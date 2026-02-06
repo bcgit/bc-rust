@@ -1,4 +1,4 @@
-use utils::ct::Condition;
+use bouncycastle_utils::ct::Condition;
 
 /// These do not validate the constant-time-ness; these are simply basic correctness tests
 /// (and example usages)

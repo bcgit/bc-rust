@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use core_interface::errors::{KeyMaterialError, RNGError};
-    use core_interface::key_material::{
+    use bouncycastle_core_interface::errors::{KeyMaterialError, RNGError};
+    use bouncycastle_core_interface::key_material::{
         KeyMaterial0, KeyMaterial256, KeyMaterialInternal, KeyType,
     };
-    use core_interface::traits::{KeyMaterial, RNG, SecurityStrength};
-    use core_test_framework::DUMMY_SEED_512;
-    use rng::Sp80090ADrbg;
-    use rng::{HashDRBG_SHA256, HashDRBG_SHA512};
+    use bouncycastle_core_interface::traits::{KeyMaterial, RNG, SecurityStrength};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_rng::Sp80090ADrbg;
+    use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 
     #[test]
     fn basic_test() {

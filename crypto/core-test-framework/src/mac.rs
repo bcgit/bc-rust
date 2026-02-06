@@ -1,8 +1,8 @@
 use crate::DUMMY_SEED_512;
-use core_interface::errors::{KeyMaterialError, MACError};
-use core_interface::key_material::{KeyMaterial512, KeyType};
-use core_interface::traits::MAC;
-use core_interface::traits::{KeyMaterial, SecurityStrength};
+use bouncycastle_core_interface::errors::{KeyMaterialError, MACError};
+use bouncycastle_core_interface::key_material::{KeyMaterial512, KeyType};
+use bouncycastle_core_interface::traits::MAC;
+use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength};
 
 pub struct TestFrameworkMAC {
     // Put any config options here

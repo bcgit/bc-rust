@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod hash_factory_tests {
-    use hex;
-    use factory::mac_factory::{MACFactory};
-    use core_interface::traits::{MAC};
-    use core_interface::key_material::{KeyMaterialInternal, KeyType};
+    use bouncycastle_hex as hex;
+    use bouncycastle_factory::mac_factory::{MACFactory};
+    use bouncycastle_core_interface::traits::{MAC};
+    use bouncycastle_core_interface::key_material::{KeyMaterialInternal, KeyType};
 
     mod sha3_tests {
         use super::*;

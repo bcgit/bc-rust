@@ -1,9 +1,9 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
-use rng;
-use core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
-use core_interface::traits::{MAC, RNG};
-use hmac::{HMAC_SHA256, HMAC_SHA512};
+use bouncycastle_rng as rng;
+use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
+use bouncycastle_core_interface::traits::{MAC, RNG};
+use bouncycastle_hmac::{HMAC_SHA256, HMAC_SHA512};
 
 fn bench_hmac_sha256(c: &mut Criterion) {
     let mut data_block = [0_u8; 1024];

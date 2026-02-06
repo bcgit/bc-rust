@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod hkdf_tests {
-    use core_interface::errors::{KDFError, KeyMaterialError, MACError};
-    use core_interface::key_material::{KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
-    use core_interface::traits::{HashAlgParams, KeyMaterial, SecurityStrength, KDF};
-    use core_test_framework::DUMMY_SEED_512;
-    use core_test_framework::kdf::TestFrameworkKDF;
-    use hex;
-    use hkdf::{HKDF, HKDF_SHA256, HKDF_SHA512};
-    use sha2::{SHA256};
-    use utils::ct;
+    use bouncycastle_core_interface::errors::{KDFError, KeyMaterialError, MACError};
+    use bouncycastle_core_interface::key_material::{KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
+    use bouncycastle_core_interface::traits::{HashAlgParams, KeyMaterial, SecurityStrength, KDF};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+    use bouncycastle_hex as hex;
+    use bouncycastle_hkdf::{HKDF, HKDF_SHA256, HKDF_SHA512};
+    use bouncycastle_sha2::{SHA256};
+    use bouncycastle_utils::ct;
 
     #[test]
     fn test_streaming_apis() {

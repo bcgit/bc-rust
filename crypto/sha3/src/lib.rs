@@ -7,7 +7,8 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use core_interface::traits::Hash;
+//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let output: Vec<u8> = sha3::SHA3_256::new().hash(data);
@@ -17,7 +18,8 @@
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
-//! use core_interface::traits::Hash;
+//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F
 //!                     \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F
@@ -35,7 +37,8 @@
 //! It is also possible to provide input where the final byte contains less than 8 bits of data (ie is a partial byte);
 //! for example, the following code uses only 3 bits of the final byte:
 //! ```
-//! use core_interface::traits::Hash;
+//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
 //! let mut sha3 = sha3::SHA3_256::new();
@@ -51,7 +54,8 @@
 //!
 //! The simplest usage is via the static functions. The following example produces a 16 byte (128-bit) and 16KiB output:
 //!```
-//! use core_interface::traits::XOF;
+//! use bouncycastle_core_interface::traits::XOF;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let output_16byte: Vec<u8> = sha3::SHAKE128::new().hash_xof(data, 16);
@@ -62,7 +66,8 @@
 //! Unlike [Hash::do_final], [XOF::squeeze] can be called multiple times.
 //! The following code produces the same output as the previous example:
 //!```
-//! use core_interface::traits::XOF;
+//! use bouncycastle_core_interface::traits::XOF;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let mut shake = sha3::SHAKE128::new();
@@ -85,8 +90,9 @@
 //! input key material to derive a MAC, symmetric, or asymmetric key.
 //!
 //! ```
-//! use core_interface::traits::KDF;
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core_interface::traits::KDF;
+//! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let input_key = KeyMaterial256::from_bytes(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F").unwrap();
 //! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input").unwrap();

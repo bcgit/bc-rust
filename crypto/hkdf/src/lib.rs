@@ -17,13 +17,15 @@
 //! The following object instantiations are equivalent:
 //!
 //! ```
-//! use hkdf::HKDF_SHA256;
+//! use bouncycastle_hkdf::HKDF_SHA256;
+//!
 //! let hkdf = HKDF_SHA256::new();
 //! ```
 //! and
 //! ```
-//! use hkdf::HKDF;
-//! use sha2::SHA256;
+//! use bouncycastle_hkdf::HKDF;
+//! use bouncycastle_sha2::SHA256;
+//!
 //! let hkdf = HKDF::<SHA256>::new();
 //! ```
 //!
@@ -38,9 +40,9 @@
 //! The simplest usage is via the one-shot functions provided by the [KDF] trait.
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use core_interface::traits::{KDF };
-//! use hkdf::HKDF_SHA256;
+//! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core_interface::traits::{KDF };
+//! use bouncycastle_hkdf::HKDF_SHA256;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
@@ -94,10 +96,10 @@
 //! A typical flow looks like this:
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialInternal, KeyType};
-//! use core_interface::traits::KDF;
-//! use hkdf::{HKDF, HKDF_SHA256};
-//! use sha2::{SHA256};
+//! use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialInternal, KeyType};
+//! use bouncycastle_core_interface::traits::KDF;
+//! use bouncycastle_hkdf::{HKDF, HKDF_SHA256};
+//! use bouncycastle_sha2::{SHA256};
 //!
 //! // setup variables
 //! let salt = KeyMaterial256::from_bytes_as_type(
@@ -116,7 +118,7 @@
 //!  hkdf.do_extract_init(&salt).unwrap();
 //!  hkdf.do_extract_update_bytes(ikm.ref_to_bytes()).unwrap();
 //!  let prk = hkdf.do_extract_final().unwrap();
-//!  HKDF_SHA256::expand_out(&prk, info, 200, &mut okm2).unwrap();
+//!  HKDF_SHA256::expand_out(&prk, info, 200, &mut okm).unwrap();
 //! ```
 //!
 //! Various convenience wrapper functions are provided which can reduce the amount of boilerplate code
@@ -124,8 +126,8 @@
 //! For example, the above code can be condensed to:
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialInternal, KeyType};
-//! use hkdf::{HKDF_SHA256};
+//! use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialInternal, KeyType};
+//! use bouncycastle_hkdf::{HKDF_SHA256};
 //!
 //! // setup variables
 //! let salt = KeyMaterial256::from_bytes_as_type(
@@ -143,7 +145,6 @@
 //! let _bytes_written = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, info, 200, &mut okm).unwrap();
 //! ```
 
-//! TODO: examples
 
 #![forbid(unsafe_code)]
 

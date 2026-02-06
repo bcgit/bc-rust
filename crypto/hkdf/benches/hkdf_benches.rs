@@ -1,9 +1,9 @@
 use std::hint::black_box;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use rng;
-use core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
-use core_interface::traits::{KeyMaterial, RNG};
-use hkdf::{HKDF_SHA256, HKDF_SHA512};
+use bouncycastle_rng as rng;
+use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
+use bouncycastle_core_interface::traits::{KeyMaterial, RNG};
+use bouncycastle_hkdf::{HKDF_SHA256, HKDF_SHA512};
 
 fn bench_hkdf_sha256(c: &mut Criterion) {
     let mut data_block = [0_u8; 1024];

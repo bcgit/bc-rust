@@ -4,13 +4,13 @@ extern crate core;
 #[cfg(test)]
 mod shake_tests {
     use super::shake_test_helpers::*;
-    use core_interface::key_material::{
+    use bouncycastle_core_interface::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType,
     };
-    use core_interface::traits::{KDF, KeyMaterial, SecurityStrength, XOF};
-    use core_test_framework::DUMMY_SEED_512;
-    use core_test_framework::kdf::TestFrameworkKDF;
-    use sha3::{SHAKE128, SHAKE256};
+    use bouncycastle_core_interface::traits::{KDF, KeyMaterial, SecurityStrength, XOF};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+    use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
     #[test]
     fn test_xof_partial_bit_output() {
@@ -276,7 +276,7 @@ mod shake_tests {
 /** Constant helpers **/
 
 pub(crate) mod shake_test_helpers {
-    use hex;
+    use bouncycastle_hex as hex;
     use std::fs;
 
     const SAMPLE_OF: &str = " sample of ";

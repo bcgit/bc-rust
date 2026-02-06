@@ -1,9 +1,9 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use core_interface::traits::{Hash, RNG};
-use rng;
-use sha2::*;
+use bouncycastle_core_interface::traits::{Hash, RNG};
+use bouncycastle_rng as rng;
+use bouncycastle_sha2::*;
 
 fn bench_sha256(c: &mut Criterion) {
     let mut data = [0_u8; 1024];

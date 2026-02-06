@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod hmac_tests {
-    use core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
-    use core_interface::traits::{Algorithm, Hash, KeyMaterial, SecurityStrength, MAC};
-    use core_test_framework::mac::TestFrameworkMAC;
-    use hex;
-    use core_interface::errors::{KeyMaterialError, MACError};
-    use core_test_framework::DUMMY_SEED_512;
-    use hmac::*;
-    use sha2::*;
-    use sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+    use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
+    use bouncycastle_core_interface::traits::{Algorithm, Hash, KeyMaterial, SecurityStrength, MAC};
+    use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
+    use bouncycastle_hex as hex;
+    use bouncycastle_core_interface::errors::{KeyMaterialError, MACError};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_hmac::*;
+    use bouncycastle_sha2::*;
+    use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 
     #[test]
     fn simple_tests() {
@@ -225,7 +225,7 @@ mod hmac_tests {
 
     #[cfg(test)]
     mod core_test_framework_rfc4231 {
-        use core_interface::key_material::KeyMaterialInternal;
+        use bouncycastle_core_interface::key_material::KeyMaterialInternal;
         use super::*;
 
         #[test]

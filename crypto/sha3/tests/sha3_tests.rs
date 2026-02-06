@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod sha3_tests {
     use super::sha3_test_helpers::*;
-    use core_interface::key_material::{
+    use bouncycastle_core_interface::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType,
     };
-    use core_interface::traits::{Hash, HashAlgParams, KDF, KeyMaterial, SecurityStrength};
-    use core_test_framework::DUMMY_SEED_512;
-    use core_test_framework::hash::TestFrameworkHash;
-    use core_test_framework::kdf::TestFrameworkKDF;
-    use sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+    use bouncycastle_core_interface::traits::{Hash, HashAlgParams, KDF, KeyMaterial, SecurityStrength};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_core_test_framework::hash::TestFrameworkHash;
+    use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+    use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 
     #[test]
     fn test_constants() {
@@ -425,7 +425,7 @@ mod sha3_tests {
 /** Constant helpers **/
 
 pub(crate) mod sha3_test_helpers {
-    use hex;
+    use bouncycastle_hex as hex;
     use std::fs;
 
     const SAMPLE_OF: &str = " sample of ";

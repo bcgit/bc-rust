@@ -1,5 +1,5 @@
-use core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
-use core_interface::traits::{KDF, KeyMaterial, SecurityStrength};
+use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
+use bouncycastle_core_interface::traits::{KDF, KeyMaterial, SecurityStrength};
 
 pub struct TestFrameworkKDF {}
 

@@ -342,7 +342,7 @@ impl KeccakDigest {
 #[cfg(test)]
 mod keccak_tests {
     use super::*;
-    use hex;
+    use bouncycastle_hex as hex;
 
     #[test]
     fn test_keccak() {
