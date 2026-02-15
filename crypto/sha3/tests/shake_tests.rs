@@ -27,7 +27,7 @@ mod shake_tests {
 
         // test bounds
         let mut shake = SHAKE128::new();
-        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("Absorb failed");
+        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]);
         let _throwaway = shake.squeeze(3);
         match shake.squeeze_partial_byte_final(0) {
             Err(_) => { /* good */ }
@@ -37,7 +37,7 @@ mod shake_tests {
         }
 
         let mut shake = SHAKE128::new();
-        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("Absorb failed");
+        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]);
         let _throwaway = shake.squeeze(3);
         match shake.squeeze_partial_byte_final(8) {
             Err(_) => { /* good */ }
@@ -48,7 +48,7 @@ mod shake_tests {
 
         for i in 1..7 {
             let mut shake = SHAKE128::new();
-            shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("Absorb failed");
+            shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]);
             _ = shake.squeeze(3);
             let out: u8 = shake.squeeze_partial_byte_final(i).expect("Squeeze failed");
             assert_eq!(out, 0xFF >> (8 - i));
@@ -56,7 +56,7 @@ mod shake_tests {
 
         // success case -- output slice version
         let mut shake = SHAKE128::new();
-        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("Absorb failed");
+        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]);
         _ = shake.squeeze(3);
         let mut out = 0u8;
         shake.squeeze_partial_byte_final_out(1, &mut out).expect("Squeeze failed");
@@ -259,10 +259,10 @@ mod shake_tests {
         let output: Vec<u8>;
 
         if partial_bits == 0 {
-            shake.absorb(tc.msg.as_slice()).expect("Absorb failed");
+            shake.absorb(tc.msg.as_slice());
             output = shake.squeeze(tc.output.len()).expect("Squeeze failed.");
         } else {
-            shake.absorb(&tc.msg[..(tc.msg.len() - 1)]).expect("Absorb failed");
+            shake.absorb(&tc.msg[..(tc.msg.len() - 1)]);
             shake
                 .absorb_last_partial_byte(tc.msg[tc.msg.len() - 1], partial_bits)
                 .expect("Absorb failed");

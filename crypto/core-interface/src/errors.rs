@@ -54,6 +54,15 @@ pub enum RNGError {
     KeyMaterialError(KeyMaterialError),
 }
 
+#[derive(Debug)]
+pub enum SignatureError {
+    GenericError(&'static str),
+    KeyGenError(&'static str),
+}
+
+
+
+
 /*** Promotion functions ***/
 impl From<KeyMaterialError> for HashError {
     fn from(e: KeyMaterialError) -> HashError {

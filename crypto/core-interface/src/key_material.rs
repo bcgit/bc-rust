@@ -77,6 +77,7 @@ pub trait KeyMaterial {
     /// however, this does not require [KeyMaterial::allow_hazardous_operations] in the name of API ergonomics:
     /// setting [KeyMaterial::allow_hazardous_operations] requires a mutable reference and reading the bytes
     /// is not an operation that should require mutability.
+    /// TODO -- consider whether this should consume the object
     fn ref_to_bytes(&self) -> &[u8];
 
     /// Get a mutable reference to the underlying key material bytes so that you can read or write

@@ -49,16 +49,16 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
 
     /// Swallows errors and simply returns an empty Vec<u8> if the hashes fails for whatever reason.
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.absorb(data).expect("Should be infallible.");
-        self.squeeze(result_len).expect(".squeeze() should be infallible.") // This should be Infallible ... figure out a clean way to do this
+        self.absorb(data);
+        self.squeeze(result_len)
     }
 
     fn hash_internal_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.absorb(data).expect("Should be infallible.");
-        self.squeeze_out(output).expect(".squeeze_out() should be infallible.")
+        self.absorb(data);
+        self.squeeze_out(output)
     }
 
-    fn mix_key_internal(&mut self, key: &impl KeyMaterial) -> Result<(), HashError> {
+    fn mix_key_internal(&mut self, key: &impl KeyMaterial) {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
 
@@ -104,11 +104,11 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
-        self.absorb(additional_input)?;
+        self.absorb(additional_input);
 
         // let mut buf = [0u8; 64];
         output_key.allow_hazardous_operations();
-        let bytes_written = self.squeeze_out(output_key.mut_ref_to_bytes().expect("We just set .allow_hazardous_operations(), so this should be fine."))?;
+        let bytes_written = self.squeeze_out(output_key.mut_ref_to_bytes().expect("We just set .allow_hazardous_operations(), so this should be fine."));
         output_key.set_key_len(bytes_written)?;
 
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
@@ -139,7 +139,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterial>, KDFError> {
         // self.derive_key_from_multiple(&[key], additional_input)
-        self.mix_key_internal(key)?;
+        self.mix_key_internal(key);
         self.derive_key_final_internal(additional_input)
     }
 
@@ -150,7 +150,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
         output_key: &mut impl KeyMaterial,
     ) -> Result<usize, KDFError> {
         // self.derive_key_from_multiple_out(&[key], additional_input, output)
-        self.mix_key_internal(key)?;
+        self.mix_key_internal(key);
         self.derive_key_out_final_internal(additional_input, output_key)
     }
 
@@ -166,7 +166,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterial>, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key)?;
+            self.mix_key_internal(*key);
         }
         self.derive_key_final_internal(additional_input)
     }
@@ -178,7 +178,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
         output_key: &mut impl KeyMaterial,
     ) -> Result<usize, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key)?;
+            self.mix_key_internal(*key);
         }
         self.derive_key_out_final_internal(additional_input, output_key)
     }
@@ -203,8 +203,8 @@ impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
         self.hash_internal_out(data, output)
     }
 
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
-        Ok(self.keccak.absorb(data))
+    fn absorb(&mut self, data: &[u8]) {
+        self.keccak.absorb(data)
     }
 
     /// Switches to squeezing.
@@ -232,20 +232,18 @@ impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
         Ok(())
     }
 
-    /// Is infallible.
-    fn squeeze(&mut self, num_bytes: usize) -> Result<Vec<u8>, HashError> {
+    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out: Vec<u8> = vec![0u8; num_bytes];
-        self.squeeze_out(&mut out)?;
-        Ok(out)
+        self.squeeze_out(&mut out);
+        out
     }
 
-    /// Is infallible.
-    fn squeeze_out(&mut self, output: &mut [u8]) -> Result<usize, HashError> {
+    fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
         if !self.keccak.squeezing {
             self.keccak.absorb_bits(0x0F, 4).expect("Absorb_bits failed");
         };
 
-        Ok(self.keccak.squeeze(output))
+        self.keccak.squeeze(output)
     }
 
     fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError> {

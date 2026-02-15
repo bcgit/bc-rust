@@ -1,6 +1,6 @@
 //! Provides simplified abstracted APIs over classes of cryptigraphic primitives, such as Hash, KDF, etc.
 
-use crate::errors::{HashError, KDFError, MACError, RNGError};
+use crate::errors::{HashError, KDFError, MACError, RNGError, SignatureError};
 pub use crate::key_material::KeyMaterial;
 
 // Imports needed for docs
@@ -353,6 +353,44 @@ pub trait RNG : Default {
     fn security_strength(&self) -> SecurityStrength;
 }
 
+trait SignaturePublicKey {}
+
+trait SignaturePrivateKey {}
+
+/// A digital signature algorithm is defined as a set of three operations:
+/// signing, verification, and key generation.
+/// This high-level trait defines the operations over a generic signature algorithm that is assumed
+/// to source all its randomness from bouncycastle's default os-backed RNG.
+/// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
+/// or deterministic seed values.
+trait Signature {
+    /// Generate a new keypair from the default OS-backed RNG.
+    fn keygen() -> Box<dyn SignaturePrivateKey>;
+
+    // todo add ctx
+    fn sign(priv_key: &impl SignaturePrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
+
+    fn sign_out(priv_key: &impl SignaturePrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
+
+    fn verify(pub_key: &impl SignaturePublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<bool, SignatureError>;
+
+    /* streaming signing API */
+    fn sign_init(&mut self, priv_key: &impl SignaturePrivateKey) -> Result<(), SignatureError>;
+
+    fn sign_update(&mut self, msg_chunk: &[u8]);
+
+    fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
+
+    fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
+
+    /* streaming signing API */
+    fn verify_init(&mut self, pub_key: &impl SignaturePublicKey) -> Result<(), SignatureError>;
+
+    fn verify_update(&mut self, msg_chunk: &[u8]);
+
+    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<bool, SignatureError>;
+}
+
 /// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
 /// The naming used for the functions of this trait are borrowed from the SHA3-style sponge constructions that split XOF operation
 /// into two phases: an absorb phase in which an arbitrary amount of input is provided to the XOF,
@@ -379,7 +417,7 @@ pub trait XOF : Default {
     /// Fills the provided output slice.
     fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize;
 
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError>;
+    fn absorb(&mut self, data: &[u8]);
 
     /// Switches to squeezing.
     fn absorb_last_partial_byte(
@@ -389,11 +427,11 @@ pub trait XOF : Default {
     ) -> Result<(), HashError>;
 
     /// Can be called multiple times.
-    fn squeeze(&mut self, num_bytes: usize) -> Result<Vec<u8>, HashError>;
+    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8>;
 
     /// Can be called multiple times.
     /// Fills the provided output slice.
-    fn squeeze_out(&mut self, output: &mut [u8]) -> Result<usize, HashError>;
+    fn squeeze_out(&mut self, output: &mut [u8]) -> usize;
 
     /// Squeezes a partial byte from the XOF.
     /// Output will be in the top `num_bits` bits of the returned u8 (ie Big Endian).

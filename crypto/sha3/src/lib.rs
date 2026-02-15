@@ -120,6 +120,7 @@ use bouncycastle_core_interface::key_material::{KeyMaterialInternal, KeyType};
 mod keccak;
 mod sha3;
 mod shake;
+
 /*** String constants ***/
 pub const SHA3_224_NAME: &str = "SHA3-224";
 pub const SHA3_256_NAME: &str = "SHA3-256";
@@ -139,6 +140,8 @@ pub type SHAKE128 = SHAKE<SHAKE128Params>;
 pub type SHAKE256 = SHAKE<SHAKE256Params>;
 
 /*** Param traits ***/
+
+/// Private trait on purpose so that only the NIST-approved params can be used.
 trait SHA3Params: HashAlgParams {
     const SIZE: KeccakSize;
 }
