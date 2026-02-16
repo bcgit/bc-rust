@@ -1,6 +1,6 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
-use crate::matrix::{Matrix, Vector, VectorK, VectorL};
+use crate::matrix::{Matrix, Vector};
 use crate::mldsa::{G, H};
 use crate::polynomial::Polynomial;
 use crate::{MLDSAParams, MldsaSize, Q, polynomial, D, N, POLY_T1PACKED_LEN};
@@ -44,16 +44,16 @@ pub(crate) fn coeff_from_half_byte<PARAMS: MLDSAParams>(b: u8) -> Result<i32, ()
 ///  Encodes a polynomial 𝑤 into a byte string.
 /// Input: 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in [0, 𝑏].
 /// Output: A byte string of length 32 ⋅ bitlen 𝑏.
-pub(crate) fn simple_bit_pack_t1<PARAMS: MLDSAParams>(w: &Polynomial<PARAMS>) -> [u8; POLY_T1PACKED_LEN] {
+pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
     let mut output = [0u8; POLY_T1PACKED_LEN];
     for i in 0..N/4 {
-        output[5 * i] = w.coeffs[4 * i] as u8;
-        output[5 * i + 1] = ((w.coeffs[4 * i] >> 8) | (w.coeffs[4 * i + 1] << 2)) as u8;
+        output[5 * i] = w[4 * i] as u8;
+        output[5 * i + 1] = ((w[4 * i] >> 8) | (w[4 * i + 1] << 2)) as u8;
         output[5 * i + 2] =
-            ((w.coeffs[4 * i + 1] >> 6) | (w.coeffs[4 * i + 2] << 4)) as u8;
+            ((w[4 * i + 1] >> 6) | (w[4 * i + 2] << 4)) as u8;
         output[5 * i + 3] =
-            ((w.coeffs[4 * i + 2] >> 4) | (w.coeffs[4 * i + 3] << 6)) as u8;
-        output[5 * i + 4] = (w.coeffs[4 * i + 3] >> 2) as u8;
+            ((w[4 * i + 2] >> 4) | (w[4 * i + 3] << 6)) as u8;
+        output[5 * i + 4] = (w[4 * i + 3] >> 2) as u8;
     }
     output
 }
@@ -62,11 +62,11 @@ pub(crate) fn simple_bit_pack_t1<PARAMS: MLDSAParams>(w: &Polynomial<PARAMS>) ->
 /// This is supposed to take a rho: [u8; 34], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
 /// we'll split that into a [u8;32] and a [u8;2]
-pub(crate) fn rej_ntt_poly<PARAMS: MLDSAParams>(
+pub(crate) fn rej_ntt_poly(
     rho: &[u8; 32],
     nonce: &[u8; 2],
-) -> Polynomial<PARAMS> {
-    let mut a = Polynomial::<PARAMS>::new();
+) -> Polynomial {
+    let mut a = polynomial::new();
     let mut j: usize = 0;
     let mut g = G::new();
     g.absorb(rho);
@@ -76,7 +76,7 @@ pub(crate) fn rej_ntt_poly<PARAMS: MLDSAParams>(
         // note: this only works because the global param N (which is the length of Polynomial) is 256.
         let mut s = [0u8; 3];
         g.squeeze_out(&mut s);
-        a.coeffs[j] = match coeff_from_three_bytes(s[0], s[1], s[2]) {
+        a[j] = match coeff_from_three_bytes(s[0], s[1], s[2]) {
             Ok(c) => {
                 j += 1;
                 c
@@ -99,8 +99,8 @@ pub(crate) fn rej_ntt_poly<PARAMS: MLDSAParams>(
 pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
     rho: &[u8; 64],
     nonce: &[u8; 2],
-) -> Polynomial<PARAMS> {
-    let mut a = Polynomial::<PARAMS>::new();
+) -> Polynomial {
+    let mut a = polynomial::new();
     let mut j: usize = 0;
     let mut h = H::new();
     h.absorb(&rho[..32]);
@@ -116,11 +116,11 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
         // todo: umm, aren't these equivalent to & 0x0F and >> 4 ?
 
         if z0.is_ok() {
-            a.coeffs[j] = z0.unwrap();
+            a[j] = z0.unwrap();
             j += 1;
         } /* else: do nothing */
         if z1.is_ok() && j < 256 {
-            a.coeffs[j] = z1.unwrap();
+            a[j] = z1.unwrap();
             j += 1;
         } /* else: do nothing */
     }
@@ -132,12 +132,12 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
 /// Samples a 𝑘 × ℓ matrix 𝐀̂ of elements of 𝑇𝑞.
 /// Input: A seed 𝜌 ∈ B^64.
 /// Output: Vectors 𝐬1, 𝐬2 of polynomials in 𝑅.
-pub(crate) fn expand_a<PARAMS: MLDSAParams>(rho: &[u8; 32]) -> Matrix<PARAMS> {
+pub(crate) fn expand_a<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<k, l> {
     #[allow(non_snake_case)]
-    let mut A = Matrix::<PARAMS>::new();
+    let mut A = Matrix::<k, l>::new();
 
-    for r in 0..PARAMS::k {
-        for s in 0..PARAMS::l {
+    for r in 0..k {
+        for s in 0..l {
             A.matrix[r][s] = rej_ntt_poly(rho, &[r as u8, s as u8]);
         }
     }
@@ -150,21 +150,18 @@ pub(crate) fn expand_a<PARAMS: MLDSAParams>(rho: &[u8; 32]) -> Matrix<PARAMS> {
 /// in the interval \[−𝜂, 𝜂].
 /// Input: A seed 𝜌 ∈ 𝔹64 .
 /// Output: Vectors 𝐬1, 𝐬2 of polynomials in 𝑅
-pub(crate) fn expand_s<PARAMS: MLDSAParams>(
+pub(crate) fn expand_s<const k: usize, const l: usize, PARAMS: MLDSAParams>(
     rho: &[u8; 64],
-) -> (VectorL<PARAMS>, VectorK<PARAMS>)
-where
-    VectorL<PARAMS>: Sized, VectorK<PARAMS>: Sized,
-{
-    let mut s1 = VectorL::<PARAMS>::new();
-    let mut s2 = VectorK::<PARAMS>::new();
+) -> (Vector::<l>, Vector::<k>) {
+    let mut s1 = Vector::<l>::new();
+    let mut s2 = Vector::<k>::new();
 
-    for r in 0..PARAMS::l {
+    for r in 0..l {
         s1.vec[r] = rej_bounded_poly::<PARAMS>(rho, &(r as u16).to_le_bytes());
     }
 
-    for r in 0..PARAMS::k {
-        s2.vec[r] = rej_bounded_poly(rho, &(r as u16 + PARAMS::l as u16).to_le_bytes());
+    for r in 0..k {
+        s2.vec[r] = rej_bounded_poly::<PARAMS>(rho, &(r as u16 + l as u16).to_le_bytes());
     }
 
     (s1, s2)
@@ -172,15 +169,15 @@ where
 
 /// Implements the meta-function described in FIPS 204 section 7.4 for applying power_2_round to a vector.
 /// ((𝐫1\[𝑖])𝑗, (𝐫0\[𝑖])𝑗) = Power2Round((𝐫\[𝑖])𝑗).
-pub(crate) fn power_2_round_vec<PARAMS: MLDSAParams, const LEN: usize>(
-    v: &Vector<PARAMS, LEN>
-) -> (Vector<PARAMS, LEN>, Vector<PARAMS, LEN>) {
-    let mut r1 = Vector::<PARAMS, LEN>::new();
-    let mut r0 = Vector::<PARAMS, LEN>::new();
+pub(crate) fn power_2_round_vec<const LEN: usize>(
+    v: &Vector<LEN>
+) -> (Vector<LEN>, Vector<LEN>) {
+    let mut r1 = Vector::<LEN>::new();
+    let mut r0 = Vector::<LEN>::new();
 
     for i in 0 .. LEN {
         for j in 0 .. N {
-            (r1.vec[i].coeffs[j], r0.vec[i].coeffs[j]) = power_2_round(v.vec[i].coeffs[j]);
+            (r1.vec[i][j], r0.vec[i][j]) = power_2_round(v.vec[i][j]);
         }
     }
 
@@ -235,12 +232,12 @@ const ZETAS: [i32; 256] = [
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
-pub(crate) fn ntt_vec<PARAMS: MLDSAParams>(
-    s: &VectorL<PARAMS>,
-) -> VectorL<PARAMS> {
-    let mut s_hat = VectorL::<PARAMS>::new();
+pub(crate) fn ntt_vec<const LEN: usize>(
+    s: &Vector<LEN>,
+) -> Vector<LEN> {
+    let mut s_hat = Vector::<LEN>::new();
 
-    for i in 0..PARAMS::l {
+    for i in 0..LEN {
         s_hat.vec[i] = ntt(s.vec[i]);
     }
 
@@ -254,14 +251,14 @@ pub(crate) fn ntt_vec<PARAMS: MLDSAParams>(
 /// Anyway, this fills in the missing overloads of NTT to act on a matrix.
 /// TODO: this one might not be used?
 #[allow(non_snake_case)]
-pub(crate) fn ntt_matrix<PARAMS: MLDSAParams>(
-    A: &Matrix<PARAMS>,
-) -> Matrix<PARAMS> {
+pub(crate) fn ntt_matrix<const l: usize, const k: usize>(
+    A: &Matrix<l,k>,
+) -> Matrix<l,k> {
     #[allow(non_snake_case)]
-    let mut A_hat = Matrix::<PARAMS>::new();
+    let mut A_hat = Matrix::<l,k>::new();
 
-    for i in 0..PARAMS::k {
-        for j in 0..PARAMS:l {
+    for i in 0..k {
+        for j in 0..l {
             A_hat.matrix[i][j] = ntt(A.matrix[i][j]);
         }
     }
@@ -283,7 +280,7 @@ pub(crate) fn ntt_matrix<PARAMS: MLDSAParams>(
 /// Design choice: don't do the NTT in-place, but copy data to a new array.
 /// This uses slightly more memory and requires a copy, but makes the code easier to read
 /// and less likely to contain a bug. But this optimization could be considered in the future.
-pub(crate) fn ntt<PARAMS: MLDSAParams>(w: Polynomial<PARAMS>) -> Polynomial<PARAMS> {
+pub(crate) fn ntt(w: Polynomial) -> Polynomial {
     let mut w_hat = w.clone();
 
     let mut m: usize = 0;
@@ -299,9 +296,9 @@ pub(crate) fn ntt<PARAMS: MLDSAParams>(w: Polynomial<PARAMS>) -> Polynomial<PARA
             // j = start;
             // while j < start + len {
             for j in start..start + len {
-                let t = polynomial::montgomery_reduce(z as i64 * w_hat.coeffs[j + len] as i64);
-                w_hat.coeffs[j + len] = w_hat.coeffs[j] - t;
-                w_hat.coeffs[j] += t;
+                let t = polynomial::montgomery_reduce(z as i64 * w_hat[j + len] as i64);
+                w_hat[j + len] = w_hat[j] - t;
+                w_hat[j] += t;
                 // j += 1;
             }
             start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.
@@ -318,12 +315,12 @@ pub(crate) fn ntt<PARAMS: MLDSAParams>(w: Polynomial<PARAMS>) -> Polynomial<PARA
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
-pub(crate) fn inv_ntt_vec<PARAMS: MLDSAParams>(
-    s_hat: &VectorK<PARAMS>,
-) -> VectorK<PARAMS> {
-    let mut s = VectorK::<PARAMS>::new();
+pub(crate) fn inv_ntt_vec<const LEN: usize>(
+    s_hat: &Vector<LEN>,
+) -> Vector<LEN> {
+    let mut s = Vector::<LEN>::new();
 
-    for i in 0..PARAMS::k {
+    for i in 0..LEN {
         s.vec[i] = inv_ntt(s_hat.vec[i]);
     }
 
@@ -337,14 +334,14 @@ pub(crate) fn inv_ntt_vec<PARAMS: MLDSAParams>(
 /// Anyway, this fills in the missing overloads of NTT to act on a matrix.
 /// TODO: this one might not be used?
 #[allow(non_snake_case)]
-pub(crate) fn inv_ntt_matrix<PARAMS: MLDSAParams>(
-    A_hat: &Matrix<PARAMS>,
-) -> Matrix<PARAMS> {
+pub(crate) fn inv_ntt_matrix<const l: usize, const k: usize>(
+    A_hat: &Matrix<l,k>,
+) -> Matrix<l,k> {
     #[allow(non_snake_case)]
-    let mut A = Matrix::<PARAMS>::new();
+    let mut A = Matrix::<l,k>::new();
 
-    for i in 0..PARAMS::k {
-        for j in 0..PARAMS:l {
+    for i in 0..k {
+        for j in 0..l {
             A.matrix[i][j] = inv_ntt(A_hat.matrix[i][j]);
         }
     }
@@ -357,7 +354,7 @@ pub(crate) fn inv_ntt_matrix<PARAMS: MLDSAParams>(
 /// Input: ̂̂ ̂ 𝑤 = (𝑤\[0], … , 𝑤\[255]) ∈ 𝑇𝑞.
 /// Output: Polynomial 𝑤(𝑋) = ∑255
 /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
-pub(crate) fn inv_ntt<PARAMS: MLDSAParams>(w_hat: Polynomial<PARAMS>) -> Polynomial<PARAMS> {
+pub(crate) fn inv_ntt(w_hat: Polynomial) -> Polynomial {
     let mut w = w_hat.clone();
 
     let mut m: usize = 256;
@@ -375,25 +372,25 @@ pub(crate) fn inv_ntt<PARAMS: MLDSAParams>(w_hat: Polynomial<PARAMS>) -> Polynom
             // while j < start + len {
             for j in start..start + len {
                 // 𝑡 ← 𝑤𝑗
-                let t: i32 = w_hat.coeffs[j];
+                let t: i32 = w_hat[j];
 
                 // 𝑤𝑗 ← (𝑡 + 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
                 // Note: the original bc-rust implementation had this line as:
                 //   a[j] = t + a[j + len];
                 // is there a mathematical reason that this can't overflow beyond Q and therefore doesn't need the reduction?
                 // Worth testing once we have unit tests as that would be a small performance increase to skip the montgomery reduction.
-                w.coeffs[j] = polynomial::montgomery_reduce(t as i64 + w.coeffs[j + len] as i64);
+                w[j] = polynomial::montgomery_reduce(t as i64 + w[j + len] as i64);
 
                 // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑡 − 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
                 // Same as above, original bc-rust impl had:
                 //  a[j + len] = t - a[j + len];
                 // with no reduction.
-                w.coeffs[j + len] =
-                    polynomial::montgomery_reduce(t as i64 - w.coeffs[j + len] as i64);
+                w[j + len] =
+                    polynomial::montgomery_reduce(t as i64 - w[j + len] as i64);
 
                 // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                w.coeffs[j + len] =
-                    polynomial::montgomery_reduce(z as i64 * w.coeffs[j + len] as i64);
+                w[j + len] =
+                    polynomial::montgomery_reduce(z as i64 * w[j + len] as i64);
             }
             start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.
         }
@@ -404,7 +401,7 @@ pub(crate) fn inv_ntt<PARAMS: MLDSAParams>(w_hat: Polynomial<PARAMS>) -> Polynom
     let f: i64 = 8347681;
     for j in 0usize..256 {
         // equiv. to the global constant N
-        w.coeffs[j] = polynomial::montgomery_reduce(f * w.coeffs[j] as i64);
+        w[j] = polynomial::montgomery_reduce(f * w[j] as i64);
     }
 
     w

@@ -1,26 +1,39 @@
-use bouncycastle_core_interface::errors::SignatureError;
 use crate::MLDSAParams;
+use crate::aux_functions::{expand_a, expand_s, inv_ntt_vec, ntt_vec, power_2_round_vec};
 use crate::mldsa_keys::{MLDSAPrivatekey, MLDSAPublickey};
+use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyType};
 use bouncycastle_core_interface::traits::{SecurityStrength, XOF};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
-use crate::aux_functions::{expand_a, expand_s, inv_ntt_vec, ntt_vec, power_2_round_vec};
 
 // Typedefs just to make the algorithms look more like the FIPS 204 sample code.
 pub(crate) type H = SHAKE256;
 pub(crate) type G = SHAKE128;
 
-pub struct MLDSA<PARAMS: MLDSAParams + 'static> {
-    param_set: &'static PARAMS,
-    
+pub struct MLDSA<
+    const k: usize,
+    const l: usize,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+    PARAMS: MLDSAParams,
+> {
+    _params: std::marker::PhantomData<PARAMS>,
     // only used in streaming sign operations
-    priv_key: Option<MLDSAPrivatekey<PARAMS>>,
+    priv_key: Option<MLDSAPrivatekey<k, l, SK_LEN>>,
 
     // only used in streaming verify operations
-    pub_key: Option<MLDSAPublickey<PARAMS>>,
+    pub_key: Option<MLDSAPublickey<k, PK_LEN>>,
 }
 
-impl<PARAMS: MLDSAParams> MLDSA<PARAMS> {
+impl<
+    const k: usize,
+    const l: usize,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+    PARAMS: MLDSAParams,
+>  MLDSA<k, l, PK_LEN, SK_LEN, SIG_LEN, PARAMS> {
     /// Implements Algorithm 6 of FIPS 204
     /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
     /// may in fact be exposed outside the crypto module.
@@ -32,23 +45,14 @@ impl<PARAMS: MLDSAParams> MLDSA<PARAMS> {
     /// [KeyMaterial::from_key] -- todo: make sure this works and copies key type and security strength correctly.
     pub fn keygen_internal(
         seed: &KeyMaterial256,
-    ) -> Result<(MLDSAPublickey<PARAMS>, MLDSAPrivatekey<PARAMS>), SignatureError> {
-        let mut out_pub = MLDSAPublickey::<PARAMS>::new();
-        let mut out_priv = MLDSAPrivatekey::<PARAMS>::new();
-        Self::keygen_internal_out(seed, &mut out_pub, &mut out_priv)?;
-        Ok((out_pub, out_priv))
-    }
-
-    /// Algorithm 6 of FIPS 204
-    /// no_std version of keygen_internal
-    pub fn keygen_internal_out(
-        seed: &KeyMaterial256,
-        out_pub: &mut MLDSAPublickey<PARAMS>,
-        out_priv: &mut MLDSAPrivatekey<PARAMS>,
-    ) -> Result<(), SignatureError> {
-        if seed.key_type() != KeyType::Seed || seed.key_len() != 32 ||
-            seed.security_strength() != SecurityStrength::_128bit {
-            return Err(SignatureError::KeyGenError("Seed must be 32 bytes, of KeyType::Seed and SecurityStrength::_128bit."));
+    ) -> Result<(MLDSAPublickey<k, PK_LEN>, MLDSAPrivatekey<k, l, SK_LEN>), SignatureError> {
+        if seed.key_type() != KeyType::Seed
+            || seed.key_len() != 32
+            || seed.security_strength() != SecurityStrength::_128bit
+        {
+            return Err(SignatureError::KeyGenError(
+                "Seed must be 32 bytes, of KeyType::Seed and SecurityStrength::_128bit.",
+            ));
         }
 
         // Alg 6 line 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
@@ -68,17 +72,16 @@ impl<PARAMS: MLDSAParams> MLDSA<PARAMS> {
         let bytes_written = h.squeeze_out(&mut priv_seed_k);
         debug_assert_eq!(bytes_written, 32);
 
-
         // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
         #[allow(non_snake_case)]
-        let mut A_hat = expand_a::<PARAMS>(&rho);
+        let mut A_hat = expand_a::<k,l>(&rho);
 
         // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-        let (s1, s2) = expand_s::<PARAMS>(&rho_prime);
+        let (s1, s2) = expand_s::<k,l,PARAMS>(&rho_prime);
 
         // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
         //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-        let s1_hat = ntt_vec::<PARAMS>(&s1);
+        let s1_hat = ntt_vec::<l>(&s1);
         let s_tmp = A_hat.mult_by_vec(&s1_hat); // performs operation in-place on A_hat
         let mut t = inv_ntt_vec(&s_tmp);
         t.add(&s2);
@@ -86,21 +89,19 @@ impl<PARAMS: MLDSAParams> MLDSA<PARAMS> {
         // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
         //   ▷ compress 𝐭
         //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-        let (t1, t0) = power_2_round_vec::<PARAMS, PARAMS::k>(&t);
+        let (t1, t0) = power_2_round_vec::<k>(&t);
 
         // 8: 𝑝𝑘 ← pkEncode(𝜌, 𝐭1)
-        let pk = MLDSAPublickey::<PARAMS>::new(&rho, &t1);
+        let pk = MLDSAPublickey::<k,PK_LEN>::new(&rho, &t1);
 
         // 9: 𝑡𝑟 ← H(𝑝𝑘, 64)
         let mut tr = [0u8; 64];
-        H::new().hash_xof_out(pk.encode(), &mut tr);
+        H::new().hash_xof_out(&pk.encode(), &mut tr);
         // todo: write pk.encode()
 
         // 10: 𝑠𝑘 ← skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ▷ 𝐾 and 𝑡𝑟 are for use in signing
 
         // 11: return (𝑝𝑘, 𝑠𝑘)
-
-
 
         Ok(())
     }
