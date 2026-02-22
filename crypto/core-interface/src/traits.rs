@@ -5,7 +5,7 @@ pub use crate::key_material::KeyMaterial;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use crate::key_material::KeyMaterialInternal;
+use crate::key_material::KeyMaterialSized;
 #[allow(unused_imports)]
 use crate::key_material::KeyType;
 // end of imports needed for docs
@@ -98,16 +98,16 @@ pub trait KDF : Default {
     ///
     /// If provided with an input key, even if it is [KeyType::BytesFullEntropy], but that
     /// contains less key material than the internal block size of the KDF, then the KDF
-    /// will not be considered properly seeded, and the output [KeyMaterialInternal] will be set to
-    /// [KeyType::BytesLowEntropy] -- for example, seeding SHA3-256 with a [KeyMaterialInternal] containing
+    /// will not be considered properly seeded, and the output [KeyMaterialSized] will be set to
+    /// [KeyType::BytesLowEntropy] -- for example, seeding SHA3-256 with a [KeyMaterialSized] containing
     /// only 128 bits of key material.
     ///
     /// An implement can, and in most cases SHOULD, return a [HashError] if provided
-    /// with a [KeyMaterialInternal] of type [KeyType::Zeroized].
+    /// with a [KeyMaterialSized] of type [KeyType::Zeroized].
     ///
     /// # Additional Input
     /// The `additional_input` parameter is used in deriving the key, but is not credited with any entropy,
-    /// and therefore does not affect the type of the output [KeyMaterialInternal].
+    /// and therefore does not affect the type of the output [KeyMaterialSized].
     /// This corresponds directly to `FixedInfo` as defined in NIST SP 800-56C.
     /// The `additional_input` parameter can be empty by passing in `&[0u8; 0]`.
     ///
@@ -119,7 +119,7 @@ pub trait KDF : Default {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterial>, KDFError>;
 
-    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterialInternal].
+    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterialSized].
     ///
     /// Output length: this function will behave differently depending on the underlying hash primitive;
     /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
@@ -144,7 +144,7 @@ pub trait KDF : Default {
     /// a KDF that is only full-entropy when keyed in the first input SHOULD return a full entropy key
     /// only if the first input is full entropy.
     ///
-    /// Implementations can, and in most cases SHOULD, return a [KeyMaterialInternal] of the same type as the
+    /// Implementations can, and in most cases SHOULD, return a [KeyMaterialSized] of the same type as the
     /// strongest key, and SHOULD throw a [HashError] if all input keys are zeroized.
     /// For example output a [KeyType::BytesFullEntropy] key whenever any one of
     /// the input keys is a [KeyType::BytesFullEntropy] key.
@@ -159,7 +159,7 @@ pub trait KDF : Default {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterial>, KDFError>;
 
-    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterialInternal].
+    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterialSized].
     ///
     /// Output length: this function will behave differently depending on the underlying hash primitive;
     /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
@@ -333,7 +333,7 @@ impl SecurityStrength {
 /// `rng` crate, but that one should
 /// be used by applications that intend to submit to FIPS certification as it more closely aligns with the
 /// requirements of SP 800-90A.
-/// Note: this interface produces bytes. If you want a [KeyMaterial], then use [KeyMaterialInternal::from_rng].
+/// Note: this interface produces bytes. If you want a [KeyMaterial], then use [KeyMaterialSized::from_rng].
 pub trait RNG : Default {
     // TODO: add back once we figure out streaming interaction with entropy sources.
     // fn add_seed_bytes(&mut self, additional_seed: &[u8]) -> Result<(), RNGError>;
@@ -353,23 +353,60 @@ pub trait RNG : Default {
     fn security_strength(&self) -> SecurityStrength;
 }
 
-trait SignaturePublicKey {}
+pub trait SignaturePublicKey {
+    fn encode(&self) -> Vec<u8>;
+    
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
+    
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
+}
 
-trait SignaturePrivateKey {}
+pub trait SignaturePrivateKey {
+
+    fn encode(&self) -> Vec<u8>;
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
+
+    fn from_bytes(sk_bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
+}
 
 /// A digital signature algorithm is defined as a set of three operations:
-/// signing, verification, and key generation.
+/// key generation, signing, and verification.
+/// 
+/// To avoid the use of dyn, this trait does not include key generation; you'll have to consult the
+/// documentation for the underlying signature primitive for how to generate a key pair.
+/// 
 /// This high-level trait defines the operations over a generic signature algorithm that is assumed
 /// to source all its randomness from bouncycastle's default os-backed RNG.
 /// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
 /// or deterministic seed values.
-trait Signature {
-    /// Generate a new keypair from the default OS-backed RNG.
-    fn keygen() -> Box<dyn SignaturePrivateKey>;
-
-    // todo add ctx
+pub trait Signature {
+    /// Produce a signature for the provided message and context.
+    /// Both the `msg` and `ctx` accept zero-length byte arrays.
+    ///
+    /// A note about the `ctx` context parameter:
+    /// This is a newer addition to cryptographic signature primitives. It allows for binding the
+    /// signature to some external property of the application so that a signature will fail to validate
+    /// if removed from its intended context.
+    /// This is particularly useful at preventing content confusion attacks between data formats that
+    /// have very similar data structures, for example S/MIME emails, signed PDFs, and signed executables
+    /// that all use the Cryptographic Message Syntax (CMS) data format, or multiple data objects that
+    /// all use the JWS data format.
+    /// To be properly effective, the ctx value must not be under the control of the attacker, which generally
+    /// means that it needs to be a value that is never transmitted over the wire, but rather is something
+    /// known to the application by context.
+    /// For example, "email" vs "pdf" would be a good choice since the application should know what it is
+    /// attempting to sign or verify.
+    /// The `ctx` param can also be used to bind the signed content to a transaction ID or a username,
+    /// but care should be taken to ensure that an attacker attempting a
+    /// content confusion attack not also cause the signed / verifier to use an incorrect transaction ID or username.
+    ///
+    /// Not all signature primitives will support a context value, so you may need to consult the
+    /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
+    /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
     fn sign(priv_key: &impl SignaturePrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
 
+    // todo -- go grab the wording from a similir API in MAC or HASH
     fn sign_out(priv_key: &impl SignaturePrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
 
     fn verify(pub_key: &impl SignaturePublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<bool, SignatureError>;

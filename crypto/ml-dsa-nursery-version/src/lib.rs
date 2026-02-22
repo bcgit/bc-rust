@@ -3,18 +3,19 @@
 #![allow(dead_code)] // todo - remove
 #![forbid(unsafe_code)]
 #![feature(generic_const_exprs)]
-#![feature(int_roundings)]
 
 mod mldsa;
-mod mldsa_keys;
+mod ntt;
+mod encodings;
 mod polynomial;
-mod aux_functions;
-mod matrix;
+mod poly_vec_k;
+mod poly_vec_l;
+mod poly_vec_matrix;
+mod reduce;
+mod rounding;
+mod symmetric;
+mod mldsa_keys;
 
-/*** Exported types ***/
-pub use mldsa::MLDSA;
-pub use mldsa_keys::MLDSAPublickey;
-use crate::mldsa_keys::MLDSAPrivatekey;
 
 /*** String constants ***/
 pub const ML_DSA_44_NAME: &str = "ML-DSA-44";
@@ -22,68 +23,19 @@ pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
 pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
 
 /*** pub types ***/
-pub type MLDSA44 = MLDSA<MLDSA44_k, MLDSA44_l, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, MLDSA44Params>;
-pub type MLDSA44PublicKey = MLDSAPublickey<MLDSA44_k, MLDSA44_PK_LEN>;
-pub type MLDSA44PrivateKey = MLDSAPrivatekey<MLDSA44_k, MLDSA44_l, MLDSA44_SK_LEN>;
 
+pub use mldsa_keys::MLDSAPublickey;
 
-pub type MLDSA65 = MLDSA<MLDSA65_k, MLDSA65_l, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, MLDSA65Params>;
-pub type MLDSA65PublicKey = MLDSAPublickey<MLDSA65_k, MLDSA65_PK_LEN>;
-pub type MLDSA65PrivateKey = MLDSAPrivatekey<MLDSA65_k, MLDSA65_l, MLDSA65_SK_LEN>;
+pub type MLDSA44PublicKey = MLDSAPublickey<MLDSA44Params>;
+pub type MLDSA65PublicKey = MLDSAPublickey<MLDSA65Params>;
+pub type MLDSA87PublicKey = MLDSAPublickey<MLDSA87Params>;
 
-pub type MLDSA87 = MLDSA<MLDSA87_k, MLDSA87_l, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, MLDSA87Params>;
-pub type MLDSA87PublicKey = MLDSAPublickey<MLDSA87_k, MLDSA87_PK_LEN>;
-pub type MLDSA87PrivateKey = MLDSAPrivatekey<MLDSA87_k, MLDSA87_l, MLDSA87_SK_LEN>;
+pub use mldsa_keys::MLDSAPrivatekey;
+use crate::MldsaSize::MlDsa87;
 
-
-/*** Constants ***/
-// The way the constants are defined is a bit weird, so let me explain:
-// We have three sets of constants:
-//   * Constants for sizing arrays, which are used in type definitions, these include the sizes of
-//     the vectors and matrices k and l, and the byte sizes of the public key, private key, and signature.
-//     These are defined as global constants because the rust compiler seems to need them that way to be
-//     usable in a typedef.
-//   * Computational values that are fixed across parameter sets. These are defined as global constants.
-//   * Computational values that vary by parameter set. These are defined in an instance of the MLDSAParams trait.
-
-/*** Size values ***/
-#[allow(non_upper_case_globals)]
-const MLDSA44_k: usize = 4;
-#[allow(non_upper_case_globals)]
-const MLDSA44_l: usize = 4;
-const MLDSA44_PK_LEN: usize = 1312;
-const MLDSA44_SK_LEN: usize = 2560;
-const MLDSA44_SIG_LEN: usize = 2420;
-
-#[allow(non_upper_case_globals)]
-const MLDSA65_k: usize = 6;
-#[allow(non_upper_case_globals)]
-const MLDSA65_l: usize = 5;
-const MLDSA65_PK_LEN: usize = 1952;
-const MLDSA65_SK_LEN: usize = 4032;
-const MLDSA65_SIG_LEN: usize = 3309;
-
-#[allow(non_upper_case_globals)]
-const MLDSA87_k: usize = 8;
-#[allow(non_upper_case_globals)]
-const MLDSA87_l: usize = 7;
-const MLDSA87_PK_LEN: usize = 2592;
-const MLDSA87_SK_LEN: usize = 4896;
-const MLDSA87_SIG_LEN: usize = 4627;
-
-
-/*** Internal fixed ML-DSA constants ***/
-pub(crate) const N: usize = 256;
-pub(crate) const Q: i32 = 8380417;
-pub(crate) const Q_INV: i32 = 58728449; // Q ^ (-1) mod 2 ^32
-pub(crate) const D: i32 = 13;
-pub(crate) const ROOT_OF_UNITY: i32 = 1753;
-pub(crate) const SEED_LEN: usize = 32;
-pub(crate) const CRH_LEN: usize = 64;
-pub(crate) const RND_LEN: usize = 32;
-pub(crate) const TR_LEN: usize = 64;
-pub(crate) const POLY_T1PACKED_LEN: usize = 320;
-pub(crate) const POLY_T0PACKED_LEN: usize = 416;
+pub type MLDSA44PrivateKey = MLDSAPrivatekey<MLDSA44Params>;
+pub type MLDSA65PrivateKey = MLDSAPrivatekey<MLDSA65Params>;
+pub type MLDSA87PrivateKey = MLDSAPrivatekey<MLDSA87Params>;
 
 
 /*** Param traits ***/
@@ -94,8 +46,6 @@ enum MldsaSize {
     MlDsa87 = 87,
 }
 
-// TODO: remove the constants from the trait that are also defined above
-
 /// Private trait on purpose so that only the NIST-approved params can be used.
 /// Values taken directly from FIPS 204 Table 1 and Table 2
 trait MLDSAParams {
@@ -104,10 +54,8 @@ trait MLDSAParams {
     const TAU: i32;
     const GAMMA1: i32;
     const GAMMA2: i32;
-    #[allow(non_upper_case_globals)]
-    const k: usize;
-    #[allow(non_upper_case_globals)]
-    const l: usize;
+    const K: usize;
+    const L: usize;
     const ETA: i32;
     const BETA: i32; // tau * eta
     const OMEGA: i32;
@@ -128,15 +76,12 @@ trait MLDSAParams {
 }
 
 pub struct MLDSA44Params;
-
 impl MLDSAParams for MLDSA44Params {
     const TAU: i32 = 39;
     const GAMMA1: i32 = 1 << 17;
     const GAMMA2: i32 = (Q - 1) / 88;
-    #[allow(non_upper_case_globals)]
-    const k: usize = 4;
-    #[allow(non_upper_case_globals)]
-    const l: usize = 4;
+    const K: usize = 4;
+    const L: usize = 4;
     const ETA: i32 = 2;
     const BETA: i32 = 78;
     const OMEGA: i32 = 80;
@@ -153,15 +98,12 @@ impl MLDSAParams for MLDSA44Params {
 }
 
 pub struct MLDSA65Params;
-
 impl MLDSAParams for MLDSA65Params {
     const TAU: i32 = 49;
     const GAMMA1: i32 = 1 << 19;
     const GAMMA2: i32 = (Q - 1) / 32;
-    #[allow(non_upper_case_globals)]
-    const k: usize = 6;
-    #[allow(non_upper_case_globals)]
-    const l: usize = 5;
+    const K: usize = 6;
+    const L: usize = 5;
     const ETA: i32 = 4;
     const BETA: i32 = 196;
     const OMEGA: i32 = 55;
@@ -178,15 +120,12 @@ impl MLDSAParams for MLDSA65Params {
 }
 
 pub struct MLDSA87Params;
-
 impl MLDSAParams for MLDSA87Params {
     const TAU: i32 = 60;
     const GAMMA1: i32 = 1 << 19;
     const GAMMA2: i32 = (Q - 1) / 32;
-    #[allow(non_upper_case_globals)]
-    const k: usize = 8;
-    #[allow(non_upper_case_globals)]
-    const l: usize = 7;
+    const K: usize = 8;
+    const L: usize = 7;
     const ETA: i32 = 2;
     const BETA: i32 = 120;
     const OMEGA: i32 = 75;
@@ -204,5 +143,16 @@ impl MLDSAParams for MLDSA87Params {
 
 // todo -- impl bouncycastle_core_interface::traits::Algorithm with the security strengths from Table 1
 
-
+/*** Internal fixed ML-DSA constants ***/
+pub(crate) const N: usize = 256;
+pub(crate) const Q: i32 = 8380417;
+pub(crate) const Q_INV: i32 = 58728449; // Q ^ (-1) mod 2 ^32
+pub(crate) const D: i32 = 13;
+pub(crate) const ROOT_OF_UNITY: i32 = 1753;
+pub(crate) const SEED_LEN: usize = 32;
+pub(crate) const CRH_LEN: usize = 64;
+pub(crate) const RND_LEN: usize = 32;
+pub(crate) const TR_LEN: usize = 64;
+pub(crate) const POLY_T1PACKED_LEN: usize = 320;
+pub(crate) const POLY_T0PACKED_LEN: usize = 416;
 

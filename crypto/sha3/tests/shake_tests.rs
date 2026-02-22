@@ -5,7 +5,7 @@ extern crate core;
 mod shake_tests {
     use super::shake_test_helpers::*;
     use bouncycastle_core_interface::key_material::{
-        KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType,
+        KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType,
     };
     use bouncycastle_core_interface::traits::{KDF, KeyMaterial, SecurityStrength, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED_512;
@@ -120,7 +120,7 @@ mod shake_tests {
         assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
         // test with a really long output key
-        let mut derived_key = KeyMaterialInternal::<10_000>::new();
+        let mut derived_key = KeyMaterialSized::<10_000>::new();
         SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
         assert_eq!(derived_key.key_len(), 10_000);
         // check that data was written to the end of the buffer
@@ -132,14 +132,14 @@ mod shake_tests {
         let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED_512[..32]).unwrap();
 
         // at size
-        let mut derived_key = KeyMaterialInternal::<32>::new();
+        let mut derived_key = KeyMaterialSized::<32>::new();
         SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
         assert_eq!(derived_key.key_len(), 32);
         let expected_key = KeyMaterial256::from_bytes(b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10\xce\xc0\xce\xcf\x79\x85\x9e\xc0\xfe\xc3\xd4\x09\xe5\x84\x7a\x92").unwrap();
         assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
         // undersized -- should truncate
-        let mut derived_key = KeyMaterialInternal::<16>::new();
+        let mut derived_key = KeyMaterialSized::<16>::new();
         SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
         assert_eq!(derived_key.key_len(), 16);
         let expected_key = KeyMaterial256::from_bytes(
@@ -149,7 +149,7 @@ mod shake_tests {
         assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
         // oversized -- SHAKE128 is an XOF, so it should fill the provided buffer
-        let mut derived_key = KeyMaterialInternal::<200>::new();
+        let mut derived_key = KeyMaterialSized::<200>::new();
         SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
         assert_eq!(derived_key.key_len(), 200);
         let expected_key = KeyMaterial256::from_bytes(b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10\xce\xc0\xce\xcf\x79\x85\x9e\xc0\xfe\xc3\xd4\x09\xe5\x84\x7a\x92").unwrap();

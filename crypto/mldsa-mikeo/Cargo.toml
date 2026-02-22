@@ -1,0 +1,20 @@
+[package]
+name = "bouncycastle-mldsa-mikeo"
+version = "0.1.2"
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core-interface.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-sha3.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "mldsa_benches"
+harness = false

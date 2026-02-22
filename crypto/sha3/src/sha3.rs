@@ -1,5 +1,5 @@
 use bouncycastle_core_interface::errors::{HashError, KDFError};
-use bouncycastle_core_interface::key_material::{KeyMaterialInternal, KeyType};
+use bouncycastle_core_interface::key_material::{KeyMaterialSized, KeyType};
 use bouncycastle_core_interface::traits::{Hash, KeyMaterial, SecurityStrength, KDF};
 use bouncycastle_utils::{max, min};
 use crate::keccak::KeccakDigest;
@@ -56,7 +56,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
         self,
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterial>, KDFError> {
-        let mut output_key = KeyMaterialInternal::<64>::new();
+        let mut output_key = KeyMaterialSized::<64>::new();
         self.derive_key_out_final_internal(additional_input, &mut output_key)?;
 
         Ok(Box::new(output_key))
@@ -194,7 +194,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
 
 /// SHA3 is allowed to be used as a KDF in the form HASH(X) as per NIST SP 800-56C.
 impl<PARAMS: SHA3Params> KDF for SHA3<PARAMS> {
-    /// Returns a [KeyMaterialInternal].
+    /// Returns a [KeyMaterialSized].
     /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
     /// it requires full-entropy input that is at least the bit size (ie 256 bits for SHA3-256, etc).
     fn derive_key(

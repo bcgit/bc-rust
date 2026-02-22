@@ -1,5 +1,5 @@
 use bouncycastle_core_interface::errors::{HashError, KDFError};
-use bouncycastle_core_interface::key_material::{KeyMaterialInternal, KeyType};
+use bouncycastle_core_interface::key_material::{KeyMaterialSized, KeyType};
 use bouncycastle_core_interface::traits::{Algorithm, KeyMaterial, SecurityStrength, KDF, XOF};
 use bouncycastle_utils::{max, min};
 use crate::keccak::KeccakDigest;
@@ -81,7 +81,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
     ) -> Result<Box<dyn KeyMaterial>, KDFError> {
         // It's unfortunate to return an oversized KeyMaterial most of the time, but I've had enough
         // of fighting with Rust traits for now ...
-        let mut output_key = KeyMaterialInternal::<64>::new();
+        let mut output_key = KeyMaterialSized::<64>::new();
         self.derive_key_out_final_internal(additional_input, &mut output_key)?;
 
         // 128 => 32, 256 => 64
@@ -126,13 +126,13 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
-    /// Returns a [KeyMaterialInternal].
+    /// Returns a [KeyMaterialSized].
     /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
     /// it requires full-entropy input that is at least 2x the bit size (ie 256 bits for SHAKE128, and 512 bits for SHAKE256).
     /// Returns a 32 byte key for SHAKE128 and a 64 byte key for SHAKE256.
     /// To produce longer keys, use [KDF::derive_key_out].
     /// To produce shorter keys, either use [KDF::derive_key_out] or truncate this result down with
-    /// [KeyMaterialInternal::truncate].
+    /// [KeyMaterialSized::truncate].
     fn derive_key(
         mut self,
         key: &impl KeyMaterial,
@@ -154,12 +154,12 @@ impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
         self.derive_key_out_final_internal(additional_input, output_key)
     }
 
-    /// Always returns a full [KeyMaterialInternal]; ie that fills the internal buffer of the
+    /// Always returns a full [KeyMaterialSized]; ie that fills the internal buffer of the
     /// appropriately-sized key material for the underlying cryptographic hash function.
-    /// This can be truncated down with [KeyMaterialInternal::truncate].
+    /// This can be truncated down with [KeyMaterialSized::truncate].
     /// Returns a 32 byte key for SHAKE128 and a 64 byte key for SHAKE256.
     /// To produce longer keys, use [KDF::derive_key_out].
-    /// To produce shorter keys, either use [KDF::derive_key_out] or truncate this result down with [KeyMaterialInternal::truncate].
+    /// To produce shorter keys, either use [KDF::derive_key_out] or truncate this result down with [KeyMaterialSized::truncate].
     fn derive_key_from_multiple(
         mut self,
         keys: &[&impl KeyMaterial],

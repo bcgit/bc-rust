@@ -2,8 +2,7 @@
 
 // todo: should this be cleaned up into, like, an algebra.rs ?
 
-use bouncycastle_core_interface::traits::XOF;
-use crate::{MLDSAParams, MldsaSize, D, POLY_T1PACKED_LEN, Q, Q_INV, SEED_LEN};
+use crate::{q, q_inv};
 
 use crate::N;
 
@@ -20,42 +19,85 @@ const STREAM_256_BLOCK_LEN: usize = 136;
 
 pub(crate) type Polynomial = [i32; N];
 
-// #[macro_export]
-// macro_rules! new_polynomial {
-//     () => { [0i32; N] };
-// }
-
 pub(crate) const fn new() -> Polynomial {
     [0i32; N]
 }
 
-
-/// Add another polynomial to this polynomial and perform montgomery reduction.
-/// Also called pointwise montgomery addition
-pub(crate) fn add(w1: &Polynomial, w2: &Polynomial) -> Polynomial {
+/// Algorithm 44 AddNTT(𝑎, 𝑏)̂
+/// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+pub(crate) fn add_ntt(w1: &Polynomial, w2: &Polynomial) -> Polynomial {
     let mut w = new();
     for i in 0..N {
-        w[i] = montgomery_reduce(w1[i] as i64 + w2[i] as i64);
+        // todo '%'
+        w[i] = (w1[i] + w2[i]) % q;
+        if w[i] < 0 { w[i] += q; }
     }
 
     w
 }
 
+/// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
+/// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+/// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
+/// Output: 𝑐 ∈ 𝑇𝑞.
 /// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
 /// Also called pointwise montgomery multiplication
-pub(crate) fn pointwise_mult(w1: &Polynomial, w2: &Polynomial) -> Polynomial {
-    let mut w_prime = new();
+pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
+    let mut c = new();
     for i in 0..N {
-        w_prime[i] = montgomery_reduce((w1[i] as i64) * (w2[i] as i64));
+        c[i] = montgomery_reduce((a[i] as i64) * (b[i] as i64));
+        // todo
+        // c[i] = ((a[i] as i64) * (b[i] as i64) % q as i64) as i32;
     }
-    w_prime
+
+    c
 }
 
+/// As described in FIPS 204 Appendix A, montgomery reduction allows for efficient computation
+/// of expressions of the form c = a * b (mod q).
+/// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
 pub(crate) fn montgomery_reduce(a: i64) -> i32 {
-    let t: i32 = a.wrapping_mul(Q_INV as i64) as i32;
-    ((a - ((t as i64) * (Q as i64))) >> 32) as i32
+    debug_assert!(a > - ((q as i64) <<31) && a < ((q as i64) <<31));
+
+    // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
+    // todo: not sure which one of these is faster -- they seem to both give equivalent results
+    // todo: worth benchmarking both
+    let t: i32 = a.wrapping_mul(q_inv as i64) as i32;
+    // let t: i32 = ((a &0x00000000FFFFFFFFi64) * (q_inv as i64)) as i32;
+
+    // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
+    ((a - ((t as i64) * (q as i64))) >> 32) as i32
 }
 
+pub(crate) fn reduce_poly(w: &mut Polynomial) {
+    for x in w.iter_mut() {
+        *x = reduce32(*x);
+    }
+}
+
+pub(crate) fn reduce32(a: i32) -> i32 {
+    let t = (a + (1 << 22)) >> 23;
+    a - t * q
+}
+
+pub(crate) fn conditional_add_q_poly(w: &mut Polynomial) {
+    for x in w.iter_mut() {
+        *x = conditional_add_q(*x);
+    }
+}
+
+/// For debugging. OpenSSL's implementation uses only integers in \[0, q-1] while bc uses \[-q, q]
+/// rectify puts things into \[0, q-1] so that intermediate results can be compared with openssl
+/// TODO THIS IS FOR DEBUGGING AND IS NOT CONSTANT TIME
+pub(crate) fn debug_rectify(w: &mut Polynomial) {
+    for x in w.iter_mut() {
+        if *x < 0 { *x += q; }
+    }
+}
+
+pub(crate) fn conditional_add_q(a: i32) -> i32 {
+    a + ((a >> 31) & q)
+}
 
 
 // #[derive(Clone, Copy)]

@@ -82,7 +82,7 @@
 //! ## KDF
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [KDF] trait,
 //! which is implemented by all SHA3 and SHAKE variants.
-//! [KDF] acts on [KeyMaterialInternal] objects as both the input and output values.
+//! [KDF] acts on [KeyMaterialSized] objects as both the input and output values.
 //! In the case of SHA3, the [KDF] interfaces are simple wrapper functions around the underlying SHA3 or SHAKE
 //! primitive that correctly maintains the length and entropy metadata of the key material that it is acting on.
 //! This is intended to act as a developer ait to prevent  some classes of developer mistakes, such as
@@ -97,11 +97,11 @@
 //! let input_key = KeyMaterial256::from_bytes(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F").unwrap();
 //! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input").unwrap();
 //!```
-//! In the previous example, since [KeyMaterialInternal::from_bytes] cannot know the amount of entropy in the input data,
+//! In the previous example, since [KeyMaterialSized::from_bytes] cannot know the amount of entropy in the input data,
 //! it automatically tags it as [KeyType::BytesLowEntropy], and thus [SHA3::derive_key] produces an output key
 //! which also has type [KeyType::BytesLowEntropy].
 //! This would also be the case even if the input had type
-//! [KeyType::BytesFullEntropy] since the input [KeyMaterialInternal] is 16 bytes but [SHA3_256] needs at least 32 bytes of
+//! [KeyType::BytesFullEntropy] since the input [KeyMaterialSized] is 16 bytes but [SHA3_256] needs at least 32 bytes of
 //! full-entropy input key material in order to be able to produce full entropy output key material.
 
 #![forbid(unsafe_code)]
@@ -114,7 +114,7 @@ use bouncycastle_core_interface::traits::{Algorithm, HashAlgParams, SecurityStre
 #[allow(unused_imports)]
 use bouncycastle_core_interface::traits::{Hash, KDF, XOF};
 #[allow(unused_imports)]
-use bouncycastle_core_interface::key_material::{KeyMaterialInternal, KeyType};
+use bouncycastle_core_interface::key_material::{KeyMaterialSized, KeyType};
 // end of doc-only imports
 
 mod keccak;
