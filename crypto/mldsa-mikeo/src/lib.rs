@@ -3,7 +3,7 @@
 
 #![allow(unused_variables)] // todo - remove
 #![allow(dead_code)] // todo - remove
-#![allow(private_interfaces)] // todo debugging -- remove
+// #![allow(private_interfaces)] // todo debugging -- remove
 
 #![forbid(unsafe_code)]
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
@@ -65,6 +65,7 @@ pub type MLDSA87PrivateKey = MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, 
 //   * Computational values that vary by parameter set. These are defined in an instance of the MLDSAParams trait.
 
 /*** Size values ***/
+// From FIPS 204 Table 1 and Table 2
 const MLDSA44_k: usize = 4;
 const MLDSA44_l: usize = 4;
 const MLDSA44_ETA: usize = 2;
@@ -123,11 +124,6 @@ trait MLDSAParams {
     const BETA: i32; // tau * eta
     const OMEGA: i32;
 
-    // from FIPS 204 Table 2
-    const SK_LEN: usize;
-    const PK_LEN: usize;
-    const SIG_LEN: usize;
-
     // useful derived values
     // const ALG: MldsaAlg;
     const C_TILDE: usize;
@@ -149,9 +145,10 @@ impl MLDSAParams for MLDSA44Params {
     const ETA: i32 = 2;
     const BETA: i32 = 78;
     const OMEGA: i32 = 80;
-    const SK_LEN: usize = 2560;
-    const PK_LEN: usize = 1312;
-    const SIG_LEN: usize = 2420;
+    // const SK_LEN: usize = 2560;
+    // const PK_LEN: usize = 1312;
+    // const SIG_LEN: usize = 2420;
+
     // const ALG: MldsaAlg = MldsaAlg::MlDsa44;
     const C_TILDE: usize = 32;
     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
@@ -172,10 +169,11 @@ impl MLDSAParams for MLDSA65Params {
     const ETA: i32 = 4;
     const BETA: i32 = 196;
     const OMEGA: i32 = 55;
-    const SK_LEN: usize = 4032;
-    const PK_LEN: usize = 1952;
-    const SIG_LEN: usize = 3309;
+    // const SK_LEN: usize = 4032;
+    // const PK_LEN: usize = 1952;
+    // const SIG_LEN: usize = 3309;
     // const ALG: MldsaAlg = MldsaAlg::MlDsa65;
+
     const C_TILDE: usize = 48;
     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
     const POLY_Z_PACKED_LEN: usize = 640;
@@ -195,10 +193,11 @@ impl MLDSAParams for MLDSA87Params {
     const ETA: i32 = 2;
     const BETA: i32 = 120;
     const OMEGA: i32 = 75;
-    const SK_LEN: usize = 4896;
-    const PK_LEN: usize = 2592;
-    const SIG_LEN: usize = 4627;
+    // const SK_LEN: usize = 4896;
+    // const PK_LEN: usize = 2592;
+    // const SIG_LEN: usize = 4627;
     // const ALG: MldsaAlg = MldsaAlg::MlDsa87;
+
     const C_TILDE: usize = 64;
     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
     const POLY_Z_PACKED_LEN: usize = 640;

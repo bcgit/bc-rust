@@ -1,6 +1,4 @@
 
-use bouncycastle_core_test_framework::{DUMMY_SEED_1024, DUMMY_SEED_512};
-
 
 /*
 Private Key Public Key Signature Size
@@ -9,39 +7,10 @@ ML-DSA-65 4032 1952 3309
 ML-DSA-87 4896 2592 4627
  */
 
-// todo -- this is just scratch space; delete at the end
-#[test]
-fn playing_with_chunks() {
-    let mut arr = [0u8; 1024];
-
-    let mut off: usize = 0;
-
-    // do something different for the first chunk
-    arr[0..4].copy_from_slice(&[0x00, 0x01, 0x02, 0x03]);
-    off += 4;
-
-    // deal with the routine chunks
-    let (chunks, last_chunk) = arr[off..].as_chunks_mut::<32>();
-    for chunk in chunks {
-        chunk.copy_from_slice(&DUMMY_SEED_1024[off..off + 32]);
-        off += 32;
-    }
-
-    // deal with the last, odd-sized, chunk
-    assert_eq!(last_chunk.len(), 32 - 4);
-    last_chunk.copy_from_slice(&DUMMY_SEED_1024[off..]);
-
-    assert_eq!(&arr, DUMMY_SEED_1024);
-
-
-    let arr: [u8; 32] = DUMMY_SEED_512[..32].try_into().unwrap();
-    print!("{:x?}", arr);
-
-}
-
 /// This performs tests using the public interfaces of the crate.
 #[cfg(test)]
 mod mldsa_tests {
+    use bouncycastle_core_interface::errors::SignatureError;
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_hex as hex;
@@ -73,7 +42,6 @@ mod mldsa_tests {
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
-
         // run keygen from seed
         let (derived_pk, derived_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
         let sk_bytes = derived_sk.sk_encode();
@@ -85,8 +53,18 @@ mod mldsa_tests {
         assert_eq!(derived_sk, expected_sk);
         assert_eq!(derived_pk, decoded_sk);
 
-        // consestincy check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.get_public_key().unwrap());
+        // consistincy check between returned pk and sk.get_public_key()
+        assert_eq!(derived_pk, derived_sk.derive_public_key());
+
+        MLDSA44::sk_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
+
+        let mut wrong_sk_bytes = sk_bytes.clone();
+        wrong_sk_bytes[4..8].copy_from_slice(&[0u8, 0u8, 0u8, 0u8]);
+        match MLDSA44::sk_from_seed_and_encoded(&seed, &wrong_sk_bytes) {
+            Err(SignatureError::KeyGenError(_)) => {/* good */ },
+            _ => panic!("sk_from_seed_and_encoded should fail with InvalidSignature"),
+        }
+
 
 
 
@@ -119,8 +97,20 @@ mod mldsa_tests {
         assert_eq!(derived_sk, decoded_sk);
         assert_eq!(derived_pk, expected_pk);
 
-        // consestincy check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.get_public_key().unwrap());
+        // consistincy check between returned pk and sk.get_public_key()
+        assert_eq!(derived_pk, derived_sk.derive_public_key());
+
+        MLDSA65::sk_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
+
+        let mut wrong_sk_bytes = sk_bytes.clone();
+        wrong_sk_bytes[4..8].copy_from_slice(&[0u8, 0u8, 0u8, 0u8]);
+        match MLDSA65::sk_from_seed_and_encoded(&seed, &wrong_sk_bytes) {
+            Err(SignatureError::KeyGenError(_)) => {/* good */ },
+            _ => panic!("sk_from_seed_and_encoded should fail with InvalidSignature"),
+        }
+
+
+
 
 
         /* MLDSA87 */
@@ -152,8 +142,18 @@ mod mldsa_tests {
         assert_eq!(derived_sk, decoded_sk);
         assert_eq!(derived_pk, expected_pk);
 
-        // consestincy check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.get_public_key().unwrap());
+        // consistincy check between returned pk and sk.get_public_key()
+        assert_eq!(derived_pk, derived_sk.derive_public_key());
+
+        MLDSA87::sk_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
+
+        let mut wrong_sk_bytes = sk_bytes.clone();
+        wrong_sk_bytes[4..8].copy_from_slice(&[0u8, 0u8, 0u8, 0u8]);
+        match MLDSA87::sk_from_seed_and_encoded(&seed, &wrong_sk_bytes) {
+            Err(SignatureError::KeyGenError(_)) => {/* good */ },
+            _ => panic!("sk_from_seed_and_encoded should fail with InvalidSignature"),
+        }
+
     }
 }
 

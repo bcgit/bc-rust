@@ -1,5 +1,5 @@
 use std::{fmt};
-use crate::aux_functions::{bit_pack_eta, bit_unpack_eta, bitlen_eta, bit_pack_t0, simple_bit_pack_t1, simple_bit_unpack_t1, bit_unpack_t0};
+use crate::aux_functions::{bit_pack_eta, bit_unpack_eta, bitlen_eta, bit_pack_t0, simple_bit_pack_t1, simple_bit_unpack_t1, bit_unpack_t0, power_2_round_vec, ntt_vec, inv_ntt_vec, expandA};
 use crate::matrix::Vector;
 use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, SEED_LEN};
 use bouncycastle_core_interface::errors::SignatureError;
@@ -65,14 +65,6 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
         // that should divide evenly the remainder of the array
         debug_assert_eq!(pk_chunks.len(), k);
         debug_assert_eq!(last_chunk.len(), 0);
-
-        // todo -- delete
-        // let mut i: usize = 0;
-        // for pk_chunk in pk_chunks {
-        //     t1.vec[i] = simple_bit_unpack_t1(pk_chunk);
-        //     i += 1;
-        //     debug_assert!(i < k);
-        // }
 
         for (t1_i, pk_chunk) in t1.vec.iter_mut().zip(pk_chunks) {
             t1_i.0.copy_from_slice(&simple_bit_unpack_t1(pk_chunk).0);
@@ -171,13 +163,6 @@ pub struct MLDSAPrivateKey<
     pub(crate) s2: Vector<k>,
     pub(crate) t0: Vector<k>,
     pub(crate) seed: Option<KeyMaterialSized<32>>,
-
-    // todo -- why? It already contains the public seed rho, why not just run expandA() on demand?
-    // todo -- In my opinion it's not so often that you'll need to extract the pub from the priv that you
-    // todo -- should always spend the RAM to keep it around.
-    // todo -- That would mean a non-FIPS approved function that re-runs the main keygen op to re-derive t1
-    // todo -- match openssl's implementation? https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L364
-    pub(crate) pub_key: Option<MLDSAPublicKey<k, PK_LEN>>,
 }
 
 impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
@@ -203,7 +188,6 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             s2: s2.clone(),
             t0: t0.clone(),
             seed: seed.clone(),
-            pub_key: pub_key.clone(),
         }
     }
 
@@ -215,12 +199,28 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         self.seed.clone()
     }
 
-    pub fn has_public_key(&self) -> bool {
-        self.pub_key.is_some()
-    }
 
-    pub fn get_public_key(&self) -> Option<MLDSAPublicKey<k, PK_LEN>> {
-        self.pub_key.clone()
+    /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
+    pub fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN> {
+
+        // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
+        let A_ntt = expandA::<k, l>(&self.rho);
+
+        // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
+        //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
+        let s1_ntt = ntt_vec::<l>(&self.s1);
+        let mut t_ntt = A_ntt.matrix_vector_ntt(&s1_ntt);
+        t_ntt.reduce();
+        let mut t = inv_ntt_vec(&t_ntt);
+        t.add_vector_ntt(&self.s2);
+        t.conditional_add_q();
+
+        // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
+        //   ▷ compress 𝐭
+        //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
+        let (t1, _) = power_2_round_vec::<k>(&t);
+
+        MLDSAPublicKey::<k, PK_LEN>::new(&self.rho, &t1)
     }
 
     /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
@@ -408,8 +408,8 @@ fmt::Debug for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
         };
         write!(
             f,
-            "MLDSAPrivateKey {{ alg: {}, pub_key_hash (tr): {:x?}, has_pk: {}, has_seed: {} }}",
-            alg, self.tr, self.has_public_key(), self.has_seed(),
+            "MLDSAPrivateKey {{ alg: {}, pub_key_hash (tr): {:x?}, has_seed: {} }}",
+            alg, self.tr, self.has_seed(),
         )
     }
 }
@@ -426,8 +426,8 @@ fmt::Display for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
         };
         write!(
             f,
-            "MLDSAPrivateKey {{ alg: {}, pub_key_hash (tr): {:x?}, has_pk: {}, has_seed: {} }}",
-            alg, self.tr, self.has_public_key(), self.has_seed(),
+            "MLDSAPrivateKey {{ alg: {}, pub_key_hash (tr): {:x?}, has_seed: {} }}",
+            alg, self.tr, self.has_seed(),
         )
     }
 }

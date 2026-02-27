@@ -1,8 +1,6 @@
 //! These are somewhat unnecessary wrappers around simple arrays, but they are helpful to me in clearly
 //! keeping the types and sizes obvious.
 
-// todo: should this be combined with Polynomial into, like, an algebra.rs ?
-
 use crate::polynomial;
 use crate::polynomial::{Polynomial};
 
@@ -14,9 +12,6 @@ pub(crate) struct Matrix<const k: usize, const l: usize>
 }
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
-    // pub fn new() -> Self {
-    //     Self { matrix: [[Polynomial::new(); l]; k] }
-    // }
     pub fn new() -> Self {
         Self { matrix: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
     }
@@ -29,21 +24,18 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// Input: vector of length l
     /// Output: vector of length k
     pub fn matrix_vector_ntt(&self, v: &Vector<l>) -> Vector<k> {
-        // todo: possible performance optimization: refactor the polynomial static functs to do the
-        // todo: work in-place in an output Polynomial, rather than copying values.
-        
         let mut w = Vector::<k>::new();
         for i in 0 .. k {
-            // todo: bc-java splits out the 0 case; not sure why? Maybe performance optimization
-            // todo: to skip a no-op add_ntt()?
+            // split out the 0 case to skip a no-op add_ntt()
             w.vec[i].0.copy_from_slice(&polynomial::multiply_ntt(&self.matrix[i][0], &v.vec[0]).0);
-            
+
+            let mut t: Polynomial;
             for j in 1 .. l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
-                let t = polynomial::multiply_ntt(&self.matrix[i][j], &v.vec[j]);
-                w.vec[i] = polynomial::add_ntt(&w.vec[i], &t);
+                t = polynomial::multiply_ntt(&self.matrix[i][j], &v.vec[j]);
+                w.vec[i].add_ntt(&t);
             }
         }
 
@@ -63,9 +55,6 @@ pub(crate) struct Vector<const LEN: usize>
 
 impl<const LEN: usize> Vector<LEN>
 {
-    // pub(crate) fn new() -> Self {
-    //     Self { vec: [Polynomial::new(); LEN] }
-    // }
     pub(crate) fn new() -> Self {
         Self { vec: [(); LEN].map(|_| Polynomial::new()) }
     }
@@ -78,7 +67,7 @@ impl<const LEN: usize> Vector<LEN>
     pub(crate) fn add_vector_ntt(&mut self, w: &Self) {
         for i in 0 .. LEN {
             // perform montgomery addition of each polynomial in the vector
-            self.vec[i] = polynomial::add_ntt(&self.vec[i], &w.vec[i]);
+            self.vec[i].add_ntt(&w.vec[i]);
         }
     }
 
@@ -91,15 +80,6 @@ impl<const LEN: usize> Vector<LEN>
     pub(crate) fn conditional_add_q(&mut self) {
         for i in 0 .. LEN {
             polynomial::conditional_add_q_poly(&mut self.vec[i]);
-        }
-    }
-
-    /// For debugging. OpenSSL's implementation uses only integers in \[0, q-1] while bc uses \[-q, q]
-    /// rectify puts things into \[0, q-1] so that intermediate results can be compared with openssl
-    /// TODO THIS IS FOR DEBUGGING AND IS NOT CONSTANT TIME
-    pub(crate) fn debug_rectify(&mut self) {
-        for i in 0 .. LEN {
-            polynomial::debug_rectify(&mut self.vec[i]);
         }
     }
 }

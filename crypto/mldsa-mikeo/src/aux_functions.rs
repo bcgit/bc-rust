@@ -8,19 +8,19 @@ use bouncycastle_core_interface::traits::XOF;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞 or ⊥.
-pub(crate) fn coeff_from_three_bytes(b0: u8, b1: u8, b2: u8) -> Result<i32, ()> {
-    let mut b2_prime = b2;
-    if b2_prime > 127 {
-        // set the top bit of b2_prime to 0
-        b2_prime = b2_prime - 128;
+// pub(crate) fn coeff_from_three_bytes(b0: u8, b1: u8, b2: u8) -> Result<i32, ()> {
+pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
+    // This is the exact alg from FIPS 204:
+    // let mut b2_prime = b2;
+    // if b2_prime > 127 {
+    //     // set the top bit of b2_prime to 0
+    //     b2_prime = b2_prime - 128;
+    // }
 
-        // todo: possibly this whole if-block could be optimized (and constant-timed) by doing instead:
-        // todo: b2_prime = b2 & 0x7F
-        // todo: ?
-        // todo: do that after I have unit tests and stuff to check that it's functionally equivalent
-    }
+    // but this is equivalent and feels more constant-time:
+    let b2_prime = b[2] & 0x7F;
 
-    let z: i32 = ((b2_prime as i32) << 16) | ((b1 as i32) << 8) | (b0 as i32);
+    let z: i32 = ((b2_prime as i32) << 16) | ((b[1] as i32) << 8) | (b[0] as i32);
 
     if z < q { Ok(z) } else { Err(()) }
 }
@@ -30,12 +30,15 @@ pub(crate) fn coeff_from_three_bytes(b0: u8, b1: u8, b2: u8) -> Result<i32, ()> 
 /// Input: Integer 𝑏 ∈ {0, 1, … , 15}.
 /// Output: An integer between −𝜂 and 𝜂, or ⊥.
 pub(crate) fn coeff_from_half_byte<PARAMS: MLDSAParams>(b: u8) -> Result<i32, ()> {
-    // todo: do some research if this cast from u8 to i32 is constant-time (it should be, but you never know). Otherwise: 0i32 | (2 - (b % 5))
+    // todo: there's no way this is constant time:
+    // todo: the if statement might not be so bad because the alternative is rejection,
+    // todo: but that % is a problem.
+    // todo: what does openssl or rust crypto do?
     if PARAMS::ETA == 2 && b < 15 {
         Ok(2 - (b % 5) as i32) // todo: is constant-time?
     }
     else {
-        if PARAMS::ETA == 4 && b < 9 { Ok(4 - b as i32) } // todo: is constant-time?
+        if PARAMS::ETA == 4 && b < 9 { Ok(4 - b as i32) }
         else { Err(()) }
     }
 }
@@ -300,18 +303,26 @@ pub(crate) fn rej_ntt_poly(
     g.absorb(rho);
     g.absorb(nonce);
 
+    // size doesn't really matter, so long as it's a multiple of 3.
+    // 288 seemed to be the sweet spot from playing with benchmarks
+    // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
+    // and 8 (efficient for SHAKE).
+    let mut s = [0u8; 288];
+    g.squeeze_out(&mut s);
+    let mut idx: usize = 0;
+
     while j < N {
-        let mut s = [0u8; 3];
-        // todo: potential optimization: squeeze a bunch of bytes up-front outside the loop, and only squeeze more if you run out.
-        g.squeeze_out(&mut s);
-        w_hat.0[j] = match coeff_from_three_bytes(s[0], s[1], s[2]) {
+        if idx == s.len() { g.squeeze_out(&mut s); idx = 0;}
+        w_hat.0[j] = match coeff_from_three_bytes(&s[idx..idx+3].try_into().unwrap()) {
             Ok(c) => { c },
             Err(_) => {
                 // those three bytes were out of range for a coefficient, so go again with the next three bytes
                 // from the SHAKE stream.
+                idx += 3;
                 continue
             },
         };
+        idx += 3;
         j += 1;
     }
 
@@ -336,20 +347,17 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
     h.absorb(rho);
     h.absorb(nonce);
 
-    while j < 256 {
-        // note: this only works because the global param N (which is the length of Polynomial) is 256.
-        // let mut z_arr: [u8; 1] = [0u8];
-        // h.squeeze_out(&mut z_arr);
-        let mut z_arr = [0u8];
-        // todo potential optimization: squeeze a bunch of bytes up-front outside the loop, and only squeeze more if you run out.
-        h.squeeze_out(&mut z_arr);
-        let z = &z_arr[0];
+    // size doesn't really matter
+    // 312 seemed to be the sweet spot from playing with benchmarks
+    // maybe something to do with the average rejection rate?
+    // Also, 312 is a multiple of 8 (efficient for SHAKE)
+    let mut z_arr = [0u8; 312];
+    h.squeeze_out(&mut z_arr);
+    let mut idx: usize = 0;
 
-        // let z0 = coeff_from_half_byte::<PARAMS>(z_arr[0] % 16); // todo: is this constant-time?
-        // let z1 = coeff_from_half_byte::<PARAMS>(z_arr[0].div_floor(16)); // todo: .div_floor() is currently an unstable feature,
-        // // todo: umm, aren't these equivalent to & 0x0F and >> 4 ?
-        let z0 = coeff_from_half_byte::<PARAMS>(z & 0x0F); // equiv to % 16 (but faster, and more importantly, constant-time)
-        let z1 = coeff_from_half_byte::<PARAMS>(z >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
+    while j < N {
+        let z0 = coeff_from_half_byte::<PARAMS>(z_arr[idx] & 0x0F); // equiv to % 16 (but faster, and more importantly, constant-time)
+        let z1 = coeff_from_half_byte::<PARAMS>(z_arr[idx] >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
 
         if z0.is_ok() {
             a.0[j] = z0.unwrap();
@@ -359,6 +367,9 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
             a.0[j] = z1.unwrap();
             j += 1;
         } /* else: do nothing */
+
+        idx += 1;
+        if idx == z_arr.len() { h.squeeze_out(&mut z_arr); idx = 0;}
     }
 
     a
@@ -374,8 +385,6 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
 
     for r in 0..k {
         for s in 0..l {
-            // todo BUG!
-            // A_hat.matrix[r][s] = rej_ntt_poly(rho, &[r as u8, s as u8]);
             A_hat.matrix[r][s] = rej_ntt_poly(rho, &[s as u8, r as u8]);
         }
     }
@@ -428,14 +437,6 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(
 /// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1 2^𝑑 + 𝑟0 mod 𝑞.
 /// Input: 𝑟 ∈ ℤ𝑞.
 /// Output: Integers (𝑟1, 𝑟0).
-// todo I think the original implementation was wrong.
-// pub(crate) fn power_2_round(a: i32) -> (i32, i32) {
-//     let r0: i32 = (a + (1 << (d - 1)) - 1) >> d;
-//     let r1: i32 = a - (r0 << d);
-//
-//     (r1, r0)
-// }
-// todo: this one matches bc-java
 pub(crate) fn power_2_round(r: i32) -> (i32, i32) {
     const u: i32 = (1 << (d - 1)) - 1;
     const v: i32 = -1 << d;
@@ -560,12 +561,8 @@ pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
 
             for j in start..start + len {
                 let t = polynomial::montgomery_reduce(z as i64 * w_ntt.0[j + len] as i64);
-                w_ntt.0[j + len] = (w_ntt.0[j] - t) % q;
-                w_ntt.0[j] = (w_ntt.0[j] + t) % q;
-                
-                // todo: bad
-                // if w_ntt.0[j + len] < 0 { w_ntt.0[j + len] += q; }
-                // if w_ntt.0[j] < 0 { w_ntt.0[j] += q; }
+                w_ntt.0[j + len] = w_ntt.0[j] - t; // '% q' not strictly needed cause it gets reduced at some point later. Removing it gave +5% in benchmarking
+                w_ntt.0[j] = w_ntt.0[j] + t;  // '% q' not strictly needed
             }
             start = start + 2 * len;
         }

@@ -104,8 +104,6 @@ impl<
         let mut t = inv_ntt_vec(&t_ntt);
         t.add_vector_ntt(&s2);
         t.conditional_add_q();
-        // t.reduce();
-
 
         // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
         //   ▷ compress 𝐭
@@ -156,19 +154,19 @@ impl<
     /// the provided `encoded_sk` using a constant-time equality check.
     /// If everything checks out, the secret key is returned fully populated with pk and seed.
     /// If the provided key and derived key don't match, an error is returned.
-    // todo -- put this back once I've implemented sk_decode()
-    // pub fn from_seed_and_encoded_sk(
-    //     seed: &KeyMaterialSized<32>,
-    //     encoded_sk: &[u8; SK_LEN],
-    // ) -> Result<MLDSAPrivatekey<k, l, eta, SK_LEN, PK_LEN>, SignatureError> {
-    //     let (_, sk) = Self::keygen_from_seed(seed)?;
-    //
-    //     let sk_from_bytes = MLDSAPrivatekey::<k, l, eta, SK_LEN, PK_LEN>::from_bytes(encoded_sk)?;
-    //
-    //
-    //
-    //     Ok(sk)
-    // }
+        pub fn sk_from_seed_and_encoded(
+        seed: &KeyMaterialSized<32>,
+        encoded_sk: &[u8; SK_LEN],
+    ) -> Result<MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>, SignatureError> {
+        let (_, sk) = Self::keygen_from_seed(seed)?;
+
+        let sk_from_bytes = MLDSAPrivateKey::<k, l, eta, SK_LEN, PK_LEN>::from_bytes(encoded_sk)?;
+
+        // MLDSAPrivateKey impls PartialEq with a constant-time equality check.
+        if sk != sk_from_bytes { return Err(SignatureError::KeyGenError("Encoded key does not match generated key")) }
+
+        Ok(sk)
+    }
 
     /// Given a public key and a secret key, check that the public key matches the secret key.
     /// This is a sanity check that the public key was generated correctly from the secret key.

@@ -1,7 +1,5 @@
 //! Represents a polynomial over the ML-DSA ring.
 
-// todo: should this be cleaned up into, like, an algebra.rs ?
-
 use crate::{q, q_inv};
 
 use crate::N;
@@ -9,8 +7,6 @@ use crate::N;
 const STREAM_128_BLOCK_LEN: usize = 168;
 const STREAM_256_BLOCK_LEN: usize = 136;
 
-
-// todo -- turn all the helper functions into methods on this struct?
 
 // pub(crate) type Polynomial = [i32; N];
 #[derive(Clone)]
@@ -20,6 +16,28 @@ impl Polynomial {
     pub(crate) const fn new() -> Polynomial {
         Self{ 0: [0i32; N] }
     }
+
+    /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
+    /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+    /// Note: result could be up to 2q.
+    pub(crate) fn add_ntt(&mut self, w: &Polynomial) {
+        for i in 0..N {
+            self.0[i] += w.0[i];
+        }
+    }
+
+    // todo: will anything use this?
+    // /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
+    // /// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+    // /// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
+    // /// Output: 𝑐 ∈ 𝑇𝑞.
+    // /// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
+    // /// Also called pointwise montgomery multiplication
+    // pub(crate) fn multiply_ntt(&mut self, w: &Polynomial){
+    //     for i in 0..N {
+    //         self.0[i] = montgomery_reduce((self.0[i] as i64) * (w.0[i] as i64));
+    //     }
+    // }
 }
 
 impl Drop for Polynomial {
@@ -34,18 +52,6 @@ impl From<Polynomial> for [i32; N] {
     }
 }
 
-/// Algorithm 44 AddNTT(𝑎, 𝑏)̂
-/// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
-/// Note: result could be up to 2q.
-pub(crate) fn add_ntt(w1: &Polynomial, w2: &Polynomial) -> Polynomial {
-    let mut w = Polynomial::new();
-    for i in 0..N {
-        w.0[i] = w1.0[i] + w2.0[i];
-    }
-
-    w
-}
-
 
 /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
 /// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
@@ -54,12 +60,12 @@ pub(crate) fn add_ntt(w1: &Polynomial, w2: &Polynomial) -> Polynomial {
 /// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
 /// Also called pointwise montgomery multiplication
 pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
-    let mut c = Polynomial::new();
+    let mut out = Polynomial::new();
     for i in 0..N {
-        c.0[i] = montgomery_reduce((a.0[i] as i64) * (b.0[i] as i64));
+        out.0[i] = montgomery_reduce((a.0[i] as i64) * (b.0[i] as i64));
     }
 
-    c
+    out
 }
 
 /// FIPS 204 Algorithm 49
@@ -70,34 +76,17 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     debug_assert!(a > - ((q as i64) <<31) && a < ((q as i64) <<31));
 
     // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
-    //   The 'as i32' is how we're implementing the 'mod 2^32', even though it looks a bit silly
-    //   to cast it to i32 and then immediately back to i64.
-    // todo: not sure which one of these is faster -- they seem to all give equivalent results
-    // todo: worth benchmarking both
-    let t: i32 = a.wrapping_mul(q_inv as i64) as i32;
-    // let t: i32 = (a as i32).wrapping_mul(q_inv);
-    // let t: i32 = ((a as i32) as i64 * q_inv as i64) as i32;
-    // let t: i32 = ((a &0x00000000FFFFFFFFi64) * (q_inv as i64)) as i32;
+    let t: i32 = (a as i32).wrapping_mul(q_inv);
 
     // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
-    // ((a - ((t as i64) * (q as i64))) >> 32) as i32
-    // (a - ((t as i64) * (q as i64)) >> 32) as i32 // -- missing a set of brackets?
-    zero_extending_right_shift(a - ((t as i64) * (q as i64)), 32) as i32
+    ((a - ((t as i64) * (q as i64))) >> 32) as i32
 
     // todo: openssl has a version of this with fewer operations.
     // todo: Once I have benchmarks, see if I can squeeze some more performance by copying?
     // todo: https://github.com/openssl/openssl/blob/3be12549113b955a19a2bde5eed9a0b1649e2168/crypto/ml_dsa/ml_dsa_ntt.c#L93
+    // 2026-02-26: I tried this, but couldn't get it working -- needed to find the openssl impl of reduce_once()
 }
 
-fn zero_extending_right_shift(a: i64, n: usize) -> i64 {
-    ((a as u64) >> n) as i64
-}
-//
-// #[test]
-// fn test_zero_extending_right_shift() {
-//     assert_eq!(zero_extending_right_shift(0x1234567890ABCDEF, 32), 0x12345678);
-//     assert_eq!(zero_extending_right_shift(-0x01, 32), 0b0000000000000000000000000000000011111111111111111111111111111111);
-// }
 
 pub(crate) fn reduce_poly(w: &mut Polynomial) {
     for x in w.0.iter_mut() {
@@ -113,15 +102,6 @@ pub(crate) fn reduce32(a: i32) -> i32 {
 pub(crate) fn conditional_add_q_poly(w: &mut Polynomial) {
     for x in w.0.iter_mut() {
         *x = conditional_add_q(*x);
-    }
-}
-
-/// For debugging. OpenSSL's implementation uses only integers in \[0, q-1] while bc uses \[-q, q]
-/// rectify puts things into \[0, q-1] so that intermediate results can be compared with openssl
-/// TODO THIS IS FOR DEBUGGING AND IS NOT CONSTANT TIME
-pub(crate) fn debug_rectify(w: &mut Polynomial) {
-    for x in w.0.iter_mut() {
-        if *x < 0 { *x += q; }
     }
 }
 
