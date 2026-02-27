@@ -60,6 +60,7 @@ pub enum SignatureError {
     EncodingError(&'static str),
     DecodingError(&'static str),
     KeyGenError(&'static str),
+    LengthError(&'static str),
 }
 
 

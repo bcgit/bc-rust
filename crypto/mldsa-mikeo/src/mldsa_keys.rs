@@ -75,7 +75,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
         // }
 
         for (t1_i, pk_chunk) in t1.vec.iter_mut().zip(pk_chunks) {
-            t1_i.copy_from_slice(&simple_bit_unpack_t1(pk_chunk));
+            t1_i.0.copy_from_slice(&simple_bit_unpack_t1(pk_chunk).0);
         }
 
         Ok(Self::new(&rho, &t1))
@@ -91,6 +91,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
     pub fn compute_tr(&self) -> [u8; 64] {
         let mut tr = [0u8; 64];
         H::new().hash_xof_out(&self.pk_encode(), &mut tr);
+
         tr
     }
 }
@@ -172,7 +173,10 @@ pub struct MLDSAPrivateKey<
     pub(crate) seed: Option<KeyMaterialSized<32>>,
 
     // todo -- why? It already contains the public seed rho, why not just run expandA() on demand?
+    // todo -- In my opinion it's not so often that you'll need to extract the pub from the priv that you
+    // todo -- should always spend the RAM to keep it around.
     // todo -- That would mean a non-FIPS approved function that re-runs the main keygen op to re-derive t1
+    // todo -- match openssl's implementation? https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L364
     pub(crate) pub_key: Option<MLDSAPublicKey<k, PK_LEN>>,
 }
 
@@ -251,7 +255,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         let sk_chunks = sk[off..off + l * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), l);
-        for (sk_chunk, s1_i) in sk_chunks.into_iter().zip(self.s1.vec) {
+        for (sk_chunk, s1_i) in sk_chunks.into_iter().zip(&self.s1.vec) {
             bit_pack_eta::<eta>(s1_i, &mut buf);
             sk_chunk.copy_from_slice(&buf[..eta_pack_len]);
         }
@@ -269,7 +273,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         // }
         let sk_chunks = sk[off..off + k * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), k);
-        for (sk_chunk, s2_i) in sk_chunks.into_iter().zip(self.s2.vec) {
+        for (sk_chunk, s2_i) in sk_chunks.into_iter().zip(&self.s2.vec) {
             bit_pack_eta::<eta>(s2_i, &mut buf);
             sk_chunk.copy_from_slice(&buf[..eta_pack_len]);
         }
@@ -281,7 +285,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         // }
         let sk_chunks = sk[off..off + k * POLY_T0PACKED_LEN].chunks_mut(POLY_T0PACKED_LEN);
         debug_assert_eq!(sk_chunks.len(), k);
-        for (sk_chunk, t0_i) in sk_chunks.into_iter().zip(self.t0.vec) {
+        for (sk_chunk, t0_i) in sk_chunks.into_iter().zip(&self.t0.vec) {
             sk_chunk.copy_from_slice(&bit_pack_t0(t0_i));
         }
 
@@ -314,7 +318,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         //     debug_assert!(i < l);
         // }
         for (s1_i, sk_chunk) in s1.vec.iter_mut().zip(sk_chunks) {
-            s1_i.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk));
+            s1_i.0.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).0);
         }
         off += l * bitlen_eta(eta);
 
@@ -330,7 +334,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         //     debug_assert!(i < k);
         // }
         for (s2_i, sk_chunk) in s2.vec.iter_mut().zip(sk_chunks) {
-            s2_i.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk));
+            s2_i.0.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).0);
         }
         off += k * bitlen_eta(eta);
 
@@ -350,7 +354,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         //     debug_assert!(i < k);
         // }
         for (t0_i, sk_chunk) in t0.vec.iter_mut().zip(sk_chunks) {
-            t0_i.copy_from_slice(&bit_unpack_t0(sk_chunk));
+            t0_i.0.copy_from_slice(&bit_unpack_t0(sk_chunk).0);
         }
 
         Ok(Self::new(&rho, &K, &tr, &s1, &s2, &t0, None, None))
@@ -425,5 +429,16 @@ fmt::Display for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
             "MLDSAPrivateKey {{ alg: {}, pub_key_hash (tr): {:x?}, has_pk: {}, has_seed: {} }}",
             alg, self.tr, self.has_public_key(), self.has_seed(),
         )
+    }
+}
+
+/// Zeroizing drop
+impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
+Drop for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
+    fn drop(&mut self) {
+        self.K.fill(0u8);
+        // s1, s2, t0, seed have their own zeroizing drop
+
+
     }
 }

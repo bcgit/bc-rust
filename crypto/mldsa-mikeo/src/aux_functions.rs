@@ -48,13 +48,13 @@ pub(crate) fn coeff_from_half_byte<PARAMS: MLDSAParams>(b: u8) -> Result<i32, ()
 pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
     let mut output = [0u8; POLY_T1PACKED_LEN];
     for i in 0..N/4 {
-        output[5 * i] = w[4 * i] as u8;
-        output[5 * i + 1] = ((w[4 * i] >> 8) | (w[4 * i + 1] << 2)) as u8;
+        output[5 * i] = w.0[4 * i] as u8;
+        output[5 * i + 1] = ((w.0[4 * i] >> 8) | (w.0[4 * i + 1] << 2)) as u8;
         output[5 * i + 2] =
-            ((w[4 * i + 1] >> 6) | (w[4 * i + 2] << 4)) as u8;
+            ((w.0[4 * i + 1] >> 6) | (w.0[4 * i + 2] << 4)) as u8;
         output[5 * i + 3] =
-            ((w[4 * i + 2] >> 4) | (w[4 * i + 3] << 6)) as u8;
-        output[5 * i + 4] = (w[4 * i + 3] >> 2) as u8;
+            ((w.0[4 * i + 2] >> 4) | (w.0[4 * i + 3] << 6)) as u8;
+        output[5 * i + 4] = (w.0[4 * i + 3] >> 2) as u8;
     }
     output
 }
@@ -77,7 +77,7 @@ pub const fn bitlen_eta(eta: usize) -> usize {
 // the hope here is that the compiler will aggressively inline this function,
 // and optimize away the branching.
 #[inline(always)]
-pub(crate) fn bit_pack_eta<const ETA: usize>(w: Polynomial, r: &mut [u8]) {
+pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
     debug_assert!(r.len() >= bitlen_eta(ETA));
     // let mut r: [u8; bitlen_eta(ETA)] = [0; bitlen_eta(ETA)];
 
@@ -89,14 +89,14 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: Polynomial, r: &mut [u8]) {
         2 => {
             let eta: i32 = 2;
             for i in 0..N/8 {
-                t[0] = (eta - w[8 * i]) as u8;
-                t[1] = (eta - w[8 * i + 1]) as u8;
-                t[2] = (eta - w[8 * i + 2]) as u8;
-                t[3] = (eta - w[8 * i + 3]) as u8;
-                t[4] = (eta - w[8 * i + 4]) as u8;
-                t[5] = (eta - w[8 * i + 5]) as u8;
-                t[6] = (eta - w[8 * i + 6]) as u8;
-                t[7] = (eta - w[8 * i + 7]) as u8;
+                t[0] = (eta - w.0[8 * i]) as u8;
+                t[1] = (eta - w.0[8 * i + 1]) as u8;
+                t[2] = (eta - w.0[8 * i + 2]) as u8;
+                t[3] = (eta - w.0[8 * i + 3]) as u8;
+                t[4] = (eta - w.0[8 * i + 4]) as u8;
+                t[5] = (eta - w.0[8 * i + 5]) as u8;
+                t[6] = (eta - w.0[8 * i + 6]) as u8;
+                t[7] = (eta - w.0[8 * i + 7]) as u8;
 
                 r[3 * i] = t[0] | (t[1] << 3) | (t[2] << 6);
                 r[3 * i + 1] = (t[2] >> 2) | (t[3] << 1) | (t[4] << 4) | (t[5] << 7);
@@ -107,8 +107,8 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: Polynomial, r: &mut [u8]) {
         4 => {
             let eta: i32 = 4;
             for i in 0..N/2 {
-                t[0] = (eta - w[2 * i]) as u8;
-                t[1] = (eta - w[2 * i + 1]) as u8;
+                t[0] = (eta - w.0[2 * i]) as u8;
+                t[1] = (eta - w.0[2 * i + 1]) as u8;
                 r[i] = t[0] | t[1] << 4;
             }
         },
@@ -122,19 +122,19 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: Polynomial, r: &mut [u8]) {
 /// Encodes a polynomial 𝑤 into a byte string.
 /// Input: 𝑎, 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in \[−eta, eta].
 /// Output: A byte string of length 32 ⋅ bitlen (𝑎 + 𝑏).
-pub(crate) fn bit_pack_t0(t0: Polynomial) -> [u8; POLY_T0PACKED_LEN] {
+pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
     let mut r = [0u8; POLY_T0PACKED_LEN];
 
     let mut t = [0; 8];
     for i in 0..N/8 {
-        t[0] = (1 << (d - 1)) - t0[8 * i];
-        t[1] = (1 << (d - 1)) - t0[8 * i + 1];
-        t[2] = (1 << (d - 1)) - t0[8 * i + 2];
-        t[3] = (1 << (d - 1)) - t0[8 * i + 3];
-        t[4] = (1 << (d - 1)) - t0[8 * i + 4];
-        t[5] = (1 << (d - 1)) - t0[8 * i + 5];
-        t[6] = (1 << (d - 1)) - t0[8 * i + 6];
-        t[7] = (1 << (d - 1)) - t0[8 * i + 7];
+        t[0] = (1 << (d - 1)) - t0.0[8 * i];
+        t[1] = (1 << (d - 1)) - t0.0[8 * i + 1];
+        t[2] = (1 << (d - 1)) - t0.0[8 * i + 2];
+        t[3] = (1 << (d - 1)) - t0.0[8 * i + 3];
+        t[4] = (1 << (d - 1)) - t0.0[8 * i + 4];
+        t[5] = (1 << (d - 1)) - t0.0[8 * i + 5];
+        t[6] = (1 << (d - 1)) - t0.0[8 * i + 6];
+        t[7] = (1 << (d - 1)) - t0.0[8 * i + 7];
 
         r[13 * i] = t[0] as u8;
         r[13 * i + 1] = (t[0] >> 8) as u8;
@@ -170,13 +170,13 @@ pub(crate) fn bit_pack_t0(t0: Polynomial) -> [u8; POLY_T0PACKED_LEN] {
 pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
     // debug_assert_eq!(v.len(), POLY_T1PACKED_LEN);
 
-    let mut w = polynomial::new();
+    let mut w = Polynomial::new();
 
     for i in 0..N/4 {
-        w[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
-        w[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
-        w[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
-        w[4 * i + 3] = (((v[5 * i + 3] as i32) >> 6) | ((v[5 * i + 4] as i32) << 2)) & 0x3FF;
+        w.0[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
+        w.0[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
+        w.0[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
+        w.0[4 * i + 3] = (((v[5 * i + 3] as i32) >> 6) | ((v[5 * i + 4] as i32) << 2)) & 0x3FF;
     }
 
     w
@@ -195,41 +195,41 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
     debug_assert_eq!(v.len(), bitlen_eta(ETA));
 
-    let mut w = polynomial::new();
+    let mut w = Polynomial::new();
 
     match ETA {
         // MLDSA44 and MLDSA87
         2 => {
             let eta: i32 = 2;
             for i in 0..N/8 {
-                w[8 * i] =      (v[3 * i] & 7) as i32;
-                w[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
-                w[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
-                w[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
-                w[8 * i + 4] = ((v[3 * i + 1] >> 4) & 7) as i32;
-                w[8 * i + 5] = ((v[3 * i + 1] >> 7) | (v[3 * i + 2] << 1) & 7) as i32;
-                w[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
-                w[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
+                w.0[8 * i] =      (v[3 * i] & 7) as i32;
+                w.0[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
+                w.0[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
+                w.0[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
+                w.0[8 * i + 4] = ((v[3 * i + 1] >> 4) & 7) as i32;
+                w.0[8 * i + 5] = ((v[3 * i + 1] >> 7) | (v[3 * i + 2] << 1) & 7) as i32;
+                w.0[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
+                w.0[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
 
-                w[8 * i] = eta -     w[8 * i];
-                w[8 * i + 1] = eta - w[8 * i + 1];
-                w[8 * i + 2] = eta - w[8 * i + 2];
-                w[8 * i + 3] = eta - w[8 * i + 3];
-                w[8 * i + 4] = eta - w[8 * i + 4];
-                w[8 * i + 5] = eta - w[8 * i + 5];
-                w[8 * i + 6] = eta - w[8 * i + 6];
-                w[8 * i + 7] = eta - w[8 * i + 7];
+                w.0[8 * i] = eta -     w.0[8 * i];
+                w.0[8 * i + 1] = eta - w.0[8 * i + 1];
+                w.0[8 * i + 2] = eta - w.0[8 * i + 2];
+                w.0[8 * i + 3] = eta - w.0[8 * i + 3];
+                w.0[8 * i + 4] = eta - w.0[8 * i + 4];
+                w.0[8 * i + 5] = eta - w.0[8 * i + 5];
+                w.0[8 * i + 6] = eta - w.0[8 * i + 6];
+                w.0[8 * i + 7] = eta - w.0[8 * i + 7];
             }
         },
         // MLDSA65
         4 => {
             let eta: i32 = 4;
             for i in 0..N/2 {
-                w[2 * i] = (v[i] & 0x0F) as i32;
-                w[2 * i + 1] = (v[i] >> 4) as i32;
+                w.0[2 * i] = (v[i] & 0x0F) as i32;
+                w.0[2 * i + 1] = (v[i] >> 4) as i32;
 
-                w[2 * i] = eta - w[2 * i];
-                w[2 * i + 1] = eta - w[2 * i + 1];
+                w.0[2 * i] = eta - w.0[2 * i];
+                w.0[2 * i + 1] = eta - w.0[2 * i + 1];
             }
         },
         _ => panic!("Invalid eta value"),
@@ -243,44 +243,44 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
 /// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
 /// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
 pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
-    let mut t0 = polynomial::new();
+    let mut t0 = Polynomial::new();
 
     for i in 0..N/8 {
-        t0[8 * i] = ((a[13 * i] as i32) | ((a[13 * i + 1] as i32) << 8)) & 0x1FFF;
-        t0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5)
+        t0.0[8 * i] = ((a[13 * i] as i32) | ((a[13 * i + 1] as i32) << 8)) & 0x1FFF;
+        t0.0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5)
             | (a[13 * i + 2] as i32) << 3)
             | ((a[13 * i + 3] as i32) << 11))
             & 0x1FFF;
-        t0[8 * i + 2] = (((a[13 * i + 3] as i32) >> 2)
+        t0.0[8 * i + 2] = (((a[13 * i + 3] as i32) >> 2)
             | ((a[13 * i + 4] as i32) << 6))
             & 0x1FFF;
-        t0[8 * i + 3] = ((((a[13 * i + 4] as i32) >> 7)
+        t0.0[8 * i + 3] = ((((a[13 * i + 4] as i32) >> 7)
             | (a[13 * i + 5] as i32) << 1)
             | ((a[13 * i + 6] as i32) << 9))
             & 0x1FFF;
-        t0[8 * i + 4] = ((((a[13 * i + 6] as i32) >> 4)
+        t0.0[8 * i + 4] = ((((a[13 * i + 6] as i32) >> 4)
             | (a[13 * i + 7] as i32) << 4)
             | ((a[13 * i + 8] as i32) << 12))
             & 0x1FFF;
-        t0[8 * i + 5] = (((a[13 * i + 8] as i32) >> 1)
+        t0.0[8 * i + 5] = (((a[13 * i + 8] as i32) >> 1)
             | ((a[13 * i + 9] as i32) << 7))
             & 0x1FFF;
-        t0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6)
+        t0.0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6)
             | (a[13 * i + 10] as i32) << 2)
             | ((a[13 * i + 11] as i32) << 10))
             & 0x1FFF;
-        t0[8 * i + 7] = (((a[13 * i + 11] as i32) >> 3)
+        t0.0[8 * i + 7] = (((a[13 * i + 11] as i32) >> 3)
             | ((a[13 * i + 12] as i32) << 5))
             & 0x1FFF;
 
-        t0[8 * i] = (1 << (d - 1)) -     t0[8 * i];
-        t0[8 * i + 1] = (1 << (d - 1)) - t0[8 * i + 1];
-        t0[8 * i + 2] = (1 << (d - 1)) - t0[8 * i + 2];
-        t0[8 * i + 3] = (1 << (d - 1)) - t0[8 * i + 3];
-        t0[8 * i + 4] = (1 << (d - 1)) - t0[8 * i + 4];
-        t0[8 * i + 5] = (1 << (d - 1)) - t0[8 * i + 5];
-        t0[8 * i + 6] = (1 << (d - 1)) - t0[8 * i + 6];
-        t0[8 * i + 7] = (1 << (d - 1)) - t0[8 * i + 7];
+        t0.0[8 * i] = (1 << (d - 1)) -     t0.0[8 * i];
+        t0.0[8 * i + 1] = (1 << (d - 1)) - t0.0[8 * i + 1];
+        t0.0[8 * i + 2] = (1 << (d - 1)) - t0.0[8 * i + 2];
+        t0.0[8 * i + 3] = (1 << (d - 1)) - t0.0[8 * i + 3];
+        t0.0[8 * i + 4] = (1 << (d - 1)) - t0.0[8 * i + 4];
+        t0.0[8 * i + 5] = (1 << (d - 1)) - t0.0[8 * i + 5];
+        t0.0[8 * i + 6] = (1 << (d - 1)) - t0.0[8 * i + 6];
+        t0.0[8 * i + 7] = (1 << (d - 1)) - t0.0[8 * i + 7];
     }
 
     t0
@@ -294,7 +294,7 @@ pub(crate) fn rej_ntt_poly(
     rho: &[u8; 32],
     nonce: &[u8; 2],
 ) -> Polynomial {
-    let mut a_hat = polynomial::new();
+    let mut w_hat = Polynomial::new();
     let mut j: usize = 0;
     let mut g = G::new();
     g.absorb(rho);
@@ -304,7 +304,7 @@ pub(crate) fn rej_ntt_poly(
         let mut s = [0u8; 3];
         // todo: potential optimization: squeeze a bunch of bytes up-front outside the loop, and only squeeze more if you run out.
         g.squeeze_out(&mut s);
-        a_hat[j] = match coeff_from_three_bytes(s[0], s[1], s[2]) {
+        w_hat.0[j] = match coeff_from_three_bytes(s[0], s[1], s[2]) {
             Ok(c) => { c },
             Err(_) => {
                 // those three bytes were out of range for a coefficient, so go again with the next three bytes
@@ -315,7 +315,7 @@ pub(crate) fn rej_ntt_poly(
         j += 1;
     }
 
-    a_hat
+    w_hat
 }
 
 /// Algorithm 31 RejBoundedPoly(𝜌)
@@ -330,7 +330,7 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
     rho: &[u8; 64],
     nonce: &[u8; 2],
 ) -> Polynomial {
-    let mut a = polynomial::new();
+    let mut a = Polynomial::new();
     let mut j: usize = 0;
     let mut h = H::new();
     h.absorb(rho);
@@ -352,11 +352,11 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
         let z1 = coeff_from_half_byte::<PARAMS>(z >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
 
         if z0.is_ok() {
-            a[j] = z0.unwrap();
+            a.0[j] = z0.unwrap();
             j += 1;
         } /* else: do nothing */
         if z1.is_ok() && j < 256 {
-            a[j] = z1.unwrap();
+            a.0[j] = z1.unwrap();
             j += 1;
         } /* else: do nothing */
     }
@@ -374,7 +374,9 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
 
     for r in 0..k {
         for s in 0..l {
-            A_hat.matrix[r][s] = rej_ntt_poly(rho, &[r as u8, s as u8]);
+            // todo BUG!
+            // A_hat.matrix[r][s] = rej_ntt_poly(rho, &[r as u8, s as u8]);
+            A_hat.matrix[r][s] = rej_ntt_poly(rho, &[s as u8, r as u8]);
         }
     }
 
@@ -413,7 +415,7 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(
 
     for i in 0 .. LEN {
         for j in 0 .. N {
-            (r1.vec[i][j], r0.vec[i][j]) = power_2_round(v.vec[i][j]);
+            (r1.vec[i].0[j], r0.vec[i].0[j]) = power_2_round(v.vec[i].0[j]);
         }
     }
 
@@ -433,9 +435,8 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(
 //
 //     (r1, r0)
 // }
+// todo: this one matches bc-java
 pub(crate) fn power_2_round(r: i32) -> (i32, i32) {
-    // let r0: i32 = (a + (1 << (D - 1)) - 1) >> D;
-    // let r1: i32 = a - (r0 << D);
     const u: i32 = (1 << (d - 1)) - 1;
     const v: i32 = -1 << d;
 
@@ -505,7 +506,7 @@ pub(crate) fn ntt_vec<const LEN: usize>(
     let mut s_hat = Vector::<LEN>::new();
 
     for i in 0..LEN {
-        s_hat.vec[i] = ntt(s.vec[i]);
+        s_hat.vec[i] = ntt(&s.vec[i]);
     }
 
     s_hat
@@ -524,7 +525,7 @@ pub(crate) fn ntt_matrix<const l: usize, const k: usize>(
 
     for i in 0..k {
         for j in 0..l {
-            A_hat.matrix[i][j] = ntt(A.matrix[i][j]);
+            A_hat.matrix[i][j] = ntt(&A.matrix[i][j]);
         }
     }
 
@@ -545,7 +546,7 @@ pub(crate) fn ntt_matrix<const l: usize, const k: usize>(
 /// Design choice: don't do the NTT in-place, but copy data to a new array.
 /// This uses slightly more memory and requires a copy, but makes the code easier to read
 /// and less likely to contain a bug. But this optimization could be considered in the future.
-pub(crate) fn ntt(w: Polynomial) -> Polynomial {
+pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
     let mut w_ntt = w.clone();
 
     let mut m: usize = 0;
@@ -558,13 +559,13 @@ pub(crate) fn ntt(w: Polynomial) -> Polynomial {
             let z: i32 = ZETAS[m];
 
             for j in start..start + len {
-                let t = polynomial::montgomery_reduce(z as i64 * w_ntt[j + len] as i64);
-                w_ntt[j + len] = (w_ntt[j] - t) % q;
-                w_ntt[j] = (w_ntt[j] + t) % q;
+                let t = polynomial::montgomery_reduce(z as i64 * w_ntt.0[j + len] as i64);
+                w_ntt.0[j + len] = (w_ntt.0[j] - t) % q;
+                w_ntt.0[j] = (w_ntt.0[j] + t) % q;
                 
                 // todo: bad
-                if w_ntt[j + len] < 0 { w_ntt[j + len] += q; }
-                if w_ntt[j] < 0 { w_ntt[j] += q; }
+                // if w_ntt.0[j + len] < 0 { w_ntt.0[j + len] += q; }
+                // if w_ntt.0[j] < 0 { w_ntt.0[j] += q; }
             }
             start = start + 2 * len;
         }
@@ -586,7 +587,7 @@ pub(crate) fn inv_ntt_vec<const LEN: usize>(
     let mut s = Vector::<LEN>::new();
 
     for i in 0..LEN {
-        s.vec[i] = inv_ntt(s_hat.vec[i]);
+        s.vec[i] = inv_ntt(&s_hat.vec[i]);
     }
 
     s
@@ -605,7 +606,7 @@ pub(crate) fn inv_ntt_matrix<const l: usize, const k: usize>(
 
     for i in 0..k {
         for j in 0..l {
-            A.matrix[i][j] = inv_ntt(A_hat.matrix[i][j]);
+            A.matrix[i][j] = inv_ntt(&A_hat.matrix[i][j]);
         }
     }
 
@@ -617,49 +618,35 @@ pub(crate) fn inv_ntt_matrix<const l: usize, const k: usize>(
 /// Input: ̂̂ ̂ 𝑤 = (𝑤\[0], … , 𝑤\[255]) ∈ 𝑇𝑞.
 /// Output: Polynomial 𝑤(𝑋) = ∑255
 /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
-pub(crate) fn inv_ntt(w_hat: Polynomial) -> Polynomial {
+pub(crate) fn inv_ntt(w_hat: &Polynomial) -> Polynomial {
+    // todo: optimize to do this in-place?
     let mut w = w_hat.clone();
 
-    let mut m: usize = 256;
+    let mut m: usize = N;
     let mut len: usize = 1;
 
-    while len < 256 {
-        // equiv. to the global constant N
+    while len < N {
         let mut start: usize = 0;
-        while start < 256 {
-            // equiv. to the global constant N
+        while start < N {
             m -= 1;
-            let z = -ZETAS[m];
+            let z = (-1) * ZETAS[m];
 
             // j = start;
             // while j < start + len {
             for j in start..start + len {
                 // 𝑡 ← 𝑤𝑗
-                let t: i32 = w_hat[j];
+                let t: i32 = w.0[j];
 
                 // 𝑤𝑗 ← (𝑡 + 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                // Note: the original bc-rust implementation had this line as:
-                //   a[j] = t + a[j + len];
-                // is there a mathematical reason that this can't overflow beyond Q and therefore doesn't need the reduction?
-                // Worth testing once we have unit tests as that would be a small performance increase to skip the montgomery reduction.
-                // todo: is '%' constant time?
-                // todo: play with taking these out?
-                w[j] = (t + w[j + len]) % q;
-
-                // todo: bad
-                if w[j] < 0 { w[j] += q; }
+                w.0[j] = t + w.0[j + len];
 
                 // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑡 − 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                // Same as above, original bc-rust impl had:
-                // todo: this one might not need to be done mod q because we're about to do a montgomery reduction anyway.
-                // todo: is '%' constant time?
-                w[j + len] = (t - w[j + len]);// % q;
+                w.0[j + len] = t - w.0[j + len];
 
                 // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                w[j + len] =
-                    polynomial::montgomery_reduce(z as i64 * w[j + len] as i64);
-
-                if w[j + len] < 0 { w[j + len] += q; }
+                w.0[j + len] =
+                    polynomial::montgomery_reduce(z as i64 * w.0[j + len] as i64);
+                print!("");
             }
             start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.
         }
@@ -667,10 +654,12 @@ pub(crate) fn inv_ntt(w_hat: Polynomial) -> Polynomial {
     }
 
     // f = 256^-1 mod q
-    let f: i64 = 8347681;
-    for j in 0usize..256 {
+    // const f: i64 = 8347681;
+    // bc-java uses this value rather than the one in FIPS 204
+    const f: i64 = 41978;
+    for j in 0..N {
         // equiv. to the global constant N
-        w[j] = polynomial::montgomery_reduce(f * w[j] as i64);
+        w.0[j] = polynomial::montgomery_reduce(f * w.0[j] as i64);
     }
 
     w

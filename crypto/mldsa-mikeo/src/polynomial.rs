@@ -10,31 +10,42 @@ const STREAM_128_BLOCK_LEN: usize = 168;
 const STREAM_256_BLOCK_LEN: usize = 136;
 
 
-// Note about the abnormal structuring of this file:
-// It might seem more notural to define Polynomial as a struct with methods,
-// but then since the math functions need acceess to the MLDSAParams, the struct would need to
-// carry a phantom MLDSAParams, which causes a bunch of confusion with the compiler.
-// Instead we define Polynomial as a simple type alias to [i32; N] and define all the math functions
-// as static functions that can request the parameters they need.
+// todo -- turn all the helper functions into methods on this struct?
 
-pub(crate) type Polynomial = [i32; N];
+// pub(crate) type Polynomial = [i32; N];
+#[derive(Clone)]
+pub(crate) struct Polynomial(pub(crate) [i32; N]);
 
-pub(crate) const fn new() -> Polynomial {
-    [0i32; N]
+impl Polynomial {
+    pub(crate) const fn new() -> Polynomial {
+        Self{ 0: [0i32; N] }
+    }
+}
+
+impl Drop for Polynomial {
+    fn drop(&mut self) {
+        self.0.fill(0i32);
+    }
+}
+
+impl From<Polynomial> for [i32; N] {
+    fn from(p: Polynomial) -> [i32; N] {
+        p.0
+    }
 }
 
 /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
 /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+/// Note: result could be up to 2q.
 pub(crate) fn add_ntt(w1: &Polynomial, w2: &Polynomial) -> Polynomial {
-    let mut w = new();
+    let mut w = Polynomial::new();
     for i in 0..N {
-        // todo '%'
-        w[i] = (w1[i] + w2[i]) % q;
-        if w[i] < 0 { w[i] += q; }
+        w.0[i] = w1.0[i] + w2.0[i];
     }
 
     w
 }
+
 
 /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
 /// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
@@ -43,16 +54,15 @@ pub(crate) fn add_ntt(w1: &Polynomial, w2: &Polynomial) -> Polynomial {
 /// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
 /// Also called pointwise montgomery multiplication
 pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
-    let mut c = new();
+    let mut c = Polynomial::new();
     for i in 0..N {
-        c[i] = montgomery_reduce((a[i] as i64) * (b[i] as i64));
-        // todo
-        // c[i] = ((a[i] as i64) * (b[i] as i64) % q as i64) as i32;
+        c.0[i] = montgomery_reduce((a.0[i] as i64) * (b.0[i] as i64));
     }
 
     c
 }
 
+/// FIPS 204 Algorithm 49
 /// As described in FIPS 204 Appendix A, montgomery reduction allows for efficient computation
 /// of expressions of the form c = a * b (mod q).
 /// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
@@ -60,17 +70,37 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     debug_assert!(a > - ((q as i64) <<31) && a < ((q as i64) <<31));
 
     // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
-    // todo: not sure which one of these is faster -- they seem to both give equivalent results
+    //   The 'as i32' is how we're implementing the 'mod 2^32', even though it looks a bit silly
+    //   to cast it to i32 and then immediately back to i64.
+    // todo: not sure which one of these is faster -- they seem to all give equivalent results
     // todo: worth benchmarking both
     let t: i32 = a.wrapping_mul(q_inv as i64) as i32;
+    // let t: i32 = (a as i32).wrapping_mul(q_inv);
+    // let t: i32 = ((a as i32) as i64 * q_inv as i64) as i32;
     // let t: i32 = ((a &0x00000000FFFFFFFFi64) * (q_inv as i64)) as i32;
 
     // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
-    ((a - ((t as i64) * (q as i64))) >> 32) as i32
+    // ((a - ((t as i64) * (q as i64))) >> 32) as i32
+    // (a - ((t as i64) * (q as i64)) >> 32) as i32 // -- missing a set of brackets?
+    zero_extending_right_shift(a - ((t as i64) * (q as i64)), 32) as i32
+
+    // todo: openssl has a version of this with fewer operations.
+    // todo: Once I have benchmarks, see if I can squeeze some more performance by copying?
+    // todo: https://github.com/openssl/openssl/blob/3be12549113b955a19a2bde5eed9a0b1649e2168/crypto/ml_dsa/ml_dsa_ntt.c#L93
 }
 
+fn zero_extending_right_shift(a: i64, n: usize) -> i64 {
+    ((a as u64) >> n) as i64
+}
+//
+// #[test]
+// fn test_zero_extending_right_shift() {
+//     assert_eq!(zero_extending_right_shift(0x1234567890ABCDEF, 32), 0x12345678);
+//     assert_eq!(zero_extending_right_shift(-0x01, 32), 0b0000000000000000000000000000000011111111111111111111111111111111);
+// }
+
 pub(crate) fn reduce_poly(w: &mut Polynomial) {
-    for x in w.iter_mut() {
+    for x in w.0.iter_mut() {
         *x = reduce32(*x);
     }
 }
@@ -81,7 +111,7 @@ pub(crate) fn reduce32(a: i32) -> i32 {
 }
 
 pub(crate) fn conditional_add_q_poly(w: &mut Polynomial) {
-    for x in w.iter_mut() {
+    for x in w.0.iter_mut() {
         *x = conditional_add_q(*x);
     }
 }
@@ -90,13 +120,29 @@ pub(crate) fn conditional_add_q_poly(w: &mut Polynomial) {
 /// rectify puts things into \[0, q-1] so that intermediate results can be compared with openssl
 /// TODO THIS IS FOR DEBUGGING AND IS NOT CONSTANT TIME
 pub(crate) fn debug_rectify(w: &mut Polynomial) {
-    for x in w.iter_mut() {
+    for x in w.0.iter_mut() {
         if *x < 0 { *x += q; }
     }
 }
 
+// TODO: this could use some unit testing to figure out exactly what it does.
 pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)
+}
+
+#[test]
+/// These are the results it's giving; I'm not sure if these are "correct" or not.
+fn test_conditional_add_q() {
+    assert_eq!(conditional_add_q(-q -1), -1);
+    assert_eq!(conditional_add_q(-q), 0);
+    assert_eq!(conditional_add_q(-q -2), -2);
+    assert_eq!(conditional_add_q(-q +1), 1);
+    assert_eq!(conditional_add_q(-1), q-1);
+    assert_eq!(conditional_add_q(0), 0);
+    assert_eq!(conditional_add_q(1), 1);
+    assert_eq!(conditional_add_q(q -1), q-1);
+    assert_eq!(conditional_add_q(q), q);
+    assert_eq!(conditional_add_q(q +1), q+1);
 }
 
 

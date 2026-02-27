@@ -5,9 +5,7 @@ use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType,
 };
-use bouncycastle_core_interface::traits::{
-    SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey, XOF,
-};
+use bouncycastle_core_interface::traits::{Hash, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey, XOF};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 // Typedefs just to make the algorithms look more like the FIPS 204 sample code.
@@ -17,7 +15,8 @@ pub(crate) type G = SHAKE128;
 // needed because MLDSAParams is on-purpose a private trait so that users cannot instantiate their
 // own parametrization of ML-DSA.
 #[allow(private_bounds)]
-pub struct MLDSA<
+pub struct HashMLDSA<
+    HASH: Hash + Default,
     const k: usize,
     const l: usize,
     const eta: usize,
@@ -28,6 +27,9 @@ pub struct MLDSA<
 > {
     _params: std::marker::PhantomData<PARAMS>,
 
+    /// Used for holding state while streaming sign/verify operations.
+    hash: Option<HASH>,
+
     // only used in streaming sign operations
     priv_key: Option<MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>>,
 
@@ -37,6 +39,7 @@ pub struct MLDSA<
 
 #[allow(private_bounds)]
 impl<
+    HASH: Hash + Default,
     const k: usize,
     const l: usize,
     const eta: usize,
@@ -44,7 +47,7 @@ impl<
     const SK_LEN: usize,
     const SIG_LEN: usize,
     PARAMS: MLDSAParams,
-> MLDSA<k, l, eta, PK_LEN, SK_LEN, SIG_LEN, PARAMS>
+> HashMLDSA<HASH, k, l, eta, PK_LEN, SK_LEN, SIG_LEN, PARAMS>
 {
     /// Implements Algorithm 6 of FIPS 204
     /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
@@ -75,9 +78,6 @@ impl<
         let mut rho: [u8; 32] = [0u8; 32];
         let mut rho_prime: [u8; 64] = [0u8; 64];
         let mut K: [u8; 32] = [0u8; 32];
-
-        // TODO: optimization: re-use variables rather than allocating new ones.
-        // TODO: do with benches because it might not actually be faster. Rust seems to like local vars.
 
         let mut h = H::default();
         h.absorb(seed.ref_to_bytes());
@@ -121,7 +121,7 @@ impl<
         // 10: 𝑠𝑘 ← skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
         //   ▷ 𝐾 and 𝑡𝑟 are for use in signing
         let sk = MLDSAPrivateKey::new(
-            &rho, &K, &tr, &s1, &s2, &t0, /*seed*/ Some(seed.clone()), /*pub_key*/ Some(pk.clone()),
+            &rho, &K, &tr, &s1, &s2, &t0, /*seed*/ None, /*pub_key*/ None,
         );
 
         // 11: return (𝑝𝑘, 𝑠𝑘)
@@ -184,60 +184,12 @@ impl<
     ) {
         todo!()
     }
-
-
-    /// This provides the first half of the "External Mu" interface to ML-DSA which is described
-    /// in, and allowed under, NIST's FAQ that accompanies FIPS 204.
-    ///
-    /// This function, together with [sign_mu] perform a complete ML-DSA signature which is indistinguishable
-    /// from one produced by the one-shot sign APIs.
-    ///
-    /// The utility of this function is exactly as described
-    /// on Line 6 of Algorithm 7 of FIPS 204:
-    ///
-    ///    message representative that may optionally be computed in a different cryptographic module
-    ///
-    /// The utility is when an extremely large message needs to be signed, where the message exists on one
-    /// computing system and the private key to sign it is held on another and either the transfer time or bandwidth
-    /// causes operational concerns (this is common for example with network HSMs or sending large messages
-    /// to be signed by a smartcard communicating over near-field radio). Another use case is if the
-    /// contents of the message are sensitive and the signer does not want to transmit the message itself
-    /// for fear of leaking it via proxy logging and instead would prefer to only transmit a hash of it.
-    ///
-    /// Since "External Mu" mode is well-defined by FIPS 204 and allowed by NIST, the mu value produced here
-    /// can be used with many hardware crypto modules.
-    ///
-    /// This "External Mu" mode of ML-DSA provides an alternative to the HashML-DSA algorithm in that it
-    /// allows the message to be externally pre-hashed, however, unlike HashML-DSA, this is merely an optimization
-    /// between the application holding the to-be-signed message and the cryptographic module holding the private key
-    /// -- in particular, while HashML-DSA requires the verifier to know whether ML-DSA or HashML-DSA was used to sign
-    /// the message, both "direct" ML-DSA and "External Mu" signatures can be verified with a standard
-    /// ML-DSA verifier.
-    ///
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
-    ///
-    /// For a streaming version of this, see [MuBuilder].
-    pub fn compute_mu_from_tr(
-        msg: &[u8],
-        ctx: &[u8],
-        tr: [u8; 64],
-    ) -> [u8; 64] {
-        todo!()
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    pub fn sign_mu(
-        priv_key: &MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>,
-        mu: &[u8; 64],
-    ) -> [u8; SIG_LEN] {
-        todo!()
-    }
+    
 }
 
 #[allow(private_bounds)]
 impl<
+    HASH: Hash + Default,
     const k: usize,
     const l: usize,
     const eta: usize,
@@ -245,8 +197,9 @@ impl<
     const SK_LEN: usize,
     const SIG_LEN: usize,
     PARAMS: MLDSAParams,
-> Signature for MLDSA<k, l, eta, PK_LEN, SK_LEN, SIG_LEN, PARAMS>
+> Signature for HashMLDSA<HASH, k, l, eta, PK_LEN, SK_LEN, SIG_LEN, PARAMS>
 {
+    /// Implements Algorithm 4 of FIPS 204
     fn sign(
         priv_key: &impl SignaturePrivateKey,
         msg: &[u8],
@@ -307,41 +260,3 @@ impl<
         todo!()
     }
 }
-
-/// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204.
-/// Provides a stateful version of [compute_mu_from_pk] and [compute_mu_from_tr] that supports streaming
-/// large to-be-signed messages.
-pub struct MuBuilder {
-    h: H,
-}
-
-impl MuBuilder {
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
-    pub fn do_init(
-        tr: &[u8; 64],
-        ctx: &[u8],
-    ) -> Result<Self, SignatureError> {
-        if ctx.len() > 255 { return Err(SignatureError::LengthError("ctx value is longer than 255 bytes")) }
-
-        let mut emb = Self{ h: H::new() };
-        emb.h.absorb(tr);
-        emb.h.absorb(&[0u8]);
-        emb.h.absorb(&[ctx.len() as u8]);
-        emb.h.absorb(ctx);
-
-        Ok(emb)
-    }
-
-    pub fn do_update(&mut self, msg_chunk: &[u8]) {
-        self.h.absorb(msg_chunk);
-    }
-
-    pub fn do_final(mut self) -> [u8; 64] {
-        let mut mu = [0u8; 64];
-        self.h.squeeze_out(&mut mu);
-
-        mu
-    }
-
-}
-
