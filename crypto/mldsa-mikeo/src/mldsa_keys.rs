@@ -178,7 +178,6 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         s2: &Vector<k>,
         t0: &Vector<k>,
         seed: Option<KeyMaterialSized<32>>,
-        pub_key: Option<MLDSAPublicKey<k, PK_LEN>>,
     ) -> Self {
         Self {
             rho: rho.clone(),
@@ -357,7 +356,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             t0_i.0.copy_from_slice(&bit_unpack_t0(sk_chunk).0);
         }
 
-        Ok(Self::new(&rho, &K, &tr, &s1, &s2, &t0, None, None))
+        Ok(Self::new(&rho, &K, &tr, &s1, &s2, &t0, None))
     }
 }
 

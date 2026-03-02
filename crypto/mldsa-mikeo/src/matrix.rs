@@ -1,6 +1,7 @@
 //! These are somewhat unnecessary wrappers around simple arrays, but they are helpful to me in clearly
 //! keeping the types and sizes obvious.
 
+use crate::aux_functions::{high_bits, inv_ntt, ntt};
 use crate::polynomial;
 use crate::polynomial::{Polynomial};
 
@@ -17,7 +18,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     }
 
     /// Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
-    /// Computes the product 𝐌 ∘̂ 𝐯̂ of a matrix 𝐌̂ and a vector 𝐯̂ over 𝑇𝑞.
+    /// Computes the product 𝐌 ∘̂ 𝐯_hat of a matrix 𝐌_hat and a vector 𝐯_hat over 𝑇𝑞.
     /// Input: 𝑘, ℓ ∈ ℕ, 𝐌 ∈ 𝑇𝑞
     /// 𝑘×ℓ ̂ 𝑞 .
     /// Performs dot product multiplication of this matrix by a vector
@@ -59,16 +60,37 @@ impl<const LEN: usize> Vector<LEN>
         Self { vec: [(); LEN].map(|_| Polynomial::new()) }
     }
 
-    /// Algorithm 46 AddVectorNTT(𝐯,̂ 𝐰)̂
-    /// Computes the sum ̂̂ ̂̂ 𝐯 + 𝐰 of two vectors 𝐯, 𝐰 over 𝑇𝑞.
-    /// Input: ℓ ∈ ℕ, ̂ 𝑞 , ̂ 𝑞 .𝐯 ∈ 𝑇 ℓ 𝐰 ∈ 𝑇 ℓ
-    /// Output: ̂ 𝑞 .
+    /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂
+    /// Computes the sum 𝐯_hat + 𝐰_hat of two vectors 𝐯_hat, 𝐰_hat over 𝑇𝑞.
+    /// Input: ℓ ∈ ℕ, v_hat ∈ T^ℓ, w_hat ∈ 𝑇^ℓ
+    /// Output: u_hat ∈ T^ℓ_𝑞.
     /// Add another vector to this vector
     pub(crate) fn add_vector_ntt(&mut self, w: &Self) {
         for i in 0 .. LEN {
             // perform montgomery addition of each polynomial in the vector
             self.vec[i].add_ntt(&w.vec[i]);
         }
+    }
+
+    pub(crate) fn sub_vector(&self, w: &Self) -> Self {
+        let mut out = self.clone();
+        for i in 0 .. LEN {
+            out.vec[i].sub(&w.vec[i]);
+        }
+        out
+    }
+
+    /// Algorithm 47 ScalarVectorNTT(𝑐,̂ 𝐯)̂
+    /// Computes the product 𝑐_hat * 𝐯_hat of a scalar 𝑐_hat and a vector 𝐯_hat over 𝑇𝑞.
+    /// Input: 𝑐_hat ∈ 𝑇𝑞, ℓ ∈ ℕ, 𝐯_hat ∈ 𝑇^ℓ
+    /// Output: 𝑞 .
+    pub(crate) fn scalar_vector_ntt(&self, w: &Polynomial) -> Self {
+        let mut s_hat = Self::new();
+        for i in 0..LEN {
+            s_hat.vec[i] = polynomial::multiply_ntt(&s_hat.vec[i], &w);
+        }
+
+        s_hat
     }
 
     pub(crate) fn reduce(&mut self) {
@@ -81,5 +103,79 @@ impl<const LEN: usize> Vector<LEN>
         for i in 0 .. LEN {
             polynomial::conditional_add_q_poly(&mut self.vec[i]);
         }
+    }
+
+    pub(crate) fn ntt(&self) -> Self {
+        let mut s_hat = Self::new();
+
+        for i in 0..LEN {
+            s_hat.vec[i] = ntt(&self.vec[i]);
+        }
+
+        s_hat
+    }
+
+    pub(crate) fn inv_ntt(&self) -> Self {
+        let mut s = Self::new();
+
+        for i in 0..LEN {
+            s.vec[i] = inv_ntt(&self.vec[i]);
+        }
+
+        s
+    }
+
+    pub(crate) fn high_bits<const GAMMA2: i32>(&self) -> Self {
+        let mut s = Self::new();
+
+        for i in 0..LEN {
+            s.vec[i] = self.vec[i].high_bits::<GAMMA2>();
+        }
+
+        s
+    }
+
+    pub(crate) fn lew_bits<const GAMMA2: i32>(&self) -> Self {
+        let mut s = Self::new();
+
+        for i in 0..LEN {
+            s.vec[i] = self.vec[i].low_bits::<GAMMA2>();
+        }
+
+        s
+    }
+
+    pub(crate) fn check_norm(&self, bound: i32) -> bool {
+        // Fine that this is not constant-time because it is used in a rejection loop -- the early quit leads to rejection.
+        // todo: convince myself that only the `false` path leads to valid signature output.
+        for x in self.vec.iter() {
+            if x.check_norm(bound) {
+                return true;
+            }
+        }
+        false
+    }
+
+
+    /// Algorithm 28 w1Encode(𝐰1)
+    /// Encodes a polynomial vector 𝐰1 into a byte string.
+    /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
+    /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
+    pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
+        // 1: 𝐰̃1 ← ()
+        let mut w1_tilde = [0u8; POLY_W1_PACKED_LEN];
+
+        // 2: for 𝑖 from 0 to 𝑘 − 1 do
+        // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
+        // 4: end for
+        for i in 0..LEN {
+            w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
+                // todo -- optimize this to take a slice and write directly to it
+                &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
+            )
+        }
+
+        // 5: return 𝐰̃1
+        w1_tilde
     }
 }

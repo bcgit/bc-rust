@@ -1,7 +1,7 @@
 //! Represents a polynomial over the ML-DSA ring.
 
-use crate::{q, q_inv};
-
+use crate::{q, q_inv, MLDSA44Params, MLDSA65Params, MLDSAParams};
+use crate::aux_functions::{high_bits, low_bits, make_hint};
 use crate::N;
 
 const STREAM_128_BLOCK_LEN: usize = 168;
@@ -13,16 +13,22 @@ const STREAM_256_BLOCK_LEN: usize = 136;
 pub(crate) struct Polynomial(pub(crate) [i32; N]);
 
 impl Polynomial {
-    pub(crate) const fn new() -> Polynomial {
+    pub(crate) const fn new() -> Self {
         Self{ 0: [0i32; N] }
     }
 
     /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
     /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
     /// Note: result could be up to 2q.
-    pub(crate) fn add_ntt(&mut self, w: &Polynomial) {
+    pub(crate) fn add_ntt(&mut self, w: &Self) {
         for i in 0..N {
             self.0[i] += w.0[i];
+        }
+    }
+
+    pub(crate) fn sub(&mut self, w: &Self) {
+        for i in 0..N {
+            self.0[i] -= w.0[i];
         }
     }
 
@@ -38,6 +44,82 @@ impl Polynomial {
     //         self.0[i] = montgomery_reduce((self.0[i] as i64) * (w.0[i] as i64));
     //     }
     // }
+
+    pub(crate) fn high_bits<const GAMMA2: i32>(&self) -> Self {
+        let mut w = Self::new();
+        for i in 0..N {
+            w.0[i] = high_bits::<GAMMA2>(self.0[i]);
+        }
+
+        w
+    }
+
+    pub(crate) fn low_bits<const GAMMA2: i32>(&self) -> Self {
+        let mut w = Self::new();
+        for i in 0..N {
+            w.0[i] = low_bits::<GAMMA2>(self.0[i]);
+        }
+
+        w
+    }
+
+    pub(crate) fn check_norm(&self, bound: i32) -> bool {
+        // Fine that this is not constant-time because it is used in a rejection loop -- the early quit leads to rejection.
+        // todo: convince myself that only the `false` path leads to valid signature output.
+        if bound > (q - 1) / 8 {
+            return true;
+        }
+
+        let mut t: i32;
+        for x in self.0.iter() {
+            t = *x >> 31;
+            t = *x - (t & (2 * *x));
+
+            if t >= bound {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub(crate) fn make_hint<const GAMMA2: i32>(&self, r: &Self) -> Self {
+        let mut out = Polynomial::new();
+        for i in 0..N {
+            // todo -- wait, what do you do with the bool?
+            out.0[i] = make_hint(&self.0[i], &r.0[i]);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
+        // todo -- optimize this to take a slice and write directly to it
+        // todo -- debug_assert_eq!(buf.len(), POLY1_PACKED_LEN)
+        //
+
+        let mut r = [0u8; POLY_W1_PACKED_LEN];
+
+        match POLY_W1_PACKED_LEN {
+            MLDSA44Params::POLY_W1_PACKED_LEN => {
+                for i in 0..N/4 {
+                    r[3 * i] =
+                        ((self.0[4 * i]) as u8) | ((self.0[4 * i + 1] << 6) as u8);
+                    r[3 * i + 1] =
+                        ((self.0[4 * i + 1] >> 2) as u8) | ((self.0[4 * i + 2] << 4) as u8);
+                    r[3 * i + 2] =
+                        ((self.0[4 * i + 2] >> 4) as u8) | ((self.0[4 * i + 3] << 2) as u8);
+                }
+            },
+            // ML-DSA65 and 87 share a POLY_W1_PACKED_LEN value
+            MLDSA65Params::POLY_W1_PACKED_LEN => {
+                for i in 0..N/2 {
+                    r[i] = ((self.0[2 * i]) | (self.0[2 * i + 1] << 4)) as u8;
+                }
+            },
+            _ => { panic!("Invalid GAMMA2 value") }
+        }
+
+        r
+    }
 }
 
 impl Drop for Polynomial {
@@ -290,135 +372,9 @@ fn test_conditional_add_q() {
 //         ctr
 //     }
 //
-//     pub(crate) fn pointwise_montgomery(&mut self, v: &Self, w: &Self) {
-//         for i in 0..N {
-//             self.coeffs[i] = reduce::montgomery_reduce((v.coeffs[i] as i64) * (w.coeffs[i] as i64));
-//         }
-//     }
-//
-//     pub(crate) fn pointwise_account_montgomery(&mut self, u: &PolyVecL, v: &PolyVecL) {
-//         let mut t: Polynomial<PARAMS> = Polynomial::<PARAMS>::new();
-//         self.pointwise_montgomery(&u.vec[0], &v.vec[0]);
-//
-//         for i in 1..PARAMS::l {
-//             t.pointwise_montgomery(&u.vec[i], &v.vec[i]);
-//             self.add(&t);
-//         }
-//     }
-//
-//     // pub(crate) fn add_poly(&mut self, a: &Self) {
-//     //     for i in 0..N {
-//     //         self.coeffs[i] += a.coeffs[i];
-//     //     }
-//     // }
-//
-//     pub(crate) fn subtract_poly(&mut self, b: &Self) {
-//         for i in 0..N {
-//             self.coeffs[i] -= b.coeffs[i];
-//         }
-//     }
-//
-//     pub(crate) fn reduce_poly(&mut self) {
-//         for x in self.coeffs.iter_mut() {
-//             *x = reduce::reduce32(*x);
-//         }
-//     }
-//
-//     pub(crate) fn poly_ntt(&mut self) {
-//         ntt::ntt(&mut self.coeffs);
-//     }
-//     pub(crate) fn inverse_ntt_to_mont(&mut self) {
-//         ntt::inverse_ntt_to_mont(&mut self.coeffs);
-//     }
-//
 //     pub(crate) fn conditional_add_q(&mut self) {
 //         for x in self.coeffs.iter_mut() {
 //             *x = reduce::conditional_add_q(*x);
-//         }
-//     }
-//
-//     pub(crate) fn power_2_round(&mut self, a: &mut Self) {
-//         for i in 0..N {
-//             let power2round = rounding::power_2_round(self.coeffs[i]);
-//             self.coeffs[i] = power2round[0];
-//             a.coeffs[i] = power2round[1];
-//         }
-//     }
-//
-//     pub(crate) fn poly_t0_pack(&self, r: &mut [u8], off: usize) {
-//         let mut t = [0; 8];
-//         for i in 0..N/8 {
-//             t[0] = (1 << (D - 1)) - self.coeffs[8 * i];
-//             t[1] = (1 << (D - 1)) - self.coeffs[8 * i + 1];
-//             t[2] = (1 << (D - 1)) - self.coeffs[8 * i + 2];
-//             t[3] = (1 << (D - 1)) - self.coeffs[8 * i + 3];
-//             t[4] = (1 << (D - 1)) - self.coeffs[8 * i + 4];
-//             t[5] = (1 << (D - 1)) - self.coeffs[8 * i + 5];
-//             t[6] = (1 << (D - 1)) - self.coeffs[8 * i + 6];
-//             t[7] = (1 << (D - 1)) - self.coeffs[8 * i + 7];
-//
-//             r[off + 13 * i] = t[0] as u8;
-//
-//             r[off + 13 * i + 1] = (t[0] >> 8) as u8;
-//             r[off + 13 * i + 1] |= (t[1] << 5) as u8;
-//             r[off + 13 * i + 2] = (t[1] >> 3) as u8;
-//             r[off + 13 * i + 3] = (t[1] >> 11) as u8;
-//             r[off + 13 * i + 3] |= (t[2] << 2) as u8;
-//             r[off + 13 * i + 4] = (t[2] >> 6) as u8;
-//             r[off + 13 * i + 4] |= (t[3] << 7) as u8;
-//             r[off + 13 * i + 5] = (t[3] >> 1) as u8;
-//             r[off + 13 * i + 6] = (t[3] >> 9) as u8;
-//             r[off + 13 * i + 6] |= (t[4] << 4) as u8;
-//             r[off + 13 * i + 7] = (t[4] >> 4) as u8;
-//             r[off + 13 * i + 8] = (t[4] >> 12) as u8;
-//             r[off + 13 * i + 8] |= (t[5] << 1) as u8;
-//             r[off + 13 * i + 9] = (t[5] >> 7) as u8;
-//             r[off + 13 * i + 9] |= (t[6] << 6) as u8;
-//             r[off + 13 * i + 10] = (t[6] >> 2) as u8;
-//             r[off + 13 * i + 11] = (t[6] >> 10) as u8;
-//             r[off + 13 * i + 11] |= (t[7] << 3) as u8;
-//             r[off + 13 * i + 12] = (t[7] >> 5) as u8;
-//         }
-//     }
-//
-//     pub(crate) fn poly_t0_unpack(&mut self, a: &[u8], off: usize) {
-//         for i in 0..N/8 {
-//             self.coeffs[8 * i] =
-//                 ((a[off + 13 * i] as i32) | ((a[off + 13 * i + 1] as i32) << 8)) & 0x1FFF;
-//             self.coeffs[8 * i + 1] = ((((a[off + 13 * i + 1] as i32) >> 5)
-//                 | (a[off + 13 * i + 2] as i32) << 3)
-//                 | ((a[off + 13 * i + 3] as i32) << 11))
-//                 & 0x1FFF;
-//             self.coeffs[8 * i + 2] = (((a[off + 13 * i + 3] as i32) >> 2)
-//                 | ((a[off + 13 * i + 4] as i32) << 6))
-//                 & 0x1FFF;
-//             self.coeffs[8 * i + 3] = ((((a[off + 13 * i + 4] as i32) >> 7)
-//                 | (a[off + 13 * i + 5] as i32) << 1)
-//                 | ((a[off + 13 * i + 6] as i32) << 9))
-//                 & 0x1FFF;
-//             self.coeffs[8 * i + 4] = ((((a[off + 13 * i + 6] as i32) >> 4)
-//                 | (a[off + 13 * i + 7] as i32) << 4)
-//                 | ((a[off + 13 * i + 8] as i32) << 12))
-//                 & 0x1FFF;
-//             self.coeffs[8 * i + 5] = (((a[off + 13 * i + 8] as i32) >> 1)
-//                 | ((a[off + 13 * i + 9] as i32) << 7))
-//                 & 0x1FFF;
-//             self.coeffs[8 * i + 6] = ((((a[off + 13 * i + 9] as i32) >> 6)
-//                 | (a[off + 13 * i + 10] as i32) << 2)
-//                 | ((a[off + 13 * i + 11] as i32) << 10))
-//                 & 0x1FFF;
-//             self.coeffs[8 * i + 7] = (((a[off + 13 * i + 11] as i32) >> 3)
-//                 | ((a[off + 13 * i + 12] as i32) << 5))
-//                 & 0x1FFF;
-//
-//             self.coeffs[8 * i] = (1 << (D - 1)) - self.coeffs[8 * i];
-//             self.coeffs[8 * i + 1] = (1 << (D - 1)) - self.coeffs[8 * i + 1];
-//             self.coeffs[8 * i + 2] = (1 << (D - 1)) - self.coeffs[8 * i + 2];
-//             self.coeffs[8 * i + 3] = (1 << (D - 1)) - self.coeffs[8 * i + 3];
-//             self.coeffs[8 * i + 4] = (1 << (D - 1)) - self.coeffs[8 * i + 4];
-//             self.coeffs[8 * i + 5] = (1 << (D - 1)) - self.coeffs[8 * i + 5];
-//             self.coeffs[8 * i + 6] = (1 << (D - 1)) - self.coeffs[8 * i + 6];
-//             self.coeffs[8 * i + 7] = (1 << (D - 1)) - self.coeffs[8 * i + 7];
 //         }
 //     }
 //

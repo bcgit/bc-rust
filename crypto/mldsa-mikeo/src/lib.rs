@@ -125,13 +125,13 @@ trait MLDSAParams {
     const OMEGA: i32;
 
     // useful derived values
-    // const ALG: MldsaAlg;
     const C_TILDE: usize;
     const POLY_VEC_H_PACKED_LEN: usize;
     const POLY_Z_PACKED_LEN: usize;
     const POLY_W1_PACKED_LEN: usize;
     const POLY_ETA_PACKED_LEN: usize;
-    const POLY_UNIFORM_GAMMA1_N_LEN: usize;
+    const GAMMA1_MASK_LEN: usize;
+    const LAMBDA_over_4: usize;
 }
 
 pub struct MLDSA44Params;
@@ -145,9 +145,6 @@ impl MLDSAParams for MLDSA44Params {
     const ETA: i32 = 2;
     const BETA: i32 = 78;
     const OMEGA: i32 = 80;
-    // const SK_LEN: usize = 2560;
-    // const PK_LEN: usize = 1312;
-    // const SIG_LEN: usize = 2420;
 
     // const ALG: MldsaAlg = MldsaAlg::MlDsa44;
     const C_TILDE: usize = 32;
@@ -155,7 +152,16 @@ impl MLDSAParams for MLDSA44Params {
     const POLY_Z_PACKED_LEN: usize = 576;
     const POLY_W1_PACKED_LEN: usize = 192;
     const POLY_ETA_PACKED_LEN: usize = 96;
-    const POLY_UNIFORM_GAMMA1_N_LEN: usize = 0; // todo -- compute: 576usize.div_ceil(symmetric.stream_256_block_bytes)
+
+    // Alg 32
+    // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
+    const GAMMA1_MASK_LEN: usize = 576;  // 32*(1 + bitlen (𝛾1 − 1) )
+    const LAMBDA_over_4: usize = 128/4;
+    // todo -- bc-java does it as compute: 576usize.div_ceil(symmetric.stream_256_block_bytes) -- which should be 5
+    // todo -- might need to debug this against bc-java
+    // todo -- debug this against bc-java; or look in other implementations. I feel like this should be 32*17=544 or 32*19=608
+    // todo -- I'm not sure why they're adding an extra 32
+    // todo -- corresponds to aux_functions::expand_mask()
 }
 
 pub struct MLDSA65Params;
@@ -169,17 +175,14 @@ impl MLDSAParams for MLDSA65Params {
     const ETA: i32 = 4;
     const BETA: i32 = 196;
     const OMEGA: i32 = 55;
-    // const SK_LEN: usize = 4032;
-    // const PK_LEN: usize = 1952;
-    // const SIG_LEN: usize = 3309;
-    // const ALG: MldsaAlg = MldsaAlg::MlDsa65;
 
     const C_TILDE: usize = 48;
     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
     const POLY_Z_PACKED_LEN: usize = 640;
     const POLY_W1_PACKED_LEN: usize = 128;
     const POLY_ETA_PACKED_LEN: usize = 128;
-    const POLY_UNIFORM_GAMMA1_N_LEN: usize = 0; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
+    const GAMMA1_MASK_LEN: usize = 640; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
+    const LAMBDA_over_4: usize = 192/4;
 }
 
 pub struct MLDSA87Params;
@@ -193,17 +196,14 @@ impl MLDSAParams for MLDSA87Params {
     const ETA: i32 = 2;
     const BETA: i32 = 120;
     const OMEGA: i32 = 75;
-    // const SK_LEN: usize = 4896;
-    // const PK_LEN: usize = 2592;
-    // const SIG_LEN: usize = 4627;
-    // const ALG: MldsaAlg = MldsaAlg::MlDsa87;
 
     const C_TILDE: usize = 64;
     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
     const POLY_Z_PACKED_LEN: usize = 640;
     const POLY_W1_PACKED_LEN: usize = 128;
     const POLY_ETA_PACKED_LEN: usize = 96;
-    const POLY_UNIFORM_GAMMA1_N_LEN: usize = 0; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
+    const GAMMA1_MASK_LEN: usize = 640; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
+    const LAMBDA_over_4: usize = 256/4;
 }
 
 // todo -- impl bouncycastle_core_interface::traits::Algorithm with the security strengths from Table 1

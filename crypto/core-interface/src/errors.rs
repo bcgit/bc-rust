@@ -61,6 +61,7 @@ pub enum SignatureError {
     DecodingError(&'static str),
     KeyGenError(&'static str),
     LengthError(&'static str),
+    RNGError(RNGError),
 }
 
 
@@ -107,4 +108,8 @@ impl From<KeyMaterialError> for RNGError {
     fn from(e: KeyMaterialError) -> RNGError {
         Self::KeyMaterialError(e)
     }
+}
+
+impl From<RNGError> for SignatureError {
+    fn from(e: RNGError) -> SignatureError { Self::RNGError(e) }
 }

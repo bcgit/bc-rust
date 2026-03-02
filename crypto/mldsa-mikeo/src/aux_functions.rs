@@ -3,8 +3,9 @@
 use crate::matrix::{Matrix, Vector};
 use crate::mldsa::{G, H};
 use crate::polynomial::{Polynomial};
-use crate::{MLDSAParams, q, polynomial, d, N, POLY_T1PACKED_LEN, POLY_T0PACKED_LEN};
+use crate::{MLDSAParams, q, polynomial, d, N, POLY_T1PACKED_LEN, POLY_T0PACKED_LEN, MLDSA44Params, MLDSA65Params};
 use bouncycastle_core_interface::traits::XOF;
+use bouncycastle_sha3::SHAKE256;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞 or ⊥.
@@ -289,7 +290,190 @@ pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
     t0
 }
 
-/// Algorithm 30 RejNTTPoly(𝜌)
+
+
+/// A variant of Algorithm 19 BitUnpack specific to a=𝛾1 − 1, b=𝛾1
+/// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
+/// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
+/// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
+///
+/// Note: caller is responsible for ensuring correct input array size
+
+// the hope here is that the compiler will aggressively inline this function,
+// and optimize away the branching.
+#[inline(always)]
+pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
+    let mut w = Polynomial::new();
+
+    match GAMMA1 {
+        MLDSA44Params::GAMMA1 => {
+            // todo -- clean up
+            // const gamma1: i32 = 1<<17;
+            for i in 0..N / 4 {
+                w.0[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
+                    | ((v[9 * i + 2] as i32) << 16))
+                    & 0x3FFFF;
+                w.0[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2)
+                    | ((v[9 * i + 3] as i32) << 6))
+                    | ((v[9 * i + 4] as i32) << 14))
+                    & 0x3FFFF;
+                w.0[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4)
+                    | ((v[9 * i + 5] as i32) << 4))
+                    | ((v[9 * i + 6] as i32) << 12))
+                    & 0x3FFFF;
+                w.0[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6)
+                    | ((v[9 * i + 7] as i32) << 2))
+                    | ((v[9 * i + 8] as i32) << 10))
+                    & 0x3FFFF;
+
+                w.0[4 * i] = GAMMA1 - w.0[4 * i];
+                w.0[4 * i + 1] = GAMMA1 - w.0[4 * i + 1];
+                w.0[4 * i + 2] = GAMMA1 - w.0[4 * i + 2];
+                w.0[4 * i + 3] = GAMMA1 - w.0[4 * i + 3];
+            }
+        },
+        // MLDSA-65 and 87 have the same GAMMA1 value
+        MLDSA65Params::GAMMA1 => {
+            // todo -- clean up
+            // const gamma1: i32 = 1<<19;
+            for i in 0..N/2 {
+                w.0[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
+                    | ((v[5 * i + 2] as i32) << 16))
+                    & 0xFFFFF;
+                w.0[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4)
+                    | ((v[5 * i + 3] as i32) << 4))
+                    | ((v[5 * i + 4] as i32) << 12))
+                    & 0xFFFFF;
+
+                w.0[2 * i] = GAMMA1 - w.0[2 * i];
+                w.0[2 * i + 1] = GAMMA1 - w.0[2 * i + 1];
+            }
+        },
+        _ => { panic!("Invalid gamma1 value") }
+    };
+
+    w
+}
+
+
+//     pub(crate) fn unpack_z(&mut self, a: &[u8]) { // todo -- does this have a definite size?
+//         // if self.engine.gamma1 == (1 << 17) {
+//         // todo could probably macro this
+//         match PARAMS::ALG {
+//             MldsaSize::MlDsa44 => {
+//                 for i in 0..(N / 4) {
+//                     self.coeffs[4 * i] = (((a[9 * i] as i32) | ((a[9 * i + 1] as i32) << 8))
+//                         | ((a[9 * i + 2] as i32) << 16))
+//                         & 0x3FFFF;
+//                     self.coeffs[4 * i + 1] = ((((a[9 * i + 2] as i32) >> 2)
+//                         | ((a[9 * i + 3] as i32) << 6))
+//                         | ((a[9 * i + 4] as i32) << 14))
+//                         & 0x3FFFF;
+//                     self.coeffs[4 * i + 2] = ((((a[9 * i + 4] as i32) >> 4)
+//                         | ((a[9 * i + 5] as i32) << 4))
+//                         | ((a[9 * i + 6] as i32) << 12))
+//                         & 0x3FFFF;
+//                     self.coeffs[4 * i + 3] = ((((a[9 * i + 6] as i32) >> 6)
+//                         | ((a[9 * i + 7] as i32) << 2))
+//                         | ((a[9 * i + 8] as i32) << 10))
+//                         & 0x3FFFF;
+//
+//                     self.coeffs[4 * i] = PARAMS::GAMMA1 - self.coeffs[4 * i];
+//                     self.coeffs[4 * i + 1] = PARAMS::GAMMA1 - self.coeffs[4 * i + 1];
+//                     self.coeffs[4 * i + 2] = PARAMS::GAMMA1 - self.coeffs[4 * i + 2];
+//                     self.coeffs[4 * i + 3] = PARAMS::GAMMA1 - self.coeffs[4 * i + 3];
+//                 }
+//             },
+//         // } else if self.engine.gamma1 == (1 << 19) {
+//             MldsaSize::MlDsa65 | MldsaSize::MlDsa87 => {
+//                 for i in 0..(N / 2) {
+//                     self.coeffs[2 * i] = (((a[5 * i] as i32) | ((a[5 * i + 1] as i32) << 8))
+//                         | ((a[5 * i + 2] as i32) << 16))
+//                         & 0xFFFFF;
+//                     self.coeffs[2 * i + 1] = ((((a[5 * i + 2] as i32) >> 4)
+//                         | ((a[5 * i + 3] as i32) << 4))
+//                         | ((a[5 * i + 4] as i32) << 12))
+//                         & 0xFFFFF;
+//
+//                     self.coeffs[2 * i] = PARAMS::GAMMA1 - self.coeffs[2 * i];
+//                     self.coeffs[2 * i + 1] = PARAMS::GAMMA1 - self.coeffs[2 * i + 1];
+//                 }
+//             },
+//         // } else {
+//         //     return Err(ParameterError("Wrong ML-DSA Gamma1!".to_string()));
+//         }
+//     }
+
+/// Algorithm 29 SampleInBall(𝜌)
+/// Samples a polynomial 𝑐 ∈ 𝑅 with coefficients from {−1, 0, 1} and Hamming weight 𝜏 ≤ 64.
+/// Input: A seed 𝜌 ∈ 𝔹𝜆/4
+/// Output: A polynomial 𝑐 in 𝑅.
+pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: usize>(rho: &[u8; LAMBDA_over_4]) -> Polynomial {
+    // 1: 𝑐 ← 0
+    let mut c = Polynomial::new();
+
+    // 2: ctx ← H.Init()
+    // 3: ctx ← H.Absorb(ctx, 𝜌)
+    // 4: (ctx, 𝑠) ← H.Squeeze(ctx, 8)
+    let mut h = H::new();
+    h.absorb(rho);
+    let mut s = [0u8; 8];
+    h.squeeze_out(&mut s);
+
+    // ℎ ← BytesToBits(𝑠)
+    //   ▷ ℎ is a bit string of length 64
+    // todo -- this can probably be optimized, but is also probably not the slowest thing in here.
+    let mut signs: u64 = 0;
+    for (i, item) in s.iter().enumerate().take(8) {
+        signs |= (*item as u64) << (8 * i);
+    }
+
+    // 6: for 𝑖 from 256 − 𝜏 to 255 do
+
+    // let mut pos = 8;
+    // let mut b;
+    let mut j = [0u8];
+    for i in (N - TAU as usize) .. N {
+        // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
+        // todo -- optimize -- pre-allocate a buffer. Again, find the sweet spot.
+        h.squeeze_out(&mut j);
+
+        // 8: while 𝑗 > 𝑖 do
+        while j[0] as usize > i {
+            // ▷ rejection sampling in {0, … , 𝑖}
+            // 9: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
+            h.squeeze_out(&mut j);
+        }
+
+        // 11: 𝑐𝑖 ← 𝑐𝑗
+        c.0[i] = c.0[j[0] as usize];
+
+        // 12: 𝑐𝑗 ← (−1)^ℎ[𝑖+𝜏−256]
+        (1u64.wrapping_sub(2 * (signs & 1))) as i32;
+        signs >>= 1;
+
+        // todo
+        // do_while! {
+        //     do {
+        //         if pos >= self.symmetric.stream_256_block_bytes {
+        //             shake_digest_256.do_output(buf.as_mut_slice());
+        //             pos = 0;
+        //         }
+        //         b = buf[pos] as usize;
+        //         pos += 1;
+        //     } while b > i;
+        // }
+        //
+        // self.coeffs[i] = self.coeffs[b];
+        // self.coeffs[b] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
+        // signs >>= 1;
+    }
+
+    c
+}
+
+
+    /// Algorithm 30 RejNTTPoly(𝜌)
 /// This is supposed to take a rho: [u8; 34], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
 /// we'll split that into a [u8;32] and a [u8;2]
@@ -431,7 +615,33 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(
     (r1, r0)
 }
 
+/// Algorithm 34 ExpandMask(𝜌, 𝜇)
+/// Samples a vector 𝐲 ∈ 𝑅ℓ such that each polynomial 𝐲[𝑟] has coefficients between −𝛾1 + 1 and 𝛾1.
+/// Input: A seed 𝜌 ∈ 𝔹64 and a nonnegative integer 𝜇.
+/// Output: Vector 𝐲 ∈ 𝑅ℓ .
+pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_LEN: usize>(rho: &[u8; 64], mu: u16) -> Vector<l> {
+    let mut y = Vector::<l>::new();
 
+    // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
+    //  ▷ 𝛾1 is always a power of 2
+    // 32c = GAMMA1_MASK_LEN;
+
+
+    for r in 0 .. l {
+        // 3: 𝜌′ ← 𝜌||IntegerToBytes(𝜇 + 𝑟, 2)
+        // 4: 𝑣 ← H(𝜌′, 32𝑐)
+        let mut h = H::new();
+        h.absorb(rho);
+        h.absorb( &(mu + (r as u16)).to_le_bytes() );
+        let mut v = [0u8; GAMMA1_MASK_LEN];
+        h.squeeze_out(&mut v);
+
+        // 5: 𝐲[𝑟] ← BitUnpack(𝑣, 𝛾1 − 1, 𝛾1)
+        y.vec[r] = bit_unpack_gamma1::<GAMMA1>(&v);
+    }
+
+    y
+}
 
 /// Algorithm 35 Power2Round(𝑟)
 /// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1 2^𝑑 + 𝑟0 mod 𝑞.
@@ -463,6 +673,85 @@ fn test_power_2_round() {
         if res < 0 { res += q; }
         assert_eq!(r%q, res);
     }
+}
+
+/// Algorithm 36 Decompose(𝑟)
+/// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1(2𝛾2) + 𝑟0 mod 𝑞.
+/// Input: 𝑟 ∈ ℤ𝑞.
+/// Output: Integers (𝑟1, 𝑟0).
+
+// the hope here is that the compiler will aggressively inline this function,
+// and optimize away the branching.
+#[inline(always)]
+pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
+    // 1: 𝑟+ ← 𝑟 mod 𝑞
+    // 2: 𝑟0 ← 𝑟+ mod±(2𝛾2)
+    // 3: if 𝑟+ − 𝑟0 = 𝑞 − 1 then
+    // 4:   𝑟1 ← 0
+    // 5:   𝑟0 ← 𝑟0 − 1
+    // 6: else 𝑟1 ← (𝑟+ − 𝑟0)/(2𝛾2)
+    // 7: end if
+    // 8: return (𝑟1, 𝑟0)
+
+    // By the powers of someone much more clever than me, this is equivalent.
+
+    let mut r1: i32;
+    let mut r0 = (r + 127) >> 7;
+
+    match GAMMA2 {
+        MLDSA44Params::GAMMA2 => { // (q - 1) / 88
+            r0 = (r0 * 11275 + (1 << 23)) >> 24;
+            r0 ^= ((43 - r0) >> 31) & r0;
+        },
+        // ML-DSA65 and 87 have the same GAMMA2
+        MLDSA65Params::GAMMA2 => { // (q - 1) / 32;
+            r0 = (r0 * 1025 + (1 << 21)) >> 22;
+            r0 &= 15;
+        },
+        _ => { panic!("Invalid GAMMA2 value") }
+    }
+
+    r1 = r - r0 * 2 * GAMMA2;
+    r1 -= (((q - 1) / 2 - r1) >> 31) & q;
+
+    (r1, r0)
+}
+
+/// Algorithm 37 HighBits(𝑟)
+/// Returns 𝑟1 from the output of Decompose (𝑟).
+/// Input: 𝑟 ∈ ℤ𝑞.
+/// Output: Integer 𝑟1.
+pub(crate) fn high_bits<const GAMMA2: i32>(r: i32) -> i32 {
+    // 1: (𝑟1, 𝑟0) ← Decompose(𝑟)
+    // 2: return 𝑟1
+    let (r1, _ ) = decompose::<GAMMA2>(r);
+    r1
+}
+
+/// Algorithm 38 LowBits(𝑟)
+/// Returns 𝑟0 from the output of Decompose (𝑟).
+/// Input: 𝑟 ∈ ℤ𝑞.
+/// Output: Integer 𝑟0.
+pub(crate) fn low_bits<const GAMMA2: i32>(r: i32) -> i32 {
+    // 1: (𝑟1, 𝑟0) ← Decompose(𝑟)
+    // 2: return 𝑟0
+    let (_, r0) = decompose::<GAMMA2>(r);
+    r0
+}
+
+/// Algorithm 39 MakeHint(𝑧, 𝑟)
+/// Computes hint bit indicating whether adding 𝑧 to 𝑟 alters the high bits of 𝑟.
+/// Input: 𝑧, 𝑟 ∈ ℤ𝑞.
+/// Output: Boolean.
+pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> bool {
+    // 1: 𝑟1 ← HighBits(𝑟)
+    let r1 = high_bits::<GAMMA2>(r);
+    
+    // 2: 𝑣1 ← HighBits(𝑟 + 𝑧)
+    let v1 = high_bits::<GAMMA2>(r + z);
+    
+    // 3: return [[𝑟1 ≠ 𝑣1]]
+    r1 == v1
 }
 
 /// Constants for NTT
@@ -501,6 +790,7 @@ const ZETAS: [i32; 256] = [
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
+// todo -- delete? -- moved to matrix.rs
 pub(crate) fn ntt_vec<const LEN: usize>(
     s: &Vector<LEN>,
 ) -> Vector<LEN> {
@@ -518,7 +808,7 @@ pub(crate) fn ntt_vec<const LEN: usize>(
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloads of NTT to act on a matrix.
-/// TODO: this one might not be used?
+/// TODO: this one might not be used? If it is, move it to matrix.rs
 pub(crate) fn ntt_matrix<const l: usize, const k: usize>(
     A: &Matrix<l,k>,
 ) -> Matrix<l,k> {
@@ -578,6 +868,7 @@ pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
+// todo -- moved to matrix.rs
 pub(crate) fn inv_ntt_vec<const LEN: usize>(
     s_hat: &Vector<LEN>,
 ) -> Vector<LEN> {
@@ -595,7 +886,7 @@ pub(crate) fn inv_ntt_vec<const LEN: usize>(
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloads of NTT to act on a matrix.
-/// TODO: this one might not be used?
+/// TODO: this one might not be used? IF it is, move it to matrix.rs
 pub(crate) fn inv_ntt_matrix<const l: usize, const k: usize>(
     A_hat: &Matrix<l,k>,
 ) -> Matrix<l,k> {
