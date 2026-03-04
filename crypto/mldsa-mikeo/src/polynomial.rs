@@ -1,6 +1,6 @@
 //! Represents a polynomial over the ML-DSA ring.
 
-use crate::{q, q_inv, MLDSA44Params, MLDSA65Params, MLDSAParams};
+use crate::{q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
 use crate::aux_functions::{high_bits, low_bits, make_hint};
 use crate::N;
 
@@ -113,7 +113,7 @@ impl Polynomial {
         let mut r = [0u8; POLY_W1_PACKED_LEN];
 
         match POLY_W1_PACKED_LEN {
-            MLDSA44Params::POLY_W1_PACKED_LEN => {
+            MLDSA44_POLY_W1_PACKED_LEN => {
                 for i in 0..N/4 {
                     r[3 * i] =
                         ((self.0[4 * i]) as u8) | ((self.0[4 * i + 1] << 6) as u8);
@@ -124,12 +124,12 @@ impl Polynomial {
                 }
             },
             // ML-DSA65 and 87 share a POLY_W1_PACKED_LEN value
-            MLDSA65Params::POLY_W1_PACKED_LEN => {
+            MLDSA65_POLY_W1_PACKED_LEN => {
                 for i in 0..N/2 {
                     r[i] = ((self.0[2 * i]) | (self.0[2 * i + 1] << 4)) as u8;
                 }
             },
-            _ => { panic!("Invalid GAMMA2 value") }
+            _ => { unreachable!() }
         }
 
         r

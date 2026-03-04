@@ -4,11 +4,11 @@ use crate::matrix::{Matrix, Vector};
 use crate::mldsa::{G, H};
 use crate::polynomial::Polynomial;
 use crate::{
-    MLDSA44Params, MLDSA65Params, MLDSAParams, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d,
-    polynomial, q,
+    N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d, q,
+    MLDSA44_GAMMA1, MLDSA65_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA2,
+    polynomial
 };
 use bouncycastle_core_interface::traits::XOF;
-use bouncycastle_sha3::SHAKE256;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞 or ⊥.
@@ -33,15 +33,16 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 /// Let 𝜂 ∈ {2, 4}. Generates an element of {−𝜂, −𝜂 + 1, … , 𝜂} ∪ {⊥}.
 /// Input: Integer 𝑏 ∈ {0, 1, … , 15}.
 /// Output: An integer between −𝜂 and 𝜂, or ⊥.
-pub(crate) fn coeff_from_half_byte<PARAMS: MLDSAParams>(b: u8) -> Result<i32, ()> {
+#[inline(always)]
+pub(crate) fn coeff_from_half_byte<const ETA: usize>(b: u8) -> Result<i32, ()> {
     // todo: there's no way this is constant time:
     // todo: the if statement might not be so bad because the alternative is rejection,
     // todo: but that % is a problem.
     // todo: what does openssl or rust crypto do?
-    if PARAMS::ETA == 2 && b < 15 {
+    if ETA == 2 && b < 15 {
         Ok(2 - (b % 5) as i32) // todo: is constant-time?
     } else {
-        if PARAMS::ETA == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
+        if ETA == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
     }
 }
 
@@ -165,17 +166,17 @@ pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
 
 
 /// A variant of Algorithm 17 specific to packing z in the signature value in \[−𝛾1 + 1, 𝛾1].
-pub(crate) fn bitpack_z<const POLY_Z_PACKED_LEN: usize, PARAMS: MLDSAParams>(z: &Polynomial) -> [u8; POLY_Z_PACKED_LEN] {
+pub(crate) fn bitpack_z<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(z: &Polynomial) -> [u8; POLY_Z_PACKED_LEN] {
     let mut r = [0u8; POLY_Z_PACKED_LEN];
 
     let mut t: [u32; 4] = [0; 4];
-    match PARAMS::GAMMA1 {
-        MLDSA44Params::GAMMA1 => {
+    match GAMMA1 {
+        MLDSA44_GAMMA1 => {
             for i in 0..N / 4 {
-                t[0] = (PARAMS::GAMMA1 - z.0[4 * i]) as u32;
-                t[1] = (PARAMS::GAMMA1 - z.0[4 * i + 1]) as u32;
-                t[2] = (PARAMS::GAMMA1 - z.0[4 * i + 2]) as u32;
-                t[3] = (PARAMS::GAMMA1 - z.0[4 * i + 3]) as u32;
+                t[0] = (GAMMA1 - z.0[4 * i]) as u32;
+                t[1] = (GAMMA1 - z.0[4 * i + 1]) as u32;
+                t[2] = (GAMMA1 - z.0[4 * i + 2]) as u32;
+                t[3] = (GAMMA1 - z.0[4 * i + 3]) as u32;
 
                 r[9 * i] = t[0] as u8;
                 r[9 * i + 1] = (t[0] >> 8) as u8;
@@ -189,10 +190,10 @@ pub(crate) fn bitpack_z<const POLY_Z_PACKED_LEN: usize, PARAMS: MLDSAParams>(z: 
             }
         },
         // MLDSA-65 and 87 have the same GAMMA1 value
-        MLDSA65Params::GAMMA1 => {
+        MLDSA65_GAMMA1 => {
             for i in 0..N / 2 {
-                t[0] = (PARAMS::GAMMA1 - z.0[2 * i]) as u32;
-                t[1] = (PARAMS::GAMMA1 - z.0[2 * i + 1]) as u32;
+                t[0] = (GAMMA1 - z.0[2 * i]) as u32;
+                t[1] = (GAMMA1 - z.0[2 * i + 1]) as u32;
 
                 r[5 * i] = t[0] as u8;
                 r[5 * i + 1] = (t[0] >> 8) as u8;
@@ -338,7 +339,7 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
     let mut w = Polynomial::new();
 
     match GAMMA1 {
-        MLDSA44Params::GAMMA1 => {
+        MLDSA44_GAMMA1 => {
             // todo -- clean up
             // const gamma1: i32 = 1<<17;
             for i in 0..N / 4 {
@@ -362,7 +363,7 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
             }
         }
         // MLDSA-65 and 87 have the same GAMMA1 value
-        MLDSA65Params::GAMMA1 => {
+        MLDSA65_GAMMA1 => {
             // todo -- clean up
             // const gamma1: i32 = 1<<19;
             for i in 0..N / 2 {
@@ -438,12 +439,13 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
 /// Input: 𝑐_tilde ∈ 𝔹𝜆/4, 𝐳 ∈ 𝑅ℓ with coefficients in [−𝛾1 + 1, 𝛾1], 𝐡 ∈ 𝑅𝑘
 /// Output: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
 pub(crate) fn sig_encode<
+    const GAMMA1: i32,
     const k: usize,
     const l: usize,
     const LAMBDA_over_4: usize,
+    const OMEGA: i32,
     const POLY_Z_PACKED_LEN: usize,
     const SIG_LEN: usize,
-    PARAMS: MLDSAParams,
 >(
     c_tilde: &[u8; LAMBDA_over_4],
     z: &Vector<l>,
@@ -457,14 +459,14 @@ pub(crate) fn sig_encode<
 
     for i in 0..l {
         // todo -- remove this copy
-        sig[pos .. pos + PARAMS::POLY_Z_PACKED_LEN].copy_from_slice(&bitpack_z::<POLY_Z_PACKED_LEN, PARAMS>(&z.vec[i]));
-        pos += PARAMS::POLY_Z_PACKED_LEN;
+        sig[pos .. pos + POLY_Z_PACKED_LEN].copy_from_slice(&bitpack_z::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
+        pos += POLY_Z_PACKED_LEN;
     }
 
 
     // This inlines Algorithm 20 HintBitPack(𝐡)
 
-    for i in 0..PARAMS::OMEGA as usize + k {
+    for i in 0..OMEGA as usize + k {
         sig[pos + i] = 0;
     }
     // todo -- would this be faster with slice.fill ?
@@ -478,7 +480,7 @@ pub(crate) fn sig_encode<
                 sig[pos + m] = j as u8;
                 m += 1;
             }
-            sig[pos + PARAMS::OMEGA as usize + i] = m as u8;
+            sig[pos + OMEGA as usize + i] = m as u8;
         }
     }
 
@@ -490,7 +492,7 @@ pub(crate) fn sig_encode<
 /// Samples a polynomial 𝑐 ∈ 𝑅 with coefficients from {−1, 0, 1} and Hamming weight 𝜏 ≤ 64.
 /// Input: A seed 𝜌 ∈ 𝔹𝜆/4
 /// Output: A polynomial 𝑐 in 𝑅.
-pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: usize>(
+pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     rho: &[u8; LAMBDA_over_4],
 ) -> Polynomial {
     // 1: 𝑐 ← 0
@@ -535,22 +537,6 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: usize>(
         // 12: 𝑐𝑗 ← (−1)^ℎ[𝑖+𝜏−256]
         (1u64.wrapping_sub(2 * (signs & 1))) as i32;
         signs >>= 1;
-
-        // todo
-        // do_while! {
-        //     do {
-        //         if pos >= self.symmetric.stream_256_block_bytes {
-        //             shake_digest_256.do_output(buf.as_mut_slice());
-        //             pos = 0;
-        //         }
-        //         b = buf[pos] as usize;
-        //         pos += 1;
-        //     } while b > i;
-        // }
-        //
-        // self.coeffs[i] = self.coeffs[b];
-        // self.coeffs[b] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
-        // signs >>= 1;
     }
 
     c
@@ -604,7 +590,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 /// This is supposed to take a rho: [u8; 66], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
 /// we'll split that into a [u8;64] and a [u8;2]
-pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) -> Polynomial {
+pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]) -> Polynomial {
     let mut a = Polynomial::new();
     let mut j: usize = 0;
     let mut h = H::new();
@@ -620,8 +606,8 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(rho: &[u8; 64], nonce: &[u8;
     let mut idx: usize = 0;
 
     while j < N {
-        let z0 = coeff_from_half_byte::<PARAMS>(z_arr[idx] & 0x0F); // equiv to % 16 (but faster, and more importantly, constant-time)
-        let z1 = coeff_from_half_byte::<PARAMS>(z_arr[idx] >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
+        let z0 = coeff_from_half_byte::<ETA>(z_arr[idx] & 0x0F); // equiv to % 16 (but faster, and more importantly, constant-time)
+        let z1 = coeff_from_half_byte::<ETA>(z_arr[idx] >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
 
         if z0.is_ok() {
             a.0[j] = z0.unwrap();
@@ -664,18 +650,18 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
 /// in the interval \[−𝜂, 𝜂].
 /// Input: A seed 𝜌 ∈ 𝔹64 .
 /// Output: Vectors 𝐬1, 𝐬2 of polynomials in 𝑅
-pub(crate) fn expandS<const k: usize, const l: usize, PARAMS: MLDSAParams>(
+pub(crate) fn expandS<const k: usize, const l: usize, const ETA: usize>(
     rho: &[u8; 64],
 ) -> (Vector<l>, Vector<k>) {
     let mut s1 = Vector::<l>::new();
     let mut s2 = Vector::<k>::new();
 
     for r in 0..l {
-        s1.vec[r] = rej_bounded_poly::<PARAMS>(rho, &(r as u16).to_le_bytes());
+        s1.vec[r] = rej_bounded_poly::<ETA>(rho, &(r as u16).to_le_bytes());
     }
 
     for r in 0..k {
-        s2.vec[r] = rej_bounded_poly::<PARAMS>(rho, &(r as u16 + l as u16).to_le_bytes());
+        s2.vec[r] = rej_bounded_poly::<ETA>(rho, &(r as u16 + l as u16).to_le_bytes());
     }
 
     (s1, s2)
@@ -784,13 +770,13 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     let mut r0 = (r + 127) >> 7;
 
     match GAMMA2 {
-        MLDSA44Params::GAMMA2 => {
+        MLDSA44_GAMMA2 => {
             // (q - 1) / 88
             r0 = (r0 * 11275 + (1 << 23)) >> 24;
             r0 ^= ((43 - r0) >> 31) & r0;
         }
         // ML-DSA65 and 87 have the same GAMMA2
-        MLDSA65Params::GAMMA2 => {
+        MLDSA65_GAMMA2 => {
             // (q - 1) / 32;
             r0 = (r0 * 1025 + (1 << 21)) >> 22;
             r0 &= 15;

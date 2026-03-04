@@ -57,6 +57,7 @@ pub enum RNGError {
 #[derive(Debug)]
 pub enum SignatureError {
     GenericError(&'static str),
+    ConsistencyCheckFailed(),
     EncodingError(&'static str),
     DecodingError(&'static str),
     KeyGenError(&'static str),
