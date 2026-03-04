@@ -7,8 +7,10 @@ use bouncycastle_sha3::{SHAKE128, SHAKE256};
 use bouncycastle_rng::hash_drbg80090a::HashDRBG80090A;
 use bouncycastle_rng::HashDRBG_SHA256;
 use crate::MLDSAParams;
-use crate::aux_functions::{expandA, expandS, expand_mask, high_bits, inv_ntt_vec, ntt, ntt_vec, power_2_round_vec, sample_in_ball};
+use crate::aux_functions::{expandA, expandS, expand_mask, high_bits, inv_ntt_vec, make_hint_vec, ntt, ntt_vec, power_2_round_vec, sample_in_ball, sig_encode};
+use crate::matrix::Vector;
 use crate::mldsa_keys::{MLDSAPrivateKey, MLDSAPublicKey};
+use crate::polynomial::Polynomial;
 
 // Typedefs just to make the algorithms look more like the FIPS 204 sample code.
 pub(crate) type H = SHAKE256;
@@ -21,6 +23,8 @@ pub struct MLDSA<
     const k: usize,
     const l: usize,
     const eta: usize,
+    const LAMBDA_over_4: usize,
+    const GAMMA1: i32,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -40,11 +44,13 @@ impl<
     const k: usize,
     const l: usize,
     const eta: usize,
+    const LAMBDA_over_4: usize,
+    const GAMMA1: i32,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
     PARAMS: MLDSAParams,
-> MLDSA<k, l, eta, PK_LEN, SK_LEN, SIG_LEN, PARAMS>
+> MLDSA<k, l, eta, LAMBDA_over_4, GAMMA1, PK_LEN, SK_LEN, SIG_LEN, PARAMS>
 {
     /// Implements Algorithm 6 of FIPS 204
     /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
@@ -307,6 +313,11 @@ impl<
         //  ▷ rejection sampling loop
         // // todo -- can the counter kappa serve double-duty as this counter?
         // let mut count: u16 = 0;
+
+        // these need to be outside the loop because they form the encoded signature value
+        let mut sig_val_c_tilde = [0u8; LAMBDA_over_4];
+        let mut sig_val_z: Vector<l>;
+        let mut sig_val_h: [u8; 64];
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
@@ -336,12 +347,11 @@ impl<
             let mut h = H::new();
             h.absorb(mu);
             h.absorb(&w1.w1_encode::<PARAMS::POLY_W1_PACKED_LEN>());
-            let mut c_tilde = [0u8; PARAMS::LAMBDA_over_4];
-            h.squeeze_out(&mut c_tilde);
+            h.squeeze_out(&mut sig_val_c_tilde);
 
             // 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(𝑐)̃
             //  ▷ verifier’s challenge
-            let c = sample_in_ball::<PARAMS::LAMBDA_over_4, PARAMS::TAU>(&c_tilde);
+            let c = sample_in_ball::<PARAMS::LAMBDA_over_4, PARAMS::TAU>(&sig_val_c_tilde);
 
             // 17: 𝑐_hat ← NTT(𝑐)
             let c_hat = ntt(&c);
@@ -355,15 +365,14 @@ impl<
 
             // 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
             y.add_vector_ntt(&cs1);
-            let z = y;
+            sig_val_z = y;
 
             // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
             let r0 = w.sub_vector(&cs2).lew_bits();
 
             // 23: if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
-            // todo is there same accounting to do before looping?
-            if z.check_norm( PARAMS::GAMMA1 - PARAMS::BETA ) { kappa += l as u16; continue };
+            if sig_val_z.check_norm( PARAMS::GAMMA1 - PARAMS::BETA ) { kappa += l as u16; continue };
             if r0.check_norm( PARAMS::GAMMA2 - PARAMS::BETA ) { kappa += l as u16; continue };
 
             // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
@@ -371,13 +380,25 @@ impl<
 
             // 26: 𝐡 ← MakeHint(−⟨⟨𝑐𝐭0⟩⟩, 𝐰 − ⟨⟨𝑐𝐬2⟩⟩ + ⟨⟨𝑐𝐭0⟩⟩)
             //  ▷ Signer’s hint
-            
+            let mut cs2_plus_ct0 = cs2.clone();
+            cs2_plus_ct0.add_vector_ntt(&ct0);
+            let (hint, hint_hamming_weight) = make_hint_vec::<k, PARAMS::GAMMA2>(&ct0.neg(), &w.sub_vector(&cs2_plus_ct0));
+
+            // 28: if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
+            if hint_hamming_weight > PARAMS::OMEGA { kappa += l as u16; continue };
+            if ct0.check_norm( PARAMS::GAMMA2) { kappa += l as u16; continue }; // todo -- this one can be moved up after line 25
 
 
             // "In addition, there is an alternative way of implementing the validity checks on 𝐳 and the computation of
             // 𝐡, which is described in Section 5.1 of. This method may also be used in implementations of ML-DSA."
             // todo -- check this out
+
+            break;
         }
+
+        // 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
+        // todo -- am I accounting for the mod±𝑞 ?
+        let sig = sig_encode(&sig_val_c_tilde, &sig_val_z, &sig_val_h)?;
 
         todo!()
 
@@ -508,4 +529,8 @@ impl MuBuilder {
 
         mu
     }
+}
+
+
+struct MLDSA44 {
 }

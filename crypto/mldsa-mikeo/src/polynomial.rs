@@ -17,6 +17,14 @@ impl Polynomial {
         Self{ 0: [0i32; N] }
     }
 
+    /// negates each entry
+    pub(crate) fn neg(&mut self){
+        for i in 0..N {
+            self.0[i] = - self.0[i];
+        }
+    }
+    
+    
     /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
     /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
     /// Note: result could be up to 2q.
@@ -82,12 +90,18 @@ impl Polynomial {
         false
     }
 
-    pub(crate) fn make_hint<const GAMMA2: i32>(&self, r: &Self) -> Self {
+    /// Creates the hint vector, and also returns its hamming weight (ie the number of 1's).
+    pub(crate) fn make_hint<const GAMMA2: i32>(&self, r: &Self) -> (Self, i32) {
         let mut out = Polynomial::new();
+        let mut count = 0i32;
         for i in 0..N {
             // todo -- wait, what do you do with the bool?
-            out.0[i] = make_hint(&self.0[i], &r.0[i]);
+            let x = make_hint::<GAMMA2>(self.0[i], r.0[i]);
+            out.0[i] = x;
+            count += x;
         }
+
+        (out, count)
     }
 
     #[inline]

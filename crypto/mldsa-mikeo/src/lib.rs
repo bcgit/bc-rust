@@ -22,6 +22,8 @@ mod mldsa_keys;
 mod polynomial;
 mod aux_functions;
 mod matrix;
+mod params_playground;
+
 
 /*** Exported types ***/
 pub use mldsa::{MLDSA, MuBuilder};
@@ -35,7 +37,12 @@ pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
 pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
 
 /*** pub types ***/
-pub type MLDSA44 = MLDSA<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, MLDSA44Params>;
+// todo -- maybe it would be cleaner to make MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, etc be
+// todo -- actual structs and totally hide the constants from the outside instead of semi-hiding them this way?
+// todo -- IE those structs have their internal consts, and call into parametrized aux_functions ?
+
+// TODO -- I think the only things that need to remain top-level constants are the encoded sizes of arrays passed back out through the public API.
+// pub type MLDSA44 = MLDSA<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_LAMBDA_over_4, MLDSA44_GAMMA1, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, MLDSA44Params>;
 pub type MLDSA44PublicKey = MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>;
 pub type MLDSA44PrivateKey = MLDSAPrivateKey<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_SK_LEN, MLDSA44_PK_LEN>;
 
@@ -66,10 +73,13 @@ pub type MLDSA87PrivateKey = MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, 
 
 /*** Size values ***/
 // From FIPS 204 Table 1 and Table 2
+// todo -- mark as `pub` the ones you need outside the library, which I think is just PK_LEN, SK_LEN, SIG_LEN
 const MLDSA44_k: usize = 4;
 const MLDSA44_l: usize = 4;
 const MLDSA44_ETA: usize = 2;
 const MLDSA44_ETA_PACK_LEN: usize = 32*3;
+const MLDSA44_GAMMA1: i32 = 1 << 17;
+const MLDSA44_LAMBDA_over_4: usize = 128/4;
 const MLDSA44_PK_LEN: usize = 1312;
 const MLDSA44_SK_LEN: usize = 2560;
 const MLDSA44_SIG_LEN: usize = 2420;

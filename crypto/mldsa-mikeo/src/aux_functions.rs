@@ -2,8 +2,11 @@
 
 use crate::matrix::{Matrix, Vector};
 use crate::mldsa::{G, H};
-use crate::polynomial::{Polynomial};
-use crate::{MLDSAParams, q, polynomial, d, N, POLY_T1PACKED_LEN, POLY_T0PACKED_LEN, MLDSA44Params, MLDSA65Params};
+use crate::polynomial::Polynomial;
+use crate::{
+    MLDSA44Params, MLDSA65Params, MLDSAParams, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d,
+    polynomial, q,
+};
 use bouncycastle_core_interface::traits::XOF;
 use bouncycastle_sha3::SHAKE256;
 
@@ -37,13 +40,10 @@ pub(crate) fn coeff_from_half_byte<PARAMS: MLDSAParams>(b: u8) -> Result<i32, ()
     // todo: what does openssl or rust crypto do?
     if PARAMS::ETA == 2 && b < 15 {
         Ok(2 - (b % 5) as i32) // todo: is constant-time?
-    }
-    else {
-        if PARAMS::ETA == 4 && b < 9 { Ok(4 - b as i32) }
-        else { Err(()) }
+    } else {
+        if PARAMS::ETA == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
     }
 }
-
 
 /// A specific instantiation of Algorithm 16 SimpleBitPack(𝑤, 𝑏) with the constants set for packing the t1 vector
 ///  Encodes a polynomial 𝑤 into a byte string.
@@ -51,13 +51,11 @@ pub(crate) fn coeff_from_half_byte<PARAMS: MLDSAParams>(b: u8) -> Result<i32, ()
 /// Output: A byte string of length 32 ⋅ bitlen 𝑏.
 pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
     let mut output = [0u8; POLY_T1PACKED_LEN];
-    for i in 0..N/4 {
+    for i in 0..N / 4 {
         output[5 * i] = w.0[4 * i] as u8;
         output[5 * i + 1] = ((w.0[4 * i] >> 8) | (w.0[4 * i + 1] << 2)) as u8;
-        output[5 * i + 2] =
-            ((w.0[4 * i + 1] >> 6) | (w.0[4 * i + 2] << 4)) as u8;
-        output[5 * i + 3] =
-            ((w.0[4 * i + 2] >> 4) | (w.0[4 * i + 3] << 6)) as u8;
+        output[5 * i + 2] = ((w.0[4 * i + 1] >> 6) | (w.0[4 * i + 2] << 4)) as u8;
+        output[5 * i + 3] = ((w.0[4 * i + 2] >> 4) | (w.0[4 * i + 3] << 6)) as u8;
         output[5 * i + 4] = (w.0[4 * i + 3] >> 2) as u8;
     }
     output
@@ -67,8 +65,8 @@ pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
 /// whose coefficients have been rounded to \[-eta, eta], which is 32*bitlen(2*eta).
 pub const fn bitlen_eta(eta: usize) -> usize {
     match eta {
-        2 => 32*3,
-        4 => 32*4,
+        2 => 32 * 3,
+        4 => 32 * 4,
         _ => panic!("Invalid eta value"),
     }
 }
@@ -92,7 +90,7 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
         // MLDSA44 and MLDSA87
         2 => {
             let eta: i32 = 2;
-            for i in 0..N/8 {
+            for i in 0..N / 8 {
                 t[0] = (eta - w.0[8 * i]) as u8;
                 t[1] = (eta - w.0[8 * i + 1]) as u8;
                 t[2] = (eta - w.0[8 * i + 2]) as u8;
@@ -106,16 +104,16 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
                 r[3 * i + 1] = (t[2] >> 2) | (t[3] << 1) | (t[4] << 4) | (t[5] << 7);
                 r[3 * i + 2] = (t[5] >> 1) | (t[6] << 2) | (t[7] << 5);
             }
-        },
+        }
         // MLDSA65
         4 => {
             let eta: i32 = 4;
-            for i in 0..N/2 {
+            for i in 0..N / 2 {
                 t[0] = (eta - w.0[2 * i]) as u8;
                 t[1] = (eta - w.0[2 * i + 1]) as u8;
                 r[i] = t[0] | t[1] << 4;
             }
-        },
+        }
         _ => panic!("Invalid eta value"),
     }
 
@@ -130,7 +128,7 @@ pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
     let mut r = [0u8; POLY_T0PACKED_LEN];
 
     let mut t = [0; 8];
-    for i in 0..N/8 {
+    for i in 0..N / 8 {
         t[0] = (1 << (d - 1)) - t0.0[8 * i];
         t[1] = (1 << (d - 1)) - t0.0[8 * i + 1];
         t[2] = (1 << (d - 1)) - t0.0[8 * i + 2];
@@ -165,6 +163,51 @@ pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
     r
 }
 
+
+/// A variant of Algorithm 17 specific to packing z in the signature value in \[−𝛾1 + 1, 𝛾1].
+pub(crate) fn bitpack_z<const POLY_Z_PACKED_LEN: usize, PARAMS: MLDSAParams>(z: &Polynomial) -> [u8; POLY_Z_PACKED_LEN] {
+    let mut r = [0u8; POLY_Z_PACKED_LEN];
+
+    let mut t: [u32; 4] = [0; 4];
+    match PARAMS::GAMMA1 {
+        MLDSA44Params::GAMMA1 => {
+            for i in 0..N / 4 {
+                t[0] = (PARAMS::GAMMA1 - z.0[4 * i]) as u32;
+                t[1] = (PARAMS::GAMMA1 - z.0[4 * i + 1]) as u32;
+                t[2] = (PARAMS::GAMMA1 - z.0[4 * i + 2]) as u32;
+                t[3] = (PARAMS::GAMMA1 - z.0[4 * i + 3]) as u32;
+
+                r[9 * i] = t[0] as u8;
+                r[9 * i + 1] = (t[0] >> 8) as u8;
+                r[9 * i + 2] = ((t[0] >> 16) | (t[1] << 2)) as u8;
+                r[9 * i + 3] = (t[1] >> 6) as u8;
+                r[9 * i + 4] = ((t[1] >> 14) | (t[2] << 4)) as u8;
+                r[9 * i + 5] = (t[2] >> 4) as u8;
+                r[9 * i + 6] = ((t[2] >> 12) | (t[3] << 6)) as u8;
+                r[9 * i + 7] = (t[3] >> 2) as u8;
+                r[9 * i + 8] = (t[3] >> 10) as u8;
+            }
+        },
+        // MLDSA-65 and 87 have the same GAMMA1 value
+        MLDSA65Params::GAMMA1 => {
+            for i in 0..N / 2 {
+                t[0] = (PARAMS::GAMMA1 - z.0[2 * i]) as u32;
+                t[1] = (PARAMS::GAMMA1 - z.0[2 * i + 1]) as u32;
+
+                r[5 * i] = t[0] as u8;
+                r[5 * i + 1] = (t[0] >> 8) as u8;
+                r[5 * i + 2] = ((t[0] >> 16) | (t[1] << 4)) as u8;
+                r[5 * i + 3] = (t[1] >> 4) as u8;
+                r[5 * i + 4] = (t[1] >> 12) as u8;
+            }
+        },
+        _ => { panic!("Invalid gamma1 value") }
+    }
+
+    r
+}
+
+
 /// A specific instantiation of Algorithm 18 SimpleBitUnpack(v, 𝑏) with the constants set for unpacking the t1 vector
 /// Input: 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen 𝑏.
 /// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [0, 2𝑐 − 1], where 𝑐 = bitlen 𝑏.
@@ -176,7 +219,7 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 
     let mut w = Polynomial::new();
 
-    for i in 0..N/4 {
+    for i in 0..N / 4 {
         w.0[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
         w.0[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
         w.0[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
@@ -205,8 +248,8 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
         // MLDSA44 and MLDSA87
         2 => {
             let eta: i32 = 2;
-            for i in 0..N/8 {
-                w.0[8 * i] =      (v[3 * i] & 7) as i32;
+            for i in 0..N / 8 {
+                w.0[8 * i] = (v[3 * i] & 7) as i32;
                 w.0[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
                 w.0[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
                 w.0[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
@@ -215,7 +258,7 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
                 w.0[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
                 w.0[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
 
-                w.0[8 * i] = eta -     w.0[8 * i];
+                w.0[8 * i] = eta - w.0[8 * i];
                 w.0[8 * i + 1] = eta - w.0[8 * i + 1];
                 w.0[8 * i + 2] = eta - w.0[8 * i + 2];
                 w.0[8 * i + 3] = eta - w.0[8 * i + 3];
@@ -224,18 +267,18 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
                 w.0[8 * i + 6] = eta - w.0[8 * i + 6];
                 w.0[8 * i + 7] = eta - w.0[8 * i + 7];
             }
-        },
+        }
         // MLDSA65
         4 => {
             let eta: i32 = 4;
-            for i in 0..N/2 {
+            for i in 0..N / 2 {
                 w.0[2 * i] = (v[i] & 0x0F) as i32;
                 w.0[2 * i + 1] = (v[i] >> 4) as i32;
 
                 w.0[2 * i] = eta - w.0[2 * i];
                 w.0[2 * i + 1] = eta - w.0[2 * i + 1];
             }
-        },
+        }
         _ => panic!("Invalid eta value"),
     }
 
@@ -249,35 +292,26 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
 pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
     let mut t0 = Polynomial::new();
 
-    for i in 0..N/8 {
+    for i in 0..N / 8 {
         t0.0[8 * i] = ((a[13 * i] as i32) | ((a[13 * i + 1] as i32) << 8)) & 0x1FFF;
-        t0.0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5)
-            | (a[13 * i + 2] as i32) << 3)
+        t0.0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5) | (a[13 * i + 2] as i32) << 3)
             | ((a[13 * i + 3] as i32) << 11))
             & 0x1FFF;
-        t0.0[8 * i + 2] = (((a[13 * i + 3] as i32) >> 2)
-            | ((a[13 * i + 4] as i32) << 6))
-            & 0x1FFF;
-        t0.0[8 * i + 3] = ((((a[13 * i + 4] as i32) >> 7)
-            | (a[13 * i + 5] as i32) << 1)
+        t0.0[8 * i + 2] = (((a[13 * i + 3] as i32) >> 2) | ((a[13 * i + 4] as i32) << 6)) & 0x1FFF;
+        t0.0[8 * i + 3] = ((((a[13 * i + 4] as i32) >> 7) | (a[13 * i + 5] as i32) << 1)
             | ((a[13 * i + 6] as i32) << 9))
             & 0x1FFF;
-        t0.0[8 * i + 4] = ((((a[13 * i + 6] as i32) >> 4)
-            | (a[13 * i + 7] as i32) << 4)
+        t0.0[8 * i + 4] = ((((a[13 * i + 6] as i32) >> 4) | (a[13 * i + 7] as i32) << 4)
             | ((a[13 * i + 8] as i32) << 12))
             & 0x1FFF;
-        t0.0[8 * i + 5] = (((a[13 * i + 8] as i32) >> 1)
-            | ((a[13 * i + 9] as i32) << 7))
-            & 0x1FFF;
-        t0.0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6)
-            | (a[13 * i + 10] as i32) << 2)
+        t0.0[8 * i + 5] = (((a[13 * i + 8] as i32) >> 1) | ((a[13 * i + 9] as i32) << 7)) & 0x1FFF;
+        t0.0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6) | (a[13 * i + 10] as i32) << 2)
             | ((a[13 * i + 11] as i32) << 10))
             & 0x1FFF;
-        t0.0[8 * i + 7] = (((a[13 * i + 11] as i32) >> 3)
-            | ((a[13 * i + 12] as i32) << 5))
-            & 0x1FFF;
+        t0.0[8 * i + 7] =
+            (((a[13 * i + 11] as i32) >> 3) | ((a[13 * i + 12] as i32) << 5)) & 0x1FFF;
 
-        t0.0[8 * i] = (1 << (d - 1)) -     t0.0[8 * i];
+        t0.0[8 * i] = (1 << (d - 1)) - t0.0[8 * i];
         t0.0[8 * i + 1] = (1 << (d - 1)) - t0.0[8 * i + 1];
         t0.0[8 * i + 2] = (1 << (d - 1)) - t0.0[8 * i + 2];
         t0.0[8 * i + 3] = (1 << (d - 1)) - t0.0[8 * i + 3];
@@ -289,8 +323,6 @@ pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
 
     t0
 }
-
-
 
 /// A variant of Algorithm 19 BitUnpack specific to a=𝛾1 − 1, b=𝛾1
 /// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
@@ -313,16 +345,13 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
                 w.0[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
                     | ((v[9 * i + 2] as i32) << 16))
                     & 0x3FFFF;
-                w.0[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2)
-                    | ((v[9 * i + 3] as i32) << 6))
+                w.0[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2) | ((v[9 * i + 3] as i32) << 6))
                     | ((v[9 * i + 4] as i32) << 14))
                     & 0x3FFFF;
-                w.0[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4)
-                    | ((v[9 * i + 5] as i32) << 4))
+                w.0[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4) | ((v[9 * i + 5] as i32) << 4))
                     | ((v[9 * i + 6] as i32) << 12))
                     & 0x3FFFF;
-                w.0[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6)
-                    | ((v[9 * i + 7] as i32) << 2))
+                w.0[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6) | ((v[9 * i + 7] as i32) << 2))
                     | ((v[9 * i + 8] as i32) << 10))
                     & 0x3FFFF;
 
@@ -331,30 +360,30 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
                 w.0[4 * i + 2] = GAMMA1 - w.0[4 * i + 2];
                 w.0[4 * i + 3] = GAMMA1 - w.0[4 * i + 3];
             }
-        },
+        }
         // MLDSA-65 and 87 have the same GAMMA1 value
         MLDSA65Params::GAMMA1 => {
             // todo -- clean up
             // const gamma1: i32 = 1<<19;
-            for i in 0..N/2 {
+            for i in 0..N / 2 {
                 w.0[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
                     | ((v[5 * i + 2] as i32) << 16))
                     & 0xFFFFF;
-                w.0[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4)
-                    | ((v[5 * i + 3] as i32) << 4))
+                w.0[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4))
                     | ((v[5 * i + 4] as i32) << 12))
                     & 0xFFFFF;
 
                 w.0[2 * i] = GAMMA1 - w.0[2 * i];
                 w.0[2 * i + 1] = GAMMA1 - w.0[2 * i + 1];
             }
-        },
-        _ => { panic!("Invalid gamma1 value") }
+        }
+        _ => {
+            panic!("Invalid gamma1 value")
+        }
     };
 
     w
 }
-
 
 //     pub(crate) fn unpack_z(&mut self, a: &[u8]) { // todo -- does this have a definite size?
 //         // if self.engine.gamma1 == (1 << 17) {
@@ -404,11 +433,66 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
 //         }
 //     }
 
+/// Algorithm 26 sigEncode(̃𝑐_tilde, 𝐳, 𝐡)
+/// Encodes a signature into a byte string.
+/// Input: 𝑐_tilde ∈ 𝔹𝜆/4, 𝐳 ∈ 𝑅ℓ with coefficients in [−𝛾1 + 1, 𝛾1], 𝐡 ∈ 𝑅𝑘
+/// Output: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
+pub(crate) fn sig_encode<
+    const k: usize,
+    const l: usize,
+    const LAMBDA_over_4: usize,
+    const POLY_Z_PACKED_LEN: usize,
+    const SIG_LEN: usize,
+    PARAMS: MLDSAParams,
+>(
+    c_tilde: &[u8; LAMBDA_over_4],
+    z: &Vector<l>,
+    h: Vector<k>,
+) -> [u8; SIG_LEN] {
+    let mut sig = [0u8; SIG_LEN];
+    let mut pos = 0;
+
+    sig[..LAMBDA_over_4].copy_from_slice(c_tilde);
+    pos += LAMBDA_over_4;
+
+    for i in 0..l {
+        // todo -- remove this copy
+        sig[pos .. pos + PARAMS::POLY_Z_PACKED_LEN].copy_from_slice(&bitpack_z::<POLY_Z_PACKED_LEN, PARAMS>(&z.vec[i]));
+        pos += PARAMS::POLY_Z_PACKED_LEN;
+    }
+
+
+    // This inlines Algorithm 20 HintBitPack(𝐡)
+
+    for i in 0..PARAMS::OMEGA as usize + k {
+        sig[pos + i] = 0;
+    }
+    // todo -- would this be faster with slice.fill ?
+    // todo -- or maybe not needed if this is just pre-filling the array, since I already prefilled it with 0u8?
+
+
+    let mut m: usize = 0;
+    for i in 0..k {
+        for j in 0..N {
+            if h.vec[i].0[j] != 0 {
+                sig[pos + m] = j as u8;
+                m += 1;
+            }
+            sig[pos + PARAMS::OMEGA as usize + i] = m as u8;
+        }
+    }
+
+
+    sig
+}
+
 /// Algorithm 29 SampleInBall(𝜌)
 /// Samples a polynomial 𝑐 ∈ 𝑅 with coefficients from {−1, 0, 1} and Hamming weight 𝜏 ≤ 64.
 /// Input: A seed 𝜌 ∈ 𝔹𝜆/4
 /// Output: A polynomial 𝑐 in 𝑅.
-pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: usize>(rho: &[u8; LAMBDA_over_4]) -> Polynomial {
+pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: usize>(
+    rho: &[u8; LAMBDA_over_4],
+) -> Polynomial {
     // 1: 𝑐 ← 0
     let mut c = Polynomial::new();
 
@@ -433,7 +517,7 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: usize>(rho: 
     // let mut pos = 8;
     // let mut b;
     let mut j = [0u8];
-    for i in (N - TAU as usize) .. N {
+    for i in (N - TAU as usize)..N {
         // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
         // todo -- optimize -- pre-allocate a buffer. Again, find the sweet spot.
         h.squeeze_out(&mut j);
@@ -472,15 +556,11 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: usize>(rho: 
     c
 }
 
-
-    /// Algorithm 30 RejNTTPoly(𝜌)
+/// Algorithm 30 RejNTTPoly(𝜌)
 /// This is supposed to take a rho: [u8; 34], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
 /// we'll split that into a [u8;32] and a [u8;2]
-pub(crate) fn rej_ntt_poly(
-    rho: &[u8; 32],
-    nonce: &[u8; 2],
-) -> Polynomial {
+pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     let mut w_hat = Polynomial::new();
     let mut j: usize = 0;
     let mut g = G::new();
@@ -496,15 +576,18 @@ pub(crate) fn rej_ntt_poly(
     let mut idx: usize = 0;
 
     while j < N {
-        if idx == s.len() { g.squeeze_out(&mut s); idx = 0;}
-        w_hat.0[j] = match coeff_from_three_bytes(&s[idx..idx+3].try_into().unwrap()) {
-            Ok(c) => { c },
+        if idx == s.len() {
+            g.squeeze_out(&mut s);
+            idx = 0;
+        }
+        w_hat.0[j] = match coeff_from_three_bytes(&s[idx..idx + 3].try_into().unwrap()) {
+            Ok(c) => c,
             Err(_) => {
                 // those three bytes were out of range for a coefficient, so go again with the next three bytes
                 // from the SHAKE stream.
                 idx += 3;
-                continue
-            },
+                continue;
+            }
         };
         idx += 3;
         j += 1;
@@ -521,10 +604,7 @@ pub(crate) fn rej_ntt_poly(
 /// This is supposed to take a rho: [u8; 66], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
 /// we'll split that into a [u8;64] and a [u8;2]
-pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
-    rho: &[u8; 64],
-    nonce: &[u8; 2],
-) -> Polynomial {
+pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) -> Polynomial {
     let mut a = Polynomial::new();
     let mut j: usize = 0;
     let mut h = H::new();
@@ -553,7 +633,10 @@ pub(crate) fn rej_bounded_poly<PARAMS: MLDSAParams>(
         } /* else: do nothing */
 
         idx += 1;
-        if idx == z_arr.len() { h.squeeze_out(&mut z_arr); idx = 0;}
+        if idx == z_arr.len() {
+            h.squeeze_out(&mut z_arr);
+            idx = 0;
+        }
     }
 
     a
@@ -583,7 +666,7 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
 /// Output: Vectors 𝐬1, 𝐬2 of polynomials in 𝑅
 pub(crate) fn expandS<const k: usize, const l: usize, PARAMS: MLDSAParams>(
     rho: &[u8; 64],
-) -> (Vector::<l>, Vector::<k>) {
+) -> (Vector<l>, Vector<k>) {
     let mut s1 = Vector::<l>::new();
     let mut s2 = Vector::<k>::new();
 
@@ -600,14 +683,12 @@ pub(crate) fn expandS<const k: usize, const l: usize, PARAMS: MLDSAParams>(
 
 /// Implements the meta-function described in FIPS 204 section 7.4 for applying power_2_round to a vector.
 /// ((𝐫1\[𝑖])𝑗, (𝐫0\[𝑖])𝑗) = Power2Round((𝐫\[𝑖])𝑗).
-pub(crate) fn power_2_round_vec<const LEN: usize>(
-    v: &Vector<LEN>
-) -> (Vector<LEN>, Vector<LEN>) {
+pub(crate) fn power_2_round_vec<const LEN: usize>(v: &Vector<LEN>) -> (Vector<LEN>, Vector<LEN>) {
     let mut r1 = Vector::<LEN>::new();
     let mut r0 = Vector::<LEN>::new();
 
-    for i in 0 .. LEN {
-        for j in 0 .. N {
+    for i in 0..LEN {
+        for j in 0..N {
             (r1.vec[i].0[j], r0.vec[i].0[j]) = power_2_round(v.vec[i].0[j]);
         }
     }
@@ -619,20 +700,23 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(
 /// Samples a vector 𝐲 ∈ 𝑅ℓ such that each polynomial 𝐲[𝑟] has coefficients between −𝛾1 + 1 and 𝛾1.
 /// Input: A seed 𝜌 ∈ 𝔹64 and a nonnegative integer 𝜇.
 /// Output: Vector 𝐲 ∈ 𝑅ℓ .
-pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_LEN: usize>(rho: &[u8; 64], mu: u16) -> Vector<l> {
+pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_LEN: usize> (
+    rho: &[u8; 64],
+    mu: u16,
+) -> Vector<l>
+{
     let mut y = Vector::<l>::new();
 
     // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
     //  ▷ 𝛾1 is always a power of 2
     // 32c = GAMMA1_MASK_LEN;
 
-
-    for r in 0 .. l {
+    for r in 0..l {
         // 3: 𝜌′ ← 𝜌||IntegerToBytes(𝜇 + 𝑟, 2)
         // 4: 𝑣 ← H(𝜌′, 32𝑐)
         let mut h = H::new();
         h.absorb(rho);
-        h.absorb( &(mu + (r as u16)).to_le_bytes() );
+        h.absorb(&(mu + (r as u16)).to_le_bytes());
         let mut v = [0u8; GAMMA1_MASK_LEN];
         h.squeeze_out(&mut v);
 
@@ -654,24 +738,25 @@ pub(crate) fn power_2_round(r: i32) -> (i32, i32) {
     let t = r + u;
     let r0 = r - (t & v);
 
-    (t>>d, r0)
+    (t >> d, r0)
 }
 
 #[test]
 // FIPS 204 describes the output as easy to check:
 // Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1 2^𝑑 + 𝑟0 mod 𝑞.
 fn test_power_2_round() {
-
     test(1);
-    test(q-3);
+    test(q - 3);
     test(q);
-    test(q+3);
+    test(q + 3);
 
     fn test(r: i32) {
         let (r1, r0) = power_2_round(r);
-        let mut res = ((r1<<d) + r0) % q;
-        if res < 0 { res += q; }
-        assert_eq!(r%q, res);
+        let mut res = ((r1 << d) + r0) % q;
+        if res < 0 {
+            res += q;
+        }
+        assert_eq!(r % q, res);
     }
 }
 
@@ -699,16 +784,20 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     let mut r0 = (r + 127) >> 7;
 
     match GAMMA2 {
-        MLDSA44Params::GAMMA2 => { // (q - 1) / 88
+        MLDSA44Params::GAMMA2 => {
+            // (q - 1) / 88
             r0 = (r0 * 11275 + (1 << 23)) >> 24;
             r0 ^= ((43 - r0) >> 31) & r0;
-        },
+        }
         // ML-DSA65 and 87 have the same GAMMA2
-        MLDSA65Params::GAMMA2 => { // (q - 1) / 32;
+        MLDSA65Params::GAMMA2 => {
+            // (q - 1) / 32;
             r0 = (r0 * 1025 + (1 << 21)) >> 22;
             r0 &= 15;
-        },
-        _ => { panic!("Invalid GAMMA2 value") }
+        }
+        _ => {
+            panic!("Invalid GAMMA2 value")
+        }
     }
 
     r1 = r - r0 * 2 * GAMMA2;
@@ -724,7 +813,7 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
 pub(crate) fn high_bits<const GAMMA2: i32>(r: i32) -> i32 {
     // 1: (𝑟1, 𝑟0) ← Decompose(𝑟)
     // 2: return 𝑟1
-    let (r1, _ ) = decompose::<GAMMA2>(r);
+    let (r1, _) = decompose::<GAMMA2>(r);
     r1
 }
 
@@ -743,16 +832,43 @@ pub(crate) fn low_bits<const GAMMA2: i32>(r: i32) -> i32 {
 /// Computes hint bit indicating whether adding 𝑧 to 𝑟 alters the high bits of 𝑟.
 /// Input: 𝑧, 𝑟 ∈ ℤ𝑞.
 /// Output: Boolean.
-pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> bool {
+pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
     // 1: 𝑟1 ← HighBits(𝑟)
     let r1 = high_bits::<GAMMA2>(r);
-    
+
     // 2: 𝑣1 ← HighBits(𝑟 + 𝑧)
     let v1 = high_bits::<GAMMA2>(r + z);
-    
+
     // 3: return [[𝑟1 ≠ 𝑣1]]
-    r1 == v1
+    if r1 == v1 { 1 } else { 0 }
 }
+
+/// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
+pub(crate) fn make_hint_vec<const k: usize, const GAMMA2: i32>(
+    r: &Vector<k>,
+    s: &Vector<k>,
+) -> (Vector<k>, i32) {
+    let mut out = Vector::<k>::new();
+    let mut count = 0i32;
+
+    for i in 0..k {
+        let (w, c) = r.vec[i].make_hint::<GAMMA2>(&s.vec[i]);
+        out.vec[i] = w;
+        count += c;
+    }
+
+    (out, count)
+}
+
+// todo -- alternate implementation; might be more performant?
+// todo -- I'm not convinced this is constant-time though
+// todo -- the decompose() that sits under high_bits() already looks pretty fast
+// pub(super) fn make_hint<const GAMMA2: i32>(a0: i32, a1: i32, engine: &MlDsaEngine) -> i32 {
+//     if a0 <= GAMMA2 || a0 > q - GAMMA2 || (a0 == q - GAMMA2 && a1 == 0) {
+//         return 0;
+//     }
+//     1
+// }
 
 /// Constants for NTT
 const ZETAS: [i32; 256] = [
@@ -784,16 +900,13 @@ const ZETAS: [i32; 256] = [
     -1362209, 3937738, 1400424, -846154, 1976782,
 ];
 
-
 /// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,
 /// but then is called with vectors of polynomials or matrices of polynomials with some hand-wany wording
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
 // todo -- delete? -- moved to matrix.rs
-pub(crate) fn ntt_vec<const LEN: usize>(
-    s: &Vector<LEN>,
-) -> Vector<LEN> {
+pub(crate) fn ntt_vec<const LEN: usize>(s: &Vector<LEN>) -> Vector<LEN> {
     let mut s_hat = Vector::<LEN>::new();
 
     for i in 0..LEN {
@@ -809,10 +922,8 @@ pub(crate) fn ntt_vec<const LEN: usize>(
 ///
 /// Anyway, this fills in the missing overloads of NTT to act on a matrix.
 /// TODO: this one might not be used? If it is, move it to matrix.rs
-pub(crate) fn ntt_matrix<const l: usize, const k: usize>(
-    A: &Matrix<l,k>,
-) -> Matrix<l,k> {
-    let mut A_hat = Matrix::<l,k>::new();
+pub(crate) fn ntt_matrix<const l: usize, const k: usize>(A: &Matrix<l, k>) -> Matrix<l, k> {
+    let mut A_hat = Matrix::<l, k>::new();
 
     for i in 0..k {
         for j in 0..l {
@@ -852,7 +963,7 @@ pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
             for j in start..start + len {
                 let t = polynomial::montgomery_reduce(z as i64 * w_ntt.0[j + len] as i64);
                 w_ntt.0[j + len] = w_ntt.0[j] - t; // '% q' not strictly needed cause it gets reduced at some point later. Removing it gave +5% in benchmarking
-                w_ntt.0[j] = w_ntt.0[j] + t;  // '% q' not strictly needed
+                w_ntt.0[j] = w_ntt.0[j] + t; // '% q' not strictly needed
             }
             start = start + 2 * len;
         }
@@ -862,16 +973,13 @@ pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
     w_ntt
 }
 
-
 /// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,
 /// but then is called with vectors of polynomials or matrices of polynomials with some hand-wany wording
 /// in section 2.5 about doing the NTT "entry-wise".
 ///
 /// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
 // todo -- moved to matrix.rs
-pub(crate) fn inv_ntt_vec<const LEN: usize>(
-    s_hat: &Vector<LEN>,
-) -> Vector<LEN> {
+pub(crate) fn inv_ntt_vec<const LEN: usize>(s_hat: &Vector<LEN>) -> Vector<LEN> {
     let mut s = Vector::<LEN>::new();
 
     for i in 0..LEN {
@@ -887,10 +995,8 @@ pub(crate) fn inv_ntt_vec<const LEN: usize>(
 ///
 /// Anyway, this fills in the missing overloads of NTT to act on a matrix.
 /// TODO: this one might not be used? IF it is, move it to matrix.rs
-pub(crate) fn inv_ntt_matrix<const l: usize, const k: usize>(
-    A_hat: &Matrix<l,k>,
-) -> Matrix<l,k> {
-    let mut A = Matrix::<l,k>::new();
+pub(crate) fn inv_ntt_matrix<const l: usize, const k: usize>(A_hat: &Matrix<l, k>) -> Matrix<l, k> {
+    let mut A = Matrix::<l, k>::new();
 
     for i in 0..k {
         for j in 0..l {
@@ -932,8 +1038,7 @@ pub(crate) fn inv_ntt(w_hat: &Polynomial) -> Polynomial {
                 w.0[j + len] = t - w.0[j + len];
 
                 // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                w.0[j + len] =
-                    polynomial::montgomery_reduce(z as i64 * w.0[j + len] as i64);
+                w.0[j + len] = polynomial::montgomery_reduce(z as i64 * w.0[j + len] as i64);
                 print!("");
             }
             start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.

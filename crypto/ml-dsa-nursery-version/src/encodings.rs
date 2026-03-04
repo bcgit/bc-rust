@@ -91,7 +91,7 @@ pub(crate) fn pack_signature(
         z.vec[i].pack_z(sig, end + i * engine.poly_z_packed_bytes)?
     }
     end += engine.l * engine.poly_z_packed_bytes;
-
+    
     for i in 0..engine.omega as usize + engine.k {
         sig[end + i] = 0;
     }

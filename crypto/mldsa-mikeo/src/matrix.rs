@@ -60,22 +60,32 @@ impl<const LEN: usize> Vector<LEN>
         Self { vec: [(); LEN].map(|_| Polynomial::new()) }
     }
 
+    /// negates each entry
+    pub(crate) fn neg(&self) -> Self {
+        let mut out = self.clone();
+        for i in 0..LEN {
+           out.vec[i].neg(); 
+        }
+        
+        out
+    }
+    
     /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂
     /// Computes the sum 𝐯_hat + 𝐰_hat of two vectors 𝐯_hat, 𝐰_hat over 𝑇𝑞.
     /// Input: ℓ ∈ ℕ, v_hat ∈ T^ℓ, w_hat ∈ 𝑇^ℓ
     /// Output: u_hat ∈ T^ℓ_𝑞.
     /// Add another vector to this vector
-    pub(crate) fn add_vector_ntt(&mut self, w: &Self) {
+    pub(crate) fn add_vector_ntt(&mut self, s: &Self) {
         for i in 0 .. LEN {
             // perform montgomery addition of each polynomial in the vector
-            self.vec[i].add_ntt(&w.vec[i]);
+            self.vec[i].add_ntt(&s.vec[i]);
         }
     }
 
-    pub(crate) fn sub_vector(&self, w: &Self) -> Self {
+    pub(crate) fn sub_vector(&self, s: &Self) -> Self {
         let mut out = self.clone();
         for i in 0 .. LEN {
-            out.vec[i].sub(&w.vec[i]);
+            out.vec[i].sub(&s.vec[i]);
         }
         out
     }
@@ -155,7 +165,6 @@ impl<const LEN: usize> Vector<LEN>
         }
         false
     }
-
 
     /// Algorithm 28 w1Encode(𝐰1)
     /// Encodes a polynomial vector 𝐰1 into a byte string.
