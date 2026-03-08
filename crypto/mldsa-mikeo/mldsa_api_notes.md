@@ -1,3 +1,10 @@
+# TODO before release:
+
+- [ ] Play with optimization using the rayon crate's .into_per_iter to optimize the vectorizable loops (hide this behind a cargo feature that falls back to the for-loop impl)
+- [ ] check all .clone() and .copy_from_slice() to make sure that you're not returning secret data to the OS.
+- [ ] check Michael Rosenberg's checklist on "Trustworthy public Rust repos" (signal chat)
+
+
 
 // add to bouncycastle_core_interface::traits
 

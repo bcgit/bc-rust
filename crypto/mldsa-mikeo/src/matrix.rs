@@ -1,7 +1,7 @@
 //! These are somewhat unnecessary wrappers around simple arrays, but they are helpful to me in clearly
 //! keeping the types and sizes obvious.
 
-use crate::aux_functions::{high_bits, inv_ntt, ntt};
+use crate::aux_functions::{inv_ntt, ntt};
 use crate::polynomial;
 use crate::polynomial::{Polynomial};
 
@@ -64,12 +64,12 @@ impl<const LEN: usize> Vector<LEN>
     pub(crate) fn neg(&self) -> Self {
         let mut out = self.clone();
         for i in 0..LEN {
-           out.vec[i].neg(); 
+           out.vec[i].neg();
         }
-        
+
         out
     }
-    
+
     /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂
     /// Computes the sum 𝐯_hat + 𝐰_hat of two vectors 𝐯_hat, 𝐰_hat over 𝑇𝑞.
     /// Input: ℓ ∈ ℕ, v_hat ∈ T^ℓ, w_hat ∈ 𝑇^ℓ
@@ -145,7 +145,7 @@ impl<const LEN: usize> Vector<LEN>
         s
     }
 
-    pub(crate) fn lew_bits<const GAMMA2: i32>(&self) -> Self {
+    pub(crate) fn low_bits<const GAMMA2: i32>(&self) -> Self {
         let mut s = Self::new();
 
         for i in 0..LEN {
@@ -170,9 +170,9 @@ impl<const LEN: usize> Vector<LEN>
     /// Encodes a polynomial vector 𝐰1 into a byte string.
     /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
     /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
-    pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
+    pub(crate) fn w1_encode<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; W1_PACKED_LEN] {        
         // 1: 𝐰̃1 ← ()
-        let mut w1_tilde = [0u8; POLY_W1_PACKED_LEN];
+        let mut w1_tilde = [0u8; W1_PACKED_LEN];
 
         // 2: for 𝑖 from 0 to 𝑘 − 1 do
         // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)

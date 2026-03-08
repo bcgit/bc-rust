@@ -367,7 +367,7 @@ pub trait SignaturePrivateKey {
 
     fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
 
-    fn from_bytes(sk_bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
 }
 
 /// A digital signature algorithm is defined as a set of three operations:
@@ -380,7 +380,10 @@ pub trait SignaturePrivateKey {
 /// to source all its randomness from bouncycastle's default os-backed RNG.
 /// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
 /// or deterministic seed values.
-pub trait Signature {
+pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey> {
+    /// Generate a keypair.
+    fn keygen() -> Result<(PK, SK), SignatureError>;
+
     /// Produce a signature for the provided message and context.
     /// Both the `msg` and `ctx` accept zero-length byte arrays.
     ///
@@ -404,15 +407,13 @@ pub trait Signature {
     /// Not all signature primitives will support a context value, so you may need to consult the
     /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign(priv_key: &impl SignaturePrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
+    fn sign(sk: &SK, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
 
-    // todo -- go grab the wording from a similir API in MAC or HASH
-    fn sign_out(priv_key: &impl SignaturePrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
-
-    fn verify(pub_key: &impl SignaturePublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<bool, SignatureError>;
+    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    fn sign_out(sk: &SK, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError>;
 
     /* streaming signing API */
-    fn sign_init(&mut self, priv_key: &impl SignaturePrivateKey) -> Result<(), SignatureError>;
+    fn sign_init(&mut self, sk: &SK) -> Result<(), SignatureError>;
 
     fn sign_update(&mut self, msg_chunk: &[u8]);
 
@@ -420,8 +421,10 @@ pub trait Signature {
 
     fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
 
+    fn verify(pk: &PK, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<bool, SignatureError>;
+
     /* streaming signing API */
-    fn verify_init(&mut self, pub_key: &impl SignaturePublicKey) -> Result<(), SignatureError>;
+    fn verify_init(&mut self, pub_key: &PK) -> Result<(), SignatureError>;
 
     fn verify_update(&mut self, msg_chunk: &[u8]);
 

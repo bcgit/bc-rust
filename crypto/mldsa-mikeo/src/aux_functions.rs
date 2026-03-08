@@ -2,11 +2,11 @@
 
 use crate::matrix::{Matrix, Vector};
 use crate::mldsa::{G, H};
+use crate::polynomial;
 use crate::polynomial::Polynomial;
-use crate::{
+use crate::mldsa::{
     N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d, q,
     MLDSA44_GAMMA1, MLDSA65_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA2,
-    polynomial
 };
 use bouncycastle_core_interface::traits::XOF;
 
@@ -438,6 +438,8 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
 /// Encodes a signature into a byte string.
 /// Input: 𝑐_tilde ∈ 𝔹𝜆/4, 𝐳 ∈ 𝑅ℓ with coefficients in [−𝛾1 + 1, 𝛾1], 𝐡 ∈ 𝑅𝑘
 /// Output: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
+///
+/// Returns the number of bytes written to the output buffer.
 pub(crate) fn sig_encode<
     const GAMMA1: i32,
     const k: usize,
@@ -449,17 +451,17 @@ pub(crate) fn sig_encode<
 >(
     c_tilde: &[u8; LAMBDA_over_4],
     z: &Vector<l>,
-    h: Vector<k>,
-) -> [u8; SIG_LEN] {
-    let mut sig = [0u8; SIG_LEN];
+    h: &Vector<k>,
+    output: &mut [u8; SIG_LEN],
+) -> usize {
     let mut pos = 0;
 
-    sig[..LAMBDA_over_4].copy_from_slice(c_tilde);
+    output[..LAMBDA_over_4].copy_from_slice(c_tilde);
     pos += LAMBDA_over_4;
 
     for i in 0..l {
         // todo -- remove this copy
-        sig[pos .. pos + POLY_Z_PACKED_LEN].copy_from_slice(&bitpack_z::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
+        output[pos .. pos + POLY_Z_PACKED_LEN].copy_from_slice(&bitpack_z::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
         pos += POLY_Z_PACKED_LEN;
     }
 
@@ -467,7 +469,7 @@ pub(crate) fn sig_encode<
     // This inlines Algorithm 20 HintBitPack(𝐡)
 
     for i in 0..OMEGA as usize + k {
-        sig[pos + i] = 0;
+        output[pos + i] = 0;
     }
     // todo -- would this be faster with slice.fill ?
     // todo -- or maybe not needed if this is just pre-filling the array, since I already prefilled it with 0u8?
@@ -477,15 +479,14 @@ pub(crate) fn sig_encode<
     for i in 0..k {
         for j in 0..N {
             if h.vec[i].0[j] != 0 {
-                sig[pos + m] = j as u8;
+                output[pos + m] = j as u8;
                 m += 1;
             }
-            sig[pos + OMEGA as usize + i] = m as u8;
+            output[pos + OMEGA as usize + i] = m as u8;
         }
     }
 
-
-    sig
+    SIG_LEN
 }
 
 /// Algorithm 29 SampleInBall(𝜌)
@@ -506,9 +507,10 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     let mut s = [0u8; 8];
     h.squeeze_out(&mut s);
 
-    // ℎ ← BytesToBits(𝑠)
+    // 5: ℎ ← BytesToBits(𝑠)
     //   ▷ ℎ is a bit string of length 64
     // todo -- this can probably be optimized, but is also probably not the slowest thing in here.
+    
     let mut signs: u64 = 0;
     for (i, item) in s.iter().enumerate().take(8) {
         signs |= (*item as u64) << (8 * i);
@@ -535,8 +537,21 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
         c.0[i] = c.0[j[0] as usize];
 
         // 12: 𝑐𝑗 ← (−1)^ℎ[𝑖+𝜏−256]
-        (1u64.wrapping_sub(2 * (signs & 1))) as i32;
+        c.0[j[0] as usize] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
         signs >>= 1;
+    }
+
+    // check post-condition
+    // coefficients from {−1, 0, 1} and Hamming weight 𝜏 ≤ 64.
+    #[cfg(debug_assertions)]
+    {
+        let mut hamming_weight: i32 = 0;
+        for i in 0..N {
+            debug_assert!((-1..=1).contains(&c.0[i]));
+            if c.0[i] != 0 { hamming_weight += 1; }
+        }
+        debug_assert!(hamming_weight > 0);
+        debug_assert!(hamming_weight <= 64);
     }
 
     c
@@ -776,6 +791,7 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
             r0 ^= ((43 - r0) >> 31) & r0;
         }
         // ML-DSA65 and 87 have the same GAMMA2
+        // todo -- the compiler thinks this branch is unreachable
         MLDSA65_GAMMA2 => {
             // (q - 1) / 32;
             r0 = (r0 * 1025 + (1 << 21)) >> 22;
@@ -826,7 +842,7 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
     let v1 = high_bits::<GAMMA2>(r + z);
 
     // 3: return [[𝑟1 ≠ 𝑣1]]
-    if r1 == v1 { 1 } else { 0 }
+    if r1 != v1 { 1 } else { 0 }
 }
 
 /// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
@@ -838,6 +854,7 @@ pub(crate) fn make_hint_vec<const k: usize, const GAMMA2: i32>(
     let mut count = 0i32;
 
     for i in 0..k {
+        // todo debug: z is always 0
         let (w, c) = r.vec[i].make_hint::<GAMMA2>(&s.vec[i]);
         out.vec[i] = w;
         count += c;

@@ -1,16 +1,17 @@
 use crate::aux_functions::{
-    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, bitlen_eta, expandA, inv_ntt_vec,
-    ntt_vec, power_2_round_vec, simple_bit_pack_t1, simple_bit_unpack_t1,
+    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, bitlen_eta, expandA, inv_ntt_vec, ntt_vec, power_2_round_vec,
+    simple_bit_pack_t1, simple_bit_unpack_t1
 };
 use crate::matrix::Vector;
 use crate::mldsa::H;
-use crate::{ML_DSA_44_NAME, MLDSA44_ETA, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_k, MLDSA44_l};
-use crate::{ML_DSA_65_NAME, MLDSA65_ETA, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_k, MLDSA65_l};
-use crate::{ML_DSA_87_NAME, MLDSA87_ETA, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_k, MLDSA87_l};
-use crate::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, SEED_LEN};
+use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
+use crate::mldsa::{MLDSA44_ETA, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_k, MLDSA44_l};
+use crate::mldsa::{MLDSA65_ETA, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_k, MLDSA65_l};
+use crate::mldsa::{MLDSA87_ETA, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_k, MLDSA87_l};
+use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, SEED_LEN};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::KeyMaterialSized;
-use bouncycastle_core_interface::traits::{SignaturePublicKey, XOF};
+use bouncycastle_core_interface::traits::{SignaturePrivateKey, SignaturePublicKey, XOF};
 use std::fmt;
 
 /// An ML-DSA public key.
@@ -59,11 +60,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
     /// Reverses the procedure pkEncode.
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
     /// Output: 𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
-    pub fn pk_decode(pk: &[u8]) -> Result<Self, SignatureError> {
-        if pk.len() != PK_LEN {
-            return Err(SignatureError::DecodingError("Input is the incorrect length"));
-        }
-
+    pub fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
         let rho = pk[0..32].try_into().unwrap();
         let mut t1 = Vector::<k>::new();
 
@@ -77,7 +74,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
             t1_i.0.copy_from_slice(&simple_bit_unpack_t1(pk_chunk).0);
         }
 
-        Ok(Self::new(&rho, &t1))
+        Self::new(&rho, &t1)
     }
 
     // todo -- these probably don't need to be pub anymore
@@ -125,27 +122,6 @@ impl<const k: usize, const PK_LEN: usize> fmt::Display for MLDSAPublicKey<k, PK_
             _ => panic!("Unsupported key length"),
         };
         write!(f, "MLDSAPublicKey {{ alg: {}, pub_key_hash (tr): {:x?} }}", alg, self.compute_tr(),)
-    }
-}
-
-impl<const k: usize, const PK_LEN: usize> SignaturePublicKey for MLDSAPublicKey<k, PK_LEN> {
-    fn encode(&self) -> Vec<u8> {
-        self.pk_encode().to_vec()
-    }
-
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
-        if out.len() < PK_LEN {
-            Err(SignatureError::EncodingError("Output buffer too small"))
-        } else {
-            let tmp = self.pk_encode();
-            debug_assert_eq!(tmp.len(), PK_LEN);
-            out[..PK_LEN].copy_from_slice(&tmp);
-            Ok(PK_LEN)
-        }
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        Self::pk_decode(bytes)
     }
 }
 
@@ -449,6 +425,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 /*** Public Key Struct defs ***/
 
 /// ML-DSA-44 public key
+#[derive(Debug)]
 pub struct MLDSA44PublicKey(pub(crate) MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>);
 
 impl From<MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>>
@@ -456,6 +433,12 @@ for MLDSA44PublicKey {
     fn from(pk: MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>) -> Self {
         Self(pk)
     }
+}
+
+/// Strictly speaking, public keys are public data, so don't need a constant-time equality check, but
+/// we'll add one anyway because there may be cases where this saves a CVE.
+impl PartialEq for MLDSA44PublicKey {
+    fn eq(&self, other: &MLDSA44PublicKey) -> bool { self.0 == other.0 }
 }
 
 impl MLDSA44PublicKey {
@@ -466,12 +449,17 @@ impl MLDSA44PublicKey {
     }
 
     /// Encode the public key
-    pub fn encode(&self) -> [u8; MLDSA44_PK_LEN] {
+    pub fn pk_encode(&self) -> [u8; MLDSA44_PK_LEN] {
         self.0.pk_encode()
     }
 
-    pub fn decode(pk: &[u8]) -> Result<Self, SignatureError> {
-        Ok(Self(MLDSAPublicKey::<MLDSA44_k, MLDSA44_PK_LEN>::pk_decode(pk)?))
+    pub fn pk_decode(pk: &[u8; MLDSA44_PK_LEN]) -> Self {
+        Self(MLDSAPublicKey::<MLDSA44_k, MLDSA44_PK_LEN>::pk_decode(pk))
+    }
+
+    /// Decode the public key from the standard byte serialization.
+    pub fn from_pk_bytes(bytes: &[u8; MLDSA44_PK_LEN]) -> Self {
+        Self::pk_decode(bytes)
     }
 
     /// Compute the public key hash (tr) from the public key.
@@ -485,7 +473,33 @@ impl MLDSA44PublicKey {
     }
 }
 
+impl SignaturePublicKey for MLDSA44PublicKey {
+    fn encode(&self) -> Vec<u8> {
+        self.0.pk_encode().to_vec()
+    }
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
+        if out.len() < MLDSA44_PK_LEN {
+            Err(SignatureError::EncodingError("Output buffer too small"))
+        } else {
+            let tmp = self.0.pk_encode();
+            debug_assert_eq!(tmp.len(), MLDSA44_PK_LEN);
+            out[..MLDSA44_PK_LEN].copy_from_slice(&tmp);
+            Ok(MLDSA44_PK_LEN)
+        }
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+        let sized_bytes: [u8; MLDSA44_PK_LEN] = match bytes[..MLDSA44_PK_LEN].try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
+        };
+        Ok(Self::pk_decode(&sized_bytes))
+    }
+}
+
 /// ML-DSA-65 public key
+#[derive(Debug)]
 pub struct MLDSA65PublicKey(pub(crate) MLDSAPublicKey<MLDSA65_k, MLDSA65_PK_LEN>);
 
 impl From<MLDSAPublicKey<MLDSA65_k, MLDSA65_PK_LEN>>
@@ -493,6 +507,12 @@ for MLDSA65PublicKey {
     fn from(pk: MLDSAPublicKey<MLDSA65_k, MLDSA65_PK_LEN>) -> Self {
         Self(pk)
     }
+}
+
+/// Strictly speaking, public keys are public data, so don't need a constant-time equality check, but
+/// we'll add one anyway because there may be cases where this saves a CVE.
+impl PartialEq for MLDSA65PublicKey {
+    fn eq(&self, other: &MLDSA65PublicKey) -> bool { self.0 == other.0 }
 }
 
 impl MLDSA65PublicKey {
@@ -503,12 +523,17 @@ impl MLDSA65PublicKey {
     }
 
     /// Encode the public key
-    pub fn encode(&self) -> [u8; MLDSA65_PK_LEN] {
+    pub fn pk_encode(&self) -> [u8; MLDSA65_PK_LEN] {
         self.0.pk_encode()
     }
 
-    pub fn decode(pk: &[u8]) -> Result<Self, SignatureError> {
-        Ok(Self(MLDSAPublicKey::<MLDSA65_k, MLDSA65_PK_LEN>::pk_decode(pk)?))
+    /// Decode the public key from the standard byte serialization.
+    pub fn pk_decode(pk: &[u8; MLDSA65_PK_LEN]) -> Self {
+        Self(MLDSAPublicKey::<MLDSA65_k, MLDSA65_PK_LEN>::pk_decode(pk))
+    }
+
+    pub fn from_pk_bytes(bytes: &[u8; MLDSA65_PK_LEN]) -> Self {
+        Self::pk_decode(bytes)
     }
 
     /// Compute the public key hash (tr) from the public key.
@@ -522,7 +547,34 @@ impl MLDSA65PublicKey {
     }
 }
 
+
+impl SignaturePublicKey for MLDSA65PublicKey {
+    fn encode(&self) -> Vec<u8> {
+        self.0.pk_encode().to_vec()
+    }
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
+        if out.len() < MLDSA65_PK_LEN {
+            Err(SignatureError::EncodingError("Output buffer too small"))
+        } else {
+            let tmp = self.0.pk_encode();
+            debug_assert_eq!(tmp.len(), MLDSA65_PK_LEN);
+            out[..MLDSA65_PK_LEN].copy_from_slice(&tmp);
+            Ok(MLDSA65_PK_LEN)
+        }
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+        let sized_bytes: [u8; MLDSA65_PK_LEN] = match bytes[..MLDSA65_PK_LEN].try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
+        };
+        Ok(Self::pk_decode(&sized_bytes))
+    }
+}
+
 /// ML-DSA-87 public key
+#[derive(Debug)]
 pub struct MLDSA87PublicKey(pub(crate) MLDSAPublicKey<MLDSA87_k, MLDSA87_PK_LEN>);
 
 impl From<MLDSAPublicKey<MLDSA87_k, MLDSA87_PK_LEN>>
@@ -530,6 +582,12 @@ for MLDSA87PublicKey {
     fn from(pk: MLDSAPublicKey<MLDSA87_k, MLDSA87_PK_LEN>) -> Self {
         Self(pk)
     }
+}
+
+/// Strictly speaking, public keys are public data, so don't need a constant-time equality check, but
+/// we'll add one anyway because there may be cases where this saves a CVE.
+impl PartialEq for MLDSA87PublicKey {
+    fn eq(&self, other: &MLDSA87PublicKey) -> bool { self.0 == other.0 }
 }
 
 impl MLDSA87PublicKey {
@@ -546,13 +604,18 @@ impl MLDSA87PublicKey {
     }
 
     /// Encode the public key into the standard byte serialization.
-    pub fn encode(&self) -> [u8; MLDSA87_PK_LEN] {
+    pub fn pk_encode(&self) -> [u8; MLDSA87_PK_LEN] {
         self.0.pk_encode()
     }
 
     /// Decode the public key from the standard byte serialization.
-    pub fn decode(pk: &[u8]) -> Result<Self, SignatureError> {
-        Ok(Self::from_pk(MLDSAPublicKey::<MLDSA87_k, MLDSA87_PK_LEN>::pk_decode(pk)?))
+    pub fn pk_decode(pk: &[u8; MLDSA87_PK_LEN]) -> Self {
+        Self::from_pk(MLDSAPublicKey::<MLDSA87_k, MLDSA87_PK_LEN>::pk_decode(pk))
+    }
+
+    /// Decode the public key from the standard byte serialization.
+    pub fn from_pk_bytes(bytes: &[u8; MLDSA87_PK_LEN]) -> Self {
+        Self::pk_decode(bytes)
     }
 
     /// Compute the public key hash (tr) from the public key.
@@ -566,9 +629,35 @@ impl MLDSA87PublicKey {
     }
 }
 
+impl SignaturePublicKey for MLDSA87PublicKey {
+    fn encode(&self) -> Vec<u8> {
+        self.0.pk_encode().to_vec()
+    }
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
+        if out.len() < MLDSA87_PK_LEN {
+            Err(SignatureError::EncodingError("Output buffer too small"))
+        } else {
+            let tmp = self.0.pk_encode();
+            debug_assert_eq!(tmp.len(), MLDSA87_PK_LEN);
+            out[..MLDSA87_PK_LEN].copy_from_slice(&tmp);
+            Ok(MLDSA87_PK_LEN)
+        }
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+        let sized_bytes: [u8; MLDSA87_PK_LEN] = match bytes[..MLDSA87_PK_LEN].try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
+        };
+        Ok(Self::pk_decode(&sized_bytes))
+    }
+}
+
 /*** Private Key Struct defs ***/
 
 /// ML-DSA-44 Private Key
+#[derive(Debug)] // should be safe because the inner structure impls Debug and won't dump private key contents
 pub struct MLDSA44PrivateKey(
     pub(crate) MLDSAPrivateKey<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_SK_LEN, MLDSA44_PK_LEN>,
 );
@@ -578,6 +667,11 @@ for MLDSA44PrivateKey {
     fn from(sk: MLDSAPrivateKey<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_SK_LEN, MLDSA44_PK_LEN>) -> Self {
         Self(sk)
     }
+}
+
+/// Constant-time equality check of the private key data.
+impl PartialEq for MLDSA44PrivateKey {
+    fn eq(&self, other: &MLDSA44PrivateKey) -> bool { self.0 == other.0 }
 }
 
 impl MLDSA44PrivateKey {
@@ -614,18 +708,49 @@ impl MLDSA44PrivateKey {
     }
 
     /// Encode the private key into the standard byte serialization.
-    pub fn encode(&self) -> [u8; MLDSA44_SK_LEN] {
+    pub fn sk_encode(&self) -> [u8; MLDSA44_SK_LEN] {
         self.0.sk_encode()
     }
 
-    /// Decode the public key from the standard byte serialization.
+    /// Decode the private key from the standard byte serialization.
     /// See [MLDSA] for key generation functions, including derive-from-seed and consistency-check functions.
     pub fn sk_decode(sk: &[u8; MLDSA44_SK_LEN]) -> Self {
         Self(MLDSAPrivateKey::<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_SK_LEN, MLDSA44_PK_LEN>::sk_decode(sk))
     }
+
+    /// Decode the private key from the standard byte serialization.
+    pub fn from_sk_bytes(bytes: &[u8; MLDSA44_SK_LEN]) -> Self {
+        Self::sk_decode(bytes)
+    }
+}
+
+impl SignaturePrivateKey for MLDSA44PrivateKey {
+    fn encode(&self) -> Vec<u8> {
+        self.0.sk_encode().to_vec()
+    }
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
+        if out.len() < MLDSA44_SK_LEN {
+            Err(SignatureError::EncodingError("Output buffer too small"))
+        } else {
+            let tmp = self.0.sk_encode();
+            debug_assert_eq!(tmp.len(), MLDSA44_SK_LEN);
+            out[..MLDSA44_SK_LEN].copy_from_slice(&tmp);
+            Ok(MLDSA44_SK_LEN)
+        }
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+        let sized_bytes: [u8; MLDSA44_SK_LEN] = match bytes[..MLDSA44_SK_LEN].try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
+        };
+        Ok(Self::sk_decode(&sized_bytes))
+    }
 }
 
 /// ML-DSA-65 Private Key
+#[derive(Debug)] // should be safe because the inner structure impls Debug and won't dump private key contents
 pub struct MLDSA65PrivateKey(
     pub(crate) MLDSAPrivateKey<MLDSA65_k, MLDSA65_l, MLDSA65_ETA, MLDSA65_SK_LEN, MLDSA65_PK_LEN>,
 );
@@ -636,6 +761,11 @@ for MLDSA65PrivateKey {
     fn from(sk: MLDSAPrivateKey<MLDSA65_k, MLDSA65_l, MLDSA65_ETA, MLDSA65_SK_LEN, MLDSA65_PK_LEN>) -> Self {
         Self(sk)
     }
+}
+
+/// Constant-time equality check of the private key data.
+impl PartialEq for MLDSA65PrivateKey {
+    fn eq(&self, other: &MLDSA65PrivateKey) -> bool { self.0 == other.0 }
 }
 
 impl MLDSA65PrivateKey {
@@ -672,7 +802,7 @@ impl MLDSA65PrivateKey {
     }
 
     /// Encode the private key into the standard byte serialization.
-    pub fn encode(&self) -> [u8; MLDSA65_SK_LEN] {
+    pub fn sk_encode(&self) -> [u8; MLDSA65_SK_LEN] {
         self.0.sk_encode()
     }
 
@@ -681,9 +811,40 @@ impl MLDSA65PrivateKey {
     pub fn sk_decode(sk: &[u8; MLDSA65_SK_LEN]) -> Self {
         Self(MLDSAPrivateKey::<MLDSA65_k, MLDSA65_l, MLDSA65_ETA, MLDSA65_SK_LEN, MLDSA65_PK_LEN>::sk_decode(sk))
     }
+
+    /// Decode the private key from the standard byte serialization.
+    pub fn from_sk_bytes(bytes: &[u8; MLDSA65_SK_LEN]) -> Self {
+        Self::sk_decode(bytes)
+    }
+}
+
+impl SignaturePrivateKey for MLDSA65PrivateKey {
+    fn encode(&self) -> Vec<u8> {
+        self.0.sk_encode().to_vec()
+    }
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
+        if out.len() < MLDSA65_SK_LEN {
+            Err(SignatureError::EncodingError("Output buffer too small"))
+        } else {
+            let tmp = self.0.sk_encode();
+            debug_assert_eq!(tmp.len(), MLDSA65_SK_LEN);
+            out[..MLDSA65_SK_LEN].copy_from_slice(&tmp);
+            Ok(MLDSA65_SK_LEN)
+        }
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+        let sized_bytes: [u8; MLDSA65_SK_LEN] = match bytes[..MLDSA65_SK_LEN].try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
+        };
+        Ok(Self::sk_decode(&sized_bytes))
+    }
 }
 
 /// ML-DSA-87 Private Key
+#[derive(Debug)] // should be safe because the inner structure impls Debug and won't dump private key contents
 pub struct MLDSA87PrivateKey(
     pub(crate) MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, MLDSA87_SK_LEN, MLDSA87_PK_LEN>,
 );
@@ -693,6 +854,11 @@ for MLDSA87PrivateKey {
     fn from(sk: MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, MLDSA87_SK_LEN, MLDSA87_PK_LEN>) -> Self {
         Self(sk)
     }
+}
+
+/// Constant-time equality check of the private key data.
+impl PartialEq for MLDSA87PrivateKey {
+    fn eq(&self, other: &MLDSA87PrivateKey) -> bool { self.0 == other.0 }
 }
 
 impl MLDSA87PrivateKey {
@@ -729,7 +895,7 @@ impl MLDSA87PrivateKey {
     }
 
     /// Encode the private key into the standard byte serialization.
-    pub fn encode(&self) -> [u8; MLDSA87_SK_LEN] {
+    pub fn sk_encode(&self) -> [u8; MLDSA87_SK_LEN] {
         self.0.sk_encode()
     }
 
@@ -737,5 +903,35 @@ impl MLDSA87PrivateKey {
     /// See [MLDSA] for key generation functions, including derive-from-seed and consistency-check functions.
     pub fn sk_decode(sk: &[u8; MLDSA87_SK_LEN]) -> Self {
         Self(MLDSAPrivateKey::<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, MLDSA87_SK_LEN, MLDSA87_PK_LEN>::sk_decode(sk))
+    }
+
+    /// Decode the private key from the standard byte serialization.
+    pub fn from_sk_bytes(bytes: &[u8; MLDSA87_SK_LEN]) -> Self {
+        Self::sk_decode(bytes)
+    }
+}
+
+impl SignaturePrivateKey for MLDSA87PrivateKey {
+    fn encode(&self) -> Vec<u8> {
+        self.0.sk_encode().to_vec()
+    }
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
+        if out.len() < MLDSA87_SK_LEN {
+            Err(SignatureError::EncodingError("Output buffer too small"))
+        } else {
+            let tmp = self.0.sk_encode();
+            debug_assert_eq!(tmp.len(), MLDSA87_SK_LEN);
+            out[..MLDSA87_SK_LEN].copy_from_slice(&tmp);
+            Ok(MLDSA87_SK_LEN)
+        }
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+        let sized_bytes: [u8; MLDSA87_SK_LEN] = match bytes[..MLDSA87_SK_LEN].try_into() {
+            Ok(bytes) => bytes,
+            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
+        };
+        Ok(Self::sk_decode(&sized_bytes))
     }
 }

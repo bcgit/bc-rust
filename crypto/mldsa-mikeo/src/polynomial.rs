@@ -1,8 +1,7 @@
 //! Represents a polynomial over the ML-DSA ring.
 
-use crate::{q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
+use crate::mldsa::{N, q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
 use crate::aux_functions::{high_bits, low_bits, make_hint};
-use crate::N;
 
 const STREAM_128_BLOCK_LEN: usize = 168;
 const STREAM_256_BLOCK_LEN: usize = 136;
@@ -23,8 +22,8 @@ impl Polynomial {
             self.0[i] = - self.0[i];
         }
     }
-    
-    
+
+
     /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
     /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
     /// Note: result could be up to 2q.
@@ -95,7 +94,6 @@ impl Polynomial {
         let mut out = Polynomial::new();
         let mut count = 0i32;
         for i in 0..N {
-            // todo -- wait, what do you do with the bool?
             let x = make_hint::<GAMMA2>(self.0[i], r.0[i]);
             out.0[i] = x;
             count += x;
