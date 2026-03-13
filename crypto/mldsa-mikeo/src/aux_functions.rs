@@ -2,12 +2,12 @@
 
 use crate::matrix::{Matrix, Vector};
 use crate::mldsa::{G, H};
+use crate::mldsa::{
+    MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N, POLY_T0PACKED_LEN,
+    POLY_T1PACKED_LEN, d, q,
+};
 use crate::polynomial;
 use crate::polynomial::Polynomial;
-use crate::mldsa::{
-    N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d, q,
-    MLDSA44_GAMMA1, MLDSA65_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA2,
-};
 use bouncycastle_core_interface::traits::XOF;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
@@ -164,9 +164,10 @@ pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
     r
 }
 
-
 /// A variant of Algorithm 17 specific to packing z in the signature value in \[−𝛾1 + 1, 𝛾1].
-pub(crate) fn bitpack_z<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(z: &Polynomial) -> [u8; POLY_Z_PACKED_LEN] {
+pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
+    z: &Polynomial,
+) -> [u8; POLY_Z_PACKED_LEN] {
     let mut r = [0u8; POLY_Z_PACKED_LEN];
 
     let mut t: [u32; 4] = [0; 4];
@@ -188,7 +189,7 @@ pub(crate) fn bitpack_z<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(z: &P
                 r[9 * i + 7] = (t[3] >> 2) as u8;
                 r[9 * i + 8] = (t[3] >> 10) as u8;
             }
-        },
+        }
         // MLDSA-65 and 87 have the same GAMMA1 value
         MLDSA65_GAMMA1 => {
             for i in 0..N / 2 {
@@ -201,13 +202,14 @@ pub(crate) fn bitpack_z<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(z: &P
                 r[5 * i + 3] = (t[1] >> 4) as u8;
                 r[5 * i + 4] = (t[1] >> 12) as u8;
             }
-        },
-        _ => { panic!("Invalid gamma1 value") }
+        }
+        _ => {
+            panic!("Invalid gamma1 value")
+        }
     }
 
     r
 }
-
 
 /// A specific instantiation of Algorithm 18 SimpleBitUnpack(v, 𝑏) with the constants set for unpacking the t1 vector
 /// Input: 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen 𝑏.
@@ -386,6 +388,18 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
     w
 }
 
+/// A variant of Algorithm 19 BitUnpack specific to a=𝛾1 − 1, b=𝛾1
+/// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
+/// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
+/// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
+///
+/// Note: caller is responsible for ensuring correct input array size
+
+// TODO: same as above?
+
+// the hope here is that the compiler will aggressively inline this function,
+// and optimize away the branching.
+#[inline(always)]
 //     pub(crate) fn unpack_z(&mut self, a: &[u8]) { // todo -- does this have a definite size?
 //         // if self.engine.gamma1 == (1 << 17) {
 //         // todo could probably macro this
@@ -434,6 +448,12 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
 //         }
 //     }
 
+/// Algorithm 21 HintBitUnpack(𝑦)
+/// Reverses the procedure HintBitPack.
+/// Input: A byte string 𝑦 of length 𝜔 + 𝑘 that encodes 𝐡 as described above.
+/// Output: A polynomial vector 𝐡 ∈ 𝑅2^𝑘 or ⊥.
+// pub(crate) fn
+
 /// Algorithm 26 sigEncode(̃𝑐_tilde, 𝐳, 𝐡)
 /// Encodes a signature into a byte string.
 /// Input: 𝑐_tilde ∈ 𝔹𝜆/4, 𝐳 ∈ 𝑅ℓ with coefficients in [−𝛾1 + 1, 𝛾1], 𝐡 ∈ 𝑅𝑘
@@ -460,11 +480,11 @@ pub(crate) fn sig_encode<
     pos += LAMBDA_over_4;
 
     for i in 0..l {
-        // todo -- remove this copy
-        output[pos .. pos + POLY_Z_PACKED_LEN].copy_from_slice(&bitpack_z::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
+        // todo -- remove this copy by having bitpack_gamma1 take an output slice
+        output[pos..pos + POLY_Z_PACKED_LEN]
+            .copy_from_slice(&bitpack_gamma1::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
         pos += POLY_Z_PACKED_LEN;
     }
-
 
     // This inlines Algorithm 20 HintBitPack(𝐡)
 
@@ -473,7 +493,6 @@ pub(crate) fn sig_encode<
     }
     // todo -- would this be faster with slice.fill ?
     // todo -- or maybe not needed if this is just pre-filling the array, since I already prefilled it with 0u8?
-
 
     let mut m: usize = 0;
     for i in 0..k {
@@ -487,6 +506,86 @@ pub(crate) fn sig_encode<
     }
 
     SIG_LEN
+}
+
+/// Algorithm 27 sigDecode(𝜎)
+/// Reverses the procedure sigEncode.
+/// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
+/// Output: 𝑐 ∈ 𝔹𝜆/4, 𝐳 ∈ 𝑅ℓ with coefficients in \[−𝛾1 + 1, 𝛾1], 𝐡 ∈ 𝑅𝑘, or ⊥.
+///   Output: (c_tilde, z, h)
+pub(crate) fn sig_decode<
+    const GAMMA1: i32,
+    const k: usize,
+    const l: usize,
+    const LAMBDA_over_4: usize,
+    const OMEGA: i32,
+    const POLY_Z_PACKED_LEN: usize,
+    const SIG_LEN: usize,
+>(
+    sig: &[u8; SIG_LEN],
+) -> Result<([u8; LAMBDA_over_4], Vector<l>, Vector<k>), ()> {
+    let mut c_tilde = [0u8; LAMBDA_over_4];
+    let mut z: Vector<l> = Vector::<l>::new();
+    let mut h: Vector<k> = Vector::<k>::new();
+
+    let mut pos: usize = 0;
+
+    // todo -- compare against nursery impl (mldsa::sign_verify) to see if I can
+    // todo -- import some optimization
+
+    c_tilde.copy_from_slice(&sig[..LAMBDA_over_4]);
+    pos += LAMBDA_over_4;
+
+    for i in 0..l {
+        z.vec[i] = bit_unpack_gamma1::<GAMMA1>(&sig[pos..pos + POLY_Z_PACKED_LEN]);
+        pos += POLY_Z_PACKED_LEN;
+    }
+
+    // This inlines Algorithm 21 HintBitUnpack(𝑦)
+
+    // 2: Index ← 0
+    //  ▷ Index for reading the first 𝜔 bytes of 𝑦
+    let mut idx = 0usize;
+
+    // 3: for 𝑖 from 0 to 𝑘 − 1 do
+    //  ▷ reconstruct 𝐡[𝑖]
+    for i in 0..k {
+        // 4: if 𝑦[𝜔 + 𝑖] < Index or 𝑦[𝜔 + 𝑖] > 𝜔 then return ⊥
+        if sig[pos + (OMEGA as usize) + i] < (idx as u8)
+            || sig[pos + (OMEGA as usize) + i] > OMEGA as u8
+        {
+            return Err(());
+        }
+
+        // 6: First ← Index
+        // 7: while Index < 𝑦[𝜔 + 𝑖] do
+        //   ▷ 𝑦[𝜔 + 𝑖] says how far one can advance Index
+        for j in idx..sig[pos + OMEGA as usize + i] as usize {
+            // 8: if Index > First then
+            // 9:   if 𝑦[Index − 1] ≥ 𝑦[Index] then return ⊥
+            //       ▷ malformed input
+            if j > idx && sig[pos + j - 1] >= sig[pos + j] {
+                return Err(());
+            }
+            // 12: 𝐡[𝑖]_𝑦[Index] ← 1
+            h.vec[i].0[sig[pos + j] as usize] = 1;
+
+            // 13: Index ← Index + 1
+            //  > done by for loop
+        }
+
+        idx = sig[pos + OMEGA as usize + i] as usize;
+    }
+
+    // ▷ read any leftover bytes in the first 𝜔 bytes of 𝑦 for malformed (nonzero) bytes
+
+    for j in idx..OMEGA as usize {
+        if sig[pos + j] != 0 {
+            return Err(());
+        }
+    }
+
+    Ok((c_tilde, z, h))
 }
 
 /// Algorithm 29 SampleInBall(𝜌)
@@ -510,7 +609,7 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     // 5: ℎ ← BytesToBits(𝑠)
     //   ▷ ℎ is a bit string of length 64
     // todo -- this can probably be optimized, but is also probably not the slowest thing in here.
-    
+
     let mut signs: u64 = 0;
     for (i, item) in s.iter().enumerate().take(8) {
         signs |= (*item as u64) << (8 * i);
@@ -548,7 +647,9 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
         let mut hamming_weight: i32 = 0;
         for i in 0..N {
             debug_assert!((-1..=1).contains(&c.0[i]));
-            if c.0[i] != 0 { hamming_weight += 1; }
+            if c.0[i] != 0 {
+                hamming_weight += 1;
+            }
         }
         debug_assert!(hamming_weight > 0);
         debug_assert!(hamming_weight <= 64);
@@ -701,11 +802,10 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(v: &Vector<LEN>) -> (Vector<LE
 /// Samples a vector 𝐲 ∈ 𝑅ℓ such that each polynomial 𝐲[𝑟] has coefficients between −𝛾1 + 1 and 𝛾1.
 /// Input: A seed 𝜌 ∈ 𝔹64 and a nonnegative integer 𝜇.
 /// Output: Vector 𝐲 ∈ 𝑅ℓ .
-pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_LEN: usize> (
+pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_LEN: usize>(
     rho: &[u8; 64],
     mu: u16,
-) -> Vector<l>
-{
+) -> Vector<l> {
     let mut y = Vector::<l>::new();
 
     // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
@@ -791,21 +891,24 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
             r0 ^= ((43 - r0) >> 31) & r0;
         }
         // ML-DSA65 and 87 have the same GAMMA2
-        // todo -- the compiler thinks this branch is unreachable
         MLDSA65_GAMMA2 => {
             // (q - 1) / 32;
             r0 = (r0 * 1025 + (1 << 21)) >> 22;
             r0 &= 15;
         }
         _ => {
-            panic!("Invalid GAMMA2 value")
+            // this branch should never compile
+            unimplemented!()
         }
     }
 
+    let g = GAMMA2;
     r1 = r - r0 * 2 * GAMMA2;
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 
-    (r1, r0)
+    // todo debug
+    // (r1, r0)
+    (r0, r1)
 }
 
 /// Algorithm 37 HighBits(𝑟)
@@ -835,32 +938,20 @@ pub(crate) fn low_bits<const GAMMA2: i32>(r: i32) -> i32 {
 /// Input: 𝑧, 𝑟 ∈ ℤ𝑞.
 /// Output: Boolean.
 pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
-    // 1: 𝑟1 ← HighBits(𝑟)
-    let r1 = high_bits::<GAMMA2>(r);
-
-    // 2: 𝑣1 ← HighBits(𝑟 + 𝑧)
-    let v1 = high_bits::<GAMMA2>(r + z);
-
-    // 3: return [[𝑟1 ≠ 𝑣1]]
-    if r1 != v1 { 1 } else { 0 }
-}
-
-/// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
-pub(crate) fn make_hint_vec<const k: usize, const GAMMA2: i32>(
-    r: &Vector<k>,
-    s: &Vector<k>,
-) -> (Vector<k>, i32) {
-    let mut out = Vector::<k>::new();
-    let mut count = 0i32;
-
-    for i in 0..k {
-        // todo debug: z is always 0
-        let (w, c) = r.vec[i].make_hint::<GAMMA2>(&s.vec[i]);
-        out.vec[i] = w;
-        count += c;
+    // // 1: 𝑟1 ← HighBits(𝑟)
+    // let r1 = high_bits::<GAMMA2>(r);
+    //
+    // // 2: 𝑣1 ← HighBits(𝑟 + 𝑧)
+    // let v1 = high_bits::<GAMMA2>(r + z);
+    //
+    // // 3: return [[𝑟1 ≠ 𝑣1]]
+    // if r1 != v1 { 1 } else { 0 }
+    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0)
+    {
+        0
+    } else {
+        1
     }
-
-    (out, count)
 }
 
 // todo -- alternate implementation; might be more performant?
@@ -872,6 +963,81 @@ pub(crate) fn make_hint_vec<const k: usize, const GAMMA2: i32>(
 //     }
 //     1
 // }
+
+/// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
+pub(crate) fn make_hint_vecs<const k: usize, const GAMMA2: i32>(
+    r: &Vector<k>,
+    s: &Vector<k>,
+) -> (Vector<k>, i32) {
+    let mut out = Vector::<k>::new();
+    let mut count = 0i32;
+
+    for i in 0..k {
+        let (w, c) = r.vec[i].make_hint::<GAMMA2>(&s.vec[i]);
+        out.vec[i] = w;
+        count += c;
+    }
+
+    (out, count)
+}
+
+/// Algorithm 40 UseHint(ℎ, 𝑟)
+/// Returns the high bits of 𝑟 adjusted according to hint ℎ.
+/// Input: Boolean ℎ, 𝑟 ∈ ℤ𝑞.
+/// Output: 𝑟1 ∈ ℤ with 0 ≤ 𝑟1 ≤ (𝑞−1) / 2*gamma2).
+pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
+    let (a0, a1) = decompose::<GAMMA2>(a);
+
+    if hint == 0 {
+        return a1;
+    }
+
+    debug_assert!(hint == 1);
+
+    match GAMMA2 {
+        MLDSA44_GAMMA2 => {
+            if a0 > 0 {
+                (a1 + 1) & 15
+            } else {
+                (a1 - 1) & 15
+            }
+        }
+        // ML-DSA65 and 87 have the same GAMMA2
+        // todo -- the compiler thinks this branch is unreachable
+        MLDSA65_GAMMA2 => {
+            if a0 > 0 {
+                if a1 == 43 { 0 } else { a1 + 1 }
+            } else {
+                if a1 == 0 { 43 } else { a1 - 1 }
+            }
+        }
+        _ => {
+            panic!("Invalid GAMMA2 value")
+        }
+    }
+}
+
+pub(crate) fn use_hint_polys<const GAMMA2: i32>(
+    wp_approx: &Polynomial,
+    h: &Polynomial,
+    out: &mut Polynomial,
+) {
+    for i in 0..N {
+        out.0[i] = use_hint::<GAMMA2>(wp_approx.0[i], h.0[i]);
+    }
+}
+
+pub(crate) fn use_hint_vecs<const k: usize, const GAMMA2: i32>(
+    h: &Vector<k>,
+    wp_approx: &Vector<k>,
+) -> Vector<k> {
+    let mut out = Vector::<k>::new();
+    for i in 0..k {
+        use_hint_polys::<GAMMA2>(&wp_approx.vec[i], &h.vec[i], &mut out.vec[i]);
+    }
+
+    out
+}
 
 /// Constants for NTT
 const ZETAS: [i32; 256] = [

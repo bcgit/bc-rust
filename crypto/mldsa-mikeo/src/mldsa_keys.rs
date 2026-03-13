@@ -11,7 +11,7 @@ use crate::mldsa::{MLDSA87_ETA, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_k, MLDSA
 use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, SEED_LEN};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::KeyMaterialSized;
-use bouncycastle_core_interface::traits::{SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_core_interface::traits::{Secret, SignaturePrivateKey, SignaturePublicKey, XOF};
 use std::fmt;
 
 /// An ML-DSA public key.
@@ -369,6 +369,9 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         bouncycastle_utils::ct::ct_eq_bytes(self_encoded.as_ref(), other_encoded.as_ref())
     }
 }
+
+impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
+Secret for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {}
 
 /// Debug impl mainly to prevent the secret key from being printed in logs.
 impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>

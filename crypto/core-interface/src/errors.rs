@@ -63,6 +63,7 @@ pub enum SignatureError {
     KeyGenError(&'static str),
     LengthError(&'static str),
     RNGError(RNGError),
+    SignatureVerificationFailed,
 }
 
 

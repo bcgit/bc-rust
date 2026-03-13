@@ -6,7 +6,6 @@ use crate::polynomial;
 use crate::polynomial::{Polynomial};
 
 
-
 pub(crate) struct Matrix<const k: usize, const l: usize>
 {
     pub(crate) matrix: [[Polynomial; l]; k],
@@ -44,8 +43,9 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     }
 }
 
-// does not need to impl drop because the actual data is in the polynomials, which have their own zeroizing drop.
-
+// Matrix and Vector do not need to impl Secret because the actual data is in the polynomials, which have their own zeroizing drop.
+// Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
+// but I'll leave it zeroizing for now and leave this as a potential future optimization.
 
 
 #[derive(Clone)]
@@ -97,7 +97,7 @@ impl<const LEN: usize> Vector<LEN>
     pub(crate) fn scalar_vector_ntt(&self, w: &Polynomial) -> Self {
         let mut s_hat = Self::new();
         for i in 0..LEN {
-            s_hat.vec[i] = polynomial::multiply_ntt(&s_hat.vec[i], &w);
+            s_hat.vec[i] = polynomial::multiply_ntt(&self.vec[i], &w);
         }
 
         s_hat
@@ -111,7 +111,8 @@ impl<const LEN: usize> Vector<LEN>
 
     pub(crate) fn conditional_add_q(&mut self) {
         for i in 0 .. LEN {
-            polynomial::conditional_add_q_poly(&mut self.vec[i]);
+            // polynomial::conditional_add_q(&mut self.vec[i]);
+            self.vec[i].conditional_add_q();
         }
     }
 
@@ -155,9 +156,17 @@ impl<const LEN: usize> Vector<LEN>
         s
     }
 
+    pub(crate) fn shift_left<const d: i32>(&self) -> Self {
+        let mut out = self.clone();
+        for i in 0..LEN {
+            out.vec[i].shift_left::<d>();
+        }
+
+        out
+    }
+
     pub(crate) fn check_norm(&self, bound: i32) -> bool {
         // Fine that this is not constant-time because it is used in a rejection loop -- the early quit leads to rejection.
-        // todo: convince myself that only the `false` path leads to valid signature output.
         for x in self.vec.iter() {
             if x.check_norm(bound) {
                 return true;
@@ -179,7 +188,7 @@ impl<const LEN: usize> Vector<LEN>
         // 4: end for
         for i in 0..LEN {
             w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
-                // todo -- optimize this to take a slice and write directly to it
+                // todo -- optimize this to take a slice and write directly to it?
                 &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
             )
         }

@@ -1,7 +1,4 @@
-use crate::aux_functions::{
-    expand_mask, expandA, expandS, inv_ntt_vec, make_hint_vec, ntt, ntt_vec,
-    power_2_round_vec, sample_in_ball, sig_encode,
-};
+use crate::aux_functions::{expand_mask, expandA, expandS, inv_ntt_vec, make_hint_vecs, ntt, ntt_vec, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
 use crate::matrix::Vector;
 use crate::mldsa_keys::{MLDSAPrivateKey, MLDSAPublicKey};
 use crate::{MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA87PublicKey, MLDSA87PrivateKey};
@@ -100,7 +97,7 @@ pub const MLDSA44_SIG_LEN: usize = 2420;
 pub(crate) const MLDSA44_TAU: i32 = 39;
 pub(crate) const MLDSA44_LAMBDA: i32 = 128;
 pub(crate) const MLDSA44_GAMMA1: i32 = 1 << 17;
-pub(crate) const MLDSA44_GAMMA2: i32 = (q - 1) / 32;
+pub(crate) const MLDSA44_GAMMA2: i32 = (q - 1) / 88;
 pub(crate) const MLDSA44_k: usize = 4;
 pub(crate) const MLDSA44_l: usize = 4;
 pub(crate) const MLDSA44_ETA: usize = 2;
@@ -109,7 +106,7 @@ pub(crate) const MLDSA44_OMEGA: i32 = 80;
 
 // Useful derived values
 pub(crate) const MLDSA44_C_TILDE: usize = 32;
-pub(crate) const MLDSA44_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
+// pub(crate) const MLDSA44_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
 pub(crate) const MLDSA44_POLY_Z_PACKED_LEN: usize = 576;
 pub(crate) const MLDSA44_POLY_W1_PACKED_LEN: usize = 192;
 pub(crate) const MLDSA44_W1_PACKED_LEN: usize = MLDSA44_k * MLDSA44_POLY_W1_PACKED_LEN;
@@ -143,7 +140,7 @@ pub(crate) const MLDSA65_OMEGA: i32 = 55;
 
 // Useful derived values
 pub(crate) const MLDSA65_C_TILDE: usize = 48;
-pub(crate) const MLDSA65_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
+// pub(crate) const MLDSA65_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
 pub(crate) const MLDSA65_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA65_POLY_W1_PACKED_LEN: usize = 128;
 pub(crate) const MLDSA65_W1_PACKED_LEN: usize = MLDSA65_k * MLDSA65_POLY_W1_PACKED_LEN;
@@ -170,7 +167,7 @@ pub(crate) const MLDSA87_OMEGA: i32 = 75;
 
 // Useful derived values
 pub(crate) const MLDSA87_C_TILDE: usize = 64;
-pub(crate) const MLDSA87_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
+// pub(crate) const MLDSA87_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
 pub(crate) const MLDSA87_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA87_POLY_W1_PACKED_LEN: usize = 128;
 pub(crate) const MLDSA87_W1_PACKED_LEN: usize = MLDSA87_k * MLDSA87_POLY_W1_PACKED_LEN;
@@ -199,7 +196,7 @@ struct MLDSA<
     const OMEGA: i32,
     const C_TILDE: usize,
     const POLY_VEC_H_PACKED_LEN: usize,
-    const POLY_Z_PACKED_LEN: usize,
+    // const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const W1_PACKED_LEN: usize,
     const POLY_ETA_PACKED_LEN: usize,
@@ -227,7 +224,7 @@ impl<
     const BETA: i32,
     const OMEGA: i32,
     const C_TILDE: usize,
-    const POLY_VEC_H_PACKED_LEN: usize,
+    // const POLY_VEC_H_PACKED_LEN: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const W1_PACKED_LEN: usize,
@@ -248,7 +245,7 @@ impl<
     BETA,
     OMEGA,
     C_TILDE,
-    POLY_VEC_H_PACKED_LEN,
+    // POLY_VEC_H_PACKED_LEN,
     POLY_Z_PACKED_LEN,
     POLY_W1_PACKED_LEN,
     W1_PACKED_LEN,
@@ -396,7 +393,7 @@ impl<
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
+    /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
     pub fn sign_mu(
         sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
         mu: &[u8; 64],
@@ -409,7 +406,7 @@ impl<
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
+    /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     pub fn sign_mu_out(
@@ -420,19 +417,52 @@ impl<
         let mut rnd: [u8; 32] = [0u8; 32];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
 
-        Self::sign_mu_internal_out(sk, mu, &mut rnd, output)
+        Self::sign_mu_internal_out(sk, mu, rnd, output)
     }
 
-    /// Algorithm 7
-    /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘), formatted message 𝑀 ′ ∈ {0, 1}∗ , and
-    /// per message randomness or dummy variable 𝑟𝑛𝑑 ∈ 𝔹32 .
-    /// Output: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
+    ///
+    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
+    /// prevent accidental nonce reuse, this function moves `rnd`.
+    ///
+    pub fn sign_mu_deterministic(
+        sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+    ) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
+        Self::sign_mu_internal_out(sk, mu, rnd, &mut out)?;
+        Ok(out)
+    }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
+    ///
+    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
+    /// prevent accidental nonce reuse, this function moves `rnd`.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    pub fn sign_mu_deterministic_out(
+        sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let mut rnd: [u8; 32] = [0u8; 32];
+        HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
+
+        Self::sign_mu_internal_out(sk, mu, rnd, output)
+    }
+
     pub(crate) fn sign_mu_internal_out(
         sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
         mu: &[u8; 64],
-        rnd: &[u8; 32],
+        rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
@@ -456,7 +486,7 @@ impl<
         // 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
         let mut h = H::new();
         h.absorb(&sk.K);
-        h.absorb(rnd);
+        h.absorb(&rnd);
         h.absorb(mu);
         let mut rho_p_p = [0u8; 64];
         h.squeeze_out(&mut rho_p_p);
@@ -466,12 +496,10 @@ impl<
         let mut kappa: u16 = 0;
 
         // 9: (𝐳, 𝐡) ← ⊥
-        // todo
+        // handled in the loop
 
         // 10: while (𝐳, 𝐡) = ⊥ do
         //  ▷ rejection sampling loop
-        // // todo -- can the counter kappa serve double-duty as this counter?
-        // let mut count: u16 = 0;
 
         // these need to be outside the loop because they form the encoded signature value
         let mut sig_val_c_tilde = [0u8; LAMBDA_over_4];
@@ -493,7 +521,8 @@ impl<
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
             let y_hat = &y.ntt();
             let w_hat = A_hat.matrix_vector_ntt(y_hat);
-            let w = w_hat.inv_ntt();
+            let mut w = w_hat.inv_ntt();
+            w.conditional_add_q();
 
             // 13: 𝐰1 ← HighBits(𝐰)
             //  ▷ signer’s commitment
@@ -501,64 +530,73 @@ impl<
 
             // 15: 𝑐_tilde ← H(𝜇||w1Encode(𝐰1), 𝜆/4)
             //  ▷ commitment hash
-            let mut h = H::new();
-            h.absorb(mu);
-            h.absorb(&w1.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>());
-            h.squeeze_out(&mut sig_val_c_tilde);
+            let mut hash = H::new();
+            hash.absorb(mu);
+            hash.absorb(&w1.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>());
+            hash.squeeze_out(&mut sig_val_c_tilde);
 
             // 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
             //  ▷ verifier’s challenge
             let c = sample_in_ball::<LAMBDA_over_4, TAU>(&sig_val_c_tilde);
-            // todo debug -- c is all zeroes
 
             // 17: 𝑐_hat ← NTT(𝑐)
             let c_hat = ntt(&c);
 
-            // 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat )
-            //  Note: <<.>> means that this value will be used again later, so you should hang on to it.
+            // 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
+            //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
             let cs1 = (s1_hat.scalar_vector_ntt(&c_hat)).inv_ntt();
-
-            // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐 ∘̂ 𝐬2̂ )
-            let cs2 = (s2_hat.scalar_vector_ntt(&c_hat)).inv_ntt();
 
             // 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
             y.add_vector_ntt(&cs1);
             sig_val_z = y;
 
-            // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-            let r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
-
-            // 23: if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
+            // 23 (first half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
+            // out-of-order on purpose for performance reasons:
+            //   might as well do the rejection sampling check before any extra heavy computation
             if sig_val_z.check_norm(GAMMA1 - BETA) {
                 kappa += l as u16;
                 continue;
             };
+
+            // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐_hat * 𝐬2̂_hat)
+            let cs2 = s2_hat.scalar_vector_ntt(&c_hat).inv_ntt();
+
+            // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
+            let mut r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
+
+            // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
+            //  ▷ validity checks
             if r0.check_norm(GAMMA2 - BETA) {
                 kappa += l as u16;
                 continue;
             };
 
             // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
-            let ct0 = t0_hat.scalar_vector_ntt(&c).inv_ntt();
+            let ct0 = t0_hat.scalar_vector_ntt(&c_hat).inv_ntt();
+
+            // 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
+            // out-of-order on purpose for performance reasons:
+            //   might as well do the rejection sampling check before any extra heavy computation
+            if ct0.check_norm(GAMMA2) {
+                kappa += l as u16;
+                continue;
+            };
 
             // 26: 𝐡 ← MakeHint(−⟨⟨𝑐𝐭0⟩⟩, 𝐰 − ⟨⟨𝑐𝐬2⟩⟩ + ⟨⟨𝑐𝐭0⟩⟩)
             //  ▷ Signer’s hint
-            let mut cs2_plus_ct0 = cs2.clone();
-            cs2_plus_ct0.add_vector_ntt(&ct0);
+            r0.add_vector_ntt(&ct0);
+            r0.conditional_add_q();
             let (hint, hint_hamming_weight) =
-                make_hint_vec::<k, GAMMA2>(&ct0.neg(), &w.sub_vector(&cs2_plus_ct0));
+                // make_hint_vecs::<k, GAMMA2>(&ct0.neg(), &w.sub_vector(&cs2_plus_ct0));
+                make_hint_vecs::<k, GAMMA2>(&r0, &w1);
             sig_val_h = hint;
 
-            // 28: if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
+            // 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             if hint_hamming_weight > OMEGA {
                 kappa += l as u16;
                 continue;
             };
-            if ct0.check_norm(GAMMA2) {
-                kappa += l as u16;
-                continue;
-            }; // todo -- this one can be moved up after line 25 for a slightly faster fail-fast
 
             // "In addition, there is an alternative way of implementing the validity checks on 𝐳 and the computation of
             // 𝐡, which is described in Section 5.1 of. This method may also be used in implementations of ML-DSA."
@@ -568,22 +606,107 @@ impl<
         }
 
         // 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
-        // todo -- am I accounting for the mod±𝑞 ?
         let bytes_written = sig_encode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>
             (&sig_val_c_tilde, &sig_val_z, &sig_val_h, output);
 
         Ok(bytes_written)
+    }
+
+    /// Algorithm 8 ML-DSA.Verify_internal(𝑝𝑘, 𝑀′, 𝜎)
+    /// Internal function to verify a signature 𝜎 for a formatted message 𝑀′ .
+    /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑) and message 𝑀′ ∈ {0, 1}∗ .
+    /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
+    pub fn verify_mu_internal(
+        pk: &MLDSAPublicKey<k, PK_LEN>,
+        mu: &[u8; 64],
+        sig: &[u8; SIG_LEN],
+    ) -> bool {
+        // 1: (𝜌, 𝐭1) ← pkDecode(𝑝𝑘)
+        // Already done -- the pk struct is already decoded
+
+        // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
+        //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
+        // 3: if 𝐡 = ⊥ then return false
+        let (c_tilde, z, h) = match sig_decode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>(&sig) {
+            Ok((c_tilde, z, h)) => (c_tilde, z, h),
+            Err(_) => return false,
+        };
+
+        // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
+        if z.check_norm(GAMMA1 - BETA) {
+            return false;
+        }
+
+        // 5: 𝐀 ← ExpandA(𝜌)
+        //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
+        #[allow(non_snake_case)]
+        let A_hat = expandA::<k, l>(&pk.rho);
+
+        // 6: 𝑡𝑟 ← H(𝑝𝑘, 64)
+        // 7: 𝜇 ← (H(BytesToBits(𝑡𝑟)||𝑀 ′, 64))
+        //   ▷ message representative that may optionally be
+        //     computed in a different cryptographic module
+        // skip because this function is being handed mu
+
+        // 8: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
+        let c = sample_in_ball::<LAMBDA_over_4, TAU>(&c_tilde);
+
+
+        // 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
+        //   broken out for clarity:
+        //   NTT−1(
+        //      𝐀_hat ∘ NTT(𝐳) −
+        //                  NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑)
+        //   )
+        // ▷ 𝐰'_approx = 𝐀𝐳 − 𝑐𝐭1 ⋅ 2^𝑑
+        let w1 = A_hat.matrix_vector_ntt(&z.ntt());
+        let w2 = pk.t1.shift_left::<d>().ntt().scalar_vector_ntt( &ntt(&c) );
+        let wp_approx = w1.sub_vector(&w2).inv_ntt();
+
+        // todo -- nursery has a
+        // todo --   w1.reduce();
+        //           w1.inverse_ntt_to_mont();
+        //           w1.conditional_add_q();
+        // todo -- here
+
+        // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
+        // ▷ reconstruction of signer’s commitment
+        let w1p = use_hint_vecs::<k, GAMMA2>(&h, &wp_approx);
+
+        // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
+        // ▷ hash it; this should match 𝑐_tilde
+        let mut c_tilde_p = [0u8; LAMBDA_over_4];
+        let mut hash = H::new();
+        hash.absorb(mu);
+        hash.absorb(&w1p.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>());
+        hash.squeeze_out(&mut c_tilde_p);
+
+
+        // verification probably doesn't technically need to be constant-time, but why not?
+        // 13 (second half): return [[ ||𝐳||∞ < 𝛾1 − 𝛽]] and [[𝑐 ̃ = 𝑐′ ]]
+        bouncycastle_utils::ct::ct_eq_bytes(&c_tilde, &c_tilde_p)
     }
 }
 
 /// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204.
 /// Provides a stateful version of [compute_mu_from_pk] and [compute_mu_from_tr] that supports streaming
 /// large to-be-signed messages.
+// todo: probably the best way to handle HashML-DSA is to have this take a ::<const IS_HashMLDSA>
 pub struct MuBuilder {
     h: H,
 }
 
 impl MuBuilder {
+    /// Algorithm 7
+    /// 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
+    pub fn compute_mu(msg: &[u8], ctx: &[u8], tr: &[u8; 64]) -> Result<[u8; 64], SignatureError> {
+        let mut mu_builder = MuBuilder::do_init(&tr, ctx)?;
+        mu_builder.do_update(msg);
+        let mu = mu_builder.do_final();
+
+        Ok(mu)
+    }
+
     /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
     pub fn do_init(tr: &[u8; 64], ctx: &[u8]) -> Result<Self, SignatureError> {
         // Algorithm 2
@@ -594,16 +717,17 @@ impl MuBuilder {
 
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
-        // and
+        let mut mb = Self { h: H::new() };
+        mb.h.absorb(tr);
+
         // Algorithm 2
         // 10: 𝑀′ ← BytesToBits(IntegerToBytes(0, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥) ∥ 𝑀
         // all done together
-        let mut mb = Self { h: H::new() };
-        mb.h.absorb(tr);
         mb.h.absorb(&[0u8]);
         mb.h.absorb(&[ctx.len() as u8]);
         mb.h.absorb(ctx);
 
+        // now ready to absorb M
         Ok(mb)
     }
 
@@ -624,17 +748,11 @@ impl MuBuilder {
     }
 }
 
-fn compute_mu_from_tr(msg: &[u8], ctx: &[u8], tr: [u8; 64]) -> Result<[u8; 64], SignatureError> {
-    let mut mu_builder = MuBuilder::do_init(&tr, ctx)?;
-    mu_builder.do_update(msg);
-    let mu = mu_builder.do_final();
-
-    Ok(mu)
-}
-
 
 
 /*** ML-DSA-44 ***/
+
+// todo -- crunch these three identical implementations down with a macro
 
 pub struct MLDSA44 {
     // only used in streaming sign operations
@@ -657,7 +775,7 @@ type MLDSA44impl = MLDSA<
     MLDSA44_BETA,
     MLDSA44_OMEGA,
     MLDSA44_C_TILDE,
-    MLDSA44_POLY_VEC_H_PACKED_LEN,
+    // MLDSA44_POLY_VEC_H_PACKED_LEN,
     MLDSA44_POLY_Z_PACKED_LEN,
     MLDSA44_POLY_W1_PACKED_LEN,
     MLDSA44_W1_PACKED_LEN,
@@ -685,6 +803,7 @@ impl MLDSA44 {
     pub fn keygen_from_seed(
         seed: &KeyMaterialSized<32>,
     ) -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
+        // todo: can I make this infallible?
         let (pk, sk) = MLDSA44impl::keygen_internal(&seed)?;
         Ok((MLDSA44PublicKey(pk), MLDSA44PrivateKey(sk)))
     }
@@ -752,9 +871,27 @@ impl MLDSA44 {
     pub fn compute_mu_from_tr(
         msg: &[u8],
         ctx: &[u8],
-        tr: [u8; 64],
+        tr: &[u8; 64],
     ) -> Result<[u8; 64], SignatureError> {
-        compute_mu_from_tr(msg, ctx, tr)
+        MuBuilder::compute_mu(msg, ctx, tr)
+    }
+
+    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
+    pub fn compute_mu_from_pk(
+        msg: &[u8],
+        ctx: &[u8],
+        pk: &MLDSA44PublicKey,
+    ) -> Result<[u8; 64], SignatureError> {
+        MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
+    }
+
+    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
+    pub fn compute_mu_from_sk(
+        msg: &[u8],
+        ctx: &[u8],
+        sk: &MLDSA44PrivateKey,
+    ) -> Result<[u8; 64], SignatureError> {
+        MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -781,6 +918,40 @@ impl MLDSA44 {
     ) -> Result<usize, SignatureError> {
         MLDSA44impl::sign_mu_out(&sk.0, mu, output)
     }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
+    ///
+    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
+    /// prevent accidental nonce reuse, this function moves `rnd`.
+    pub fn sign_mu_deterministic(
+        sk: &MLDSA44PrivateKey,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+    ) -> Result<[u8; MLDSA44_SIG_LEN], SignatureError> {
+        MLDSA44impl::sign_mu_deterministic(&sk.0, mu, rnd)
+    }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
+    ///
+    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
+    /// prevent accidental nonce reuse, this function moves `rnd`.
+    ///
+    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    pub fn sign_mu_deterministic_out(
+        sk: &MLDSA44PrivateKey,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+        output: &mut [u8; MLDSA44_SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        MLDSA44impl::sign_mu_deterministic_out(&sk.0, mu, rnd, output)
+    }
+
 }
 
 impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
@@ -798,9 +969,9 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
     }
 
     fn sign_out(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = compute_mu_from_tr(msg, ctx, sk.0.tr)?;
+        let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let mut output_sized: [u8; MLDSA44_SIG_LEN] = output.try_into().unwrap();
+        let mut output_sized: [u8; MLDSA44_SIG_LEN] = output[..MLDSA44_SIG_LEN].try_into().unwrap();
         Self::sign_mu_out(sk, &mu, &mut output_sized)
     }
 
@@ -820,9 +991,16 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
         todo!()
     }
 
-    // todo -- ?? bool or Err, why not Result<(), SignatureError> ?
-    fn verify(pk: &MLDSA44PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<bool, SignatureError> {
-        todo!()
+    fn verify(pk: &MLDSA44PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+        
+        if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        
+        if MLDSA44impl::verify_mu_internal(&pk.0, &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap()) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
     }
 
     fn verify_init(&mut self, sk: &MLDSA44PublicKey) -> Result<(), SignatureError> {
@@ -833,7 +1011,7 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
         todo!()
     }
 
-    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<bool, SignatureError> {
+    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
         todo!()
     }
 }
@@ -865,7 +1043,7 @@ type MLDSA65impl = MLDSA<
     MLDSA65_BETA,
     MLDSA65_OMEGA,
     MLDSA65_C_TILDE,
-    MLDSA65_POLY_VEC_H_PACKED_LEN,
+    // MLDSA65_POLY_VEC_H_PACKED_LEN,
     MLDSA65_POLY_Z_PACKED_LEN,
     MLDSA65_POLY_W1_PACKED_LEN,
     MLDSA65_W1_PACKED_LEN,
@@ -960,9 +1138,27 @@ impl MLDSA65 {
     pub fn compute_mu_from_tr(
         msg: &[u8],
         ctx: &[u8],
-        tr: [u8; 64],
+        tr: &[u8; 64],
     ) -> Result<[u8; 64], SignatureError> {
-        compute_mu_from_tr(msg, ctx, tr)
+        MuBuilder::compute_mu(msg, ctx, tr)
+    }
+
+    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
+    pub fn compute_mu_from_pk(
+        msg: &[u8],
+        ctx: &[u8],
+        pk: &MLDSA65PublicKey,
+    ) -> Result<[u8; 64], SignatureError> {
+        MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
+    }
+
+    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
+    pub fn compute_mu_from_sk(
+        msg: &[u8],
+        ctx: &[u8],
+        sk: &MLDSA65PrivateKey,
+    ) -> Result<[u8; 64], SignatureError> {
+        MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -989,8 +1185,99 @@ impl MLDSA65 {
     ) -> Result<usize, SignatureError> {
         MLDSA65impl::sign_mu_out(&sk.0, mu, output)
     }
+
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    ///
+    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
+    /// prevent accidental nonce reuse, this function moves `rnd`.
+    pub fn sign_mu_deterministic(
+        sk: &MLDSA65PrivateKey,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+    ) -> Result<[u8; MLDSA65_SIG_LEN], SignatureError> {
+        MLDSA65impl::sign_mu_deterministic(&sk.0, mu, rnd)
+    }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
+    ///
+    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    pub fn sign_mu_deterministic_out(
+        sk: &MLDSA65PrivateKey,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+        output: &mut [u8; MLDSA65_SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        MLDSA65impl::sign_mu_deterministic_out(&sk.0, mu, rnd, output)
+    }
 }
 
+impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
+
+    fn keygen() -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
+        let (pk, sk) = MLDSA65impl::keygen_from_os_rng()?;
+        Ok((MLDSA65PublicKey(pk), MLDSA65PrivateKey(sk)))
+    }
+
+    fn sign(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
+        let mut out = vec![0u8; MLDSA65_SIG_LEN];
+        Self::sign_out(sk, msg, ctx, &mut out)?;
+
+        Ok(out)
+    }
+
+    fn sign_out(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
+        if output.len() < MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        let mut output_sized: [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].try_into().unwrap();
+        Self::sign_mu_out(sk, &mu, &mut output_sized)
+    }
+
+    fn sign_init(&mut self, sk: &MLDSA65PrivateKey) -> Result<(), SignatureError> {
+        todo!()
+    }
+
+    fn sign_update(&mut self, msg_chunk: &[u8]) {
+        todo!()
+    }
+
+    fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
+        todo!()
+    }
+
+    fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError> {
+        todo!()
+    }
+
+    fn verify(pk: &MLDSA65PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+
+        if sig.len() != MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+
+        if MLDSA65impl::verify_mu_internal(&pk.0, &mu, &sig[..MLDSA65_SIG_LEN].try_into().unwrap()) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
+    }
+
+    fn verify_init(&mut self, sk: &MLDSA65PublicKey) -> Result<(), SignatureError> {
+        todo!()
+    }
+
+    fn verify_update(&mut self, msg_chunk: &[u8]) {
+        todo!()
+    }
+
+    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        todo!()
+    }
+}
 
 
 
@@ -1018,7 +1305,7 @@ type MLDSA87impl = MLDSA<
     MLDSA87_BETA,
     MLDSA87_OMEGA,
     MLDSA87_C_TILDE,
-    MLDSA87_POLY_VEC_H_PACKED_LEN,
+    // MLDSA87_POLY_VEC_H_PACKED_LEN,
     MLDSA87_POLY_Z_PACKED_LEN,
     MLDSA87_POLY_W1_PACKED_LEN,
     MLDSA87_W1_PACKED_LEN,
@@ -1115,8 +1402,27 @@ impl MLDSA87 {
         ctx: &[u8],
         tr: [u8; 64],
     ) -> Result<[u8; 64], SignatureError> {
-        compute_mu_from_tr(msg, ctx, tr)
+        MuBuilder::compute_mu(msg, ctx, &tr)
     }
+
+    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
+    pub fn compute_mu_from_pk(
+        msg: &[u8],
+        ctx: &[u8],
+        pk: &MLDSA65PublicKey,
+    ) -> Result<[u8; 64], SignatureError> {
+        MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
+    }
+
+    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
+    pub fn compute_mu_from_sk(
+        msg: &[u8],
+        ctx: &[u8],
+        sk: &MLDSA65PrivateKey,
+    ) -> Result<[u8; 64], SignatureError> {
+        MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
+    }
+
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
@@ -1141,5 +1447,97 @@ impl MLDSA87 {
         output: &mut [u8; MLDSA87_SIG_LEN],
     ) -> Result<usize, SignatureError> {
         MLDSA87impl::sign_mu_out(&sk.0, mu, output)
+    }
+
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    ///
+    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
+    /// prevent accidental nonce reuse, this function moves `rnd`.
+    pub fn sign_mu_deterministic(
+        sk: &MLDSA87PrivateKey,
+        mu: &[u8; 64],
+        rnd: [u8; 32]
+    ) -> Result<[u8; MLDSA87_SIG_LEN], SignatureError> {
+        MLDSA87impl::sign_mu_deterministic(&sk.0, mu, rnd)
+    }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
+    ///
+    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    pub fn sign_mu_deterministic_out(
+        sk: &MLDSA87PrivateKey,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+        output: &mut [u8; MLDSA87_SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        MLDSA87impl::sign_mu_deterministic_out(&sk.0, mu, rnd, output)
+    }
+}
+
+impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
+
+    fn keygen() -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
+        let (pk, sk) = MLDSA87impl::keygen_from_os_rng()?;
+        Ok((MLDSA87PublicKey(pk), MLDSA87PrivateKey(sk)))
+    }
+
+    fn sign(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
+        let mut out = vec![0u8; MLDSA87_SIG_LEN];
+        Self::sign_out(sk, msg, ctx, &mut out)?;
+
+        Ok(out)
+    }
+
+    fn sign_out(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
+        if output.len() < MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        let mut output_sized: [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].try_into().unwrap();
+        Self::sign_mu_out(sk, &mu, &mut output_sized)
+    }
+
+    fn sign_init(&mut self, sk: &MLDSA87PrivateKey) -> Result<(), SignatureError> {
+        todo!()
+    }
+
+    fn sign_update(&mut self, msg_chunk: &[u8]) {
+        todo!()
+    }
+
+    fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
+        todo!()
+    }
+
+    fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError> {
+        todo!()
+    }
+
+    fn verify(pk: &MLDSA87PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+
+        if sig.len() != MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+
+        if MLDSA87impl::verify_mu_internal(&pk.0, &mu, &sig[..MLDSA87_SIG_LEN].try_into().unwrap()) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
+    }
+
+    fn verify_init(&mut self, sk: &MLDSA87PublicKey) -> Result<(), SignatureError> {
+        todo!()
+    }
+
+    fn verify_update(&mut self, msg_chunk: &[u8]) {
+        todo!()
+    }
+
+    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+        todo!()
     }
 }

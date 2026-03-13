@@ -1,5 +1,7 @@
 //! Represents a polynomial over the ML-DSA ring.
 
+use std::fmt::{Debug, Display, Formatter};
+use bouncycastle_core_interface::traits::Secret;
 use crate::mldsa::{N, q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
 use crate::aux_functions::{high_bits, low_bits, make_hint};
 
@@ -23,6 +25,11 @@ impl Polynomial {
         }
     }
 
+    pub(crate) fn conditional_add_q(&mut self) {
+        for x in self.0.iter_mut() {
+            *x = conditional_add_q(*x);
+        }
+    }
 
     /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
     /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
@@ -89,6 +96,12 @@ impl Polynomial {
         false
     }
 
+    pub(crate) fn shift_left<const d: i32>(&mut self) {
+        for x in self.0.iter_mut() {
+            *x <<= d;
+        }
+    }
+
     /// Creates the hint vector, and also returns its hamming weight (ie the number of 1's).
     pub(crate) fn make_hint<const GAMMA2: i32>(&self, r: &Self) -> (Self, i32) {
         let mut out = Polynomial::new();
@@ -101,6 +114,15 @@ impl Polynomial {
 
         (out, count)
     }
+
+    // pub(crate) fn use_hint<const GAMMA2: i32>(a: &Self, h: &Self) -> Polynomial {
+    //     let mut out = Polynomial::new();
+    //     for i in 0..N {
+    //         out.0[i] = use_hint::<GAMMA2>(a.0[i], h.0[i]);
+    //     }
+    //
+    //     out
+    // }
 
     #[inline]
     pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
@@ -134,18 +156,32 @@ impl Polynomial {
     }
 }
 
+impl Secret for Polynomial {}
+
 impl Drop for Polynomial {
     fn drop(&mut self) {
         self.0.fill(0i32);
     }
 }
 
+impl Debug for Polynomial {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Polynomial (data masked)")
+    }
+}
+
+impl Display for Polynomial {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Polynomial (data masked)")
+    }
+}
+
+
 impl From<Polynomial> for [i32; N] {
     fn from(p: Polynomial) -> [i32; N] {
         p.0
     }
 }
-
 
 /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
 /// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
@@ -193,16 +229,11 @@ pub(crate) fn reduce32(a: i32) -> i32 {
     a - t * q
 }
 
-pub(crate) fn conditional_add_q_poly(w: &mut Polynomial) {
-    for x in w.0.iter_mut() {
-        *x = conditional_add_q(*x);
-    }
-}
-
 // TODO: this could use some unit testing to figure out exactly what it does.
 pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)
 }
+
 
 #[test]
 /// These are the results it's giving; I'm not sure if these are "correct" or not.

@@ -1,5 +1,6 @@
 //! Provides simplified abstracted APIs over classes of cryptigraphic primitives, such as Hash, KDF, etc.
 
+use std::fmt::{Debug, Display};
 use crate::errors::{HashError, KDFError, MACError, RNGError, SignatureError};
 pub use crate::key_material::KeyMaterial;
 
@@ -353,29 +354,16 @@ pub trait RNG : Default {
     fn security_strength(&self) -> SecurityStrength;
 }
 
-pub trait SignaturePublicKey {
-    fn encode(&self) -> Vec<u8>;
-    
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
-    
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
-}
-
-pub trait SignaturePrivateKey {
-
-    fn encode(&self) -> Vec<u8>;
-
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
-}
+/// A trait that forces an object to implement a zeroizing Drop() as well as Debug and Display that
+/// will not log the sensitive contents, even in error or crash-dump scenarios.
+pub trait Secret : Drop + Debug + Display {}
 
 /// A digital signature algorithm is defined as a set of three operations:
 /// key generation, signing, and verification.
-/// 
+///
 /// To avoid the use of dyn, this trait does not include key generation; you'll have to consult the
 /// documentation for the underlying signature primitive for how to generate a key pair.
-/// 
+///
 /// This high-level trait defines the operations over a generic signature algorithm that is assumed
 /// to source all its randomness from bouncycastle's default os-backed RNG.
 /// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
@@ -421,14 +409,35 @@ pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey> {
 
     fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
 
-    fn verify(pk: &PK, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<bool, SignatureError>;
+    /// On success, returns Ok(())
+    /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
+    fn verify(pk: &PK, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError>;
 
     /* streaming signing API */
     fn verify_init(&mut self, pub_key: &PK) -> Result<(), SignatureError>;
 
     fn verify_update(&mut self, msg_chunk: &[u8]);
 
-    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<bool, SignatureError>;
+    /// On success, returns Ok(())
+    /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
+    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError>;
+}
+
+pub trait SignaturePublicKey {
+    fn encode(&self) -> Vec<u8>;
+    
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
+    
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
+}
+
+pub trait SignaturePrivateKey {
+
+    fn encode(&self) -> Vec<u8>;
+
+    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
 }
 
 /// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
