@@ -116,14 +116,14 @@ impl<const LEN: usize> Vector<LEN>
         }
     }
 
-    pub(crate) fn ntt(&self) -> Self {
-        let mut s_hat = Self::new();
+    pub(crate) fn ntt(&mut self){
+        // let mut s_hat = Self::new();
 
         for i in 0..LEN {
-            s_hat.vec[i] = ntt(&self.vec[i]);
+            self.vec[i] = ntt(&self.vec[i]);
         }
 
-        s_hat
+        // s_hat
     }
 
     pub(crate) fn inv_ntt(&self) -> Self {

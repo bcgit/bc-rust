@@ -1075,15 +1075,15 @@ const ZETAS: [i32; 256] = [
 ///
 /// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
 // todo -- delete? -- moved to matrix.rs
-pub(crate) fn ntt_vec<const LEN: usize>(s: &Vector<LEN>) -> Vector<LEN> {
-    let mut s_hat = Vector::<LEN>::new();
-
-    for i in 0..LEN {
-        s_hat.vec[i] = ntt(&s.vec[i]);
-    }
-
-    s_hat
-}
+// pub(crate) fn ntt_vec<const LEN: usize>(s: &Vector<LEN>) -> Vector<LEN> {
+//     let mut s_hat = Vector::<LEN>::new();
+//
+//     for i in 0..LEN {
+//         s_hat.vec[i] = ntt(&s.vec[i]);
+//     }
+//
+//     s_hat
+// }
 
 /// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,
 /// but then is called with vectors of polynomials or matrices of polynomials with some hand-wany wording

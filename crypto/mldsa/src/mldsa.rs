@@ -1,67 +1,7 @@
-use crate::aux_functions::{expand_mask, expandA, expandS, inv_ntt_vec, make_hint_vecs, ntt, ntt_vec, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
+use crate::aux_functions::{expand_mask, expandA, expandS, inv_ntt_vec, make_hint_vecs, ntt, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
 use crate::matrix::Vector;
 use crate::mldsa_keys::{MLDSAPrivateKey, MLDSAPublicKey};
 use crate::{MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA87PublicKey, MLDSA87PrivateKey};
-// use crate::{
-//     MLDSA44_PK_LEN,
-//     MLDSA44_SK_LEN,
-//     MLDSA44_SIG_LEN,
-//     MLDSA44_TAU,
-//     MLDSA44_GAMMA1,
-//     MLDSA44_GAMMA2,
-//     MLDSA44_k,
-//     MLDSA44_l,
-//     MLDSA44_ETA,
-//     MLDSA44_BETA,
-//     MLDSA44_OMEGA,
-//     MLDSA44_C_TILDE,
-//     MLDSA44_POLY_VEC_H_PACKED_LEN,
-//     MLDSA44_POLY_Z_PACKED_LEN,
-//     MLDSA44_POLY_W1_PACKED_LEN,
-//     MLDSA44_POLY_ETA_PACKED_LEN,
-//     MLDSA44_LAMBDA_over_4,
-//     MLDSA44_GAMMA1_MASK_LEN,
-// };
-// use crate::{
-//     MLDSA65_PK_LEN,
-//     MLDSA65_SK_LEN,
-//     MLDSA65_SIG_LEN,
-//     MLDSA65_TAU,
-//     MLDSA65_GAMMA1,
-//     MLDSA65_GAMMA2,
-//     MLDSA65_k,
-//     MLDSA65_l,
-//     MLDSA65_ETA,
-//     MLDSA65_BETA,
-//     MLDSA65_OMEGA,
-//     MLDSA65_C_TILDE,
-//     MLDSA65_POLY_VEC_H_PACKED_LEN,
-//     MLDSA65_POLY_Z_PACKED_LEN,
-//     MLDSA65_POLY_W1_PACKED_LEN,
-//     MLDSA65_POLY_ETA_PACKED_LEN,
-//     MLDSA65_LAMBDA_over_4,
-//     MLDSA65_GAMMA1_MASK_LEN,
-// };
-// use crate::{
-//     MLDSA87_PK_LEN,
-//     MLDSA87_SK_LEN,
-//     MLDSA87_SIG_LEN,
-//     MLDSA87_TAU,
-//     MLDSA87_GAMMA1,
-//     MLDSA87_GAMMA2,
-//     MLDSA87_k,
-//     MLDSA87_l,
-//     MLDSA87_ETA,
-//     MLDSA87_BETA,
-//     MLDSA87_OMEGA,
-//     MLDSA87_C_TILDE,
-//     MLDSA87_POLY_VEC_H_PACKED_LEN,
-//     MLDSA87_POLY_Z_PACKED_LEN,
-//     MLDSA87_POLY_W1_PACKED_LEN,
-//     MLDSA87_POLY_ETA_PACKED_LEN,
-//     MLDSA87_LAMBDA_over_4,
-//     MLDSA87_GAMMA1_MASK_LEN,
-// };
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType,
@@ -305,7 +245,9 @@ impl<
 
         // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
         //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-        let s1_hat = ntt_vec::<l>(&s1);
+        let mut s1_hat = s1.clone();
+        s1_hat.ntt();
+        // let s1_hat = ntt_vec::<l>(&s1);
         let mut t_hat = A_hat.matrix_vector_ntt(&s1_hat);
         t_hat.reduce();
         let mut t = inv_ntt_vec(&t_hat);
@@ -465,13 +407,18 @@ impl<
         // Already done -- the sk struct is already decoded
 
         // 2: 𝐬1̂_hat ← NTT(𝐬1)
-        let s1_hat = ntt_vec::<l>(&sk.s1);
+        // let s1_hat = ntt_vec::<l>(&sk.s1);
+        let mut s1_hat = sk.s1.clone();
+        s1_hat.ntt();
 
         // 3: 𝐬2̂_hat ← NTT(𝐬2)
-        let s2_hat = ntt_vec::<k>(&sk.s2);
+        let mut s2_hat = sk.s2.clone();
+        s2_hat.ntt();
 
         // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
-        let t0_hat = ntt_vec::<k>(&sk.t0);
+        let mut t0_hat = sk.t0.clone();
+        t0_hat.ntt();
+        // let t0_hat = ntt_vec::<k>(&sk.t0);
 
         // 5: 𝐀_hat ← ExpandA(𝜌)
         let A_hat = expandA::<k, l>(&sk.rho);
@@ -504,8 +451,7 @@ impl<
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
-            // if count > 1000 { return Err(SignatureError::GenericError("Rejection sampling loop hit the hard-coded maximum number of iterations. Simply try again with a different random nonce rnd.")); }
-            // count += 1;
+            if kappa > 1000 * k as u16 { return Err(SignatureError::GenericError("Rejection sampling loop exceeded max iterations, try again with a different signing nonce."))}
 
             // todo: as the nursary does, could optimize by having the output vars work directly in the output signature buffer
             // todo: optimize by changing many of the member functions of matrix.rs to work in-ploce, then `let` rename the variable
@@ -515,8 +461,9 @@ impl<
             let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
 
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
-            let y_hat = &y.ntt();
-            let w_hat = A_hat.matrix_vector_ntt(y_hat);
+            let mut y_hat = y.clone();
+            y_hat.ntt();
+            let w_hat = A_hat.matrix_vector_ntt(&y_hat);
             let mut w = w_hat.inv_ntt();
             w.conditional_add_q();
 
@@ -655,8 +602,13 @@ impl<
         //                  NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑)
         //   )
         // ▷ 𝐰'_approx = 𝐀𝐳 − 𝑐𝐭1 ⋅ 2^𝑑
-        let w1 = A_hat.matrix_vector_ntt(&z.ntt());
-        let w2 = pk.t1.shift_left::<d>().ntt().scalar_vector_ntt( &ntt(&c) );
+        let mut z_hat = z.clone();
+        z_hat.ntt();
+        let w1 = A_hat.matrix_vector_ntt(&z_hat);
+        let mut t1_shift_hat = pk.t1.shift_left::<d>();
+        t1_shift_hat.ntt();
+        let w2 = t1_shift_hat.scalar_vector_ntt( &ntt(&c) );
+        // let w2 = pk.t1.shift_left::<d>().ntt().scalar_vector_ntt( &ntt(&c) );
         let wp_approx = w1.sub_vector(&w2).inv_ntt();
 
         // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)

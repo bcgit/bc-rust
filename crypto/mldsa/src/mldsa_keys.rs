@@ -1,5 +1,5 @@
 use crate::aux_functions::{
-    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, bitlen_eta, expandA, inv_ntt_vec, ntt_vec, power_2_round_vec,
+    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, bitlen_eta, expandA, inv_ntt_vec, power_2_round_vec,
     simple_bit_pack_t1, simple_bit_unpack_t1
 };
 use crate::matrix::Vector;
@@ -183,7 +183,9 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
         //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-        let s1_ntt = ntt_vec::<l>(&self.s1);
+        let mut s1_ntt = self.s1.clone();
+        s1_ntt.ntt();
+        // let s1_ntt = ntt_vec::<l>(&self.s1);
         let mut t_ntt = A_ntt.matrix_vector_ntt(&s1_ntt);
         t_ntt.reduce();
         let mut t = inv_ntt_vec(&t_ntt);
