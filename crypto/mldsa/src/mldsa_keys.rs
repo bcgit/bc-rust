@@ -1,5 +1,5 @@
 use crate::aux_functions::{
-    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, bitlen_eta, expandA, inv_ntt_vec, power_2_round_vec,
+    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, bitlen_eta, expandA, power_2_round_vec,
     simple_bit_pack_t1, simple_bit_unpack_t1
 };
 use crate::matrix::Vector;
@@ -179,16 +179,18 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
     pub fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN> {
         // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-        let A_ntt = expandA::<k, l>(&self.rho);
+        let A_hat = expandA::<k, l>(&self.rho);
 
         // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
         //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-        let mut s1_ntt = self.s1.clone();
-        s1_ntt.ntt();
+        let mut s1_hat = self.s1.clone();
+        s1_hat.ntt();
         // let s1_ntt = ntt_vec::<l>(&self.s1);
-        let mut t_ntt = A_ntt.matrix_vector_ntt(&s1_ntt);
+        let mut t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
         t_ntt.reduce();
-        let mut t = inv_ntt_vec(&t_ntt);
+        // let mut t = inv_ntt_vec(&t_ntt);
+        let mut t = t_ntt;
+        t.inv_ntt();
         t.add_vector_ntt(&self.s2);
         t.conditional_add_q();
 

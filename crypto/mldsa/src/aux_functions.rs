@@ -1091,17 +1091,17 @@ const ZETAS: [i32; 256] = [
 ///
 /// Anyway, this fills in the missing overloads of NTT to act on a matrix.
 /// TODO: this one might not be used? If it is, move it to matrix.rs
-pub(crate) fn ntt_matrix<const l: usize, const k: usize>(A: &Matrix<l, k>) -> Matrix<l, k> {
-    let mut A_hat = Matrix::<l, k>::new();
-
-    for i in 0..k {
-        for j in 0..l {
-            A_hat.matrix[i][j] = ntt(&A.matrix[i][j]);
-        }
-    }
-
-    A_hat
-}
+// pub(crate) fn ntt_matrix<const l: usize, const k: usize>(A: &Matrix<l, k>) -> Matrix<l, k> {
+//     let mut A_hat = Matrix::<l, k>::new();
+//
+//     for i in 0..k {
+//         for j in 0..l {
+//             A_hat.matrix[i][j] = ntt(&A.matrix[i][j]);
+//         }
+//     }
+//
+//     A_hat
+// }
 
 /// Algorithm 41 NTT(𝑤)
 /// Computes the NTT.
@@ -1140,22 +1140,6 @@ pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
     }
 
     w_ntt
-}
-
-/// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,
-/// but then is called with vectors of polynomials or matrices of polynomials with some hand-wany wording
-/// in section 2.5 about doing the NTT "entry-wise".
-///
-/// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
-// todo -- moved to matrix.rs
-pub(crate) fn inv_ntt_vec<const LEN: usize>(s_hat: &Vector<LEN>) -> Vector<LEN> {
-    let mut s = Vector::<LEN>::new();
-
-    for i in 0..LEN {
-        s.vec[i] = inv_ntt(&s_hat.vec[i]);
-    }
-
-    s
 }
 
 /// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,

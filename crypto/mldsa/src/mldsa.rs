@@ -1,4 +1,4 @@
-use crate::aux_functions::{expand_mask, expandA, expandS, inv_ntt_vec, make_hint_vecs, ntt, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
+use crate::aux_functions::{expand_mask, expandA, expandS, make_hint_vecs, ntt, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
 use crate::matrix::Vector;
 use crate::mldsa_keys::{MLDSAPrivateKey, MLDSAPublicKey};
 use crate::{MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA87PublicKey, MLDSA87PrivateKey};
@@ -250,7 +250,9 @@ impl<
         // let s1_hat = ntt_vec::<l>(&s1);
         let mut t_hat = A_hat.matrix_vector_ntt(&s1_hat);
         t_hat.reduce();
-        let mut t = inv_ntt_vec(&t_hat);
+        // let mut t = inv_ntt_vec(&t_hat);
+        let mut t = t_hat;
+        t.inv_ntt();
         t.add_vector_ntt(&s2);
         t.conditional_add_q();
 
@@ -407,7 +409,6 @@ impl<
         // Already done -- the sk struct is already decoded
 
         // 2: 𝐬1̂_hat ← NTT(𝐬1)
-        // let s1_hat = ntt_vec::<l>(&sk.s1);
         let mut s1_hat = sk.s1.clone();
         s1_hat.ntt();
 
@@ -418,7 +419,6 @@ impl<
         // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
         let mut t0_hat = sk.t0.clone();
         t0_hat.ntt();
-        // let t0_hat = ntt_vec::<k>(&sk.t0);
 
         // 5: 𝐀_hat ← ExpandA(𝜌)
         let A_hat = expandA::<k, l>(&sk.rho);
@@ -453,18 +453,16 @@ impl<
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
             if kappa > 1000 * k as u16 { return Err(SignatureError::GenericError("Rejection sampling loop exceeded max iterations, try again with a different signing nonce."))}
 
-            // todo: as the nursary does, could optimize by having the output vars work directly in the output signature buffer
-            // todo: optimize by changing many of the member functions of matrix.rs to work in-ploce, then `let` rename the variable
-            // todo:   ie figure out where you can consume the input variable, then just do it in place with a rename instead.
-
             // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
             let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
 
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
             let mut y_hat = y.clone();
             y_hat.ntt();
-            let w_hat = A_hat.matrix_vector_ntt(&y_hat);
-            let mut w = w_hat.inv_ntt();
+            let mut w_hat = A_hat.matrix_vector_ntt(&y_hat);
+            let mut w = w_hat;
+            w.inv_ntt();
+            // let mut w = w_hat.inv_ntt();
             w.conditional_add_q();
 
             // 13: 𝐰1 ← HighBits(𝐰)
@@ -487,7 +485,8 @@ impl<
 
             // 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
             //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
-            let cs1 = (s1_hat.scalar_vector_ntt(&c_hat)).inv_ntt();
+            let mut cs1 = s1_hat.scalar_vector_ntt(&c_hat);
+            cs1.inv_ntt();
 
             // 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
             y.add_vector_ntt(&cs1);
@@ -503,7 +502,8 @@ impl<
             };
 
             // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐_hat * 𝐬2̂_hat)
-            let cs2 = s2_hat.scalar_vector_ntt(&c_hat).inv_ntt();
+            let mut cs2 = s2_hat.scalar_vector_ntt(&c_hat);
+            cs2.inv_ntt();
 
             // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
             let mut r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
@@ -516,7 +516,8 @@ impl<
             };
 
             // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
-            let ct0 = t0_hat.scalar_vector_ntt(&c_hat).inv_ntt();
+            let mut ct0 = t0_hat.scalar_vector_ntt(&c_hat);
+            ct0.inv_ntt();
 
             // 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             // out-of-order on purpose for performance reasons:
@@ -609,7 +610,8 @@ impl<
         t1_shift_hat.ntt();
         let w2 = t1_shift_hat.scalar_vector_ntt( &ntt(&c) );
         // let w2 = pk.t1.shift_left::<d>().ntt().scalar_vector_ntt( &ntt(&c) );
-        let wp_approx = w1.sub_vector(&w2).inv_ntt();
+        let mut wp_approx = w1.sub_vector(&w2);
+        wp_approx.inv_ntt();
 
         // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
         // ▷ reconstruction of signer’s commitment

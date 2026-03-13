@@ -126,14 +126,14 @@ impl<const LEN: usize> Vector<LEN>
         // s_hat
     }
 
-    pub(crate) fn inv_ntt(&self) -> Self {
-        let mut s = Self::new();
+    pub(crate) fn inv_ntt(&mut self) {
+        // let mut s = Self::new();
 
         for i in 0..LEN {
-            s.vec[i] = inv_ntt(&self.vec[i]);
+            self.vec[i] = inv_ntt(&self.vec[i]);
         }
 
-        s
+        // s
     }
 
     pub(crate) fn high_bits<const GAMMA2: i32>(&self) -> Self {
