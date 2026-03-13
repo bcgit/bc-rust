@@ -112,11 +112,6 @@ pub(crate) const MLDSA44_POLY_W1_PACKED_LEN: usize = 192;
 pub(crate) const MLDSA44_W1_PACKED_LEN: usize = MLDSA44_k * MLDSA44_POLY_W1_PACKED_LEN;
 pub(crate) const MLDSA44_POLY_ETA_PACKED_LEN: usize = 32*3;
 pub(crate) const MLDSA44_LAMBDA_over_4: usize = 128/4;
-// todo -- bc-java does it as compute: 576usize.div_ceil(symmetric.stream_256_block_bytes) -- which should be 5
-// todo -- might need to debug this against bc-java
-// todo -- debug this against bc-java; or look in other implementations. I feel like this should be 32*17=544 or 32*19=608
-// todo -- I'm not sure why they're adding an extra 32
-// todo -- corresponds to aux_functions::expand_mask()
 
 // Alg 32
 // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
@@ -140,13 +135,15 @@ pub(crate) const MLDSA65_OMEGA: i32 = 55;
 
 // Useful derived values
 pub(crate) const MLDSA65_C_TILDE: usize = 48;
-// pub(crate) const MLDSA65_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
 pub(crate) const MLDSA65_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA65_POLY_W1_PACKED_LEN: usize = 128;
 pub(crate) const MLDSA65_W1_PACKED_LEN: usize = MLDSA65_k * MLDSA65_POLY_W1_PACKED_LEN;
 pub(crate) const MLDSA65_POLY_ETA_PACKED_LEN: usize = 32*4;
-pub(crate) const MLDSA65_GAMMA1_MASK_LEN: usize = 640; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
 pub(crate) const MLDSA65_LAMBDA_over_4: usize = 192/4;
+
+// Alg 32
+// 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
+pub(crate) const MLDSA65_GAMMA1_MASK_LEN: usize = 640;
 
 
 
@@ -167,13 +164,15 @@ pub(crate) const MLDSA87_OMEGA: i32 = 75;
 
 // Useful derived values
 pub(crate) const MLDSA87_C_TILDE: usize = 64;
-// pub(crate) const MLDSA87_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
 pub(crate) const MLDSA87_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA87_POLY_W1_PACKED_LEN: usize = 128;
 pub(crate) const MLDSA87_W1_PACKED_LEN: usize = MLDSA87_k * MLDSA87_POLY_W1_PACKED_LEN;
 pub(crate) const MLDSA87_POLY_ETA_PACKED_LEN: usize = 32*3;
-pub(crate) const MLDSA87_GAMMA1_MASK_LEN: usize = 640; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
 pub(crate) const MLDSA87_LAMBDA_over_4: usize = 256/4;
+
+// Alg 32
+// 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
+pub(crate) const MLDSA87_GAMMA1_MASK_LEN: usize = 640;
 
 
 
@@ -196,7 +195,6 @@ struct MLDSA<
     const OMEGA: i32,
     const C_TILDE: usize,
     const POLY_VEC_H_PACKED_LEN: usize,
-    // const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const W1_PACKED_LEN: usize,
     const POLY_ETA_PACKED_LEN: usize,
@@ -224,7 +222,6 @@ impl<
     const BETA: i32,
     const OMEGA: i32,
     const C_TILDE: usize,
-    // const POLY_VEC_H_PACKED_LEN: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const W1_PACKED_LEN: usize,
@@ -245,7 +242,6 @@ impl<
     BETA,
     OMEGA,
     C_TILDE,
-    // POLY_VEC_H_PACKED_LEN,
     POLY_Z_PACKED_LEN,
     POLY_W1_PACKED_LEN,
     W1_PACKED_LEN,
@@ -662,12 +658,6 @@ impl<
         let w1 = A_hat.matrix_vector_ntt(&z.ntt());
         let w2 = pk.t1.shift_left::<d>().ntt().scalar_vector_ntt( &ntt(&c) );
         let wp_approx = w1.sub_vector(&w2).inv_ntt();
-
-        // todo -- nursery has a
-        // todo --   w1.reduce();
-        //           w1.inverse_ntt_to_mont();
-        //           w1.conditional_add_q();
-        // todo -- here
 
         // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
         // ▷ reconstruction of signer’s commitment
@@ -1305,7 +1295,6 @@ type MLDSA87impl = MLDSA<
     MLDSA87_BETA,
     MLDSA87_OMEGA,
     MLDSA87_C_TILDE,
-    // MLDSA87_POLY_VEC_H_PACKED_LEN,
     MLDSA87_POLY_Z_PACKED_LEN,
     MLDSA87_POLY_W1_PACKED_LEN,
     MLDSA87_W1_PACKED_LEN,
@@ -1409,7 +1398,7 @@ impl MLDSA87 {
     pub fn compute_mu_from_pk(
         msg: &[u8],
         ctx: &[u8],
-        pk: &MLDSA65PublicKey,
+        pk: &MLDSA87PublicKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
     }
@@ -1418,7 +1407,7 @@ impl MLDSA87 {
     pub fn compute_mu_from_sk(
         msg: &[u8],
         ctx: &[u8],
-        sk: &MLDSA65PrivateKey,
+        sk: &MLDSA87PrivateKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
     }

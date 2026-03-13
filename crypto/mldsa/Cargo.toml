@@ -1,5 +1,5 @@
 [package]
-name = "bouncycastle-mldsa-mikeo"
+name = "bouncycastle-mldsa"
 version = "0.1.2"
 edition.workspace = true
 
