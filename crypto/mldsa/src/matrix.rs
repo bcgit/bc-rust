@@ -111,29 +111,20 @@ impl<const LEN: usize> Vector<LEN>
 
     pub(crate) fn conditional_add_q(&mut self) {
         for i in 0 .. LEN {
-            // polynomial::conditional_add_q(&mut self.vec[i]);
             self.vec[i].conditional_add_q();
         }
     }
 
     pub(crate) fn ntt(&mut self){
-        // let mut s_hat = Self::new();
-
         for i in 0..LEN {
             self.vec[i] = ntt(&self.vec[i]);
         }
-
-        // s_hat
     }
 
     pub(crate) fn inv_ntt(&mut self) {
-        // let mut s = Self::new();
-
         for i in 0..LEN {
             self.vec[i] = inv_ntt(&self.vec[i]);
         }
-
-        // s
     }
 
     pub(crate) fn high_bits<const GAMMA2: i32>(&self) -> Self {
@@ -187,10 +178,7 @@ impl<const LEN: usize> Vector<LEN>
         // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
         // 4: end for
         for i in 0..LEN {
-            w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
-                // todo -- optimize this to take a slice and write directly to it?
-                &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
-            )
+            self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>(&mut w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN]);
         }
 
         // 5: return 𝐰̃1

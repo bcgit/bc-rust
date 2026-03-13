@@ -222,9 +222,6 @@ impl<
         let mut rho_prime: [u8; 64] = [0u8; 64];
         let mut K: [u8; 32] = [0u8; 32];
 
-        // TODO: optimization: re-use variables rather than allocating new ones?
-        // TODO: do with benches because it might not actually be faster. Rust seems to like local vars.
-
         let mut h = H::default();
         h.absorb(seed.ref_to_bytes());
         h.absorb(&(k as u8).to_le_bytes());
@@ -541,7 +538,7 @@ impl<
 
             // "In addition, there is an alternative way of implementing the validity checks on 𝐳 and the computation of
             // 𝐡, which is described in Section 5.1 of. This method may also be used in implementations of ML-DSA."
-            // todo -- check this out
+            // todo -- check this out -- it's probably the optimization that I have already borrowed from bc-java
 
             break;
         }
