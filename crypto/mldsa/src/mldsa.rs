@@ -46,7 +46,6 @@ pub(crate) const MLDSA44_OMEGA: i32 = 80;
 
 // Useful derived values
 pub(crate) const MLDSA44_C_TILDE: usize = 32;
-// pub(crate) const MLDSA44_POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
 pub(crate) const MLDSA44_POLY_Z_PACKED_LEN: usize = 576;
 pub(crate) const MLDSA44_POLY_W1_PACKED_LEN: usize = 192;
 pub(crate) const MLDSA44_W1_PACKED_LEN: usize = MLDSA44_k * MLDSA44_POLY_W1_PACKED_LEN;
@@ -223,7 +222,7 @@ impl<
         let mut rho_prime: [u8; 64] = [0u8; 64];
         let mut K: [u8; 32] = [0u8; 32];
 
-        // TODO: optimization: re-use variables rather than allocating new ones.
+        // TODO: optimization: re-use variables rather than allocating new ones?
         // TODO: do with benches because it might not actually be faster. Rust seems to like local vars.
 
         let mut h = H::default();
@@ -459,10 +458,8 @@ impl<
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
             let mut y_hat = y.clone();
             y_hat.ntt();
-            let mut w_hat = A_hat.matrix_vector_ntt(&y_hat);
-            let mut w = w_hat;
+            let mut w = A_hat.matrix_vector_ntt(&y_hat);
             w.inv_ntt();
-            // let mut w = w_hat.inv_ntt();
             w.conditional_add_q();
 
             // 13: 𝐰1 ← HighBits(𝐰)
@@ -987,7 +984,6 @@ type MLDSA65impl = MLDSA<
     MLDSA65_BETA,
     MLDSA65_OMEGA,
     MLDSA65_C_TILDE,
-    // MLDSA65_POLY_VEC_H_PACKED_LEN,
     MLDSA65_POLY_Z_PACKED_LEN,
     MLDSA65_POLY_W1_PACKED_LEN,
     MLDSA65_W1_PACKED_LEN,

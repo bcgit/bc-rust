@@ -47,7 +47,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
         // these loops have no interaction between sequential iterations,
         // so could be replaced with some kind of threaded for construct.
         // This should be done carefully against benchmarks to make sure we're actually making a
-        // performance improvement, and making sure that whatever multi-threading construst is used
+        // performance improvement, and making sure that whatever multi-threading construct is used
         // falls back to sequential execution when not available (such as a no_std build).
         for (pk_chunk, t1_i) in pk_chunks.into_iter().zip(&self.t1.vec) {
             pk_chunk.copy_from_slice(&simple_bit_pack_t1(&t1_i));
@@ -77,15 +77,13 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
         Self::new(&rho, &t1)
     }
 
-    // todo -- these probably don't need to be pub anymore
-
     /// Compute the public key hash (tr) from the public key.
     ///
     /// This is exposed as a public API for a few reasons:
     /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
     /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
     ///     to use, for example, to build a public key lookup or deny-listing table.
-    pub fn compute_tr(&self) -> [u8; 64] {
+    pub(crate) fn compute_tr(&self) -> [u8; 64] {
         let mut tr = [0u8; 64];
         H::new().hash_xof_out(&self.pk_encode(), &mut tr);
 

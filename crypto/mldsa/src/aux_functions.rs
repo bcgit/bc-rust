@@ -342,7 +342,6 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
 
     match GAMMA1 {
         MLDSA44_GAMMA1 => {
-            // todo -- clean up
             // const gamma1: i32 = 1<<17;
             for i in 0..N / 4 {
                 w.0[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
@@ -366,7 +365,6 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
         }
         // MLDSA-65 and 87 have the same GAMMA1 value
         MLDSA65_GAMMA1 => {
-            // todo -- clean up
             // const gamma1: i32 = 1<<19;
             for i in 0..N / 2 {
                 w.0[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
@@ -387,72 +385,6 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
 
     w
 }
-
-/// A variant of Algorithm 19 BitUnpack specific to a=𝛾1 − 1, b=𝛾1
-/// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
-/// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
-/// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
-///
-/// Note: caller is responsible for ensuring correct input array size
-
-// TODO: same as above?
-
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
-#[inline(always)]
-//     pub(crate) fn unpack_z(&mut self, a: &[u8]) { // todo -- does this have a definite size?
-//         // if self.engine.gamma1 == (1 << 17) {
-//         // todo could probably macro this
-//         match PARAMS::ALG {
-//             MldsaSize::MlDsa44 => {
-//                 for i in 0..(N / 4) {
-//                     self.coeffs[4 * i] = (((a[9 * i] as i32) | ((a[9 * i + 1] as i32) << 8))
-//                         | ((a[9 * i + 2] as i32) << 16))
-//                         & 0x3FFFF;
-//                     self.coeffs[4 * i + 1] = ((((a[9 * i + 2] as i32) >> 2)
-//                         | ((a[9 * i + 3] as i32) << 6))
-//                         | ((a[9 * i + 4] as i32) << 14))
-//                         & 0x3FFFF;
-//                     self.coeffs[4 * i + 2] = ((((a[9 * i + 4] as i32) >> 4)
-//                         | ((a[9 * i + 5] as i32) << 4))
-//                         | ((a[9 * i + 6] as i32) << 12))
-//                         & 0x3FFFF;
-//                     self.coeffs[4 * i + 3] = ((((a[9 * i + 6] as i32) >> 6)
-//                         | ((a[9 * i + 7] as i32) << 2))
-//                         | ((a[9 * i + 8] as i32) << 10))
-//                         & 0x3FFFF;
-//
-//                     self.coeffs[4 * i] = PARAMS::GAMMA1 - self.coeffs[4 * i];
-//                     self.coeffs[4 * i + 1] = PARAMS::GAMMA1 - self.coeffs[4 * i + 1];
-//                     self.coeffs[4 * i + 2] = PARAMS::GAMMA1 - self.coeffs[4 * i + 2];
-//                     self.coeffs[4 * i + 3] = PARAMS::GAMMA1 - self.coeffs[4 * i + 3];
-//                 }
-//             },
-//         // } else if self.engine.gamma1 == (1 << 19) {
-//             MldsaSize::MlDsa65 | MldsaSize::MlDsa87 => {
-//                 for i in 0..(N / 2) {
-//                     self.coeffs[2 * i] = (((a[5 * i] as i32) | ((a[5 * i + 1] as i32) << 8))
-//                         | ((a[5 * i + 2] as i32) << 16))
-//                         & 0xFFFFF;
-//                     self.coeffs[2 * i + 1] = ((((a[5 * i + 2] as i32) >> 4)
-//                         | ((a[5 * i + 3] as i32) << 4))
-//                         | ((a[5 * i + 4] as i32) << 12))
-//                         & 0xFFFFF;
-//
-//                     self.coeffs[2 * i] = PARAMS::GAMMA1 - self.coeffs[2 * i];
-//                     self.coeffs[2 * i + 1] = PARAMS::GAMMA1 - self.coeffs[2 * i + 1];
-//                 }
-//             },
-//         // } else {
-//         //     return Err(ParameterError("Wrong ML-DSA Gamma1!".to_string()));
-//         }
-//     }
-
-/// Algorithm 21 HintBitUnpack(𝑦)
-/// Reverses the procedure HintBitPack.
-/// Input: A byte string 𝑦 of length 𝜔 + 𝑘 that encodes 𝐡 as described above.
-/// Output: A polynomial vector 𝐡 ∈ 𝑅2^𝑘 or ⊥.
-// pub(crate) fn
 
 /// Algorithm 26 sigEncode(̃𝑐_tilde, 𝐳, 𝐡)
 /// Encodes a signature into a byte string.
@@ -487,12 +419,6 @@ pub(crate) fn sig_encode<
     }
 
     // This inlines Algorithm 20 HintBitPack(𝐡)
-
-    for i in 0..OMEGA as usize + k {
-        output[pos + i] = 0;
-    }
-    // todo -- would this be faster with slice.fill ?
-    // todo -- or maybe not needed if this is just pre-filling the array, since I already prefilled it with 0u8?
 
     let mut m: usize = 0;
     for i in 0..k {
@@ -608,8 +534,6 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
 
     // 5: ℎ ← BytesToBits(𝑠)
     //   ▷ ℎ is a bit string of length 64
-    // todo -- this can probably be optimized, but is also probably not the slowest thing in here.
-
     let mut signs: u64 = 0;
     for (i, item) in s.iter().enumerate().take(8) {
         signs |= (*item as u64) << (8 * i);
@@ -622,7 +546,8 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     let mut j = [0u8];
     for i in (N - TAU as usize)..N {
         // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
-        // todo -- optimize -- pre-allocate a buffer. Again, find the sweet spot.
+        // Note: you would think that this would be faster to pre-squeeze a buffer outside the loop, but in testing it
+        //       doesn't make a difference.
         h.squeeze_out(&mut j);
 
         // 8: while 𝑗 > 𝑖 do
@@ -906,8 +831,6 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     r1 = r - r0 * 2 * GAMMA2;
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 
-    // todo debug
-    // (r1, r0)
     (r0, r1)
 }
 
@@ -946,6 +869,9 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
     //
     // // 3: return [[𝑟1 ≠ 𝑣1]]
     // if r1 != v1 { 1 } else { 0 }
+
+    // By the powers of someone much more clever than me, this is equivalent.
+
     if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0)
     {
         0
@@ -953,16 +879,6 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
         1
     }
 }
-
-// todo -- alternate implementation; might be more performant?
-// todo -- I'm not convinced this is constant-time though
-// todo -- the decompose() that sits under high_bits() already looks pretty fast
-// pub(super) fn make_hint<const GAMMA2: i32>(a0: i32, a1: i32, engine: &MlDsaEngine) -> i32 {
-//     if a0 <= GAMMA2 || a0 > q - GAMMA2 || (a0 == q - GAMMA2 && a1 == 0) {
-//         return 0;
-//     }
-//     1
-// }
 
 /// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
 pub(crate) fn make_hint_vecs<const k: usize, const GAMMA2: i32>(
@@ -1003,7 +919,6 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
             }
         }
         // ML-DSA65 and 87 have the same GAMMA2
-        // todo -- the compiler thinks this branch is unreachable
         MLDSA65_GAMMA2 => {
             if a0 > 0 {
                 if a1 == 43 { 0 } else { a1 + 1 }
@@ -1069,40 +984,6 @@ const ZETAS: [i32; 256] = [
     -1362209, 3937738, 1400424, -846154, 1976782,
 ];
 
-/// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,
-/// but then is called with vectors of polynomials or matrices of polynomials with some hand-wany wording
-/// in section 2.5 about doing the NTT "entry-wise".
-///
-/// Anyway, this fills in the missing overloaded version of NTT to act on a vector.
-// todo -- delete? -- moved to matrix.rs
-// pub(crate) fn ntt_vec<const LEN: usize>(s: &Vector<LEN>) -> Vector<LEN> {
-//     let mut s_hat = Vector::<LEN>::new();
-//
-//     for i in 0..LEN {
-//         s_hat.vec[i] = ntt(&s.vec[i]);
-//     }
-//
-//     s_hat
-// }
-
-/// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,
-/// but then is called with vectors of polynomials or matrices of polynomials with some hand-wany wording
-/// in section 2.5 about doing the NTT "entry-wise".
-///
-/// Anyway, this fills in the missing overloads of NTT to act on a matrix.
-/// TODO: this one might not be used? If it is, move it to matrix.rs
-// pub(crate) fn ntt_matrix<const l: usize, const k: usize>(A: &Matrix<l, k>) -> Matrix<l, k> {
-//     let mut A_hat = Matrix::<l, k>::new();
-//
-//     for i in 0..k {
-//         for j in 0..l {
-//             A_hat.matrix[i][j] = ntt(&A.matrix[i][j]);
-//         }
-//     }
-//
-//     A_hat
-// }
-
 /// Algorithm 41 NTT(𝑤)
 /// Computes the NTT.
 /// Input: Polynomial 𝑤(𝑋)
@@ -1142,31 +1023,13 @@ pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
     w_ntt
 }
 
-/// I think there is an omission in FIPS 204 in that Algorithm 41 NTT is defined for a single polynomial,
-/// but then is called with vectors of polynomials or matrices of polynomials with some hand-wany wording
-/// in section 2.5 about doing the NTT "entry-wise".
-///
-/// Anyway, this fills in the missing overloads of NTT to act on a matrix.
-/// TODO: this one might not be used? IF it is, move it to matrix.rs
-pub(crate) fn inv_ntt_matrix<const l: usize, const k: usize>(A_hat: &Matrix<l, k>) -> Matrix<l, k> {
-    let mut A = Matrix::<l, k>::new();
-
-    for i in 0..k {
-        for j in 0..l {
-            A.matrix[i][j] = inv_ntt(&A_hat.matrix[i][j]);
-        }
-    }
-
-    A
-}
-
 /// Algorithm 42 NTT−1(𝑤)̂
 /// Computes the inverse of the NTT.
 /// Input: ̂̂ ̂ 𝑤 = (𝑤\[0], … , 𝑤\[255]) ∈ 𝑇𝑞.
 /// Output: Polynomial 𝑤(𝑋) = ∑255
 /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
 pub(crate) fn inv_ntt(w_hat: &Polynomial) -> Polynomial {
-    // todo: optimize to do this in-place?
+    // todo: optimize to do this in-place? Might actually bench worse.
     let mut w = w_hat.clone();
 
     let mut m: usize = N;
