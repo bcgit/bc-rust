@@ -115,21 +115,7 @@ impl Polynomial {
         (out, count)
     }
 
-    // pub(crate) fn use_hint<const GAMMA2: i32>(a: &Self, h: &Self) -> Polynomial {
-    //     let mut out = Polynomial::new();
-    //     for i in 0..N {
-    //         out.0[i] = use_hint::<GAMMA2>(a.0[i], h.0[i]);
-    //     }
-    //
-    //     out
-    // }
-
-    #[inline]
     pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
-        // todo -- optimize this to take a slice and write directly to it
-        // todo -- debug_assert_eq!(buf.len(), POLY1_PACKED_LEN)
-        //
-
         let mut r = [0u8; POLY_W1_PACKED_LEN];
 
         match POLY_W1_PACKED_LEN {

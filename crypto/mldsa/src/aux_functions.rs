@@ -905,25 +905,25 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
     let (a0, a1) = decompose::<GAMMA2>(a);
 
     if hint == 0 {
-        return a1;
+        return a0;
     }
 
     debug_assert!(hint == 1);
 
     match GAMMA2 {
         MLDSA44_GAMMA2 => {
-            if a0 > 0 {
-                (a1 + 1) & 15
+            if a1 > 0 {
+                if a0 == 43 { 0 } else { a0 + 1 }
             } else {
-                (a1 - 1) & 15
+                if a0 == 0 { 43 } else { a0 - 1 }
             }
         }
         // ML-DSA65 and 87 have the same GAMMA2
         MLDSA65_GAMMA2 => {
-            if a0 > 0 {
-                if a1 == 43 { 0 } else { a1 + 1 }
+            if a1 > 0 {
+                (a0 + 1) & 15
             } else {
-                if a1 == 0 { 43 } else { a1 - 1 }
+                (a0 - 1) & 15
             }
         }
         _ => {

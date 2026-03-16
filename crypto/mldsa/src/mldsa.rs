@@ -606,9 +606,10 @@ impl<
         let mut t1_shift_hat = pk.t1.shift_left::<d>();
         t1_shift_hat.ntt();
         let w2 = t1_shift_hat.scalar_vector_ntt( &ntt(&c) );
-        // let w2 = pk.t1.shift_left::<d>().ntt().scalar_vector_ntt( &ntt(&c) );
         let mut wp_approx = w1.sub_vector(&w2);
         wp_approx.inv_ntt();
+        wp_approx.conditional_add_q();
+        // bc-java does a wp_approx.conditional_add_q();
 
         // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
         // ▷ reconstruction of signer’s commitment
@@ -619,6 +620,7 @@ impl<
         let mut c_tilde_p = [0u8; LAMBDA_over_4];
         let mut hash = H::new();
         hash.absorb(mu);
+        /* DEBUG */ let tmp = w1p.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>();
         hash.absorb(&w1p.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>());
         hash.squeeze_out(&mut c_tilde_p);
 
@@ -912,8 +914,11 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
     fn sign_out(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let mut output_sized: [u8; MLDSA44_SIG_LEN] = output[..MLDSA44_SIG_LEN].try_into().unwrap();
-        Self::sign_mu_out(sk, &mu, &mut output_sized)
+        let mut output_sized = [0u8; MLDSA44_SIG_LEN];
+        let bytes_written = Self::sign_mu_out(sk, &mu, &mut output_sized)?;
+        output[..MLDSA44_SIG_LEN].copy_from_slice(&output_sized); // there's probably a rusty-way to get a mutable slice to the original `output`
+                                                                  // and avoid the copy, but this works for now.
+        Ok(bytes_written)
     }
 
     fn sign_init(&mut self, sk: &MLDSA44PrivateKey) -> Result<(), SignatureError> {
@@ -934,7 +939,7 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
 
     fn verify(pk: &MLDSA44PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
-        
+
         if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
         
         if MLDSA44impl::verify_mu_internal(&pk.0, &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap()) {

@@ -56,8 +56,8 @@ mod mldsa_tests {
 
 
         // Decode and re-encode the pk, make sure you get the same thing
-        let decoded_sk = MLDSA44PublicKey::from_bytes(&expected_pk_bytes).unwrap();
-        let pk_bytes = decoded_sk.pk_encode();
+        let decoded_pk = MLDSA44PublicKey::from_bytes(&expected_pk_bytes).unwrap();
+        let pk_bytes = decoded_pk.pk_encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
@@ -70,9 +70,9 @@ mod mldsa_tests {
         assert_eq!(derived_pk.pk_encode(), expected_pk_bytes.as_slice());
         // also test the `impl Eq`
         assert_eq!(derived_sk, expected_sk);
-        assert_eq!(derived_pk, decoded_sk);
+        assert_eq!(derived_pk, decoded_pk);
 
-        // consistincy check between returned pk and sk.get_public_key()
+        // consistency check between returned pk and sk.get_public_key()
         assert_eq!(derived_pk, derived_sk.derive_public_key());
 
         MLDSA44::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
@@ -192,6 +192,8 @@ mod mldsa_tests {
         let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA44_KAT1.signature).unwrap());
 
+        MLDSA44::verify(&sk.derive_public_key(), &*hex::decode(MLDSA44_KAT1.message).unwrap(), &*hex::decode(MLDSA44_KAT1.ctx).unwrap(), &sig).unwrap();
+
 
         // ML-DSA-65
 
@@ -205,6 +207,7 @@ mod mldsa_tests {
         let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA65_KAT1.signature).unwrap());
 
+        MLDSA65::verify(&sk.derive_public_key(), &*hex::decode(MLDSA65_KAT1.message).unwrap(), &*hex::decode(MLDSA65_KAT1.ctx).unwrap(), &sig).unwrap();
 
 
         // ML-DSA-87
@@ -218,6 +221,8 @@ mod mldsa_tests {
         let mu = MLDSA87::compute_mu_from_sk(&hex::decode(MLDSA87_KAT1.message).unwrap(), &hex::decode(MLDSA87_KAT1.ctx).unwrap(), &sk).unwrap();
         let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA87_KAT1.signature).unwrap());
+
+        MLDSA87::verify(&sk.derive_public_key(), &*hex::decode(MLDSA87_KAT1.message).unwrap(), &*hex::decode(MLDSA87_KAT1.ctx).unwrap(), &sig).unwrap();
     }
 }
 

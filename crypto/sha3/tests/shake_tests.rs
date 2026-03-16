@@ -260,13 +260,13 @@ mod shake_tests {
 
         if partial_bits == 0 {
             shake.absorb(tc.msg.as_slice());
-            output = shake.squeeze(tc.output.len()).expect("Squeeze failed.");
+            output = shake.squeeze(tc.output.len());
         } else {
             shake.absorb(&tc.msg[..(tc.msg.len() - 1)]);
             shake
                 .absorb_last_partial_byte(tc.msg[tc.msg.len() - 1], partial_bits)
                 .expect("Absorb failed");
-            output = shake.squeeze(tc.output.len()).expect("Squeeze failed.");
+            output = shake.squeeze(tc.output.len());
         }
 
         assert_eq!(tc.output, output);
