@@ -718,7 +718,6 @@ type MLDSA44impl = MLDSA<
     MLDSA44_BETA,
     MLDSA44_OMEGA,
     MLDSA44_C_TILDE,
-    // MLDSA44_POLY_VEC_H_PACKED_LEN,
     MLDSA44_POLY_Z_PACKED_LEN,
     MLDSA44_POLY_W1_PACKED_LEN,
     MLDSA44_W1_PACKED_LEN,
@@ -914,10 +913,10 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
     fn sign_out(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let mut output_sized = [0u8; MLDSA44_SIG_LEN];
-        let bytes_written = Self::sign_mu_out(sk, &mu, &mut output_sized)?;
-        output[..MLDSA44_SIG_LEN].copy_from_slice(&output_sized); // there's probably a rusty-way to get a mutable slice to the original `output`
-                                                                  // and avoid the copy, but this works for now.
+        // let mut output_sized = [0u8; MLDSA44_SIG_LEN];
+        let output_sized: &mut [u8; MLDSA44_SIG_LEN] = output.as_mut().try_into().unwrap();
+        let bytes_written = Self::sign_mu_out(sk, &mu, output_sized)?;
+        
         Ok(bytes_written)
     }
 
@@ -1179,8 +1178,8 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
     fn sign_out(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let mut output_sized: [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].try_into().unwrap();
-        Self::sign_mu_out(sk, &mu, &mut output_sized)
+        let output_sized: &mut [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].as_mut().try_into().unwrap();
+        Self::sign_mu_out(sk, &mu, output_sized)
     }
 
     fn sign_init(&mut self, sk: &MLDSA65PrivateKey) -> Result<(), SignatureError> {
@@ -1441,8 +1440,8 @@ impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
     fn sign_out(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let mut output_sized: [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].try_into().unwrap();
-        Self::sign_mu_out(sk, &mu, &mut output_sized)
+        let output_sized: &mut [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].as_mut().try_into().unwrap();
+        Self::sign_mu_out(sk, &mu, output_sized)
     }
 
     fn sign_init(&mut self, sk: &MLDSA87PrivateKey) -> Result<(), SignatureError> {
