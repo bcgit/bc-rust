@@ -139,13 +139,7 @@ struct MLDSA<
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> {
-    // only used in streaming sign operations
-    priv_key: Option<MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>>,
-
-    // only used in streaming verify operations
-    pub_key: Option<MLDSAPublicKey<k, PK_LEN>>,
-}
+> { }
 
 impl<
     const PK_LEN: usize,
@@ -386,18 +380,6 @@ impl<
     /// prevent accidental nonce reuse, this function moves `rnd`.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_deterministic_out(
-        sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        let mut rnd: [u8; 32] = [0u8; 32];
-        HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
-
-        Self::sign_mu_internal_out(sk, mu, rnd, output)
-    }
-
     pub(crate) fn sign_mu_internal_out(
         sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
         mu: &[u8; 64],
@@ -642,7 +624,7 @@ pub struct MuBuilder {
 impl MuBuilder {
     /// Algorithm 7
     /// 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
-    pub fn compute_mu(msg: &[u8], ctx: &[u8], tr: &[u8; 64]) -> Result<[u8; 64], SignatureError> {
+    pub fn compute_mu(msg: &[u8], ctx: Option<&[u8]>, tr: &[u8; 64]) -> Result<[u8; 64], SignatureError> {
         let mut mu_builder = MuBuilder::do_init(&tr, ctx)?;
         mu_builder.do_update(msg);
         let mu = mu_builder.do_final();
@@ -651,7 +633,9 @@ impl MuBuilder {
     }
 
     /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
-    pub fn do_init(tr: &[u8; 64], ctx: &[u8]) -> Result<Self, SignatureError> {
+    pub fn do_init(tr: &[u8; 64], ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        let ctx = match ctx { Some(ctx) => ctx, None => &[] };
+
         // Algorithm 2
         // 1: if |𝑐𝑡𝑥| > 255 then
         if ctx.len() > 255 {
@@ -698,11 +682,16 @@ impl MuBuilder {
 // todo -- crunch these three identical implementations down with a macro
 
 pub struct MLDSA44 {
+    // used for streaming the message for both signing and verifying
+    mu_builder: MuBuilder,
+
+    signer_rnd: Option<[u8; RND_LEN]>,
+
     // only used in streaming sign operations
-    priv_key: Option<MLDSA44PrivateKey>,
+    sk: Option<MLDSA44PrivateKey>,
 
     // only used in streaming verify operations
-    pub_key: Option<MLDSA44PublicKey>,
+    pk: Option<MLDSA44PublicKey>,
 }
 type MLDSA44impl = MLDSA<
     MLDSA44_PK_LEN,
@@ -727,7 +716,7 @@ type MLDSA44impl = MLDSA<
 >;
 
 impl MLDSA44 {
-    /// Genarate a fresh key pair using the default cryptographic RNG, seeded from the OS.
+    /// Generate a fresh key pair using the default cryptographic RNG, seeded from the OS.
     pub fn keygen_from_os_rng() -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
         let (pk, sk) = MLDSA44impl::keygen_from_os_rng()?;
         Ok((MLDSA44PublicKey(pk), MLDSA44PrivateKey(sk)))
@@ -812,7 +801,7 @@ impl MLDSA44 {
     /// For a streaming version of this, see [MuBuilder].
     pub fn compute_mu_from_tr(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         tr: &[u8; 64],
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, tr)
@@ -821,7 +810,7 @@ impl MLDSA44 {
     /// Same as [compute_mu_from_tr], but extracts tr from the public key.
     pub fn compute_mu_from_pk(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         pk: &MLDSA44PublicKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
@@ -830,7 +819,7 @@ impl MLDSA44 {
     /// Same as [compute_mu_from_tr], but extracts tr from the private key.
     pub fn compute_mu_from_sk(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         sk: &MLDSA44PrivateKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
@@ -891,9 +880,30 @@ impl MLDSA44 {
         rnd: [u8; 32],
         output: &mut [u8; MLDSA44_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA44impl::sign_mu_deterministic_out(&sk.0, mu, rnd, output)
+        MLDSA44impl::sign_mu_internal_out(&sk.0, mu, rnd, output)
     }
 
+    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
+    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
+    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
+        self.signer_rnd = Some(rnd);
+    }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
+    pub fn verify_mu(
+        pk: &MLDSA44PublicKey,
+        mu: &[u8; 64],
+        sig: &[u8; MLDSA44_SIG_LEN],
+    ) -> Result<(), SignatureError> {
+        if MLDSA44impl::verify_mu_internal(&pk.0, &mu, sig) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
+    }
 }
 
 impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
@@ -903,61 +913,85 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
         Ok((MLDSA44PublicKey(pk), MLDSA44PrivateKey(sk)))
     }
 
-    fn sign(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
+    fn sign(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
         let mut out = vec![0u8; MLDSA44_SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
 
         Ok(out)
     }
 
-    fn sign_out(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
+    fn sign_out(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        // let mut output_sized = [0u8; MLDSA44_SIG_LEN];
-        let output_sized: &mut [u8; MLDSA44_SIG_LEN] = output.as_mut().try_into().unwrap();
+        let output_sized: &mut [u8; MLDSA44_SIG_LEN] = output[..MLDSA44_SIG_LEN].as_mut().try_into().unwrap();
         let bytes_written = Self::sign_mu_out(sk, &mu, output_sized)?;
-        
+
         Ok(bytes_written)
     }
 
-    fn sign_init(&mut self, sk: &MLDSA44PrivateKey) -> Result<(), SignatureError> {
-        todo!()
+    fn sign_init(sk: &MLDSA44PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                mu_builder: MuBuilder::do_init(&sk.0.tr, ctx)?,
+                signer_rnd: None,
+                sk: Some(MLDSA44PrivateKey(sk.0.clone())),
+                pk: None }
+        )
     }
 
     fn sign_update(&mut self, msg_chunk: &[u8]) {
-        todo!()
+        self.mu_builder.do_update(msg_chunk);
     }
 
-    fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
-        todo!()
+    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
+        let mut out = [0u8; MLDSA44_SIG_LEN];
+        self.sign_final_out(&mut out)?;
+        Ok(Vec::from(out))
     }
 
-    fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError> {
-        todo!()
-    }
+    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
+        let mu = self.mu_builder.do_final();
 
-    fn verify(pk: &MLDSA44PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+        assert!(self.sk.is_some(), "Somehow you managed to construct a streaming signer without a private key, impressive!");
 
-        if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-        
-        if MLDSA44impl::verify_mu_internal(&pk.0, &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap()) {
-            Ok(())
+        if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        let output_sized: &mut [u8; MLDSA44_SIG_LEN] = output[..MLDSA44_SIG_LEN].as_mut().try_into().unwrap();
+
+        if self.signer_rnd.is_none() {
+            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
         } else {
-            Err(SignatureError::SignatureVerificationFailed)
+            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
         }
     }
 
-    fn verify_init(&mut self, sk: &MLDSA44PublicKey) -> Result<(), SignatureError> {
-        todo!()
+    fn verify(pk: &MLDSA44PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+
+        if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        Self::verify_mu(pk, &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap())
+    }
+
+    fn verify_init(pk: &MLDSA44PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
+                signer_rnd: None,
+                sk: None,
+                pk: Some(MLDSA44PublicKey(pk.0.clone())) }
+        )
     }
 
     fn verify_update(&mut self, msg_chunk: &[u8]) {
-        todo!()
+        self.mu_builder.do_update(msg_chunk);
     }
 
-    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
-        todo!()
+    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = self.mu_builder.do_final();
+
+        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
+
+        if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        Self::verify_mu(&self.pk.unwrap(), &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap())
     }
 }
 
@@ -968,11 +1002,16 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
 
 // exported as pub in lib.rs
 pub struct MLDSA65 {
+    // used for streaming the message for both signing and verifying
+    mu_builder: MuBuilder,
+
+    signer_rnd: Option<[u8; RND_LEN]>,
+
     // only used in streaming sign operations
-    priv_key: Option<MLDSA65PrivateKey>,
+    sk: Option<MLDSA65PrivateKey>,
 
     // only used in streaming verify operations
-    pub_key: Option<MLDSA65PublicKey>,
+    pk: Option<MLDSA65PublicKey>,
 }
 type MLDSA65impl = MLDSA<
     MLDSA65_PK_LEN,
@@ -1081,7 +1120,7 @@ impl MLDSA65 {
     /// For a streaming version of this, see [MuBuilder].
     pub fn compute_mu_from_tr(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         tr: &[u8; 64],
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, tr)
@@ -1090,7 +1129,7 @@ impl MLDSA65 {
     /// Same as [compute_mu_from_tr], but extracts tr from the public key.
     pub fn compute_mu_from_pk(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         pk: &MLDSA65PublicKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
@@ -1099,7 +1138,7 @@ impl MLDSA65 {
     /// Same as [compute_mu_from_tr], but extracts tr from the private key.
     pub fn compute_mu_from_sk(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         sk: &MLDSA65PrivateKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
@@ -1157,7 +1196,29 @@ impl MLDSA65 {
         rnd: [u8; 32],
         output: &mut [u8; MLDSA65_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA65impl::sign_mu_deterministic_out(&sk.0, mu, rnd, output)
+        MLDSA65impl::sign_mu_internal_out(&sk.0, mu, rnd, output)
+    }
+
+    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
+    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
+    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
+        self.signer_rnd = Some(rnd);
+    }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
+    pub fn verify_mu(
+        pk: &MLDSA65PublicKey,
+        mu: &[u8; 64],
+        sig: &[u8; MLDSA65_SIG_LEN],
+    ) -> Result<(), SignatureError> {
+        if MLDSA65impl::verify_mu_internal(&pk.0, &mu, sig) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
     }
 }
 
@@ -1168,37 +1229,56 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
         Ok((MLDSA65PublicKey(pk), MLDSA65PrivateKey(sk)))
     }
 
-    fn sign(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
+    fn sign(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: Option<&[u8]>,) -> Result<Vec<u8>, SignatureError> {
         let mut out = vec![0u8; MLDSA65_SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
 
         Ok(out)
     }
 
-    fn sign_out(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
+    fn sign_out(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
         let output_sized: &mut [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].as_mut().try_into().unwrap();
         Self::sign_mu_out(sk, &mu, output_sized)
     }
 
-    fn sign_init(&mut self, sk: &MLDSA65PrivateKey) -> Result<(), SignatureError> {
-        todo!()
+    fn sign_init(sk: &MLDSA65PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                mu_builder: MuBuilder::do_init(&sk.0.tr, ctx)?,
+                signer_rnd: None,
+                sk: Some(MLDSA65PrivateKey(sk.0.clone())),
+                pk: None }
+        )
     }
 
     fn sign_update(&mut self, msg_chunk: &[u8]) {
-        todo!()
+        self.mu_builder.do_update(msg_chunk);
     }
 
-    fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
-        todo!()
+    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
+        let mut out = [0u8; MLDSA65_SIG_LEN];
+        self.sign_final_out(&mut out)?;
+        Ok(Vec::from(out))
     }
 
-    fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError> {
-        todo!()
+    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
+        let mu = self.mu_builder.do_final();
+
+        assert!(self.sk.is_some(), "Somehow you managed to construct a streaming signer without a private key, impressive!");
+
+        if output.len() < MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        let output_sized: &mut [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].as_mut().try_into().unwrap();
+
+        if self.signer_rnd.is_none() {
+            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
+        } else {
+            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
+        }
     }
 
-    fn verify(pk: &MLDSA65PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+    fn verify(pk: &MLDSA65PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
 
         if sig.len() != MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
@@ -1210,16 +1290,27 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
         }
     }
 
-    fn verify_init(&mut self, sk: &MLDSA65PublicKey) -> Result<(), SignatureError> {
-        todo!()
+    fn verify_init(pk: &MLDSA65PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
+                signer_rnd: None,
+                sk: None,
+                pk: Some(MLDSA65PublicKey(pk.0.clone())) }
+        )
     }
 
     fn verify_update(&mut self, msg_chunk: &[u8]) {
-        todo!()
+        self.mu_builder.do_update(msg_chunk);
     }
 
-    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
-        todo!()
+    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = self.mu_builder.do_final();
+
+        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
+
+        if sig.len() != MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        Self::verify_mu(&self.pk.unwrap(), &mu, &sig[..MLDSA65_SIG_LEN].try_into().unwrap())
     }
 }
 
@@ -1229,11 +1320,16 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
 
 // exported as pub in lib.rs
 pub struct MLDSA87 {
+    // used for streaming the message for both signing and verifying
+    mu_builder: MuBuilder,
+
+    signer_rnd: Option<[u8; RND_LEN]>,
+
     // only used in streaming sign operations
-    priv_key: Option<MLDSA87PrivateKey>,
+    sk: Option<MLDSA87PrivateKey>,
 
     // only used in streaming verify operations
-    pub_key: Option<MLDSA87PublicKey>,
+    pk: Option<MLDSA87PublicKey>,
 }
 type MLDSA87impl = MLDSA<
     MLDSA87_PK_LEN,
@@ -1342,7 +1438,7 @@ impl MLDSA87 {
     /// For a streaming version of this, see [MuBuilder].
     pub fn compute_mu_from_tr(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         tr: [u8; 64],
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &tr)
@@ -1351,7 +1447,7 @@ impl MLDSA87 {
     /// Same as [compute_mu_from_tr], but extracts tr from the public key.
     pub fn compute_mu_from_pk(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         pk: &MLDSA87PublicKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
@@ -1360,7 +1456,7 @@ impl MLDSA87 {
     /// Same as [compute_mu_from_tr], but extracts tr from the private key.
     pub fn compute_mu_from_sk(
         msg: &[u8],
-        ctx: &[u8],
+        ctx: Option<&[u8]>,
         sk: &MLDSA87PrivateKey,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
@@ -1419,7 +1515,29 @@ impl MLDSA87 {
         rnd: [u8; 32],
         output: &mut [u8; MLDSA87_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA87impl::sign_mu_deterministic_out(&sk.0, mu, rnd, output)
+        MLDSA87impl::sign_mu_internal_out(&sk.0, mu, rnd, output)
+    }
+
+    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
+    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
+    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
+        self.signer_rnd = Some(rnd);
+    }
+
+    /// Performs an ML-DSA signature using the provided external message representative `mu`.
+    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
+    /// FIPS 204 itself, as well as subsequent FAQ documents.
+    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
+    pub fn verify_mu(
+        pk: &MLDSA87PublicKey,
+        mu: &[u8; 64],
+        sig: &[u8; MLDSA87_SIG_LEN],
+    ) -> Result<(), SignatureError> {
+        if MLDSA87impl::verify_mu_internal(&pk.0, &mu, sig) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
     }
 }
 
@@ -1430,37 +1548,57 @@ impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
         Ok((MLDSA87PublicKey(pk), MLDSA87PrivateKey(sk)))
     }
 
-    fn sign(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
+    fn sign(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
         let mut out = vec![0u8; MLDSA87_SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
 
         Ok(out)
     }
 
-    fn sign_out(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError> {
+    fn sign_out(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
         if output.len() < MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
         let output_sized: &mut [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].as_mut().try_into().unwrap();
         Self::sign_mu_out(sk, &mu, output_sized)
     }
 
-    fn sign_init(&mut self, sk: &MLDSA87PrivateKey) -> Result<(), SignatureError> {
-        todo!()
+    fn sign_init(sk: &MLDSA87PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                mu_builder: MuBuilder::do_init(&sk.0.tr, ctx)?,
+                signer_rnd: None ,
+                sk: Some(MLDSA87PrivateKey(sk.0.clone())),
+                pk: None
+            }
+        )
     }
 
     fn sign_update(&mut self, msg_chunk: &[u8]) {
-        todo!()
+        self.mu_builder.do_update(msg_chunk);
     }
 
-    fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError> {
-        todo!()
+    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
+        let mut out = [0u8; MLDSA87_SIG_LEN];
+        self.sign_final_out(&mut out)?;
+        Ok(Vec::from(out))
     }
 
-    fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError> {
-        todo!()
+    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
+        let mu = self.mu_builder.do_final();
+
+        assert!(self.sk.is_some(), "Somehow you managed to construct a streaming signer without a private key, impressive!");
+
+        if output.len() < MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        let output_sized: &mut [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].as_mut().try_into().unwrap();
+
+        if self.signer_rnd.is_none() {
+            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
+        } else {
+            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
+        }
     }
 
-    fn verify(pk: &MLDSA87PublicKey, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
+    fn verify(pk: &MLDSA87PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
 
         if sig.len() != MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
@@ -1472,15 +1610,26 @@ impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
         }
     }
 
-    fn verify_init(&mut self, sk: &MLDSA87PublicKey) -> Result<(), SignatureError> {
-        todo!()
+    fn verify_init(pk: &MLDSA87PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
+                signer_rnd: None,
+                sk: None,
+                pk: Some(MLDSA87PublicKey(pk.0.clone())) }
+        )
     }
 
     fn verify_update(&mut self, msg_chunk: &[u8]) {
-        todo!()
+        self.mu_builder.do_update(msg_chunk);
     }
 
-    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError> {
-        todo!()
+    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = self.mu_builder.do_final();
+
+        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
+
+        if sig.len() != MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        Self::verify_mu(&self.pk.unwrap(), &mu, &sig[..MLDSA87_SIG_LEN].try_into().unwrap())
     }
 }

@@ -368,8 +368,9 @@ pub trait Secret : Drop + Debug + Display {}
 /// to source all its randomness from bouncycastle's default os-backed RNG.
 /// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
 /// or deterministic seed values.
-pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey> {
+pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey>: Sized {
     /// Generate a keypair.
+    /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), SignatureError>;
 
     /// Produce a signature for the provided message and context.
@@ -395,32 +396,35 @@ pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey> {
     /// Not all signature primitives will support a context value, so you may need to consult the
     /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign(sk: &SK, msg: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
+    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError>;
 
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_out(sk: &SK, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError>;
+    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
 
     /* streaming signing API */
-    fn sign_init(&mut self, sk: &SK) -> Result<(), SignatureError>;
+    /// Initialize a signer for streaming mode with the provided private key.
+    fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
 
     fn sign_update(&mut self, msg_chunk: &[u8]);
 
-    fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
+    /// Complete the signing operation. Consumes self.
+    fn sign_final(self) -> Result<Vec<u8>, SignatureError>;
 
-    fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
+    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError>;
 
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
-    fn verify(pk: &PK, msg: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError>;
+    fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
 
     /* streaming signing API */
-    fn verify_init(&mut self, pub_key: &PK) -> Result<(), SignatureError>;
+    fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
 
     fn verify_update(&mut self, msg_chunk: &[u8]);
 
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
-    fn verify_final(&mut self, msg_chunk: &[u8], ctx: &[u8], sig: &[u8]) -> Result<(), SignatureError>;
+    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError>;
 }
 
 pub trait SignaturePublicKey {

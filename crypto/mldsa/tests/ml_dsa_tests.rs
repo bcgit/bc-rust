@@ -4,34 +4,39 @@ mod mldsa_tests {
     use bouncycastle_core_interface::errors::SignatureError;
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Signature, SignaturePrivateKey, SignaturePublicKey, RNG};
+    use bouncycastle_core_test_framework::DUMMY_SEED_1024;
+    use bouncycastle_core_test_framework::signature::*;
     use bouncycastle_hex as hex;
-    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
+    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSA44, MLDSA65, MLDSA87};
+    use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
 
     #[test]
-    fn basic_keygen_sign_verify_test() {
-        // todo -- this only exercises the Signature API
-        // todo -- move this to generic_test_framework
-        let msg = b"The quick brown fox jumped over the lazy dog";
+    fn test_framework_signature() {
+        let tf = TestFrameworkSignature::new(false, true);
 
+        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_SIG_LEN>(false);
 
-        /* MLDSA44 */
-        let (pk, sk) = MLDSA44::keygen().unwrap();
-        let sig_val = MLDSA44::sign(&sk, msg, &[0u8; 0]).unwrap();
-        MLDSA44::verify(&pk, msg, &[0u8; 0], &sig_val).unwrap();
+        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_SIG_LEN>(false);
 
+        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_SIG_LEN>(false);
 
-        /* MLDSA65 */
-        let (pk, sk) = MLDSA65::keygen().unwrap();
-        let sig_val = MLDSA65::sign(&sk, msg, &[0u8; 0]).unwrap();
-        MLDSA65::verify(&pk, msg, &[0u8; 0], &sig_val).unwrap();
-
-
-        /* MLDSA87 */
-        let (pk, sk) = MLDSA87::keygen().unwrap();
-        let sig_val = MLDSA87::sign(&sk, msg, &[0u8; 0]).unwrap();
-        MLDSA87::verify(&pk, msg, &[0u8; 0], &sig_val).unwrap();
     }
+
+    /// This runs the full bitflipping tests and takes several minutes.
+    /// I'm leaving this commented out, but feel free to un-comment it and run it.
+    // #[test]
+    // fn test_framework_signature_extensive() {
+    //
+    //     let tf = TestFrameworkSignature::new(false, true);
+    //
+    //     tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_SIG_LEN>(true);
+    //
+    //     tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_SIG_LEN>(true);
+    //
+    //     tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_SIG_LEN>(true);
+    //
+    // }
 
     #[test]
     fn rfc9881_keygen() {
@@ -183,46 +188,234 @@ mod mldsa_tests {
         // ML-DSA-44
 
         let sk = MLDSA44PrivateKey::from_bytes(&hex::decode(MLDSA44_KAT1.sk).unwrap()).unwrap();
-        let mut rnd = [0u8; 32];
-        if !MLDSA44_KAT1.deterministic {
-            bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
-        } // else: leave it as [0u8]
+        let rnd = if !MLDSA44_KAT1.deterministic {
+                let mut rnd = [0u8; 32];
+                bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
+                rnd
+            } else { [0u8; 32] };
 
-        let mu = MLDSA44::compute_mu_from_sk(&hex::decode(MLDSA44_KAT1.message).unwrap(), &hex::decode(MLDSA44_KAT1.ctx).unwrap(), &sk).unwrap();
+        let mu = MLDSA44::compute_mu_from_sk(&hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sk).unwrap();
         let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA44_KAT1.signature).unwrap());
+        MLDSA44::verify(&sk.derive_public_key(), &hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sig).unwrap();
 
-        MLDSA44::verify(&sk.derive_public_key(), &*hex::decode(MLDSA44_KAT1.message).unwrap(), &*hex::decode(MLDSA44_KAT1.ctx).unwrap(), &sig).unwrap();
+        // test the streaming API on the same value
+        let mut s = MLDSA44::sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &hex::decode(MLDSA44_KAT1.signature).unwrap());
+
+        // Then with the message broken into chunks
+        let mut s = MLDSA44::sign_init(&sk, Some(b"streaming API chunked")).unwrap();
+        s.set_signer_rnd(rnd);
+        for msg_chunk in DUMMY_SEED_1024.chunks(100) {
+            s.sign_update(msg_chunk);
+        }
+        let sig_val = s.sign_final().unwrap();
+        MLDSA44::verify(&sk.derive_public_key(), DUMMY_SEED_1024, Some(b"streaming API chunked"), &sig_val).unwrap();
+
 
 
         // ML-DSA-65
 
         let sk = MLDSA65PrivateKey::from_bytes(&hex::decode(MLDSA65_KAT1.sk).unwrap()).unwrap();
-        let mut rnd = [0u8; 32];
-        if !MLDSA65_KAT1.deterministic {
+        let rnd = if !MLDSA65_KAT1.deterministic {
+            let mut rnd = [0u8; 32];
             bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
-        } // else: leave it as [0u8]
+            rnd
+        } else { [0u8; 32] };
 
-        let mu = MLDSA65::compute_mu_from_sk(&hex::decode(MLDSA65_KAT1.message).unwrap(), &hex::decode(MLDSA65_KAT1.ctx).unwrap(), &sk).unwrap();
+        let mu = MLDSA65::compute_mu_from_sk(&hex::decode(MLDSA65_KAT1.message).unwrap(), Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()), &sk).unwrap();
         let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA65_KAT1.signature).unwrap());
 
-        MLDSA65::verify(&sk.derive_public_key(), &*hex::decode(MLDSA65_KAT1.message).unwrap(), &*hex::decode(MLDSA65_KAT1.ctx).unwrap(), &sig).unwrap();
+        MLDSA65::verify(&sk.derive_public_key(), &*hex::decode(MLDSA65_KAT1.message).unwrap(), Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()), &sig).unwrap();
+
+        // test the streaming API on the same value
+        let mut s = MLDSA65::sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &hex::decode(MLDSA65_KAT1.signature).unwrap());
+
 
 
         // ML-DSA-87
 
         let sk = MLDSA87PrivateKey::from_bytes(&hex::decode(MLDSA87_KAT1.sk).unwrap()).unwrap();
-        let mut rnd = [0u8; 32];
-        if !MLDSA87_KAT1.deterministic {
+        let rnd = if !MLDSA65_KAT1.deterministic {
+            let mut rnd = [0u8; 32];
             bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
-        } // else: leave it as [0u8]
+            rnd
+        } else { [0u8; 32] };
 
-        let mu = MLDSA87::compute_mu_from_sk(&hex::decode(MLDSA87_KAT1.message).unwrap(), &hex::decode(MLDSA87_KAT1.ctx).unwrap(), &sk).unwrap();
+        let mu = MLDSA87::compute_mu_from_sk(&hex::decode(MLDSA87_KAT1.message).unwrap(), Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()), &sk).unwrap();
         let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA87_KAT1.signature).unwrap());
 
-        MLDSA87::verify(&sk.derive_public_key(), &*hex::decode(MLDSA87_KAT1.message).unwrap(), &*hex::decode(MLDSA87_KAT1.ctx).unwrap(), &sig).unwrap();
+        MLDSA87::verify(&sk.derive_public_key(), &*hex::decode(MLDSA87_KAT1.message).unwrap(), Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()), &sig).unwrap();
+
+        // test the streaming API on the same value
+        let mut s = MLDSA87::sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &hex::decode(MLDSA87_KAT1.signature).unwrap());
+    }
+
+    #[test]
+    fn test_boundary_conditions() {
+
+        let msg = b"The quick brown fox jumped over the lazy dog";
+
+        // ctx too long
+        // this is common to all parameter sets, so I'll just test MLDSA44
+        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let too_long_ctx = [1u8; 256];
+        match MLDSA44::sign_init(&sk, Some(&too_long_ctx)) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for ctx too long"),
+        }
+
+        // test various things that are shorter / longer than required
+
+        // sign_out
+
+        // MLDSA44
+        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let mut out_too_short = [0u8; MLDSA44_SIG_LEN -1];
+        match MLDSA44::sign_out(&sk, msg, None, &mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        let mut s = MLDSA44::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        match s.sign_final_out(&mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+
+        // too long is fine; it should just write to the beginning
+        let mut out_too_long = [0u8; MLDSA44_SIG_LEN + 2];
+        let bytes_written = MLDSA44::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA44_SIG_LEN..], &[0,0]);
+
+        let mut s = MLDSA44::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA44_SIG_LEN..], &[0,0]);
+
+
+        // MLDSA65
+        let (_pk, sk) = MLDSA65::keygen().unwrap();
+        let mut out_too_short = [0u8; MLDSA65_SIG_LEN -1];
+        match MLDSA65::sign_out(&sk, msg, None, &mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        let mut s = MLDSA65::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        match s.sign_final_out(&mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        // too long is fine; it should just write to the beginning
+        let mut out_too_long = [0u8; MLDSA65_SIG_LEN + 2];
+        let bytes_written = MLDSA65::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA65_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA65_SIG_LEN..], &[0,0]);
+
+        let mut s = MLDSA65::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA65_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA65_SIG_LEN..], &[0,0]);
+
+
+        // MLDSA87
+        let (_pk, sk) = MLDSA87::keygen().unwrap();
+        let mut out_too_short = [0u8; MLDSA87_SIG_LEN -1];
+        match MLDSA87::sign_out(&sk, msg, None, &mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        let mut s = MLDSA87::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        match s.sign_final_out(&mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        // too long is fine; it should just write to the beginning
+        let mut out_too_long = [0u8; MLDSA87_SIG_LEN + 2];
+        let bytes_written = MLDSA87::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA87_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA87_SIG_LEN..], &[0,0]);
+
+        let mut s = MLDSA87::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA87_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA87_SIG_LEN..], &[0,0]);
+
+
+        // sig too long / too short
+
+        // MLDSA44
+        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let sig = MLDSA44::sign(&sk, msg, None).unwrap();
+        // too short
+        match MLDSA44::verify(&pk, msg, None, &sig[..MLDSA44_SIG_LEN-1]) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+        // too long
+        let mut sig_too_long = sig.clone();
+        sig_too_long.append(&mut vec![0u8, 0u8]);
+        match MLDSA44::verify(&pk, msg, None, &sig_too_long) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+
+        // MLDSA65
+        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let sig = MLDSA65::sign(&sk, msg, None).unwrap();
+        // too short
+        match MLDSA65::verify(&pk, msg, None, &sig[..MLDSA65_SIG_LEN-1]) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+        // too long
+        let mut sig_too_long = sig.clone();
+        sig_too_long.append(&mut vec![0u8, 0u8]);
+        match MLDSA65::verify(&pk, msg, None, &sig_too_long) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+
+        // MLDSA87
+        let (pk, sk) = MLDSA87::keygen().unwrap();
+        let sig = MLDSA87::sign(&sk, msg, None).unwrap();
+        // too short
+        match MLDSA87::verify(&pk, msg, None, &sig[..MLDSA44_SIG_LEN-1]) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+        // too long
+        let mut sig_too_long = sig.clone();
+        sig_too_long.append(&mut vec![0u8, 0u8]);
+        match MLDSA87::verify(&pk, msg, None, &sig_too_long) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
     }
 }
 
