@@ -1,13 +1,12 @@
 //! Represents a polynomial over the ML-DSA ring.
 
-use std::fmt::{Debug, Display, Formatter};
-use bouncycastle_core_interface::traits::Secret;
-use crate::mldsa::{N, q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
 use crate::aux_functions::{high_bits, low_bits, make_hint};
+use crate::mldsa::{q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N};
+use bouncycastle_core_interface::traits::Secret;
+use core::fmt::{Debug, Display, Formatter};
 
 const STREAM_128_BLOCK_LEN: usize = 168;
 const STREAM_256_BLOCK_LEN: usize = 136;
-
 
 // pub(crate) type Polynomial = [i32; N];
 #[derive(Clone)]
@@ -15,13 +14,13 @@ pub(crate) struct Polynomial(pub(crate) [i32; N]);
 
 impl Polynomial {
     pub(crate) const fn new() -> Self {
-        Self{ 0: [0i32; N] }
+        Self { 0: [0i32; N] }
     }
 
     /// negates each entry
-    pub(crate) fn neg(&mut self){
+    pub(crate) fn neg(&mut self) {
         for i in 0..N {
-            self.0[i] = - self.0[i];
+            self.0[i] = -self.0[i];
         }
     }
 
@@ -115,6 +114,18 @@ impl Polynomial {
         (out, count)
     }
 
+    pub(crate) fn high_bits_assign<const GAMMA2: i32>(&mut self) {
+        for i in 0..N {
+            self.0[i] = high_bits::<GAMMA2>(self.0[i]);
+        }
+    }
+
+    pub(crate) fn low_bits_assign<const GAMMA2: i32>(&mut self) {
+        for i in 0..N {
+            self.0[i] = low_bits::<GAMMA2>(self.0[i]);
+        }
+    }
+
     // pub(crate) fn use_hint<const GAMMA2: i32>(a: &Self, h: &Self) -> Polynomial {
     //     let mut out = Polynomial::new();
     //     for i in 0..N {
@@ -126,33 +137,38 @@ impl Polynomial {
 
     #[inline]
     pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
-        // todo -- optimize this to take a slice and write directly to it
-        // todo -- debug_assert_eq!(buf.len(), POLY1_PACKED_LEN)
-        //
-
         let mut r = [0u8; POLY_W1_PACKED_LEN];
+        self.w1_encode_into::<POLY_W1_PACKED_LEN>(&mut r);
+        r
+    }
+
+    #[inline]
+    pub(crate) fn w1_encode_into<const POLY_W1_PACKED_LEN: usize>(
+        &self,
+        r: &mut [u8; POLY_W1_PACKED_LEN],
+    ) {
+        r.fill(0);
 
         match POLY_W1_PACKED_LEN {
             MLDSA44_POLY_W1_PACKED_LEN => {
-                for i in 0..N/4 {
-                    r[3 * i] =
-                        ((self.0[4 * i]) as u8) | ((self.0[4 * i + 1] << 6) as u8);
+                for i in 0..N / 4 {
+                    r[3 * i] = ((self.0[4 * i]) as u8) | ((self.0[4 * i + 1] << 6) as u8);
                     r[3 * i + 1] =
                         ((self.0[4 * i + 1] >> 2) as u8) | ((self.0[4 * i + 2] << 4) as u8);
                     r[3 * i + 2] =
                         ((self.0[4 * i + 2] >> 4) as u8) | ((self.0[4 * i + 3] << 2) as u8);
                 }
-            },
+            }
             // ML-DSA65 and 87 share a POLY_W1_PACKED_LEN value
             MLDSA65_POLY_W1_PACKED_LEN => {
-                for i in 0..N/2 {
+                for i in 0..N / 2 {
                     r[i] = ((self.0[2 * i]) | (self.0[2 * i + 1] << 4)) as u8;
                 }
-            },
-            _ => { unreachable!() }
+            }
+            _ => {
+                unreachable!()
+            }
         }
-
-        r
     }
 }
 
@@ -165,17 +181,16 @@ impl Drop for Polynomial {
 }
 
 impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "Polynomial (data masked)")
     }
 }
 
 impl Display for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "Polynomial (data masked)")
     }
 }
-
 
 impl From<Polynomial> for [i32; N] {
     fn from(p: Polynomial) -> [i32; N] {
@@ -203,7 +218,7 @@ pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
 /// of expressions of the form c = a * b (mod q).
 /// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
 pub(crate) fn montgomery_reduce(a: i64) -> i32 {
-    debug_assert!(a > - ((q as i64) <<31) && a < ((q as i64) <<31));
+    debug_assert!(a > -((q as i64) << 31) && a < ((q as i64) << 31));
 
     // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
     let t: i32 = (a as i32).wrapping_mul(q_inv);
@@ -216,7 +231,6 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     // todo: https://github.com/openssl/openssl/blob/3be12549113b955a19a2bde5eed9a0b1649e2168/crypto/ml_dsa/ml_dsa_ntt.c#L93
     // 2026-02-26: I tried this, but couldn't get it working -- needed to find the openssl impl of reduce_once()
 }
-
 
 pub(crate) fn reduce_poly(w: &mut Polynomial) {
     for x in w.0.iter_mut() {
@@ -234,22 +248,20 @@ pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)
 }
 
-
 #[test]
 /// These are the results it's giving; I'm not sure if these are "correct" or not.
 fn test_conditional_add_q() {
-    assert_eq!(conditional_add_q(-q -1), -1);
+    assert_eq!(conditional_add_q(-q - 1), -1);
     assert_eq!(conditional_add_q(-q), 0);
-    assert_eq!(conditional_add_q(-q -2), -2);
-    assert_eq!(conditional_add_q(-q +1), 1);
-    assert_eq!(conditional_add_q(-1), q-1);
+    assert_eq!(conditional_add_q(-q - 2), -2);
+    assert_eq!(conditional_add_q(-q + 1), 1);
+    assert_eq!(conditional_add_q(-1), q - 1);
     assert_eq!(conditional_add_q(0), 0);
     assert_eq!(conditional_add_q(1), 1);
-    assert_eq!(conditional_add_q(q -1), q-1);
+    assert_eq!(conditional_add_q(q - 1), q - 1);
     assert_eq!(conditional_add_q(q), q);
-    assert_eq!(conditional_add_q(q +1), q+1);
+    assert_eq!(conditional_add_q(q + 1), q + 1);
 }
-
 
 // #[derive(Clone, Copy)]
 // pub(crate) struct Polynomial<PARAMS: MLDSAParams> {

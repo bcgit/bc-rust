@@ -169,6 +169,15 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
     z: &Polynomial,
 ) -> [u8; POLY_Z_PACKED_LEN] {
     let mut r = [0u8; POLY_Z_PACKED_LEN];
+    bitpack_gamma1_into::<POLY_Z_PACKED_LEN, GAMMA1>(z, &mut r);
+    r
+}
+
+pub(crate) fn bitpack_gamma1_into<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
+    z: &Polynomial,
+    r: &mut [u8; POLY_Z_PACKED_LEN],
+) {
+    r.fill(0);
 
     let mut t: [u32; 4] = [0; 4];
     match GAMMA1 {
@@ -207,8 +216,6 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
             panic!("Invalid gamma1 value")
         }
     }
-
-    r
 }
 
 /// A specific instantiation of Algorithm 18 SimpleBitUnpack(v, 𝑏) with the constants set for unpacking the t1 vector
@@ -411,10 +418,12 @@ pub(crate) fn sig_encode<
     output[..LAMBDA_over_4].copy_from_slice(c_tilde);
     pos += LAMBDA_over_4;
 
-    for i in 0..l {
-        // todo -- remove this copy by having bitpack_gamma1 take an output slice
-        output[pos..pos + POLY_Z_PACKED_LEN]
-            .copy_from_slice(&bitpack_gamma1::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
+    let (z_chunks, last_chunk) =
+        output[pos..pos + l * POLY_Z_PACKED_LEN].as_chunks_mut::<POLY_Z_PACKED_LEN>();
+    debug_assert_eq!(z_chunks.len(), l);
+    debug_assert_eq!(last_chunk.len(), 0);
+    for (z_chunk, z_i) in z_chunks.into_iter().zip(&z.vec) {
+        bitpack_gamma1_into::<POLY_Z_PACKED_LEN, GAMMA1>(z_i, z_chunk);
         pos += POLY_Z_PACKED_LEN;
     }
 
@@ -686,6 +695,27 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
     A_hat
 }
 
+/// Multiply the implicit public matrix A_hat derived from `rho` by an NTT-domain vector without
+/// materializing the full `k x l` matrix in memory.
+pub(crate) fn expand_a_matrix_vector_ntt<const k: usize, const l: usize>(
+    rho: &[u8; 32],
+    v: &Vector<l>,
+) -> Vector<k> {
+    let mut out = Vector::<k>::new();
+
+    for r in 0..k {
+        debug_assert!(l > 0);
+        let mut acc = polynomial::multiply_ntt(&rej_ntt_poly(rho, &[0u8, r as u8]), &v.vec[0]);
+        for s in 1..l {
+            let tmp = polynomial::multiply_ntt(&rej_ntt_poly(rho, &[s as u8, r as u8]), &v.vec[s]);
+            acc.add_ntt(&tmp);
+        }
+        out.vec[r] = acc;
+    }
+
+    out
+}
+
 /// Algorithm 33 ExpandS(𝜌)
 /// Samples vectors 𝐬1 ∈ 𝑅ℓ and 𝐬2 ∈ 𝑅𝑘 , each with polynomial coordinates whose coefficients are
 /// in the interval \[−𝜂, 𝜂].
@@ -723,10 +753,43 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(v: &Vector<LEN>) -> (Vector<LE
     (r1, r0)
 }
 
+/// Recompute the public-key splitting `t = t1 * 2^d + t0` directly from `rho`, `s1`, and `s2`
+/// without storing the full public matrix.
+pub(crate) fn derive_t_components<const k: usize, const l: usize>(
+    rho: &[u8; 32],
+    s1: &Vector<l>,
+    s2: &Vector<k>,
+) -> (Vector<k>, Vector<k>) {
+    let mut s1_hat = s1.clone();
+    s1_hat.ntt();
+
+    let mut t_hat = expand_a_matrix_vector_ntt::<k, l>(rho, &s1_hat);
+    t_hat.reduce();
+
+    let mut t = t_hat;
+    t.inv_ntt();
+    t.add_vector_ntt(s2);
+    t.conditional_add_q();
+
+    power_2_round_vec::<k>(&t)
+}
+
 /// Algorithm 34 ExpandMask(𝜌, 𝜇)
 /// Samples a vector 𝐲 ∈ 𝑅ℓ such that each polynomial 𝐲[𝑟] has coefficients between −𝛾1 + 1 and 𝛾1.
 /// Input: A seed 𝜌 ∈ 𝔹64 and a nonnegative integer 𝜇.
 /// Output: Vector 𝐲 ∈ 𝑅ℓ .
+pub(crate) fn expand_mask_poly<const GAMMA1: i32, const GAMMA1_MASK_LEN: usize>(
+    rho: &[u8; 64],
+    nonce: u16,
+) -> Polynomial {
+    let mut h = H::new();
+    h.absorb(rho);
+    h.absorb(&nonce.to_le_bytes());
+    let mut v = [0u8; GAMMA1_MASK_LEN];
+    h.squeeze_out(&mut v);
+    bit_unpack_gamma1::<GAMMA1>(&v)
+}
+
 pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_LEN: usize>(
     rho: &[u8; 64],
     mu: u16,
@@ -738,16 +801,7 @@ pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_L
     // 32c = GAMMA1_MASK_LEN;
 
     for r in 0..l {
-        // 3: 𝜌′ ← 𝜌||IntegerToBytes(𝜇 + 𝑟, 2)
-        // 4: 𝑣 ← H(𝜌′, 32𝑐)
-        let mut h = H::new();
-        h.absorb(rho);
-        h.absorb(&(mu + (r as u16)).to_le_bytes());
-        let mut v = [0u8; GAMMA1_MASK_LEN];
-        h.squeeze_out(&mut v);
-
-        // 5: 𝐲[𝑟] ← BitUnpack(𝑣, 𝛾1 − 1, 𝛾1)
-        y.vec[r] = bit_unpack_gamma1::<GAMMA1>(&v);
+        y.vec[r] = expand_mask_poly::<GAMMA1, GAMMA1_MASK_LEN>(rho, mu + r as u16);
     }
 
     y
@@ -872,12 +926,7 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
 
     // By the powers of someone much more clever than me, this is equivalent.
 
-    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0)
-    {
-        0
-    } else {
-        1
-    }
+    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0) { 0 } else { 1 }
 }
 
 /// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
@@ -897,12 +946,49 @@ pub(crate) fn make_hint_vecs<const k: usize, const GAMMA2: i32>(
     (out, count)
 }
 
+pub(crate) fn make_hint_ct0_vecs_out<const k: usize, const GAMMA2: i32>(
+    ct0: &Vector<k>,
+    w: &Vector<k>,
+    out: &mut Vector<k>,
+) -> i32 {
+    let mut count = 0i32;
+
+    for i in 0..k {
+        for j in 0..N {
+            let x = make_hint::<GAMMA2>(-ct0.vec[i].0[j], w.vec[i].0[j]);
+            out.vec[i].0[j] = x;
+            count += x;
+        }
+    }
+
+    count
+}
+
+pub(crate) fn make_hint_r0_w_out<const k: usize, const GAMMA2: i32>(
+    r0: &Vector<k>,
+    w: &Vector<k>,
+    out: &mut Vector<k>,
+) -> i32 {
+    let mut count = 0i32;
+    let mut w1 = Polynomial::new();
+
+    for i in 0..k {
+        w1.0.copy_from_slice(&w.vec[i].0);
+        w1.high_bits_assign::<GAMMA2>();
+        let (hint, weight) = r0.vec[i].make_hint::<GAMMA2>(&w1);
+        out.vec[i] = hint;
+        count += weight;
+    }
+
+    count
+}
+
 /// Algorithm 40 UseHint(ℎ, 𝑟)
 /// Returns the high bits of 𝑟 adjusted according to hint ℎ.
 /// Input: Boolean ℎ, 𝑟 ∈ ℤ𝑞.
 /// Output: 𝑟1 ∈ ℤ with 0 ≤ 𝑟1 ≤ (𝑞−1) / 2*gamma2).
 pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
-    let (a0, a1) = decompose::<GAMMA2>(a);
+    let (a1, a0) = decompose::<GAMMA2>(a);
 
     if hint == 0 {
         return a1;
@@ -913,17 +999,17 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
     match GAMMA2 {
         MLDSA44_GAMMA2 => {
             if a0 > 0 {
-                (a1 + 1) & 15
+                if a1 == 43 { 0 } else { a1 + 1 }
             } else {
-                (a1 - 1) & 15
+                if a1 == 0 { 43 } else { a1 - 1 }
             }
         }
         // ML-DSA65 and 87 have the same GAMMA2
         MLDSA65_GAMMA2 => {
             if a0 > 0 {
-                if a1 == 43 { 0 } else { a1 + 1 }
+                (a1 + 1) & 15
             } else {
-                if a1 == 0 { 43 } else { a1 - 1 }
+                (a1 - 1) & 15
             }
         }
         _ => {
@@ -952,6 +1038,44 @@ pub(crate) fn use_hint_vecs<const k: usize, const GAMMA2: i32>(
     }
 
     out
+}
+
+pub(crate) fn absorb_high_bits_w1<
+    const k: usize,
+    const GAMMA2: i32,
+    const POLY_W1_PACKED_LEN: usize,
+>(
+    hash: &mut H,
+    w: &Vector<k>,
+) {
+    let mut poly = Polynomial::new();
+    let mut encoded = [0u8; POLY_W1_PACKED_LEN];
+
+    for i in 0..k {
+        poly.0.copy_from_slice(&w.vec[i].0);
+        poly.high_bits_assign::<GAMMA2>();
+        poly.w1_encode_into::<POLY_W1_PACKED_LEN>(&mut encoded);
+        hash.absorb(&encoded);
+    }
+}
+
+pub(crate) fn absorb_use_hint_w1<
+    const k: usize,
+    const GAMMA2: i32,
+    const POLY_W1_PACKED_LEN: usize,
+>(
+    hash: &mut H,
+    h: &Vector<k>,
+    wp_approx: &Vector<k>,
+) {
+    let mut poly = Polynomial::new();
+    let mut encoded = [0u8; POLY_W1_PACKED_LEN];
+
+    for i in 0..k {
+        use_hint_polys::<GAMMA2>(&wp_approx.vec[i], &h.vec[i], &mut poly);
+        poly.w1_encode_into::<POLY_W1_PACKED_LEN>(&mut encoded);
+        hash.absorb(&encoded);
+    }
 }
 
 /// Constants for NTT
@@ -1055,7 +1179,6 @@ pub(crate) fn inv_ntt(w_hat: &Polynomial) -> Polynomial {
 
                 // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
                 w.0[j + len] = polynomial::montgomery_reduce(z as i64 * w.0[j + len] as i64);
-                print!("");
             }
             start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.
         }

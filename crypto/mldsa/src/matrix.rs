@@ -3,11 +3,9 @@
 
 use crate::aux_functions::{inv_ntt, ntt};
 use crate::polynomial;
-use crate::polynomial::{Polynomial};
+use crate::polynomial::Polynomial;
 
-
-pub(crate) struct Matrix<const k: usize, const l: usize>
-{
+pub(crate) struct Matrix<const k: usize, const l: usize> {
     pub(crate) matrix: [[Polynomial; l]; k],
 }
 
@@ -25,12 +23,12 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// Output: vector of length k
     pub fn matrix_vector_ntt(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
-        for i in 0 .. k {
+        for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
             w.vec[i].0.copy_from_slice(&polynomial::multiply_ntt(&self.matrix[i][0], &v.vec[0]).0);
 
             let mut t: Polynomial;
-            for j in 1 .. l {
+            for j in 1..l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
@@ -47,15 +45,12 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
 // but I'll leave it zeroizing for now and leave this as a potential future optimization.
 
-
 #[derive(Clone)]
-pub(crate) struct Vector<const LEN: usize>
-{
+pub(crate) struct Vector<const LEN: usize> {
     pub(crate) vec: [Polynomial; LEN],
 }
 
-impl<const LEN: usize> Vector<LEN>
-{
+impl<const LEN: usize> Vector<LEN> {
     pub(crate) fn new() -> Self {
         Self { vec: [(); LEN].map(|_| Polynomial::new()) }
     }
@@ -64,7 +59,7 @@ impl<const LEN: usize> Vector<LEN>
     pub(crate) fn neg(&self) -> Self {
         let mut out = self.clone();
         for i in 0..LEN {
-           out.vec[i].neg();
+            out.vec[i].neg();
         }
 
         out
@@ -76,7 +71,7 @@ impl<const LEN: usize> Vector<LEN>
     /// Output: u_hat ∈ T^ℓ_𝑞.
     /// Add another vector to this vector
     pub(crate) fn add_vector_ntt(&mut self, s: &Self) {
-        for i in 0 .. LEN {
+        for i in 0..LEN {
             // perform montgomery addition of each polynomial in the vector
             self.vec[i].add_ntt(&s.vec[i]);
         }
@@ -84,10 +79,16 @@ impl<const LEN: usize> Vector<LEN>
 
     pub(crate) fn sub_vector(&self, s: &Self) -> Self {
         let mut out = self.clone();
-        for i in 0 .. LEN {
+        for i in 0..LEN {
             out.vec[i].sub(&s.vec[i]);
         }
         out
+    }
+
+    pub(crate) fn sub_assign(&mut self, s: &Self) {
+        for i in 0..LEN {
+            self.vec[i].sub(&s.vec[i]);
+        }
     }
 
     /// Algorithm 47 ScalarVectorNTT(𝑐,̂ 𝐯)̂
@@ -104,19 +105,19 @@ impl<const LEN: usize> Vector<LEN>
     }
 
     pub(crate) fn reduce(&mut self) {
-        for i in 0 .. LEN {
+        for i in 0..LEN {
             polynomial::reduce_poly(&mut self.vec[i]);
         }
     }
 
     pub(crate) fn conditional_add_q(&mut self) {
-        for i in 0 .. LEN {
+        for i in 0..LEN {
             // polynomial::conditional_add_q(&mut self.vec[i]);
             self.vec[i].conditional_add_q();
         }
     }
 
-    pub(crate) fn ntt(&mut self){
+    pub(crate) fn ntt(&mut self) {
         // let mut s_hat = Self::new();
 
         for i in 0..LEN {
@@ -165,6 +166,18 @@ impl<const LEN: usize> Vector<LEN>
         out
     }
 
+    pub(crate) fn low_bits_assign<const GAMMA2: i32>(&mut self) {
+        for i in 0..LEN {
+            self.vec[i].low_bits_assign::<GAMMA2>();
+        }
+    }
+
+    pub(crate) fn shift_left_in_place<const d: i32>(&mut self) {
+        for i in 0..LEN {
+            self.vec[i].shift_left::<d>();
+        }
+    }
+
     pub(crate) fn check_norm(&self, bound: i32) -> bool {
         // Fine that this is not constant-time because it is used in a rejection loop -- the early quit leads to rejection.
         for x in self.vec.iter() {
@@ -179,18 +192,20 @@ impl<const LEN: usize> Vector<LEN>
     /// Encodes a polynomial vector 𝐰1 into a byte string.
     /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
     /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
-    pub(crate) fn w1_encode<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; W1_PACKED_LEN] {        
+    pub(crate) fn w1_encode<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(
+        &self,
+    ) -> [u8; W1_PACKED_LEN] {
         // 1: 𝐰̃1 ← ()
         let mut w1_tilde = [0u8; W1_PACKED_LEN];
+        let (poly_chunks, last_chunk) = w1_tilde.as_chunks_mut::<POLY_W1_PACKED_LEN>();
+        debug_assert_eq!(poly_chunks.len(), LEN);
+        debug_assert_eq!(last_chunk.len(), 0);
 
         // 2: for 𝑖 from 0 to 𝑘 − 1 do
         // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
         // 4: end for
-        for i in 0..LEN {
-            w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
-                // todo -- optimize this to take a slice and write directly to it?
-                &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
-            )
+        for (poly_chunk, poly) in poly_chunks.into_iter().zip(&self.vec) {
+            poly.w1_encode_into::<POLY_W1_PACKED_LEN>(poly_chunk);
         }
 
         // 5: return 𝐰̃1
