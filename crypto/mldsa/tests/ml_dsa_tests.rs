@@ -54,7 +54,7 @@ mod mldsa_tests {
                                                         .try_into().unwrap();
 
         // Decode and re-encode the sk, make sure you get the same thing
-        let expected_sk = MLDSA44PrivateKey::from_sk_bytes(&expected_sk_bytes);
+        let expected_sk = MLDSA44PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = expected_sk.sk_encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
@@ -99,15 +99,15 @@ mod mldsa_tests {
                                                         .try_into().unwrap();
 
         // Decode and re-encode the sk, make sure you get the same thing
-        let decoded_sk = MLDSA65PrivateKey::from_sk_bytes(&expected_sk_bytes);
+        let decoded_sk = MLDSA65PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = decoded_sk.sk_encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
 
 
         // Decode and re-encode the pk, make sure you get the same thing
-        let expected_pk = MLDSA65PublicKey::from_pk_bytes(&expected_pk_bytes);
-        let pk_bytes = expected_pk.pk_encode();
+        let expected_pk = MLDSA65PublicKey::from_bytes(&expected_pk_bytes).unwrap();
+        let pk_bytes = expected_pk.encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
@@ -144,15 +144,15 @@ mod mldsa_tests {
                                                         .try_into().unwrap();
 
         // Decode and re-encode the sk, make sure you get the same thing
-        let decoded_sk = MLDSA87PrivateKey::from_sk_bytes(&expected_sk_bytes);
+        let decoded_sk = MLDSA87PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = decoded_sk.sk_encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
 
 
         // Decode and re-encode the pk, make sure you get the same thing
-        let expected_pk = MLDSA87PublicKey::from_pk_bytes(&expected_pk_bytes);
-        let pk_bytes = expected_pk.pk_encode();
+        let expected_pk = MLDSA87PublicKey::from_bytes(&expected_pk_bytes).unwrap();
+        let pk_bytes = expected_pk.encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 

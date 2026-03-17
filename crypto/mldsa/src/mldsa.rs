@@ -719,8 +719,7 @@ type MLDSA44impl = MLDSA<
 impl MLDSA44 {
     /// Generate a fresh key pair using the default cryptographic RNG, seeded from the OS.
     pub fn keygen_from_os_rng() -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA44impl::keygen_from_os_rng()?;
-        Ok((MLDSA44PublicKey(pk), MLDSA44PrivateKey(sk)))
+        MLDSA44impl::keygen_from_os_rng()
     }
 
     /// Expand a (pk, sk) keypair from a private key seed.
@@ -736,8 +735,7 @@ impl MLDSA44 {
         seed: &KeyMaterialSized<32>,
     ) -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
         // todo: can I make this infallible?
-        let (pk, sk) = MLDSA44impl::keygen_internal(&seed)?;
-        Ok((MLDSA44PublicKey(pk), MLDSA44PrivateKey(sk)))
+        MLDSA44impl::keygen_internal(&seed)
     }
 
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -750,8 +748,7 @@ impl MLDSA44 {
         seed: &KeyMaterialSized<32>,
         encoded_sk: &[u8; MLDSA44_SK_LEN],
     ) -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA44impl::keygen_from_seed_and_encoded(seed, encoded_sk)?;
-        Ok((MLDSA44PublicKey(pk), MLDSA44PrivateKey(sk)))
+        MLDSA44impl::keygen_from_seed_and_encoded(seed, encoded_sk)
     }
 
     /// Given a public key and a secret key, check that the public key matches the secret key.
@@ -766,7 +763,7 @@ impl MLDSA44 {
         pk: MLDSA44PublicKey,
         sk: MLDSA44PrivateKey,
     ) -> Result<(), SignatureError> {
-        MLDSA44impl::keypair_consistency_check(pk.0, sk.0)
+        MLDSA44impl::keypair_consistency_check(pk, sk)
     }
 
     /// This provides the first half of the "External Mu" interface to ML-DSA which is described
@@ -823,7 +820,7 @@ impl MLDSA44 {
         ctx: Option<&[u8]>,
         sk: &MLDSA44PrivateKey,
     ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
+        MuBuilder::compute_mu(msg, ctx, &sk.tr)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -834,7 +831,7 @@ impl MLDSA44 {
         sk: &MLDSA44PrivateKey,
         mu: &[u8; 64],
     ) -> Result<[u8; MLDSA44_SIG_LEN], SignatureError> {
-        MLDSA44impl::sign_mu(&sk.0, mu)
+        MLDSA44impl::sign_mu(&sk, mu)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -848,7 +845,7 @@ impl MLDSA44 {
         mu: &[u8; 64],
         output: &mut [u8; MLDSA44_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA44impl::sign_mu_out(&sk.0, mu, output)
+        MLDSA44impl::sign_mu_out(&sk, mu, output)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -863,7 +860,7 @@ impl MLDSA44 {
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; MLDSA44_SIG_LEN], SignatureError> {
-        MLDSA44impl::sign_mu_deterministic(&sk.0, mu, rnd)
+        MLDSA44impl::sign_mu_deterministic(&sk, mu, rnd)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -881,7 +878,7 @@ impl MLDSA44 {
         rnd: [u8; 32],
         output: &mut [u8; MLDSA44_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA44impl::sign_mu_internal_out(&sk.0, mu, rnd, output)
+        MLDSA44impl::sign_mu_internal_out(&sk, mu, rnd, output)
     }
 
     /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
@@ -899,7 +896,7 @@ impl MLDSA44 {
         mu: &[u8; 64],
         sig: &[u8; MLDSA44_SIG_LEN],
     ) -> Result<(), SignatureError> {
-        if MLDSA44impl::verify_mu_internal(&pk.0, &mu, sig) {
+        if MLDSA44impl::verify_mu_internal(&pk, &mu, sig) {
             Ok(())
         } else {
             Err(SignatureError::SignatureVerificationFailed)
@@ -910,8 +907,7 @@ impl MLDSA44 {
 impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
 
     fn keygen() -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA44impl::keygen_from_os_rng()?;
-        Ok((MLDSA44PublicKey(pk), MLDSA44PrivateKey(sk)))
+        MLDSA44impl::keygen_from_os_rng()
     }
 
     fn sign(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
@@ -922,7 +918,7 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
     }
 
     fn sign_out(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
+        let mu = MuBuilder::compute_mu(msg, ctx, &sk.tr)?;
         if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
         let output_sized: &mut [u8; MLDSA44_SIG_LEN] = output[..MLDSA44_SIG_LEN].as_mut().try_into().unwrap();
         let bytes_written = Self::sign_mu_out(sk, &mu, output_sized)?;
@@ -933,9 +929,9 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
     fn sign_init(sk: &MLDSA44PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(
             Self {
-                mu_builder: MuBuilder::do_init(&sk.0.tr, ctx)?,
+                mu_builder: MuBuilder::do_init(&sk.tr, ctx)?,
                 signer_rnd: None,
-                sk: Some(MLDSA44PrivateKey(sk.0.clone())),
+                sk: Some(sk.clone()),
                 pk: None }
         )
     }
@@ -966,7 +962,7 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
     }
 
     fn verify(pk: &MLDSA44PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())?;
 
         if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
         Self::verify_mu(pk, &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap())
@@ -978,7 +974,7 @@ impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
                 mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
                 signer_rnd: None,
                 sk: None,
-                pk: Some(MLDSA44PublicKey(pk.0.clone())) }
+                pk: Some(pk.clone()) }
         )
     }
 
@@ -1040,7 +1036,7 @@ impl MLDSA65 {
     /// Genarate a fresh key pair using the default cryptographic RNG, seeded from the OS.
     pub fn keygen_from_os_rng() -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
         let (pk, sk) = MLDSA65impl::keygen_from_os_rng()?;
-        Ok((MLDSA65PublicKey(pk), MLDSA65PrivateKey(sk)))
+        Ok((pk, sk))
     }
 
     /// Expand a (pk, sk) keypair from a private key seed.
@@ -1055,8 +1051,7 @@ impl MLDSA65 {
     pub fn keygen_from_seed(
         seed: &KeyMaterialSized<32>,
     ) -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA65impl::keygen_internal(&seed)?;
-        Ok((MLDSA65PublicKey(pk), MLDSA65PrivateKey(sk)))
+        MLDSA65impl::keygen_internal(&seed)
     }
 
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -1069,8 +1064,7 @@ impl MLDSA65 {
         seed: &KeyMaterialSized<32>,
         encoded_sk: &[u8; MLDSA65_SK_LEN],
     ) -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA65impl::keygen_from_seed_and_encoded(seed, encoded_sk)?;
-        Ok((MLDSA65PublicKey(pk), MLDSA65PrivateKey(sk)))
+        MLDSA65impl::keygen_from_seed_and_encoded(seed, encoded_sk)
     }
 
     /// Given a public key and a secret key, check that the public key matches the secret key.
@@ -1085,7 +1079,7 @@ impl MLDSA65 {
         pk: MLDSA65PublicKey,
         sk: MLDSA65PrivateKey,
     ) -> Result<(), SignatureError> {
-        MLDSA65impl::keypair_consistency_check(pk.0, sk.0)
+        MLDSA65impl::keypair_consistency_check(pk, sk)
     }
 
     /// This provides the first half of the "External Mu" interface to ML-DSA which is described
@@ -1142,7 +1136,7 @@ impl MLDSA65 {
         ctx: Option<&[u8]>,
         sk: &MLDSA65PrivateKey,
     ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
+        MuBuilder::compute_mu(msg, ctx, &sk.tr)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -1153,7 +1147,7 @@ impl MLDSA65 {
         sk: &MLDSA65PrivateKey,
         mu: &[u8; 64],
     ) -> Result<[u8; MLDSA65_SIG_LEN], SignatureError> {
-        MLDSA65impl::sign_mu(&sk.0, mu)
+        MLDSA65impl::sign_mu(&sk, mu)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -1167,7 +1161,7 @@ impl MLDSA65 {
         mu: &[u8; 64],
         output: &mut [u8; MLDSA65_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA65impl::sign_mu_out(&sk.0, mu, output)
+        MLDSA65impl::sign_mu_out(&sk, mu, output)
     }
 
 
@@ -1182,7 +1176,7 @@ impl MLDSA65 {
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; MLDSA65_SIG_LEN], SignatureError> {
-        MLDSA65impl::sign_mu_deterministic(&sk.0, mu, rnd)
+        MLDSA65impl::sign_mu_deterministic(&sk, mu, rnd)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -1197,7 +1191,7 @@ impl MLDSA65 {
         rnd: [u8; 32],
         output: &mut [u8; MLDSA65_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA65impl::sign_mu_internal_out(&sk.0, mu, rnd, output)
+        MLDSA65impl::sign_mu_internal_out(&sk, mu, rnd, output)
     }
 
     /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
@@ -1215,7 +1209,7 @@ impl MLDSA65 {
         mu: &[u8; 64],
         sig: &[u8; MLDSA65_SIG_LEN],
     ) -> Result<(), SignatureError> {
-        if MLDSA65impl::verify_mu_internal(&pk.0, &mu, sig) {
+        if MLDSA65impl::verify_mu_internal(&pk, &mu, sig) {
             Ok(())
         } else {
             Err(SignatureError::SignatureVerificationFailed)
@@ -1226,8 +1220,7 @@ impl MLDSA65 {
 impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
 
     fn keygen() -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA65impl::keygen_from_os_rng()?;
-        Ok((MLDSA65PublicKey(pk), MLDSA65PrivateKey(sk)))
+        MLDSA65impl::keygen_from_os_rng()
     }
 
     fn sign(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: Option<&[u8]>,) -> Result<Vec<u8>, SignatureError> {
@@ -1238,7 +1231,7 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
     }
 
     fn sign_out(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
+        let mu = MuBuilder::compute_mu(msg, ctx, &sk.tr)?;
         if output.len() < MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
         let output_sized: &mut [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].as_mut().try_into().unwrap();
         Self::sign_mu_out(sk, &mu, output_sized)
@@ -1247,9 +1240,9 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
     fn sign_init(sk: &MLDSA65PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(
             Self {
-                mu_builder: MuBuilder::do_init(&sk.0.tr, ctx)?,
+                mu_builder: MuBuilder::do_init(&sk.tr, ctx)?,
                 signer_rnd: None,
-                sk: Some(MLDSA65PrivateKey(sk.0.clone())),
+                sk: Some(sk.clone()),
                 pk: None }
         )
     }
@@ -1280,11 +1273,11 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
     }
 
     fn verify(pk: &MLDSA65PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())?;
 
         if sig.len() != MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
 
-        if MLDSA65impl::verify_mu_internal(&pk.0, &mu, &sig[..MLDSA65_SIG_LEN].try_into().unwrap()) {
+        if MLDSA65impl::verify_mu_internal(&pk, &mu, &sig[..MLDSA65_SIG_LEN].try_into().unwrap()) {
             Ok(())
         } else {
             Err(SignatureError::SignatureVerificationFailed)
@@ -1297,7 +1290,7 @@ impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
                 mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
                 signer_rnd: None,
                 sk: None,
-                pk: Some(MLDSA65PublicKey(pk.0.clone())) }
+                pk: Some(pk.clone()) }
         )
     }
 
@@ -1358,7 +1351,7 @@ impl MLDSA87 {
     /// Genarate a fresh key pair using the default cryptographic RNG, seeded from the OS.
     pub fn keygen_from_os_rng() -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
         let (pk, sk) = MLDSA87impl::keygen_from_os_rng()?;
-        Ok((MLDSA87PublicKey(pk), MLDSA87PrivateKey(sk)))
+        Ok((pk, sk))
     }
 
     /// Expand a (pk, sk) keypair from a private key seed.
@@ -1374,7 +1367,7 @@ impl MLDSA87 {
         seed: &KeyMaterialSized<32>,
     ) -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
         let (pk, sk) = MLDSA87impl::keygen_internal(&seed)?;
-        Ok((MLDSA87PublicKey(pk), MLDSA87PrivateKey(sk)))
+        Ok((pk, sk))
     }
 
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -1387,8 +1380,7 @@ impl MLDSA87 {
         seed: &KeyMaterialSized<32>,
         encoded_sk: &[u8; MLDSA87_SK_LEN],
     ) -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA87impl::keygen_from_seed_and_encoded(seed, encoded_sk)?;
-        Ok((MLDSA87PublicKey(pk), MLDSA87PrivateKey(sk)))
+        MLDSA87impl::keygen_from_seed_and_encoded(seed, encoded_sk)
     }
 
     /// Given a public key and a secret key, check that the public key matches the secret key.
@@ -1403,7 +1395,7 @@ impl MLDSA87 {
         pk: MLDSA87PublicKey,
         sk: MLDSA87PrivateKey,
     ) -> Result<(), SignatureError> {
-        MLDSA87impl::keypair_consistency_check(pk.0, sk.0)
+        MLDSA87impl::keypair_consistency_check(pk, sk)
     }
 
     /// This provides the first half of the "External Mu" interface to ML-DSA which is described
@@ -1460,7 +1452,7 @@ impl MLDSA87 {
         ctx: Option<&[u8]>,
         sk: &MLDSA87PrivateKey,
     ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &sk.0.tr)
+        MuBuilder::compute_mu(msg, ctx, &sk.tr)
     }
 
 
@@ -1472,7 +1464,7 @@ impl MLDSA87 {
         sk: &MLDSA87PrivateKey,
         mu: &[u8; 64],
     ) -> Result<[u8; MLDSA87_SIG_LEN], SignatureError> {
-        MLDSA87impl::sign_mu(&sk.0, mu)
+        MLDSA87impl::sign_mu(&sk, mu)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -1486,7 +1478,7 @@ impl MLDSA87 {
         mu: &[u8; 64],
         output: &mut [u8; MLDSA87_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA87impl::sign_mu_out(&sk.0, mu, output)
+        MLDSA87impl::sign_mu_out(&sk, mu, output)
     }
 
 
@@ -1501,7 +1493,7 @@ impl MLDSA87 {
         mu: &[u8; 64],
         rnd: [u8; 32]
     ) -> Result<[u8; MLDSA87_SIG_LEN], SignatureError> {
-        MLDSA87impl::sign_mu_deterministic(&sk.0, mu, rnd)
+        MLDSA87impl::sign_mu_deterministic(&sk, mu, rnd)
     }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -1516,7 +1508,7 @@ impl MLDSA87 {
         rnd: [u8; 32],
         output: &mut [u8; MLDSA87_SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        MLDSA87impl::sign_mu_internal_out(&sk.0, mu, rnd, output)
+        MLDSA87impl::sign_mu_internal_out(&sk, mu, rnd, output)
     }
 
     /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
@@ -1534,7 +1526,7 @@ impl MLDSA87 {
         mu: &[u8; 64],
         sig: &[u8; MLDSA87_SIG_LEN],
     ) -> Result<(), SignatureError> {
-        if MLDSA87impl::verify_mu_internal(&pk.0, &mu, sig) {
+        if MLDSA87impl::verify_mu_internal(&pk, &mu, sig) {
             Ok(())
         } else {
             Err(SignatureError::SignatureVerificationFailed)
@@ -1545,8 +1537,7 @@ impl MLDSA87 {
 impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
 
     fn keygen() -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA87impl::keygen_from_os_rng()?;
-        Ok((MLDSA87PublicKey(pk), MLDSA87PrivateKey(sk)))
+        MLDSA87impl::keygen_from_os_rng()
     }
 
     fn sign(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
@@ -1557,7 +1548,7 @@ impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
     }
 
     fn sign_out(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &sk.0.tr)?;
+        let mu = MuBuilder::compute_mu(msg, ctx, &sk.tr)?;
         if output.len() < MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
         let output_sized: &mut [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].as_mut().try_into().unwrap();
         Self::sign_mu_out(sk, &mu, output_sized)
@@ -1566,9 +1557,9 @@ impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
     fn sign_init(sk: &MLDSA87PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(
             Self {
-                mu_builder: MuBuilder::do_init(&sk.0.tr, ctx)?,
+                mu_builder: MuBuilder::do_init(&sk.tr, ctx)?,
                 signer_rnd: None ,
-                sk: Some(MLDSA87PrivateKey(sk.0.clone())),
+                sk: Some(sk.clone()),
                 pk: None
             }
         )
@@ -1600,11 +1591,11 @@ impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
     }
 
     fn verify(pk: &MLDSA87PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &pk.0.compute_tr())?;
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())?;
 
         if sig.len() != MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
 
-        if MLDSA87impl::verify_mu_internal(&pk.0, &mu, &sig[..MLDSA87_SIG_LEN].try_into().unwrap()) {
+        if MLDSA87impl::verify_mu_internal(&pk, &mu, &sig[..MLDSA87_SIG_LEN].try_into().unwrap()) {
             Ok(())
         } else {
             Err(SignatureError::SignatureVerificationFailed)
@@ -1617,7 +1608,7 @@ impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
                 mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
                 signer_rnd: None,
                 sk: None,
-                pk: Some(MLDSA87PublicKey(pk.0.clone())) }
+                pk: Some(pk.clone()) }
         )
     }
 

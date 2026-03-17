@@ -22,7 +22,7 @@ mod mldsa_tests {
             .try_into().unwrap();
 
         // Decode and re-encode the sk, make sure you get the same thing
-        let expected_sk = MLDSA44PrivateKey::from_sk_bytes(&expected_sk_bytes);
+        let expected_sk = MLDSA44PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = expected_sk.sk_encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());

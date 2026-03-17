@@ -231,8 +231,8 @@ impl TestFrameworkSignatureKeys {
     >(&self) {
         let (pk, sk) = SigAlg::keygen().unwrap();
         
-        let sk_str = format!("{:?}", sk);
-        println!("sk_str: {}", sk_str);
+        // let sk_str = format!("{:?}", sk);
+        // println!("sk_str: {}", sk_str);
     }
 }
 

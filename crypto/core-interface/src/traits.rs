@@ -515,7 +515,7 @@ pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey>: Sized {
 }
 
 /// A public key for a signature algorithm, often denoted "pk".
-pub trait SignaturePublicKey {
+pub trait SignaturePublicKey : PartialEq + Eq + Clone + Debug + Display + Sized {
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> Vec<u8>;
 
@@ -523,11 +523,11 @@ pub trait SignaturePublicKey {
     fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
 
     /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
 
 /// A private key for a signature algorithm, often denoted "sk" (for "secret key").
-pub trait SignaturePrivateKey {
+pub trait SignaturePrivateKey: PartialEq + Eq + Clone + Debug + Display + Sized {
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> Vec<u8>;
 
@@ -535,7 +535,7 @@ pub trait SignaturePrivateKey {
     fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
 
     /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> where Self: Sized;
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
 
 /// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
