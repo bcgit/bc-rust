@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod mldsa_tests {
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core_interface::traits::SignaturePublicKey;
-    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA44_SK_LEN};
+    use bouncycastle_core_interface::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
+    use bouncycastle_core_test_framework::signature::{TestFrameworkSignature, TestFrameworkSignatureKeys};
+    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSA44, MLDSA65, MLDSA87};
+    use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
     use bouncycastle_hex as hex;
 
     #[test]
@@ -36,4 +38,87 @@ mod mldsa_tests {
         let pk1 = expected_sk.derive_public_key();
         assert_eq!(pk1, decoded_pk);
     }
+
+    #[test]
+    fn test_eq() {
+
+        // MLDSA-44
+
+        let (pk, sk) = MLDSA44::keygen().unwrap();
+
+        // basic equality checks
+        assert_eq!(pk, pk);
+        assert_eq!(pk, pk.clone());
+        assert_eq!(pk, MLDSA44PublicKey::from_bytes(&pk.pk_encode()).unwrap());
+
+        assert_eq!(sk, sk);
+        assert_eq!(sk, sk.clone());
+        assert_eq!(sk, MLDSA44PrivateKey::from_bytes(&sk.sk_encode()).unwrap());
+
+        // inequality checks
+        let mut bytes = pk.encode();
+        bytes[17] ^= 0x01;
+        assert_ne!(pk, MLDSA44PublicKey::from_bytes(&bytes).unwrap());
+
+        let mut bytes = sk.encode();
+        bytes[17] ^= 0x01;
+        assert_ne!(sk, MLDSA44PrivateKey::from_bytes(&bytes).unwrap());
+
+
+        // MLDSA-65
+
+        let (pk, sk) = MLDSA65::keygen().unwrap();
+
+        // basic equality checks
+        assert_eq!(pk, pk);
+        assert_eq!(pk, pk.clone());
+        assert_eq!(pk, MLDSA65PublicKey::from_bytes(&pk.pk_encode()).unwrap());
+
+        assert_eq!(sk, sk);
+        assert_eq!(sk, sk.clone());
+        assert_eq!(sk, MLDSA65PrivateKey::from_bytes(&sk.sk_encode()).unwrap());
+
+        // inequality checks
+        let mut bytes = pk.encode();
+        bytes[17] ^= 0x01;
+        assert_ne!(pk, MLDSA65PublicKey::from_bytes(&bytes).unwrap());
+
+        let mut bytes = sk.encode();
+        bytes[17] ^= 0x01;
+        assert_ne!(sk, MLDSA65PrivateKey::from_bytes(&bytes).unwrap());
+
+
+        // MLDSA-87
+
+        let (pk, sk) = MLDSA87::keygen().unwrap();
+
+        // basic equality checks
+        assert_eq!(pk, pk);
+        assert_eq!(pk, pk.clone());
+        assert_eq!(pk, MLDSA87PublicKey::from_bytes(&pk.pk_encode()).unwrap());
+
+        assert_eq!(sk, sk);
+        assert_eq!(sk, sk.clone());
+        assert_eq!(sk, MLDSA87PrivateKey::from_bytes(&sk.sk_encode()).unwrap());
+
+        // inequality checks
+        let mut bytes = pk.encode();
+        bytes[17] ^= 0x01;
+        assert_ne!(pk, MLDSA87PublicKey::from_bytes(&bytes).unwrap());
+
+        let mut bytes = sk.encode();
+        bytes[17] ^= 0x01;
+        assert_ne!(sk, MLDSA87PrivateKey::from_bytes(&bytes).unwrap());
+    }
+
+
+    #[test]
+    fn core_framework_tests() {
+        let tf = TestFrameworkSignatureKeys::new();
+
+        tf.test_public_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN>();
+        tf.test_public_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN>();
+        tf.test_public_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN>();
+    }
+
 }

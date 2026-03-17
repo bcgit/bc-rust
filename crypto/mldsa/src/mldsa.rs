@@ -286,7 +286,7 @@ impl<
     /// the provided `encoded_sk` using a constant-time equality check.
     /// If everything checks out, the secret key is returned fully populated with pk and seed.
     /// If the provided key and derived key don't match, an error is returned.
-    pub fn keygen_from_seed_and_encoded(
+    fn keygen_from_seed_and_encoded(
         seed: &KeyMaterialSized<32>,
         encoded_sk: &[u8; SK_LEN],
     ) -> Result<
@@ -316,7 +316,7 @@ impl<
     ///
     /// TODO -- sync with openssl implementation
     /// TODO -- https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L385
-    pub fn keypair_consistency_check(
+    fn keypair_consistency_check(
         pk: MLDSAPublicKey<k, PK_LEN>,
         sk: MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
     ) -> Result<(), SignatureError> {
@@ -327,7 +327,7 @@ impl<
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
     /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    pub fn sign_mu(
+    fn sign_mu(
         sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
         mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
@@ -342,7 +342,7 @@ impl<
     /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_out(
+    fn sign_mu_out(
         sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
@@ -361,7 +361,7 @@ impl<
     /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
     /// prevent accidental nonce reuse, this function moves `rnd`.
     ///
-    pub fn sign_mu_deterministic(
+    fn sign_mu_deterministic(
         sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
         mu: &[u8; 64],
         rnd: [u8; 32],
@@ -539,7 +539,7 @@ impl<
     /// Internal function to verify a signature 𝜎 for a formatted message 𝑀′ .
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑) and message 𝑀′ ∈ {0, 1}∗ .
     /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
-    pub fn verify_mu_internal(
+    fn verify_mu_internal(
         pk: &MLDSAPublicKey<k, PK_LEN>,
         mu: &[u8; 64],
         sig: &[u8; SIG_LEN],
@@ -679,7 +679,7 @@ impl MuBuilder {
 
 /*** ML-DSA-44 ***/
 
-// todo -- crunch these three identical implementations down with a macro
+// todo -- crunch these three identical implementations down with a macro or clever type system?
 
 pub struct MLDSA44 {
     // used for streaming the message for both signing and verifying
@@ -693,6 +693,7 @@ pub struct MLDSA44 {
     // only used in streaming verify operations
     pk: Option<MLDSA44PublicKey>,
 }
+
 type MLDSA44impl = MLDSA<
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,

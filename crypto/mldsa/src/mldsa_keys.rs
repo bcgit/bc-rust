@@ -13,6 +13,7 @@ use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::KeyMaterialSized;
 use bouncycastle_core_interface::traits::{Secret, SignaturePrivateKey, SignaturePublicKey, XOF};
 use std::fmt;
+use std::fmt::{Display, Formatter};
 
 /// An ML-DSA public key.
 #[derive(Clone)]
@@ -83,7 +84,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
     /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
     /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
     ///     to use, for example, to build a public key lookup or deny-listing table.
-    pub(crate) fn compute_tr(&self) -> [u8; 64] {
+    pub fn compute_tr(&self) -> [u8; 64] {
         let mut tr = [0u8; 64];
         H::new().hash_xof_out(&self.pk_encode(), &mut tr);
 
@@ -430,7 +431,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 /*** Public Key Struct defs ***/
 
 /// ML-DSA-44 public key
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MLDSA44PublicKey(pub(crate) MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>);
 
 impl From<MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>>
@@ -495,16 +496,14 @@ impl SignaturePublicKey for MLDSA44PublicKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let sized_bytes: [u8; MLDSA44_PK_LEN] = match bytes[..MLDSA44_PK_LEN].try_into() {
-            Ok(bytes) => bytes,
-            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
-        };
+        if bytes.len() != MLDSA44_PK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
+        let sized_bytes: [u8; MLDSA44_PK_LEN] = bytes[..MLDSA44_PK_LEN].try_into().unwrap();
         Ok(Self::pk_decode(&sized_bytes))
     }
 }
 
 /// ML-DSA-65 public key
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MLDSA65PublicKey(pub(crate) MLDSAPublicKey<MLDSA65_k, MLDSA65_PK_LEN>);
 
 impl From<MLDSAPublicKey<MLDSA65_k, MLDSA65_PK_LEN>>
@@ -570,16 +569,14 @@ impl SignaturePublicKey for MLDSA65PublicKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let sized_bytes: [u8; MLDSA65_PK_LEN] = match bytes[..MLDSA65_PK_LEN].try_into() {
-            Ok(bytes) => bytes,
-            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
-        };
+        if bytes.len() != MLDSA65_PK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
+        let sized_bytes: [u8; MLDSA65_PK_LEN] = bytes[..MLDSA65_PK_LEN].try_into().unwrap();
         Ok(Self::pk_decode(&sized_bytes))
     }
 }
 
 /// ML-DSA-87 public key
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MLDSA87PublicKey(pub(crate) MLDSAPublicKey<MLDSA87_k, MLDSA87_PK_LEN>);
 
 impl From<MLDSAPublicKey<MLDSA87_k, MLDSA87_PK_LEN>>
@@ -651,10 +648,8 @@ impl SignaturePublicKey for MLDSA87PublicKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let sized_bytes: [u8; MLDSA87_PK_LEN] = match bytes[..MLDSA87_PK_LEN].try_into() {
-            Ok(bytes) => bytes,
-            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
-        };
+        if bytes.len() != MLDSA87_PK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
+        let sized_bytes: [u8; MLDSA87_PK_LEN] = bytes[..MLDSA87_PK_LEN].try_into().unwrap();
         Ok(Self::pk_decode(&sized_bytes))
     }
 }
@@ -662,7 +657,7 @@ impl SignaturePublicKey for MLDSA87PublicKey {
 /*** Private Key Struct defs ***/
 
 /// ML-DSA-44 Private Key
-#[derive(Debug)] // should be safe because the inner structure impls Debug and won't dump private key contents
+#[derive(Debug, Clone)] // should be safe because the inner structure impls Debug and won't dump private key contents
 pub struct MLDSA44PrivateKey(
     pub(crate) MLDSAPrivateKey<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_SK_LEN, MLDSA44_PK_LEN>,
 );
@@ -729,6 +724,20 @@ impl MLDSA44PrivateKey {
     }
 }
 
+impl Secret for MLDSA44PrivateKey {}
+
+impl Drop for MLDSA44PrivateKey {
+    fn drop(&mut self) {
+        self.
+    }
+}
+
+impl Display for MLDSA44PrivateKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        todo!()
+    }
+}
+
 impl SignaturePrivateKey for MLDSA44PrivateKey {
     fn encode(&self) -> Vec<u8> {
         self.0.sk_encode().to_vec()
@@ -746,16 +755,14 @@ impl SignaturePrivateKey for MLDSA44PrivateKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let sized_bytes: [u8; MLDSA44_SK_LEN] = match bytes[..MLDSA44_SK_LEN].try_into() {
-            Ok(bytes) => bytes,
-            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
-        };
+        if bytes.len() != MLDSA44_SK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
+        let sized_bytes: [u8; MLDSA44_SK_LEN] = bytes[..MLDSA44_SK_LEN].try_into().unwrap();
         Ok(Self::sk_decode(&sized_bytes))
     }
 }
 
 /// ML-DSA-65 Private Key
-#[derive(Debug)] // should be safe because the inner structure impls Debug and won't dump private key contents
+#[derive(Debug, Clone)] // should be safe because the inner structure impls Debug and won't dump private key contents
 pub struct MLDSA65PrivateKey(
     pub(crate) MLDSAPrivateKey<MLDSA65_k, MLDSA65_l, MLDSA65_ETA, MLDSA65_SK_LEN, MLDSA65_PK_LEN>,
 );
@@ -840,16 +847,14 @@ impl SignaturePrivateKey for MLDSA65PrivateKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let sized_bytes: [u8; MLDSA65_SK_LEN] = match bytes[..MLDSA65_SK_LEN].try_into() {
-            Ok(bytes) => bytes,
-            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
-        };
+        if bytes.len() != MLDSA65_SK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
+        let sized_bytes: [u8; MLDSA65_SK_LEN] = bytes[..MLDSA65_SK_LEN].try_into().unwrap();
         Ok(Self::sk_decode(&sized_bytes))
     }
 }
 
 /// ML-DSA-87 Private Key
-#[derive(Debug)] // should be safe because the inner structure impls Debug and won't dump private key contents
+#[derive(Debug, Clone)] // should be safe because the inner structure impls Debug and won't dump private key contents
 pub struct MLDSA87PrivateKey(
     pub(crate) MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, MLDSA87_SK_LEN, MLDSA87_PK_LEN>,
 );
@@ -933,10 +938,8 @@ impl SignaturePrivateKey for MLDSA87PrivateKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let sized_bytes: [u8; MLDSA87_SK_LEN] = match bytes[..MLDSA87_SK_LEN].try_into() {
-            Ok(bytes) => bytes,
-            Err(_) => { return Err(SignatureError::DecodingError("Provided bytes are the incorrect length")) },
-        };
+        if bytes.len() != MLDSA87_PK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
+        let sized_bytes: [u8; MLDSA87_SK_LEN] = bytes[..MLDSA87_SK_LEN].try_into().unwrap();
         Ok(Self::sk_decode(&sized_bytes))
     }
 }

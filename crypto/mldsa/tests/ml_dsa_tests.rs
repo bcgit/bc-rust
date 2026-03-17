@@ -184,6 +184,7 @@ mod mldsa_tests {
     #[test]
     fn deterministic_sign() {
         // at least one test each of signing with a deterministic signing nonce
+        // We support setting the signing nonce (rnd) via two interfaces: external mu, and streaming API.
 
         // ML-DSA-44
 
