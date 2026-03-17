@@ -173,7 +173,6 @@ impl TestFrameworkSignatureKeys {
         const SK_LEN: usize,
     >(&self) {
         self.test_boundary_conditions::<PK, SK, SigAlg, PK_LEN, SK_LEN>();
-        self.debug_fmt_tests::<PK, SK, SigAlg, PK_LEN, SK_LEN>();
     }
 
     /// Tests the correct behaviour on buffers too large / too small.
@@ -218,21 +217,6 @@ impl TestFrameworkSignatureKeys {
             Err(SignatureError::DecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
-    }
-
-    /// Tests that no private data is displayed
-    // TODO: add the same tests to the core ML-DSA tests on vectors and polynomials
-    fn debug_fmt_tests<
-        PK: SignaturePublicKey,
-        SK: SignaturePrivateKey,
-        SigAlg: Signature<PK, SK>,
-        const PK_LEN: usize,
-        const SK_LEN: usize,
-    >(&self) {
-        let (pk, sk) = SigAlg::keygen().unwrap();
-        
-        // let sk_str = format!("{:?}", sk);
-        // println!("sk_str: {}", sk_str);
     }
 }
 

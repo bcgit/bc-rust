@@ -32,10 +32,6 @@ pub struct MLDSAPublicKey<const k: usize, const PK_LEN: usize> {
 }
 
 pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePublicKey {
-    /// Not exposing a constructor publicly because you should have to get an instance either by
-    /// running a keygen, or by decoding an existing key.
-    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self;
-
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
@@ -55,6 +51,12 @@ pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePu
     /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
     ///     to use, for example, to build a public key lookup or deny-listing table.
     fn compute_tr(&self) -> [u8; 64];
+}
+
+pub(crate) trait MLDSAPublicKeyInternalTrait<const k: usize, const PK_LEN: usize> {
+    /// Not exposing a constructor publicly because you should have to get an instance either by
+    /// running a keygen, or by decoding an existing key.
+    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self;
 
     /// Get a ref to rho
     fn rho(&self) -> &[u8; 32];
@@ -64,10 +66,6 @@ pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePu
 }
 
 impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k, PK_LEN> for MLDSAPublicKey<k, PK_LEN> {
-    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self {
-        Self { rho: rho.clone(), t1: t1.clone() }
-    }
-
     fn pk_encode(&self) -> [u8; PK_LEN] {
         let mut pk = [0u8; PK_LEN];
 
@@ -114,6 +112,12 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k, PK_LEN> for MLD
         H::new().hash_xof_out(&self.pk_encode(), &mut tr);
 
         tr
+    }
+}
+
+impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyInternalTrait<k, PK_LEN> for MLDSAPublicKey<k, PK_LEN> {
+    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self {
+        Self { rho: rho.clone(), t1: t1.clone() }
     }
 
     fn rho(&self) -> &[u8; 32] { &self.rho }
@@ -197,36 +201,6 @@ pub struct MLDSAPrivateKey<
 }
 
 pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize> : SignaturePrivateKey {
-    /// Not exposing a constructor publicly because you should have to get an instance either by
-    /// running a keygen, or by decoding an existing key.
-    fn new(
-        rho: &[u8; 32],
-        K: &[u8; 32],
-        tr: &[u8; 64],
-        s1: &Vector<l>,
-        s2: &Vector<k>,
-        t0: &Vector<k>,
-        seed: Option<KeyMaterialSized<32>>,
-    ) -> Self;
-
-    /// Get a ref to rho
-    fn rho(&self) -> &[u8; 32];
-
-    /// Get a ref to K
-    fn K(&self) -> &[u8; 32];
-
-    /// Get a ref to tr
-    fn tr(&self) -> &[u8; 64];
-
-    /// Get a ref to s1
-    fn s1(&self) -> &Vector<l>;
-
-    /// Get a ref to s2
-    fn s2(&self) -> &Vector<k>;
-
-    /// Get a ref to t0
-    fn t0(&self) -> &Vector<k>;
-
     /// Get a ref to the seed, if there is one stored with this private key
     fn seed(&self) -> &Option<KeyMaterialSized<32>>;
 
@@ -249,9 +223,9 @@ pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize,
     fn sk_decode(sk: &[u8; SK_LEN]) -> Self;
 }
 
-
-impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
-    MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
+pub(crate) trait MLDSAPrivateKeyInternalTrait<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize> {
+    /// Not exposing a constructor publicly because you should have to get an instance either by
+    /// running a keygen, or by decoding an existing key.
     fn new(
         rho: &[u8; 32],
         K: &[u8; 32],
@@ -260,30 +234,29 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         s2: &Vector<k>,
         t0: &Vector<k>,
         seed: Option<KeyMaterialSized<32>>,
-    ) -> Self {
-        Self {
-            rho: rho.clone(),
-            K: K.clone(),
-            tr: tr.clone(),
-            s1: s1.clone(),
-            s2: s2.clone(),
-            t0: t0.clone(),
-            seed: seed.clone(),
-        }
-    }
+    ) -> Self;
+    /// Get a ref to rho
+    fn rho(&self) -> &[u8; 32];
 
-    fn rho(&self) -> &[u8; 32] { &self.rho }
+    /// Get a ref to K
+    fn K(&self) -> &[u8; 32];
 
-    fn K(&self) -> &[u8; 32] { &self.K }
+    /// Get a ref to tr
+    fn tr(&self) -> &[u8; 64];
 
-    fn tr(&self) -> &[u8; 64] { &self.tr }
+    /// Get a ref to s1
+    fn s1(&self) -> &Vector<l>;
 
-    fn s1(&self) -> &Vector<l> { &self.s1 }
+    /// Get a ref to s2
+    fn s2(&self) -> &Vector<k>;
 
-    fn s2(&self) -> &Vector<k> { &self.s2 }
+    /// Get a ref to t0
+    fn t0(&self) -> &Vector<k>;
+}
 
-    fn t0(&self) -> &Vector<k> { &self.t0 }
 
+impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
+    MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
     fn seed(&self) -> &Option<KeyMaterialSized<32>> { &self.seed }
 
     fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN> {
@@ -388,6 +361,41 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         Self::new(&rho, &K, &tr, &s1, &s2, &t0, None)
     }
+}
+
+impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
+    MLDSAPrivateKeyInternalTrait<k, l, eta, SK_LEN, PK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
+    fn new(
+        rho: &[u8; 32],
+        K: &[u8; 32],
+        tr: &[u8; 64],
+        s1: &Vector<l>,
+        s2: &Vector<k>,
+        t0: &Vector<k>,
+        seed: Option<KeyMaterialSized<32>>,
+    ) -> Self {
+        Self {
+            rho: rho.clone(),
+            K: K.clone(),
+            tr: tr.clone(),
+            s1: s1.clone(),
+            s2: s2.clone(),
+            t0: t0.clone(),
+            seed: seed.clone(),
+        }
+    }
+    
+    fn rho(&self) -> &[u8; 32] { &self.rho }
+
+    fn K(&self) -> &[u8; 32] { &self.K }
+
+    fn tr(&self) -> &[u8; 64] { &self.tr }
+
+    fn s1(&self) -> &Vector<l> { &self.s1 }
+
+    fn s2(&self) -> &Vector<k> { &self.s2 }
+
+    fn t0(&self) -> &Vector<k> { &self.t0 }
 }
 
 impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>

@@ -1,13 +1,14 @@
 use std::marker::PhantomData;
 use crate::aux_functions::{expand_mask, expandA, expandS, make_hint_vecs, ntt, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
 use crate::matrix::Vector;
-use crate::mldsa_keys::{MLDSAPrivateKey, MLDSAPrivateKeyTrait, MLDSAPublicKey, MLDSAPublicKeyTrait};
+use crate::mldsa_keys::{MLDSAPublicKeyTrait, MLDSAPublicKeyInternalTrait};
+use crate::mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPrivateKeyInternalTrait};
 use crate::{MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA87PublicKey, MLDSA87PrivateKey};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType,
 };
-use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature, SignaturePublicKey, SignaturePrivateKey};
+use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature};
 use bouncycastle_rng::{HashDRBG_SHA512};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
@@ -199,8 +200,8 @@ pub struct MLDSA<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -236,8 +237,8 @@ impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -786,8 +787,8 @@ impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,

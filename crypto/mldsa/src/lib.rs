@@ -3,7 +3,6 @@
 
 #![allow(unused_variables)] // todo - remove
 #![allow(dead_code)] // todo - remove
-// #![allow(private_interfaces)] // todo debugging -- remove
 
 #![forbid(unsafe_code)]
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
@@ -15,6 +14,10 @@
 // But need to tell the rust linter to not care.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
+
+// so I can use private traits to hide internal stuff that needs to be generic within the
+// MLDSA implentation, but I don't want accessed from outside, such FIPS-internal functions.
+#![allow(private_bounds)]
 
 mod mldsa;
 mod hashmldsa;
