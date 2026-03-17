@@ -1,12 +1,13 @@
+use std::marker::PhantomData;
 use crate::aux_functions::{expand_mask, expandA, expandS, make_hint_vecs, ntt, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
 use crate::matrix::Vector;
-use crate::mldsa_keys::{MLDSAPrivateKey, MLDSAPublicKey};
+use crate::mldsa_keys::{MLDSAPrivateKey, MLDSAPrivateKeyTrait, MLDSAPublicKey, MLDSAPublicKeyTrait};
 use crate::{MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA87PublicKey, MLDSA87PrivateKey};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType,
 };
-use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature};
+use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature, SignaturePublicKey, SignaturePrivateKey};
 use bouncycastle_rng::{HashDRBG_SHA512};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
@@ -119,10 +120,87 @@ pub(crate) const MLDSA87_GAMMA1_MASK_LEN: usize = 640;
 pub(crate) type H = SHAKE256;
 pub(crate) type G = SHAKE128;
 
-struct MLDSA<
+
+/*** Pub Types ***/
+pub type MLDSA44 = MLDSA<
+    MLDSA44_PK_LEN,
+    MLDSA44_SK_LEN,
+    MLDSA44_SIG_LEN,
+    MLDSA44PublicKey,
+    MLDSA44PrivateKey,
+    MLDSA44_TAU,
+    MLDSA44_LAMBDA,
+    MLDSA44_GAMMA1,
+    MLDSA44_GAMMA2,
+    MLDSA44_k,
+    MLDSA44_l,
+    MLDSA44_ETA,
+    MLDSA44_BETA,
+    MLDSA44_OMEGA,
+    MLDSA44_C_TILDE,
+    MLDSA44_POLY_Z_PACKED_LEN,
+    MLDSA44_POLY_W1_PACKED_LEN,
+    MLDSA44_W1_PACKED_LEN,
+    MLDSA44_POLY_ETA_PACKED_LEN,
+    MLDSA44_LAMBDA_over_4,
+    MLDSA44_GAMMA1_MASK_LEN,
+>;
+
+pub type MLDSA65 = MLDSA<
+    MLDSA65_PK_LEN,
+    MLDSA65_SK_LEN,
+    MLDSA65_SIG_LEN,
+    MLDSA65PublicKey,
+    MLDSA65PrivateKey,
+    MLDSA65_TAU,
+    MLDSA65_LAMBDA,
+    MLDSA65_GAMMA1,
+    MLDSA65_GAMMA2,
+    MLDSA65_k,
+    MLDSA65_l,
+    MLDSA65_ETA,
+    MLDSA65_BETA,
+    MLDSA65_OMEGA,
+    MLDSA65_C_TILDE,
+    MLDSA65_POLY_Z_PACKED_LEN,
+    MLDSA65_POLY_W1_PACKED_LEN,
+    MLDSA65_W1_PACKED_LEN,
+    MLDSA65_POLY_ETA_PACKED_LEN,
+    MLDSA65_LAMBDA_over_4,
+    MLDSA65_GAMMA1_MASK_LEN,
+>;
+
+pub type MLDSA87 = MLDSA<
+    MLDSA87_PK_LEN,
+    MLDSA87_SK_LEN,
+    MLDSA87_SIG_LEN,
+    MLDSA87PublicKey,
+    MLDSA87PrivateKey,
+    MLDSA87_TAU,
+    MLDSA87_LAMBDA,
+    MLDSA87_GAMMA1,
+    MLDSA87_GAMMA2,
+    MLDSA87_k,
+    MLDSA87_l,
+    MLDSA87_ETA,
+    MLDSA87_BETA,
+    MLDSA87_OMEGA,
+    MLDSA87_C_TILDE,
+    MLDSA87_POLY_Z_PACKED_LEN,
+    MLDSA87_POLY_W1_PACKED_LEN,
+    MLDSA87_W1_PACKED_LEN,
+    MLDSA87_POLY_ETA_PACKED_LEN,
+    MLDSA87_LAMBDA_over_4,
+    MLDSA87_GAMMA1_MASK_LEN,
+>;
+
+
+pub struct MLDSA<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
+    PK: MLDSAPublicKeyTrait<k, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -139,12 +217,27 @@ struct MLDSA<
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> { }
+> {
+    _phantom: PhantomData<(PK, SK)>,
+
+    /// used for streaming the message for both signing and verifying
+    mu_builder: MuBuilder,
+
+    signer_rnd: Option<[u8; RND_LEN]>,
+
+    /// only used in streaming sign operations
+    sk: Option<SK>,
+
+    /// only used in streaming verify operations
+    pk: Option<PK>,
+}
 
 impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
+    PK: MLDSAPublicKeyTrait<k, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -165,6 +258,8 @@ impl<
     PK_LEN,
     SK_LEN,
     SIG_LEN,
+    PK,
+    SK,
     TAU,
     LAMBDA,
     GAMMA1,
@@ -195,7 +290,7 @@ impl<
     fn keygen_internal(
         seed: &KeyMaterial256,
     ) -> Result<
-        (MLDSAPublicKey<k, PK_LEN>, MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>),
+        (PK, SK),
         SignatureError,
     > {
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
@@ -255,14 +350,14 @@ impl<
         let (t1, t0) = power_2_round_vec::<k>(&t);
 
         // 8: 𝑝𝑘 ← pkEncode(𝜌, 𝐭1)
-        let pk = MLDSAPublicKey::<k, PK_LEN>::new(&rho, &t1);
+        let pk = PK::new(&rho, &t1);
 
         // 9: 𝑡𝑟 ← H(𝑝𝑘, 64)
         let tr = pk.compute_tr();
 
         // 10: 𝑠𝑘 ← skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
         //   ▷ 𝐾 and 𝑡𝑟 are for use in signing
-        let sk = MLDSAPrivateKey::new(&rho, &K, &tr, &s1, &s2, &t0, Some(seed.clone()));
+        let sk = SK::new(&rho, &K, &tr, &s1, &s2, &t0, Some(seed.clone()));
 
         // 11: return (𝑝𝑘, 𝑠𝑘)
         Ok((pk, sk))
@@ -271,13 +366,18 @@ impl<
     /*** Key Generation and PK / SK consistency checks ***/
 
     /// Should still be ok in FIPS mode
-    fn keygen_from_os_rng() -> Result<
-        (MLDSAPublicKey<k, PK_LEN>, MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>),
+    pub fn keygen_from_os_rng() -> Result<
+        (PK, SK),
         SignatureError,
     > {
         let mut seed = KeyMaterial256::new();
         HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
         Self::keygen_internal(&seed)
+    }
+
+    /// Imports a secret key from a seed.
+    pub fn keygen_from_seed(seed: &KeyMaterialSized<32>) -> Result<(PK, SK), SignatureError> {
+        Self::keygen_internal(seed)
     }
 
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -286,16 +386,16 @@ impl<
     /// the provided `encoded_sk` using a constant-time equality check.
     /// If everything checks out, the secret key is returned fully populated with pk and seed.
     /// If the provided key and derived key don't match, an error is returned.
-    fn keygen_from_seed_and_encoded(
+    pub fn keygen_from_seed_and_encoded(
         seed: &KeyMaterialSized<32>,
         encoded_sk: &[u8; SK_LEN],
     ) -> Result<
-        (MLDSAPublicKey<k, PK_LEN>, MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>),
+        (PK, SK),
         SignatureError,
     > {
         let (pk, sk) = Self::keygen_internal(seed)?;
 
-        let sk_from_bytes = MLDSAPrivateKey::<k, l, ETA, SK_LEN, PK_LEN>::sk_decode(encoded_sk);
+        let sk_from_bytes = SK::sk_decode(encoded_sk);
 
         // MLDSAPrivateKey impls PartialEq with a constant-time equality check.
         if sk != sk_from_bytes {
@@ -316,19 +416,76 @@ impl<
     ///
     /// TODO -- sync with openssl implementation
     /// TODO -- https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L385
-    fn keypair_consistency_check(
-        pk: MLDSAPublicKey<k, PK_LEN>,
-        sk: MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
+    pub fn keypair_consistency_check(
+        pk: &PK,
+        sk: &SK,
     ) -> Result<(), SignatureError> {
         todo!()
     }
+
+        /// This provides the first half of the "External Mu" interface to ML-DSA which is described
+        /// in, and allowed under, NIST's FAQ that accompanies FIPS 204.
+        ///
+        /// This function, together with [sign_mu] perform a complete ML-DSA signature which is indistinguishable
+        /// from one produced by the one-shot sign APIs.
+        ///
+        /// The utility of this function is exactly as described
+        /// on Line 6 of Algorithm 7 of FIPS 204:
+        ///
+        ///    message representative that may optionally be computed in a different cryptographic module
+        ///
+        /// The utility is when an extremely large message needs to be signed, where the message exists on one
+        /// computing system and the private key to sign it is held on another and either the transfer time or bandwidth
+        /// causes operational concerns (this is common for example with network HSMs or sending large messages
+        /// to be signed by a smartcard communicating over near-field radio). Another use case is if the
+        /// contents of the message are sensitive and the signer does not want to transmit the message itself
+        /// for fear of leaking it via proxy logging and instead would prefer to only transmit a hash of it.
+        ///
+        /// Since "External Mu" mode is well-defined by FIPS 204 and allowed by NIST, the mu value produced here
+        /// can be used with many hardware crypto modules.
+        ///
+        /// This "External Mu" mode of ML-DSA provides an alternative to the HashML-DSA algorithm in that it
+        /// allows the message to be externally pre-hashed, however, unlike HashML-DSA, this is merely an optimization
+        /// between the application holding the to-be-signed message and the cryptographic module holding the private key
+        /// -- in particular, while HashML-DSA requires the verifier to know whether ML-DSA or HashML-DSA was used to sign
+        /// the message, both "direct" ML-DSA and "External Mu" signatures can be verified with a standard
+        /// ML-DSA verifier.
+        ///
+        /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
+        ///
+        /// For a streaming version of this, see [MuBuilder].
+        pub fn compute_mu_from_tr(
+            msg: &[u8],
+            ctx: Option<&[u8]>,
+            tr: &[u8; 64],
+        ) -> Result<[u8; 64], SignatureError> {
+            MuBuilder::compute_mu(msg, ctx, tr)
+        }
+
+        /// Same as [compute_mu_from_tr], but extracts tr from the public key.
+        pub fn compute_mu_from_pk(
+            msg: &[u8],
+            ctx: Option<&[u8]>,
+            pk: &PK,
+        ) -> Result<[u8; 64], SignatureError> {
+            MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
+        }
+
+        /// Same as [compute_mu_from_tr], but extracts tr from the private key.
+        pub fn compute_mu_from_sk(
+            msg: &[u8],
+            ctx: Option<&[u8]>,
+            sk: &SK,
+        ) -> Result<[u8; 64], SignatureError> {
+            MuBuilder::compute_mu(msg, ctx, &sk.tr())
+        }
 
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
     /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
     fn sign_mu(
-        sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
+        sk: &SK,
         mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
@@ -343,16 +500,19 @@ impl<
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_mu_out(
-        sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
+        sk: &SK,
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         let mut rnd: [u8; 32] = [0u8; 32];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
 
-        Self::sign_mu_internal_out(sk, mu, rnd, output)
+        Self::sign_mu_deterministic_out(sk, mu, rnd, output)
     }
 
+    /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
+    /// (modified to take an externally-computed mu instead of M')
+    ///
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
@@ -361,16 +521,19 @@ impl<
     /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
     /// prevent accidental nonce reuse, this function moves `rnd`.
     ///
-    fn sign_mu_deterministic(
-        sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
+    pub fn sign_mu_deterministic(
+        sk: &SK,
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
-        Self::sign_mu_internal_out(sk, mu, rnd, &mut out)?;
+        Self::sign_mu_deterministic_out(sk, mu, rnd, &mut out)?;
         Ok(out)
     }
 
+    /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
+    /// (modified to take an externally-computed mu instead of M')
+    ///
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
@@ -380,8 +543,8 @@ impl<
     /// prevent accidental nonce reuse, this function moves `rnd`.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub(crate) fn sign_mu_internal_out(
-        sk: &MLDSAPrivateKey<k, l, ETA, SK_LEN, PK_LEN>,
+    pub(crate) fn sign_mu_deterministic_out(
+        sk: &SK,
         mu: &[u8; 64],
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
@@ -390,26 +553,26 @@ impl<
         // Already done -- the sk struct is already decoded
 
         // 2: 𝐬1̂_hat ← NTT(𝐬1)
-        let mut s1_hat = sk.s1.clone();
+        let mut s1_hat = sk.s1().clone();
         s1_hat.ntt();
 
         // 3: 𝐬2̂_hat ← NTT(𝐬2)
-        let mut s2_hat = sk.s2.clone();
+        let mut s2_hat = sk.s2().clone();
         s2_hat.ntt();
 
         // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
-        let mut t0_hat = sk.t0.clone();
+        let mut t0_hat = sk.t0().clone();
         t0_hat.ntt();
 
         // 5: 𝐀_hat ← ExpandA(𝜌)
-        let A_hat = expandA::<k, l>(&sk.rho);
+        let A_hat = expandA::<k, l>(&sk.rho());
 
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         // skip: mu has already been provided
 
         // 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
         let mut h = H::new();
-        h.absorb(&sk.K);
+        h.absorb(sk.K());
         h.absorb(&rnd);
         h.absorb(mu);
         let mut rho_p_p = [0u8; 64];
@@ -535,12 +698,18 @@ impl<
         Ok(bytes_written)
     }
 
+    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
+    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
+    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
+        self.signer_rnd = Some(rnd);
+    }
+
     /// Algorithm 8 ML-DSA.Verify_internal(𝑝𝑘, 𝑀′, 𝜎)
     /// Internal function to verify a signature 𝜎 for a formatted message 𝑀′ .
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑) and message 𝑀′ ∈ {0, 1}∗ .
     /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
     fn verify_mu_internal(
-        pk: &MLDSAPublicKey<k, PK_LEN>,
+        pk: &PK,
         mu: &[u8; 64],
         sig: &[u8; SIG_LEN],
     ) -> bool {
@@ -563,7 +732,7 @@ impl<
         // 5: 𝐀 ← ExpandA(𝜌)
         //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
         #[allow(non_snake_case)]
-        let A_hat = expandA::<k, l>(&pk.rho);
+        let A_hat = expandA::<k, l>(&pk.rho());
 
         // 6: 𝑡𝑟 ← H(𝑝𝑘, 64)
         // 7: 𝜇 ← (H(BytesToBits(𝑡𝑟)||𝑀 ′, 64))
@@ -585,7 +754,7 @@ impl<
         let mut z_hat = z.clone();
         z_hat.ntt();
         let w1 = A_hat.matrix_vector_ntt(&z_hat);
-        let mut t1_shift_hat = pk.t1.shift_left::<d>();
+        let mut t1_shift_hat = pk.t1().shift_left::<d>();
         t1_shift_hat.ntt();
         let w2 = t1_shift_hat.scalar_vector_ntt( &ntt(&c) );
         let mut wp_approx = w1.sub_vector(&w2);
@@ -612,6 +781,149 @@ impl<
         bouncycastle_utils::ct::ct_eq_bytes(&c_tilde, &c_tilde_p)
     }
 }
+
+impl<
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+    PK: MLDSAPublicKeyTrait<k, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    const TAU: i32,
+    const LAMBDA: i32,
+    const GAMMA1: i32,
+    const GAMMA2: i32,
+    const k: usize,
+    const l: usize,
+    const ETA: usize,
+    const BETA: i32,
+    const OMEGA: i32,
+    const C_TILDE: usize,
+    const POLY_Z_PACKED_LEN: usize,
+    const POLY_W1_PACKED_LEN: usize,
+    const W1_PACKED_LEN: usize,
+    const POLY_ETA_PACKED_LEN: usize,
+    const LAMBDA_over_4: usize,
+    const GAMMA1_MASK_LEN: usize,
+> Signature<PK, SK> for MLDSA<
+    PK_LEN,
+    SK_LEN,
+    SIG_LEN,
+    PK,
+    SK,
+    TAU,
+    LAMBDA,
+    GAMMA1,
+    GAMMA2,
+    k,
+    l,
+    ETA,
+    BETA,
+    OMEGA,
+    C_TILDE,
+    POLY_Z_PACKED_LEN,
+    POLY_W1_PACKED_LEN,
+    W1_PACKED_LEN,
+    POLY_ETA_PACKED_LEN,
+    LAMBDA_over_4,
+    GAMMA1_MASK_LEN,
+> {
+
+    fn keygen() -> Result<(PK, SK), SignatureError> {
+        Self::keygen_from_os_rng()
+    }
+
+    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
+        let mut out = vec![0u8; SIG_LEN];
+        Self::sign_out(sk, msg, ctx, &mut out)?;
+
+        Ok(out)
+    }
+
+    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &sk.tr())?;
+        if output.len() < SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
+        let bytes_written = Self::sign_mu_out(sk, &mu, output_sized)?;
+
+        Ok(bytes_written)
+    }
+
+    fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                _phantom: PhantomData,
+                mu_builder: MuBuilder::do_init(&sk.tr(), ctx)?,
+                signer_rnd: None,
+                sk: Some(sk.clone()),
+                pk: None }
+        )
+    }
+
+    fn sign_update(&mut self, msg_chunk: &[u8]) {
+        self.mu_builder.do_update(msg_chunk);
+    }
+
+    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
+        let mut out = [0u8; SIG_LEN];
+        self.sign_final_out(&mut out)?;
+        Ok(Vec::from(out))
+    }
+
+    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
+        let mu = self.mu_builder.do_final();
+
+        assert!(self.sk.is_some(), "Somehow you managed to construct a streaming signer without a private key, impressive!");
+
+        if output.len() < SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
+
+        if self.signer_rnd.is_none() {
+            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
+        } else {
+            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
+        }
+    }
+
+    fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())?;
+
+        if sig.len() != SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        if Self::verify_mu_internal(pk, &mu, &sig[..SIG_LEN].try_into().unwrap()) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
+    }
+
+    fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+        Ok(
+            Self {
+                _phantom: Default::default(),
+                mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
+                signer_rnd: None,
+                sk: None,
+                pk: Some(pk.clone()) }
+        )
+    }
+
+    fn verify_update(&mut self, msg_chunk: &[u8]) {
+        self.mu_builder.do_update(msg_chunk);
+    }
+
+    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+        let mu = self.mu_builder.do_final();
+
+        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
+
+        if sig.len() != SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        if Self::verify_mu_internal(&self.pk.unwrap(), &mu, &sig[..SIG_LEN].try_into().unwrap()) {
+            Ok(())
+        } else {
+            Err(SignatureError::SignatureVerificationFailed)
+        }
+    }
+}
+
 
 /// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204.
 /// Provides a stateful version of [compute_mu_from_pk] and [compute_mu_from_tr] that supports streaming
@@ -672,956 +984,5 @@ impl MuBuilder {
         self.h.squeeze_out(&mut mu);
 
         mu
-    }
-}
-
-
-
-/*** ML-DSA-44 ***/
-
-// todo -- crunch these three identical implementations down with a macro or clever type system?
-
-pub struct MLDSA44 {
-    // used for streaming the message for both signing and verifying
-    mu_builder: MuBuilder,
-
-    signer_rnd: Option<[u8; RND_LEN]>,
-
-    // only used in streaming sign operations
-    sk: Option<MLDSA44PrivateKey>,
-
-    // only used in streaming verify operations
-    pk: Option<MLDSA44PublicKey>,
-}
-
-type MLDSA44impl = MLDSA<
-    MLDSA44_PK_LEN,
-    MLDSA44_SK_LEN,
-    MLDSA44_SIG_LEN,
-    MLDSA44_TAU,
-    MLDSA44_LAMBDA,
-    MLDSA44_GAMMA1,
-    MLDSA44_GAMMA2,
-    MLDSA44_k,
-    MLDSA44_l,
-    MLDSA44_ETA,
-    MLDSA44_BETA,
-    MLDSA44_OMEGA,
-    MLDSA44_C_TILDE,
-    MLDSA44_POLY_Z_PACKED_LEN,
-    MLDSA44_POLY_W1_PACKED_LEN,
-    MLDSA44_W1_PACKED_LEN,
-    MLDSA44_POLY_ETA_PACKED_LEN,
-    MLDSA44_LAMBDA_over_4,
-    MLDSA44_GAMMA1_MASK_LEN,
->;
-
-impl MLDSA44 {
-    /// Generate a fresh key pair using the default cryptographic RNG, seeded from the OS.
-    pub fn keygen_from_os_rng() -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
-        MLDSA44impl::keygen_from_os_rng()
-    }
-
-    /// Expand a (pk, sk) keypair from a private key seed.
-    /// Both pk and sk objects will be fully populated.
-    /// This is simply a pass-through to [MLDSA::keygen_internal], which is allowed to be exposed externally by NIST.
-    ///
-    /// Unlike other interfaces across the library that take an &impl KeyMaterial, this one
-    /// specifically takes a 32-byte [KeyMaterial256] and checks that it has [KeyType::Seed] and
-    /// [SecurityStrength::_256bit].
-    /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
-    /// [KeyMaterial::from_key] -- todo: make sure this works and copies key type and security strength correctly.
-    pub fn keygen_from_seed(
-        seed: &KeyMaterialSized<32>,
-    ) -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
-        // todo: can I make this infallible?
-        MLDSA44impl::keygen_internal(&seed)
-    }
-
-    /// Imports a secret key from both a seed and an encoded_sk.
-    ///
-    /// This is a convenience function to expand the key from seed and compare it against
-    /// the provided `encoded_sk` using a constant-time equality check.
-    /// If everything checks out, the secret key is returned fully populated with pk and seed.
-    /// If the provided key and derived key don't match, an error is returned.
-    pub fn keygen_from_seed_and_encoded(
-        seed: &KeyMaterialSized<32>,
-        encoded_sk: &[u8; MLDSA44_SK_LEN],
-    ) -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
-        MLDSA44impl::keygen_from_seed_and_encoded(seed, encoded_sk)
-    }
-
-    /// Given a public key and a secret key, check that the public key matches the secret key.
-    /// This is a sanity check that the public key was generated correctly from the secret key.
-    ///
-    /// At the current time, this is only possible if `sk` either contains a public key (in which case
-    /// the two pk's are encoded and compared for byte equality), or if `sk` contains a seed
-    /// (in which case a keygen_from_seed is run and then the pk's compared).
-    /// TODO -- sync with openssl implementation
-    /// TODO -- https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L385
-    pub fn keypair_consistency_check(
-        pk: MLDSA44PublicKey,
-        sk: MLDSA44PrivateKey,
-    ) -> Result<(), SignatureError> {
-        MLDSA44impl::keypair_consistency_check(pk, sk)
-    }
-
-    /// This provides the first half of the "External Mu" interface to ML-DSA which is described
-    /// in, and allowed under, NIST's FAQ that accompanies FIPS 204.
-    ///
-    /// This function, together with [sign_mu] perform a complete ML-DSA signature which is indistinguishable
-    /// from one produced by the one-shot sign APIs.
-    ///
-    /// The utility of this function is exactly as described
-    /// on Line 6 of Algorithm 7 of FIPS 204:
-    ///
-    ///    message representative that may optionally be computed in a different cryptographic module
-    ///
-    /// The utility is when an extremely large message needs to be signed, where the message exists on one
-    /// computing system and the private key to sign it is held on another and either the transfer time or bandwidth
-    /// causes operational concerns (this is common for example with network HSMs or sending large messages
-    /// to be signed by a smartcard communicating over near-field radio). Another use case is if the
-    /// contents of the message are sensitive and the signer does not want to transmit the message itself
-    /// for fear of leaking it via proxy logging and instead would prefer to only transmit a hash of it.
-    ///
-    /// Since "External Mu" mode is well-defined by FIPS 204 and allowed by NIST, the mu value produced here
-    /// can be used with many hardware crypto modules.
-    ///
-    /// This "External Mu" mode of ML-DSA provides an alternative to the HashML-DSA algorithm in that it
-    /// allows the message to be externally pre-hashed, however, unlike HashML-DSA, this is merely an optimization
-    /// between the application holding the to-be-signed message and the cryptographic module holding the private key
-    /// -- in particular, while HashML-DSA requires the verifier to know whether ML-DSA or HashML-DSA was used to sign
-    /// the message, both "direct" ML-DSA and "External Mu" signatures can be verified with a standard
-    /// ML-DSA verifier.
-    ///
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
-    ///
-    /// For a streaming version of this, see [MuBuilder].
-    pub fn compute_mu_from_tr(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        tr: &[u8; 64],
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, tr)
-    }
-
-    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
-    pub fn compute_mu_from_pk(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        pk: &MLDSA44PublicKey,
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
-    }
-
-    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
-    pub fn compute_mu_from_sk(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        sk: &MLDSA44PrivateKey,
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &sk.tr)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    pub fn sign_mu(
-        sk: &MLDSA44PrivateKey,
-        mu: &[u8; 64],
-    ) -> Result<[u8; MLDSA44_SIG_LEN], SignatureError> {
-        MLDSA44impl::sign_mu(&sk, mu)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_out(
-        sk: &MLDSA44PrivateKey,
-        mu: &[u8; 64],
-        output: &mut [u8; MLDSA44_SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        MLDSA44impl::sign_mu_out(&sk, mu, output)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    ///
-    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
-    /// prevent accidental nonce reuse, this function moves `rnd`.
-    pub fn sign_mu_deterministic(
-        sk: &MLDSA44PrivateKey,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-    ) -> Result<[u8; MLDSA44_SIG_LEN], SignatureError> {
-        MLDSA44impl::sign_mu_deterministic(&sk, mu, rnd)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    ///
-    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
-    /// prevent accidental nonce reuse, this function moves `rnd`.
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_deterministic_out(
-        sk: &MLDSA44PrivateKey,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-        output: &mut [u8; MLDSA44_SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        MLDSA44impl::sign_mu_internal_out(&sk, mu, rnd, output)
-    }
-
-    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
-    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
-    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
-        self.signer_rnd = Some(rnd);
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    pub fn verify_mu(
-        pk: &MLDSA44PublicKey,
-        mu: &[u8; 64],
-        sig: &[u8; MLDSA44_SIG_LEN],
-    ) -> Result<(), SignatureError> {
-        if MLDSA44impl::verify_mu_internal(&pk, &mu, sig) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
-    }
-}
-
-impl Signature<MLDSA44PublicKey, MLDSA44PrivateKey> for MLDSA44 {
-
-    fn keygen() -> Result<(MLDSA44PublicKey, MLDSA44PrivateKey), SignatureError> {
-        MLDSA44impl::keygen_from_os_rng()
-    }
-
-    fn sign(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; MLDSA44_SIG_LEN];
-        Self::sign_out(sk, msg, ctx, &mut out)?;
-
-        Ok(out)
-    }
-
-    fn sign_out(sk: &MLDSA44PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &sk.tr)?;
-        if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let output_sized: &mut [u8; MLDSA44_SIG_LEN] = output[..MLDSA44_SIG_LEN].as_mut().try_into().unwrap();
-        let bytes_written = Self::sign_mu_out(sk, &mu, output_sized)?;
-
-        Ok(bytes_written)
-    }
-
-    fn sign_init(sk: &MLDSA44PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        Ok(
-            Self {
-                mu_builder: MuBuilder::do_init(&sk.tr, ctx)?,
-                signer_rnd: None,
-                sk: Some(sk.clone()),
-                pk: None }
-        )
-    }
-
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
-        self.mu_builder.do_update(msg_chunk);
-    }
-
-    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
-        let mut out = [0u8; MLDSA44_SIG_LEN];
-        self.sign_final_out(&mut out)?;
-        Ok(Vec::from(out))
-    }
-
-    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = self.mu_builder.do_final();
-
-        assert!(self.sk.is_some(), "Somehow you managed to construct a streaming signer without a private key, impressive!");
-
-        if output.len() < MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let output_sized: &mut [u8; MLDSA44_SIG_LEN] = output[..MLDSA44_SIG_LEN].as_mut().try_into().unwrap();
-
-        if self.signer_rnd.is_none() {
-            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
-        } else {
-            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
-        }
-    }
-
-    fn verify(pk: &MLDSA44PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())?;
-
-        if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-        Self::verify_mu(pk, &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap())
-    }
-
-    fn verify_init(pk: &MLDSA44PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        Ok(
-            Self {
-                mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
-                signer_rnd: None,
-                sk: None,
-                pk: Some(pk.clone()) }
-        )
-    }
-
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
-        self.mu_builder.do_update(msg_chunk);
-    }
-
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = self.mu_builder.do_final();
-
-        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
-
-        if sig.len() != MLDSA44_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-        Self::verify_mu(&self.pk.unwrap(), &mu, &sig[..MLDSA44_SIG_LEN].try_into().unwrap())
-    }
-}
-
-
-
-
-/*** ML-DSA-65 ***/
-
-// exported as pub in lib.rs
-pub struct MLDSA65 {
-    // used for streaming the message for both signing and verifying
-    mu_builder: MuBuilder,
-
-    signer_rnd: Option<[u8; RND_LEN]>,
-
-    // only used in streaming sign operations
-    sk: Option<MLDSA65PrivateKey>,
-
-    // only used in streaming verify operations
-    pk: Option<MLDSA65PublicKey>,
-}
-type MLDSA65impl = MLDSA<
-    MLDSA65_PK_LEN,
-    MLDSA65_SK_LEN,
-    MLDSA65_SIG_LEN,
-    MLDSA65_TAU,
-    MLDSA65_LAMBDA,
-    MLDSA65_GAMMA1,
-    MLDSA65_GAMMA2,
-    MLDSA65_k,
-    MLDSA65_l,
-    MLDSA65_ETA,
-    MLDSA65_BETA,
-    MLDSA65_OMEGA,
-    MLDSA65_C_TILDE,
-    MLDSA65_POLY_Z_PACKED_LEN,
-    MLDSA65_POLY_W1_PACKED_LEN,
-    MLDSA65_W1_PACKED_LEN,
-    MLDSA65_POLY_ETA_PACKED_LEN,
-    MLDSA65_LAMBDA_over_4,
-    MLDSA65_GAMMA1_MASK_LEN,
->;
-
-impl MLDSA65 {
-    /// Genarate a fresh key pair using the default cryptographic RNG, seeded from the OS.
-    pub fn keygen_from_os_rng() -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA65impl::keygen_from_os_rng()?;
-        Ok((pk, sk))
-    }
-
-    /// Expand a (pk, sk) keypair from a private key seed.
-    /// Both pk and sk objects will be fully populated.
-    /// This is simply a pass-through to [MLDSA::keygen_internal], which is allowed to be exposed externally by NIST.
-    ///
-    /// Unlike other interfaces across the library that take an &impl KeyMaterial, this one
-    /// specifically takes a 32-byte [KeyMaterial256] and checks that it has [KeyType::Seed] and
-    /// [SecurityStrength::_256bit].
-    /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
-    /// [KeyMaterial::from_key] -- todo: make sure this works and copies key type and security strength correctly.
-    pub fn keygen_from_seed(
-        seed: &KeyMaterialSized<32>,
-    ) -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
-        MLDSA65impl::keygen_internal(&seed)
-    }
-
-    /// Imports a secret key from both a seed and an encoded_sk.
-    ///
-    /// This is a convenience function to expand the key from seed and compare it against
-    /// the provided `encoded_sk` using a constant-time equality check.
-    /// If everything checks out, the secret key is returned fully populated with pk and seed.
-    /// If the provided key and derived key don't match, an error is returned.
-    pub fn keygen_from_seed_and_encoded(
-        seed: &KeyMaterialSized<32>,
-        encoded_sk: &[u8; MLDSA65_SK_LEN],
-    ) -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
-        MLDSA65impl::keygen_from_seed_and_encoded(seed, encoded_sk)
-    }
-
-    /// Given a public key and a secret key, check that the public key matches the secret key.
-    /// This is a sanity check that the public key was generated correctly from the secret key.
-    ///
-    /// At the current time, this is only possible if `sk` either contains a public key (in which case
-    /// the two pk's are encoded and compared for byte equality), or if `sk` contains a seed
-    /// (in which case a keygen_from_seed is run and then the pk's compared).
-    /// TODO -- sync with openssl implementation
-    /// TODO -- https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L385
-    pub fn keypair_consistency_check(
-        pk: MLDSA65PublicKey,
-        sk: MLDSA65PrivateKey,
-    ) -> Result<(), SignatureError> {
-        MLDSA65impl::keypair_consistency_check(pk, sk)
-    }
-
-    /// This provides the first half of the "External Mu" interface to ML-DSA which is described
-    /// in, and allowed under, NIST's FAQ that accompanies FIPS 204.
-    ///
-    /// This function, together with [sign_mu] perform a complete ML-DSA signature which is indistinguishable
-    /// from one produced by the one-shot sign APIs.
-    ///
-    /// The utility of this function is exactly as described
-    /// on Line 6 of Algorithm 7 of FIPS 204:
-    ///
-    ///    message representative that may optionally be computed in a different cryptographic module
-    ///
-    /// The utility is when an extremely large message needs to be signed, where the message exists on one
-    /// computing system and the private key to sign it is held on another and either the transfer time or bandwidth
-    /// causes operational concerns (this is common for example with network HSMs or sending large messages
-    /// to be signed by a smartcard communicating over near-field radio). Another use case is if the
-    /// contents of the message are sensitive and the signer does not want to transmit the message itself
-    /// for fear of leaking it via proxy logging and instead would prefer to only transmit a hash of it.
-    ///
-    /// Since "External Mu" mode is well-defined by FIPS 204 and allowed by NIST, the mu value produced here
-    /// can be used with many hardware crypto modules.
-    ///
-    /// This "External Mu" mode of ML-DSA provides an alternative to the HashML-DSA algorithm in that it
-    /// allows the message to be externally pre-hashed, however, unlike HashML-DSA, this is merely an optimization
-    /// between the application holding the to-be-signed message and the cryptographic module holding the private key
-    /// -- in particular, while HashML-DSA requires the verifier to know whether ML-DSA or HashML-DSA was used to sign
-    /// the message, both "direct" ML-DSA and "External Mu" signatures can be verified with a standard
-    /// ML-DSA verifier.
-    ///
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
-    ///
-    /// For a streaming version of this, see [MuBuilder].
-    pub fn compute_mu_from_tr(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        tr: &[u8; 64],
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, tr)
-    }
-
-    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
-    pub fn compute_mu_from_pk(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        pk: &MLDSA65PublicKey,
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
-    }
-
-    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
-    pub fn compute_mu_from_sk(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        sk: &MLDSA65PrivateKey,
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &sk.tr)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    pub fn sign_mu(
-        sk: &MLDSA65PrivateKey,
-        mu: &[u8; 64],
-    ) -> Result<[u8; MLDSA65_SIG_LEN], SignatureError> {
-        MLDSA65impl::sign_mu(&sk, mu)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_out(
-        sk: &MLDSA65PrivateKey,
-        mu: &[u8; 64],
-        output: &mut [u8; MLDSA65_SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        MLDSA65impl::sign_mu_out(&sk, mu, output)
-    }
-
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    ///
-    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
-    /// prevent accidental nonce reuse, this function moves `rnd`.
-    pub fn sign_mu_deterministic(
-        sk: &MLDSA65PrivateKey,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-    ) -> Result<[u8; MLDSA65_SIG_LEN], SignatureError> {
-        MLDSA65impl::sign_mu_deterministic(&sk, mu, rnd)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_deterministic_out(
-        sk: &MLDSA65PrivateKey,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-        output: &mut [u8; MLDSA65_SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        MLDSA65impl::sign_mu_internal_out(&sk, mu, rnd, output)
-    }
-
-    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
-    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
-    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
-        self.signer_rnd = Some(rnd);
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    pub fn verify_mu(
-        pk: &MLDSA65PublicKey,
-        mu: &[u8; 64],
-        sig: &[u8; MLDSA65_SIG_LEN],
-    ) -> Result<(), SignatureError> {
-        if MLDSA65impl::verify_mu_internal(&pk, &mu, sig) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
-    }
-}
-
-impl Signature<MLDSA65PublicKey, MLDSA65PrivateKey> for MLDSA65 {
-
-    fn keygen() -> Result<(MLDSA65PublicKey, MLDSA65PrivateKey), SignatureError> {
-        MLDSA65impl::keygen_from_os_rng()
-    }
-
-    fn sign(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: Option<&[u8]>,) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; MLDSA65_SIG_LEN];
-        Self::sign_out(sk, msg, ctx, &mut out)?;
-
-        Ok(out)
-    }
-
-    fn sign_out(sk: &MLDSA65PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &sk.tr)?;
-        if output.len() < MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let output_sized: &mut [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].as_mut().try_into().unwrap();
-        Self::sign_mu_out(sk, &mu, output_sized)
-    }
-
-    fn sign_init(sk: &MLDSA65PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        Ok(
-            Self {
-                mu_builder: MuBuilder::do_init(&sk.tr, ctx)?,
-                signer_rnd: None,
-                sk: Some(sk.clone()),
-                pk: None }
-        )
-    }
-
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
-        self.mu_builder.do_update(msg_chunk);
-    }
-
-    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
-        let mut out = [0u8; MLDSA65_SIG_LEN];
-        self.sign_final_out(&mut out)?;
-        Ok(Vec::from(out))
-    }
-
-    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = self.mu_builder.do_final();
-
-        assert!(self.sk.is_some(), "Somehow you managed to construct a streaming signer without a private key, impressive!");
-
-        if output.len() < MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let output_sized: &mut [u8; MLDSA65_SIG_LEN] = output[..MLDSA65_SIG_LEN].as_mut().try_into().unwrap();
-
-        if self.signer_rnd.is_none() {
-            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
-        } else {
-            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
-        }
-    }
-
-    fn verify(pk: &MLDSA65PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())?;
-
-        if sig.len() != MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-
-        if MLDSA65impl::verify_mu_internal(&pk, &mu, &sig[..MLDSA65_SIG_LEN].try_into().unwrap()) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
-    }
-
-    fn verify_init(pk: &MLDSA65PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        Ok(
-            Self {
-                mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
-                signer_rnd: None,
-                sk: None,
-                pk: Some(pk.clone()) }
-        )
-    }
-
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
-        self.mu_builder.do_update(msg_chunk);
-    }
-
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = self.mu_builder.do_final();
-
-        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
-
-        if sig.len() != MLDSA65_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-        Self::verify_mu(&self.pk.unwrap(), &mu, &sig[..MLDSA65_SIG_LEN].try_into().unwrap())
-    }
-}
-
-
-
-/*** ML-DSA-87 ***/
-
-// exported as pub in lib.rs
-pub struct MLDSA87 {
-    // used for streaming the message for both signing and verifying
-    mu_builder: MuBuilder,
-
-    signer_rnd: Option<[u8; RND_LEN]>,
-
-    // only used in streaming sign operations
-    sk: Option<MLDSA87PrivateKey>,
-
-    // only used in streaming verify operations
-    pk: Option<MLDSA87PublicKey>,
-}
-type MLDSA87impl = MLDSA<
-    MLDSA87_PK_LEN,
-    MLDSA87_SK_LEN,
-    MLDSA87_SIG_LEN,
-    MLDSA87_TAU,
-    MLDSA87_LAMBDA,
-    MLDSA87_GAMMA1,
-    MLDSA87_GAMMA2,
-    MLDSA87_k,
-    MLDSA87_l,
-    MLDSA87_ETA,
-    MLDSA87_BETA,
-    MLDSA87_OMEGA,
-    MLDSA87_C_TILDE,
-    MLDSA87_POLY_Z_PACKED_LEN,
-    MLDSA87_POLY_W1_PACKED_LEN,
-    MLDSA87_W1_PACKED_LEN,
-    MLDSA87_POLY_ETA_PACKED_LEN,
-    MLDSA87_LAMBDA_over_4,
-    MLDSA87_GAMMA1_MASK_LEN,
->;
-
-impl MLDSA87 {
-    /// Genarate a fresh key pair using the default cryptographic RNG, seeded from the OS.
-    pub fn keygen_from_os_rng() -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA87impl::keygen_from_os_rng()?;
-        Ok((pk, sk))
-    }
-
-    /// Expand a (pk, sk) keypair from a private key seed.
-    /// Both pk and sk objects will be fully populated.
-    /// This is simply a pass-through to [MLDSA::keygen_internal], which is allowed to be exposed externally by NIST.
-    ///
-    /// Unlike other interfaces across the library that take an &impl KeyMaterial, this one
-    /// specifically takes a 32-byte [KeyMaterial256] and checks that it has [KeyType::Seed] and
-    /// [SecurityStrength::_256bit].
-    /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
-    /// [KeyMaterial::from_key] -- todo: make sure this works and copies key type and security strength correctly.
-    pub fn keygen_from_seed(
-        seed: &KeyMaterialSized<32>,
-    ) -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
-        let (pk, sk) = MLDSA87impl::keygen_internal(&seed)?;
-        Ok((pk, sk))
-    }
-
-    /// Imports a secret key from both a seed and an encoded_sk.
-    ///
-    /// This is a convenience function to expand the key from seed and compare it against
-    /// the provided `encoded_sk` using a constant-time equality check.
-    /// If everything checks out, the secret key is returned fully populated with pk and seed.
-    /// If the provided key and derived key don't match, an error is returned.
-    pub fn keygen_from_seed_and_encoded(
-        seed: &KeyMaterialSized<32>,
-        encoded_sk: &[u8; MLDSA87_SK_LEN],
-    ) -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
-        MLDSA87impl::keygen_from_seed_and_encoded(seed, encoded_sk)
-    }
-
-    /// Given a public key and a secret key, check that the public key matches the secret key.
-    /// This is a sanity check that the public key was generated correctly from the secret key.
-    ///
-    /// At the current time, this is only possible if `sk` either contains a public key (in which case
-    /// the two pk's are encoded and compared for byte equality), or if `sk` contains a seed
-    /// (in which case a keygen_from_seed is run and then the pk's compared).
-    /// TODO -- sync with openssl implementation
-    /// TODO -- https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L385
-    pub fn keypair_consistency_check(
-        pk: MLDSA87PublicKey,
-        sk: MLDSA87PrivateKey,
-    ) -> Result<(), SignatureError> {
-        MLDSA87impl::keypair_consistency_check(pk, sk)
-    }
-
-    /// This provides the first half of the "External Mu" interface to ML-DSA which is described
-    /// in, and allowed under, NIST's FAQ that accompanies FIPS 204.
-    ///
-    /// This function, together with [sign_mu] perform a complete ML-DSA signature which is indistinguishable
-    /// from one produced by the one-shot sign APIs.
-    ///
-    /// The utility of this function is exactly as described
-    /// on Line 6 of Algorithm 7 of FIPS 204:
-    ///
-    ///    message representative that may optionally be computed in a different cryptographic module
-    ///
-    /// The utility is when an extremely large message needs to be signed, where the message exists on one
-    /// computing system and the private key to sign it is held on another and either the transfer time or bandwidth
-    /// causes operational concerns (this is common for example with network HSMs or sending large messages
-    /// to be signed by a smartcard communicating over near-field radio). Another use case is if the
-    /// contents of the message are sensitive and the signer does not want to transmit the message itself
-    /// for fear of leaking it via proxy logging and instead would prefer to only transmit a hash of it.
-    ///
-    /// Since "External Mu" mode is well-defined by FIPS 204 and allowed by NIST, the mu value produced here
-    /// can be used with many hardware crypto modules.
-    ///
-    /// This "External Mu" mode of ML-DSA provides an alternative to the HashML-DSA algorithm in that it
-    /// allows the message to be externally pre-hashed, however, unlike HashML-DSA, this is merely an optimization
-    /// between the application holding the to-be-signed message and the cryptographic module holding the private key
-    /// -- in particular, while HashML-DSA requires the verifier to know whether ML-DSA or HashML-DSA was used to sign
-    /// the message, both "direct" ML-DSA and "External Mu" signatures can be verified with a standard
-    /// ML-DSA verifier.
-    ///
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
-    ///
-    /// For a streaming version of this, see [MuBuilder].
-    pub fn compute_mu_from_tr(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        tr: [u8; 64],
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &tr)
-    }
-
-    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
-    pub fn compute_mu_from_pk(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        pk: &MLDSA87PublicKey,
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
-    }
-
-    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
-    pub fn compute_mu_from_sk(
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        sk: &MLDSA87PrivateKey,
-    ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(msg, ctx, &sk.tr)
-    }
-
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    pub fn sign_mu(
-        sk: &MLDSA87PrivateKey,
-        mu: &[u8; 64],
-    ) -> Result<[u8; MLDSA87_SIG_LEN], SignatureError> {
-        MLDSA87impl::sign_mu(&sk, mu)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_out(
-        sk: &MLDSA87PrivateKey,
-        mu: &[u8; 64],
-        output: &mut [u8; MLDSA87_SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        MLDSA87impl::sign_mu_out(&sk, mu, output)
-    }
-
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    ///
-    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
-    /// prevent accidental nonce reuse, this function moves `rnd`.
-    pub fn sign_mu_deterministic(
-        sk: &MLDSA87PrivateKey,
-        mu: &[u8; 64],
-        rnd: [u8; 32]
-    ) -> Result<[u8; MLDSA87_SIG_LEN], SignatureError> {
-        MLDSA87impl::sign_mu_deterministic(&sk, mu, rnd)
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_mu_deterministic_out(
-        sk: &MLDSA87PrivateKey,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-        output: &mut [u8; MLDSA87_SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        MLDSA87impl::sign_mu_internal_out(&sk, mu, rnd, output)
-    }
-
-    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
-    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
-    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
-        self.signer_rnd = Some(rnd);
-    }
-
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode uses randomized signing (called "hedged mode" in FIPS 204).
-    pub fn verify_mu(
-        pk: &MLDSA87PublicKey,
-        mu: &[u8; 64],
-        sig: &[u8; MLDSA87_SIG_LEN],
-    ) -> Result<(), SignatureError> {
-        if MLDSA87impl::verify_mu_internal(&pk, &mu, sig) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
-    }
-}
-
-impl Signature<MLDSA87PublicKey, MLDSA87PrivateKey> for MLDSA87 {
-
-    fn keygen() -> Result<(MLDSA87PublicKey, MLDSA87PrivateKey), SignatureError> {
-        MLDSA87impl::keygen_from_os_rng()
-    }
-
-    fn sign(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; MLDSA87_SIG_LEN];
-        Self::sign_out(sk, msg, ctx, &mut out)?;
-
-        Ok(out)
-    }
-
-    fn sign_out(sk: &MLDSA87PrivateKey, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &sk.tr)?;
-        if output.len() < MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let output_sized: &mut [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].as_mut().try_into().unwrap();
-        Self::sign_mu_out(sk, &mu, output_sized)
-    }
-
-    fn sign_init(sk: &MLDSA87PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        Ok(
-            Self {
-                mu_builder: MuBuilder::do_init(&sk.tr, ctx)?,
-                signer_rnd: None ,
-                sk: Some(sk.clone()),
-                pk: None
-            }
-        )
-    }
-
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
-        self.mu_builder.do_update(msg_chunk);
-    }
-
-    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
-        let mut out = [0u8; MLDSA87_SIG_LEN];
-        self.sign_final_out(&mut out)?;
-        Ok(Vec::from(out))
-    }
-
-    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
-        let mu = self.mu_builder.do_final();
-
-        assert!(self.sk.is_some(), "Somehow you managed to construct a streaming signer without a private key, impressive!");
-
-        if output.len() < MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let output_sized: &mut [u8; MLDSA87_SIG_LEN] = output[..MLDSA87_SIG_LEN].as_mut().try_into().unwrap();
-
-        if self.signer_rnd.is_none() {
-            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
-        } else {
-            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
-        }
-    }
-
-    fn verify(pk: &MLDSA87PublicKey, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())?;
-
-        if sig.len() != MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-
-        if MLDSA87impl::verify_mu_internal(&pk, &mu, &sig[..MLDSA87_SIG_LEN].try_into().unwrap()) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
-    }
-
-    fn verify_init(pk: &MLDSA87PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        Ok(
-            Self {
-                mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
-                signer_rnd: None,
-                sk: None,
-                pk: Some(pk.clone()) }
-        )
-    }
-
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
-        self.mu_builder.do_update(msg_chunk);
-    }
-
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        let mu = self.mu_builder.do_final();
-
-        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
-
-        if sig.len() != MLDSA87_SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-        Self::verify_mu(&self.pk.unwrap(), &mu, &sig[..MLDSA87_SIG_LEN].try_into().unwrap())
     }
 }

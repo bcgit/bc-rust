@@ -25,9 +25,10 @@ mod matrix;
 
 
 /*** Exported types ***/
-pub use mldsa::{MLDSA44, MLDSA65, MLDSA87};
-pub use mldsa_keys::{MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey};
-pub use mldsa_keys::{MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey};
+pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87};
+pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
+pub use mldsa_keys::{MLDSAPublicKey, MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey};
+pub use mldsa_keys::{MLDSAPrivateKey, MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey};
 pub use mldsa::{MuBuilder};
 
 // todo

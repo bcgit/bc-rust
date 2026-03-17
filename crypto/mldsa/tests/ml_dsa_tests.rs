@@ -9,6 +9,7 @@ mod mldsa_tests {
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSA44, MLDSA65, MLDSA87};
     use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
+    use bouncycastle_mldsa::{MLDSAPublicKeyTrait, MLDSAPrivateKeyTrait};
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
 
     #[test]

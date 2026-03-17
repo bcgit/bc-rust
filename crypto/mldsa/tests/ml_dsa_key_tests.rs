@@ -3,7 +3,7 @@ mod mldsa_tests {
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_core_test_framework::signature::{TestFrameworkSignature, TestFrameworkSignatureKeys};
-    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSA44, MLDSA65, MLDSA87};
+    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSA44, MLDSA65, MLDSA87};
     use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
     use bouncycastle_hex as hex;
 
@@ -23,14 +23,14 @@ mod mldsa_tests {
 
         // Decode and re-encode the sk, make sure you get the same thing
         let expected_sk = MLDSA44PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
-        let sk_bytes = expected_sk.sk_encode();
+        let sk_bytes = expected_sk.encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
 
 
         // Decode and re-encode the pk, make sure you get the same thing
         let decoded_pk = MLDSA44PublicKey::from_bytes(&expected_pk_bytes).unwrap();
-        let pk_bytes = decoded_pk.pk_encode();
+        let pk_bytes = decoded_pk.encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
         
@@ -49,7 +49,7 @@ mod mldsa_tests {
         // basic equality checks
         assert_eq!(pk, pk);
         assert_eq!(pk, pk.clone());
-        assert_eq!(pk, MLDSA44PublicKey::from_bytes(&pk.pk_encode()).unwrap());
+        assert_eq!(pk, MLDSA44PublicKey::from_bytes(&pk.encode()).unwrap());
 
         assert_eq!(sk, sk);
         assert_eq!(sk, sk.clone());

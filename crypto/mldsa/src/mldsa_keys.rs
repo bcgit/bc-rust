@@ -27,22 +27,48 @@ pub type MLDSA87PrivateKey = MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, 
 /// An ML-DSA public key.
 #[derive(Clone)]
 pub struct MLDSAPublicKey<const k: usize, const PK_LEN: usize> {
-    pub(crate) rho: [u8; SEED_LEN],
-    pub(crate) t1: Vector<k>,
+    rho: [u8; SEED_LEN],
+    t1: Vector<k>,
 }
 
-impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
+pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePublicKey {
     /// Not exposing a constructor publicly because you should have to get an instance either by
     /// running a keygen, or by decoding an existing key.
-    pub(crate) fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self {
-        Self { rho: rho.clone(), t1: t1.clone() }
-    }
+    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self;
 
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
     /// Output: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
-    pub fn pk_encode(&self) -> [u8; PK_LEN] {
+    fn pk_encode(&self) -> [u8; PK_LEN];
+
+    /// Algorithm 23 pkDecode(𝑝𝑘)
+    /// Reverses the procedure pkEncode.
+    /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
+    /// Output: 𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
+    fn pk_decode(pk: &[u8; PK_LEN]) -> Self;
+
+    /// Compute the public key hash (tr) from the public key.
+    ///
+    /// This is exposed as a public API for a few reasons:
+    /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
+    /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
+    ///     to use, for example, to build a public key lookup or deny-listing table.
+    fn compute_tr(&self) -> [u8; 64];
+
+    /// Get a ref to rho
+    fn rho(&self) -> &[u8; 32];
+
+    /// Get a ref to t1
+    fn t1(&self) -> &Vector<k>;
+}
+
+impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k, PK_LEN> for MLDSAPublicKey<k, PK_LEN> {
+    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self {
+        Self { rho: rho.clone(), t1: t1.clone() }
+    }
+
+    fn pk_encode(&self) -> [u8; PK_LEN] {
         let mut pk = [0u8; PK_LEN];
 
         pk[0..SEED_LEN].copy_from_slice(&self.rho);
@@ -66,11 +92,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
         pk
     }
 
-    /// Algorithm 23 pkDecode(𝑝𝑘)
-    /// Reverses the procedure pkEncode.
-    /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
-    /// Output: 𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
-    pub fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
+    fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
         let rho = pk[0..32].try_into().unwrap();
         let mut t1 = Vector::<k>::new();
 
@@ -87,18 +109,16 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKey<k, PK_LEN> {
         Self::new(&rho, &t1)
     }
 
-    /// Compute the public key hash (tr) from the public key.
-    ///
-    /// This is exposed as a public API for a few reasons:
-    /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
-    /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
-    ///     to use, for example, to build a public key lookup or deny-listing table.
-    pub fn compute_tr(&self) -> [u8; 64] {
+    fn compute_tr(&self) -> [u8; 64] {
         let mut tr = [0u8; 64];
         H::new().hash_xof_out(&self.pk_encode(), &mut tr);
 
         tr
     }
+
+    fn rho(&self) -> &[u8; 32] { &self.rho }
+
+    fn t1(&self) -> &Vector<k> { &self.t1 }
 }
 
 impl<const k: usize, const PK_LEN: usize>  SignaturePublicKey for MLDSAPublicKey<k, PK_LEN> {
@@ -167,20 +187,72 @@ pub struct MLDSAPrivateKey<
     const SK_LEN: usize,
     const PK_LEN: usize,
 > {
-    pub(crate) rho: [u8; 32],
-    pub(crate) K: [u8; 32],
-    pub(crate) tr: [u8; 64],
-    pub(crate) s1: Vector<l>,
-    pub(crate) s2: Vector<k>,
-    pub(crate) t0: Vector<k>,
-    pub(crate) seed: Option<KeyMaterialSized<32>>,
+    rho: [u8; 32],
+    K: [u8; 32],
+    tr: [u8; 64],
+    s1: Vector<l>,
+    s2: Vector<k>,
+    t0: Vector<k>,
+    seed: Option<KeyMaterialSized<32>>,
 }
 
-impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
-    MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
+pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize> : SignaturePrivateKey {
     /// Not exposing a constructor publicly because you should have to get an instance either by
     /// running a keygen, or by decoding an existing key.
-    pub(crate) fn new(
+    fn new(
+        rho: &[u8; 32],
+        K: &[u8; 32],
+        tr: &[u8; 64],
+        s1: &Vector<l>,
+        s2: &Vector<k>,
+        t0: &Vector<k>,
+        seed: Option<KeyMaterialSized<32>>,
+    ) -> Self;
+
+    /// Get a ref to rho
+    fn rho(&self) -> &[u8; 32];
+
+    /// Get a ref to K
+    fn K(&self) -> &[u8; 32];
+
+    /// Get a ref to tr
+    fn tr(&self) -> &[u8; 64];
+
+    /// Get a ref to s1
+    fn s1(&self) -> &Vector<l>;
+
+    /// Get a ref to s2
+    fn s2(&self) -> &Vector<k>;
+
+    /// Get a ref to t0
+    fn t0(&self) -> &Vector<k>;
+
+    /// Get a ref to the seed, if there is one stored with this private key
+    fn seed(&self) -> &Option<KeyMaterialSized<32>>;
+
+    /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
+    fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN>;
+    /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
+    /// Encodes a secret key for ML-DSA into a byte string.
+    /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
+    /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
+    /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
+    fn sk_encode(&self) -> [u8; SK_LEN];
+    /// Algorithm 25 skDecode(𝑠𝑘)
+    /// Reverses the procedure skEncode.
+    /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘).
+    /// Output: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 ,
+    /// 𝐬1 ∈ 𝑅ℓ , 𝐬2 ∈ 𝑅𝑘 , 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
+    ///
+    /// Note: this object contains only the simple decoding routine to unpack a semi-expanded key.
+    /// See [MLDSA] for key generation functions, including derive-from-seed and consistency-check functions.
+    fn sk_decode(sk: &[u8; SK_LEN]) -> Self;
+}
+
+
+impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
+    MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
+    fn new(
         rho: &[u8; 32],
         K: &[u8; 32],
         tr: &[u8; 64],
@@ -200,16 +272,21 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
     }
 
-    pub fn has_seed(&self) -> bool {
-        self.seed.is_some()
-    }
+    fn rho(&self) -> &[u8; 32] { &self.rho }
 
-    pub fn get_seed(&self) -> Option<KeyMaterialSized<32>> {
-        self.seed.clone()
-    }
+    fn K(&self) -> &[u8; 32] { &self.K }
 
-    /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
-    pub fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN> {
+    fn tr(&self) -> &[u8; 64] { &self.tr }
+
+    fn s1(&self) -> &Vector<l> { &self.s1 }
+
+    fn s2(&self) -> &Vector<k> { &self.s2 }
+
+    fn t0(&self) -> &Vector<k> { &self.t0 }
+
+    fn seed(&self) -> &Option<KeyMaterialSized<32>> { &self.seed }
+
+    fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN> {
         // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
         let A_hat = expandA::<k, l>(&self.rho);
 
@@ -233,13 +310,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         MLDSAPublicKey::<k, PK_LEN>::new(&self.rho, &t1)
     }
-
-    /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
-    /// Encodes a secret key for ML-DSA into a byte string.
-    /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
-    /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
-    pub fn sk_encode(&self) -> [u8; SK_LEN] {
+    fn sk_encode(&self) -> [u8; SK_LEN] {
         let mut sk = [0u8; SK_LEN];
 
         // bytes written counter
@@ -277,17 +348,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         sk
     }
-
-    /// Algorithm 25 skDecode(𝑠𝑘)
-    /// Reverses the procedure skEncode.
-    /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘).
-    /// Output: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 ,
-    /// 𝐬1 ∈ 𝑅ℓ , 𝐬2 ∈ 𝑅𝑘 , 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    ///
-    /// Note: this object contains only the simple decoding routine to unpack a semi-expanded key.
-    /// See [MLDSA] for key generation functions, including derive-from-seed and consistency-check functions.
-    // pub fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
-    pub fn sk_decode(sk: &[u8; SK_LEN]) -> Self {
+    fn sk_decode(sk: &[u8; SK_LEN]) -> Self {
         let rho = sk[0..32].try_into().unwrap();
         let K = sk[32..64].try_into().unwrap();
         let tr = sk[64..128].try_into().unwrap();
@@ -385,7 +446,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             "MLDSAPrivateKey {{ alg: {}, pub_key_hash (tr): {:x?}, has_seed: {} }}",
             alg,
             self.tr,
-            self.has_seed(),
+            self.seed.is_some(),
         )
     }
 }
@@ -406,7 +467,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             "MLDSAPrivateKey {{ alg: {}, pub_key_hash (tr): {:x?}, has_seed: {} }}",
             alg,
             self.tr,
-            self.has_seed(),
+            self.seed.is_some(),
         )
     }
 }
