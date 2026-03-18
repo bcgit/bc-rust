@@ -25,7 +25,6 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 
     let z: i32 = ((b2_prime as i32) << 16) | ((b[1] as i32) << 8) | (b[0] as i32);
 
-    // todo: mutants thinks you can swap this for a > without breaking any unit tests
     if z < q { Ok(z) } else { Err(()) }
 }
 

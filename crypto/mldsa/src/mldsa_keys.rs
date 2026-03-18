@@ -276,7 +276,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         // let s1_ntt = ntt_vec::<l>(&self.s1);
         let mut t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
 
-        // todo: mutants thinks this can be deleted
+        // todo: mutants thinks you can delete this function without breaking anything
+        // todo: wait until I have the full set of NIST KATs before playing with removing it.
         t_ntt.reduce();
 
         let mut t = t_ntt;
@@ -300,9 +301,6 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     }
 
     fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        // todo: clean up
-        // let mut sk = [0u8; SK_LEN];
-
         // bytes written counter
         let mut off: usize = 0;
 
@@ -336,7 +334,6 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             sk_chunk.copy_from_slice(&bit_pack_t0(t0_i));
         }
 
-        // sk
         SK_LEN
     }
     fn sk_decode(sk: &[u8; SK_LEN]) -> Self {

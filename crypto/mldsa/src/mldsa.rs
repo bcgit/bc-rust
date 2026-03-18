@@ -336,7 +336,8 @@ impl<
         // let s1_hat = ntt_vec::<l>(&s1);
         let mut t_hat = A_hat.matrix_vector_ntt(&s1_hat);
 
-        // todo: mutants thinks this can be deleted
+        // todo: mutants thinks you can delete this function without breaking anything
+        // todo: wait until I have the full set of NIST KATs before playing with removing it.
         t_hat.reduce();
 
         let mut t = t_hat;
@@ -731,7 +732,7 @@ impl<
     /// Internal function to verify a signature 𝜎 for a formatted message 𝑀′ .
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑) and message 𝑀′ ∈ {0, 1}∗ .
     /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
-    fn verify_mu_internal(
+    pub(crate) fn verify_mu_internal(
         pk: &PK,
         mu: &[u8; MU_LEN],
         sig: &[u8; SIG_LEN],

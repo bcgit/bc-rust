@@ -404,11 +404,6 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const HAS
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
 
-    /// On success, returns Ok(())
-    /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
-    fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
-
-
     /// Produce a signature for the provided pre-hashed message and context.
     ///
     /// `ctx` accepts a zero-length byte array.
@@ -438,6 +433,10 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const HAS
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_ph_out(sk: &SK, ph: &[u8; HASH_LEN], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
 
+    /// On success, returns Ok(())
+    /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
+    fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
+    
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify_ph(pk: &PK, ph: &[u8; HASH_LEN], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;

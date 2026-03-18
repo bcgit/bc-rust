@@ -9,6 +9,7 @@ bouncycastle-hex.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
+sha2 = "0.11.0-rc.5"
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
