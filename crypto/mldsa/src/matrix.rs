@@ -188,7 +188,6 @@ impl<const LEN: usize> Vector<LEN>
         // 4: end for
         for i in 0..LEN {
             w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
-                // todo -- optimize this to take a slice and write directly to it?
                 &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
             )
         }

@@ -35,12 +35,16 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 /// Output: An integer between −𝜂 and 𝜂, or ⊥.
 #[inline(always)]
 pub(crate) fn coeff_from_half_byte<const ETA: usize>(b: u8) -> Result<i32, ()> {
-    // todo: there's no way this is constant time:
-    // todo: the if statement might not be so bad because the alternative is rejection,
-    // todo: but that % is a problem.
-    // todo: what does openssl or rust crypto do?
     if ETA == 2 && b < 15 {
-        Ok(2 - (b % 5) as i32) // todo: is constant-time?
+        // Original code is bad because '%' is not constant-time.
+        // Ok(2 - (b % 5) as i32)
+        // I'm still not convinced this is constant-time, but maybe it's closer? And I can't come up with anything better.
+        let b = match b {
+            b if b < 5 => b,
+            b if b < 10 => b - 5,
+            _ => b - 10,
+        };
+        Ok(2 - b as i32)
     } else {
         if ETA == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
     }
@@ -412,7 +416,6 @@ pub(crate) fn sig_encode<
     pos += LAMBDA_over_4;
 
     for i in 0..l {
-        // todo -- remove this copy by having bitpack_gamma1 take an output slice
         output[pos..pos + POLY_Z_PACKED_LEN]
             .copy_from_slice(&bitpack_gamma1::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
         pos += POLY_Z_PACKED_LEN;
@@ -504,7 +507,6 @@ pub(crate) fn sig_decode<
     }
 
     // ▷ read any leftover bytes in the first 𝜔 bytes of 𝑦 for malformed (nonzero) bytes
-
     for j in idx..OMEGA as usize {
         if sig[pos + j] != 0 {
             return Err(());
@@ -790,7 +792,6 @@ fn test_power_2_round() {
 /// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1(2𝛾2) + 𝑟0 mod 𝑞.
 /// Input: 𝑟 ∈ ℤ𝑞.
 /// Output: Integers (𝑟1, 𝑟0).
-
 // the hope here is that the compiler will aggressively inline this function,
 // and optimize away the branching.
 #[inline(always)]
@@ -1029,7 +1030,6 @@ pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
 /// Output: Polynomial 𝑤(𝑋) = ∑255
 /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
 pub(crate) fn inv_ntt(w_hat: &Polynomial) -> Polynomial {
-    // todo: optimize to do this in-place? Might actually bench worse.
     let mut w = w_hat.clone();
 
     let mut m: usize = N;

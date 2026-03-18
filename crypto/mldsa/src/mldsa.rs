@@ -27,6 +27,7 @@ pub(crate) const ROOT_OF_UNITY: i32 = 1753;
 pub const SEED_LEN: usize = 32;
 pub const RND_LEN: usize = 32;
 pub const TR_LEN: usize = 64;
+pub const MU_LEN: usize = 64;
 pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 pub(crate) const POLY_T0PACKED_LEN: usize = 416;
 
@@ -287,7 +288,7 @@ impl<
     /// specifically takes a 32-byte [KeyMaterial256] and checks that it has [KeyType::Seed] and
     /// [SecurityStrength::_256bit].
     /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
-    /// [KeyMaterial::from_key] -- todo: make sure this works and copies key type and security strength correctly.
+    /// [KeyMaterial::from_key]
     fn keygen_internal(
         seed: &KeyMaterial256,
     ) -> Result<
@@ -312,15 +313,11 @@ impl<
         let mut rho_prime: [u8; 64] = [0u8; 64];
         let mut K: [u8; 32] = [0u8; 32];
 
-        // TODO: optimization: re-use variables rather than allocating new ones?
-        // TODO: do with benches because it might not actually be faster. Rust seems to like local vars.
-
         let mut h = H::default();
         h.absorb(seed.ref_to_bytes());
         h.absorb(&(k as u8).to_le_bytes());
         h.absorb(&(l as u8).to_le_bytes());
         let bytes_written = h.squeeze_out(&mut rho);
-        debug_assert_eq!(bytes_written, 32); // todo: remove these asserts once we have unit tests that pass?
         let bytes_written = h.squeeze_out(&mut rho_prime);
         debug_assert_eq!(bytes_written, 64);
         let bytes_written = h.squeeze_out(&mut K);
@@ -421,14 +418,17 @@ impl<
     /// (in which case a keygen_from_seed is run and then the pk's compared).
     ///
     /// Returns either `()` or [SignatureError::ConsistencyCheckFailed].
-    ///
-    /// TODO -- sync with openssl implementation
-    /// TODO -- https://github.com/openssl/openssl/blob/master/crypto/ml_dsa/ml_dsa_key.c#L385
     pub fn keypair_consistency_check(
         pk: &PK,
         sk: &SK,
     ) -> Result<(), SignatureError> {
-        todo!()
+        // This is maybe a computationally heavy way to compare them, but it works
+        let derived_pk = sk.derive_public_key();
+        if derived_pk.compute_tr() == pk.compute_tr() {
+            Ok(())
+        } else {
+            Err(SignatureError::ConsistencyCheckFailed())
+        }
     }
 
         /// This provides the first half of the "External Mu" interface to ML-DSA which is described
@@ -465,8 +465,8 @@ impl<
         pub fn compute_mu_from_tr(
             msg: &[u8],
             ctx: Option<&[u8]>,
-            tr: &[u8; 64],
-        ) -> Result<[u8; 64], SignatureError> {
+            tr: &[u8; TR_LEN],
+        ) -> Result<[u8; TR_LEN], SignatureError> {
             MuBuilder::compute_mu(msg, ctx, tr)
         }
 
@@ -475,7 +475,7 @@ impl<
             msg: &[u8],
             ctx: Option<&[u8]>,
             pk: &PK,
-        ) -> Result<[u8; 64], SignatureError> {
+        ) -> Result<[u8; MU_LEN], SignatureError> {
             MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
         }
 
@@ -494,7 +494,7 @@ impl<
     /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
     fn sign_mu(
         sk: &SK,
-        mu: &[u8; 64],
+        mu: &[u8; MU_LEN],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
         Self::sign_mu_out(sk, mu, &mut out)?;
@@ -509,10 +509,10 @@ impl<
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_mu_out(
         sk: &SK,
-        mu: &[u8; 64],
+        mu: &[u8; MU_LEN],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let mut rnd: [u8; 32] = [0u8; 32];
+        let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
 
         Self::sign_mu_deterministic_out(sk, mu, rnd, output)
@@ -553,8 +553,8 @@ impl<
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     pub(crate) fn sign_mu_deterministic_out(
         sk: &SK,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
+        mu: &[u8; MU_LEN],
+        rnd: [u8; RND_LEN],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
@@ -607,9 +607,6 @@ impl<
 
             // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
             let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
-
-            // last use of rho_p_p, so zeroizing it
-            rho_p_p.fill(0u8);
 
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
             let mut y_hat = y.clone();
@@ -696,11 +693,15 @@ impl<
             };
 
             // "In addition, there is an alternative way of implementing the validity checks on 𝐳 and the computation of
-            // 𝐡, which is described in Section 5.1 of. This method may also be used in implementations of ML-DSA."
-            // todo -- check this out
+            // 𝐡, which is described in Section 5.1 of [6] (dilithium-specification-round3-20210208.pdf).
+            // This method may also be used in implementations of ML-DSA."
+            // todo -- I believe this code is already using this optimization, but it could use a deeper look to see if more optimization is possible.
 
             break;
         }
+
+        // zeroize rho_p_p before returning it to the OS
+        rho_p_p.fill(0u8);
 
         // 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
         let bytes_written = sig_encode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>
@@ -721,7 +722,7 @@ impl<
     /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
     fn verify_mu_internal(
         pk: &PK,
-        mu: &[u8; 64],
+        mu: &[u8; MU_LEN],
         sig: &[u8; SIG_LEN],
     ) -> bool {
         // 1: (𝜌, 𝐭1) ← pkDecode(𝑝𝑘)

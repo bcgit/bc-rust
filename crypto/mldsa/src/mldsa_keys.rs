@@ -384,7 +384,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             seed: seed.clone(),
         }
     }
-    
+
     fn rho(&self) -> &[u8; 32] { &self.rho }
 
     fn K(&self) -> &[u8; 32] { &self.K }
