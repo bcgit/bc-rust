@@ -118,12 +118,27 @@ mod mldsa_tests {
     /// Tests that no private data is displayed
     // TODO: add the same tests to the core ML-DSA tests on vectors and polynomials
     #[test]
-    fn debug_fmt_tests() {
+    fn test_display() {
         let (pk, sk) = MLDSA44::keygen().unwrap();
 
+        /** MLDSAPublicKey **/
+        // fmt
+
+        let pk_str = format!("{}", pk);
+        assert!(pk_str.contains("MLDSAPublicKey { alg: ML-DSA-44, pub_key_hash (tr):"));
+
+        // debug
         let pk_str = format!("{:?}", pk);
         assert!(pk_str.contains("MLDSAPublicKey { alg: ML-DSA-44, pub_key_hash (tr):"));
 
+
+
+        /** MLDSAPrivateKey **/
+        // fmt
+        let sk_str = format!("{}", sk);
+        assert!(sk_str.contains("MLDSAPrivateKey { alg: ML-DSA-44, pub_key_hash (tr):"));
+
+        // debug
         let sk_str = format!("{:?}", sk);
         assert!(sk_str.contains("MLDSAPrivateKey { alg: ML-DSA-44, pub_key_hash (tr):"));
     }

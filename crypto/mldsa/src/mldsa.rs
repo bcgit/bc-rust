@@ -24,9 +24,9 @@ pub(crate) const q: i32 = 8380417;
 pub(crate) const q_inv: i32 = 58728449; // q ^ (-1) mod 2 ^32
 pub(crate) const d: i32 = 13;
 pub(crate) const ROOT_OF_UNITY: i32 = 1753;
-pub(crate) const SEED_LEN: usize = 32;
-pub(crate) const RND_LEN: usize = 32;
-pub(crate) const TR_LEN: usize = 64;
+pub const SEED_LEN: usize = 32;
+pub const RND_LEN: usize = 32;
+pub const TR_LEN: usize = 64;
 pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 pub(crate) const POLY_T0PACKED_LEN: usize = 416;
 
@@ -360,6 +360,13 @@ impl<
         //   ▷ 𝐾 and 𝑡𝑟 are for use in signing
         let sk = SK::new(&rho, &K, &tr, &s1, &s2, &t0, Some(seed.clone()));
 
+        // Clear the secret data before returning memory to the OS
+        //   (SK::new() copies all values)
+        rho.fill(0u8);
+        K.fill(0u8);
+        // tr is public data, does not need to be zeroized
+        // s1, s2, t0 are all Vectors of Polynomials, so implement a zeroizing Drop
+
         // 11: return (𝑝𝑘, 𝑠𝑘)
         Ok((pk, sk))
     }
@@ -600,6 +607,9 @@ impl<
 
             // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
             let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
+
+            // last use of rho_p_p, so zeroizing it
+            rho_p_p.fill(0u8);
 
             // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
             let mut y_hat = y.clone();

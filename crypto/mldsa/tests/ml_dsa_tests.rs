@@ -419,6 +419,20 @@ mod mldsa_tests {
             _ => panic!("Expected error for sig too short"),
         }
     }
+
+    /// Tests that no private data is displayed
+    #[test]
+    fn test_display() {
+        // Objects within the ML-DSA implementation that (could) contain private data,
+        // and therefore should be protected against accidental crash dumps:
+        //  * Polynomial -- this is pub(crate) so can't test it from here, see polynomial.rs::test_display()
+        //  * MLDSAPrivateKey -- see ml_dsa_key_tests.rs::test_display()
+        
+        // In addition, [u8] intermediate values within ml_dsa.rs::keygen_internal() 
+        // and ml_dsa.rs::sign_mu_deterministic_out() are zeroized after their last use.
+        
+        // So in fact, nothing to test here
+    }
 }
 
 struct Kat {

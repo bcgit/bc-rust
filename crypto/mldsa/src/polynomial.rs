@@ -46,19 +46,6 @@ impl Polynomial {
         }
     }
 
-    // todo: will anything use this?
-    // /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
-    // /// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
-    // /// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
-    // /// Output: 𝑐 ∈ 𝑇𝑞.
-    // /// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
-    // /// Also called pointwise montgomery multiplication
-    // pub(crate) fn multiply_ntt(&mut self, w: &Polynomial){
-    //     for i in 0..N {
-    //         self.0[i] = montgomery_reduce((self.0[i] as i64) * (w.0[i] as i64));
-    //     }
-    // }
-
     pub(crate) fn high_bits<const GAMMA2: i32>(&self) -> Self {
         let mut w = Self::new();
         for i in 0..N {
@@ -162,6 +149,19 @@ impl Display for Polynomial {
     }
 }
 
+#[test]
+fn test_display() {
+    // Polynomials (could) contain private data,
+    // and therefore should be protected against accidental crash dumps:
+    
+    // fmt
+    let p = Polynomial::new();
+    assert_eq!(format!("{}", p), "Polynomial (data masked)");
+
+    // debug
+    let p = Polynomial::new();
+    assert_eq!(format!("{:?}", p), "Polynomial (data masked)");
+}
 
 impl From<Polynomial> for [i32; N] {
     fn from(p: Polynomial) -> [i32; N] {
