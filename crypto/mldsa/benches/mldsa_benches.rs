@@ -2,7 +2,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
 use std::hint::black_box;
 use bouncycastle_core_interface::traits::Signature;
-use bouncycastle_mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA87};
+use bouncycastle_mldsa::{MLDSA44, MLDSA65, MLDSA87};
 use bouncycastle_hex as hex;
 
 fn bench_mldsa_keygen(c: &mut Criterion) {
@@ -56,7 +56,7 @@ fn bench_mldsa_sign(c: &mut Criterion) {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /** ML-DSA-44 **/
+    /*** ML-DSA-44 ***/
     let (_mldsa44_pk, mldsa44_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
 
 
@@ -67,7 +67,7 @@ fn bench_mldsa_sign(c: &mut Criterion) {
 
     group.bench_function("ML-DSA-44", |b| {
         b.iter(|| {
-            let mu = MLDSA44::compute_mu_from_sk(msg, &[0u8;0], &mldsa44_sk).unwrap();
+            let mu = MLDSA44::compute_mu_from_sk(msg, None, &mldsa44_sk).unwrap();
             let sig = MLDSA44::sign_mu_deterministic(&mldsa44_sk, &mu, rnd).unwrap();
             black_box(sig);
             rnd[31] = rnd[31].wrapping_add(1);
@@ -75,12 +75,12 @@ fn bench_mldsa_sign(c: &mut Criterion) {
     });
 
 
-    /** ML-DSA-65 **/
+    /*** ML-DSA-65 ***/
     let (_mldsa65_pk, mldsa65_sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 
     group.bench_function("ML-DSA-65", |b| {
         b.iter(|| {
-            let mu = MLDSA65::compute_mu_from_sk(msg, &[0u8;0], &mldsa65_sk).unwrap();
+            let mu = MLDSA65::compute_mu_from_sk(msg, None, &mldsa65_sk).unwrap();
             let sig = MLDSA65::sign_mu_deterministic(&mldsa65_sk, &mu, rnd).unwrap();
             black_box(sig);
             rnd[31] = rnd[31].wrapping_add(1);
@@ -88,13 +88,13 @@ fn bench_mldsa_sign(c: &mut Criterion) {
     });
 
 
-    /** ML-DSA-87 **/
+    /*** ML-DSA-87 ***/
 
     let (_mldsa87_pk, mldsa87_sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
 
     group.bench_function("ML-DSA-87", |b| {
         b.iter(|| {
-            let mu = MLDSA87::compute_mu_from_sk(msg, &[0u8;0], &mldsa87_sk).unwrap();
+            let mu = MLDSA87::compute_mu_from_sk(msg, None, &mldsa87_sk).unwrap();
             let sig = MLDSA87::sign_mu_deterministic(&mldsa87_sk, &mu, rnd).unwrap();
             black_box(sig);
             rnd[31] = rnd[31].wrapping_add(1);
@@ -117,7 +117,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     let msg = b"The quick brown fox jumped over the lazy dog";
 
 
-    /** ML-DSA-44 **/
+    /*** ML-DSA-44 ***/
     let (mldsa44_pk, mldsa44_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
 
     // Create a vec of 1000  different signatures to verify
@@ -126,7 +126,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
-        sigs.push( (MLDSA44::sign(&mldsa44_sk, msg, &ctx.to_le_bytes()).unwrap(), ctx) );
+        sigs.push( (MLDSA44::sign(&mldsa44_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx) );
         ctx += 1
     }
 
@@ -136,13 +136,13 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA44::verify(&mldsa44_pk, msg, &ctx.to_le_bytes(), &sig).unwrap() )
+                black_box( MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), &sig).unwrap() )
             }
         })
     });
 
 
-    /** ML-DSA-65 **/
+    /*** ML-DSA-65 ***/
     let (mldsa65_pk, mldsa65_sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 
     // Create a vec of 1000  different signatures to verify
@@ -151,7 +151,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
-        sigs.push( (MLDSA65::sign(&mldsa65_sk, msg, &ctx.to_le_bytes()).unwrap(), ctx) );
+        sigs.push( (MLDSA65::sign(&mldsa65_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx) );
         ctx += 1
     }
 
@@ -161,13 +161,13 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA65::verify(&mldsa65_pk, msg, &ctx.to_le_bytes(), &sig).unwrap() )
+                black_box( MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), &sig).unwrap() )
             }
         })
     });
 
 
-    /** ML-DSA-87 **/
+    /*** ML-DSA-87 ***/
     let (mldsa87_pk, mldsa87_sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
 
     // Create a vec of 1000  different signatures to verify
@@ -176,7 +176,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
-        sigs.push( (MLDSA87::sign(&mldsa87_sk, msg, &ctx.to_le_bytes()).unwrap(), ctx) );
+        sigs.push( (MLDSA87::sign(&mldsa87_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx) );
         ctx += 1
     }
 
@@ -186,7 +186,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA87::verify(&mldsa87_pk, msg, &ctx.to_le_bytes(), &sig).unwrap() )
+                black_box( MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), &sig).unwrap() )
             }
         })
     });

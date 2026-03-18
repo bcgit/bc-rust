@@ -116,7 +116,6 @@ mod mldsa_tests {
     }
 
     /// Tests that no private data is displayed
-    // TODO: add the same tests to the core ML-DSA tests on vectors and polynomials
     #[test]
     fn test_display() {
         let (pk, sk) = MLDSA44::keygen().unwrap();
