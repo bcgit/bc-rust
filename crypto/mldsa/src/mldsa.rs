@@ -335,8 +335,10 @@ impl<
         s1_hat.ntt();
         // let s1_hat = ntt_vec::<l>(&s1);
         let mut t_hat = A_hat.matrix_vector_ntt(&s1_hat);
+
+        // todo: mutants thinks this can be deleted
         t_hat.reduce();
-        // let mut t = inv_ntt_vec(&t_hat);
+
         let mut t = t_hat;
         t.inv_ntt();
         t.add_vector_ntt(&s2);
@@ -465,8 +467,8 @@ impl<
         pub fn compute_mu_from_tr(
             msg: &[u8],
             ctx: Option<&[u8]>,
-            tr: &[u8; TR_LEN],
-        ) -> Result<[u8; TR_LEN], SignatureError> {
+            tr: &[u8; 64],
+        ) -> Result<[u8; 64], SignatureError> {
             MuBuilder::compute_mu(msg, ctx, tr)
         }
 
@@ -475,7 +477,7 @@ impl<
             msg: &[u8],
             ctx: Option<&[u8]>,
             pk: &PK,
-        ) -> Result<[u8; MU_LEN], SignatureError> {
+        ) -> Result<[u8; 64], SignatureError> {
             MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
         }
 
@@ -492,9 +494,9 @@ impl<
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
     /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    fn sign_mu(
+    pub fn sign_mu(
         sk: &SK,
-        mu: &[u8; MU_LEN],
+        mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
         Self::sign_mu_out(sk, mu, &mut out)?;
@@ -507,9 +509,9 @@ impl<
     /// This mode uses randomized signing (called "hedged mode" in FIPS 204) using an internal RNG.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_mu_out(
+    pub fn sign_mu_out(
         sk: &SK,
-        mu: &[u8; MU_LEN],
+        mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
@@ -524,11 +526,17 @@ impl<
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
     /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
     /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
+    ///
+    /// Security note:
+    /// This mode exposes deterministic signing (called "hedged mode" and allowed by FIPS 204).
+    /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
+    /// the responsibility is on you to ensure that your nonce `rnd` is unique per signature.
+    /// If not, you may lose some privacy properties; for example it becomes easy to tell if a signer
+    /// has signed the same message twice or two different messagase, or to tell if the same message
+    /// has been signed by the same signer twice or two different signers.
     ///
     /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
     /// prevent accidental nonce reuse, this function moves `rnd`.
-    ///
     pub fn sign_mu_deterministic(
         sk: &SK,
         mu: &[u8; 64],
@@ -551,10 +559,10 @@ impl<
     /// prevent accidental nonce reuse, this function moves `rnd`.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub(crate) fn sign_mu_deterministic_out(
+    pub fn sign_mu_deterministic_out(
         sk: &SK,
-        mu: &[u8; MU_LEN],
-        rnd: [u8; RND_LEN],
+        mu: &[u8; 64],
+        rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
@@ -702,6 +710,9 @@ impl<
 
         // zeroize rho_p_p before returning it to the OS
         rho_p_p.fill(0u8);
+
+        // sig_encode does not necessarily write to all bytes of the output, so just to be safe:
+        output.fill(0u8);
 
         // 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
         let bytes_written = sig_encode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>

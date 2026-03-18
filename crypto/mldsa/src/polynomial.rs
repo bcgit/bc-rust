@@ -19,6 +19,8 @@ impl Polynomial {
     }
 
     /// negates each entry
+    // todo: mutants thinks you can delete this function without breaking anything
+    // todo: wait until I have the full set of NIST KATs before playing with removing it.
     pub(crate) fn neg(&mut self){
         for i in 0..N {
             self.0[i] = - self.0[i];
@@ -64,6 +66,9 @@ impl Polynomial {
         w
     }
 
+    // todo: mutants: replace Polynomial::check_norm -> bool with false
+    // todo: umm, what? Do the test vectors have nothing that fails a norm check?
+    // todo: I suppose I could add a maliciously-tampered signature value where z is too large
     pub(crate) fn check_norm(&self, bound: i32) -> bool {
         // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
         // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing the signature validation.
@@ -164,12 +169,6 @@ fn test_display() {
     assert_eq!(format!("{:?}", p), "Polynomial (data masked)");
 }
 
-impl From<Polynomial> for [i32; N] {
-    fn from(p: Polynomial) -> [i32; N] {
-        p.0
-    }
-}
-
 /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
 /// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
 /// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
@@ -199,7 +198,8 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     ((a - ((t as i64) * (q as i64))) >> 32) as i32
 }
 
-
+// todo: mutants thinks you can delete this function without breaking anything
+// todo: wait until I have the full set of NIST KATs before playing with removing it.
 pub(crate) fn reduce_poly(w: &mut Polynomial) {
     for x in w.0.iter_mut() {
         *x = reduce32(*x);

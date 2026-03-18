@@ -147,6 +147,15 @@ impl TestFrameworkSignature {
         }
         v.verify_final(&sig).unwrap();
 
+        // failure case for streaming verify
+        let sig = SigAlg::sign(&sk, DUMMY_SEED_1024, Some(b"streaming API")).unwrap();
+        let mut v = SigAlg::verify_init(&pk, Some(b"streaming API")).unwrap();
+        v.verify_update(b"this is the wrong message");
+        match v.verify_final(&sig) {
+            Err(SignatureError::SignatureVerificationFailed) => (),
+            _ => panic!("This should have thrown an error but it didn't."),
+        }
+
         // test sign_out version of streaming API
         let mut s = SigAlg::sign_init(&sk, Some(b"streaming API")).unwrap();
         s.sign_update(DUMMY_SEED_1024);

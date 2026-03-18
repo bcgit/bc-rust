@@ -12,7 +12,6 @@ use bouncycastle_core_interface::traits::XOF;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞 or ⊥.
-// pub(crate) fn coeff_from_three_bytes(b0: u8, b1: u8, b2: u8) -> Result<i32, ()> {
 pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
     // This is the exact alg from FIPS 204:
     // let mut b2_prime = b2;
@@ -26,6 +25,7 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 
     let z: i32 = ((b2_prime as i32) << 16) | ((b[1] as i32) << 8) | (b[0] as i32);
 
+    // todo: mutants thinks you can swap this for a > without breaking any unit tests
     if z < q { Ok(z) } else { Err(()) }
 }
 

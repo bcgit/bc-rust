@@ -23,6 +23,23 @@
 // Used in HashMLDSA
 #![feature(unsized_const_params)]
 
+/* todo -- note from an implementor that I should digest and see what I can apply
+<quote>
+First I stop generating both keys. At keygen I only derive what is needed for the public key and its
+hash, and I do that row by row instead of expanding the full secret and public vector state up front.
+I also avoid keeping large vectors in memory by working row by row to keep peak usage down.
+I stop storing fully expanded secret polynomials like s1, s2, and t0, and instead reconstruct the
+needed rows or polynomials on demand from seed.
+
+For signing i stop it from building full y, w, z, and h vectors in memory, and instead recompute
+w, z, w0-cs2, and ct0 row by row or component by component to keep peak usage down.
+I also hash w1 incrementally and write packed z and hint bytes straight into the output buffer
+instead of staging large temporary vectors first.For signature verification I do a similar change.
+I fix use_hint() for both gamma2 families, and I avoid building a full temporary w1 vector in memory
+by reconstructing and hashing it incrementally instead.
+</quote>
+ */
+
 mod mldsa;
 mod hashmldsa;
 mod mldsa_keys;

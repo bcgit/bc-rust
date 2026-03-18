@@ -170,7 +170,7 @@ impl<const k: usize, const PK_LEN: usize> fmt::Debug for MLDSAPublicKey<k, PK_LE
     }
 }
 
-impl<const k: usize, const PK_LEN: usize> fmt::Display for MLDSAPublicKey<k, PK_LEN> {
+impl<const k: usize, const PK_LEN: usize> Display for MLDSAPublicKey<k, PK_LEN> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let alg = match k {
             4 => ML_DSA_44_NAME,
@@ -212,6 +212,12 @@ pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize,
     /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
     /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
     fn sk_encode(&self) -> [u8; SK_LEN];
+    /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
+    /// Encodes a secret key for ML-DSA into a byte string.
+    /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
+    /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
+    /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
+    fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
     /// Algorithm 25 skDecode(𝑠𝑘)
     /// Reverses the procedure skEncode.
     /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘).
@@ -269,8 +275,10 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         s1_hat.ntt();
         // let s1_ntt = ntt_vec::<l>(&self.s1);
         let mut t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
+
+        // todo: mutants thinks this can be deleted
         t_ntt.reduce();
-        // let mut t = inv_ntt_vec(&t_ntt);
+
         let mut t = t_ntt;
         t.inv_ntt();
         t.add_vector_ntt(&self.s2);
@@ -283,21 +291,30 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         MLDSAPublicKey::<k, PK_LEN>::new(&self.rho, &t1)
     }
+
     fn sk_encode(&self) -> [u8; SK_LEN] {
-        let mut sk = [0u8; SK_LEN];
+        let mut out = [0u8; SK_LEN];
+        let bytes_written = self.sk_encode_out(&mut out);
+        debug_assert_eq!(bytes_written, SK_LEN);
+        out
+    }
+
+    fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        // todo: clean up
+        // let mut sk = [0u8; SK_LEN];
 
         // bytes written counter
         let mut off: usize = 0;
 
-        sk[0..32].copy_from_slice(&self.rho);
-        sk[32..64].copy_from_slice(&self.K);
-        sk[64..128].copy_from_slice(&self.tr);
+        out[0..32].copy_from_slice(&self.rho);
+        out[32..64].copy_from_slice(&self.K);
+        out[64..128].copy_from_slice(&self.tr);
         off += 128;
 
         let mut buf = [0u8; 32 * 4]; // largest possible buffer
         let eta_pack_len = bitlen_eta(eta);
 
-        let sk_chunks = sk[off..off + l * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
+        let sk_chunks = out[off..off + l * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), l);
         for (sk_chunk, s1_i) in sk_chunks.into_iter().zip(&self.s1.vec) {
             bit_pack_eta::<eta>(s1_i, &mut buf);
@@ -305,7 +322,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
         off += l * bitlen_eta(eta);
 
-        let sk_chunks = sk[off..off + k * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
+        let sk_chunks = out[off..off + k * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), k);
         for (sk_chunk, s2_i) in sk_chunks.into_iter().zip(&self.s2.vec) {
             bit_pack_eta::<eta>(s2_i, &mut buf);
@@ -313,13 +330,14 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
         off += k * bitlen_eta(eta);
 
-        let sk_chunks = sk[off..off + k * POLY_T0PACKED_LEN].chunks_mut(POLY_T0PACKED_LEN);
+        let sk_chunks = out[off..off + k * POLY_T0PACKED_LEN].chunks_mut(POLY_T0PACKED_LEN);
         debug_assert_eq!(sk_chunks.len(), k);
         for (sk_chunk, t0_i) in sk_chunks.into_iter().zip(&self.t0.vec) {
             sk_chunk.copy_from_slice(&bit_pack_t0(t0_i));
         }
 
-        sk
+        // sk
+        SK_LEN
     }
     fn sk_decode(sk: &[u8; SK_LEN]) -> Self {
         let rho = sk[0..32].try_into().unwrap();
@@ -408,10 +426,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         if out.len() < SK_LEN {
             Err(SignatureError::EncodingError("Output buffer too small"))
         } else {
-            let tmp = self.sk_encode();
-            debug_assert_eq!(tmp.len(), SK_LEN);
-            out[..SK_LEN].copy_from_slice(&tmp);
-            Ok(SK_LEN)
+            let out_sized: &mut [u8; SK_LEN] = out[..SK_LEN].as_mut().try_into().unwrap();
+            Ok(self.sk_encode_out(out_sized))
         }
     }
 

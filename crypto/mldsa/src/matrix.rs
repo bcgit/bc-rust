@@ -103,6 +103,7 @@ impl<const LEN: usize> Vector<LEN>
         s_hat
     }
 
+    // todo: mutants thinks that this can be deleted without breaking anything. Try it!
     pub(crate) fn reduce(&mut self) {
         for i in 0 .. LEN {
             polynomial::reduce_poly(&mut self.vec[i]);
@@ -117,13 +118,9 @@ impl<const LEN: usize> Vector<LEN>
     }
 
     pub(crate) fn ntt(&mut self){
-        // let mut s_hat = Self::new();
-
         for i in 0..LEN {
             self.vec[i] = ntt(&self.vec[i]);
         }
-
-        // s_hat
     }
 
     pub(crate) fn inv_ntt(&mut self) {
