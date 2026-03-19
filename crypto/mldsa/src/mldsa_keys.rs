@@ -286,7 +286,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         // todo: mutants thinks you can delete this function without breaking anything
         // todo: wait until I have the full set of NIST KATs before playing with removing it.
-        t_ntt.reduce();
+        // t_ntt.reduce();
 
         let mut t = t_ntt;
         t.inv_ntt();

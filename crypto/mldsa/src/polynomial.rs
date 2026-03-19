@@ -200,18 +200,18 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
 
 // todo: mutants thinks you can delete this function without breaking anything
 // todo: wait until I have the full set of NIST KATs before playing with removing it.
-pub(crate) fn reduce_poly(w: &mut Polynomial) {
-    for x in w.0.iter_mut() {
-        *x = reduce32(*x);
-    }
-}
+// pub(crate) fn reduce_poly(w: &mut Polynomial) {
+//     for x in w.0.iter_mut() {
+//         *x = reduce32(*x);
+//     }
+// }
 
 // todo: mutants thinks you can delete this function without breaking anything
 // todo: wait until I have the full set of NIST KATs before playing with removing it.
-pub(crate) fn reduce32(a: i32) -> i32 {
-    let t = (a + (1 << 22)) >> 23;
-    a - t * q
-}
+// pub(crate) fn reduce32(a: i32) -> i32 {
+//     let t = (a + (1 << 22)) >> 23;
+//     a - t * q
+// }
 
 pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)

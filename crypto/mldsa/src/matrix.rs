@@ -104,11 +104,11 @@ impl<const LEN: usize> Vector<LEN>
     }
 
     // todo: mutants thinks that this can be deleted without breaking anything. Try it!
-    pub(crate) fn reduce(&mut self) {
-        for i in 0 .. LEN {
-            polynomial::reduce_poly(&mut self.vec[i]);
-        }
-    }
+    // pub(crate) fn reduce(&mut self) {
+    //     for i in 0 .. LEN {
+    //         polynomial::reduce_poly(&mut self.vec[i]);
+    //     }
+    // }
 
     pub(crate) fn conditional_add_q(&mut self) {
         for i in 0 .. LEN {

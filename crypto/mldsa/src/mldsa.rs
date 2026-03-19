@@ -342,7 +342,7 @@ impl<
 
         // todo: mutants thinks you can delete this function without breaking anything
         // todo: wait until I have the full set of NIST KATs before playing with removing it.
-        t_hat.reduce();
+        // t_hat.reduce();
 
         let mut t = t_hat;
         t.inv_ntt();
