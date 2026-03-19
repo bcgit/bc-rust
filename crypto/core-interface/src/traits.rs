@@ -356,6 +356,9 @@ pub trait RNG : Default {
 
 /// A trait that forces an object to implement a zeroizing Drop() as well as Debug and Display that
 /// will not log the sensitive contents, even in error or crash-dump scenarios.
+#[allow(drop_bounds)] // Since rust auto-implements Drop, there's a lint that explicitly bounding on Drop is useless.
+                      // I disagree because I want to force things that are secrets to manually implement Drop that zeroizes the data.
+                      // So I'm turning off this lint.
 pub trait Secret : Drop + Debug + Display {}
 
 /// Pre-Hashed Signature is mostly a mirror of the [Signature] trait, but it applies to signature
@@ -436,7 +439,7 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
-    
+
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify_ph(pk: &PK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;

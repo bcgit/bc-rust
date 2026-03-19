@@ -10,7 +10,7 @@ mod hash_mldsa_tests {
 
 
     #[test]
-    fn test_framework_signature() {
+    fn core_framework_signature() {
         let tf = TestFrameworkSignature::new(false, true);
 
         tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, 32, HashMLDSA44_with_SHA256, MLDSA44_SIG_LEN>(false);
@@ -70,8 +70,6 @@ mod hash_mldsa_tests {
         let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
         let sig = HashMLDSA65_with_SHA512::sign_ph_deterministic(&sk, None, &ph, rnd).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
-
-
     }
 
     // todo: core framework tests
