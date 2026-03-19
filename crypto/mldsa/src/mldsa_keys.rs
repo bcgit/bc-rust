@@ -204,6 +204,9 @@ pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize,
     /// Get a ref to the seed, if there is one stored with this private key
     fn seed(&self) -> &Option<KeyMaterialSized<32>>;
 
+    /// Get a ref to the key hash `tr`.
+    fn tr(&self) -> &[u8; 64];
+
     /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
     fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN>;
     /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
@@ -248,7 +251,8 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<const k: usize, const l: usize, co
     fn K(&self) -> &[u8; 32];
 
     /// Get a ref to tr
-    fn tr(&self) -> &[u8; 64];
+    // don't need here because there's one in the public trait
+    // fn tr(&self) -> &[u8; 64];
 
     /// Get a ref to s1
     fn s1(&self) -> &Vector<l>;
@@ -264,6 +268,10 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<const k: usize, const l: usize, co
 impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
     MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
     fn seed(&self) -> &Option<KeyMaterialSized<32>> { &self.seed }
+
+    fn tr(&self) -> &[u8; 64] {
+        &self.tr
+    }
 
     fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN> {
         // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
@@ -404,7 +412,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
     fn K(&self) -> &[u8; 32] { &self.K }
 
-    fn tr(&self) -> &[u8; 64] { &self.tr }
+    // don't need here because there's one in the public trait
+    // fn tr(&self) -> &[u8; 64] { &self.tr }
 
     fn s1(&self) -> &Vector<l> { &self.s1 }
 

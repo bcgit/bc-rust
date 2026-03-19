@@ -17,7 +17,7 @@
 #![allow(non_upper_case_globals)]
 
 // so I can use private traits to hide internal stuff that needs to be generic within the
-// MLDSA implentation, but I don't want accessed from outside, such FIPS-internal functions.
+// MLDSA implementation, but I don't want accessed from outside, such as FIPS-internal functions.
 #![allow(private_bounds)]
 
 // Used in HashMLDSA
