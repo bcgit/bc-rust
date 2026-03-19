@@ -206,6 +206,8 @@ pub(crate) fn reduce_poly(w: &mut Polynomial) {
     }
 }
 
+// todo: mutants thinks you can delete this function without breaking anything
+// todo: wait until I have the full set of NIST KATs before playing with removing it.
 pub(crate) fn reduce32(a: i32) -> i32 {
     let t = (a + (1 << 22)) >> 23;
     a - t * q

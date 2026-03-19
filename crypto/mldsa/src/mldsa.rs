@@ -15,8 +15,12 @@ use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 
 /*** Constants ***/
-// From FIPS 204 Table 1 and Table 2
 
+pub const ML_DSA_44_NAME: &str = "ML-DSA-44";
+pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
+pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
+
+// From FIPS 204 Table 1 and Table 2
 
 // Constants that are the same for all parameter sets
 pub(crate) const N: usize = 256;
@@ -952,7 +956,11 @@ impl<
 /// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204.
 /// Provides a stateful version of [compute_mu_from_pk] and [compute_mu_from_tr] that supports streaming
 /// large to-be-signed messages.
-// todo: probably the best way to handle HashML-DSA is to have this take a ::<const IS_HashMLDSA>
+///
+/// Note: this struct is only exposed for "pure" ML-DSA and not for HashML-DSA because HashML-DSA
+/// does not benefit from allowing external construction of the message representative mu.
+/// You can get the same behaviour by computing the pre-hash `ph` with the appropriate hash function
+/// and providing that to [HashMLDSA::sign_ph].
 pub struct MuBuilder {
     h: H,
 }

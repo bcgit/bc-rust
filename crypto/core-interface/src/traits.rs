@@ -368,7 +368,7 @@ pub trait Secret : Drop + Debug + Display {}
 /// Instead of handling streaming on the signature primitive, you get to use an external hash function.
 /// Just be careful to use the same hash function that the signature primitive is expecting you to use.
 /// (with great power comes great responsibility)
-pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const HASH_LEN: usize>: Sized {
+pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_LEN: usize>: Sized {
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), SignatureError>;
@@ -428,10 +428,10 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const HAS
     /// Not all signature primitives will support a context value, so you may need to consult the
     /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign_ph(sk: &SK, ph: &[u8; HASH_LEN], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError>;
+    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError>;
 
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_ph_out(sk: &SK, ph: &[u8; HASH_LEN], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
+    fn sign_ph_out(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
 
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
@@ -439,7 +439,7 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const HAS
     
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
-    fn verify_ph(pk: &PK, ph: &[u8; HASH_LEN], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
+    fn verify_ph(pk: &PK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
 }
 
 /// A digital signature algorithm is defined as a set of three operations:

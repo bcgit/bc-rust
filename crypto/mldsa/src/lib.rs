@@ -41,7 +41,7 @@ by reconstructing and hashing it incrementally instead.
  */
 
 mod mldsa;
-mod hashmldsa;
+mod hash_mldsa;
 mod mldsa_keys;
 mod polynomial;
 mod aux_functions;
@@ -50,18 +50,25 @@ mod matrix;
 
 /*** Exported types ***/
 pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87};
+pub use hash_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA65_with_SHA256, HashMLDSA87_with_SHA256};
+pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
 pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
 pub use mldsa_keys::{MLDSAPublicKey, MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey};
 pub use mldsa_keys::{MLDSAPrivateKey, MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey};
 pub use mldsa::{MuBuilder};
 
-// todo
-// pub use hashmldsa::HashMLDSA;
-
 /*** Exported constants ***/
-pub const ML_DSA_44_NAME: &str = "ML-DSA-44";
-pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
-pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
+pub use mldsa::ML_DSA_44_NAME;
+pub use mldsa::ML_DSA_65_NAME;
+pub use mldsa::ML_DSA_87_NAME;
+
+pub use hash_mldsa::Hash_ML_DSA_44_with_SHA256_NAME;
+pub use hash_mldsa::Hash_ML_DSA_65_with_SHA256_NAME;
+pub use hash_mldsa::Hash_ML_DSA_87_with_SHA256_NAME;
+
+pub use hash_mldsa::Hash_ML_DSA_44_with_SHA512_NAME;
+pub use hash_mldsa::Hash_ML_DSA_65_with_SHA512_NAME;
+pub use hash_mldsa::Hash_ML_DSA_87_with_SHA512_NAME;
 
 pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN};
 pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN};

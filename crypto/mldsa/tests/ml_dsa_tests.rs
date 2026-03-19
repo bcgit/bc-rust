@@ -17,11 +17,8 @@ mod mldsa_tests {
         let tf = TestFrameworkSignature::new(false, true);
 
         tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_SIG_LEN>(false);
-
         tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_SIG_LEN>(false);
-
         tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_SIG_LEN>(false);
-
     }
 
     /// This runs the full bitflipping tests and takes several minutes.
