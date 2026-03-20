@@ -76,7 +76,7 @@ mod mldsa_tests {
         assert_eq!(derived_pk, decoded_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.derive_public_key());
+        assert_eq!(derived_pk, derived_sk.derive_pk());
 
         MLDSA44::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -121,7 +121,7 @@ mod mldsa_tests {
         assert_eq!(derived_pk, expected_pk);
 
         // consistincy check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.derive_public_key());
+        assert_eq!(derived_pk, derived_sk.derive_pk());
 
         MLDSA65::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -166,7 +166,7 @@ mod mldsa_tests {
         assert_eq!(derived_pk, expected_pk);
 
         // consistency check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.derive_public_key());
+        assert_eq!(derived_pk, derived_sk.derive_pk());
 
         MLDSA87::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -250,7 +250,7 @@ mod mldsa_tests {
         let mu = MLDSA44::compute_mu_from_sk(&hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sk).unwrap();
         let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA44_KAT1.signature).unwrap());
-        MLDSA44::verify(&sk.derive_public_key(), &hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sig).unwrap();
+        MLDSA44::verify(&sk.derive_pk(), &hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sig).unwrap();
 
         // test the streaming API on the same value
         let mut s = MLDSA44::sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
@@ -266,7 +266,7 @@ mod mldsa_tests {
             s.sign_update(msg_chunk);
         }
         let sig_val = s.sign_final().unwrap();
-        MLDSA44::verify(&sk.derive_public_key(), DUMMY_SEED_1024, Some(b"streaming API chunked"), &sig_val).unwrap();
+        MLDSA44::verify(&sk.derive_pk(), DUMMY_SEED_1024, Some(b"streaming API chunked"), &sig_val).unwrap();
 
 
 
@@ -283,7 +283,7 @@ mod mldsa_tests {
         let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA65_KAT1.signature).unwrap());
 
-        MLDSA65::verify(&sk.derive_public_key(), &*hex::decode(MLDSA65_KAT1.message).unwrap(), Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()), &sig).unwrap();
+        MLDSA65::verify(&sk.derive_pk(), &*hex::decode(MLDSA65_KAT1.message).unwrap(), Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()), &sig).unwrap();
 
         // test the streaming API on the same value
         let mut s = MLDSA65::sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
@@ -307,7 +307,7 @@ mod mldsa_tests {
         let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA87_KAT1.signature).unwrap());
 
-        MLDSA87::verify(&sk.derive_public_key(), &*hex::decode(MLDSA87_KAT1.message).unwrap(), Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()), &sig).unwrap();
+        MLDSA87::verify(&sk.derive_pk(), &*hex::decode(MLDSA87_KAT1.message).unwrap(), Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()), &sig).unwrap();
 
         // test the streaming API on the same value
         let mut s = MLDSA87::sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();

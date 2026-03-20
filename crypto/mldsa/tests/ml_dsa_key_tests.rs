@@ -40,7 +40,7 @@ mod mldsa_tests {
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
         
         // test re-deriving pk from sk
-        let pk1 = expected_sk.derive_public_key();
+        let pk1 = expected_sk.derive_pk();
         assert_eq!(pk1, decoded_pk);
     }
 

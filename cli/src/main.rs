@@ -4,8 +4,9 @@ mod sha2_cmd;
 mod mac_cmd;
 mod hkdf_cmd;
 mod rng_cmd;
+mod mldsa_cmd;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use crate::mac_cmd::HMACVariant;
 
 #[derive(Parser)]
@@ -269,6 +270,29 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// The MLDSA44 signature algorithm.
+    MLDSA44 {
+        action: MLDSAAction,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum MLDSAAction {
+    /// Generate and output a new private key
+    Keygen,
+    /// Generate and output a private key from a seed read from stdin
+    KeygenFromSeed,
+    /// Generate and output a new public key from a private key read from stdin
+    PkFromSk,
+    /// Sign a message read from stdin with a private key file and output the signature
+    Sign,
+    /// Verify a message read from stdin with a public key file and a signature file
+    Verify,
 }
 
 fn main() {
@@ -294,6 +318,7 @@ fn main() {
         Some(Subcommands::HKDF_SHA256 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::HKDF_SHA512 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::RNG {  len, x}) => { rng_cmd::rng_cmd(*len, *x)},
+        Some(Subcommands::MLDSA44 { action, x }) => { mldsa_cmd::mldsa44_cmd(action, *x); }
         None => { eprintln!("No command provided. See -h") },
     }
 }

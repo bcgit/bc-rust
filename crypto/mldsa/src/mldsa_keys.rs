@@ -208,7 +208,7 @@ pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize,
     fn tr(&self) -> &[u8; 64];
 
     /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
-    fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN>;
+    fn derive_pk(&self) -> MLDSAPublicKey<k, PK_LEN>;
     /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
     /// Encodes a secret key for ML-DSA into a byte string.
     /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
@@ -273,7 +273,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         &self.tr
     }
 
-    fn derive_public_key(&self) -> MLDSAPublicKey<k, PK_LEN> {
+    fn derive_pk(&self) -> MLDSAPublicKey<k, PK_LEN> {
         // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
         let A_hat = expandA::<k, l>(&self.rho);
 

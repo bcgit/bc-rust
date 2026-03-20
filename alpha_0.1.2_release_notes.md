@@ -3,6 +3,7 @@
 
 [ ] Finish ML-DSA
 [ ] Ensure that all crates have `#![forbid(missing_docs)]`
+[ ] Apply Secret trait consistently across the library
 [ ] Change all "[u8;0]" to "[]" throughout the code and docs ... or better yet, change the APIs to take an Option<>
 [ ] Enhance the default HashDRBG instantiation to take in NIST-compatible CPU jitter entropy
 [ ] Do a pass over KeyMaterial, taking into account Dennis Jackson's input (maybe ping him for a phone call?)
