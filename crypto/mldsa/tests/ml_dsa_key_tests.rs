@@ -3,7 +3,7 @@ mod mldsa_tests {
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_core_test_framework::signature::{TestFrameworkSignatureKeys};
-    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSA44, MLDSA65, MLDSA87};
+    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
     use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
     use bouncycastle_hex as hex;
 

@@ -202,24 +202,13 @@ impl<const LEN: usize> Vector<LEN>
     /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
     /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
     /// Optimized from FIPS 204 to feed into the hash one row at a time to reduce overall memory footprint.
-    pub(crate) fn w1_encode_and_hash<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self, h: &mut H)  { // -> [u8; W1_PACKED_LEN] {
+    pub(crate) fn w1_encode_and_hash<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self, h: &mut H)  {
         // 1: 𝐰̃1 ← ()
-        // let mut w1_tilde = [0u8; W1_PACKED_LEN];
+        // don't need to allocate anything since we're feeding it into the hash row-wise
 
-        // 2: for 𝑖 from 0 to 𝑘 − 1 do
-        // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
-        // 4: end for
-        // for i in 0..LEN {
-        //     // w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
-        //     //     &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
-        //     // )
-        // }
         for w in self.vec.iter() {
+            // 3: 𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
             h.absorb(&w.w1_encode::<POLY_W1_PACKED_LEN>());
         }
-
-        // 5: return 𝐰̃1
-        // don't need since we're feeding into the hash row-wise
-        // w1_tilde
     }
 }

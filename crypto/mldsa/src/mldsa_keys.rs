@@ -274,22 +274,20 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<k, PK_LEN> {
-        // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-        let A_hat = expandA::<k, l>(&self.rho);
 
         // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
         //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
         let mut s1_hat = self.s1.clone();
         s1_hat.ntt();
-        // let s1_ntt = ntt_vec::<l>(&self.s1);
-        let t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
 
-        // todo: mutants thinks you can delete this function without breaking anything
-        // todo: wait until I have the full set of NIST KATs before playing with removing it.
-        // t_ntt.reduce();
-
-        let mut t = t_ntt;
-        t.inv_ntt();
+        let mut t = { // scope for A_hat
+            let A_hat = expandA::<k, l>(&self.rho);
+            
+            // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
+            let mut t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
+            t_ntt.inv_ntt();
+            t_ntt
+        };
         t.add_vector_ntt(&self.s2);
         t.conditional_add_q();
 

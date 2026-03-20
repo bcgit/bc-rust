@@ -13,7 +13,7 @@ mod bc_test_data {
     use bouncycastle_hex as hex;
     use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Hash, PHSignature, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey};
-    use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSA44, MLDSA65, MLDSA87};
+    use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
     use bouncycastle_sha2::SHA512;
     use crate::BustedMuBuilder;
 

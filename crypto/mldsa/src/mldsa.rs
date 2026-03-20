@@ -351,13 +351,11 @@ impl<
         // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
         let A_hat = expandA::<k, l>(&rho);
 
-
-        let t_hat = { // scope for s1_hat, t_hat
+        let t_hat = { // scope for s1_hat
             // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
             //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
             let mut s1_hat = s1.clone();
             s1_hat.ntt();
-            // let s1_hat = ntt_vec::<l>(&s1);
             A_hat.matrix_vector_ntt(&s1_hat)
         };
 
@@ -857,11 +855,13 @@ impl<
         };
 
         // Alg 7; 5: 𝐀_hat ← ExpandA(𝜌)
-        // this is a large bit of memory and technically could move inside the loop,
-        // but expandA() is quite computationally-heavy, so deriving it multiple times doesn't seem like a good
-        // tradeoff for general purposes, but someone could fork the code and do this if this
-        // function still doesn't fit in available memory.
-        // TODO: measure how many times, on average, the loop executes across all test cases.
+        // Note on memory optimization:
+        // A_hat consumes a large bit of memory and technically could move inside the loop --
+        // -- or even more aggressively, could be derived and multiplied by y_hat row-by-row --
+        // But in my unit tests, I see the loop typically execute 1 - 3 times, sometimes as many
+        // as 20 or even 80 times. So moving expandA() inside the loop would be a pretty drastic speed-for-memory tradeoff
+        // that I'm not willing to make in general, so I leave that as an optimization that people
+        // can make on a private fork if you really really need the memory squeeze.
         let A_hat = expandA::<k, l>(&rho);
 
         // Alg 7; 8: 𝜅 ← 0
