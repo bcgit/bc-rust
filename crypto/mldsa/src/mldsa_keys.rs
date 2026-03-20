@@ -282,7 +282,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         let mut s1_hat = self.s1.clone();
         s1_hat.ntt();
         // let s1_ntt = ntt_vec::<l>(&self.s1);
-        let mut t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
+        let t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
 
         // todo: mutants thinks you can delete this function without breaking anything
         // todo: wait until I have the full set of NIST KATs before playing with removing it.

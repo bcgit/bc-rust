@@ -1,7 +1,9 @@
 //! These are somewhat unnecessary wrappers around simple arrays, but they are helpful to me in clearly
 //! keeping the types and sizes obvious.
 
+use bouncycastle_core_interface::traits::XOF;
 use crate::aux_functions::{inv_ntt, ntt};
+use crate::mldsa::H;
 use crate::polynomial;
 use crate::polynomial::{Polynomial};
 
@@ -172,11 +174,13 @@ impl<const LEN: usize> Vector<LEN>
         false
     }
 
+    // todo: goal is to delete this
     /// Algorithm 28 w1Encode(𝐰1)
     /// Encodes a polynomial vector 𝐰1 into a byte string.
     /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
     /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
-    pub(crate) fn w1_encode<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; W1_PACKED_LEN] {        
+    /// Optimized from FIPS 204 to feed into the hash one row at a time to reduce overall memory footprint.
+    pub(crate) fn w1_encode<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; W1_PACKED_LEN] {
         // 1: 𝐰̃1 ← ()
         let mut w1_tilde = [0u8; W1_PACKED_LEN];
 
@@ -191,5 +195,31 @@ impl<const LEN: usize> Vector<LEN>
 
         // 5: return 𝐰̃1
         w1_tilde
+    }
+
+    /// Algorithm 28 w1Encode(𝐰1)
+    /// Encodes a polynomial vector 𝐰1 into a byte string.
+    /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
+    /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
+    /// Optimized from FIPS 204 to feed into the hash one row at a time to reduce overall memory footprint.
+    pub(crate) fn w1_encode_and_hash<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self, h: &mut H)  { // -> [u8; W1_PACKED_LEN] {
+        // 1: 𝐰̃1 ← ()
+        // let mut w1_tilde = [0u8; W1_PACKED_LEN];
+
+        // 2: for 𝑖 from 0 to 𝑘 − 1 do
+        // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
+        // 4: end for
+        // for i in 0..LEN {
+        //     // w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
+        //     //     &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
+        //     // )
+        // }
+        for w in self.vec.iter() {
+            h.absorb(&w.w1_encode::<POLY_W1_PACKED_LEN>());
+        }
+
+        // 5: return 𝐰̃1
+        // don't need since we're feeding into the hash row-wise
+        // w1_tilde
     }
 }

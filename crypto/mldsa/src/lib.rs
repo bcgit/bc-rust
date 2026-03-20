@@ -49,7 +49,7 @@ mod matrix;
 
 
 /*** Exported types ***/
-pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87};
+pub use mldsa::{MLDSATrait, MLDSA, MLDSA44, MLDSA65, MLDSA87};
 pub use hash_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA65_with_SHA256, HashMLDSA87_with_SHA256};
 pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
 pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
@@ -70,6 +70,7 @@ pub use hash_mldsa::Hash_ML_DSA_44_with_SHA512_NAME;
 pub use hash_mldsa::Hash_ML_DSA_65_with_SHA512_NAME;
 pub use hash_mldsa::Hash_ML_DSA_87_with_SHA512_NAME;
 
+pub use mldsa::{TR_LEN, RND_LEN, MU_LEN};
 pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN};
 pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN};
 pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN};
