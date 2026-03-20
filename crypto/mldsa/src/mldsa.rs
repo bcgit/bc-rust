@@ -855,7 +855,7 @@ impl<
             // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
             expandS::<k, l, ETA>(&rho_prime)
         };
-        
+
         // Alg 7; 5: 𝐀_hat ← ExpandA(𝜌)
         // this is a large bit of memory and technically could move inside the loop,
         // but expandA() is quite computationally-heavy, so deriving it multiple times doesn't seem like a good
@@ -919,7 +919,7 @@ impl<
                 ntt(&c)
             };
 
-            let mut t_hat: Vector<k>;
+            let t_hat: Vector<k>;
             sig_val_z = { // scope for s1_hat, cs1
                 // Alg 7; 2: 𝐬1̂_hat ← NTT(𝐬1)
                 let mut s1_hat = s1.clone();
@@ -964,7 +964,7 @@ impl<
                 cs2.inv_ntt();
 
                 // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-                let mut r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
+                let r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
 
                 // while we have s2_hat in scope, derive t0
                 let mut t = t_hat;
@@ -1111,28 +1111,33 @@ impl<
         //                  NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑)
         //   )
         // ▷ 𝐰'_approx = 𝐀𝐳 − 𝑐𝐭1 ⋅ 2^𝑑
-        let mut z_hat = z.clone();
-        z_hat.ntt();
-        let w1 = A_hat.matrix_vector_ntt(&z_hat);
-        let mut t1_shift_hat = pk.t1().shift_left::<d>();
-        t1_shift_hat.ntt();
-        let w2 = t1_shift_hat.scalar_vector_ntt(&ntt(&c));
-        let mut wp_approx = w1.sub_vector(&w2);
-        wp_approx.inv_ntt();
-        wp_approx.conditional_add_q();
-        // bc-java does a wp_approx.conditional_add_q();
+        // weird nested scoping is to reduce peak stack memory usage
+        let w1p = {
+            let w1 = {
+                let mut z_hat = z.clone();
+                z_hat.ntt();
+                A_hat.matrix_vector_ntt(&z_hat)
+            };
+            let w2 = {
+                let mut t1_shift_hat = pk.t1().shift_left::<d>();
+                t1_shift_hat.ntt();
+                t1_shift_hat.scalar_vector_ntt(&ntt(&c))
+            };
+            let mut wp_approx = w1.sub_vector(&w2);
+            wp_approx.inv_ntt();
+            wp_approx.conditional_add_q();
+            // bc-java does a wp_approx.conditional_add_q();
 
-        // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
-        // ▷ reconstruction of signer’s commitment
-        let w1p = use_hint_vecs::<k, GAMMA2>(&h, &wp_approx);
-
+            // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
+            // ▷ reconstruction of signer’s commitment
+            use_hint_vecs::<k, GAMMA2>(&h, &wp_approx)
+        };
         // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
         // ▷ hash it; this should match 𝑐_tilde
         let mut c_tilde_p = [0u8; LAMBDA_over_4];
         let mut hash = H::new();
         hash.absorb(mu);
-        /* DEBUG */ let tmp = w1p.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>();
-        hash.absorb(&w1p.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>());
+        w1p.w1_encode_and_hash::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>(&mut hash);
         hash.squeeze_out(&mut c_tilde_p);
 
 
