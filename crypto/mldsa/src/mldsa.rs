@@ -326,41 +326,52 @@ impl<
         // Alg 6 line 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
         //   ▷ expand seed
         let mut rho: [u8; 32] = [0u8; 32];
-        let mut rho_prime: [u8; 64] = [0u8; 64];
         let mut K: [u8; 32] = [0u8; 32];
 
-        let mut h = H::default();
-        h.absorb(seed.ref_to_bytes());
-        h.absorb(&(k as u8).to_le_bytes());
-        h.absorb(&(l as u8).to_le_bytes());
-        let bytes_written = h.squeeze_out(&mut rho);
-        let bytes_written = h.squeeze_out(&mut rho_prime);
-        debug_assert_eq!(bytes_written, 64);
-        let bytes_written = h.squeeze_out(&mut K);
-        debug_assert_eq!(bytes_written, 32);
+        let (s1, s2) = { // scope for h
+            let mut h = H::default();
+            h.absorb(seed.ref_to_bytes());
+            h.absorb(&(k as u8).to_le_bytes());
+            h.absorb(&(l as u8).to_le_bytes());
+            let bytes_written = h.squeeze_out(&mut rho);
+            let mut rho_prime: [u8; 64] = [0u8; 64];
+            let bytes_written = h.squeeze_out(&mut rho_prime);
+            debug_assert_eq!(bytes_written, 64);
+            let bytes_written = h.squeeze_out(&mut K);
+            debug_assert_eq!(bytes_written, 32);
+
+            // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
+            let (s1, s2) = expandS::<k, l, ETA>(&rho_prime);
+
+            // Clear the secret data before returning memory to the OS
+            rho_prime.fill(0u8);
+            (s1, s2)
+        };
 
         // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
         let A_hat = expandA::<k, l>(&rho);
 
-        // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-        let (s1, s2) = expandS::<k, l, ETA>(&rho_prime);
 
-        // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
-        //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-        let mut s1_hat = s1.clone();
-        s1_hat.ntt();
-        // let s1_hat = ntt_vec::<l>(&s1);
-        let t_hat = A_hat.matrix_vector_ntt(&s1_hat);
+        let t_hat = { // scope for s1_hat, t_hat
+            // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
+            //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
+            let mut s1_hat = s1.clone();
+            s1_hat.ntt();
+            // let s1_hat = ntt_vec::<l>(&s1);
+            A_hat.matrix_vector_ntt(&s1_hat)
+        };
 
-        let mut t = t_hat;
-        t.inv_ntt();
-        t.add_vector_ntt(&s2);
-        t.conditional_add_q();
+        let (t1, t0) = { // scope for t
+            let mut t = t_hat;
+            t.inv_ntt();
+            t.add_vector_ntt(&s2);
+            t.conditional_add_q();
 
-        // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
-        //   ▷ compress 𝐭
-        //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-        let (t1, t0) = power_2_round_vec::<k>(&t);
+            // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
+            //   ▷ compress 𝐭
+            //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
+            power_2_round_vec::<k>(&t)
+        };
 
         // 8: 𝑝𝑘 ← pkEncode(𝜌, 𝐭1)
         let pk = PK::new(&rho, &t1);
@@ -792,9 +803,8 @@ impl<
         // stack variables are alive at the same time.
 
         // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
-        // todo: delete
-        let (_, sk) = Self::keygen_internal(&seed)?;
-
+        // to avoid having all of it in memory at the same time,
+        // we're gonna derive what we need as we need it.
 
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
             || seed.key_len() != 32
@@ -845,8 +855,7 @@ impl<
             // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
             expandS::<k, l, ETA>(&rho_prime)
         };
-
-
+        
         // Alg 7; 5: 𝐀_hat ← ExpandA(𝜌)
         // this is a large bit of memory and technically could move inside the loop,
         // but expandA() is quite computationally-heavy, so deriving it multiple times doesn't seem like a good
@@ -909,18 +918,29 @@ impl<
                 // 17: 𝑐_hat ← NTT(𝑐)
                 ntt(&c)
             };
-            sig_val_z = { // scope for s1_hat and cs1
+
+            let mut t_hat: Vector<k>;
+            sig_val_z = { // scope for s1_hat, cs1
                 // Alg 7; 2: 𝐬1̂_hat ← NTT(𝐬1)
-                let mut s1_hat = sk.s1().clone();
+                let mut s1_hat = s1.clone();
                 s1_hat.ntt();
 
-                // Alg 7; 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
-                //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
-                let mut cs1 = s1_hat.scalar_vector_ntt(&c_hat);
-                cs1.inv_ntt();
+                y = { // scope for cs1
+                    // Alg 7; 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
+                    //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
+                    let mut cs1 = s1_hat.scalar_vector_ntt(&c_hat);
+                    cs1.inv_ntt();
 
-                // Alg 7; 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
-                y.add_vector_ntt(&cs1);
+                    // Alg 7; 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
+                    y.add_vector_ntt(&cs1);
+                    y
+                };
+
+                // also, while we have s1_hat in memory, compute t_hat
+                // Alg 6; 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
+                //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
+                t_hat = A_hat.matrix_vector_ntt(&s1_hat);
+
                 y
             };
 
@@ -933,9 +953,10 @@ impl<
                 continue;
             };
 
+            let t0: Vector<k>;
             let mut r0: Vector<k> = { // scope for s2_hat and cs2
                 // 3: 𝐬2̂_hat ← NTT(𝐬2)
-                let mut s2_hat = sk.s2().clone();
+                let mut s2_hat = s2.clone();
                 s2_hat.ntt();
 
                 // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐_hat * 𝐬2̂_hat)
@@ -943,7 +964,21 @@ impl<
                 cs2.inv_ntt();
 
                 // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-                w.sub_vector(&cs2).low_bits::<GAMMA2>()
+                let mut r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
+
+                // while we have s2_hat in scope, derive t0
+                let mut t = t_hat;
+                t.inv_ntt();
+                t.add_vector_ntt(&s2);
+                t.conditional_add_q();
+
+                // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
+                //   ▷ compress 𝐭
+                //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
+                let (t1tmp, t0tmp) = power_2_round_vec::<k>(&t);
+                t0 = t0tmp;
+
+                r0
             };
 
             // Alg 7; 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
@@ -955,7 +990,7 @@ impl<
 
             let ct0: Vector<k> = { // scope for t0_hat
                 // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
-                let mut t0_hat = sk.t0().clone();
+                let mut t0_hat = t0.clone();
                 t0_hat.ntt();
 
                 // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
