@@ -2,9 +2,7 @@ use bouncycastle::core_interface::traits::{RNG};
 use bouncycastle::factory::AlgorithmFactory;
 use bouncycastle::factory::rng_factory::RNGFactory;
 
-use std::io;
-use std::io::{Write};
-
+use crate::print_bytes_or_hex;
 
 pub(crate) fn rng_cmd(len: Option<u32>, output_hex: bool) {
     let mut rng = RNGFactory::default_256_bit();
@@ -16,11 +14,13 @@ pub(crate) fn rng_cmd(len: Option<u32>, output_hex: bool) {
         rng.next_bytes_out(&mut buf).unwrap();
 
         if bytes_left_to_write < buf.len() { buf.truncate(bytes_left_to_write); }
-        if output_hex {
-            for b in buf.iter() {
-                print!("{b:02x}");
-            }
-        } else { io::stdout().write(&buf).unwrap(); }
+        println!("buf.len(): {}", buf.len());
+        // if output_hex {
+        //     for b in buf.iter() {
+        //         print!("{b:02x}");
+        //     }
+        // } else { io::stdout().write(&buf).unwrap(); }
+        print_bytes_or_hex(&buf, output_hex);
         bytes_left_to_write -= buf.len();
     }
     println!();

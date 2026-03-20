@@ -6,6 +6,8 @@ mod hkdf_cmd;
 mod rng_cmd;
 mod mldsa_cmd;
 
+use std::io;
+use std::io::Write;
 use clap::{Parser, Subcommand, ValueEnum};
 use crate::mac_cmd::HMACVariant;
 
@@ -285,14 +287,28 @@ enum Subcommands {
 pub(crate) enum MLDSAAction {
     /// Generate and output a new private key
     Keygen,
-    /// Generate and output a private key from a seed read from stdin
+    /// Generate and output a private key from a seed read from stdin.
+    /// Accepts either binary or hex.
     KeygenFromSeed,
-    /// Generate and output a new public key from a private key read from stdin
+    /// Generate and output a new public key from a private key read from stdin.
+    /// Accepts either binary or hex.
     PkFromSk,
-    /// Sign a message read from stdin with a private key file and output the signature
+    /// Sign a message read from stdin with a private key file and output the signature.
+    /// Accepts private key as full or seed, binary or hex.
     Sign,
     /// Verify a message read from stdin with a public key file and a signature file
+    /// Accepts the public key and signature as binary or hex.
     Verify,
+}
+
+pub(crate) fn print_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+    if output_hex {
+        for b in bytes.iter() {
+            print!("{b:02x}");
+        }
+    } else {
+        io::stdout().write(bytes).unwrap();
+    }
 }
 
 fn main() {
