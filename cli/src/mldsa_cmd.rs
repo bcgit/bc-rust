@@ -2,12 +2,12 @@
 //! by using generics or macros. I just, haven't ... yet.
 
 use crate::{MLDSAAction, write_bytes_or_hex};
-use bouncycastle::core_interface::key_material::{KeyMaterial256, KeyMaterialSized, KeyType};
+use bouncycastle::core_interface::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core_interface::traits::{
     KeyMaterial, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
 };
 use bouncycastle::hex;
-use bouncycastle::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait, MLDSAPrivateKey, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA87PrivateKey, MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
+use bouncycastle::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA87PrivateKey, MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
 use std::{fs, io};
 use std::io::{Read};
 use std::process::exit;
@@ -85,7 +85,7 @@ pub(crate) fn mldsa44_cmd(
         MLDSAAction::Sign => {
             // first, read the sk
             let mut sk_bytes = [0u8; 2*2560+1];
-            let mut sk_len: usize;
+            let sk_len: usize;
             if skfile.is_some() {
                 sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
             } else {
@@ -272,7 +272,7 @@ pub(crate) fn mldsa65_cmd(
         MLDSAAction::Sign => {
             // first, read the sk
             let mut sk_bytes = [0u8; 2*4032+1];
-            let mut sk_len: usize;
+            let sk_len: usize;
             if skfile.is_some() {
                 sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
             } else {
@@ -459,7 +459,7 @@ pub(crate) fn mldsa87_cmd(
         MLDSAAction::Sign => {
             // first, read the sk
             let mut sk_bytes = [0u8; 2*4627+1];
-            let mut sk_len: usize;
+            let sk_len: usize;
             if skfile.is_some() {
                 sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
             } else {
@@ -646,7 +646,7 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
         MLDSAAction::Sign => {
             // first, read the sk
             let mut sk_bytes = [0u8; 2*2560+1];
-            let mut sk_len: usize;
+            let sk_len: usize;
             if skfile.is_some() {
                 sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
             } else {
@@ -833,7 +833,7 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
         MLDSAAction::Sign => {
             // first, read the sk
             let mut sk_bytes = [0u8; 2*4032+1];
-            let mut sk_len: usize;
+            let sk_len: usize;
             if skfile.is_some() {
                 sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
             } else {
@@ -1019,7 +1019,7 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
         MLDSAAction::Sign => {
             // first, read the sk
             let mut sk_bytes = [0u8; 2*4627+1];
-            let mut sk_len: usize;
+            let sk_len: usize;
             if skfile.is_some() {
                 sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
             } else {

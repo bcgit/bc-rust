@@ -1,4 +1,313 @@
-//! give an example of operating solely from the seed
+//! This page documents advanced features of the Module Lattice Digital Signature Algorithm (ML-DSA)
+//! available in this crate.
+//!
+//!
+//! # Streaming APIs
+//!
+//! Sometimes the message you need to sign or verify is too big to fit in device memory all at once.
+//! No worries, we got you covered!
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//!
+//! // Let's pretend this message was so long that you couldn't possibly
+//! // stream the whole thing over a network, and you need it pre-hashed.
+//! let msg_chunk1 = b"The quick brown fox ";
+//! let msg_chunk2 = b"jumped over the lazy dog";
+//!
+//! let mut signer = MLDSA65::sign_init(&sk, None).unwrap();
+//! signer.sign_update(msg_chunk1);
+//! signer.sign_update(msg_chunk2);
+//! let sig: Vec<u8> = signer.sign_final().unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! // This is compatible with a verifies that takes the whole message as one chunk:
+//! let msg = b"The quick brown fox jumped over the lazy dog";
+//! match MLDSA65::verify(&pk, msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//!
+//! // But of course there's also a streaming API for the verifier!
+//! let mut verifier = MLDSA65::verify_init(&pk, None).unwrap();
+//! verifier.verify_update(msg_chunk1);
+//! verifier.verify_update(msg_chunk2);
+//!
+//! match verifier.verify_final(&sig.as_slice()) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//! ```
+//!
+//!
+//! Note that the streaming API also supports setting the signing context `ctx` and signing nonce `rnd`,
+//! which are explained in more detail below.
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//!
+//! // Let's pretend this message was so long that you couldn't possibly
+//! // stream the whole thing over a network, and you need it pre-hashed.
+//! let msg_chunk1 = b"The quick brown fox ";
+//! let msg_chunk2 = b"jumped over the lazy dog";
+//!
+//! let mut signer = MLDSA65::sign_init(&sk, Some(b"signing ctx value")).unwrap();
+//! signer.set_signer_rnd([0u8; 32]); // an all-zero rnd is the "deterministic" mode of ML-DSA
+//! signer.sign_update(msg_chunk1);
+//! signer.sign_update(msg_chunk2);
+//! let sig: Vec<u8> = signer.sign_final().unwrap();
+//! ```
+//!
+//! # External Mu mode
+//!
+//! Here, `mu` refers to the message digest which is computed internally to the ML-DSA algorithm:
+//!
+//! > 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
+//! >   ▷ message representative that may optionally be computed in a different cryptographic module
+//!
+//! The External Mu mode of ML-DSA fulfills a similar function to [HashMLDSA] in that it allows large
+//! messages to be pre-digested outside of the cryptographic module that holds the private key,
+//! but it does it in a way that is compatible with the ML-DSA verification function.
+//! In other works, whereas [HashMLDSA] represents a different signature algorithm, the external mu
+//! mode of ML-DSA is simply internal implementation detail of how the signature was computed and
+//! produces signatures that are indistinguishable from "direct" ML-DSA mode.
+//!
+//! The one potential complication with external mu mode -- that [HashMLDSA] does not have --
+//! is that it requires you to know the public key that you are about to sign the message with.
+//! Or, more specifically, the hash of the public key `tr`.
+//! `tr` is a public value (derivable from the public key), so there is no harm in, for example,
+//! sending it down to a client device so that it can pre-hash a large message and only send the
+//! 64-byte `mu` value up to the server to be signed.
+//! But in some contexts, the message has to be pre-hashed for performance reasons but
+//! the public key that will be used for signing cannot be known in advance.
+//! For those use cases, your only choice is to use [HashMLDSA].
+//!
+//! This library exposes [MuBuilder] which can be used to pre-hash a large to-be-signed message
+//! along with the public key hash `tr`:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let (pk, _) = MLDSA65::keygen().unwrap();
+//!
+//! // Let's pretend this message was so long that you couldn't possibly
+//! // stream the whole thing over a network, and you need it pre-hashed.
+//! let msg = b"The quick brown fox jumped over the lazy dog";
+//!
+//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+//! ```
+//!
+//! Note: if you are going to bind a `ctx` value (explained below), then you need to do in in [MuBuilder::compute_mu].
+//!
+//! If the message really is so huge that you can't hold it all in memory at once, then you might prefer a streaming API for
+//! computing mu:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let (pk, _) = MLDSA65::keygen().unwrap();
+//!
+//! // Let's pretend this message was so long that you couldn't possibly
+//! // stream the whole thing over a network, and you need it pre-hashed.
+//! let msg_chunk1 = b"The quick brown fox ";
+//! let msg_chunk2 = b"jumped over the lazy dog";
+//!
+//! let mut mb = MuBuilder::do_init(&pk.compute_tr(), None).unwrap();
+//! mb.do_update(msg_chunk1);
+//! mb.do_update(msg_chunk2);
+//! let mu = mb.do_final();
+//! ```
+//!
+//! Given a mu value, you can compute a signature that verifies as normal (no mu's required!):
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let msg = b"The quick brown fox jumped over the lazy dog";
+//!
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//!
+//! // Assume this was computed somewhere else and sent to you.
+//! // They would have had to know pk!
+//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+//!
+//! let sig = MLDSA65::sign_mu(&sk, &mu).unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! match MLDSA65::verify(&pk, msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//!
+//! ```
+//!
+//! # Ctx and Rnd params
+//! Various functions in this crate let you set the signing context value (`ctx`) and the signing nonce (`rnd`).
+//! Let's talk about them both:
+//!
+//! ## ctx
+//! The `ctx` value allows the signer to bind the signature value to an extra piece of information
+//! (up to 255 bytes long) that must also be known to the verifier in order to successfully verify the signature.
+//! This optional parameter allows cryptographic protocol designers to get additional binding properties
+//! from the ML-DSA signature.
+//! The `ctx` value should be something that is known to both the signer and verifier,
+//! does not necessarily need to be a secret, but should not go over the wire as part of the not-yet-verified message.
+//! Examples of uses of the `ctx` could include binding the application data type (ex: `FooEmailData`) in order
+//! to disambiguate other data types that share an encoding (ex: `FooTextDocumentData`) and might otherwise be possible for an
+//! attacker to trick a verifier into accepting one in place of the other.
+//! In a network protocol, `ctx` could be used to bind a transaction ID or protocol nonce in order to strongly
+//! protect against replay attacks.
+//! Generally, `ctx` is one of those things that if you don't know what it does, then you're probably
+//! fine to ignore it.
+//!
+//! Example of signing and verifying with a `ctx` value:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let msg = b"The quick brown fox";
+//! let ctx = b"FooTextDocumentFormat";
+//!
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//!
+//! let sig: Vec<u8> = MLDSA65::sign(&sk, msg, Some(ctx)).unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! match MLDSA65::verify(&pk, msg, Some(ctx), &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//! ```
+//!
+//! ## rnd
+//!
+//! This is the signature nonce, whose purpose is to ensure that you get different signature values
+//! if you sign the same message with the same public key multiple times.
+//!
+//! In general, the "deterministic" mode of ML-DSA (which usually uses an all-zero `rnd`) is considered
+//! secure and safe to use but you may lose certain privacy properties, because, for example,
+//! it becomes obvious that multiple identical signatures means that the same message was signed multiple times
+//! by the same private key.
+//!
+//! The default mode of ML-DSA uses a `rnd` generated by the library's OS-backed RNG, but you can set the `rnd`
+//! if you need to; for example if you are running on an embedded device that does not have access to an RNG.
+//!
+//! Note that in order to avoid combinatorial explosion of API functions, setting the `rnd` value is only
+//! available in conjunction with external mu or streaming modes. The example of setting `rnd` on the streaming
+//! API was shown above.
+//!
+//! Here is an example of using the [MLDSA::sign_mu_deterministic] function:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let msg = b"The quick brown fox jumped over the lazy dog";
+//!
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//!
+//! // Assume this was computed somewhere else and sent to you.
+//! // They would have had to know pk!
+//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+//!
+//! // Typically, "deterministic" mode of ML-DSA will use an all-zero rnd,
+//! // but we've exposed it so you can set any value you need to.
+//! let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! match MLDSA65::verify(&pk, msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//! ```
+//!
+//! # sign_from_seed
+//!
+//! This mode is intended for users with extreme performance or resource-limitation requirements.
+//!
+//! A very careful analysis of the ML-DSA signing algorithm will show that you don't actually need
+//! the entire ML-DSA private key to be in memory at the same time. In fact, it is possible to merge
+//! the keygen() and sign() functions
+//!
+//! We provide [MLDSA::sign_mu_deterministic_from_seed] which implements such an algorithm.
+//! It has a significantly lower peak-memory-footprint than the regular signing API (although there's
+//! always room for more optimization), and according to our benchmarks it is only around 25% slower
+//! than signing with a fully-expanded private key -- which is still faster than performing a full
+//! keygen followed by a regular sign since there are intermediate values common to keygen and sign
+//! that the merged function is able to only compute once.
+//!
+//! Since this is intended for hard-core embedded systems people, we have not wrapped this in all
+//! the beginner-friendly APIs. If you need this, then we assume you know what you're doing!
+//!
+//! Example usage:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core_interface::traits::KeyMaterial;
+//! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+//!
+//! let msg = b"The quick brown fox jumped over the lazy dog";
+//!
+//! let seed = KeyMaterial256::from_bytes_as_type(
+//!     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+//!     KeyType::Seed,
+//! ).unwrap();
+//!
+//! // At some point, you'll need to compute the public key, both to get `tr`, and so other
+//! // people can verify your signature.
+//! // There's no possible short-cut to efficiently computing the public key or `tr` from the seed;
+//! // you have to run the full keygen to get the full private key, at least momentarily, then
+//! // you can discard it in only keep `tr` and `seed`.
+//! let (pk, _) = MLDSA44::keygen_from_seed(&seed).unwrap();
+//! let tr: [u8; 64] = pk.compute_tr();
+//!
+//! // Assume this was computed somewhere else and sent to you.
+//! // They would have had to know pk!
+//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &tr).unwrap();
+//! let rnd: [u8; 32] = [0u8; 32]; // with this API, you're responsible for your own nonce
+//!                                // because in the cases where this level of memory optimization
+//!                                // is needed, our RNG probably won't work anyway.
+//!
+//! let mut sig = [0u8; MLDSA44_SIG_LEN];
+//! let bytes_written = MLDSA44::sign_mu_deterministic_from_seed_out(&seed, &mu, rnd, &mut sig).unwrap();
+//!
+//! // it can be verified normally
+//! match MLDSA44::verify(&pk, msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//! ```
+//!
+//! While this is currently only supported when operating from a seed-based private key, something analogous
+//! could be done that merges the sk_decode() and sign() routines when working with the standardized
+//! private key encoding (which is often called the "semi-expanded format" since the in-memory representation
+//! is still larger).
+//! Contact us if you need such a thing implemented.
 
 use std::marker::PhantomData;
 use crate::aux_functions::{expand_mask, expandA, expandS, make_hint_vecs, ntt, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
@@ -10,14 +319,17 @@ use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType,
 };
-use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature};
+use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature, Algorithm};
 use bouncycastle_rng::{HashDRBG_SHA512};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 /*** Constants ***/
 
+///
 pub const ML_DSA_44_NAME: &str = "ML-DSA-44";
+///
 pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
+///
 pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
 
 // From FIPS 204 Table 1 and Table 2
@@ -27,10 +339,12 @@ pub(crate) const N: usize = 256;
 pub(crate) const q: i32 = 8380417;
 pub(crate) const q_inv: i32 = 58728449; // q ^ (-1) mod 2 ^32
 pub(crate) const d: i32 = 13;
-pub(crate) const ROOT_OF_UNITY: i32 = 1753;
 pub const SEED_LEN: usize = 32;
+/// Length of the \[u8] holding a ML-DSA signing random value.
 pub const RND_LEN: usize = 32;
+/// Length of the \[u8] holding a ML-DSA tr value (which is the SHAKE256 hash of the public key).
 pub const TR_LEN: usize = 64;
+/// Length of the \[u8] holding a ML-DSA mu value.
 pub const MU_LEN: usize = 64;
 pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 pub(crate) const POLY_T0PACKED_LEN: usize = 416;
@@ -38,8 +352,11 @@ pub(crate) const POLY_T0PACKED_LEN: usize = 416;
 
 /* ML-DSA-44 params */
 
+/// Length of the \[u8] holding a ML-DSA-44 public key.
 pub const MLDSA44_PK_LEN: usize = 1312;
+/// Length of the \[u8] holding a ML-DSA-44 private key.
 pub const MLDSA44_SK_LEN: usize = 2560;
+/// Length of the \[u8] holding a ML-DSA-44 signature value.
 pub const MLDSA44_SIG_LEN: usize = 2420;
 pub(crate) const MLDSA44_TAU: i32 = 39;
 pub(crate) const MLDSA44_LAMBDA: i32 = 128;
@@ -66,8 +383,11 @@ pub(crate) const MLDSA44_GAMMA1_MASK_LEN: usize = 576;  // 32*(1 + bitlen (𝛾1
 
 /* ML-DSA-65 params */
 
+/// Length of the \[u8] holding a ML-DSA-65 public key.
 pub const MLDSA65_PK_LEN: usize = 1952;
+/// Length of the \[u8] holding a ML-DSA-65 private key.
 pub const MLDSA65_SK_LEN: usize = 4032;
+/// Length of the \[u8] holding a ML-DSA-65 signature value.
 pub const MLDSA65_SIG_LEN: usize = 3309;
 pub(crate) const MLDSA65_TAU: i32 = 49;
 pub(crate) const MLDSA65_LAMBDA: i32 = 192;
@@ -95,8 +415,11 @@ pub(crate) const MLDSA65_GAMMA1_MASK_LEN: usize = 640;
 
 /* ML-DSA-87 params */
 
+/// Length of the \[u8] holding a ML-DSA-87 public key.
 pub const MLDSA87_PK_LEN: usize = 2592;
+/// Length of the \[u8] holding a ML-DSA-87 private key.
 pub const MLDSA87_SK_LEN: usize = 4896;
+/// Length of the \[u8] holding a ML-DSA-87 signature value.
 pub const MLDSA87_SIG_LEN: usize = 4627;
 pub(crate) const MLDSA87_TAU: i32 = 60;
 pub(crate) const MLDSA87_LAMBDA: i32 = 256;
@@ -128,6 +451,8 @@ pub(crate) type G = SHAKE128;
 
 
 /*** Pub Types ***/
+
+/// The ML-DSA-44 algorithm.
 pub type MLDSA44 = MLDSA<
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
@@ -152,6 +477,12 @@ pub type MLDSA44 = MLDSA<
     MLDSA44_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for MLDSA44 {
+    const ALG_NAME: &'static str = ML_DSA_44_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// The ML-DSA-65 algorithm.
 pub type MLDSA65 = MLDSA<
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
@@ -176,6 +507,12 @@ pub type MLDSA65 = MLDSA<
     MLDSA65_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for MLDSA65 {
+    const ALG_NAME: &'static str = ML_DSA_65_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+}
+
+/// The ML-DSA-87 algorithm.
 pub type MLDSA87 = MLDSA<
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
@@ -200,7 +537,14 @@ pub type MLDSA87 = MLDSA<
     MLDSA87_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for MLDSA87 {
+    const ALG_NAME: &'static str = ML_DSA_87_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
 
+/// The core internal implementation of the ML-DSA algorithm.
+/// This needs to be public for the compiler to be able to find it, but you shouldn't ever
+/// need to use this directly. Please use the named public types.
 pub struct MLDSA<
     const PK_LEN: usize,
     const SK_LEN: usize,
@@ -334,6 +678,7 @@ impl<
             h.absorb(&(k as u8).to_le_bytes());
             h.absorb(&(l as u8).to_le_bytes());
             let bytes_written = h.squeeze_out(&mut rho);
+            debug_assert_eq!(bytes_written, 32);
             let mut rho_prime: [u8; 64] = [0u8; 64];
             let bytes_written = h.squeeze_out(&mut rho_prime);
             debug_assert_eq!(bytes_written, 64);
@@ -834,6 +1179,7 @@ impl<
             h.absorb(&(k as u8).to_le_bytes());
             h.absorb(&(l as u8).to_le_bytes());
             let bytes_written = h.squeeze_out(&mut tmp_rho);
+            debug_assert_eq!(bytes_written, 32);
             let bytes_written = h.squeeze_out(&mut rho_prime);
             debug_assert_eq!(bytes_written, 64);
             let bytes_written = h.squeeze_out(&mut K);
@@ -975,7 +1321,7 @@ impl<
                 // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
                 //   ▷ compress 𝐭
                 //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-                let (t1tmp, t0tmp) = power_2_round_vec::<k>(&t);
+                let (_t1tmp, t0tmp) = power_2_round_vec::<k>(&t);
                 t0 = t0tmp;
 
                 r0
@@ -1149,6 +1495,7 @@ impl<
     }
 }
 
+/// Trait for all three of the ML-DSA algorithm variants.
 pub trait MLDSATrait<
     const PK_LEN: usize,
     const SK_LEN: usize,

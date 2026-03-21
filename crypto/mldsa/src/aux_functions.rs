@@ -458,9 +458,6 @@ pub(crate) fn sig_decode<
 
     let mut pos: usize = 0;
 
-    // todo -- compare against nursery impl (mldsa::sign_verify) to see if I can
-    // todo -- import some optimization
-
     c_tilde.copy_from_slice(&sig[..LAMBDA_over_4]);
     pos += LAMBDA_over_4;
 
@@ -827,7 +824,6 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
         }
     }
 
-    let g = GAMMA2;
     r1 = r - r0 * 2 * GAMMA2;
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 

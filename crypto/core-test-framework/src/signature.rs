@@ -119,7 +119,7 @@ impl TestFrameworkSignature {
         // fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
 
         // First, test the streaming API with one call to .sign_update
-        let mut s = SigAlg::sign_init(&sk, Some(b"streaming API")).unwrap();
+        let mut s = SigAlg::sign_init(&sk, Some(b"streaming API")).unwrap();        
         s.sign_update(DUMMY_SEED_1024);
         let sig_val = s.sign_final().unwrap();
         SigAlg::verify(&pk, DUMMY_SEED_1024, Some(b"streaming API"), &sig_val).unwrap();

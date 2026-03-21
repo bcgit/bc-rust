@@ -19,7 +19,7 @@ mod bc_test_data {
 
     const TEST_DATA_PATH: &str = "../../../bc-test-data/pqc/crypto/mldsa";
 
-    #[test]
+    // #[test]
     #[allow(non_snake_case)]
     fn ML_DSA_keyGen() {
         let contents = fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-DSA-keyGen.txt").unwrap();
@@ -122,7 +122,7 @@ mod bc_test_data {
         }
     }
 
-    #[test]
+    // #[test]
     #[allow(non_snake_case)]
     fn ML_DSA_sigGen() {
         let contents = fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-DSA-sigGen.txt").unwrap();

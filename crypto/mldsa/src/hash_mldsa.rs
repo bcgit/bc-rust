@@ -1,6 +1,67 @@
-//! Note in docs that this is just a light wrapper around [MLDSA], and, for example, the share key types,
+//! This implements the HashML-DSA algorithm specified in FIPS 204 which is useful for cases
+//! where you need to process the to-be-signed message in chunks, and you cannot use the external mu
+//! mode of [MLDSA]; possibly because you have to digest the message before you know which public key
+//! will sign it.
+//!
+//! HashML-DSA is a full signature algorithm implementing the [Signature] trait:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let msg = b"The quick brown fox jumped over the lazy dog";
+//!
+//! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
+//!
+//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//! ```
+//!
+//! But you also have access to the pre-hashed function available from [PHSignature]:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
+//! use bouncycastle_core_interface::traits::{Signature, PHSignature, Hash};
+//! use bouncycastle_sha2::SHA512;
+//!
+//! let msg = b"The quick brown fox jumped over the lazy dog";
+//!
+//! // Here, and in contrast to External Mu mode of ML-DSA, we can pre-hash the message before
+//! // even generating the signing key.
+//! let ph: [u8; 64] = SHA512::default().hash(msg).as_slice().try_into().unwrap();
+//!
+//!
+//! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
+//!
+//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! // This verifies either through the usual one-shot API of the [Signature] trait
+//! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//!
+//! // Or though the verify_ph of the [PHSignature] trait
+//! match HashMLDSA65_with_SHA512::verify_ph(&pk, &ph, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//! ```
+//!
+//! Note that the [HashMLDSA] object is just a light wrapper around [MLDSA], and, for example, they share key types,
 //! so if you need the fancy keygen functions, just use them from [MLDSA].
-//! But a simple [HashMLDSA::keygen] is provided in order to have conformance to the [PHSignature] trait.
+//! But a simple [HashMLDSA::keygen] is provided in order to have conformance to the [Signature] trait.
 
 use std::marker::PhantomData;
 use crate::mldsa::{H, MLDSATrait, MU_LEN, RND_LEN};
@@ -23,10 +84,10 @@ use crate::mldsa::{
     MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87_TAU, MLDSA87_W1_PACKED_LEN, MLDSA87_k, MLDSA87_l,
 };
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPublicKeyInternalTrait};
-use crate::{MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MuBuilder};
+use crate::{MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::KeyMaterialSized;
-use bouncycastle_core_interface::traits::{Hash, PHSignature, RNG, Signature, XOF};
+use bouncycastle_core_interface::traits::{Hash, PHSignature, RNG, Signature, XOF, Algorithm, SecurityStrength};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::{SHA256, SHA512};
 
@@ -35,15 +96,22 @@ const SHA512_OID: &[u8] = &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04
 
 /*** Constants ***/
 
+///
 pub const Hash_ML_DSA_44_with_SHA256_NAME: &str = "HashML-DSA-44_with_SHA256";
+///
 pub const Hash_ML_DSA_65_with_SHA256_NAME: &str = "HashML-DSA-65_with_SHA256";
+///
 pub const Hash_ML_DSA_87_with_SHA256_NAME: &str = "HashML-DSA-87_with_SHA256";
-
+///
 pub const Hash_ML_DSA_44_with_SHA512_NAME: &str = "HashML-DSA-44_with_SHA512";
+///
 pub const Hash_ML_DSA_65_with_SHA512_NAME: &str = "HashML-DSA-65_with_SHA512";
+///
 pub const Hash_ML_DSA_87_with_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
 
 /*** Pub Types ***/
+
+/// The HashML-DSA-44_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA44_with_SHA256 = HashMLDSA<
     SHA256,
@@ -72,6 +140,12 @@ pub type HashMLDSA44_with_SHA256 = HashMLDSA<
     MLDSA44_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for HashMLDSA44_with_SHA256 {
+    const ALG_NAME: &'static str = Hash_ML_DSA_44_with_SHA256_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// The HashML-DSA-65_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA65_with_SHA256 = HashMLDSA<
     SHA256,
@@ -100,6 +174,12 @@ pub type HashMLDSA65_with_SHA256 = HashMLDSA<
     MLDSA65_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for HashMLDSA65_with_SHA256 {
+    const ALG_NAME: &'static str = Hash_ML_DSA_65_with_SHA256_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// The HashML-DSA-87_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA87_with_SHA256 = HashMLDSA<
     SHA256,
@@ -128,6 +208,12 @@ pub type HashMLDSA87_with_SHA256 = HashMLDSA<
     MLDSA87_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for HashMLDSA87_with_SHA256 {
+    const ALG_NAME: &'static str = Hash_ML_DSA_87_with_SHA256_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// The HashML-DSA-44_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA44_with_SHA512 = HashMLDSA<
     SHA512,
@@ -156,6 +242,12 @@ pub type HashMLDSA44_with_SHA512 = HashMLDSA<
     MLDSA44_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for HashMLDSA44_with_SHA512 {
+    const ALG_NAME: &'static str = Hash_ML_DSA_44_with_SHA512_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// The HashML-DSA-65_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA65_with_SHA512 = HashMLDSA<
     SHA512,
@@ -184,6 +276,12 @@ pub type HashMLDSA65_with_SHA512 = HashMLDSA<
     MLDSA65_GAMMA1_MASK_LEN,
 >;
 
+impl Algorithm for HashMLDSA65_with_SHA512 {
+    const ALG_NAME: &'static str = Hash_ML_DSA_65_with_SHA512_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+}
+
+/// The HashML-DSA-87_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA87_with_SHA512 = HashMLDSA<
     SHA512,
@@ -211,6 +309,11 @@ pub type HashMLDSA87_with_SHA512 = HashMLDSA<
     MLDSA87_LAMBDA_over_4,
     MLDSA87_GAMMA1_MASK_LEN,
 >;
+
+impl Algorithm for HashMLDSA87_with_SHA512 {
+    const ALG_NAME: &'static str = Hash_ML_DSA_87_with_SHA512_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
 
 /// An instance of the HashML-DSA algorithm.
 ///
@@ -465,7 +568,7 @@ impl<
             Ok(([0u8; 255], 0))
         }
     }
-    
+
     /// Alternative initialization of the streaming signer where you have your private key
     /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
     pub fn sign_init_from_seed(seed: &KeyMaterialSized<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
@@ -624,7 +727,7 @@ impl<
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
-                Self::sign_ph_out(&self.sk.unwrap(), &ph, Some(&self.ctx), output_sized)
+                Self::sign_ph_out(&self.sk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), output_sized)
             } else {
                 Self::sign_ph_deterministic_out(&self.sk.unwrap(), Some(&self.ctx[..self.ctx_len]), &ph, self.signer_rnd.unwrap(), output_sized)
             }

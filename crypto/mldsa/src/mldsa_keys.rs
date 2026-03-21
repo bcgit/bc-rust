@@ -15,13 +15,17 @@ use bouncycastle_core_interface::traits::{Secret, SignaturePrivateKey, Signature
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
+/// ML-DSA-44 Public Key
 pub type MLDSA44PublicKey = MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>;
+/// ML-DSA-44 Private Key
 pub type MLDSA44PrivateKey = MLDSAPrivateKey<MLDSA44_k, MLDSA44_l, MLDSA44_ETA, MLDSA44_SK_LEN, MLDSA44_PK_LEN>;
-
+/// ML-DSA-65 Public Key
 pub type MLDSA65PublicKey = MLDSAPublicKey<MLDSA65_k, MLDSA65_PK_LEN>;
+/// ML-DSA-65 Private Key
 pub type MLDSA65PrivateKey = MLDSAPrivateKey<MLDSA65_k, MLDSA65_l, MLDSA65_ETA, MLDSA65_SK_LEN, MLDSA65_PK_LEN>;
-
+/// ML-DSA-87 Public Key
 pub type MLDSA87PublicKey = MLDSAPublicKey<MLDSA87_k, MLDSA87_PK_LEN>;
+/// ML-DSA-87 Private Key
 pub type MLDSA87PrivateKey = MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, MLDSA87_SK_LEN, MLDSA87_PK_LEN>;
 
 /// An ML-DSA public key.
@@ -31,6 +35,7 @@ pub struct MLDSAPublicKey<const k: usize, const PK_LEN: usize> {
     t1: Vector<k>,
 }
 
+/// General trait for all ML-DSA public keys types.
 pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePublicKey {
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
@@ -200,6 +205,7 @@ pub struct MLDSAPrivateKey<
     seed: Option<KeyMaterialSized<32>>,
 }
 
+/// General trait for all ML-DSA private keys types.
 pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize> : SignaturePrivateKey {
     /// Get a ref to the seed, if there is one stored with this private key
     fn seed(&self) -> &Option<KeyMaterialSized<32>>;
@@ -282,7 +288,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         let mut t = { // scope for A_hat
             let A_hat = expandA::<k, l>(&self.rho);
-            
+
             // 3: 𝐀 ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
             let mut t_ntt = A_hat.matrix_vector_ntt(&s1_hat);
             t_ntt.inv_ntt();

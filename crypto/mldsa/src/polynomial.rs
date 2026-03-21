@@ -5,8 +5,6 @@ use bouncycastle_core_interface::traits::Secret;
 use crate::mldsa::{N, q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
 use crate::aux_functions::{high_bits, low_bits, make_hint};
 
-const STREAM_128_BLOCK_LEN: usize = 168;
-const STREAM_256_BLOCK_LEN: usize = 136;
 
 
 // pub(crate) type Polynomial = [i32; N];
@@ -16,15 +14,6 @@ pub(crate) struct Polynomial(pub(crate) [i32; N]);
 impl Polynomial {
     pub(crate) const fn new() -> Self {
         Self{ 0: [0i32; N] }
-    }
-
-    /// negates each entry
-    // todo: mutants thinks you can delete this function without breaking anything
-    // todo: wait until I have the full set of NIST KATs before playing with removing it.
-    pub(crate) fn neg(&mut self){
-        for i in 0..N {
-            self.0[i] = - self.0[i];
-        }
     }
 
     pub(crate) fn conditional_add_q(&mut self) {
@@ -66,9 +55,6 @@ impl Polynomial {
         w
     }
 
-    // todo: mutants: replace Polynomial::check_norm -> bool with false
-    // todo: umm, what? Do the test vectors have nothing that fails a norm check?
-    // todo: I suppose I could add a maliciously-tampered signature value where z is too large
     pub(crate) fn check_norm(&self, bound: i32) -> bool {
         // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
         // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing the signature validation.
@@ -197,21 +183,6 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
     ((a - ((t as i64) * (q as i64))) >> 32) as i32
 }
-
-// todo: mutants thinks you can delete this function without breaking anything
-// todo: wait until I have the full set of NIST KATs before playing with removing it.
-// pub(crate) fn reduce_poly(w: &mut Polynomial) {
-//     for x in w.0.iter_mut() {
-//         *x = reduce32(*x);
-//     }
-// }
-
-// todo: mutants thinks you can delete this function without breaking anything
-// todo: wait until I have the full set of NIST KATs before playing with removing it.
-// pub(crate) fn reduce32(a: i32) -> i32 {
-//     let t = (a + (1 << 22)) >> 23;
-//     a - t * q
-// }
 
 pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)

@@ -62,16 +62,6 @@ impl<const LEN: usize> Vector<LEN>
         Self { vec: [(); LEN].map(|_| Polynomial::new()) }
     }
 
-    /// negates each entry
-    pub(crate) fn neg(&self) -> Self {
-        let mut out = self.clone();
-        for i in 0..LEN {
-           out.vec[i].neg();
-        }
-
-        out
-    }
-
     /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂
     /// Computes the sum 𝐯_hat + 𝐰_hat of two vectors 𝐯_hat, 𝐰_hat over 𝑇𝑞.
     /// Input: ℓ ∈ ℕ, v_hat ∈ T^ℓ, w_hat ∈ 𝑇^ℓ
@@ -104,13 +94,6 @@ impl<const LEN: usize> Vector<LEN>
 
         s_hat
     }
-
-    // todo: mutants thinks that this can be deleted without breaking anything. Try it!
-    // pub(crate) fn reduce(&mut self) {
-    //     for i in 0 .. LEN {
-    //         polynomial::reduce_poly(&mut self.vec[i]);
-    //     }
-    // }
 
     pub(crate) fn conditional_add_q(&mut self) {
         for i in 0 .. LEN {
@@ -172,29 +155,6 @@ impl<const LEN: usize> Vector<LEN>
             }
         }
         false
-    }
-
-    // todo: goal is to delete this
-    /// Algorithm 28 w1Encode(𝐰1)
-    /// Encodes a polynomial vector 𝐰1 into a byte string.
-    /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
-    /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
-    /// Optimized from FIPS 204 to feed into the hash one row at a time to reduce overall memory footprint.
-    pub(crate) fn w1_encode<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; W1_PACKED_LEN] {
-        // 1: 𝐰̃1 ← ()
-        let mut w1_tilde = [0u8; W1_PACKED_LEN];
-
-        // 2: for 𝑖 from 0 to 𝑘 − 1 do
-        // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
-        // 4: end for
-        for i in 0..LEN {
-            w1_tilde[i*POLY_W1_PACKED_LEN .. (i+1)*POLY_W1_PACKED_LEN].copy_from_slice(
-                &self.vec[i].w1_encode::<POLY_W1_PACKED_LEN>()
-            )
-        }
-
-        // 5: return 𝐰̃1
-        w1_tilde
     }
 
     /// Algorithm 28 w1Encode(𝐰1)
