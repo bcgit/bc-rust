@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod kdf_factory_tests {
-    use factory::AlgorithmFactory;
-    use factory::kdf_factory::{KDFFactory};
-    use core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
-    use core_interface::traits::{KeyMaterial, KDF};
-    use core_test_framework::DUMMY_SEED_512;
-    use utils::ct;
+    use bouncycastle_factory::AlgorithmFactory;
+    use bouncycastle_factory::kdf_factory::{KDFFactory};
+    use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
+    use bouncycastle_core_interface::traits::{KeyMaterial, KDF};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_utils::ct;
+    use bouncycastle_factory as factory;
 
     #[test]
     fn sha3_kdf_tests() {

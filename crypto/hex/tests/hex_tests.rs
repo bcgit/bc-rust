@@ -1,5 +1,5 @@
-use hex;
-use hex::HexError;
+use bouncycastle_hex as hex;
+use bouncycastle_hex::HexError;
 
 #[test]
 fn encode_test() {

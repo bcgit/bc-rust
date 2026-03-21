@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod sha2_tests {
-    use core_interface::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
-    use core_test_framework::DUMMY_SEED_512;
-    use core_test_framework::hash::TestFrameworkHash;
-    use sha2::*;
+    use bouncycastle_core_interface::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_core_test_framework::hash::TestFrameworkHash;
+    use bouncycastle_sha2::*;
 
     #[cfg(test)]
     mod core_test_framework_hash {
         use super::*;
-        use core_test_framework::DUMMY_SEED_1024;
+        use bouncycastle_core_test_framework::DUMMY_SEED_1024;
 
         #[test]
         fn sha224() {

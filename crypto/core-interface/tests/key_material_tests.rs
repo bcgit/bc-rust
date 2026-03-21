@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod test_key_material {
-    use core_interface::errors::KeyMaterialError;
-    use core_interface::key_material::{
-        KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType,
+    use bouncycastle_core_interface::errors::KeyMaterialError;
+    use bouncycastle_core_interface::key_material::{
+        KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType,
     };
-    use core_interface::traits::{KeyMaterial, SecurityStrength};
+    use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength};
 
     const DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
                                    \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
@@ -106,9 +106,9 @@ mod test_key_material {
         let key = KeyMaterial512::new();
         assert_eq!(key.capacity(), 64);
 
-        let key16 = KeyMaterialInternal::<16>::new();
+        let key16 = KeyMaterialSized::<16>::new();
         assert_eq!(key16.capacity(), 16);
-        match KeyMaterialInternal::<16>::from_bytes(&[1u8; 17]) {
+        match KeyMaterialSized::<16>::from_bytes(&[1u8; 17]) {
             Ok(_) => {
                 panic!("should have thrown a KeyMaterialError::InputDataLongerThanMaxKeyLen error.")
             }
@@ -120,13 +120,13 @@ mod test_key_material {
             }
         }
 
-        let key1024 = KeyMaterialInternal::<1024>::new();
+        let key1024 = KeyMaterialSized::<1024>::new();
         assert_eq!(key1024.capacity(), 1024);
         assert_eq!(key1024.key_len(), 0);
-        let key1024 = KeyMaterialInternal::<1024>::from_bytes(&[1u8; 1024]).unwrap();
+        let key1024 = KeyMaterialSized::<1024>::from_bytes(&[1u8; 1024]).unwrap();
         assert_eq!(key1024.key_len(), 1024);
 
-        match KeyMaterialInternal::<1024>::from_bytes(&[1u8; 1025]) {
+        match KeyMaterialSized::<1024>::from_bytes(&[1u8; 1025]) {
             Ok(_) => {
                 panic!("should have thrown a KeyMaterialError::InputDataLongerThanMaxKeyLen error.")
             }
@@ -158,7 +158,7 @@ mod test_key_material {
 
     #[test]
     fn new_from_rng() {
-        use rng;
+        use bouncycastle_rng as rng;
 
         let key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
         assert_eq!(key.key_len(), 32);
@@ -439,13 +439,16 @@ mod test_key_material {
     }
 
     #[test]
-    fn from_keymaterial() {
-        let key1 = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-
+    fn from_keym() {
+        let key1 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        assert_eq!(key1.key_type(), KeyType::MACKey);
+        assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
+        
         // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
         let key2 = KeyMaterial256::from(key1.clone());
         assert_eq!(key1.key_len(), key2.key_len());
         assert_eq!(key1.key_type(), key2.key_type());
+        assert_eq!(key1.security_strength(), key2.security_strength());
         assert_eq!(key1, key2);
 
         // success case: same size

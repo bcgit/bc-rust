@@ -2,7 +2,7 @@ use std::{fs, io};
 use std::io::Write;
 use std::process::exit;
 
-use bouncycastle::core_interface::key_material::{KeyMaterialInternal, KeyType};
+use bouncycastle::core_interface::key_material::{KeyMaterialSized, KeyType};
 use bouncycastle::core_interface::traits::KeyMaterial;
 use bouncycastle::hex;
 use bouncycastle::hkdf;
@@ -19,7 +19,7 @@ pub(crate) fn hkdf_cmd(hkdfname: &str,
     let salt_bytes: Vec<u8>;
     let ikm_bytes: Vec<u8>;
     let additional_input_bytes: Vec<u8>;
-    let mut out_key = KeyMaterialInternal::<1024>::new();
+    let mut out_key = KeyMaterialSized::<1024>::new();
 
     if len > 1024 {
         eprintln!("Error: The CLI only supports output lengths up to 128 bytes (1024 bits).");
@@ -40,7 +40,7 @@ pub(crate) fn hkdf_cmd(hkdfname: &str,
         eprintln!("Error: The CLI only supports HKDF salts up to 128 bytes (1024 bytes).");
         exit(-1);
     }
-    let mut salt_key = KeyMaterialInternal::<1024>::from_bytes(&salt_bytes).unwrap();
+    let mut salt_key = KeyMaterialSized::<1024>::from_bytes(&salt_bytes).unwrap();
     // force it just so the CLI behaves properly even with all-zero or zero-length keys
     salt_key.allow_hazardous_operations();
     salt_key.convert_key_type(KeyType::MACKey).unwrap();

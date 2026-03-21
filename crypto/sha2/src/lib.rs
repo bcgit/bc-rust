@@ -2,12 +2,12 @@
 //!
 //! # Examples
 //! ## Hash
-//! Hash functionality is accessed via the [core_interface::traits::Hash] trait,
+//! Hash functionality is accessed via the [bouncycastle_core_interface::traits::Hash] trait,
 //! which is implemented by [SHA224], [SHA256], [SHA384] and [SHA512].
 //!
 //! The simplest usage is via the static functions.
 //! ```
-//! use core_interface::traits::Hash;
+//! use bouncycastle_core_interface::traits::Hash;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let output: Vec<u8> = sha2::SHA256::new().hash(data);
@@ -17,7 +17,8 @@
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
-//! use core_interface::traits::Hash;
+//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_sha2 as sha2;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F
 //!                     \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F

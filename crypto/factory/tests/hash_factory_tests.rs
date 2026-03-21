@@ -1,15 +1,17 @@
 #[cfg(test)]
 mod hash_factory_tests {
-    use factory::AlgorithmFactory;
-    use factory::hash_factory::{HashFactory};
-    use factory::xof_factory::{XOFFactory};
-    use core_interface::traits::{Hash, XOF};
-    use core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_factory::AlgorithmFactory;
+    use bouncycastle_factory::hash_factory::{HashFactory};
+    use bouncycastle_factory::xof_factory::{XOFFactory};
+    use bouncycastle_core_interface::traits::{Hash, XOF};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
 
     mod sha3_tests {
-        use sha2::SHA224;
         use super::*;
-        use sha3;
+        use bouncycastle_sha2::SHA224;
+        use bouncycastle_sha2 as sha2;
+        use bouncycastle_sha3 as sha3;
+        use bouncycastle_factory as factory;
 
         #[test]
         fn sha2_hash_tests() {

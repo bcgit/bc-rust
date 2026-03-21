@@ -8,6 +8,8 @@
 //! and returns a `Vec<u8>`.
 //!
 //! ```
+//! use bouncycastle_hex as hex;
+//!
 //! let out = hex::encode(b"\x00\x01\x02\x03"); // "00010203"
 //! let out = hex::encode(&[0x00, 0x01, 0x02, 0x03]); // "00010203"
 //! let out = hex::encode(vec![0x00, 0x01, 0x02, 0x03]); // "00010203"

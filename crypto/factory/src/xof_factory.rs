@@ -88,7 +88,7 @@ impl XOF for XOFFactory {
         }
     }
 
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
+    fn absorb(&mut self, data: &[u8]) {
         match self {
             Self::SHAKE128(h) => h.absorb(data),
             Self::SHAKE256(h) => h.absorb(data),
@@ -102,14 +102,14 @@ impl XOF for XOFFactory {
         }
     }
 
-    fn squeeze(&mut self, num_bytes: usize) -> Result<Vec<u8>, HashError> {
+    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
         match self {
             Self::SHAKE128(h) => h.squeeze(num_bytes),
             Self::SHAKE256(h) => h.squeeze(num_bytes),
         }
     }
 
-    fn squeeze_out(&mut self, output: &mut [u8]) -> Result<usize, HashError> {
+    fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
         match self {
             Self::SHAKE128(h) => h.squeeze_out(output),
             Self::SHAKE256(h) => h.squeeze_out(output),
