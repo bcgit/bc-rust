@@ -54,6 +54,21 @@ pub enum RNGError {
     KeyMaterialError(KeyMaterialError),
 }
 
+#[derive(Debug)]
+pub enum SignatureError {
+    GenericError(&'static str),
+    ConsistencyCheckFailed(),
+    EncodingError(&'static str),
+    DecodingError(&'static str),
+    KeyGenError(&'static str),
+    LengthError(&'static str),
+    RNGError(RNGError),
+    SignatureVerificationFailed,
+}
+
+
+
+
 /*** Promotion functions ***/
 impl From<KeyMaterialError> for HashError {
     fn from(e: KeyMaterialError) -> HashError {
@@ -95,4 +110,8 @@ impl From<KeyMaterialError> for RNGError {
     fn from(e: KeyMaterialError) -> RNGError {
         Self::KeyMaterialError(e)
     }
+}
+
+impl From<RNGError> for SignatureError {
+    fn from(e: RNGError) -> SignatureError { Self::RNGError(e) }
 }

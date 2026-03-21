@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod hmac_tests {
-    use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
+    use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType};
     use bouncycastle_core_interface::traits::{Algorithm, Hash, KeyMaterial, SecurityStrength, MAC};
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
     use bouncycastle_hex as hex;
@@ -104,11 +104,11 @@ mod hmac_tests {
     #[test]
     fn test_block_bitlen() {
         // give it a key that is exactly the block size
-        let key = KeyMaterialInternal::<1000>::from_bytes_as_type(&vec![0x3cu8; SHA256::new().block_bitlen()/8], KeyType::MACKey).unwrap();
+        let key = KeyMaterialSized::<1000>::from_bytes_as_type(&vec![0x3cu8; SHA256::new().block_bitlen()/8], KeyType::MACKey).unwrap();
         assert!(HMAC_SHA256::new(&key).unwrap().verify(b"Hi There", &hex::decode("4da0a0bb56f010db147b8f6e5f2dbecf7bb35ff00c8b9da31c9b94cc81815873").unwrap()));
 
         // Now give it a key that is larger than the block size and needs to be hashed down
-        let key = KeyMaterialInternal::<1000>::from_bytes_as_type(&vec![0x3cu8; SHA256::new().block_bitlen()/8 + 1], KeyType::MACKey).unwrap();
+        let key = KeyMaterialSized::<1000>::from_bytes_as_type(&vec![0x3cu8; SHA256::new().block_bitlen()/8 + 1], KeyType::MACKey).unwrap();
         HMAC_SHA256::new(&key).unwrap().verify(b"Hi There", &hex::decode("5cb9475aba606afe8c82c2d1b3e1cfb1c814e8a72ce5a7b4fe43b0a0aac45144").unwrap());
     }
 
@@ -225,7 +225,7 @@ mod hmac_tests {
 
     #[cfg(test)]
     mod core_test_framework_rfc4231 {
-        use bouncycastle_core_interface::key_material::KeyMaterialInternal;
+        use bouncycastle_core_interface::key_material::KeyMaterialSized;
         use super::*;
 
         #[test]
@@ -288,7 +288,7 @@ mod hmac_tests {
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            let key = KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap();
+            let key = KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap();
             test_framework.test_mac::<HMAC<SHA224>>(&key,
                                                     b"Test Using Larger Than Block-Size Key - Hash Key First",
                                                     &hex::decode("95e9a0db962095adaebe9b2d6f0dbce2d499f112f2d2b7273fa6870e").unwrap()
@@ -296,7 +296,7 @@ mod hmac_tests {
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA224>>(&KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_framework.test_mac::<HMAC<SHA224>>(&KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("3a854166ac5d9f023f54d517d0b39dbd946770db9c2b95c9f6f565d1").unwrap()
             );
@@ -363,14 +363,14 @@ mod hmac_tests {
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"Test Using Larger Than Block-Size Key - Hash Key First",
                                                     &hex::decode("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54").unwrap()
             );
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2").unwrap()
             );
@@ -438,14 +438,14 @@ mod hmac_tests {
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"Test Using Larger Than Block-Size Key - Hash Key First",
                                                     &hex::decode("4ece084485813e9088d2c63a041bc5b44f9ef1012a2b588f3cd11f05033ac4c60c2ef6ab4030fe8296248df163f44952").unwrap()
             );
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("6617178e941f020d351e2f254e8fd32c602420feb0b8fb9adccebb82461e99c5a678cc31e799176d3860e6110c46523e").unwrap()
             );
@@ -514,14 +514,14 @@ mod hmac_tests {
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"Test Using Larger Than Block-Size Key - Hash Key First",
                                                     &hex::decode("80b24263c7c1a3ebb71493c1dd7be8b49b46d1f41b4aeec1121b013783f8f3526b56d037e05f2598bd0fd2215d6a1e5295e64f73f63f0aec8b915a985d786598").unwrap()
             );
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterialInternal::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterialSized::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("e37b6a775dc87dbaa4dfa9f96e5e3ffddebd71f8867289865df5a32d20cdc944b6022cac3c4982b10d5eeb55c3e4de15134676fb6de0446065c97440fa8c6a58").unwrap()
             );

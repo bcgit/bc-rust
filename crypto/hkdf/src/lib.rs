@@ -96,7 +96,7 @@
 //! A typical flow looks like this:
 //!
 //! ```
-//! use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialInternal, KeyType};
+//! use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType};
 //! use bouncycastle_core_interface::traits::KDF;
 //! use bouncycastle_hkdf::{HKDF, HKDF_SHA256};
 //! use bouncycastle_sha2::{SHA256};
@@ -113,7 +113,7 @@
 //! let info = b"some extra context info";
 //!
 //!  // Use the streaming API to derive an output key of length 200 bytes.
-//!  let mut okm = KeyMaterialInternal::<200>::new();
+//!  let mut okm = KeyMaterialSized::<200>::new();
 //!  let mut hkdf = HKDF::<SHA256>::default();
 //!  hkdf.do_extract_init(&salt).unwrap();
 //!  hkdf.do_extract_update_bytes(ikm.ref_to_bytes()).unwrap();
@@ -126,7 +126,7 @@
 //! For example, the above code can be condensed to:
 //!
 //! ```
-//! use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialInternal, KeyType};
+//! use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType};
 //! use bouncycastle_hkdf::{HKDF_SHA256};
 //!
 //! // setup variables
@@ -141,7 +141,7 @@
 //! let info = b"some extra context info";
 //!
 //! // Use the one-shot API to derive an output key of length 200 bytes.
-//! let mut okm = KeyMaterialInternal::<200>::new();
+//! let mut okm = KeyMaterialSized::<200>::new();
 //! let _bytes_written = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, info, 200, &mut okm).unwrap();
 //! ```
 
@@ -150,7 +150,7 @@
 
 use std::marker::PhantomData;
 use bouncycastle_core_interface::errors::{KDFError, MACError};
-use bouncycastle_core_interface::key_material::{KeyMaterial0, KeyMaterial512, KeyMaterialInternal, KeyType};
+use bouncycastle_core_interface::key_material::{KeyMaterial0, KeyMaterial512, KeyMaterialSized, KeyType};
 use bouncycastle_core_interface::traits::{Hash, KDF, KeyMaterial, MAC, HashAlgParams, SecurityStrength};
 use bouncycastle_hmac::HMAC;
 use bouncycastle_sha2::{SHA256, SHA512};
@@ -305,7 +305,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         salt: &impl KeyMaterial,
         ikm: &impl KeyMaterial,
     ) -> Result<impl KeyMaterial, MACError> {
-        let mut prk = KeyMaterialInternal::<HMAC_BLOCK_LEN>::new();
+        let mut prk = KeyMaterialSized::<HMAC_BLOCK_LEN>::new();
         Self::extract_out(salt, ikm, &mut prk)?;
         Ok(prk)
     }
@@ -399,7 +399,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         // Could potentially speed this up by unrolling T(0) and T(1)
 
         // We're gonna have to kludge the prk key type to MACKey to make HMAC happy, but we'll set it back to the original value afterwards.
-        let prk_as_mac_key = KeyMaterialInternal::<HMAC_BLOCK_LEN>::from_bytes_as_type(prk.ref_to_bytes(), KeyType::MACKey)?;
+        let prk_as_mac_key = KeyMaterialSized::<HMAC_BLOCK_LEN>::from_bytes_as_type(prk.ref_to_bytes(), KeyType::MACKey)?;
 
         #[allow(non_snake_case)]
         let mut T = [0u8; HMAC_BLOCK_LEN];
@@ -543,7 +543,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
 
     #[allow(non_snake_case)]
     pub fn do_extract_final(self) -> Result<impl KeyMaterial, MACError> {
-        let mut okm = KeyMaterialInternal::<HMAC_BLOCK_LEN>::new();
+        let mut okm = KeyMaterialSized::<HMAC_BLOCK_LEN>::new();
         self.do_extract_final_out(&mut okm)?;
         Ok(okm)
     }
@@ -604,7 +604,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterial,
     ) -> Result<usize, KDFError> {
-        let bytes_written = HKDF::<H>::extract_and_expand_out(&KeyMaterialInternal::<0>::new(), key, additional_input, output_key.capacity(), output_key)?;
+        let bytes_written = HKDF::<H>::extract_and_expand_out(&KeyMaterialSized::<0>::new(), key, additional_input, output_key.capacity(), output_key)?;
         Ok(bytes_written)
     }
 
@@ -653,7 +653,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
                 entropy.credit_entropy(*key);
             }
         }
-        let mut prk = KeyMaterialInternal::<HMAC_BLOCK_LEN>::new();
+        let mut prk = KeyMaterialSized::<HMAC_BLOCK_LEN>::new();
         _ = hkdf.do_extract_final_out(&mut prk)?;
         let bytes_written = HKDF::<H>::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
 

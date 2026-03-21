@@ -2,7 +2,7 @@
 mod test_key_material {
     use bouncycastle_core_interface::errors::KeyMaterialError;
     use bouncycastle_core_interface::key_material::{
-        KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType,
+        KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType,
     };
     use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength};
 
@@ -106,9 +106,9 @@ mod test_key_material {
         let key = KeyMaterial512::new();
         assert_eq!(key.capacity(), 64);
 
-        let key16 = KeyMaterialInternal::<16>::new();
+        let key16 = KeyMaterialSized::<16>::new();
         assert_eq!(key16.capacity(), 16);
-        match KeyMaterialInternal::<16>::from_bytes(&[1u8; 17]) {
+        match KeyMaterialSized::<16>::from_bytes(&[1u8; 17]) {
             Ok(_) => {
                 panic!("should have thrown a KeyMaterialError::InputDataLongerThanMaxKeyLen error.")
             }
@@ -120,13 +120,13 @@ mod test_key_material {
             }
         }
 
-        let key1024 = KeyMaterialInternal::<1024>::new();
+        let key1024 = KeyMaterialSized::<1024>::new();
         assert_eq!(key1024.capacity(), 1024);
         assert_eq!(key1024.key_len(), 0);
-        let key1024 = KeyMaterialInternal::<1024>::from_bytes(&[1u8; 1024]).unwrap();
+        let key1024 = KeyMaterialSized::<1024>::from_bytes(&[1u8; 1024]).unwrap();
         assert_eq!(key1024.key_len(), 1024);
 
-        match KeyMaterialInternal::<1024>::from_bytes(&[1u8; 1025]) {
+        match KeyMaterialSized::<1024>::from_bytes(&[1u8; 1025]) {
             Ok(_) => {
                 panic!("should have thrown a KeyMaterialError::InputDataLongerThanMaxKeyLen error.")
             }
@@ -439,13 +439,16 @@ mod test_key_material {
     }
 
     #[test]
-    fn from_keymaterial() {
-        let key1 = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-
+    fn from_keym() {
+        let key1 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        assert_eq!(key1.key_type(), KeyType::MACKey);
+        assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
+        
         // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
         let key2 = KeyMaterial256::from(key1.clone());
         assert_eq!(key1.key_len(), key2.key_len());
         assert_eq!(key1.key_type(), key2.key_type());
+        assert_eq!(key1.security_strength(), key2.security_strength());
         assert_eq!(key1, key2);
 
         // success case: same size

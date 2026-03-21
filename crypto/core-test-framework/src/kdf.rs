@@ -1,4 +1,4 @@
-use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
+use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType};
 use bouncycastle_core_interface::traits::{KDF, KeyMaterial, SecurityStrength};
 
 pub struct TestFrameworkKDF {}
@@ -41,7 +41,7 @@ impl TestFrameworkKDF {
 
         let kdf = H::default();
         // Give it a KeyMaterial with a capacity of 10 bytes
-        let mut output = KeyMaterialInternal::<10>::new();
+        let mut output = KeyMaterialSized::<10>::new();
         let bytes_written = kdf.derive_key_out(key, additional_input, &mut output).unwrap();
         assert_eq!(bytes_written, 10);
         assert_eq!(output.key_len(), 10);
@@ -124,7 +124,7 @@ impl TestFrameworkKDF {
 
         let kdf = H::default();
         // Give it a KeyMaterial with a capacity of 10 bytes
-        let mut output = KeyMaterialInternal::<10>::new();
+        let mut output = KeyMaterialSized::<10>::new();
         let bytes_written =
             kdf.derive_key_from_multiple_out(keys, additional_input, &mut output).unwrap();
         assert_eq!(bytes_written, 10);
