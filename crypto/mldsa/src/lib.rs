@@ -10,7 +10,7 @@
 //!
 //! This page gives examples of simple usage for generating keys and signatures, and verifying signatures.//!
 //!
-//! More examples on advanced usage can be found on the [MLDSA] and [HashMLDSA] pages.
+//! More examples on advanced usage can be found on the [mldsa] and [hash_mldsa] pages.
 //!
 //! ## Generating Keys
 //!
@@ -38,9 +38,9 @@
 //! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
-//! See [MLDSA] and [MLDSA::sign_mu_deterministic_from_seed] for an API flow that uses a merged
+//! See [MLDSATrait] and [MLDSATrait::sign_mu_deterministic_from_seed] for an API flow that uses a merged
 //! keygen-and-sign function to provide improved speed and memory performance compared with making
-//! separate calls to [MLDSA::keygen_from_seed] followed by [MLDSA::sign].
+//! separate calls to [MLDSATrait::keygen_from_seed] followed by [Signature::sign].
 //!
 //! ## Generating and Verifying Signatures
 //!
@@ -110,8 +110,11 @@
 // Used in HashMLDSA
 #![feature(unsized_const_params)]
 
-mod mldsa;
-mod hash_mldsa;
+// imports needed just for docs
+use bouncycastle_core_interface::traits::{KeyMaterial, Signature, PHSignature};
+
+pub mod mldsa; // todo -- pub just to get the docs. Is that right? Or should I suck the docs up here?
+pub mod hash_mldsa; // todo -- pub just to get the docs. Is that right? Or should I suck the docs up here?
 mod mldsa_keys;
 mod polynomial;
 mod aux_functions;

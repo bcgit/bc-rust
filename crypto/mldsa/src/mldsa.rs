@@ -75,14 +75,14 @@
 //! > 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
 //! >   ▷ message representative that may optionally be computed in a different cryptographic module
 //!
-//! The External Mu mode of ML-DSA fulfills a similar function to [HashMLDSA] in that it allows large
+//! The External Mu mode of ML-DSA fulfills a similar function to [hash_mldsa] in that it allows large
 //! messages to be pre-digested outside of the cryptographic module that holds the private key,
 //! but it does it in a way that is compatible with the ML-DSA verification function.
-//! In other works, whereas [HashMLDSA] represents a different signature algorithm, the external mu
+//! In other works, whereas [hash_mldsa] represents a different signature algorithm, the external mu
 //! mode of ML-DSA is simply internal implementation detail of how the signature was computed and
 //! produces signatures that are indistinguishable from "direct" ML-DSA mode.
 //!
-//! The one potential complication with external mu mode -- that [HashMLDSA] does not have --
+//! The one potential complication with external mu mode -- that [hash_mldsa] does not have --
 //! is that it requires you to know the public key that you are about to sign the message with.
 //! Or, more specifically, the hash of the public key `tr`.
 //! `tr` is a public value (derivable from the public key), so there is no harm in, for example,
@@ -90,7 +90,7 @@
 //! 64-byte `mu` value up to the server to be signed.
 //! But in some contexts, the message has to be pre-hashed for performance reasons but
 //! the public key that will be used for signing cannot be known in advance.
-//! For those use cases, your only choice is to use [HashMLDSA].
+//! For those use cases, your only choice is to use [hash_mldsa].
 //!
 //! This library exposes [MuBuilder] which can be used to pre-hash a large to-be-signed message
 //! along with the public key hash `tr`:
@@ -323,6 +323,11 @@ use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature,
 use bouncycastle_rng::{HashDRBG_SHA512};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
+
+// imports needed just for docs
+use bouncycastle_core_interface::traits::PHSignature;
+use crate::hash_mldsa;
+
 /*** Constants ***/
 
 ///
@@ -339,7 +344,6 @@ pub(crate) const N: usize = 256;
 pub(crate) const q: i32 = 8380417;
 pub(crate) const q_inv: i32 = 58728449; // q ^ (-1) mod 2 ^32
 pub(crate) const d: i32 = 13;
-pub const SEED_LEN: usize = 32;
 /// Length of the \[u8] holding a ML-DSA signing random value.
 pub const RND_LEN: usize = 32;
 /// Length of the \[u8] holding a ML-DSA tr value (which is the SHAKE256 hash of the public key).
@@ -836,7 +840,7 @@ impl<
     /// This provides the first half of the "External Mu" interface to ML-DSA which is described
     /// in, and allowed under, NIST's FAQ that accompanies FIPS 204.
     ///
-    /// This function, together with [sign_mu] perform a complete ML-DSA signature which is indistinguishable
+    /// This function, together with [MLDSATrait::sign_mu] perform a complete ML-DSA signature which is indistinguishable
     /// from one produced by the one-shot sign APIs.
     ///
     /// The utility of this function is exactly as described
@@ -861,7 +865,8 @@ impl<
     /// the message, both "direct" ML-DSA and "External Mu" signatures can be verified with a standard
     /// ML-DSA verifier.
     ///
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
+    /// This function requires the public key hash `tr`, which can be computed from the public key
+    /// using [MLDSAPublicKeyTrait::compute_tr].
     ///
     /// For a streaming version of this, see [MuBuilder].
     fn compute_mu_from_tr(
@@ -871,7 +876,7 @@ impl<
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, tr)
     }
-    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
+    /// Same as [MLDSA::compute_mu_from_tr], but extracts tr from the public key.
     fn compute_mu_from_pk(
         msg: &[u8],
         ctx: Option<&[u8]>,
@@ -879,7 +884,7 @@ impl<
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(msg, ctx, &pk.compute_tr())
     }
-    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
+    /// Same as [MLDSA::compute_mu_from_tr], but extracts tr from the private key.
     fn compute_mu_from_sk(
         msg: &[u8],
         ctx: Option<&[u8]>,
@@ -1536,7 +1541,7 @@ pub trait MLDSATrait<
     /// This provides the first half of the "External Mu" interface to ML-DSA which is described
     /// in, and allowed under, NIST's FAQ that accompanies FIPS 204.
     ///
-    /// This function, together with [sign_mu] perform a complete ML-DSA signature which is indistinguishable
+    /// This function, together with [MLDSATrait::sign_mu] perform a complete ML-DSA signature which is indistinguishable
     /// from one produced by the one-shot sign APIs.
     ///
     /// The utility of this function is exactly as described
@@ -1561,7 +1566,8 @@ pub trait MLDSATrait<
     /// the message, both "direct" ML-DSA and "External Mu" signatures can be verified with a standard
     /// ML-DSA verifier.
     ///
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
+    /// This function requires the public key hash `tr`, which can be computed from the public key
+    /// using [MLDSAPublicKeyTrait::compute_tr].
     ///
     /// For a streaming version of this, see [MuBuilder].
     fn compute_mu_from_tr(
@@ -1569,13 +1575,13 @@ pub trait MLDSATrait<
         ctx: Option<&[u8]>,
         tr: &[u8; 64],
     ) -> Result<[u8; 64], SignatureError>;
-    /// Same as [compute_mu_from_tr], but extracts tr from the public key.
+    /// Same as [MLDSATrait::compute_mu_from_tr], but extracts tr from the public key.
     fn compute_mu_from_pk(
         msg: &[u8],
         ctx: Option<&[u8]>,
         pk: &PK,
     ) -> Result<[u8; 64], SignatureError>;
-    /// Same as [compute_mu_from_tr], but extracts tr from the private key.
+    /// Same as [MLDSATrait::compute_mu_from_tr], but extracts tr from the private key.
     fn compute_mu_from_sk(
         msg: &[u8],
         ctx: Option<&[u8]>,
@@ -1832,13 +1838,14 @@ impl<
 
 
 /// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204.
-/// Provides a stateful version of [compute_mu_from_pk] and [compute_mu_from_tr] that supports streaming
+/// Provides a stateful version of [MLDSATrait::compute_mu_from_pk] and [MLDSATrait::compute_mu_from_tr]
+/// that supports streaming
 /// large to-be-signed messages.
 ///
 /// Note: this struct is only exposed for "pure" ML-DSA and not for HashML-DSA because HashML-DSA
 /// does not benefit from allowing external construction of the message representative mu.
 /// You can get the same behaviour by computing the pre-hash `ph` with the appropriate hash function
-/// and providing that to [HashMLDSA::sign_ph].
+/// and providing that to HashMLDSA via [PHSignature::sign_ph].
 pub struct MuBuilder {
     h: H,
 }
@@ -1854,7 +1861,8 @@ impl MuBuilder {
         Ok(mu)
     }
 
-    /// This function requires the public key hash `tr`, which can be computed from the public key using [MLDSAPublicKey::compute_tr].
+    /// This function requires the public key hash `tr`, which can be computed from the public key
+    /// using [MLDSAPublicKeyTrait::compute_tr].
     pub fn do_init(tr: &[u8; 64], ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let ctx = match ctx { Some(ctx) => ctx, None => &[] };
 
