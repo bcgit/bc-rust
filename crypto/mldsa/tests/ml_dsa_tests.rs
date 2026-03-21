@@ -7,7 +7,7 @@ mod mldsa_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED_1024;
     use bouncycastle_core_test_framework::signature::*;
     use bouncycastle_hex as hex;
-    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MuBuilder, MLDSA44, MLDSA65, MLDSA87, TR_LEN};
+    use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MuBuilder, MLDSA44, MLDSA65, MLDSA87, TR_LEN};
     use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
     use bouncycastle_mldsa::{MLDSATrait, MLDSAPublicKeyTrait, MLDSAPrivateKeyTrait};
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
@@ -328,7 +328,6 @@ mod mldsa_tests {
             KeyType::Seed,
         ).unwrap();
 
-
         let rnd = if !MLDSA44_KAT1.deterministic {
             let mut rnd = [0u8; 32];
             bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
@@ -361,21 +360,22 @@ mod mldsa_tests {
         let (pk, _) = MLDSA44::keygen_from_seed(&seed).unwrap();
         MLDSA44::verify(&pk, &hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sig).unwrap();
 
-        // test the streaming API on the same value
-        // let mut s = MLDSA44::sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
-        // s.set_signer_rnd(rnd);
-        // s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        // let sig = s.sign_final().unwrap();
-        // assert_eq!(&sig, &hex::decode(MLDSA44_KAT1.signature).unwrap());
 
-        // Then with the message broken into chunks
-        // let mut s = MLDSA44::sign_init(&sk, Some(b"streaming API chunked")).unwrap();
-        // s.set_signer_rnd(rnd);
-        // for msg_chunk in DUMMY_SEED_1024.chunks(100) {
-        //     s.sign_update(msg_chunk);
-        // }
-        // let sig_val = s.sign_final().unwrap();
-        // MLDSA44::verify(&sk.derive_pk(), DUMMY_SEED_1024, Some(b"streaming API chunked"), &sig_val).unwrap();
+        // test the streaming API on the same value
+
+        let mut s = MLDSA44::sign_init_from_seed(&seed, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &expected_sig);
+
+
+
+        // while we're at it, test the streaming verifier cause I'm not sure where else this is being tested.
+
+        let mut v = MLDSA44::verify_init(&pk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        v.verify_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        v.verify_final(&expected_sig).unwrap();
     }
 
     #[test]

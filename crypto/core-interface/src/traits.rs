@@ -361,52 +361,10 @@ pub trait RNG : Default {
                       // So I'm turning off this lint.
 pub trait Secret : Drop + Debug + Display {}
 
-/// Pre-Hashed Signature is mostly a mirror of the [Signature] trait, but it applies to signature
-/// algorithms that can accept a pre-hashed message instead of the full message, and therefore the
-/// public API of a PHSigsature is slightly different.
-///
-/// A PHSignature algorithm can also be used like a normal signature algorithm via the usual [PHSignature::sign] and [PHSignature::verify] functions.
-///
-/// This trait appears simpler than [Signature] because it does not have streaming modes; and that's the whole point!
-/// Instead of handling streaming on the signature primitive, you get to use an external hash function.
-/// Just be careful to use the same hash function that the signature primitive is expecting you to use.
-/// (with great power comes great responsibility)
-pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_LEN: usize>: Sized {
-    /// Generate a keypair.
-    /// Error condition: Basically only on RNG failures
-    fn keygen() -> Result<(PK, SK), SignatureError>;
-
-    /// Produce a signature for the provided full message and context.
-    /// Even though this interface accepts the full message, it will pre-hash it internally so that
-    /// the signature produced is compatible with a ph_verify.
-    ///
-    /// Both the `msg` and `ctx` accept zero-length byte arrays.
-    ///
-    /// A note about the `ctx` context parameter:
-    /// This is a newer addition to cryptographic signature primitives. It allows for binding the
-    /// signature to some external property of the application so that a signature will fail to validate
-    /// if removed from its intended context.
-    /// This is particularly useful at preventing content confusion attacks between data formats that
-    /// have very similar data structures, for example S/MIME emails, signed PDFs, and signed executables
-    /// that all use the Cryptographic Message Syntax (CMS) data format, or multiple data objects that
-    /// all use the JWS data format.
-    /// To be properly effective, the ctx value must not be under the control of the attacker, which generally
-    /// means that it needs to be a value that is never transmitted over the wire, but rather is something
-    /// known to the application by context.
-    /// For example, "email" vs "pdf" would be a good choice since the application should know what it is
-    /// attempting to sign or verify.
-    /// The `ctx` param can also be used to bind the signed content to a transaction ID or a username,
-    /// but care should be taken to ensure that an attacker attempting a
-    /// content confusion attack not also cause the signed / verifier to use an incorrect transaction ID or username.
-    ///
-    /// Not all signature primitives will support a context value, so you may need to consult the
-    /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
-    /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError>;
-
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
-
+/// Pre-Hashed Signature is an extension to [Signature] that adds functionality specific to signature
+/// primatives that can operate on a pre-hashed message instead of the full message.
+pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_LEN: usize>:
+    Signature<PK, SK>{
     /// Produce a signature for the provided pre-hashed message and context.
     ///
     /// `ctx` accepts a zero-length byte array.
@@ -432,14 +390,8 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_
     /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
     fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError>;
-
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_ph_out(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
-
-    /// On success, returns Ok(())
-    /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
-    fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
-
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify_ph(pk: &PK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;

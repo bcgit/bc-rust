@@ -1,3 +1,8 @@
+use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+use bouncycastle_core_interface::traits::{Hash, Signature};
+use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, MLDSA44_SIG_LEN};
+use bouncycastle_sha2::SHA512;
+
 #[cfg(test)]
 mod hash_mldsa_tests {
     use bouncycastle_hex as hex;
@@ -71,4 +76,57 @@ mod hash_mldsa_tests {
         let sig = HashMLDSA87_with_SHA512::sign_ph_deterministic(&sk, None, &ph, rnd).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
     }
+}
+
+#[test]
+fn test_streaming_api() {
+    // I don't have a KAT, so I'll test against the regular implementation
+
+    let msg = b"The quick brown fox jumped over the lazy dog.";
+
+    // ML-DSA-44
+
+    let seed = KeyMaterial256::from_bytes_as_type(
+        &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+        KeyType::Seed,
+    ).unwrap();
+
+    let rnd = [1u8; 32];
+
+    let ctx: Option<&[u8]> = Some(b"testing streaming API");
+
+    // BEGIN expected values
+    let (expected_pk, expected_sk) = HashMLDSA44_with_SHA512::keygen_from_seed(&seed).unwrap();
+    let expected_ph: [u8; 64] = SHA512::new().hash(msg).try_into().unwrap();
+    let mut expected_sig = [0u8; MLDSA44_SIG_LEN];
+    let bytes_written = HashMLDSA44_with_SHA512::sign_ph_deterministic_out(
+        &expected_sk, ctx, &expected_ph, rnd, &mut expected_sig).unwrap();
+    assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+    HashMLDSA44_with_SHA512::verify(&expected_pk, msg, ctx, &expected_sig).unwrap();
+    // END expected values
+
+
+    // test the streaming API from sk
+
+    let mut s = HashMLDSA44_with_SHA512::sign_init(&expected_sk, ctx).unwrap();
+    s.set_signer_rnd(rnd);
+    s.sign_update(msg);
+    let sig = s.sign_final().unwrap();
+    assert_eq!(&sig, &expected_sig);
+
+
+    // test the streaming API from seed
+
+    let mut s = HashMLDSA44_with_SHA512::sign_init_from_seed(&seed, ctx).unwrap();
+    s.set_signer_rnd(rnd);
+    s.sign_update(msg);
+    let sig = s.sign_final().unwrap();
+    assert_eq!(&sig, &expected_sig);
+
+
+    // test the streaming verifier
+
+    let mut v = HashMLDSA44_with_SHA512::verify_init(&expected_pk, ctx).unwrap();
+    v.verify_update(msg);
+    v.verify_final(&expected_sig).unwrap();
 }

@@ -305,7 +305,7 @@ impl<
     /// [SecurityStrength::_256bit].
     /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
     /// [KeyMaterial::from_key]
-    fn keygen_internal(
+    pub(crate) fn keygen_internal(
         seed: &KeyMaterial256,
     ) -> Result<
         (PK, SK),
@@ -1051,6 +1051,8 @@ impl<
         self.signer_rnd = Some(rnd);
     }
 
+    /// Alternative initialization of the streaming signer where you have your private key
+    /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
     fn sign_init_from_seed(seed: &KeyMaterialSized<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (_pk, sk) = Self::keygen_from_seed(seed)?;
         Ok(
@@ -1419,16 +1421,25 @@ impl<
             return Err(SignatureError::GenericError("Somehow you managed to construct a streaming signer without a private key, impressive!"))
         }
 
-        // todo: if self.sk.is_none() && self.seed.is_some()
-
         if output.len() < SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
         let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
 
-        if self.signer_rnd.is_none() {
-            Ok(Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)?)
-        } else {
-            Ok(Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)?)
-        }
+        if self.sk.is_some() {
+            if self.signer_rnd.is_none() {
+                Self::sign_mu_out(&self.sk.unwrap(), &mu, output_sized)
+            } else {
+                Self::sign_mu_deterministic_out(&self.sk.unwrap(), &mu, self.signer_rnd.unwrap(), output_sized)
+            }
+        } else if self.seed.is_some() {
+            let rnd = if self.signer_rnd.is_some() {
+                self.signer_rnd.unwrap()
+            } else {
+                let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
+                HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
+                rnd
+            };
+            Self::sign_mu_deterministic_from_seed_out(&self.seed.unwrap(), &mu, rnd, output_sized)
+        } else { unreachable!() }
     }
 
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
