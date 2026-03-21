@@ -5,8 +5,6 @@ use bouncycastle_core_interface::traits::Secret;
 use crate::mldsa::{N, q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
 use crate::aux_functions::{high_bits, low_bits, make_hint};
 
-const STREAM_128_BLOCK_LEN: usize = 168;
-const STREAM_256_BLOCK_LEN: usize = 136;
 
 
 // pub(crate) type Polynomial = [i32; N];
@@ -16,13 +14,6 @@ pub(crate) struct Polynomial(pub(crate) [i32; N]);
 impl Polynomial {
     pub(crate) const fn new() -> Self {
         Self{ 0: [0i32; N] }
-    }
-
-    /// negates each entry
-    pub(crate) fn neg(&mut self){
-        for i in 0..N {
-            self.0[i] = - self.0[i];
-        }
     }
 
     pub(crate) fn conditional_add_q(&mut self) {
@@ -46,19 +37,6 @@ impl Polynomial {
         }
     }
 
-    // todo: will anything use this?
-    // /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
-    // /// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
-    // /// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
-    // /// Output: 𝑐 ∈ 𝑇𝑞.
-    // /// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
-    // /// Also called pointwise montgomery multiplication
-    // pub(crate) fn multiply_ntt(&mut self, w: &Polynomial){
-    //     for i in 0..N {
-    //         self.0[i] = montgomery_reduce((self.0[i] as i64) * (w.0[i] as i64));
-    //     }
-    // }
-
     pub(crate) fn high_bits<const GAMMA2: i32>(&self) -> Self {
         let mut w = Self::new();
         for i in 0..N {
@@ -78,8 +56,9 @@ impl Polynomial {
     }
 
     pub(crate) fn check_norm(&self, bound: i32) -> bool {
-        // Fine that this is not constant-time because it is used in a rejection loop -- the early quit leads to rejection.
-        // todo: convince myself that only the `false` path leads to valid signature output.
+        // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
+        // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing the signature validation.
+        // So the i32 that we just checked in a non-constant-time manner is about to get thrown away.
         if bound > (q - 1) / 8 {
             return true;
         }
@@ -115,20 +94,7 @@ impl Polynomial {
         (out, count)
     }
 
-    // pub(crate) fn use_hint<const GAMMA2: i32>(a: &Self, h: &Self) -> Polynomial {
-    //     let mut out = Polynomial::new();
-    //     for i in 0..N {
-    //         out.0[i] = use_hint::<GAMMA2>(a.0[i], h.0[i]);
-    //     }
-    //
-    //     out
-    // }
-
-    #[inline]
-    pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self, out: &mut [u8]) {
-        debug_assert_eq!(out.len(), POLY_W1_PACKED_LEN);
-        
-
+    pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
         let mut r = [0u8; POLY_W1_PACKED_LEN];
 
         match POLY_W1_PACKED_LEN {
@@ -150,6 +116,8 @@ impl Polynomial {
             },
             _ => { unreachable!() }
         }
+
+        r
     }
 }
 
@@ -173,11 +141,18 @@ impl Display for Polynomial {
     }
 }
 
+#[test]
+fn test_display() {
+    // Polynomials (could) contain private data,
+    // and therefore should be protected against accidental crash dumps:
+    
+    // fmt
+    let p = Polynomial::new();
+    assert_eq!(format!("{}", p), "Polynomial (data masked)");
 
-impl From<Polynomial> for [i32; N] {
-    fn from(p: Polynomial) -> [i32; N] {
-        p.0
-    }
+    // debug
+    let p = Polynomial::new();
+    assert_eq!(format!("{:?}", p), "Polynomial (data masked)");
 }
 
 /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
@@ -207,18 +182,6 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
 
     // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
     ((a - ((t as i64) * (q as i64))) >> 32) as i32
-}
-
-
-pub(crate) fn reduce_poly(w: &mut Polynomial) {
-    for x in w.0.iter_mut() {
-        *x = reduce32(*x);
-    }
-}
-
-pub(crate) fn reduce32(a: i32) -> i32 {
-    let t = (a + (1 << 22)) >> 23;
-    a - t * q
 }
 
 pub(crate) fn conditional_add_q(a: i32) -> i32 {

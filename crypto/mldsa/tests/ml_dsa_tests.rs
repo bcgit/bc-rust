@@ -3,35 +3,38 @@
 mod mldsa_tests {
     use bouncycastle_core_interface::errors::SignatureError;
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core_interface::traits::{Signature, SignaturePrivateKey, SignaturePublicKey, RNG};
+    use bouncycastle_core_interface::traits::{KeyMaterial, Signature, SignaturePrivateKey, SignaturePublicKey, RNG};
+    use bouncycastle_core_test_framework::DUMMY_SEED_1024;
+    use bouncycastle_core_test_framework::signature::*;
     use bouncycastle_hex as hex;
-    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
+    use bouncycastle_mldsa::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MuBuilder, MLDSA44, MLDSA65, MLDSA87, TR_LEN};
+    use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
+    use bouncycastle_mldsa::{MLDSATrait, MLDSAPublicKeyTrait, MLDSAPrivateKeyTrait};
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
 
     #[test]
-    fn basic_keygen_sign_verify_test() {
-        // todo -- this only exercises the Signature API
-        // todo -- move this to generic_test_framework
-        let msg = b"The quick brown fox jumped over the lazy dog";
+    fn test_framework_signature() {
+        let tf = TestFrameworkSignature::new(false, true);
 
-
-        /* MLDSA44 */
-        let (pk, sk) = MLDSA44::keygen().unwrap();
-        let sig_val = MLDSA44::sign(&sk, msg, &[0u8; 0]).unwrap();
-        MLDSA44::verify(&pk, msg, &[0u8; 0], &sig_val).unwrap();
-
-
-        /* MLDSA65 */
-        let (pk, sk) = MLDSA65::keygen().unwrap();
-        let sig_val = MLDSA65::sign(&sk, msg, &[0u8; 0]).unwrap();
-        MLDSA65::verify(&pk, msg, &[0u8; 0], &sig_val).unwrap();
-
-
-        /* MLDSA87 */
-        let (pk, sk) = MLDSA87::keygen().unwrap();
-        let sig_val = MLDSA87::sign(&sk, msg, &[0u8; 0]).unwrap();
-        MLDSA87::verify(&pk, msg, &[0u8; 0], &sig_val).unwrap();
+        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_SIG_LEN>(false);
+        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_SIG_LEN>(false);
+        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_SIG_LEN>(false);
     }
+
+    /// This runs the full bitflipping tests and takes several minutes.
+    /// I'm leaving this commented out, but feel free to un-comment it and run it.
+    // #[test]
+    // fn test_framework_signature_extensive() {
+    //
+    //     let tf = TestFrameworkSignature::new(false, true);
+    //
+    //     tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_SIG_LEN>(true);
+    //
+    //     tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_SIG_LEN>(true);
+    //
+    //     tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_SIG_LEN>(true);
+    //
+    // }
 
     #[test]
     fn rfc9881_keygen() {
@@ -49,15 +52,15 @@ mod mldsa_tests {
                                                         .try_into().unwrap();
 
         // Decode and re-encode the sk, make sure you get the same thing
-        let expected_sk = MLDSA44PrivateKey::from_sk_bytes(&expected_sk_bytes);
+        let expected_sk = MLDSA44PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = expected_sk.sk_encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
 
 
         // Decode and re-encode the pk, make sure you get the same thing
-        let decoded_sk = MLDSA44PublicKey::from_bytes(&expected_pk_bytes).unwrap();
-        let pk_bytes = decoded_sk.pk_encode();
+        let decoded_pk = MLDSA44PublicKey::from_bytes(&expected_pk_bytes).unwrap();
+        let pk_bytes = decoded_pk.pk_encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
@@ -70,10 +73,10 @@ mod mldsa_tests {
         assert_eq!(derived_pk.pk_encode(), expected_pk_bytes.as_slice());
         // also test the `impl Eq`
         assert_eq!(derived_sk, expected_sk);
-        assert_eq!(derived_pk, decoded_sk);
+        assert_eq!(derived_pk, decoded_pk);
 
-        // consistincy check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.derive_public_key());
+        // consistency check between returned pk and sk.get_public_key()
+        assert_eq!(derived_pk, derived_sk.derive_pk());
 
         MLDSA44::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -86,7 +89,6 @@ mod mldsa_tests {
 
 
 
-
         /* MLDSA65 */
         let expected_sk_bytes: [u8; MLDSA65_SK_LEN] = hex::decode("48683d91978e31eb3dddb8b0473482d2b88a5f625949fd8f58a561e696bd4c27d853fa69b8199023e8cd678dd9fabf9047646ffd0cb3cc7f795805a71e70d2371b0563e3cd3346149c8c9ebcf23b0a4e5a900eea9c6562790a7c63e38663daa2dddb6e480dc405a1e701948b74841ef5cc1c3f2bf327972e9510510cd5375ecc0855717711872221862381000424778061475007501717035504515125471838046175722244108868608646012747567180870666864332444122043638667502823634244322057364106455547722755681433614625508206437685468754353751068718333805475052580752818843811087260202008588301836113828212061711578768788878643754601657155084718866072732880664741856762180318276641578245025646643113504364780126673143011660655864718368863503847861101202356116137860785321240075478823043666116604255418285605367785638434430632610770731784272141116530385276867460150823735320766107504681248066603032652312445408800318088767217307182472151278011654474866172233380866064468352158420368011802118183317735453488100448653674370577258833460384232856810060426042584560235682051838638432421224245645858677145728504788717180618836086864156508116502646700608266227383172407257300727288620667588682607064020330343663155464245345667187345658370225084685628807036708462371710065717584778708655537822351446772856730322870014332061715845526632502651334777380355164313473510662751757402468881706743468186017652453330872104343401032287635155265081307745444168154183636411204026873043677712808846355453006245810458365124842780345166635843785601465115742321436685224777313450178362420550006484471234408800604735405783336308210615225207248851348637067622588571265673476816464684258708122705500838320023208066345336003346857247063554003577122752307142536874374570056643224482852072183330205337334077278055253063525040673346131807280717248377634573185851602333443625164338160858773462428830070365853755007552315037021324630437086806361503030043586357080211066473463522620330438021085287578321078867480856347436734284058466841437005510873426447721127384736526472577144704178644260247118740812216605847178137067680817058185585471363421075580163583585184403847110338742628247741365544270734635777500662562684202124683864616646031225388845400845734464754472560546166846630880638271563287183840652247681160662130330186802801384630505657238758365723230688046122606651675570532413227673517080153001628460134887701118815571315464311704732882856368234555041862765631111687505104254414427852211171788153685157447166255365583630250285576875327137103723705714761713651841242366444664143520521085157033363860258426628148110546268173038756433216588568663632813406254012040886547886171657623726234867030115115632050753502122108426531435567111525720106853630150557586058784314313278788087384788637881813873426178388524667733506021151464238232680135440783475385535752832335187601152134325773333655188615816168241842212230841448151201103024777242544366067717707603014525403500183873237735265086357113734481605277456553730085837785035121115480628850180268138652053468013207241803213005723864076427114101838525510632607104865176833828572762354518735083132886376661426311675033112553764176031433177212234418a82e4f5c9ea0faf99eb04d78a7332711117c33f18eca21f8743376ada5219804a7ed9a5557fcd67a3550b3a4b8c588629c021475fa3d56d5d6cfbb1a09bda8d14de622ddff16d8bc99b14278a8af1d76bed157672dd9c32316f97e8daadef8d9da69586725567fb96b59990d4bf0bc9c195b90b74295f5675b24257c2710c175b0153f2911328c2eb7abb9ad46e70a8b53c39ea642cee4b3cb42620e863ce8b650ce8adcd923721a1687023c673a8cbb6b03d51cd197e8c346ebadce93950f88cee201db9e320843e29f300d9a19500d70a4caf272c69e4eef69fbb8a55efd7ca2bed990d2d3b582848f9c45c2abc54cfc47d34f06c0ffa56fcd762ab9cba9146d7725218963b240d72b6d22c93171fbd47788b76e72042def0878d23df631a1a1e5a6027686de5b4a10e91069c8f2ba0259b04d6409da96567ca52da497026e583a0ecefc1f01e6b988e21f9767a2b7e1672deb9a1e2a3fcc863aa91517c334620601b4fe79730e934935f4b6fbc4e32695145c2b5f6a127fecc0a277451ebc3fd523444f9ee7c9c34534f356db544fc31c1bfde5f65c77ea2f7c2eae4c55ebaf104271c566fd4ebac71c7a62c74952817ae675504d9599b1b762b6aca168a83248c9d9adb0ceb1556e5759490bbc0c7900795ad72123038b662f64f106a9993681a25d59af7bc97a235be9284c5bc45a6c90cb1c2999c663d96b478e2307f85548957d65740e2673e9ebd1352829038f462b8fd3b5681da55c0252523853525ea0ad647e71ac2c5a8893e603ac97e56c04ceb2f26f5c5b4b6d94ab811380fd00f2208fe86535086aebfd35c29120624c04fbb6113929d9c556350253766c209fdba83c95fccd342a28099355d00bc863f4eef596eb0b42ebcc7c79491cceae205ea0b8059fbb8a5726c5949d2b15e7e29c51fc9b02ee1a4fc357b5f1bef9c4add46a2a920c2fbf08a37eb1514bfa15110a4392a74c6f13c50c5cffd97531098d7cd23b60eb35c4a428b46c55386e1010c4ba7f70e4c7ecb7575f3063a71e84dfdcf09a58b2cdb0f99f27ed378610d25cbad7bfa6ba0d59189cfe88eab9b46d7e6db0307eabe4198e99bd71f779ab66581e0912fc7b1d2585245e9a12687a975cd5e8e1dcc045d5f891c4c685db07cf81e77389b363eb6bdfe39b27ff84c97eefee162e3b451fe6914719cb6436d855960ff915d7cea6adeafdfc1c05786c49f923a474ffdfc3153a06e6ed0b0ad220d72524434d5273c0aab6dde4e91476d581a2695a60de6d9f44d77aa08266e938eeb4a9597c9b64986059e49262a4eab2454e14015ad0536c42733a5d77d7995c2a20446009ebfe5632c80c08ed2b97af35066489f597eb1b1f11f04f60e0c9040159c44ab3e60e0a15229d191228bed17bbc3ac939b3c67cee135f352c27216c9c31f72a3e87040c5f619306eb0b6cca2a9ce7b22a1694d00ca9c05e315126457f26ce84f9617241860782f864b473d84017491902b1bdc8cdc5800dd46127fb80a71c095b473a562529b3b1e7e437e158a5f6666e9974d005b062c2309e6dce98f9b658c6e3f9a216d58c8c9142bd1c8c85a9da872ebbfad3fea9d9aba2b68c0e8f19c6ff5f00584d45daf9d6c9d69ed04b8da8d687258b77807927612c530446fea7697ae3f926698929bc6a5a8cf3e2024c0f0c5ee57b5869bf981881caf9e3665fc7f7efc678929f87a56eaa42ea4d1ff6691822dd79a47096b776d1d8f01456e5873b0738406c382c573ae9cde2d9e7f231b6cc5c676e7cf43963373013a58075381ff0949be084546d72e4f8a3e5fe4aa5091add234e2afe0030b1b663ae9d2d32410986b9402aaaf2465b74a5e2d0bc38e3a92bbddd8a1fed7b948c23cce6f8c08fe356835ba65b0f984068616ef48138efd89bf357a54d2ebbf376cbdcc69c5f1f61c64d2794bc06ccb9abdf66e25085d8c830e2ae3b0fe0f07a7af8b9320bf342970997d67d7c12593a8fbfade635aac53083a7022c47d5f77a52b57b598da9392ae6d86afc46fc06455181b9c75a646dc21f81e4bf213753de737fd2a140027920add35a223f9f5f4465ceb60c03ed0455a333a5cc83adbf43f1f42c2ccb8328c21c7ab7faed2b21cfade2da55223aaab2af9b41c7332341746341b39aa2f43815650f5480511424cfa6901779c4d18b638cc0287aaaf31680338d20b17c7449fdc6a278a8d96a82ee4c4eca40125e2d65290071c7aef1be6a991598fb9d59512523bcd4b38c566b8e80a73ae333e134414327ef1d83c47c49dfe7936df1338a5e247787868fc84fdcb95ac89c185c4bb5fd57b2338ac42b41c10a823df39624f36b15a2f067584e06ca2e08ccaff1618fe01dd06df3512e0b724dec8506da24215acacc2c51b82ad8d302002fb41068b1da4f8bb147987b3516bad5dbddf01318fd3fa9bc43702ac498c719d95f2e841b622a5e4848a3c5c262959992ea7a7d72ca8a368028f497dfad93355cbb1bb9786d14ff2cf590317848f95856427110dda36f5192a816ce9c8816cc7bbfc804efc40085a3850b89f1e7fe5656dba410f906a97c32336c1ae7e81737a83e087354e428da8538d948dbf5dfacb59dd2b5fd3bc803f4ba432c9a739df2cfa9ed9484320f97edff1a48c6b86b3002cfb772dd5e562bc4c3d683ed964b6199fa0514b0790d958095b7b85c6be875fbb559e1930146ccea63a388a194fe09c3dea03be52de27e901017afe809af630a7382bf5c4cd4d1b8f41579fb4348ede4ca05f4cd3f139a31b2544e516dbe4086b9bb4b2bed47e2d230982dd5192429d377b7c0745cc068e2f5a4aa04c7ff87209ed1259976a0fc9b25e9e851d4e3502c02c85d6dff029e211d01ebf0e9e7188d568f8437d813b0f122f2fb17603b693ed9c38f17cfd50b815e6d9dfc0ed2ccf19f6399274a1420f235a59d8bf724345e14e45d9e4be8934dfc3fa92678db61d7118bf53cb8a2225b335f7eae50e3f941237628db76d8ea38f77a72af3a26c81fe43523b335535a5d1db7c38f341082bb5734d089e8ae309cfda3a0bcb5cd5b097113c8edf9616aa4f6e6631b9125276fb3f680a34341c3db668dc6cad45fc93b2708ca2af75ccce734fd191c50089dad53982fddae02531ff93e1f21ff395fc0a12874edf06b6f9647e95a7324586c71dfd91d901d621858190fecd00ccd110bbac59f96cb884c3c93994748a56f41283bfc41fb89052153a894588c3cb9017f3d66326c985637e575acb812346342654025d602de3ba940c19ac1a633dffda977b529b8013e19c1d6d0680f4dae62c924450ae66aab82f21473061dab3d62b247f907e3551939ad3f5465e9d08a82bfea17eea1b6b2b923757477f993000b2f43b70f28aaab1fe9a26ad1fd3361616c0b0e242fe76604b7033a1f30e97e28f526ca3c880fe2b8d9d1b0c9ff188b31cb9d97425acab9b216d98a6ae355e583da71e8864ee3d16b0759796190ef545c1e62bfef92af6ca147b13244d6c892fc8ef223ab3f43f924c2f466097ee8").unwrap()
                                                         .try_into().unwrap();
@@ -94,15 +96,15 @@ mod mldsa_tests {
                                                         .try_into().unwrap();
 
         // Decode and re-encode the sk, make sure you get the same thing
-        let decoded_sk = MLDSA65PrivateKey::from_sk_bytes(&expected_sk_bytes);
+        let decoded_sk = MLDSA65PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = decoded_sk.sk_encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
 
 
         // Decode and re-encode the pk, make sure you get the same thing
-        let expected_pk = MLDSA65PublicKey::from_pk_bytes(&expected_pk_bytes);
-        let pk_bytes = expected_pk.pk_encode();
+        let expected_pk = MLDSA65PublicKey::from_bytes(&expected_pk_bytes).unwrap();
+        let pk_bytes = expected_pk.encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
@@ -119,7 +121,7 @@ mod mldsa_tests {
         assert_eq!(derived_pk, expected_pk);
 
         // consistincy check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.derive_public_key());
+        assert_eq!(derived_pk, derived_sk.derive_pk());
 
         MLDSA65::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -139,15 +141,15 @@ mod mldsa_tests {
                                                         .try_into().unwrap();
 
         // Decode and re-encode the sk, make sure you get the same thing
-        let decoded_sk = MLDSA87PrivateKey::from_sk_bytes(&expected_sk_bytes);
+        let decoded_sk = MLDSA87PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = decoded_sk.sk_encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
 
 
         // Decode and re-encode the pk, make sure you get the same thing
-        let expected_pk = MLDSA87PublicKey::from_pk_bytes(&expected_pk_bytes);
-        let pk_bytes = expected_pk.pk_encode();
+        let expected_pk = MLDSA87PublicKey::from_bytes(&expected_pk_bytes).unwrap();
+        let pk_bytes = expected_pk.encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
         assert_eq!(pk_bytes, expected_pk_bytes.as_slice());
 
@@ -163,8 +165,8 @@ mod mldsa_tests {
         assert_eq!(derived_sk, decoded_sk);
         assert_eq!(derived_pk, expected_pk);
 
-        // consistincy check between returned pk and sk.get_public_key()
-        assert_eq!(derived_pk, derived_sk.derive_public_key());
+        // consistency check between returned pk and sk.get_public_key()
+        assert_eq!(derived_pk, derived_sk.derive_pk());
 
         MLDSA87::keygen_from_seed_and_encoded(&seed, &sk_bytes).unwrap();
 
@@ -177,47 +179,486 @@ mod mldsa_tests {
     }
 
     #[test]
+    fn keygen_error_cases() {
+        /*
+            Testing this condition:
+                if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
+            || seed.key_len() != 32
+         */
+        // success case KeyType: seed
+        let mut seed = KeyMaterial256::from_bytes_as_type(
+            &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+            KeyType::Seed,
+        ).unwrap();
+        /* MLDSA44 */
+        let expected_sk_bytes: [u8; MLDSA44_SK_LEN] = hex::decode("d7b2b47254aae0db45e7930d4a98d2c97d8f1397d1789dafa17024b316e9bec939ce0f7f77f8db5644dcda366bfe4734bd95f435ff9a613aa54aa41c2c694c04329a07b1fabb48f52a309f11a1898f848e2322ffe623ec810db3bee33685854a88269da320d5120bfcfe89a18e30f7114d83aa404a646b6c997389860d12522ee0006e2384819186619b260d118664d4a62822184482402898146148a6614c4248a19208c2382951244808a125c2083108c47120140914836c18a78084106ec9c07022b56408b0610c070498124451886959004622932041062e42b64c01164914284c41a85180460a5116515a0820022244dc9849d13251e13065d3c08592a85112a1640039220946621cc70cd9086dd0062652408580443091062c50c80924c5841a966d4a982c99066da4443220a7645a326e11b57020926124138e04852c0a4872c8a051d3082a99208058242024074e59148810a46460c06de0b28d1b1909203422c024410943710a212061a2015222521b80809a340013934dd3322922170a9892691a14512027219cc02062a2814818691a854d8344695b2041031242cb184601a90d0c023183b0215a224ac89205d9906904306a4b064ad2b2011c404081423252327254a6405a18100c321292c2805212625c82280bb46c03428d53100c14010ee1365288842491020a63462620062911c228d0204802b36ca236095a8648cbb4618b4662c440821a890910024d24b24520122524c90588288cc9c04d5948220a276ec134644c90605b445082864943880443b28c603080a2882d84a46d8ca629d0c68442064689885100a98d01498de4380da4068dd3947142b26c1a84611ba32842b42808a0711ac531e0a04c013765242862142890091061d940221b3360090292d02481200408491844a3222d5c8844149808a446610195640b390a0c9450ca406ad2b220c0380182308e13b908918084148829c0189112350da02422e20406d9c2850428121cc989180272d24029c20812d8062a9994719bb8682384291a2289144511dc82445096450c4484c0b2049aa60543862c44326e88442120a84c9a3070e3b82d63268803254903438c48a809ca147253344e1243081ba704593022d99480e234228142129c302a9434266104452426281346094a326d11280918b82562281113410d41b21190844c8b1212a2c688c9c030220606d2188e848630904452128831d9207113c52843060e033060cca6845826524c88011ef72562c85ffa43acfa49217f2b172d7bbc14620e6d980a71aabbdf0c45e9a206ecb1423fee15decc17601300149d9223cd6e6c6e1fa8e41fc7c64938ab68905fd3dcda50d87082e7d0d71d1bc9b2b84c85523ca8fe6cad294adf83be15b108ff721d0cc87bc3dd3a7590184b0e845663a91fc9e1c3c53a61d867420b04f092355753bc65a06368fd41295fd09924132c6f91f67964c142674a725c343914c4cecf58c074bcaf4558c97bf7911e07aa6d0938f2ee2bb3c1a8c595d635e84342fdea01dc24b211ad2fc281cf77e59110c7abc54bf0c86d480b9be276471dc9d603cee98cfdab3e9fcfb703793560549ea4450fa7b33fb9169c44b4d25fb9c457f49791cd3da03eac96095813c105132ccda4e63e49228cd23d8a1f37856f142d93b90db09f82af89258c63aab8047a80c036c9357ea2046f8dc6354f0c5295f342bb417d3cfeb0b1fd33622c29e14cbbd92e1363c65ebd4504b7512329b9670e32e1b2c67a54e7f1a55f8b9f9ea04e8ca3a705e62a3c5e637374afb7aeb6ddea612cde28f01a202d7aa4e34722d27dd3f9b89894d019fd5d4d7119efe3723bba104cb8bb0981e074de3afe200daaaead826cc45f244dbf431afab34efbdf782474d2fd57118f646214934ed99cba3b003e8d67a3836f6f19fc41910ce5163ee3ae99eb84d514eb761e63684ea56f9791d2dd4aac6e6168b948c817f75a222acb0e8cdc03cc4afe8f67157e1a363b7faeff9f172b98913677c5a1dd085e9ee4c22052c1af58193116673dcd3bfc5f34b855dcc6c77885649e9e71f43d4aea0f4b72ca7eda0578ba13d31a658d2d060a9a66ff69ed1be7997a2fb1d2723d38f9bfabe18f8e7b3cda906e4e9b5e942c8eaeb296070ebfd364947a940cc978bed66b37749e6d5dcd7be8c494440e2b84cecfefb98c0bedfb3c41e3359d2cd7197fbe720c48aa6c6b6465c1ee63e3569c2adc744491370b7f7826fe0b77a1d19d64101d032b918106b42d2ef73747e5601fe4ba50f23ede521f031a817d15294a43722e8378784b6db0cf1ba9e8ae911d9201b9ce9cc3019c6f5c27cb98da26144b64225a7c932b30f761e78a2d59a1d8b83ec6344a2f6dd47e765706d00bf4a79a6a926c3ba91d812c8f2c797ab1796709e5d16856778293529f0286d015c3b5399619642a333e9e593d6e3f5353994208e9e6a332851d7f652522a928b917e27e2d6d42137dfe2ebfa6fb1c67b26c0254528685f7ebdbe315a68eaa2da769e8a9f42d3e60007c71330926b2c0012d83ead4e4fd1ed872ccd1972201d2b027f3545ac2d30cd78bc1d740feccbc6fc2a0446c6e30eac51f5a69098aa2d447f2085b4e4e4b92ccc26921d2de478518cd090ce267aea2d27ada57fd88b4976d89fb843cdccf49a76ca2679e6801bfa7fb031896fb50629704b9923936bb5dd385311121cadfb11995e59b73034cf67ed03ab813867648d025828087e949a9afd16b95d72d99b1edca257aac132ffb7a0709aed5a9c0ff05fb0f2bbf28409eed7b5f5801be964ced019e1cb7851d3851f10290674e19ffb008b301c4acf641a2bb14216e1d69cabf52b5ef227496b0f30799a855d117fad3744a6fa33503ea798b52ddd7ee5426609dbfcd3f0c13b164d6c051f7ed4a119719a712e388d328402081ff1354b554d2c237afed3b151c4ba8e9f4bdeb8499a3066e26bbc69e8af089dec71731d1dc529eab17ef7374734c0fe475494c83836bdd34a03b9bc89914716061bfb98ec6e61c3ed4438edcaf25243c647086b9ea7018b0d9a8a0b00cecb00abde2498d69c2336101a772cbe4f571523f51bd05882cdf358b849cc140aa1faf22423a12851ce0e33fd48975a4959fa5c5fe418c93908191ab6e741b77bfe02cbd698ee795c466d615619e6441382c6eac01834ee9ab73cea80bbe235c78da91bd79b6f82f899785d68700d393e675c2224d6b7a1ad21320495679adaed70167b50866713a53109db7b6f7d81304ecdfd83b319b1ef248306b45ad29e7ddcc863dac56048b5d69ea175011f7614c00a86a863cde1872a8932878b9ac7e1ac5bda4997b72064f0cd75f4c814e034de11acb9013cf7ea926b4e7eaace070c7ba2188efad2e431e1223d45dd05c4d8403c2e45cee6413ecbe7527e873e455c4e610a61839aacc0bd56d2483e78f298b66a478eb2f558cbafca86be847baeb02c5b216c8cd88fea4df249b09e670a20703abac24b0a91abc4a5646601442ba10becfd30993880051d07f56a05a9379e7a8e6befee3f22faa106398f7706006e42e9be1ef89d25c272f11a95095c587d713732284de9dbd3c7217b0689e21d8eb0ff69668").unwrap()
+            .try_into().unwrap();
+        let expected_pk_bytes: [u8; MLDSA44_PK_LEN] = hex::decode("d7b2b47254aae0db45e7930d4a98d2c97d8f1397d1789dafa17024b316e9bec94fc9946d42f19b79a7413bbaa33e7149cb42ed5115693ac041facb988adeb5fe0e1d8631184995b592c397d2294e2e14f90aa414ba3826899ac43f4cccacbc26e9a832b95118d5cb433cbef9660b00138e0817f61e762ca274c36ad554eb22aac1162e4ab01acba1e38c4efd8f80b65b333d0f72e55dfe71ce9c1ebb9889e7c56106c0fd73803a2aecfeafded7aa3cb2ceda54d12bd8cd36a78cf975943b47abd25e880ac452e5742ed1e8d1a82afa86e590c758c15ae4d2840d92bca1a5090f40496597fca7d8b9513f1a1bda6e950aaa98de467507d4a4f5a4f0599216582c3572f62eda8905ab3581670c4a02777a33e0ca7295fd8f4ff6d1a0a3a7683d65f5f5f7fc60da023e826c5f92144c02f7d1ba1075987553ea9367fcd76d990b7fa99cd45afdb8836d43e459f5187df058479709a01ea6835935fa70460990cd3dc1ba401ba94bab1dde41ac67ab3319dcaca06048d4c4eef27ee13a9c17d0538f430f2d642dc2415660de78877d8d8abc72523978c042e4285f4319846c44126242976844c10e556ba215b5a719e59d0c6b2a96d39859071fdcc2cde7524a7bedae54e85b318e854e8fe2b2f3edfac9719128270aafd1e5044c3a4fdafd9ff31f90784b8e8e4596144a0daf586511d3d9962b9ea95af197b4e5fc60f2b1ed15de3a5bef5f89bdc79d91051d9b2816e74fa54531efdc1cbe74d448857f476bcd58f21c0b653b3b76a4e076a6559a302718555cc63f74859aabab925f023861ca8cd0f7badb2871f67d55326d7451135ad45f4a1ba69118fbb2c8a30eec9392ef3f977066c9add5c710cc647b1514d217d958c7017c3e90fd20c04e674b90486e9370a31a001d32f473979e4906749e7e477fa0b74508f8a5f2378312b83c25bd388ca0b0fff7478baf42b71667edaac97c46b129643e586e5b055a0c211946d4f36e675bed5860fa042a315d9826164d6a9237c35a5fbf495490a5bd4df248b95c4aae7784b605673166ac4245b5b4b082a09e9323e62f2078c5b76783446defd736ad3a3702d49b089844900a61833397bc4419b30d7a97a0b387c1911474c4d41b53e32a977acb6f0ea75db65bb39e59e701e76957def6f2d44559c31a77122b5204e3b5c219f1688b14ed0bc0b801b3e6e82dcd43e9c0e9f41744cd9815bd1bc8820d8bb123f04facd1b1b685dd5a2b1b8dbbf3ed933670f095a180b4f192d08b10b8fabbdfcc2b24518e32eea0a5e0c904ca844780083f3b0cd2d0b8b6af67bc355b9494025dc7b0a78fa80e3a2dbfeb51328851d6078198e9493651ae787ec0251f922ba30e9f51df62a6d72784cf3dd205393176dfa324a512bd94970a36dd34a514a86791f0eb36f0145b09ab64651b4a0313b299611a2a1c48891627598768a3114060ba4443486df51522a1ce88b30985c216f8e6ed178dd567b304a0d4cafba882a28342f17a9aa26ae58db630083d2c358fdf566c3f5d62a428567bc9ea8ce95caa0f35474b0bfa8f339a250ab4dfcf2083be8eefbc1055e18fe15370eecb260566d83ff06b211aaec43ca29b54ccd00f8815a2465ef0b46515cc7e41f3124f09efff739309ab58b29a1459a00bce5038e938c9678f72eb0e4ee5fdaae66d9f8573fc97fc42b4959f4bf8b61d78433e86b0335d6e9191c4d8bf487b3905c108cfd6ac24b0ceb7dcb7cf51f84d0ed687b95eaeb1c533c06f0d97023d92a70825837b59ba6cb7d4e56b0a87c203862ae8f315ba5925e8edefa679369a2202766151f16a965f9f81ece76cc070b55869e4db9784cf05c830b3242c8312").unwrap()
+            .try_into().unwrap();
+        let (derived_pk, derived_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        assert_eq!(derived_sk.sk_encode(), expected_sk_bytes.as_slice());
+        assert_eq!(derived_pk.pk_encode(), expected_pk_bytes.as_slice());
+
+        // success case KeyType: BytesFullEntropy
+        seed.allow_hazardous_operations();
+        seed.set_key_type(KeyType::BytesFullEntropy).unwrap();
+        _ = MLDSA44::keygen_from_seed(&seed).unwrap();
+
+
+        // Failure case: key type != Seed || BytesFullEntropy
+        let mac_seed = KeyMaterial256::from_bytes_as_type(
+            &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+            KeyType::MACKey,
+        ).unwrap();
+
+        match MLDSA44::keygen_from_seed(&mac_seed) {
+            Err(SignatureError::KeyGenError(_)) => { /* good */ },
+            _ => panic!("expected KeyGenError"),
+        }
+
+        // Failure case: key is undersized
+        let seed = KeyMaterial256::from_bytes_as_type(
+            &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718").unwrap(),
+            KeyType::Seed,
+        ).unwrap();
+        assert_eq!(seed.key_len(), 25);
+
+        match MLDSA44::keygen_from_seed(&seed) {
+            Err(SignatureError::KeyGenError(_)) => { /* good */ },
+            _ => panic!("expected KeyGenError"),
+        }
+
+
+    }
+
+    #[test]
     fn deterministic_sign() {
         // at least one test each of signing with a deterministic signing nonce
+        // We support setting the signing nonce (rnd) via two interfaces: external mu, and streaming API.
 
         // ML-DSA-44
 
         let sk = MLDSA44PrivateKey::from_bytes(&hex::decode(MLDSA44_KAT1.sk).unwrap()).unwrap();
-        let mut rnd = [0u8; 32];
-        if !MLDSA44_KAT1.deterministic {
-            bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
-        } // else: leave it as [0u8]
+        let rnd = if !MLDSA44_KAT1.deterministic {
+                let mut rnd = [0u8; 32];
+                bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
+                rnd
+            } else { [0u8; 32] };
 
-        let mu = MLDSA44::compute_mu_from_sk(&hex::decode(MLDSA44_KAT1.message).unwrap(), &hex::decode(MLDSA44_KAT1.ctx).unwrap(), &sk).unwrap();
+        let mu = MLDSA44::compute_mu_from_sk(&hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sk).unwrap();
         let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA44_KAT1.signature).unwrap());
+        MLDSA44::verify(&sk.derive_pk(), &hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sig).unwrap();
+
+        // test the streaming API on the same value
+        let mut s = MLDSA44::sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &hex::decode(MLDSA44_KAT1.signature).unwrap());
+
+        // Then with the message broken into chunks
+        let mut s = MLDSA44::sign_init(&sk, Some(b"streaming API chunked")).unwrap();
+        s.set_signer_rnd(rnd);
+        for msg_chunk in DUMMY_SEED_1024.chunks(100) {
+            s.sign_update(msg_chunk);
+        }
+        let sig_val = s.sign_final().unwrap();
+        MLDSA44::verify(&sk.derive_pk(), DUMMY_SEED_1024, Some(b"streaming API chunked"), &sig_val).unwrap();
+
 
 
         // ML-DSA-65
 
         let sk = MLDSA65PrivateKey::from_bytes(&hex::decode(MLDSA65_KAT1.sk).unwrap()).unwrap();
-        let mut rnd = [0u8; 32];
-        if !MLDSA65_KAT1.deterministic {
+        let rnd = if !MLDSA65_KAT1.deterministic {
+            let mut rnd = [0u8; 32];
             bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
-        } // else: leave it as [0u8]
+            rnd
+        } else { [0u8; 32] };
 
-        let mu = MLDSA65::compute_mu_from_sk(&hex::decode(MLDSA65_KAT1.message).unwrap(), &hex::decode(MLDSA65_KAT1.ctx).unwrap(), &sk).unwrap();
+        let mu = MLDSA65::compute_mu_from_sk(&hex::decode(MLDSA65_KAT1.message).unwrap(), Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()), &sk).unwrap();
         let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA65_KAT1.signature).unwrap());
+
+        MLDSA65::verify(&sk.derive_pk(), &*hex::decode(MLDSA65_KAT1.message).unwrap(), Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()), &sig).unwrap();
+
+        // test the streaming API on the same value
+        let mut s = MLDSA65::sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &hex::decode(MLDSA65_KAT1.signature).unwrap());
 
 
 
         // ML-DSA-87
 
         let sk = MLDSA87PrivateKey::from_bytes(&hex::decode(MLDSA87_KAT1.sk).unwrap()).unwrap();
-        let mut rnd = [0u8; 32];
-        if !MLDSA87_KAT1.deterministic {
+        let rnd = if !MLDSA65_KAT1.deterministic {
+            let mut rnd = [0u8; 32];
             bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
-        } // else: leave it as [0u8]
+            rnd
+        } else { [0u8; 32] };
 
-        let mu = MLDSA87::compute_mu_from_sk(&hex::decode(MLDSA87_KAT1.message).unwrap(), &hex::decode(MLDSA87_KAT1.ctx).unwrap(), &sk).unwrap();
+        let mu = MLDSA87::compute_mu_from_sk(&hex::decode(MLDSA87_KAT1.message).unwrap(), Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()), &sk).unwrap();
         let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA87_KAT1.signature).unwrap());
+
+        MLDSA87::verify(&sk.derive_pk(), &*hex::decode(MLDSA87_KAT1.message).unwrap(), Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()), &sig).unwrap();
+
+        // test the streaming API on the same value
+        let mut s = MLDSA87::sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &hex::decode(MLDSA87_KAT1.signature).unwrap());
+    }
+
+    #[test]
+    fn test_sign_mu_deterministic_from_seed_out() {
+        // I don't have a KAT, so I'll test against the regular implementation
+
+        // ML-DSA-44
+
+        let seed = KeyMaterial256::from_bytes_as_type(
+            &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+            KeyType::Seed,
+        ).unwrap();
+
+        let rnd = if !MLDSA44_KAT1.deterministic {
+            let mut rnd = [0u8; 32];
+            bouncycastle_rng::DefaultRNG::default().next_bytes_out(&mut rnd).unwrap();
+            rnd
+        } else { [0u8; 32] };
+
+        let tr: [u8; TR_LEN];
+        {
+            let (_, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+            tr = sk.tr().clone();
+        }
+
+        // BEGIN expected values
+        let (_, expected_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        let expected_mu = MLDSA44::compute_mu_from_sk(&hex::decode(MLDSA44_KAT1.message).unwrap(),
+                                                      Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
+                                                      &expected_sk).unwrap();
+        let mut expected_sig = [0u8; MLDSA44_SIG_LEN];
+        let bytes_written = MLDSA44::sign_mu_deterministic_out(&expected_sk, &expected_mu, rnd, &mut expected_sig).unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        // END expected values
+
+        let mu = MLDSA44::compute_mu_from_tr(&hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &tr).unwrap();
+        assert_eq!(&expected_mu, &mu);
+        let mut sig = [0u8; MLDSA44_SIG_LEN];
+        let bytes_written = MLDSA44::sign_mu_deterministic_from_seed_out(&seed, &mu, rnd, &mut sig).unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        assert_eq!(&sig, &expected_sig);
+
+        let (pk, _) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        MLDSA44::verify(&pk, &hex::decode(MLDSA44_KAT1.message).unwrap(), Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()), &sig).unwrap();
+
+
+        // test the streaming API on the same value
+
+        let mut s = MLDSA44::sign_init_from_seed(&seed, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &expected_sig);
+
+
+
+        // while we're at it, test the streaming verifier cause I'm not sure where else this is being tested.
+
+        let mut v = MLDSA44::verify_init(&pk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        v.verify_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        v.verify_final(&expected_sig).unwrap();
+    }
+
+    #[test]
+    fn test_boundary_conditions() {
+        let msg = b"The quick brown fox jumped over the lazy dog";
+
+        // ctx too long
+        // this is common to all parameter sets, so I'll just test MLDSA44
+        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let too_long_ctx = [1u8; 256];
+        match MLDSA44::sign_init(&sk, Some(&too_long_ctx)) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for ctx too long"),
+        }
+
+        // test various things that are shorter / longer than required
+
+        // sign_out
+
+        // MLDSA44
+        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let mut out_too_short = [1u8; MLDSA44_SIG_LEN -1];
+        match MLDSA44::sign_out(&sk, msg, None, &mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        let mut s = MLDSA44::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        match s.sign_final_out(&mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+
+        // too long is fine; it should just write to the beginning
+        let mut out_too_long = [1u8; MLDSA44_SIG_LEN + 2];
+        let bytes_written = MLDSA44::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA44_SIG_LEN..], &[1,1]);
+
+        let mut s = MLDSA44::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA44_SIG_LEN..], &[1,1]);
+
+
+        // MLDSA65
+        let (_pk, sk) = MLDSA65::keygen().unwrap();
+        let mut out_too_short = [1u8; MLDSA65_SIG_LEN -1];
+        match MLDSA65::sign_out(&sk, msg, None, &mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        let mut s = MLDSA65::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        match s.sign_final_out(&mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        // too long is fine; it should just write to the beginning
+        let mut out_too_long = [1u8; MLDSA65_SIG_LEN + 2];
+        let bytes_written = MLDSA65::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA65_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA65_SIG_LEN..], &[1,1]);
+
+        let mut s = MLDSA65::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA65_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA65_SIG_LEN..], &[1,1]);
+
+
+        // MLDSA87
+        let (_pk, sk) = MLDSA87::keygen().unwrap();
+        let mut out_too_short = [1u8; MLDSA87_SIG_LEN -1];
+        match MLDSA87::sign_out(&sk, msg, None, &mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        let mut s = MLDSA87::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        match s.sign_final_out(&mut out_too_short) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for out_too_short"),
+        }
+
+        // too long is fine; it should just write to the beginning
+        let mut out_too_long = [1u8; MLDSA87_SIG_LEN + 2];
+        let bytes_written = MLDSA87::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA87_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA87_SIG_LEN..], &[1,1]);
+
+        let mut s = MLDSA87::sign_init(&sk, None).unwrap();
+        s.sign_update(msg);
+        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
+        assert_eq!(bytes_written, MLDSA87_SIG_LEN);
+        assert_eq!(&out_too_long[MLDSA87_SIG_LEN..], &[1,1]);
+
+
+        // sig too long / too short
+
+        // MLDSA44
+        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let sig = MLDSA44::sign(&sk, msg, None).unwrap();
+        // too short
+        match MLDSA44::verify(&pk, msg, None, &sig[..MLDSA44_SIG_LEN-1]) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+        // too long
+        let mut sig_too_long = sig.clone();
+        sig_too_long.append(&mut vec![1u8, 0u8]);
+        match MLDSA44::verify(&pk, msg, None, &sig_too_long) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+
+        // MLDSA65
+        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let sig = MLDSA65::sign(&sk, msg, None).unwrap();
+        // too short
+        match MLDSA65::verify(&pk, msg, None, &sig[..MLDSA65_SIG_LEN-1]) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+        // too long
+        let mut sig_too_long = sig.clone();
+        sig_too_long.append(&mut vec![0u8, 0u8]);
+        match MLDSA65::verify(&pk, msg, None, &sig_too_long) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+
+        // MLDSA87
+        let (pk, sk) = MLDSA87::keygen().unwrap();
+        let sig = MLDSA87::sign(&sk, msg, None).unwrap();
+        // too short
+        match MLDSA87::verify(&pk, msg, None, &sig[..MLDSA44_SIG_LEN-1]) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+        // too long
+        let mut sig_too_long = sig.clone();
+        sig_too_long.append(&mut vec![0u8, 0u8]);
+        match MLDSA87::verify(&pk, msg, None, &sig_too_long) {
+            Err(SignatureError::LengthError(_)) => { /* good */ },
+            _ => panic!("Expected error for sig too short"),
+        }
+    }
+
+    #[test]
+    fn sig_val_z_too_big() {
+        // This signature value was manually generated in the debugger to have a z containing several
+        // coefficients of (1<<17) -1, which are just below GAMMA1, and in aggregate should cause check_norm() to fail.
+        // ... a condition that generally does not show up with well-behaved inputs.
+
+        let busted_sig = hex::decode("cb8f8b46d73e7c273500555acbe0e7cf1da54d950675248e11bff5940b45f52f010004001000000682ff854d13b45dd7a148636d330453ecaecc627c0a1b417aa5c52cdbb614aeaa3e73f19a59686151872cab71fe793a217ecad4c7a0504a6bbd2585dcb4fc756ebf43242d933c5d90f940d96c74a2a0817e14b5d5563c1f42cd7ac23d18276a301acd91ce752843982ebea23b1c0a7319adcb6ded96d6db10b80067d20b2cce31ea5ff1dbd2bf0b9d29e2db5f9bd547e9f75d00e7db6f2071b5d4f3cb9137df6924ba5e2e203b000802ee2bd34f933e352a54325804ff0b5c43deae326e7e6af0afcff83c2b4ced702a5e2f2fe57a2aad9223a96aa1b54e422aa2ad23a75ce489bf4232b92cb4ddbae6f9f1c0a7d3472e26b7423caf59c919c916e08fc50981c153ea9daa956afdd0a8d980cbb709082c8fcec7f55cef10f1e2d641b667f4aa54be817c26ed446bf58ebbe4b0a98175e469d6231c73d798e761190018a9340d463c09e525d17ab29b50031cc46f625f20ddffbacee4833cf652f6733c5ab1c3c0554fe916652e3a5b88e634213f7fa34ce2c8cfea0e49eed17ada23844c061846f962410b43d1facd60d5e3a667871f7c10d922ba44b7ed153d9b9337d07e14338e8dcae3371c84483a65b5889591c226aa04f4f22965b0762e0cd98396fe6aa0a5aa902f70f93bf9a816dc686ac6cf055d7acb7a994cb1613fc1a8473fde6d39beabcf302eded80ea213f980bd28df6e5837de4b8afbb685b74a1e9cf4f9fc51639b057e73b68d11d72d15e8c81762e3ebf085cf058e132d1edcf170915509a3a58bc2e3184629b0cfe17b452537421532d6bd7d78237b8cb83811d3f823e150144d102f86418ab8cefb2c4c6a7510f1a34e1d2f9cee9209fb8f62c04975086767bfae2644f0e514e0b973ed6547deee0b8cf0a5d21865b4c41bf7acf05ad8f14103dc599aa9d068d777b047850ff42328de052300588bab7264fa885e981b1afce0b48e756db8589625d6294732c44a51aa4a8d4f5c5572bc3c08a3d18c0d7f9d2291af6ee2f3bb552b22acf3466f75886a77701cc0efa1adbc5258dc7e9463db16983e4e7bf2cf66bd3770ea2ca0a33e3c4515b1865f9bd5057c8a810062a7c61f9c1e73b0c53fb1a29b306ae719ad7602c49dde36909e152e106d248be1df684c4a56355a69277255e646d5c1bc6fea212e19da26caaddae09c63587ca4bc496de9369e22eb270a96706d3d4b3caabb271bea66027739fad15bd5d91108944b7533daa77f5eb3cf87eaaba8a8eb7e1aa234eccb2fda84ba55027bb96b024a8a81afbe46b3334376f5f9f8efbce6530ada96980b2c9938858ec99fce960eae548e84bfccf400209fdca72fdcc8a72cc497ef4f247056f7cd008bf2299a6e3d5bcccc7055abbf7a8585bdde15028815cfee54e7a74a88c09af785d1b8885c090e59ea312f2aabffaceb8f77eb62e122ca5b74cf906ff7bb393f7d5801332aa0edc72a9a264b413405edf3b80c6e2dd410f0ab0ddca75d04cccdef4c76df60482e83e45a4306f7b67028d4ac0a99d75dacd0d78c4056814f1e3624219dc46832ebf66d6520316a7a552d12752e991a0217e119662d21ead999271c74a6cb168af99dd0a63412882be744f409d08c0ace64b60a647326f88262bd6a1c19187ad9ff420e56fd0242c4c8e3dc097e1313047d618b29336c36571b0bf2840da2d8d9d021c271532f475c07b5dfd74754a3b4a2b22035b3575d4a4836c784f24b228be567f30994b71be1c355644edb72dea9458848f91da920c3c45c187121431684e261af26671387a109b1938e14257a646902be53d5bd9a26696c7ef48e194135c6bdf97df5a98e87a77df89150b2906b50d332cd79389710fcd0c57c982ed51d510ca44de02d4acc9ad0fd9e4491fc9727ea26691b2f742c96bf0b0c88c1d844102e2d90d744fa91cd6d01a2123b8e6e0f2f40ab68149d7fc00fcce3ef590152722b4d47bf8f291491e8ebf6efdde2d1992ce9b754aea6ef9ee019afeddf619aed86757c50b5b85bf8c44eaab670f4f018bcde75f7dcead0a1ff234d6e717f057a9a372ba998915c4cac6b8c4d568b414c8c0be19afbb8a40092c686eeb57a899b3f67d1e1d6ae326f1f5fc5e8e3b203e041807462c7f171f49841835c20f32fadca7b3ee944c814ef61796083b88994948967f5422c51df776d0957011d2ed0569d8e7b28ebe02b4e38f52d00330b79850d6fcba7c598e40ab93e12ab3b7c2f46f88b56b5d83f828871d94ff0e2d60b549c7e7b2cfc5f1a960fd7afcc46ce5f058f1e05a872c38495cb3490a365135a26515cf2cc453f9e71a0c3d233fc6e6d0dbe152f7f34add23fa5b101e02fd83c5fdfe1a66754cc7a4748abbfbb96c7762153c33bad113e3720861fe1accea673c334c915036794a8341d47bae11fc9a2a9effdb54c904b9e9fc9a1cef369ad4d04c51b97ef8820c8bc3343c33ab85c6f040a46210b7a72c76b639702620731fa002460fb781b5a663ec200ab82626d4b085e3348ba5d42f83f743fbaf59f009b960d40c3978bedc8b2f6701619a6f79a82b4c27604d28e6b1413742aa35e981e9b6eb3ecac3c013506209bda49a7d5f4667e45d57b311f476617706b415baf0964fe531fd38cd200450007f3aad73141732d6c0ffde482e36cbc47aebec1ec036069020df695fa9a43ad5711ecb9b54b358991640a8090093ecd7f9448ec08c8250d27a45595d2e7a1c012e07c632083af08995fc211eb55d04f9bc787d4d604de5b797b64a4918e9d93f3cd84690f99b93194da46bad979e5cbf5146cedcbb43e931da298b708fde037a4057a7178d66bfa3ad2fedd06c646cfc128496e8d9f3d439421cf0a6199b5d6614a7a06a1369384cccae710f3dcdf8f1d52cf7bd5b7fed962c1646e372dd2b00ee98d286c61f10ffe4d7ec8300202ceae605c64ff085a9adc1031798c5ecd9a747dee38fc64f43883db58572d57fd56c94b27d1a97b15f93daa73a5931a72dcf59d6ba2a5bfceeb8814963c0e953491be65175c7248dd7a3c1486d9713b636cdde8b36cab2dc6773a671d637a739feaed54d8c43742cab579896914770d5f14141eca519adc3556dfc08ca9720045cc0679999e864b19d9cca01ca6fc1f0536ccd7ed3d4a7e2d911346d66d648ea0d2a8d9da8097fa0ac9f239d5a566dd88164ae8c2a18612c47f72dfa73f8166550e516a7656329fcddc63b258de992e4bc918401e91257e6852e9f1c64eddc0ba3e724f4a6c7e0ef80a26eb38501908191a292a314344626f718ca1b4c9dce9f828687197a5b0bdf9112f345f70798dc5e4121d283b6f728fa3adb0c4f9000000000000000000000000000000000000000000000000000000000000000000001119222e").unwrap();
+
+        let msg = b"The quick brown fox jumped over the lazy dog";
+
+        let seed = KeyMaterial256::from_bytes_as_type(
+            &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+            KeyType::Seed,
+        ).unwrap();
+
+        let (pk, _sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+
+        // BEGIN GENERATE BUSTED SIG
+        // let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        // let busted_sig = MLDSA44::sign(&sk, msg, None).unwrap();
+        // // ^^ debug this with a breakpoint in aux_functions::sig_encode
+        // // ^^ and go muck with the z coeffs
+        // println!("{:?}", hex::encode(busted_sig.as_slice()));
+        // END GENERATE BUSTED SIG
+
+        match MLDSA44::verify(&pk, msg, None, busted_sig.as_slice().try_into().unwrap()) {
+            Err(SignatureError::SignatureVerificationFailed) => (),
+            _ => panic!("Expected verification to fail due to busted signature"),
+        }
+    }
+
+    /// Tests that no private data is displayed
+    #[test]
+    fn test_display() {
+        // Objects within the ML-DSA implementation that (could) contain private data,
+        // and therefore should be protected against accidental crash dumps:
+        //  * Polynomial -- this is pub(crate) so can't test it from here, see polynomial.rs::test_display()
+        //  * MLDSAPrivateKey -- see ml_dsa_key_tests.rs::test_display()
+        
+        // In addition, [u8] intermediate values within ml_dsa.rs::keygen_internal() 
+        // and ml_dsa.rs::sign_mu_deterministic_out() are zeroized after their last use.
+        
+        // So in fact, nothing to test here
+    }
+
+    #[test]
+    fn keypair_consistency_check() {
+        // this is common to all parameter sets, so I'll just test MLDSA44
+        let (pk, sk) = MLDSA44::keygen().unwrap();
+
+        // success case
+        MLDSA44::keypair_consistency_check(&pk, &sk).unwrap();
+
+        // failure case: different but valid key
+        let (pk2, sk2) = MLDSA44::keygen().unwrap();
+        match MLDSA44::keypair_consistency_check(&pk, &sk2) {
+            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ },
+            _ => panic!("Expected error for different key"),
+        };
+        match MLDSA44::keypair_consistency_check(&pk2, &sk) {
+            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ },
+            _ => panic!("Expected error for different key"),
+        };
+
+        // failure case: flip some bits
+        let mut pk_bytes = pk.encode();
+        pk_bytes[17] ^= 0x01;
+        let pk2 = MLDSA44PublicKey::from_bytes(&pk_bytes).unwrap();
+        match MLDSA44::keypair_consistency_check(&pk2, &sk) {
+            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ },
+            _ => panic!("Expected error for different key"),
+        };
+
+        let mut sk_bytes = sk.encode();
+        sk_bytes[17] ^= 0x01;
+        let sk2 = MLDSA44PrivateKey::from_bytes(&sk_bytes).unwrap();
+        match MLDSA44::keypair_consistency_check(&pk, &sk2) {
+            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ },
+            _ => panic!("Expected error for different key"),
+        };
+    }
+
+    #[test]
+    fn compute_mu() {
+        let msg = b"The quick brown fox jumped over the lazy dog";
+
+        let (pk, sk) = MLDSA44::keygen().unwrap();
+
+        let mu1 = MLDSA44::compute_mu_from_sk(msg, None, &sk).unwrap();
+        let mu2 = MLDSA44::compute_mu_from_pk(msg, None, &pk).unwrap();
+        let mu3 = MLDSA44::compute_mu_from_tr(msg, None, &pk.compute_tr()).unwrap();
+        assert_eq!(mu1, mu2);
+        assert_eq!(mu2, mu3);
+
+        let mu4 = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+        assert_eq!(mu1, mu4);
+
+        let mut mb = MuBuilder::do_init(&pk.compute_tr(), None).unwrap();
+        mb.do_update(msg);
+        let mu5 = mb.do_final();
+        assert_eq!(mu1, mu5);
+
+        let mut mb = MuBuilder::do_init(&pk.compute_tr(), None).unwrap();
+        mb.do_update(b"The quick brown fox ");
+        mb.do_update(b"jumped over the lazy dog");
+        let mu6 = mb.do_final();
+        assert_eq!(mu1, mu6);
+    }
+
+    #[test]
+    fn external_mu() {
+        let msg = b"The quick brown fox jumped over the lazy dog";
+
+        let (pk, sk) = MLDSA44::keygen().unwrap();
+
+        let mu = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+
+
+        let sig = MLDSA44::sign_mu(&sk, &mu).unwrap();
+        MLDSA44::verify(&pk, msg, None, &sig).unwrap();
+
+        let mut sig_buf = [1u8; MLDSA44_SIG_LEN];
+        MLDSA44::sign_mu_out(&sk, &mu, &mut sig_buf).unwrap();
+        MLDSA44::verify(&pk, msg, None, &sig_buf).unwrap();
+
+        let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+        MLDSA44::verify(&pk, msg, None, &sig).unwrap();
+
+        MLDSA44::sign_mu_deterministic_out(&sk, &mu, [1u8; 32], &mut sig_buf).unwrap();
+        MLDSA44::verify(&pk, msg, None, &sig_buf).unwrap();
     }
 }
 

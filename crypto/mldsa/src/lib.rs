@@ -1,23 +1,117 @@
-//! todo -- docs -- turn this back on:
-// #![forbid(missing_docs)]
+//!
+//! This crate implements the Module Lattice Digital Signature Algorithm (ML-DSA) as per FIPS 204.
+//!
+//! # Usage
+//!
+//! This crate has been designed to serve a wide range of use cases, from people dabbling in
+//! cryptography for the first time, to cryptographic protocol designers who need access to the advanced
+//! functionality of the ML-DSA algorithm, to embedded systems developers who want access to memory
+//! and performance optimized functions.
+//!
+//! This page gives examples of simple usage for generating keys and signatures, and verifying signatures.//!
+//!
+//! More examples on advanced usage can be found on the [MLDSA] and [HashMLDSA] pages.
+//!
+//! ## Generating Keys
+//!
+//! ```rust
+//! use bouncycastle_mldsa::MLDSA65;
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! ```
+//! That's it. That will use the library's default OS-backend RNG.
+//!
+//! Commonly with the ML-DSA algorithm, a 32-byte seed is used as the private key, and expanded into
+//! a full private key as needed. This is offered through the library's [KeyMaterial] object:
+//!
+//! ```rust
+//! use bouncycastle_core_interface::traits::KeyMaterial;
+//! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
+//!
+//! let seed = KeyMaterial256::from_bytes_as_type(
+//!     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
+//!     KeyType::Seed,
+//! ).unwrap();
+//!
+//! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
+//! ```
+//!
+//! See [MLDSA] and [MLDSA::sign_mu_deterministic_from_seed] for an API flow that uses a merged
+//! keygen-and-sign function to provide improved speed and memory performance compared with making
+//! separate calls to [MLDSA::keygen_from_seed] followed by [MLDSA::sign].
+//!
+//! ## Generating and Verifying Signatures
+//!
+//! ```rust
+//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
+//! use bouncycastle_core_interface::traits::Signature;
+//!
+//! let msg = b"The quick brown fox";
+//!
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//!
+//! let sig: Vec<u8> = MLDSA65::sign(&sk, msg, None).unwrap();
+//! // This is the signature value that you can save to a file or whatever you need.
+//!
+//! match MLDSA65::verify(&pk, msg, None, &sig) {
+//!     Ok(()) => println!("Signature is valid!"),
+//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
+//!     Err(e) => panic!("Something else went wrong: {:?}", e),
+//! }
+//!
+//! ```
+//! And that's the basic usage! There are lots more bells-and-whistles in the form of exposed algorithm
+//! parameters, streaming APIs and other goodies that you can find by poking around this documentation.
+//!
+//! # Security
+//! All functionality exposed by this crate is considered secure to use.
+//! In other words, this crate does not contain any "hazmat" except for the obvous points about
+//! handling your private keys properly: if you post your private key to github, or you generate
+//! production keys from a weak seed, I can't help you, that's on you.
+//!
+//! While the full formulation of the ML-DSA and HashML-DSA algorithms look complex with parameters
+//! like `seed`, `mu`, `ph`, `ctx`, and `rnd`, rest assured that use (or misuse) of these parameters
+//! do not really affect security of the algorithm; they just mean that you might produce a signature
+//! that nobody else can verify.
+//!
+//! A note about cryptographic side-channel attacks: considerable effort has been expended to attempt
+//! to make this implementation constant-time, which generally means that the core mathematical algorithm
+//! code that handles secret data uses bitshift-and-xor type constructions instead of if-and-loop
+//! constructions. That should give this implementation reasonably good resistance to timing and
+//! power analysis key extraction attacks, however: A) this is a "best-effort" and not formally verified,
+//! and B) the Rust compiler does not guarantee constant-time behaviour no matter how clever your code,
+//! so like all Safe Rust code (ie Rust code that does not include inline assembly), we are at the mercy
+//! of the Rust compiler's optimizer for whether our bitshift-and-xor code actually remains
+//! constant-time after compilation.
 
-#![allow(unused_variables)] // todo - remove
-#![allow(dead_code)] // todo - remove
-// #![allow(private_interfaces)] // todo debugging -- remove
+
+#![forbid(missing_docs)]
 
 #![forbid(unsafe_code)]
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
 #![feature(generic_const_exprs)]
 #![feature(int_roundings)]
 #![feature(inherent_associated_types)]
+#![feature(adt_const_params)]
+
 // These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',
 // or 'A' and 'a' are used and have specific meanings.
 // But need to tell the rust linter to not care.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 
+// so I can use private traits to hide internal stuff that needs to be generic within the
+// MLDSA implementation, but I don't want accessed from outside, such as FIPS-internal functions.
+#![allow(private_bounds)]
+
+// Used in HashMLDSA
+#![feature(unsized_const_params)]
+
 mod mldsa;
-mod hashmldsa;
+mod hash_mldsa;
 mod mldsa_keys;
 mod polynomial;
 mod aux_functions;
@@ -25,131 +119,28 @@ mod matrix;
 
 
 /*** Exported types ***/
-pub use mldsa::{MLDSA44, MLDSA65, MLDSA87};
-pub use mldsa_keys::{MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey};
-pub use mldsa_keys::{MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey};
+pub use mldsa::{MLDSATrait, MLDSA, MLDSA44, MLDSA65, MLDSA87};
+pub use hash_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA65_with_SHA256, HashMLDSA87_with_SHA256};
+pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
+pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
+pub use mldsa_keys::{MLDSAPublicKey, MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey};
+pub use mldsa_keys::{MLDSAPrivateKey, MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey};
 pub use mldsa::{MuBuilder};
 
-// todo
-// pub use hashmldsa::HashMLDSA;
-
 /*** Exported constants ***/
-pub const ML_DSA_44_NAME: &str = "ML-DSA-44";
-pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
-pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
+pub use mldsa::ML_DSA_44_NAME;
+pub use mldsa::ML_DSA_65_NAME;
+pub use mldsa::ML_DSA_87_NAME;
 
+pub use hash_mldsa::Hash_ML_DSA_44_with_SHA256_NAME;
+pub use hash_mldsa::Hash_ML_DSA_65_with_SHA256_NAME;
+pub use hash_mldsa::Hash_ML_DSA_87_with_SHA256_NAME;
+
+pub use hash_mldsa::Hash_ML_DSA_44_with_SHA512_NAME;
+pub use hash_mldsa::Hash_ML_DSA_65_with_SHA512_NAME;
+pub use hash_mldsa::Hash_ML_DSA_87_with_SHA512_NAME;
+
+pub use mldsa::{TR_LEN, RND_LEN, MU_LEN};
 pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN};
 pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN};
 pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN};
-
-/*** pub types ***/
-
-
-// TODO: I'm gonna need to duplicate all these types for HashML-DSA.
-// TODO: probably with an extra param <HASH: Hash> to the HashML_DSA struct definition.
-// TODO: Need to decide whether to also add this to public and private keys for no other reason than to
-// TODO:   make it hard to cross-use keys between ML-DSA and HashML-DSA.
-
-
-
-/*** Param traits ***/
-
-// todo -- delete
-// /// Private trait on purpose so that only the NIST-approved params can be used.
-// /// Values taken directly from FIPS 204 Table 1 and Table 2
-// #[allow(private_bounds)]
-// trait MLDSAParams {
-//     // from FIPS 204 Table 1
-//     // q, zeta, d defined as global constants since they do not vary by parameter set
-//     const TAU: i32;
-//     const GAMMA1: i32;
-//     const GAMMA2: i32;
-//     const k: usize;
-//     const l: usize;
-//     const ETA: i32;
-//     const BETA: i32; // tau * eta
-//     const OMEGA: i32;
-//
-//     // useful derived values
-//     const C_TILDE: usize;
-//     const POLY_VEC_H_PACKED_LEN: usize;
-//     const POLY_Z_PACKED_LEN: usize;
-//     const POLY_W1_PACKED_LEN: usize;
-//     const POLY_ETA_PACKED_LEN: usize;
-//     const GAMMA1_MASK_LEN: usize;
-//     const LAMBDA_over_4: usize;
-// }
-
-// pub struct MLDSA44Params;
-//
-// impl MLDSAParams for MLDSA44Params {
-//     const TAU: i32 = 39;
-//     const GAMMA1: i32 = 1 << 17;
-//     const GAMMA2: i32 = (q - 1) / 88;
-//     const k: usize = 4;
-//     const l: usize = 4;
-//     const ETA: i32 = 2;
-//     const BETA: i32 = 78;
-//     const OMEGA: i32 = 80;
-//
-//     // const ALG: MldsaAlg = MldsaAlg::MlDsa44;
-//     const C_TILDE: usize = 32;
-//     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
-//     const POLY_Z_PACKED_LEN: usize = 576;
-//     const POLY_W1_PACKED_LEN: usize = 192;
-//     const POLY_ETA_PACKED_LEN: usize = 96;
-//
-//     // Alg 32
-//     // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
-//     const GAMMA1_MASK_LEN: usize = 576;  // 32*(1 + bitlen (𝛾1 − 1) )
-//     const LAMBDA_over_4: usize = 128/4;
-//     // todo -- bc-java does it as compute: 576usize.div_ceil(symmetric.stream_256_block_bytes) -- which should be 5
-//     // todo -- might need to debug this against bc-java
-//     // todo -- debug this against bc-java; or look in other implementations. I feel like this should be 32*17=544 or 32*19=608
-//     // todo -- I'm not sure why they're adding an extra 32
-//     // todo -- corresponds to aux_functions::expand_mask()
-// }
-
-// pub struct MLDSA65Params;
-//
-// impl MLDSAParams for MLDSA65Params {
-//     const TAU: i32 = 49;
-//     const GAMMA1: i32 = 1 << 19;
-//     const GAMMA2: i32 = (q - 1) / 32;
-//     const k: usize = 6;
-//     const l: usize = 5;
-//     const ETA: i32 = 4;
-//     const BETA: i32 = 196;
-//     const OMEGA: i32 = 55;
-//
-//     const C_TILDE: usize = 48;
-//     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
-//     const POLY_Z_PACKED_LEN: usize = 640;
-//     const POLY_W1_PACKED_LEN: usize = 128;
-//     const POLY_ETA_PACKED_LEN: usize = 128;
-//     const GAMMA1_MASK_LEN: usize = 640; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
-//     const LAMBDA_over_4: usize = 192/4;
-// }
-
-// pub struct MLDSA87Params;
-//
-// impl MLDSAParams for MLDSA87Params {
-//     const TAU: i32 = 60;
-//     const GAMMA1: i32 = 1 << 19;
-//     const GAMMA2: i32 = (q - 1) / 32;
-//     const k: usize = 8;
-//     const l: usize = 7;
-//     const ETA: i32 = 2;
-//     const BETA: i32 = 120;
-//     const OMEGA: i32 = 75;
-//
-//     const C_TILDE: usize = 64;
-//     const POLY_VEC_H_PACKED_LEN: usize = 0; // todo -- compute
-//     const POLY_Z_PACKED_LEN: usize = 640;
-//     const POLY_W1_PACKED_LEN: usize = 128;
-//     const POLY_ETA_PACKED_LEN: usize = 96;
-//     const GAMMA1_MASK_LEN: usize = 640; // todo -- compute: 640usize.div_ceil(symmetric.stream_256_block_bytes)
-//     const LAMBDA_over_4: usize = 256/4;
-// }
-
-// todo -- impl bouncycastle_core_interface::traits::Algorithm with the security strengths from Table 1
