@@ -93,8 +93,8 @@
 #![forbid(unsafe_code)]
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
 #![feature(generic_const_exprs)]
-#![feature(int_roundings)]
-#![feature(inherent_associated_types)]
+// #![feature(int_roundings)]
+// #![feature(inherent_associated_types)]
 #![feature(adt_const_params)]
 
 // These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',

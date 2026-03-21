@@ -8,7 +8,6 @@ mod hash_mldsa_tests {
     use bouncycastle_hex as hex;
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Hash};
-    use bouncycastle_core_test_framework::DUMMY_SEED_1024;
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA256, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA256, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
     use bouncycastle_mldsa::{MLDSA44_SIG_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN};
