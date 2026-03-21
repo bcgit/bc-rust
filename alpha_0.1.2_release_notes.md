@@ -3,9 +3,10 @@
 
 [ ] Finish ML-DSA
 [ ] Ensure that all crates have `#![forbid(missing_docs)]`
-[ ] Apply Secret trait consistently across the library
+[ ] Apply Secret trait consistently across the library --> study the `Zeroize` trait in RustCrypto
 [ ] Change all "[u8;0]" to "[]" throughout the code and docs ... or better yet, change the APIs to take an Option<>
 [ ] Enhance the default HashDRBG instantiation to take in NIST-compatible CPU jitter entropy
+[ ] Get an opinion from Bob Beck or Dennis about the factories ... Are they worth it?
 [ ] Do a pass over KeyMaterial, taking into account Dennis Jackson's input (maybe ping him for a phone call?)
 [ ] Open github issues
 

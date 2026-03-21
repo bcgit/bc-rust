@@ -277,6 +277,23 @@ enum Subcommands {
     MLDSA44 {
         action: MLDSAAction,
 
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -293,6 +310,8 @@ pub(crate) enum MLDSAAction {
     /// Generate and output a new public key from a private key read from stdin.
     /// Accepts either binary or hex.
     PkFromSk,
+    /// Accepts a sk and pk, and checks that they match.
+    CheckConsistency,
     /// Sign a message read from stdin with a private key file and output the signature.
     /// Accepts private key as full or seed, binary or hex.
     Sign,
@@ -301,13 +320,15 @@ pub(crate) enum MLDSAAction {
     Verify,
 }
 
-pub(crate) fn print_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+    // first flush stdout to ensure any buffered data is written
+    io::stdout().flush().unwrap();
     if output_hex {
         for b in bytes.iter() {
             print!("{b:02x}");
         }
     } else {
-        io::stdout().write(bytes).unwrap();
+        io::stdout().write_all(bytes).unwrap();
     }
 }
 
@@ -334,7 +355,7 @@ fn main() {
         Some(Subcommands::HKDF_SHA256 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::HKDF_SHA512 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::RNG {  len, x}) => { rng_cmd::rng_cmd(*len, *x)},
-        Some(Subcommands::MLDSA44 { action, x }) => { mldsa_cmd::mldsa44_cmd(action, *x); }
+        Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
         None => { eprintln!("No command provided. See -h") },
     }
 }
