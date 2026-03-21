@@ -560,6 +560,9 @@ impl<const KEY_LEN: usize> KeyMaterial for KeyMaterialSized<KEY_LEN> {
         Ok(())
     }
 
+    //
+    // Q. T. Felix - start
+    //
     fn concatenate(&mut self, other: &dyn KeyMaterial) -> Result<usize, KeyMaterialError> {
         let new_key_len = self.key_len() + other.key_len();
         if self.key_len() + other.key_len() > KEY_LEN {
@@ -567,10 +570,17 @@ impl<const KEY_LEN: usize> KeyMaterial for KeyMaterialSized<KEY_LEN> {
         }
         self.buf[self.key_len..new_key_len].copy_from_slice(other.ref_to_bytes());
         self.key_len += other.key_len();
-        self.key_type = max(&self.key_type, &other.key_type()).clone();
-        self.security_strength = max(&self.security_strength, &other.security_strength()).clone();
+        // Q. T. Felix NOTE: concatenate 트레이트 Docstring에는 고품질 키와 저품질 키를 섞으면
+        //                   보안성이 낮은 쪽(Low Entropy)으로 하향 평준화되어야 한다고 명시되어 있음
+        //                   하지만 아래 실제 구현에는 bouncycastle_utils::max 함수로 Docstring 내용과
+        //                   정확하게 반대됨.
+        self.key_type = min(&self.key_type, &other.key_type()).clone();
+        self.security_strength = min(&self.security_strength, &other.security_strength()).clone();
         Ok(self.key_len())
     }
+    //
+    // Q. T. Felix - end
+    //
 
     fn equals(&self, other: &dyn KeyMaterial) -> bool {
         if self.key_len() != other.key_len() {
