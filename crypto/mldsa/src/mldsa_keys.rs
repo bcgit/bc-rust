@@ -8,12 +8,20 @@ use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use crate::mldsa::{MLDSA44_ETA, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_k, MLDSA44_l};
 use crate::mldsa::{MLDSA65_ETA, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_k, MLDSA65_l};
 use crate::mldsa::{MLDSA87_ETA, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_k, MLDSA87_l};
+use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, SEED_LEN};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::KeyMaterialSized;
 use bouncycastle_core_interface::traits::{Secret, SignaturePrivateKey, SignaturePublicKey, XOF};
 use std::fmt;
 use std::fmt::{Display, Formatter};
+
+// imports just for docs
+use crate::mldsa::MLDSATrait;
+
+
+
+/* Pub Types */
 
 /// ML-DSA-44 Public Key
 pub type MLDSA44PublicKey = MLDSAPublicKey<MLDSA44_k, MLDSA44_PK_LEN>;
@@ -234,7 +242,7 @@ pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize,
     /// 𝐬1 ∈ 𝑅ℓ , 𝐬2 ∈ 𝑅𝑘 , 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
     ///
     /// Note: this object contains only the simple decoding routine to unpack a semi-expanded key.
-    /// See [MLDSA] for key generation functions, including derive-from-seed and consistency-check functions.
+    /// See [MLDSATrait] for key generation functions, including derive-from-seed and consistency-check functions.
     fn sk_decode(sk: &[u8; SK_LEN]) -> Self;
 }
 

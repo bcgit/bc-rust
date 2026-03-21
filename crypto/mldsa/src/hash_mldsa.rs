@@ -91,6 +91,9 @@ use bouncycastle_core_interface::traits::{Hash, PHSignature, RNG, Signature, XOF
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::{SHA256, SHA512};
 
+// Imports needed only for docs
+use crate::mldsa::MuBuilder;
+
 const SHA256_OID: &[u8] = &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
 const SHA512_OID: &[u8] = &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03];
 
@@ -459,7 +462,7 @@ impl<
     /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
     /// the responsibility is on you to ensure that your nonce `rnd` is unique per signature.
     /// If not, you may lose some privacy properties; for example it becomes easy to tell if a signer
-    /// has signed the same message twice or two different messagase, or to tell if the same message
+    /// has signed the same message twice or two different messages, or to tell if the same message
     /// has been signed by the same signer twice or two different signers.
     ///
     /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
@@ -547,8 +550,9 @@ impl<
         Ok(bytes_written)
     }
 
-    /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
-    /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
+    /// To be used for deterministic signing in conjunction with the [Signature::sign_init],
+    /// [Signature::sign_update], and [Signature::sign_final] flow.
+    /// Can be set anywhere after [Signature::sign_init] and before [Signature::sign_final]
     pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
         self.signer_rnd = Some(rnd);
     }
@@ -845,7 +849,10 @@ impl<
         Ok(out)
     }
 
-    /// Note that the PH expected here *is not the same* as the `mu` computed by [MLDSA::compute_mu] ... blah blah explain.
+    /// Note that the PH expected here *is not the same* as the `mu` computed by [MuBuilder].
+    /// To make use of this function, you need to compute a straight hash of the message using
+    /// the same hash function as the indicated in the HashML-DSA variant; for example SHA256 for
+    /// HashMDSA44_with_SHA256, SHA512 for HashMLDSA65_with_SHA512, etc.
     fn sign_ph_out(
         sk: &SK,
         ph: &[u8; PH_LEN],
