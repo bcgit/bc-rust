@@ -92,6 +92,7 @@ use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::{SHA256, SHA512};
 
 // Imports needed only for docs
+#[allow(unused_imports)]
 use crate::mldsa::MuBuilder;
 
 const SHA256_OID: &[u8] = &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];

@@ -325,7 +325,9 @@ use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 
 // imports needed just for docs
+#[allow(unused_imports)]
 use bouncycastle_core_interface::traits::PHSignature;
+#[allow(unused_imports)] 
 use crate::hash_mldsa;
 
 /*** Constants ***/

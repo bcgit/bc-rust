@@ -111,6 +111,7 @@
 #![feature(unsized_const_params)]
 
 // imports needed just for docs
+#[allow(unused_imports)]
 use bouncycastle_core_interface::traits::{KeyMaterial, Signature, PHSignature};
 
 pub mod mldsa; // todo -- pub just to get the docs. Is that right? Or should I suck the docs up here?

@@ -8,7 +8,6 @@ use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use crate::mldsa::{MLDSA44_ETA, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_k, MLDSA44_l};
 use crate::mldsa::{MLDSA65_ETA, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_k, MLDSA65_l};
 use crate::mldsa::{MLDSA87_ETA, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_k, MLDSA87_l};
-use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, SEED_LEN};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::KeyMaterialSized;
@@ -17,6 +16,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 
 // imports just for docs
+#[allow(unused_imports)]
 use crate::mldsa::MLDSATrait;
 
 
