@@ -21,6 +21,31 @@ Benchmark data is available here: https://bcgit.github.io/bc-rust/benches/report
 
 A basic script that reports lines-of-code and some basic code quality metrics is available here: https://bcgit.github.io/bc-rust/code_stats.txt
 
+## Portability, Performance, and Memory-Safety
+
+This project does not attempt to be the fastest or the most constant-time.
+There exist excellent cryptographic libraries that include hand-optimized assembly that will always beat Bouncy Castle Rust
+on performance benchmarks, as well as having a smaller memory and code-size footprint.
+Many of these libraries also use formal methods to prove the constant-time and memory-safety security properties of their code.
+
+Bouncy Castle Rust aims to take a different approach: this is a pure-Rust implementation that strictly forbids unsafe rust code by placing:
+
+```rust
+#![forbid(unsafe_code)]
+```
+at the top of every sub-crate.
+We also avoid (except where absolutely necessary) third-party depencendencies which could themselves introduce unsafe code.
+
+This gives maximum portability because our code will compile on any platform supported by the Rust compiler.
+It also means that our code automatically inherits all the memory and type safety guarantees of Rust.
+However, it unfortunately means that we cannot guarantee constant-time since the Rust compiler itself does not guarantee constant-time.
+We do a best-effort to write constant-time code; for example our Hex and Base64 implementations are both based on the constant-time implementation recommended in (Sieck, 2021)](https://arxiv.org/pdf/2108.04600.pdf),
+and our cryptographic primitives use bitshift-and-XOR constructions instead of loop-and-if constructions but we cannot fully
+guarantee that the Rust compiler does not make optimizations that break the constant-time properties.
+This means that Bouncy Castle Rust should be constant-time enough for most applications, however, if your threat model includes
+resisting attacks by bad guys with soldering irons, oscilloscopes and electron microscopes, then this might not be the cryptographic library for you
+and if you get in touch with us, we would be happy to recommend an alternative project that uses formally-verified assembly more suited to your needs.
+
 ## Roadmap
 
 This alpha release includes the following cryptographic primitives:

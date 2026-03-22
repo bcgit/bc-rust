@@ -229,6 +229,8 @@ impl KeccakDigest {
             panic!("attempt to absorb with odd length queue");
         }
         if self.squeezing {
+            // Maybe this should be an error rather than a panic?
+            // But, like, don't write your code to absorb after squeezing.
             panic!("attempt to absorb while squeezing");
         }
 
@@ -342,7 +344,7 @@ impl KeccakDigest {
 #[cfg(test)]
 mod keccak_tests {
     use super::*;
-    use hex;
+    use bouncycastle_hex as hex;
 
     #[test]
     fn test_keccak() {

@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod sha3_tests {
     use super::sha3_test_helpers::*;
-    use core_interface::key_material::{
-        KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType,
+    use bouncycastle_core_interface::key_material::{
+        KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType,
     };
-    use core_interface::traits::{Hash, HashAlgParams, KDF, KeyMaterial, SecurityStrength};
-    use core_test_framework::DUMMY_SEED_512;
-    use core_test_framework::hash::TestFrameworkHash;
-    use core_test_framework::kdf::TestFrameworkKDF;
-    use sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+    use bouncycastle_core_interface::traits::{Hash, HashAlgParams, KDF, KeyMaterial, SecurityStrength};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_core_test_framework::hash::TestFrameworkHash;
+    use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+    use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 
     #[test]
     fn test_constants() {
@@ -216,14 +216,14 @@ mod sha3_tests {
         let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED_512[..32]).unwrap();
 
         // at size
-        let mut derived_key = KeyMaterialInternal::<32>::new();
+        let mut derived_key = KeyMaterialSized::<32>::new();
         SHA3_256::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
         assert_eq!(derived_key.key_len(), 32);
         let expected_key = KeyMaterial256::from_bytes(b"\x05\x0a\x48\x73\x3b\xd5\xc2\x75\x6b\xa9\x5c\x58\x28\xcc\x83\xee\x16\xfa\xbc\xd3\xc0\x86\x88\x5b\x77\x44\xf8\x4a\x0f\x9e\x0d\x94").unwrap();
         assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
         // undersized -- should truncate
-        let mut derived_key = KeyMaterialInternal::<16>::new();
+        let mut derived_key = KeyMaterialSized::<16>::new();
         SHA3_256::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
         assert_eq!(derived_key.key_len(), 16);
         let expected_key = KeyMaterial256::from_bytes(
@@ -233,7 +233,7 @@ mod sha3_tests {
         assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
         // oversized -- SHA3 is a fixed-length KDF, so it should leave the back of the buffer as 0's
-        let mut derived_key = KeyMaterialInternal::<200>::new();
+        let mut derived_key = KeyMaterialSized::<200>::new();
         SHA3_256::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
         assert_eq!(derived_key.key_len(), 32);
         let expected_key = KeyMaterial256::from_bytes(b"\x05\x0a\x48\x73\x3b\xd5\xc2\x75\x6b\xa9\x5c\x58\x28\xcc\x83\xee\x16\xfa\xbc\xd3\xc0\x86\x88\x5b\x77\x44\xf8\x4a\x0f\x9e\x0d\x94").unwrap();
@@ -425,7 +425,7 @@ mod sha3_tests {
 /** Constant helpers **/
 
 pub(crate) mod sha3_test_helpers {
-    use hex;
+    use bouncycastle_hex as hex;
     use std::fs;
 
     const SAMPLE_OF: &str = " sample of ";

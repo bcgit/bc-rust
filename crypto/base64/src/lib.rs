@@ -5,6 +5,8 @@
 //! and returns a `Vec<u8>`.
 //!
 //!```
+//! use bouncycastle_base64 as base64;
+//!
 //! let out = base64::encode(b"\x00"); // "AA=="
 //! let out = base64::encode(b"Hello, World!"); // "SGVsbG8sIFdvcmxkIQ=="
 //! let out = base64::encode(b"\x00\x01\x02\x03\x04\x05\x06"); // "AAECAwQFBg=="
@@ -36,6 +38,8 @@
 //! partial block until either `do_update` or `do_final` is called.
 //!
 //! ```
+//! use bouncycastle_base64 as base64;
+//!
 //! let mut b64_str: String = String::new();
 //! let mut encoder = base64::Base64Encoder::new();
 //! b64_str.push_str( encoder.do_update(b"Hello,").as_str() );

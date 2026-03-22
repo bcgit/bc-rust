@@ -15,6 +15,7 @@ bouncycastle-factory = { path = "./crypto/factory", version = "0.1.1"}
 bouncycastle-hex = { path = "./crypto/hex", version = "0.1.1" }
 bouncycastle-hkdf = { path = "./crypto/hkdf", version = "0.1.1"}
 bouncycastle-hmac = { path = "./crypto/hmac", version = "0.1.1"}
+bouncycastle-mldsa = { path = "./crypto/mldsa", version = "0.1.2" }
 bouncycastle-rng = { path = "./crypto/rng", version = "0.1.1" }
 bouncycastle-sha2 = { path = "./crypto/sha2", version = "0.1.1"}
 bouncycastle-sha3 = { path = "./crypto/sha3", version = "0.1.1"}
@@ -42,6 +43,7 @@ bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
+bouncycastle-mldsa.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true

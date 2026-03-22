@@ -1,9 +1,9 @@
 use std::hint::black_box;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use rng;
-use core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
-use core_interface::traits::{KeyMaterial, RNG};
-use hkdf::{HKDF_SHA256, HKDF_SHA512};
+use bouncycastle_rng as rng;
+use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType};
+use bouncycastle_core_interface::traits::{KeyMaterial, RNG};
+use bouncycastle_hkdf::{HKDF_SHA256, HKDF_SHA512};
 
 fn bench_hkdf_sha256(c: &mut Criterion) {
     let mut data_block = [0_u8; 1024];
@@ -59,7 +59,7 @@ fn bench_hkdf_sha256(c: &mut Criterion) {
     let mut group = c.benchmark_group("HKDF_SHA256::expand_out max output size (255*HashLen)");
     group.throughput(Throughput::Bytes(255*32u64));
     group.bench_function(format!("{} bytes of output key material", 255*32u64), |b| {
-        let mut output_key = KeyMaterialInternal::<8160>::new();
+        let mut output_key = KeyMaterialSized::<8160>::new();
         b.iter(|| {
             HKDF_SHA256::extract_and_expand_out(&key, &key, &data_block, 255*32, &mut output_key).unwrap();
             black_box(&output_key);
@@ -122,7 +122,7 @@ fn bench_hkdf_sha512(c: &mut Criterion) {
     let mut group = c.benchmark_group("HKDF_SHA512::expand_out max output size (255*HashLen)");
     group.throughput(Throughput::Bytes(255*64u64));
     group.bench_function(format!("{} bytes of output key material", 255*64u64), |b| {
-        let mut output_key = KeyMaterialInternal::<16320>::new();
+        let mut output_key = KeyMaterialSized::<16320>::new();
         b.iter(|| {
             HKDF_SHA512::extract_and_expand_out(&key, &key, &data_block, 255*64, &mut output_key).unwrap();
             black_box(&output_key);

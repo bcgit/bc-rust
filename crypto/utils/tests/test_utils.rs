@@ -1,5 +1,5 @@
-use core_interface::key_material::KeyType;
-use utils::{max, min};
+use bouncycastle_core_interface::key_material::KeyType;
+use bouncycastle_utils::{max, min};
 
 #[test]
 fn test_max_min() {

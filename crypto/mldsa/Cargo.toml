@@ -1,0 +1,22 @@
+[package]
+name = "bouncycastle-mldsa"
+version = "0.1.2"
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core-interface.workspace = true
+bouncycastle-sha2.workspace = true
+bouncycastle-sha3.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-utils.workspace = true
+hex = "0.4.3"
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "mldsa_benches"
+harness = false

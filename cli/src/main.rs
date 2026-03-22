@@ -4,8 +4,11 @@ mod sha2_cmd;
 mod mac_cmd;
 mod hkdf_cmd;
 mod rng_cmd;
+mod mldsa_cmd;
 
-use clap::{Parser, Subcommand};
+use std::io;
+use std::io::Write;
+use clap::{Parser, Subcommand, ValueEnum};
 use crate::mac_cmd::HMACVariant;
 
 #[derive(Parser)]
@@ -269,6 +272,194 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// The ML-DSA-44 signature algorithm.
+    MLDSA44 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-DSA-65 signature algorithm.
+    MLDSA65 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-DSA-87 signature algorithm.
+    MLDSA87 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The HashML-DSA-44 signature algorithm.
+    HashMLDSA44 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The HashML-DSA-65 signature algorithm.
+    HashMLDSA65 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The HashML-DSA87 signature algorithm.
+    HashMLDSA87 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum MLDSAAction {
+    /// Generate and output a new private key
+    Keygen,
+    /// Generate and output a private key from a seed read from stdin.
+    /// Accepts either binary or hex.
+    KeygenFromSeed,
+    /// Generate and output a new public key from a private key read from stdin.
+    /// Accepts either binary or hex.
+    PkFromSk,
+    /// Accepts a sk and pk, and checks that they match.
+    CheckConsistency,
+    /// Sign a message read from stdin with a private key file and output the signature.
+    /// Accepts private key as full or seed, binary or hex.
+    Sign,
+    /// Verify a message read from stdin with a public key file and a signature file
+    /// Accepts the public key and signature as binary or hex.
+    Verify,
+}
+
+pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
+    // first flush stdout to ensure any buffered data is written
+    io::stdout().flush().unwrap();
+    if output_hex {
+        for b in bytes.iter() {
+            print!("{b:02x}");
+        }
+    } else {
+        io::stdout().write_all(bytes).unwrap();
+    }
 }
 
 fn main() {
@@ -294,6 +485,12 @@ fn main() {
         Some(Subcommands::HKDF_SHA256 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::HKDF_SHA512 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::RNG {  len, x}) => { rng_cmd::rng_cmd(*len, *x)},
+        Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
+        Some(Subcommands::MLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa65_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
+        Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
+        Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
+        Some(Subcommands::HashMLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::hash_mldsa65_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
+        Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
         None => { eprintln!("No command provided. See -h") },
     }
 }

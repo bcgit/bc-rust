@@ -48,11 +48,11 @@ fn do_shake(mut shake: impl XOF, output_len: usize, output_hex: bool) {
     // read from stdin
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     while bytes_read != 0 {
-        shake.absorb(&buf[..bytes_read]).unwrap();
+        shake.absorb(&buf[..bytes_read]);
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
-    let out = shake.squeeze(output_len).unwrap();
+    let out = shake.squeeze(output_len);
     if output_hex {
         for b in out.iter() {
             print!("{b:02x}");

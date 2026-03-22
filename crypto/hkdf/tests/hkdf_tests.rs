@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod hkdf_tests {
-    use core_interface::errors::{KDFError, KeyMaterialError, MACError};
-    use core_interface::key_material::{KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialInternal, KeyType};
-    use core_interface::traits::{HashAlgParams, KeyMaterial, SecurityStrength, KDF};
-    use core_test_framework::DUMMY_SEED_512;
-    use core_test_framework::kdf::TestFrameworkKDF;
-    use hex;
-    use hkdf::{HKDF, HKDF_SHA256, HKDF_SHA512};
-    use sha2::{SHA256};
-    use utils::ct;
+    use bouncycastle_core_interface::errors::{KDFError, KeyMaterialError, MACError};
+    use bouncycastle_core_interface::key_material::{KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType};
+    use bouncycastle_core_interface::traits::{HashAlgParams, KeyMaterial, SecurityStrength, KDF};
+    use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+    use bouncycastle_hex as hex;
+    use bouncycastle_hkdf::{HKDF, HKDF_SHA256, HKDF_SHA512};
+    use bouncycastle_sha2::{SHA256};
+    use bouncycastle_utils::ct;
 
     #[test]
     fn test_streaming_apis() {
@@ -357,18 +357,18 @@ mod hkdf_tests {
         // output limit is 255 * hash_len, which for sha256 is 225*32 = 8160 bytes.
 
         // success case: large but not over-limit
-        let mut mega_huge_key = KeyMaterialInternal::<8100>::new();
+        let mut mega_huge_key = KeyMaterialSized::<8100>::new();
         assert!(mega_huge_key.capacity() < 255 * hash_len);
         _ = HKDF_SHA256::extract_and_expand_out(&KeyMaterial0::new(), &KeyMaterial0::new(), &[], 8100, &mut mega_huge_key).unwrap();
 
         // test exactly the capacity
-        let mut mega_huge_key = KeyMaterialInternal::<8160>::new();
+        let mut mega_huge_key = KeyMaterialSized::<8160>::new();
         assert_eq!(mega_huge_key.capacity(), 255 * hash_len);
         _ = HKDF_SHA256::extract_and_expand_out(&KeyMaterial0::new(), &KeyMaterial0::new(), &[], 8160, &mut mega_huge_key).unwrap();
 
 
         // failure case
-        let mut mega_huge_key = KeyMaterialInternal::<8192>::new();
+        let mut mega_huge_key = KeyMaterialSized::<8192>::new();
         assert!(mega_huge_key.capacity() > 255 * hash_len);
         match HKDF_SHA256::extract_and_expand_out(&KeyMaterial0::new(), &KeyMaterial0::new(), &[], 8192, &mut mega_huge_key) {
             Ok(_) => { panic!("Should have thrown a KeyMaterialError"); },
@@ -415,7 +415,7 @@ mod hkdf_tests {
     fn rfc5896_sha256(ikm: &str, salt: &str, info: &str, prk: &str, L: usize, okm: &str) {
         /*** First with the one-shot APIs ::extract() and ::expand_out(). ***/
 
-        let mut ikm_key = KeyMaterialInternal::<100>::new();
+        let mut ikm_key = KeyMaterialSized::<100>::new();
         ikm_key.allow_hazardous_operations();
         let r = ikm_key.set_bytes_as_type(&hex::decode(ikm).unwrap(), KeyType::BytesFullEntropy); // just for testing, ignore the error about zeroized keys
         if r.is_err() {
@@ -423,7 +423,7 @@ mod hkdf_tests {
             ikm_key.set_key_type(KeyType::MACKey).unwrap();
         }
 
-        let mut salt_key = KeyMaterialInternal::<100>::new();
+        let mut salt_key = KeyMaterialSized::<100>::new();
         salt_key.allow_hazardous_operations();
         let r = salt_key.set_bytes_as_type(&hex::decode(salt).unwrap(), KeyType::MACKey); // just for testing, ignore the error about zeroized keys
         if r.is_err() {
@@ -441,7 +441,7 @@ mod hkdf_tests {
         prk_key.allow_hazardous_operations();
         prk_key.set_key_type(KeyType::MACKey).unwrap();
 
-        let mut okm_key = KeyMaterialInternal::<100>::new();
+        let mut okm_key = KeyMaterialSized::<100>::new();
         _ = HKDF_SHA256::expand_out(&prk_key, &info, L, &mut okm_key).unwrap();
         okm_key.truncate(L).unwrap();
         assert_eq!(okm_key.ref_to_bytes().len(), L);
@@ -568,13 +568,13 @@ mod hkdf_tests {
         **/
 
         // SP800-56Cr2 tcId 1
-        let mut salt = KeyMaterialInternal::<128>::new(); // have to do it this way for it to accept a zeroized key
+        let mut salt = KeyMaterialSized::<128>::new(); // have to do it this way for it to accept a zeroized key
         salt.allow_hazardous_operations();
         salt.set_bytes_as_type(&hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), KeyType::MACKey).unwrap();
 
         // ikm = z||t
         // let ikm = KeyMaterial_internal::<128>::from_bytes_as_type(&hex::decode("589410408990A227518017C37997BE2F770AF54063E7393B2AA5463196136D18F365733139EB74CDD6B7268F41D33DB6").unwrap(), KeyType::MACKey).unwrap();
-        let ikm = KeyMaterialInternal::<128>::from_bytes_as_type(&hex::decode("25C807590CF01685757BCBF7CFB806DDB9F1EB0AB810BEDF969779C81A1E806DCEAAE3B3AE31021F97D83A4901BB2FD02594A607558205097BB58B0E0FAE5DB0C4CCB2FF882B7160F8408CBE193A9421A6897778CE453A81A96CDE2092FB602396").unwrap(), KeyType::MACKey).unwrap();
+        let ikm = KeyMaterialSized::<128>::from_bytes_as_type(&hex::decode("25C807590CF01685757BCBF7CFB806DDB9F1EB0AB810BEDF969779C81A1E806DCEAAE3B3AE31021F97D83A4901BB2FD02594A607558205097BB58B0E0FAE5DB0C4CCB2FF882B7160F8408CBE193A9421A6897778CE453A81A96CDE2092FB602396").unwrap(), KeyType::MACKey).unwrap();
 
         // info = uPartyInfo||vPartyInfo||i32(l)
         let mut additional_input: Vec<u8> = Vec::<u8>::new();
@@ -582,11 +582,11 @@ mod hkdf_tests {
         /*fixedInfoPartyV*/additional_input.append(&mut hex::decode("03EEF6BD71BCE550BBA98D7C0080B582").unwrap());
         /*L*/additional_input.append(&mut hex::decode("00000400").unwrap());
 
-        let mut expected_key = KeyMaterialInternal::<128>::from_bytes_as_type(&hex::decode("1f6f7381c72f1d46d83e819bedeb482944adb0e3352cf2718e4bd334d95699e7256d01a48f35016f807bc1b739d41f5d53e442c67f6b455776d50d8667d62b3f3b632c5a88c371f7229a4c88beea1f28752a95fb2c533af28e6bfb19e69d750bbadc6609b2715dac19de9d9a6cfe3472a5e5312eabfd9bdbfa222cc7046ce3f7").unwrap(), KeyType::MACKey).unwrap();
+        let mut expected_key = KeyMaterialSized::<128>::from_bytes_as_type(&hex::decode("1f6f7381c72f1d46d83e819bedeb482944adb0e3352cf2718e4bd334d95699e7256d01a48f35016f807bc1b739d41f5d53e442c67f6b455776d50d8667d62b3f3b632c5a88c371f7229a4c88beea1f28752a95fb2c533af28e6bfb19e69d750bbadc6609b2715dac19de9d9a6cfe3472a5e5312eabfd9bdbfa222cc7046ce3f7").unwrap(), KeyType::MACKey).unwrap();
 
 
         // do it manually just to check that we have the test vector right.
-        let mut output_key = KeyMaterialInternal::<128>::new();
+        let mut output_key = KeyMaterialSized::<128>::new();
         let bytes_written = HKDF::<SHA256>::extract_and_expand_out(&salt, &ikm, additional_input.as_slice(), 128, &mut output_key).unwrap();
         assert_eq!(bytes_written, 128);
         assert_eq!(output_key.ref_to_bytes(), expected_key.ref_to_bytes());

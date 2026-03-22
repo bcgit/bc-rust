@@ -1,4 +1,4 @@
-use core_interface::traits::{Hash, HashAlgParams};
+use bouncycastle_core_interface::traits::{Hash, HashAlgParams};
 
 pub struct TestFrameworkHash {
     pub enable_partial_final_input_tests: bool,
