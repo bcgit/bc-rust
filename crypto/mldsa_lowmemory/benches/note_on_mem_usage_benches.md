@@ -1,0 +1,1 @@
+Note that a test framework is located in the `\<root\>/src/bench_mldsa_mem_usage.rs` so that it can be built as a standalone binary and have its memory usage measured with /usr/bin/time without also measuring any of the cargo bench framework.

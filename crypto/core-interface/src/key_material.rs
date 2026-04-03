@@ -38,7 +38,7 @@
 //! It as always possible, for example, to extract the bytes from a KeyMaterial object, manipulate them, and then re-wrap them in a new KeyMaterial object.
 
 use crate::errors::KeyMaterialError;
-use crate::traits::{RNG, SecurityStrength};
+use crate::traits::{RNG, SecurityStrength, Secret};
 use bouncycastle_utils::{ct, max, min};
 
 use std::cmp::{Ordering, PartialOrd};
@@ -181,6 +181,8 @@ pub struct KeyMaterialSized<const KEY_LEN: usize> {
     security_strength: SecurityStrength,
     allow_hazardous_operations: bool,
 }
+
+impl<const KEY_LEN: usize> Secret for KeyMaterialSized<KEY_LEN> {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyType {

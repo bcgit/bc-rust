@@ -31,13 +31,13 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
             // split out the 0 case to skip a no-op add_ntt()
             w.vec[i].0.copy_from_slice(&polynomial::multiply_ntt(&self.matrix[i][0], &v.vec[0]).0);
 
-            let mut t: Polynomial;
+            let mut w1: Polynomial;
             for j in 1 .. l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
-                t = polynomial::multiply_ntt(&self.matrix[i][j], &v.vec[j]);
-                w.vec[i].add_ntt(&t);
+                w1 = polynomial::multiply_ntt(&self.matrix[i][j], &v.vec[j]);
+                w.vec[i].add_ntt(&w1);
             }
         }
 

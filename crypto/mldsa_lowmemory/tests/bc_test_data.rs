@@ -8,16 +8,14 @@ use bouncycastle_sha3::SHAKE256;
 
 #[cfg(test)]
 mod bc_test_data {
-    #![allow(dead_code)]
-
-    use std::{fs};
+    use crate::BustedMuBuilder;
     use bouncycastle_core_interface::errors::SignatureError;
-    use bouncycastle_hex as hex;
     use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Hash, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey};
-    use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
+    use bouncycastle_hex as hex;
+    use bouncycastle_mldsa_lowmemory::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
     use bouncycastle_sha2::SHA512;
-    use crate::BustedMuBuilder;
+    use std::fs;
 
     const TEST_DATA_PATH: &str = "../../../bc-test-data/pqc/crypto/mldsa";
 
@@ -514,7 +512,7 @@ mod bc_test_data {
                         // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
                         // so need to manually compute mu
                         let mu = MLDSA65::compute_mu_from_tr(
-                            sk.tr(),
+                            &sk.tr(),
                             &hex::decode(&self.msg).unwrap(),
                             Some(&hex::decode(&self.context).unwrap()),
                         ).unwrap();
@@ -556,7 +554,7 @@ mod bc_test_data {
                         // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
                         // so need to manually compute mu
                         let mu = MLDSA65::compute_mu_from_tr(
-                            sk.tr(),
+                            &sk.tr(),
                             &hex::decode(&self.msg).unwrap(),
                             Some(&hex::decode(&self.context).unwrap()),
                         ).unwrap();
@@ -599,7 +597,7 @@ mod bc_test_data {
                         // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
                         // so need to manually compute mu
                         let mu = MLDSA65::compute_mu_from_tr(
-                            sk.tr(),
+                            &sk.tr(),
                             &hex::decode(&self.msg).unwrap(),
                             Some(&hex::decode(&self.context).unwrap()),
                         ).unwrap();
