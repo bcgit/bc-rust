@@ -309,16 +309,14 @@
 //! is still larger).
 //! Contact us if you need such a thing implemented.
 
-use std::marker::PhantomData;
-use crate::aux_functions::{expand_mask, expandA, expandS, make_hint_vecs, ntt, power_2_round_vec, sample_in_ball, sig_encode, sig_decode, use_hint_vecs};
-use crate::matrix::Vector;
+use core::marker::PhantomData;
+use crate::aux_functions::{sample_in_ball, bitpack_gamma1, bitlen_eta, unpack_h_row, unpack_c_tilde};
+use crate::low_memory_helpers::{compute_ct0_component, compute_w0cs2_component, compute_w_row, compute_wp_approx_row, compute_z_component, s_unpack};
 use crate::mldsa_keys::{MLDSAPublicKeyTrait, MLDSAPublicKeyInternalTrait};
 use crate::mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPrivateKeyInternalTrait};
 use crate::{MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA87PublicKey, MLDSA87PrivateKey};
 use bouncycastle_core_interface::errors::SignatureError;
-use bouncycastle_core_interface::key_material::{
-    KeyMaterial, KeyMaterial256, KeyMaterialSized, KeyType,
-};
+use bouncycastle_core_interface::key_material::{KeyMaterialSized};
 use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature, Algorithm};
 use bouncycastle_rng::{HashDRBG_SHA512};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
@@ -329,7 +327,8 @@ use bouncycastle_sha3::{SHAKE128, SHAKE256};
 use bouncycastle_core_interface::traits::PHSignature;
 #[allow(unused_imports)]
 use crate::hash_mldsa;
-
+#[allow(unused_imports)]
+use bouncycastle_core_interface::key_material::KeyMaterial256;
 /*** Constants ***/
 
 ///
@@ -346,24 +345,21 @@ pub(crate) const N: usize = 256;
 pub(crate) const q: i32 = 8380417;
 pub(crate) const q_inv: i32 = 58728449; // q ^ (-1) mod 2 ^32
 pub(crate) const d: i32 = 13;
-/// Length of the \[u8] holding an ML-DSA seed value.
-pub const SEED_LEN: usize = 32;
-/// Length of the \[u8] holding an ML-DSA signing random value.
+/// Length of the \[u8] holding a ML-DSA signing random value.
 pub const RND_LEN: usize = 32;
-/// Length of the \[u8] holding an ML-DSA tr value (which is the SHAKE256 hash of the public key).
+/// Length of the \[u8] holding a ML-DSA tr value (which is the SHAKE256 hash of the public key).
 pub const TR_LEN: usize = 64;
-/// Length of the \[u8] holding an ML-DSA mu value.
+/// Length of the \[u8] holding a ML-DSA mu value.
 pub const MU_LEN: usize = 64;
 pub(crate) const POLY_T1PACKED_LEN: usize = 320;
-pub(crate) const POLY_T0PACKED_LEN: usize = 416;
 
 
 /* ML-DSA-44 params */
 
 /// Length of the \[u8] holding a ML-DSA-44 public key.
 pub const MLDSA44_PK_LEN: usize = 1312;
-/// Length of the \[u8] holding a ML-DSA-44 private key.
-pub const MLDSA44_SK_LEN: usize = 2560;
+/// Length of the \[u8] holding a ML-DSA-44 private key, which in this implementation is just a 32-byte seed.
+pub const MLDSA44_SK_LEN: usize = 32;
 /// Length of the \[u8] holding a ML-DSA-44 signature value.
 pub const MLDSA44_SIG_LEN: usize = 2420;
 pub(crate) const MLDSA44_TAU: i32 = 39;
@@ -380,7 +376,9 @@ pub(crate) const MLDSA44_OMEGA: i32 = 80;
 pub(crate) const MLDSA44_C_TILDE: usize = 32;
 pub(crate) const MLDSA44_POLY_Z_PACKED_LEN: usize = 576;
 pub(crate) const MLDSA44_POLY_W1_PACKED_LEN: usize = 192;
-pub(crate) const MLDSA44_W1_PACKED_LEN: usize = MLDSA44_k * MLDSA44_POLY_W1_PACKED_LEN;
+pub(crate) const MLDSA44_S1_PACKED_LEN: usize = bitlen_eta(MLDSA44_ETA)  * MLDSA44_l;
+pub(crate) const MLDSA44_S2_PACKED_LEN: usize = bitlen_eta(MLDSA44_ETA)  * MLDSA44_k;
+pub(crate) const MLDSA44_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA44_k;
 pub(crate) const MLDSA44_POLY_ETA_PACKED_LEN: usize = 32*3;
 pub(crate) const MLDSA44_LAMBDA_over_4: usize = 128/4;
 
@@ -393,8 +391,8 @@ pub(crate) const MLDSA44_GAMMA1_MASK_LEN: usize = 576;  // 32*(1 + bitlen (𝛾1
 
 /// Length of the \[u8] holding a ML-DSA-65 public key.
 pub const MLDSA65_PK_LEN: usize = 1952;
-/// Length of the \[u8] holding a ML-DSA-65 private key.
-pub const MLDSA65_SK_LEN: usize = 4032;
+/// Length of the \[u8] holding a ML-DSA-65 private key, which in this implementation is just a 32-byte seed.
+pub const MLDSA65_SK_LEN: usize = 32;
 /// Length of the \[u8] holding a ML-DSA-65 signature value.
 pub const MLDSA65_SIG_LEN: usize = 3309;
 pub(crate) const MLDSA65_TAU: i32 = 49;
@@ -411,7 +409,9 @@ pub(crate) const MLDSA65_OMEGA: i32 = 55;
 pub(crate) const MLDSA65_C_TILDE: usize = 48;
 pub(crate) const MLDSA65_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA65_POLY_W1_PACKED_LEN: usize = 128;
-pub(crate) const MLDSA65_W1_PACKED_LEN: usize = MLDSA65_k * MLDSA65_POLY_W1_PACKED_LEN;
+pub(crate) const MLDSA65_S1_PACKED_LEN: usize = bitlen_eta(MLDSA65_ETA)  * MLDSA65_l;
+pub(crate) const MLDSA65_S2_PACKED_LEN: usize = bitlen_eta(MLDSA65_ETA)  * MLDSA65_k;
+pub(crate) const MLDSA65_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA65_k;
 pub(crate) const MLDSA65_POLY_ETA_PACKED_LEN: usize = 32*4;
 pub(crate) const MLDSA65_LAMBDA_over_4: usize = 192/4;
 
@@ -425,8 +425,8 @@ pub(crate) const MLDSA65_GAMMA1_MASK_LEN: usize = 640;
 
 /// Length of the \[u8] holding a ML-DSA-87 public key.
 pub const MLDSA87_PK_LEN: usize = 2592;
-/// Length of the \[u8] holding a ML-DSA-87 private key.
-pub const MLDSA87_SK_LEN: usize = 4896;
+/// Length of the \[u8] holding a ML-DSA-87 private key, which in this implementation is just a 32-byte seed.
+pub const MLDSA87_SK_LEN: usize = 32;
 /// Length of the \[u8] holding a ML-DSA-87 signature value.
 pub const MLDSA87_SIG_LEN: usize = 4627;
 pub(crate) const MLDSA87_TAU: i32 = 60;
@@ -443,7 +443,9 @@ pub(crate) const MLDSA87_OMEGA: i32 = 75;
 pub(crate) const MLDSA87_C_TILDE: usize = 64;
 pub(crate) const MLDSA87_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA87_POLY_W1_PACKED_LEN: usize = 128;
-pub(crate) const MLDSA87_W1_PACKED_LEN: usize = MLDSA87_k * MLDSA87_POLY_W1_PACKED_LEN;
+pub(crate) const MLDSA87_S1_PACKED_LEN: usize = bitlen_eta(MLDSA87_ETA)  * MLDSA87_l;
+pub(crate) const MLDSA87_S2_PACKED_LEN: usize = bitlen_eta(MLDSA87_ETA)  * MLDSA87_k;
+pub(crate) const MLDSA87_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA87_k;
 pub(crate) const MLDSA87_POLY_ETA_PACKED_LEN: usize = 32*3;
 pub(crate) const MLDSA87_LAMBDA_over_4: usize = 256/4;
 
@@ -479,7 +481,9 @@ pub type MLDSA44 = MLDSA<
     MLDSA44_C_TILDE,
     MLDSA44_POLY_Z_PACKED_LEN,
     MLDSA44_POLY_W1_PACKED_LEN,
-    MLDSA44_W1_PACKED_LEN,
+    MLDSA44_S1_PACKED_LEN,
+    MLDSA44_S2_PACKED_LEN,
+    MLDSA44_T1_PACKED_LEN,
     MLDSA44_POLY_ETA_PACKED_LEN,
     MLDSA44_LAMBDA_over_4,
     MLDSA44_GAMMA1_MASK_LEN,
@@ -509,7 +513,9 @@ pub type MLDSA65 = MLDSA<
     MLDSA65_C_TILDE,
     MLDSA65_POLY_Z_PACKED_LEN,
     MLDSA65_POLY_W1_PACKED_LEN,
-    MLDSA65_W1_PACKED_LEN,
+    MLDSA65_S1_PACKED_LEN,
+    MLDSA65_S2_PACKED_LEN,
+    MLDSA65_T1_PACKED_LEN,
     MLDSA65_POLY_ETA_PACKED_LEN,
     MLDSA65_LAMBDA_over_4,
     MLDSA65_GAMMA1_MASK_LEN,
@@ -539,7 +545,9 @@ pub type MLDSA87 = MLDSA<
     MLDSA87_C_TILDE,
     MLDSA87_POLY_Z_PACKED_LEN,
     MLDSA87_POLY_W1_PACKED_LEN,
-    MLDSA87_W1_PACKED_LEN,
+    MLDSA87_S1_PACKED_LEN,
+    MLDSA87_S2_PACKED_LEN,
+    MLDSA87_T1_PACKED_LEN,
     MLDSA87_POLY_ETA_PACKED_LEN,
     MLDSA87_LAMBDA_over_4,
     MLDSA87_GAMMA1_MASK_LEN,
@@ -557,8 +565,9 @@ pub struct MLDSA<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -571,7 +580,9 @@ pub struct MLDSA<
     const C_TILDE: usize,
     const POLY_VEC_H_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
+    const S1_PACKED_LEN: usize,
+    const S2_PACKED_LEN: usize,
+    const T1_PACKED_LEN: usize,
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
@@ -597,8 +608,9 @@ impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -611,7 +623,9 @@ impl<
     const C_TILDE: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
+    const S1_PACKED_LEN: usize,
+    const S2_PACKED_LEN: usize,
+    const T1_PACKED_LEN: usize,
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
@@ -633,7 +647,9 @@ impl<
     C_TILDE,
     POLY_Z_PACKED_LEN,
     POLY_W1_PACKED_LEN,
-    W1_PACKED_LEN,
+    S1_PACKED_LEN,
+    S2_PACKED_LEN,
+    T1_PACKED_LEN,
     POLY_ETA_PACKED_LEN,
     LAMBDA_over_4,
     GAMMA1_MASK_LEN,
@@ -644,7 +660,7 @@ impl<
         (PK, SK),
         SignatureError,
     > {
-        let mut seed = KeyMaterial256::new();
+        let mut seed = KeyMaterialSized::<32>::new();
         HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
         Self::keygen_internal(&seed)
     }
@@ -658,90 +674,14 @@ impl<
     /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
     /// [KeyMaterial::from_key]
     pub(crate) fn keygen_internal(
-        seed: &KeyMaterial256,
-    ) -> Result<
-        (PK, SK),
-        SignatureError,
-    > {
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
-            || seed.key_len() != 32
-        {
-            return Err(SignatureError::KeyGenError(
-                "Seed must be 32 bytes and KeyType::Seed or KeyType::BytesFullEntropy.",
-            ));
-        }
-
-        if seed.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
-            return Err(SignatureError::KeyGenError("Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87)."));
-        }
-
-        // Alg 6 line 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
-        //   ▷ expand seed
-        let mut rho: [u8; 32] = [0u8; 32];
-        let mut K: [u8; 32] = [0u8; 32];
-
-        let (s1, s2) = { // scope for h
-            let mut h = H::default();
-            h.absorb(seed.ref_to_bytes());
-            h.absorb(&(k as u8).to_le_bytes());
-            h.absorb(&(l as u8).to_le_bytes());
-            let bytes_written = h.squeeze_out(&mut rho);
-            debug_assert_eq!(bytes_written, 32);
-            let mut rho_prime: [u8; 64] = [0u8; 64];
-            let bytes_written = h.squeeze_out(&mut rho_prime);
-            debug_assert_eq!(bytes_written, 64);
-            let bytes_written = h.squeeze_out(&mut K);
-            debug_assert_eq!(bytes_written, 32);
-
-            // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-            let (s1, s2) = expandS::<k, l, ETA>(&rho_prime);
-
-            // Clear the secret data before returning memory to the OS
-            rho_prime.fill(0u8);
-            (s1, s2)
-        };
-
-        // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-        let A_hat = expandA::<k, l>(&rho);
-
-        let t_hat = { // scope for s1_hat
-            // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
-            //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-            let mut s1_hat = s1.clone();
-            s1_hat.ntt();
-            A_hat.matrix_vector_ntt(&s1_hat)
-        };
-
-        let (t1, t0) = { // scope for t
-            let mut t = t_hat;
-            t.inv_ntt();
-            t.add_vector_ntt(&s2);
-            t.conditional_add_q();
-
-            // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
-            //   ▷ compress 𝐭
-            //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-            power_2_round_vec::<k>(&t)
-        };
-
-        // 8: 𝑝𝑘 ← pkEncode(𝜌, 𝐭1)
-        let pk = PK::new(&rho, &t1);
-
-        // 9: 𝑡𝑟 ← H(𝑝𝑘, 64)
-        let tr = pk.compute_tr();
-
-        // 10: 𝑠𝑘 ← skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
-        //   ▷ 𝐾 and 𝑡𝑟 are for use in signing
-        let sk = SK::new(&rho, &K, &tr, &s1, &s2, &t0, Some(seed.clone()));
-
-        // Clear the secret data before returning memory to the OS
-        //   (SK::new() copies all values)
-        rho.fill(0u8);
-        K.fill(0u8);
-        // tr is public data, does not need to be zeroized
-        // s1, s2, t0 are all Vectors of Polynomials, so implement a zeroizing Drop
-
-        // 11: return (𝑝𝑘, 𝑠𝑘)
+            seed: &KeyMaterialSized<32>,
+        ) -> Result<
+            (PK, SK),
+            SignatureError,
+        > {
+        let sk = SK::from_keymaterial(seed)?;
+        let pk = sk.derive_pk();
+        let pk = PK::new(&pk.rho, &pk.t1_packed); // stupid conversion, but it gets around these overly-generified rust types
         Ok((pk, sk))
     }
 }
@@ -750,25 +690,28 @@ impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, eta, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
     const GAMMA2: i32,
     const k: usize,
     const l: usize,
-    const ETA: usize,
+    const eta: usize,
     const BETA: i32,
     const OMEGA: i32,
     const C_TILDE: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
+    const S1_PACKED_LEN: usize,
+    const S2_PACKED_LEN: usize,
+    const T1_PACKED_LEN: usize,
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, k, l, ETA> for MLDSA<
+> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, LAMBDA, GAMMA2, k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, eta> for MLDSA<
     PK_LEN,
     SK_LEN,
     SIG_LEN,
@@ -780,13 +723,15 @@ impl<
     GAMMA2,
     k,
     l,
-    ETA,
+    eta,
     BETA,
     OMEGA,
     C_TILDE,
     POLY_Z_PACKED_LEN,
     POLY_W1_PACKED_LEN,
-    W1_PACKED_LEN,
+    S1_PACKED_LEN,
+    S2_PACKED_LEN,
+    T1_PACKED_LEN,
     POLY_ETA_PACKED_LEN,
     LAMBDA_over_4,
     GAMMA1_MASK_LEN,
@@ -924,73 +869,48 @@ impl<
 
         Self::sign_mu_deterministic_out(sk, mu, rnd, output)
     }
-    /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
-    /// (modified to take an externally-computed mu instead of M')
-    ///
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    ///
-    /// Security note:
-    /// This mode exposes deterministic signing (called "hedged mode" and allowed by FIPS 204).
-    /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
-    /// the responsibility is on you to ensure that your nonce `rnd` is unique per signature.
-    /// If not, you may lose some privacy properties; for example it becomes easy to tell if a signer
-    /// has signed the same message twice or two different messagase, or to tell if the same message
-    /// has been signed by the same signer twice or two different signers.
-    ///
-    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
-    /// prevent accidental nonce reuse, this function moves `rnd`.
-    fn sign_mu_deterministic(
-        sk: &SK,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-    ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
-        Self::sign_mu_deterministic_out(sk, mu, rnd, &mut out)?;
+
+    fn sign_mu_deterministic(sk: &SK, mu: &[u8; 64], rnd: [u8; 32]) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
+        let bytes_written = Self::sign_mu_deterministic_out(sk, mu, rnd, &mut out)?;
+        debug_assert_eq!(bytes_written, SIG_LEN);
         Ok(out)
     }
-    /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
-    /// (modified to take an externally-computed mu instead of M')
-    ///
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    ///
-    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
-    /// prevent accidental nonce reuse, this function moves `rnd`.
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+
     fn sign_mu_deterministic_out(
         sk: &SK,
         mu: &[u8; 64],
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        // This function is a mash-up of keyGen (Algorithm 6) and sign (Algorithm 7),
+        // with a special emphasis on deriving values only as we need them, which in particular
+        // means that we'll process matrices and vectors row or component-wise.
+
+        // I have tried to keep this as clean as possible for correspondence with the FIPS,
+        // but I have moved things around so that I can use unnamed scopes to limit how many
+        // stack variables are alive at the same time.
+
         // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
-        // Already done -- the sk struct is already decoded
+        // to avoid having all of it in memory at the same time,
+        // we're gonna derive what we need as we need it.
 
-        // 2: 𝐬1̂_hat ← NTT(𝐬1)
-        let mut s1_hat = sk.s1().clone();
-        s1_hat.ntt();
-
-        // 3: 𝐬2̂_hat ← NTT(𝐬2)
-        let mut s2_hat = sk.s2().clone();
-        s2_hat.ntt();
-
-        // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
-        let mut t0_hat = sk.t0().clone();
-        t0_hat.ntt();
-
-        // 5: 𝐀_hat ← ExpandA(𝜌)
-        let A_hat = expandA::<k, l>(&sk.rho());
+        // [Optimization Note]:
+        // s1 and s2 are normally part of the stored private key.
+        // We are going to need them many times through this function,
+        // so we'll compute them here and hold on to them in the compressed encoding specified in
+        // FIPS 204 Alg 17.
+        // We'll uncompress them as-needed, and only one polynomial at a time.
+        // You can avoid storing these in memory, but then all the sites where they are used
+        // will require calls to sk.compute_s1_row() and sk.compute_s2_row(), which are fairly expensive.
+        let s1_packed: [u8; S1_PACKED_LEN] = sk.compute_s1_packed();
+        let s2_packed: [u8; S2_PACKED_LEN] = sk.compute_s2_packed();
 
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         // skip: mu has already been provided
 
-        let mut rho_p_p:[u8; 64] = { // scope for h
-            // 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
+        // Alg 7; 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
+        let rho_p_p: [u8; 64] = {
             let mut h = H::new();
             h.absorb(sk.K());
             h.absorb(&rnd);
@@ -1004,402 +924,145 @@ impl<
         //  ▷ initialize counter 𝜅
         let mut kappa: u16 = 0;
 
-        // 9: (𝐳, 𝐡) ← ⊥
-        // handled in the loop
+        let z_offset = LAMBDA_over_4;
+        let hint_offset = LAMBDA_over_4 + l * POLY_Z_PACKED_LEN;
 
-        // 10: while (𝐳, 𝐡) = ⊥ do
-        //  ▷ rejection sampling loop
-
-        // these need to be outside the loop because they form the encoded signature value
-        let mut sig_val_c_tilde = [0u8; LAMBDA_over_4];
-        let mut sig_val_z: Vector<l>;
-        let mut sig_val_h: Vector<k>;
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
-            if kappa > 1000 * k as u16 { return Err(SignatureError::GenericError("Rejection sampling loop exceeded max iterations, try again with a different signing nonce.")) }
-
-            // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
-            let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
-
-            let w = { // scope for y_hat
-                // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
-                let mut y_hat = y.clone();
-                y_hat.ntt();
-                let mut w = A_hat.matrix_vector_ntt(&y_hat);
-                w.inv_ntt();
-                w.conditional_add_q();
-                w
-            };
-
-            // 13: 𝐰1 ← HighBits(𝐰)
-            //  ▷ signer’s commitment
-            let w1 = w.high_bits::<GAMMA2>();
-
-            { // scope for h
-                // 15: 𝑐_tilde ← H(𝜇||w1Encode(𝐰1), 𝜆/4)
-                //  ▷ commitment hash
-                let mut hash = H::new();
-                hash.absorb(mu);
-                w1.w1_encode_and_hash::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>(&mut hash);
-                hash.squeeze_out(&mut sig_val_c_tilde);
+            if kappa > 1000 * k as u16 {
+                return Err(SignatureError::GenericError(
+                    "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
+                ));
             }
 
+            // 11-15: derive c_tilde without materializing y_hat or w as full vectors.
+            let sig_val_c_tilde = { // scope for hash
+                let mut hash = H::new();
+                hash.absorb(mu);
+                for row in 0..k {
+                    let mut w = compute_w_row::<l, GAMMA1, GAMMA1_MASK_LEN>(&sk.rho(), &rho_p_p, kappa, row);
+                    w.high_bits::<GAMMA2>();
+                    hash.absorb(&w.w1_encode::<POLY_W1_PACKED_LEN>());
+                }
+                let mut sig_val_c_tilde = [0u8; LAMBDA_over_4];
+                hash.squeeze_out(&mut sig_val_c_tilde);
+                sig_val_c_tilde
+            };
             // 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
-            //  ▷ verifier’s challenge
-            let c_hat = { // scope for c
-                let c = sample_in_ball::<LAMBDA_over_4, TAU>(&sig_val_c_tilde);
+            // 17: 𝑐_hat ← NTT(𝑐)
+            // optimization note: c_hat is used basically until the end, so we can't really scope it.
+            let mut c_hat = sample_in_ball::<LAMBDA_over_4, TAU>(&sig_val_c_tilde);
+            c_hat.ntt();
 
-                // 17: 𝑐_hat ← NTT(𝑐)
-                ntt(&c)
-            };
-            // 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
-            //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
-            let mut cs1 = s1_hat.scalar_vector_ntt(&c_hat);
-            cs1.inv_ntt();
+            output.fill(0);
+            output[..LAMBDA_over_4].copy_from_slice(&sig_val_c_tilde);
 
-            // 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
-            y.add_vector_ntt(&cs1);
-            sig_val_z = y;
+            let (z_chunks, z_remainder) = output[z_offset..z_offset + l * POLY_Z_PACKED_LEN]
+                .as_chunks_mut::<POLY_Z_PACKED_LEN>();
+            debug_assert_eq!(z_chunks.len(), l);
+            debug_assert_eq!(z_remainder.len(), 0);
 
-            // 23 (first half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
-            //  ▷ validity checks
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
-            if sig_val_z.check_norm(GAMMA1 - BETA) {
+            // 18-23 (z path): compute and encode each z polynomial directly into the caller buffer.
+            let mut rejected = false;
+            for col in 0..l {
+                let z = match compute_z_component::<GAMMA1, GAMMA1_MASK_LEN, BETA>(
+                    // [Optimization Note]:
+                    // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
+                    // &sk.compute_s1_row(col),
+                    &s_unpack::<eta>(&s1_packed, col),
+                    &rho_p_p, &c_hat, kappa, col,
+                )? {
+                    Some(z) => z,
+                    None => {
+                        rejected = true;
+                        break;
+                    }
+                };
+
+                bitpack_gamma1::<POLY_Z_PACKED_LEN, GAMMA1>(&z, &mut z_chunks[col]);
+            }
+
+            if rejected {
                 kappa += l as u16;
                 continue;
-            };
+            }
 
-            // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐_hat * 𝐬2̂_hat)
-            let mut cs2 = s2_hat.scalar_vector_ntt(&c_hat);
-            cs2.inv_ntt();
+            // 19-28 (hint path): recompute rows as needed and write the packed hint directly.
+            let mut hint_count = 0usize;
+            for row in 0..k {
+                let mut w = compute_w_row::<l, GAMMA1, GAMMA1_MASK_LEN>(&sk.rho(), &rho_p_p, kappa, row);
+                let mut tmp =
+                    match compute_w0cs2_component::<GAMMA2, BETA>(
+                        // [Optimization Note]:
+                        // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
+                        // &sk.compute_s2_row(row),
+                        &s_unpack::<eta>(&s2_packed, row),
+                        &w, &c_hat) {
+                        Some(tmp) => tmp,
+                        None => {
+                            rejected = true;
+                            break;
+                        }
+                    };
 
-            // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-            let mut r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
+                let ct0 = match compute_ct0_component::<GAMMA2>(
+                    // [Optimization Note]:
+                    // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
+                    // &sk.compute_t0_row(row), &c_hat) {
+                    &sk.compute_t0_row(row, &s1_packed, &s2_packed), &c_hat) {
+                    Some(ct0) => ct0,
+                    None => {
+                        rejected = true;
+                        break;
+                    }
+                };
 
-            // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
-            //  ▷ validity checks
-            if r0.check_norm(GAMMA2 - BETA) {
+                tmp.add_ntt(&ct0);
+                tmp.conditional_add_q();
+
+                w.high_bits::<GAMMA2>();
+                let (hint_row, weight) = tmp.make_hint_row::<GAMMA2>(&w);
+                let next_hint_count = hint_count + weight as usize;
+                if next_hint_count > OMEGA as usize {
+                    rejected = true;
+                    break;
+                }
+
+                for idx in 0..N {
+                    if hint_row.0[idx] != 0 {
+                        output[hint_offset + hint_count] = idx as u8;
+                        hint_count += 1;
+                    }
+                }
+                debug_assert_eq!(hint_count, next_hint_count);
+                output[hint_offset + OMEGA as usize + row] = hint_count as u8;
+            }
+
+            if rejected {
                 kappa += l as u16;
                 continue;
-            };
-
-            // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
-            let mut ct0 = t0_hat.scalar_vector_ntt(&c_hat);
-            ct0.inv_ntt();
-
-            // 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
-            if ct0.check_norm(GAMMA2) {
-                kappa += l as u16;
-                continue;
-            };
-
-            // 26: 𝐡 ← MakeHint(−⟨⟨𝑐𝐭0⟩⟩, 𝐰 − ⟨⟨𝑐𝐬2⟩⟩ + ⟨⟨𝑐𝐭0⟩⟩)
-            //  ▷ Signer’s hint
-            r0.add_vector_ntt(&ct0);
-            r0.conditional_add_q();
-            let hint_hamming_weight: i32;
-            sig_val_h = { // scope for hint
-                let (hint, inner_hint_hamming_weight) =
-                    make_hint_vecs::<k, GAMMA2>(&r0, &w1);
-                hint_hamming_weight = inner_hint_hamming_weight;
-                hint
-            };
-
-            // 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
-            if hint_hamming_weight > OMEGA {
-                kappa += l as u16;
-                continue;
-            };
-
-            // "In addition, there is an alternative way of implementing the validity checks on 𝐳 and the computation of
-            // 𝐡, which is described in Section 5.1 of [6] (dilithium-specification-round3-20210208.pdf).
-            // This method may also be used in implementations of ML-DSA."
-            // todo -- I believe this code is already using this optimization, but it could use a deeper look to see if more optimization is possible.
+            }
 
             break;
         }
 
-        // zeroize rho_p_p before returning it to the OS
-        rho_p_p.fill(0u8);
-
-        // sig_encode does not necessarily write to all bytes of the output, so just to be safe:
-        output.fill(0u8);
-
-        // 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
-        let bytes_written = sig_encode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>
-            (&sig_val_c_tilde, &sig_val_z, &sig_val_h, output);
-
-        Ok(bytes_written)
+        Ok(SIG_LEN)
     }
 
     fn sign_mu_deterministic_from_seed(seed: &KeyMaterialSized<32>, mu: &[u8; 64], rnd: [u8; 32]) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
-        Self::sign_mu_deterministic_from_seed_out(seed, mu, rnd, &mut out)?;
+        let mut out = [0u8; SIG_LEN];
+        SK::from_keymaterial(&seed)?;
+        Self::sign_mu_deterministic_out(&SK::from_keymaterial(&seed)?, mu, rnd, &mut out)?;
         Ok(out)
     }
 
-    fn sign_mu_deterministic_from_seed_out(
-        seed: &KeyMaterialSized<32>,
-        mu: &[u8; 64],
-        rnd: [u8; 32],
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        // This function is a mash-up of keyGen (Algorithm 6) and sign (Algorithm 7)
-
-        // I have tried to keep this as clean as possible for correspondence with the FIPS,
-        // but I have moved things around so that I can use unnamed scopes to limit how many
-        // stack variables are alive at the same time.
-
-        // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
-        // to avoid having all of it in memory at the same time,
-        // we're gonna derive what we need as we need it.
-
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
-            || seed.key_len() != 32
-        {
-            return Err(SignatureError::KeyGenError(
-                "Seed must be 32 bytes and KeyType::Seed or KeyType::BytesFullEntropy.",
-            ));
-        }
-
-        if seed.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
-            return Err(SignatureError::KeyGenError("Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87)."));
-        }
-
-        // Alg 7; 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
-        // skip: mu has already been provided
-
-        let rho: [u8; 32];
-        let mut rho_p_p:[u8; 64];
-        let (s1, s2) = { // scope for h
-            // derive sk.K
-            // Alg 6; 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
-            //   ▷ expand seed
-            let mut tmp_rho: [u8; 32] = [0u8; 32];
-            let mut rho_prime: [u8; 64] = [0u8; 64];
-            let mut K: [u8; 32] = [0u8; 32];
-
-            let mut h = H::default();
-            h.absorb(seed.ref_to_bytes());
-            h.absorb(&(k as u8).to_le_bytes());
-            h.absorb(&(l as u8).to_le_bytes());
-            let bytes_written = h.squeeze_out(&mut tmp_rho);
-            debug_assert_eq!(bytes_written, 32);
-            let bytes_written = h.squeeze_out(&mut rho_prime);
-            debug_assert_eq!(bytes_written, 64);
-            let bytes_written = h.squeeze_out(&mut K);
-            debug_assert_eq!(bytes_written, 32);
-            rho = tmp_rho;
-
-
-            // Alg 7; 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
-            let mut h = H::new();
-            h.absorb(&K);
-            h.absorb(&rnd);
-            h.absorb(mu);
-            let mut tmp_rho_p_p = [0u8; 64];
-            h.squeeze_out(&mut tmp_rho_p_p);
-            rho_p_p = tmp_rho_p_p;
-
-            // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-            expandS::<k, l, ETA>(&rho_prime)
-        };
-
-        // Alg 7; 5: 𝐀_hat ← ExpandA(𝜌)
-        // Note on memory optimization:
-        // A_hat consumes a large bit of memory and technically could move inside the loop --
-        // -- or even more aggressively, could be derived and multiplied by y_hat row-by-row --
-        // But in my unit tests, I see the loop typically execute 1 - 3 times, sometimes as many
-        // as 20 or even 80 times. So moving expandA() inside the loop would be a pretty drastic speed-for-memory tradeoff
-        // that I'm not willing to make in general, so I leave that as an optimization that people
-        // can make on a private fork if you really really need the memory squeeze.
-        let A_hat = expandA::<k, l>(&rho);
-
-        // Alg 7; 8: 𝜅 ← 0
-        //  ▷ initialize counter 𝜅
-        let mut kappa: u16 = 0;
-
-        // Alg 7; 9: (𝐳, 𝐡) ← ⊥
-        // handled in the loop
-
-        // Alg 7; 10: while (𝐳, 𝐡) = ⊥ do
-        //  ▷ rejection sampling loop
-
-        // these need to be outside the loop because they form the encoded signature value
-        let mut sig_val_c_tilde = [0u8; LAMBDA_over_4];
-        let mut sig_val_z: Vector<l>;
-        let mut sig_val_h: Vector<k>;
-        loop {
-            // FIPS 204 s. 6.2 allows:
-            //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
-            if kappa > 1000 * k as u16 { return Err(SignatureError::GenericError("Rejection sampling loop exceeded max iterations, try again with a different signing nonce.")) }
-
-            // Alg 7; 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
-            let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
-
-            let w = { // scope for y_hat
-                // Alg 7; 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
-                let mut y_hat = y.clone();
-                y_hat.ntt();
-                let mut w = A_hat.matrix_vector_ntt(&y_hat);
-                w.inv_ntt();
-                w.conditional_add_q();
-                w
-            };
-
-            // Alg 7; 13: 𝐰1 ← HighBits(𝐰)
-            //  ▷ signer’s commitment
-            let w1 = w.high_bits::<GAMMA2>();
-
-            { // scope for h
-                // 15: 𝑐_tilde ← H(𝜇||w1Encode(𝐰1), 𝜆/4)
-                //  ▷ commitment hash
-                let mut hash = H::new();
-                hash.absorb(mu);
-                // hash.absorb(&w1.w1_encode::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>());
-                w1.w1_encode_and_hash::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>(&mut hash);
-                hash.squeeze_out(&mut sig_val_c_tilde);
-            }
-
-            // Alg 7; 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
-            //  ▷ verifier’s challenge
-            let c_hat = { // scope for c
-                let c = sample_in_ball::<LAMBDA_over_4, TAU>(&sig_val_c_tilde);
-
-                // 17: 𝑐_hat ← NTT(𝑐)
-                ntt(&c)
-            };
-
-            let t_hat: Vector<k>;
-            sig_val_z = { // scope for s1_hat, cs1
-                // Alg 7; 2: 𝐬1̂_hat ← NTT(𝐬1)
-                let mut s1_hat = s1.clone();
-                s1_hat.ntt();
-
-                y = { // scope for cs1
-                    // Alg 7; 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
-                    //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
-                    let mut cs1 = s1_hat.scalar_vector_ntt(&c_hat);
-                    cs1.inv_ntt();
-
-                    // Alg 7; 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
-                    y.add_vector_ntt(&cs1);
-                    y
-                };
-
-                // also, while we have s1_hat in memory, compute t_hat
-                // Alg 6; 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
-                //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-                t_hat = A_hat.matrix_vector_ntt(&s1_hat);
-
-                y
-            };
-
-            // Alg 7; 23 (first half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
-            //  ▷ validity checks
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
-            if sig_val_z.check_norm(GAMMA1 - BETA) {
-                kappa += l as u16;
-                continue;
-            };
-
-            let t0: Vector<k>;
-            let mut r0: Vector<k> = { // scope for s2_hat and cs2
-                // 3: 𝐬2̂_hat ← NTT(𝐬2)
-                let mut s2_hat = s2.clone();
-                s2_hat.ntt();
-
-                // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐_hat * 𝐬2̂_hat)
-                let mut cs2 = s2_hat.scalar_vector_ntt(&c_hat);
-                cs2.inv_ntt();
-
-                // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-                let r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
-
-                // while we have s2_hat in scope, derive t0
-                let mut t = t_hat;
-                t.inv_ntt();
-                t.add_vector_ntt(&s2);
-                t.conditional_add_q();
-
-                // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
-                //   ▷ compress 𝐭
-                //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-                let (_t1tmp, t0tmp) = power_2_round_vec::<k>(&t);
-                t0 = t0tmp;
-
-                r0
-            };
-
-            // Alg 7; 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
-            //  ▷ validity checks
-            if r0.check_norm(GAMMA2 - BETA) {
-                kappa += l as u16;
-                continue;
-            };
-
-            let ct0: Vector<k> = { // scope for t0_hat
-                // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
-                let mut t0_hat = t0.clone();
-                t0_hat.ntt();
-
-                // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
-                let mut ct0 = t0_hat.scalar_vector_ntt(&c_hat);
-                ct0.inv_ntt();
-                ct0
-            };
-
-            // Alg 7; 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
-            if ct0.check_norm(GAMMA2) {
-                kappa += l as u16;
-                continue;
-            };
-
-            // Alg 7; 26: 𝐡 ← MakeHint(−⟨⟨𝑐𝐭0⟩⟩, 𝐰 − ⟨⟨𝑐𝐬2⟩⟩ + ⟨⟨𝑐𝐭0⟩⟩)
-            //  ▷ Signer’s hint
-            r0.add_vector_ntt(&ct0);
-            r0.conditional_add_q();
-            let hint_hamming_weight: i32;
-            sig_val_h = { // scope for hint
-                let (hint, inner_hint_hamming_weight) =
-                    make_hint_vecs::<k, GAMMA2>(&r0, &w1);
-                hint_hamming_weight = inner_hint_hamming_weight;
-                hint
-            };
-
-            // Alg 7; 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
-            if hint_hamming_weight > OMEGA {
-                kappa += l as u16;
-                continue;
-            };
-
-            // "In addition, there is an alternative way of implementing the validity checks on 𝐳 and the computation of
-            // 𝐡, which is described in Section 5.1 of [6] (dilithium-specification-round3-20210208.pdf).
-            // This method may also be used in implementations of ML-DSA."
-            // todo -- I believe this code is already using this optimization, but it could use a deeper look to see if more optimization is possible.
-
-            break;
-        }
-
-        // zeroize rho_p_p before returning it to the OS
-        rho_p_p.fill(0u8);
-
-        // sig_encode does not necessarily write to all bytes of the output, so just to be safe:
-        output.fill(0u8);
-
-        // Alg 7; 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
-        let bytes_written = sig_encode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>
-            (&sig_val_c_tilde, &sig_val_z, &sig_val_h, output);
-
-        Ok(bytes_written)
+    fn sign_mu_deterministic_from_seed_out(seed: &KeyMaterialSized<32>, mu: &[u8; 64], rnd: [u8; 32], output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+        SK::from_keymaterial(&seed)?;
+        Self::sign_mu_deterministic_out(&SK::from_keymaterial(&seed)?, mu, rnd, output)
     }
+
+
     /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
     /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
     fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
@@ -1433,23 +1096,10 @@ impl<
         // 1: (𝜌, 𝐭1) ← pkDecode(𝑝𝑘)
         // Already done -- the pk struct is already decoded
 
-        // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
-        //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
-        // 3: if 𝐡 = ⊥ then return false
-        let (c_tilde, z, h) = match sig_decode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>(&sig) {
-            Ok((c_tilde, z, h)) => (c_tilde, z, h),
-            Err(_) => return false,
-        };
-
-        // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
-        if z.check_norm(GAMMA1 - BETA) {
-            return false;
-        }
-
         // 5: 𝐀 ← ExpandA(𝜌)
         //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-        #[allow(non_snake_case)]
-        let A_hat = expandA::<k, l>(&pk.rho());
+        // We're gonna do this one row / polynomial at a time to reduce peak memory usage so that
+        // the entirety of A_hat is never in memory at the same time.
 
         // 6: 𝑡𝑟 ← H(𝑝𝑘, 64)
         // 7: 𝜇 ← (H(BytesToBits(𝑡𝑟)||𝑀 ′, 64))
@@ -1458,48 +1108,50 @@ impl<
         // skip because this function is being handed mu
 
         // 8: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
-        let c = sample_in_ball::<LAMBDA_over_4, TAU>(&c_tilde);
+        let c = sample_in_ball::<LAMBDA_over_4, TAU>(unpack_c_tilde(sig));
 
+        // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
+        // ▷ hash it; this should match 𝑐_tilde
+        let mut hash = H::new();
+        hash.absorb(mu);
 
-        // 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
-        //   broken out for clarity:
-        //   NTT−1(
-        //      𝐀_hat ∘ NTT(𝐳) −
-        //                  NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑)
-        //   )
-        // ▷ 𝐰'_approx = 𝐀𝐳 − 𝑐𝐭1 ⋅ 2^𝑑
-        // weird nested scoping is to reduce peak stack memory usage
-        let w1p = {
-            let Az = {
-                let mut z_hat = z.clone();
-                z_hat.ntt();
-                A_hat.matrix_vector_ntt(&z_hat)
+        for row in 0..k {
+            let mut wp_approx = match {
+                // 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
+                compute_wp_approx_row::<GAMMA1, BETA, l, POLY_Z_PACKED_LEN, LAMBDA_over_4, SIG_LEN>(
+                    pk.rho(),
+                    sig,
+                    &pk.unpack_t1_row(row),
+                    &c,
+                    row)
+            } {
+                Ok(wp_approx) => wp_approx,
+                // means the norm check on z failed
+                Err(_) => return false,
             };
-            let ct1 = {
-                let mut t1_shift_hat = pk.t1().shift_left::<d>();
-                t1_shift_hat.ntt();
-                t1_shift_hat.scalar_vector_ntt(&ntt(&c))
+
+            let h_i
+                = match unpack_h_row::<GAMMA1, k, l, OMEGA, LAMBDA_over_4, POLY_Z_PACKED_LEN, SIG_LEN>
+                        (row, &sig) {
+                    Some(h_i) => h_i,
+                    // means there were more than OMEGA bits set in the hint
+                    None => return false,
             };
-            let mut wp_approx = Az.sub_vector(&ct1);
-            wp_approx.inv_ntt();
-            wp_approx.conditional_add_q();
 
             // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
             // ▷ reconstruction of signer’s commitment
-            use_hint_vecs::<k, GAMMA2>(&h, &wp_approx)
-        };
-        // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
-        // ▷ hash it; this should match 𝑐_tilde
-        let mut c_tilde_p = [0u8; LAMBDA_over_4];
-        let mut hash = H::new();
-        hash.absorb(mu);
-        w1p.w1_encode_and_hash::<W1_PACKED_LEN, POLY_W1_PACKED_LEN>(&mut hash);
-        hash.squeeze_out(&mut c_tilde_p);
+            wp_approx.use_hint::<GAMMA2>(&h_i);
+            hash.absorb(&wp_approx.w1_encode::<POLY_W1_PACKED_LEN>());
+        }
 
+        let mut c_tilde_p = [0u8; LAMBDA_over_4];
+        hash.squeeze_out(&mut c_tilde_p);
 
         // verification probably doesn't technically need to be constant-time, but why not?
         // 13 (second half): return [[ ||𝐳||∞ < 𝛾1 − 𝛽]] and [[𝑐 ̃ = 𝑐′ ]]
-        bouncycastle_utils::ct::ct_eq_bytes(&c_tilde, &c_tilde_p)
+        //   note: the first half of this check (the norm check) is buried in unpack_z_row(),
+        //         which is called from compute_wp_approx_row()
+        bouncycastle_utils::ct::ct_eq_bytes(unpack_c_tilde::<LAMBDA_over_4>(sig), &c_tilde_p)
     }
 }
 
@@ -1508,10 +1160,16 @@ pub trait MLDSATrait<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
+    const LAMBDA: i32,
+    const GAMMA2: i32,
     const k: usize,
     const l: usize,
+    const S1_PACKED_LEN: usize,
+    const S2_PACKED_LEN: usize,
+    const T1_PACKED_LEN: usize,
     const ETA: usize
 > : Sized {
     /// Imports a secret key from a seed.
@@ -1700,8 +1358,9 @@ impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -1714,7 +1373,9 @@ impl<
     const C_TILDE: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
+    const S1_PACKED_LEN: usize,
+    const S2_PACKED_LEN: usize,
+    const T1_PACKED_LEN: usize,
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
@@ -1736,7 +1397,9 @@ impl<
     C_TILDE,
     POLY_Z_PACKED_LEN,
     POLY_W1_PACKED_LEN,
-    W1_PACKED_LEN,
+    S1_PACKED_LEN,
+    S2_PACKED_LEN,
+    T1_PACKED_LEN,
     POLY_ETA_PACKED_LEN,
     LAMBDA_over_4,
     GAMMA1_MASK_LEN,

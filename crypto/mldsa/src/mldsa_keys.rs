@@ -8,7 +8,7 @@ use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use crate::mldsa::{MLDSA44_ETA, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_k, MLDSA44_l};
 use crate::mldsa::{MLDSA65_ETA, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_k, MLDSA65_l};
 use crate::mldsa::{MLDSA87_ETA, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_k, MLDSA87_l};
-use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, SEED_LEN};
+use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use bouncycastle_core_interface::errors::SignatureError;
 use bouncycastle_core_interface::key_material::KeyMaterialSized;
 use bouncycastle_core_interface::traits::{Secret, SignaturePrivateKey, SignaturePublicKey, XOF};
@@ -39,7 +39,7 @@ pub type MLDSA87PrivateKey = MLDSAPrivateKey<MLDSA87_k, MLDSA87_l, MLDSA87_ETA, 
 /// An ML-DSA public key.
 #[derive(Clone)]
 pub struct MLDSAPublicKey<const k: usize, const PK_LEN: usize> {
-    rho: [u8; SEED_LEN],
+    rho: [u8; 32],
     t1: Vector<k>,
 }
 
@@ -69,7 +69,7 @@ pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePu
 pub(crate) trait MLDSAPublicKeyInternalTrait<const k: usize, const PK_LEN: usize> {
     /// Not exposing a constructor publicly because you should have to get an instance either by
     /// running a keygen, or by decoding an existing key.
-    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self;
+    fn new(rho: &[u8; 32], t1: &Vector<k>) -> Self;
 
     /// Get a ref to rho
     fn rho(&self) -> &[u8; 32];
@@ -82,9 +82,9 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k, PK_LEN> for MLD
     fn pk_encode(&self) -> [u8; PK_LEN] {
         let mut pk = [0u8; PK_LEN];
 
-        pk[0..SEED_LEN].copy_from_slice(&self.rho);
+        pk[0..32].copy_from_slice(&self.rho);
 
-        let (pk_chunks, last_chunk) = pk[SEED_LEN..].as_chunks_mut::<POLY_T1PACKED_LEN>();
+        let (pk_chunks, last_chunk) = pk[32..].as_chunks_mut::<POLY_T1PACKED_LEN>();
 
         // that should divide evenly the remainder of the array
         debug_assert_eq!(pk_chunks.len(), k);
@@ -129,7 +129,7 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k, PK_LEN> for MLD
 }
 
 impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyInternalTrait<k, PK_LEN> for MLDSAPublicKey<k, PK_LEN> {
-    fn new(rho: &[u8; SEED_LEN], t1: &Vector<k>) -> Self {
+    fn new(rho: &[u8; 32], t1: &Vector<k>) -> Self {
         Self { rho: rho.clone(), t1: t1.clone() }
     }
 

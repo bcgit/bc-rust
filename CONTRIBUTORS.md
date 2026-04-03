@@ -13,3 +13,5 @@ Donations and sponsorships can be made at: [Cryptic Forest Software github](http
 Holders of [Cryptic Forest Software](mailto:crypticforest@crypticforest.com) maintenance and support contracts directly support the development and tailoring of this library. You know who you are!
 
 # People -- direct contributions and pull requests
+
+Daniel Heinrich (Cryptsoft) -- Contributed mldsa_lowmemory implementation

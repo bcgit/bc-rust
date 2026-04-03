@@ -6,12 +6,12 @@ In this guide, you get an overview of the contribution workflow from starting a 
 
 For an overview of the project, see [README](README.md). 
 
-### Start a discussion
+## Start a discussion
 If you have a question or problem, you can [search in discussions](https://github.com/bcgit/bc-rust/discussions), if someone has already found a solution to your problem. 
 
 Or you can [start a new discussion](https://github.com/bcgit/bc-rust/discussions/new/choose) and ask your question. 
 
-### Create an issue
+## Create an issue
 
 If you find a problem with Bouncy Castle, [search if an issue already exists](https://github.com/bcgit/bc-rust/issues).
 
@@ -20,13 +20,13 @@ before posting anything public. See [Security Policy](SECURITY.md).
 
 If a related discussion or issue doesn't exist, and the issue is not security related, you can [open a new issue](https://github.com/bcgit/bc-java/issues/new). An issue can be converted into a discussion if regarded as one.
 
-### Contribute to the code
+## Contribute to the code
 
 For substantial, non-trivial contributions, you may be asked to sign a contributor assignment agreement. Optionally, you can also have your name and contact information listed in [Contributors](https://www.bouncycastle.org/contributors.html). 
 
 Please note we are unable to accept contributions which cannot be released under the [Bouncy Castle License](https://www.bouncycastle.org/licence.html). Issuing a pull request on our public github mirror is taken as agreement to issuing under the Bouncy Castle License.
 
-#### Create a pull request
+### Create a pull request
 
 > **_NOTE:_**  If the issue is a __potential security problem__, please contact us. See [Security Policy](SECURITY.md).
 
@@ -38,12 +38,20 @@ You are welcome to send patches, under the Bouncy Castle License, as pull reques
 
 For more information, refer to the Bouncy Castle documentation on [Getting Started with Bouncy Castle](https://doc.primekey.com/bouncycastle/introduction#Introduction-GettingStartedwithBouncyCastle).
 
-#### Self-review
+### Quality Standards
+Except where otherwise noted, all crates must have:
+
+* benchmarks
+* unit tests that (mostly) satisfy cargo mutants
+* lib.rs needs to compile with: #![forbid(missing_docs)], #![no_std]
+
+Code submissions that do not meet these standards, or that require significant effort from the maintainers in order to meet these standards, will not be accepted.
+
+### Self-review
 
 Don't forget to self-review. Please follow these simple guidelines:
 * Keep the patch limited, only change the parts related to your patch. 
 * Do not change other lines, such as whitespace, adding line breaks to Java doc, etc. It will make it very hard for us to review the patch.
-
 
 #### Your pull request is merged
 
