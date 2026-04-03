@@ -88,7 +88,7 @@
 //!
 //! Actual values may vary based on build configuration.
 //!
-//! | Algorithm | Peak memory usage | Throughput (ops/s) |
+//! | Algorithm | Peak memory usage (kB) | Throughput (ops/s) |
 //! |-----------|-----------------------|-------------------|
 //! | MLDSA44_lowmemory/KeyGen  | 12.9 (77.9)    | 8100 (8700) |
 //! | MLDSA65_lowmemory/KeyGen  | 14.8 (156.9)   | 4900 (5400) |
@@ -100,7 +100,6 @@
 //! | MLDSA65_lowmemory/Verify  | 19.0 (115.7)   | 4500 (5700) |
 //! | MLDSA87_lowmemory/Verify  | 20.6 (237.2)   | 2700 (3600) |
 //!
-//! All values are in kilobytes.
 //! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
 //!
