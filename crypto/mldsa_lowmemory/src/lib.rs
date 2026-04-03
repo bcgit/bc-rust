@@ -44,7 +44,7 @@
 //!
 //! We also get a surprising amount of memory-savings by good coding hygiene:
 //! Using un-named scopes to tell the compiler when an intermediate variable is no longer needed and
-//! con be popped off the stack. This sometimes requires re-ordering the steps of the algorithms given in
+//! can be popped off the stack. This sometimes requires re-ordering the steps of the algorithms given in
 //! FIPS 204 so that variables can be created, used, and released in a self-contained block.
 //! Sometimes this is not possible and we have to make a choice between keeping the variable around
 //! or releasing it and re-deriving it later.
@@ -117,7 +117,7 @@
 //! ## Generating Keys
 //!
 //! ```rust
-//! use bouncycastle_mldsa::MLDSA65;
+//! use bouncycastle_mldsa_lowmemory::MLDSA65;
 //! use bouncycastle_core_interface::traits::Signature;
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
@@ -148,8 +148,8 @@
 //!
 //! ```rust
 //! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let msg = b"The quick brown fox";
 //!
