@@ -1427,7 +1427,7 @@ impl<
     /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
     fn verify_mu_internal(
         pk: &PK,
-        mu: &[u8; MU_LEN],
+        mu: &[u8; 64],
         sig: &[u8; SIG_LEN],
     ) -> bool {
         // 1: (𝜌, 𝐭1) ← pkDecode(𝑝𝑘)
@@ -1691,7 +1691,7 @@ pub trait MLDSATrait<
     /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
     fn verify_mu_internal(
         pk: &PK,
-        mu: &[u8; MU_LEN],
+        mu: &[u8; 64],
         sig: &[u8; SIG_LEN],
     ) -> bool;
 }
