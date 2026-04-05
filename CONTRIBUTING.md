@@ -20,6 +20,23 @@ before posting anything public. See [Security Policy](SECURITY.md).
 
 If a related discussion or issue doesn't exist, and the issue is not security related, you can [open a new issue](https://github.com/bcgit/bc-java/issues/new). An issue can be converted into a discussion if regarded as one.
 
+## Coding philosophy
+
+> Slow is smooth, smooth is fast.
+
+There is a time and a place for "Move fast and break things", but the source code of a crypto library is not one of them.
+
+This project takes the philosophy that taking the time to do things right pays off in the long run, both in terms of 
+the runtime and memory footprint of the code, and it terms of the time required for a future maintainer to get up to speed with the code
+and avoid introducing bugs due to the code being hard to understand.
+
+Some specifics:
+
+* Respect that the innovative process sometimes requires exploring several dead-ends before you find the most elegant solution.
+* Public APIs of a library should be both ergonomic and expressive. When defining a new trait or public function, ask yourself whether a programmer who is new to cryptography is likely to use this in a way that will get them into trouble.
+* Variables should be well-named, well-structured, and well-commented (a comment-to-code ration of 1:1 is a goal to be strived for!). Think about memory footprint and, where possible, use unnamed scopes to allow the compiler to pop intermediate value variables off the stack as soon as they are no longer needed.
+* Always run your code through `cargo mutants` and get the issue count as low as your can. As a first pass, this forces you to write thorough unit tests. As a second pass, this draws your attention to bits of your code that cannot be tested from the outside. Often this means that the code can be simplified without affecting functionality (as defined by your set of unit tests) -- "simpler code" usually means faster runtime and easier future maintenance.
+
 ## Contribute to the code
 
 For substantial, non-trivial contributions, you may be asked to sign a contributor assignment agreement. Optionally, you can also have your name and contact information listed in [Contributors](https://www.bouncycastle.org/contributors.html). 
@@ -55,5 +72,5 @@ Don't forget to self-review. Please follow these simple guidelines:
 
 #### Your pull request is merged
 
-For acceptance, pull requests need to meet specific quality criteria, including tests for anything substantial. Someone on the Bouncy Castle core team will review the pull request when there is time, and let you know if something is missing or suggest improvements. If it is a useful and generic feature it will be integrated in Bouncy Castle to be available in a later release.
+Someone on the Bouncy Castle core team will review the pull request when there is time, and let you know if something is missing or suggest improvements. If it is a useful and generic feature it will be integrated in Bouncy Castle to be available in a later release.
 
