@@ -363,8 +363,14 @@ pub trait Secret : Drop + Debug + Display {}
 
 /// Pre-Hashed Signature is an extension to [Signature] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.
-pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_LEN: usize>:
-    Signature<PK, SK>{
+pub trait PHSignature<
+    PK: SignaturePublicKey<PK_LEN>,
+    SK: SignaturePrivateKey<SK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+    const PH_LEN: usize>:
+    Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>{
     /// Produce a signature for the provided pre-hashed message and context.
     ///
     /// `ctx` accepts a zero-length byte array.
@@ -389,9 +395,9 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_
     /// Not all signature primitives will support a context value, so you may need to consult the
     /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError>;
+    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError>;
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_ph_out(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
+    fn sign_ph_out(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify_ph(pk: &PK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
@@ -407,9 +413,17 @@ pub trait PHSignature<PK: SignaturePublicKey, SK: SignaturePrivateKey, const PH_
 /// to source all its randomness from bouncycastle's default os-backed RNG.
 /// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
 /// or deterministic seed values.
-// Note to future maintainers: this could have had a SIG_LEN a param and then done [u8; SIG_LEN] throughout and removed a whole bunch of Results,
-// but in general there exist signature algs with non-fixed-length signature values.
-pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey>: Sized {
+///
+/// Here we statically-size the arrays used to encode public keys, private keys, and signature values
+/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
+/// the fallibility of the library. This design choice could make this trait complicated to apply
+/// to a signature algorithm that do not have fixed sizes for the encodings of these objects.
+pub trait Signature<
+    PK: SignaturePublicKey<PK_LEN>,
+    SK: SignaturePrivateKey<SK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize>: Sized {
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), SignatureError>;
@@ -437,22 +451,25 @@ pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey>: Sized {
     /// Not all signature primitives will support a context value, so you may need to consult the
     /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError>;
+    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError>;
 
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError>;
+    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
 
     /* streaming signing API */
     /// Initialize a signer for streaming mode with the provided private key.
     fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
 
+    // todo: make this a AsRef<[u8]> ?
+    /// Update the signer with the next chunk of data.
+    /// This can be called multiple times.
     fn sign_update(&mut self, msg_chunk: &[u8]);
 
     /// Complete the signing operation. Consumes self.
-    fn sign_final(self) -> Result<Vec<u8>, SignatureError>;
+    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError>;
 
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError>;
+    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
 
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
@@ -461,6 +478,9 @@ pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey>: Sized {
     /* streaming verification API */
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
 
+    // todo: make this a AsRef<[u8]> ?
+    /// Update the verifier with the next chunk of data.
+    /// This can be called multiple times.
     fn verify_update(&mut self, msg_chunk: &[u8]);
 
     /// On success, returns Ok(())
@@ -468,25 +488,28 @@ pub trait Signature<PK: SignaturePublicKey, SK: SignaturePrivateKey>: Sized {
     fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError>;
 }
 
+// todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>
+// todo: that automatically call the encode and from_bytes() ?
+
 /// A public key for a signature algorithm, often denoted "pk".
-pub trait SignaturePublicKey : PartialEq + Eq + Clone + Debug + Display + Sized {
+pub trait SignaturePublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
     /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> Vec<u8>;
+    fn encode(&self) -> [u8; PK_LEN];
 
     /// Write it out to bytes in its standard encoding.
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
 
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
 
 /// A private key for a signature algorithm, often denoted "sk" (for "secret key").
-pub trait SignaturePrivateKey: PartialEq + Eq + Clone + Debug + Display + Sized {
+pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
     /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> Vec<u8>;
+    fn encode(&self) -> [u8; SK_LEN];
 
     /// Write it out to bytes in its standard encoding.
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError>;
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
 
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;

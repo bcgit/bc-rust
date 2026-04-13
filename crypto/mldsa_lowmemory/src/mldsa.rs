@@ -1379,7 +1379,7 @@ impl<
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> Signature<PK, SK> for MLDSA<
+> Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN> for MLDSA<
     PK_LEN,
     SK_LEN,
     SIG_LEN,
@@ -1409,18 +1409,16 @@ impl<
         Self::keygen_from_os_rng()
     }
 
-    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; SIG_LEN];
+    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
 
         Ok(out)
     }
 
-    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8]) -> Result<usize, SignatureError> {
+    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         let mu = MuBuilder::compute_mu(&sk.tr(), msg, ctx)?;
-        if output.len() < SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
-        let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
-        let bytes_written = Self::sign_mu_out(sk, &mu, output_sized)?;
+        let bytes_written = Self::sign_mu_out(sk, &mu, output)?;
 
         Ok(bytes_written)
     }
@@ -1441,13 +1439,13 @@ impl<
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
+    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         self.sign_final_out(&mut out)?;
-        Ok(Vec::from(out))
+        Ok(out)
     }
 
-    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
+    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         let mu = self.mu_builder.do_final();
 
         if self.sk.is_none() && self.seed.is_none() {
@@ -1478,7 +1476,7 @@ impl<
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)?;
 
-        if sig.len() != SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        if sig.len() < SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
         if Self::verify_mu_internal(pk, &mu, &sig[..SIG_LEN].try_into().unwrap()) {
             Ok(())
         } else {
@@ -1507,7 +1505,7 @@ impl<
 
         assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
 
-        if sig.len() != SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
+        if sig.len() < SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
         if Self::verify_mu_internal(&self.pk.unwrap(), &mu, &sig[..SIG_LEN].try_into().unwrap()) {
             Ok(())
         } else {

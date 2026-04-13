@@ -619,7 +619,7 @@ impl<
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> Signature<PK, SK>
+> Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>
     for HashMLDSA<
         HASH,
         PH_LEN,
@@ -676,8 +676,8 @@ impl<
 
     /// Algorithm 4 HashML-DSA.Sign(𝑠𝑘, 𝑀 , 𝑐𝑡𝑥, PH)
     /// Generate a “pre-hash” ML-DSA signature.
-    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; SIG_LEN];
+    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
 
         Ok(out)
@@ -687,7 +687,7 @@ impl<
         sk: &SK,
         msg: &[u8],
         ctx: Option<&[u8]>,
-        output: &mut [u8],
+        output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         let mut ph_m = [0u8; PH_LEN];
         _ = HASH::default().hash_out(msg, &mut ph_m);
@@ -714,13 +714,13 @@ impl<
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
+    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         self.sign_final_out(&mut out)?;
-        Ok(Vec::from(out))
+        Ok(out)
     }
 
-    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
+    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
 
         if self.sk.is_none() && self.seed.is_none() {
@@ -779,12 +779,9 @@ impl<
     }
 
     fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
-
         assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
-
-        if sig.len() != SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-        Self::verify_ph(&self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), &sig[..SIG_LEN])
+        let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
+        Self::verify_ph(&self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), sig)
     }
 }
 
@@ -814,7 +811,7 @@ impl<
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> PHSignature<PK, SK, PH_LEN>
+> PHSignature<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>
     for HashMLDSA<
         HASH,
         PH_LEN,
@@ -843,8 +840,8 @@ impl<
     >
 {
 
-    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; SIG_LEN];
+    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, ph, ctx, &mut out)?;
 
         Ok(out)
@@ -858,18 +855,11 @@ impl<
         sk: &SK,
         ph: &[u8; PH_LEN],
         ctx: Option<&[u8]>,
-        output: &mut [u8],
+        output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        if output.len() < SIG_LEN {
-            return Err(SignatureError::LengthError(
-                "Output buffer insufficient size to hold signature",
-            ));
-        }
-        let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
-
         let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
-        Self::sign_ph_deterministic_out(sk, ctx, ph, rnd, output_sized)
+        Self::sign_ph_deterministic_out(sk, ctx, ph, rnd, output)
     }
 
     fn verify_ph(
@@ -878,10 +868,11 @@ impl<
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        if sig.len() != SIG_LEN {
+        if sig.len() < SIG_LEN {
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
-
+        let sig_sized: &[u8; SIG_LEN] = sig[..SIG_LEN].try_into().unwrap();
+        
         let ctx = if ctx.is_some() { ctx.unwrap() } else { &[] };
 
         // Algorithm 5
@@ -928,7 +919,7 @@ impl<
             POLY_ETA_PACKED_LEN,
             LAMBDA_over_4,
             GAMMA1_MASK_LEN,
-        >::verify_mu_internal(pk, &mu, &sig[..SIG_LEN].try_into().unwrap())
+        >::verify_mu_internal(pk, &mu, sig_sized)
         {
             Ok(())
         } else {

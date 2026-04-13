@@ -40,7 +40,7 @@ pub struct MLDSAPublicKey<const k: usize, const T1_PACKED_LEN: usize, const PK_L
 }
 
 /// General trait for all ML-DSA public keys types.
-pub trait MLDSAPublicKeyTrait<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize> : SignaturePublicKey {
+pub trait MLDSAPublicKeyTrait<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize> : SignaturePublicKey<PK_LEN> {
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
@@ -75,24 +75,6 @@ pub(crate) trait MLDSAPublicKeyInternalTrait<const k: usize, const T1_PACKED_LEN
 }
 
 impl<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> for MLDSAPublicKey<k, T1_PACKED_LEN, PK_LEN> {
-    // todo -- I think this becomes trivial
-    // fn pk_encode(&self) -> [u8; PK_LEN] {
-    //     let mut pk = [0u8; PK_LEN];
-    //
-    //     pk[0..32].copy_from_slice(&self.rho);
-    //
-    //     let (pk_chunks, last_chunk) = pk[32..].as_chunks_mut::<POLY_T1PACKED_LEN>();
-    //
-    //     // that should divide evenly the remainder of the array
-    //     debug_assert_eq!(pk_chunks.len(), k);
-    //     debug_assert_eq!(last_chunk.len(), 0);
-    //
-    //     for (pk_chunk, t1_i) in pk_chunks.into_iter().zip(&self.t1.vec) {
-    //         pk_chunk.copy_from_slice(&simple_bit_pack_t1(&t1_i));
-    //     }
-    //
-    //     pk
-    // }
     fn pk_encode(&self) -> [u8; PK_LEN] {
         let mut pk = [0u8; PK_LEN];
         pk[..32].copy_from_slice(&self.rho);
@@ -100,22 +82,6 @@ impl<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize> MLDSAPubli
         pk
     }
 
-    // fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
-    //     let rho = pk[0..32].try_into().unwrap();
-    //     let mut t1 = Vector::<k>::new();
-    //
-    //     let (pk_chunks, last_chunk) = pk[32..].as_chunks::<POLY_T1PACKED_LEN>();
-    //
-    //     // that should divide evenly the remainder of the array
-    //     debug_assert_eq!(pk_chunks.len(), k);
-    //     debug_assert_eq!(last_chunk.len(), 0);
-    //
-    //     for (t1_i, pk_chunk) in t1.vec.iter_mut().zip(pk_chunks) {
-    //         t1_i.0.copy_from_slice(&simple_bit_unpack_t1(pk_chunk).0);
-    //     }
-    //
-    //     Self::new(&rho, &t1)
-    // }
     fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
         Self {
             rho: pk[..32].try_into().unwrap(),
@@ -143,20 +109,14 @@ impl<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize> MLDSAPubli
     }
 }
 
-impl<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize>  SignaturePublicKey for MLDSAPublicKey<k, T1_PACKED_LEN, PK_LEN> {
-    fn encode(&self) -> Vec<u8> {
-        Vec::from(self.pk_encode())
+impl<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize>  SignaturePublicKey<PK_LEN> for MLDSAPublicKey<k, T1_PACKED_LEN, PK_LEN> {
+    fn encode(&self) -> [u8; PK_LEN] {
+        self.pk_encode()
     }
 
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
-        if out.len() < PK_LEN {
-            Err(SignatureError::EncodingError("Output buffer too small"))
-        } else {
-            let tmp = self.pk_encode();
-            debug_assert_eq!(tmp.len(), PK_LEN);
-            out[..PK_LEN].copy_from_slice(&tmp);
-            Ok(PK_LEN)
-        }
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        out.copy_from_slice(&self.pk_encode());
+        PK_LEN
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
@@ -211,7 +171,7 @@ pub trait MLDSAPrivateKeyTrait<
     const T1_PACKED_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize
-> : SignaturePrivateKey {
+> : SignaturePrivateKey<SK_LEN> {
     /// New from KeyMaterial. Can throw a SignatureError if the KeyMaterial does not contain sufficient entropy.
     fn from_keymaterial(seed: &KeyMaterialSized<32>) -> Result<Self, SignatureError>;
 
@@ -476,20 +436,17 @@ impl<
     const T1_PACKED_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
-> SignaturePrivateKey for MLDSASeedPrivateKey<LAMBDA, GAMMA2, k, l, eta, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN> {
-    fn encode(&self) -> Vec<u8> {
-        let mut out = [0u8; 32];
+> SignaturePrivateKey<SK_LEN> for MLDSASeedPrivateKey<LAMBDA, GAMMA2, k, l, eta, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN> {
+    fn encode(&self) -> [u8; SK_LEN] {
+        let mut out = [0u8; SK_LEN];
         out.copy_from_slice(self.seed.ref_to_bytes());
-        out.to_vec()
+        out
     }
 
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
-        if out.len() < 32 {
-            return Err(SignatureError::EncodingError("Output buffer too small"));
-        }
-        out[..32].copy_from_slice(self.seed.ref_to_bytes());
-        Ok(32)
-
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+        out.copy_from_slice(self.seed.ref_to_bytes());
+        SK_LEN
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {

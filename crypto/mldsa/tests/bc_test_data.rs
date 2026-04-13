@@ -13,7 +13,7 @@ mod bc_test_data {
     use bouncycastle_hex as hex;
     use bouncycastle_core_interface::key_material::{KeyMaterial, KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Hash, PHSignature, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey};
-    use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
+    use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
     use bouncycastle_sha2::SHA512;
     use crate::BustedMuBuilder;
 
@@ -103,18 +103,24 @@ mod bc_test_data {
             match self.parameter_set.as_str() {
                 "ML-DSA-44" => {
                     let (pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-                    assert_eq!(pk.encode(), hex::decode(&self.pk).unwrap());
-                    assert_eq!(sk.encode(), hex::decode(&self.sk).unwrap());
+                    let pk_sized: [u8; MLDSA44_PK_LEN] = hex::decode(&self.pk).unwrap().try_into().unwrap();
+                    assert_eq!(pk.encode(), pk_sized);
+                    let sk_sized: [u8; MLDSA44_SK_LEN] = hex::decode(&self.sk).unwrap().try_into().unwrap();
+                    assert_eq!(sk.encode(), sk_sized);
                 },
                 "ML-DSA-65" => {
                     let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-                    assert_eq!(pk.encode(), hex::decode(&self.pk).unwrap());
-                    assert_eq!(sk.encode(), hex::decode(&self.sk).unwrap());
+                    let pk_sized: [u8; MLDSA65_PK_LEN] = hex::decode(&self.pk).unwrap().try_into().unwrap();
+                    assert_eq!(pk.encode(), pk_sized);
+                    let sk_sized: [u8; MLDSA65_SK_LEN] = hex::decode(&self.sk).unwrap().try_into().unwrap();
+                    assert_eq!(sk.encode(), sk_sized);
                 },
                 "ML-DSA-87" => {
                     let (pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-                    assert_eq!(pk.encode(), hex::decode(&self.pk).unwrap());
-                    assert_eq!(sk.encode(), hex::decode(&self.sk).unwrap());
+                    let pk_sized: [u8; MLDSA87_PK_LEN] = hex::decode(&self.pk).unwrap().try_into().unwrap();
+                    assert_eq!(pk.encode(), pk_sized);
+                    let sk_sized: [u8; MLDSA87_SK_LEN] = hex::decode(&self.sk).unwrap().try_into().unwrap();
+                    assert_eq!(sk.encode(), sk_sized);
                 },
                 val => panic!("Invalid parameter set: {}", val),
 
@@ -493,8 +499,10 @@ mod bc_test_data {
 
 
                     let (pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-                    assert_eq!(pk.encode(), hex::decode(&self.pk).unwrap());
-                    assert_eq!(sk.encode(), hex::decode(&self.sk).unwrap());
+                    let pk_sized: [u8; MLDSA44_PK_LEN] = hex::decode(&self.pk).unwrap().try_into().unwrap();
+                    assert_eq!(pk.encode(), pk_sized);
+                    let sk_sized: [u8; MLDSA44_SK_LEN] = hex::decode(&self.sk).unwrap().try_into().unwrap();
+                    assert_eq!(sk.encode(), sk_sized);
 
                     if IS_HASH_MLDSA {
                         // we're only testing SHA512
@@ -535,8 +543,10 @@ mod bc_test_data {
                     seed.drop_hazardous_operations();
 
                     let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-                    assert_eq!(pk.encode(), hex::decode(&self.pk).unwrap());
-                    assert_eq!(sk.encode(), hex::decode(&self.sk).unwrap());
+                    let pk_sized: [u8; MLDSA65_PK_LEN] = hex::decode(&self.pk).unwrap().try_into().unwrap();
+                    assert_eq!(pk.encode(), pk_sized);
+                    let sk_sized: [u8; MLDSA65_SK_LEN] = hex::decode(&self.sk).unwrap().try_into().unwrap();
+                    assert_eq!(sk.encode(), sk_sized);
 
                     if IS_HASH_MLDSA {
                         // we're only testing SHA512
@@ -577,8 +587,10 @@ mod bc_test_data {
                     seed.drop_hazardous_operations();
 
                     let (pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-                    assert_eq!(pk.encode(), hex::decode(&self.pk).unwrap());
-                    assert_eq!(sk.encode(), hex::decode(&self.sk).unwrap());
+                    let pk_sized: [u8; MLDSA87_PK_LEN] = hex::decode(&self.pk).unwrap().try_into().unwrap();
+                    assert_eq!(pk.encode(), pk_sized);
+                    let sk_sized: [u8; MLDSA87_SK_LEN] = hex::decode(&self.sk).unwrap().try_into().unwrap();
+                    assert_eq!(sk.encode(), sk_sized);
 
 
                     if IS_HASH_MLDSA {

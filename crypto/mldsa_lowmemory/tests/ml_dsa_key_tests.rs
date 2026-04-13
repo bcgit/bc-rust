@@ -7,7 +7,9 @@ mod mldsa_tests {
     use bouncycastle_core_interface::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_core_test_framework::signature::{TestFrameworkSignatureKeys};
     use bouncycastle_mldsa_lowmemory::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
-    use bouncycastle_mldsa_lowmemory::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87_PK_LEN, MLDSA87_SK_LEN};
+    use bouncycastle_mldsa_lowmemory::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN};
+    use bouncycastle_mldsa_lowmemory::{MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN};
+    use bouncycastle_mldsa_lowmemory::{MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN};
     use bouncycastle_hex as hex;
 
 
@@ -15,9 +17,9 @@ mod mldsa_tests {
     fn core_framework_tests() {
         let tf = TestFrameworkSignatureKeys::new();
 
-        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN>();
-        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN>();
-        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN>();
+        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>();
+        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>();
+        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>();
     }
 
     #[test]
@@ -33,12 +35,12 @@ mod mldsa_tests {
 
         let (pk2, sk2) = MLDSA44::keygen_from_seed(&seed).unwrap();
         let mut pk2_bytes = [1u8; MLDSA44_PK_LEN];
-        let bytes_written = pk2.encode_out(&mut pk2_bytes).unwrap();
+        let bytes_written = pk2.encode_out(&mut pk2_bytes);
         assert_eq!(bytes_written, MLDSA44_PK_LEN);
         assert_eq!(pk1_bytes, pk2_bytes);
 
         let mut sk2_bytes = [1u8; MLDSA44_SK_LEN];
-        let bytes_written = sk2.encode_out(&mut sk2_bytes).unwrap();
+        let bytes_written = sk2.encode_out(&mut sk2_bytes);
         assert_eq!(bytes_written, MLDSA44_SK_LEN);
         assert_eq!(sk1_bytes, sk2_bytes);
     }

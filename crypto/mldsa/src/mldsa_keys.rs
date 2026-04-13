@@ -44,7 +44,7 @@ pub struct MLDSAPublicKey<const k: usize, const PK_LEN: usize> {
 }
 
 /// General trait for all ML-DSA public keys types.
-pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePublicKey {
+pub trait MLDSAPublicKeyTrait<const k: usize, const PK_LEN: usize> : SignaturePublicKey<PK_LEN> {
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
@@ -138,26 +138,20 @@ impl<const k: usize, const PK_LEN: usize> MLDSAPublicKeyInternalTrait<k, PK_LEN>
     fn t1(&self) -> &Vector<k> { &self.t1 }
 }
 
-impl<const k: usize, const PK_LEN: usize>  SignaturePublicKey for MLDSAPublicKey<k, PK_LEN> {
-    fn encode(&self) -> Vec<u8> {
-        Vec::from(self.pk_encode())
+impl<const k: usize, const PK_LEN: usize>  SignaturePublicKey<PK_LEN> for MLDSAPublicKey<k, PK_LEN> {
+    fn encode(&self) -> [u8; PK_LEN] {
+        self.pk_encode()
     }
 
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
-        if out.len() < PK_LEN {
-            Err(SignatureError::EncodingError("Output buffer too small"))
-        } else {
-            let tmp = self.pk_encode();
-            debug_assert_eq!(tmp.len(), PK_LEN);
-            out[..PK_LEN].copy_from_slice(&tmp);
-            Ok(PK_LEN)
-        }
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        out.copy_from_slice(&self.pk_encode());
+        PK_LEN
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
         if bytes.len() != PK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
-        let sized_bytes: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(Self::pk_decode(&sized_bytes))
+        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Ok(Self::pk_decode(&bytes_sized))
     }
 }
 
@@ -214,7 +208,12 @@ pub struct MLDSAPrivateKey<
 }
 
 /// General trait for all ML-DSA private keys types.
-pub trait MLDSAPrivateKeyTrait<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize> : SignaturePrivateKey {
+pub trait MLDSAPrivateKeyTrait<
+    const k: usize,
+    const l: usize,
+    const eta: usize,
+    const SK_LEN: usize,
+    const PK_LEN: usize> : SignaturePrivateKey<SK_LEN> {
     /// Get a ref to the seed, if there is one stored with this private key
     fn seed(&self) -> &Option<KeyMaterialSized<32>>;
 
@@ -435,24 +434,20 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 }
 
 impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
-    SignaturePrivateKey for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
-    fn encode(&self) -> Vec<u8> {
-        self.sk_encode().to_vec()
+    SignaturePrivateKey<SK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN> {
+    fn encode(&self) -> [u8; SK_LEN] {
+        self.sk_encode()
     }
 
-    fn encode_out(&self, out: &mut [u8]) -> Result<usize, SignatureError> {
-        if out.len() < SK_LEN {
-            Err(SignatureError::EncodingError("Output buffer too small"))
-        } else {
-            let out_sized: &mut [u8; SK_LEN] = out[..SK_LEN].as_mut().try_into().unwrap();
-            Ok(self.sk_encode_out(out_sized))
-        }
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+        self.sk_encode_out(out)
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
         if bytes.len() != SK_LEN { return Err(SignatureError::DecodingError("Provided key bytes are the incorrect length")) }
-        let sized_bytes: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
-        Ok(Self::sk_decode(&sized_bytes))
+        let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
+        Ok(Self::sk_decode(&bytes_sized))
     }
 }
 
