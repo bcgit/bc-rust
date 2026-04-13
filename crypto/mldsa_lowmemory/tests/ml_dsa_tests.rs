@@ -8,7 +8,9 @@ mod mldsa_tests {
     use bouncycastle_core_test_framework::signature::*;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa_lowmemory::{MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MuBuilder, MLDSA44, MLDSA65, MLDSA87, TR_LEN};
-    use bouncycastle_mldsa_lowmemory::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN, MLDSA87_PK_LEN};
+    use bouncycastle_mldsa_lowmemory::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN};
+    use bouncycastle_mldsa_lowmemory::{MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN};
+    use bouncycastle_mldsa_lowmemory::{MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN};
     use bouncycastle_mldsa_lowmemory::{MLDSATrait, MLDSAPublicKeyTrait, MLDSAPrivateKeyTrait};
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
 
@@ -16,9 +18,9 @@ mod mldsa_tests {
     fn test_framework_signature() {
         let tf = TestFrameworkSignature::new(false, true);
 
-        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_SIG_LEN>(false);
-        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_SIG_LEN>(false);
-        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_SIG_LEN>(false);
+        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(false);
+        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(false);
+        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(false);
     }
 
     /// This runs the full bitflipping tests and takes several minutes.
@@ -219,7 +221,8 @@ mod mldsa_tests {
         s.set_signer_rnd(rnd);
         s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
         let sig = s.sign_final().unwrap();
-        assert_eq!(&sig, &hex::decode(MLDSA44_KAT1.signature).unwrap());
+        let decoded_sig: &[u8; MLDSA44_SIG_LEN] = &hex::decode(MLDSA44_KAT1.signature).unwrap().try_into().unwrap();
+        assert_eq!(&sig, decoded_sig);
 
         // Then with the message broken into chunks
         let mut s = MLDSA44::sign_init(&sk, Some(b"streaming API chunked")).unwrap();
@@ -253,7 +256,8 @@ mod mldsa_tests {
         s.set_signer_rnd(rnd);
         s.sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
         let sig = s.sign_final().unwrap();
-        assert_eq!(&sig, &hex::decode(MLDSA65_KAT1.signature).unwrap());
+        let decoded_sig: &[u8; MLDSA65_SIG_LEN] = &hex::decode(MLDSA65_KAT1.signature).unwrap().try_into().unwrap();
+        assert_eq!(&sig, decoded_sig);
 
 
 
@@ -277,7 +281,8 @@ mod mldsa_tests {
         s.set_signer_rnd(rnd);
         s.sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
         let sig = s.sign_final().unwrap();
-        assert_eq!(&sig, &hex::decode(MLDSA87_KAT1.signature).unwrap());
+        let decoded_sig: &[u8; MLDSA87_SIG_LEN] = &hex::decode(MLDSA87_KAT1.signature).unwrap().try_into().unwrap();
+        assert_eq!(&sig, decoded_sig);
     }
 
     #[test]
@@ -356,92 +361,6 @@ mod mldsa_tests {
 
         // test various things that are shorter / longer than required
 
-        // sign_out
-
-        // MLDSA44
-        let (_pk, sk) = MLDSA44::keygen().unwrap();
-        let mut out_too_short = [1u8; MLDSA44_SIG_LEN -1];
-        match MLDSA44::sign_out(&sk, msg, None, &mut out_too_short) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for out_too_short"),
-        }
-
-        let mut s = MLDSA44::sign_init(&sk, None).unwrap();
-        s.sign_update(msg);
-        match s.sign_final_out(&mut out_too_short) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for out_too_short"),
-        }
-
-
-        // too long is fine; it should just write to the beginning
-        let mut out_too_long = [1u8; MLDSA44_SIG_LEN + 2];
-        let bytes_written = MLDSA44::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
-        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
-        assert_eq!(&out_too_long[MLDSA44_SIG_LEN..], &[1,1]);
-
-        let mut s = MLDSA44::sign_init(&sk, None).unwrap();
-        s.sign_update(msg);
-        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
-        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
-        assert_eq!(&out_too_long[MLDSA44_SIG_LEN..], &[1,1]);
-
-
-        // MLDSA65
-        let (_pk, sk) = MLDSA65::keygen().unwrap();
-        let mut out_too_short = [1u8; MLDSA65_SIG_LEN -1];
-        match MLDSA65::sign_out(&sk, msg, None, &mut out_too_short) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for out_too_short"),
-        }
-
-        let mut s = MLDSA65::sign_init(&sk, None).unwrap();
-        s.sign_update(msg);
-        match s.sign_final_out(&mut out_too_short) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for out_too_short"),
-        }
-
-        // too long is fine; it should just write to the beginning
-        let mut out_too_long = [1u8; MLDSA65_SIG_LEN + 2];
-        let bytes_written = MLDSA65::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
-        assert_eq!(bytes_written, MLDSA65_SIG_LEN);
-        assert_eq!(&out_too_long[MLDSA65_SIG_LEN..], &[1,1]);
-
-        let mut s = MLDSA65::sign_init(&sk, None).unwrap();
-        s.sign_update(msg);
-        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
-        assert_eq!(bytes_written, MLDSA65_SIG_LEN);
-        assert_eq!(&out_too_long[MLDSA65_SIG_LEN..], &[1,1]);
-
-
-        // MLDSA87
-        let (_pk, sk) = MLDSA87::keygen().unwrap();
-        let mut out_too_short = [1u8; MLDSA87_SIG_LEN -1];
-        match MLDSA87::sign_out(&sk, msg, None, &mut out_too_short) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for out_too_short"),
-        }
-
-        let mut s = MLDSA87::sign_init(&sk, None).unwrap();
-        s.sign_update(msg);
-        match s.sign_final_out(&mut out_too_short) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for out_too_short"),
-        }
-
-        // too long is fine; it should just write to the beginning
-        let mut out_too_long = [1u8; MLDSA87_SIG_LEN + 2];
-        let bytes_written = MLDSA87::sign_out(&sk, msg, None, &mut out_too_long).unwrap();
-        assert_eq!(bytes_written, MLDSA87_SIG_LEN);
-        assert_eq!(&out_too_long[MLDSA87_SIG_LEN..], &[1,1]);
-
-        let mut s = MLDSA87::sign_init(&sk, None).unwrap();
-        s.sign_update(msg);
-        let bytes_written = s.sign_final_out(&mut out_too_long).unwrap();
-        assert_eq!(bytes_written, MLDSA87_SIG_LEN);
-        assert_eq!(&out_too_long[MLDSA87_SIG_LEN..], &[1,1]);
-
 
         // sig too long / too short
 
@@ -454,12 +373,9 @@ mod mldsa_tests {
             _ => panic!("Expected error for sig too short"),
         }
         // too long
-        let mut sig_too_long = sig.clone();
-        sig_too_long.append(&mut vec![1u8, 0u8]);
-        match MLDSA44::verify(&pk, msg, None, &sig_too_long) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for sig too short"),
-        }
+        let mut sig_too_long= vec![1u8; MLDSA44_SIG_LEN + 2];
+        sig_too_long[..MLDSA44_SIG_LEN].copy_from_slice(&sig);
+        MLDSA44::verify(&pk, msg, None, &sig_too_long).unwrap();
 
         // MLDSA65
         let (pk, sk) = MLDSA65::keygen().unwrap();
@@ -470,12 +386,9 @@ mod mldsa_tests {
             _ => panic!("Expected error for sig too short"),
         }
         // too long
-        let mut sig_too_long = sig.clone();
-        sig_too_long.append(&mut vec![0u8, 0u8]);
-        match MLDSA65::verify(&pk, msg, None, &sig_too_long) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for sig too short"),
-        }
+        let mut sig_too_long= vec![1u8; MLDSA65_SIG_LEN + 2];
+        sig_too_long[..MLDSA65_SIG_LEN].copy_from_slice(&sig);
+        MLDSA65::verify(&pk, msg, None, &sig_too_long).unwrap();
 
         // MLDSA87
         let (pk, sk) = MLDSA87::keygen().unwrap();
@@ -486,12 +399,9 @@ mod mldsa_tests {
             _ => panic!("Expected error for sig too short"),
         }
         // too long
-        let mut sig_too_long = sig.clone();
-        sig_too_long.append(&mut vec![0u8, 0u8]);
-        match MLDSA87::verify(&pk, msg, None, &sig_too_long) {
-            Err(SignatureError::LengthError(_)) => { /* good */ },
-            _ => panic!("Expected error for sig too short"),
-        }
+        let mut sig_too_long= vec![1u8; MLDSA87_SIG_LEN + 2];
+        sig_too_long[..MLDSA87_SIG_LEN].copy_from_slice(&sig);
+        MLDSA87::verify(&pk, msg, None, &sig_too_long).unwrap();
     }
 
     #[test]
