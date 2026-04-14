@@ -22,7 +22,7 @@
 //! let mut signer = MLDSA65::sign_init(&sk, None).unwrap();
 //! signer.sign_update(msg_chunk1);
 //! signer.sign_update(msg_chunk2);
-//! let sig: Vec<u8> = signer.sign_final().unwrap();
+//! let sig = signer.sign_final().unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! // This is compatible with a verifies that takes the whole message as one chunk:
@@ -65,7 +65,7 @@
 //! signer.set_signer_rnd([0u8; 32]); // an all-zero rnd is the "deterministic" mode of ML-DSA
 //! signer.sign_update(msg_chunk1);
 //! signer.sign_update(msg_chunk2);
-//! let sig: Vec<u8> = signer.sign_final().unwrap();
+//! let sig = signer.sign_final().unwrap();
 //! ```
 //!
 //! # External Mu mode
@@ -106,7 +106,7 @@
 //! // stream the whole thing over a network, and you need it pre-hashed.
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
-//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+//! let mu: [u8; 64] = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
 //! ```
 //!
 //! Note: if you are going to bind a `ctx` value (explained below), then you need to do in in [MuBuilder::compute_mu].
@@ -145,7 +145,7 @@
 //!
 //! // Assume this was computed somewhere else and sent to you.
 //! // They would have had to know pk!
-//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+//! let mu: [u8; 64] = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
 //!
 //! let sig = MLDSA65::sign_mu(&sk, &mu).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
@@ -189,7 +189,7 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = MLDSA65::sign(&sk, msg, Some(ctx)).unwrap();
+//! let sig = MLDSA65::sign(&sk, msg, Some(ctx)).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! match MLDSA65::verify(&pk, msg, Some(ctx), &sig) {
@@ -229,7 +229,7 @@
 //!
 //! // Assume this was computed somewhere else and sent to you.
 //! // They would have had to know pk!
-//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &pk.compute_tr()).unwrap();
+//! let mu: [u8; 64] = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
 //!
 //! // Typically, "deterministic" mode of ML-DSA will use an all-zero rnd,
 //! // but we've exposed it so you can set any value you need to.
@@ -265,10 +265,11 @@
 //!
 //! ```rust
 //! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //! use bouncycastle_core_interface::traits::Signature;
 //! use bouncycastle_core_interface::traits::KeyMaterial;
 //! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
+//! use bouncycastle_hex as hex;
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
@@ -287,7 +288,7 @@
 //!
 //! // Assume this was computed somewhere else and sent to you.
 //! // They would have had to know pk!
-//! let mu: [u8; 64] = MuBuilder::compute_mu(msg, None, &tr).unwrap();
+//! let mu: [u8; 64] = MuBuilder::compute_mu(&tr, msg, None).unwrap();
 //! let rnd: [u8; 32] = [0u8; 32]; // with this API, you're responsible for your own nonce
 //!                                // because in the cases where this level of memory optimization
 //!                                // is needed, our RNG probably won't work anyway.

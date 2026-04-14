@@ -7,14 +7,14 @@
 //!
 //! ```rust
 //! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
 //! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_mldsa_lowmemory::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
+//! let sig = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
@@ -28,9 +28,9 @@
 //!
 //! ```rust
 //! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
 //! use bouncycastle_core_interface::traits::{Signature, PHSignature, Hash};
 //! use bouncycastle_sha2::SHA512;
+//! use bouncycastle_mldsa_lowmemory::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
@@ -41,7 +41,7 @@
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
+//! let sig = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! // This verifies either through the usual one-shot API of the [Signature] trait

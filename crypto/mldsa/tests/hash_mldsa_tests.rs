@@ -2,10 +2,11 @@ use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core_interface::traits::{Hash, Signature};
 use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, MLDSA44_SIG_LEN};
 use bouncycastle_sha2::SHA512;
+use bouncycastle_hex as hex;
 
 #[cfg(test)]
 mod hash_mldsa_tests {
-    use bouncycastle_hex as hex;
+    use super::*;
     use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
     use bouncycastle_core_interface::traits::{Hash};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;

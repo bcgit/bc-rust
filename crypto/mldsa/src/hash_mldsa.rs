@@ -14,7 +14,7 @@
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
+//! let sig = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
@@ -41,7 +41,7 @@
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
+//! let sig = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! // This verifies either through the usual one-shot API of the [Signature] trait
