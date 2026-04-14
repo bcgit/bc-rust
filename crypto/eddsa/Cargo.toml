@@ -1,0 +1,20 @@
+[package]
+name = "bouncycastle-eddsa"
+version = "0.1.2"
+edition.workspace = true
+
+[dependencies]
+#arrayref.workspace = true
+bouncycastle-core-interface.workspace = true
+#curve25519.workspace = true
+bouncycastle-utils.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-sha2.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+bouncycastle-hex.workspace = true
+
+[[bench]]
+name = "ed25519_benches"
+harness = false

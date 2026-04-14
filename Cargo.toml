@@ -10,17 +10,18 @@ edition = "2024"
 bouncycastle = { path = "./", version = "0.1.1" }
 bouncycastle-base64 = { path = "./crypto/base64", version = "0.1.1"}
 bouncycastle-core-interface = { path = "./crypto/core-interface", version = "0.1.1" }
-bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", version = "0.1.1"}
-bouncycastle-factory = { path = "./crypto/factory", version = "0.1.1"}
+bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", version = "0.1.1" }
+bouncycastle-eddsa = { path = "crypto/eddsa", version = "0.1.2" }
+bouncycastle-factory = { path = "./crypto/factory", version = "0.1.1" }
 bouncycastle-hex = { path = "./crypto/hex", version = "0.1.1" }
-bouncycastle-hkdf = { path = "./crypto/hkdf", version = "0.1.1"}
-bouncycastle-hmac = { path = "./crypto/hmac", version = "0.1.1"}
+bouncycastle-hkdf = { path = "./crypto/hkdf", version = "0.1.1" }
+bouncycastle-hmac = { path = "./crypto/hmac", version = "0.1.1" }
 bouncycastle-mldsa = { path = "./crypto/mldsa", version = "0.1.2" }
 bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa_lowmemory", version = "0.1.2" }
 bouncycastle-rng = { path = "./crypto/rng", version = "0.1.1" }
-bouncycastle-sha2 = { path = "./crypto/sha2", version = "0.1.1"}
-bouncycastle-sha3 = { path = "./crypto/sha3", version = "0.1.1"}
-bouncycastle-utils = { path = "./crypto/utils", version = "0.1.1"}
+bouncycastle-sha2 = { path = "./crypto/sha2", version = "0.1.1" }
+bouncycastle-sha3 = { path = "./crypto/sha3", version = "0.1.1" }
+bouncycastle-utils = { path = "./crypto/utils", version = "0.1.1" }
 
 
 # *** External Dependencies ***
@@ -40,6 +41,7 @@ edition.workspace = true
 [dependencies]
 bouncycastle-base64.workspace = true
 bouncycastle-core-interface.workspace = true
+bouncycastle-eddsa.workspace = true
 bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-hkdf.workspace = true
