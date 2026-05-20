@@ -9,6 +9,7 @@
 //!
 //! Should only ever be a dev-dependency.
 
+pub mod aead;
 pub mod hash;
 pub mod kdf;
 pub mod mac;

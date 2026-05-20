@@ -8,6 +8,7 @@ edition = "2024"
 
 # *** Internal Dependencies ***
 bouncycastle = { path = "./", version = "0.1.1" }
+bouncycastle-ascon = { path = "./crypto/ascon", version = "0.1.1" }
 bouncycastle-base64 = { path = "./crypto/base64", version = "0.1.1"}
 bouncycastle-core-interface = { path = "./crypto/core-interface", version = "0.1.1" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", version = "0.1.1"}
