@@ -200,7 +200,6 @@ impl Polynomial {
                     // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
                     self.0[j + len] =
                         polynomial::montgomery_reduce(z as i64 * self.0[j + len] as i64);
-                    print!("");
                 }
                 start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.
             }
