@@ -1,11 +1,11 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
 use crate::matrix::{Matrix, Vector};
-use crate::mldsa::{G, H};
 use crate::mldsa::{
-    MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N, POLY_T0PACKED_LEN,
-    POLY_T1PACKED_LEN, d, q,
+    d, q, MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N, POLY_T0PACKED_LEN,
+    POLY_T1PACKED_LEN,
 };
+use crate::mldsa::{G, H};
 use crate::polynomial;
 use crate::polynomial::Polynomial;
 use bouncycastle_core_interface::traits::XOF;
@@ -25,7 +25,11 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 
     let z: i32 = ((b2_prime as i32) << 16) | ((b[1] as i32) << 8) | (b[0] as i32);
 
-    if z < q { Ok(z) } else { Err(()) }
+    if z < q {
+        Ok(z)
+    } else {
+        Err(())
+    }
 }
 
 /// Algorithm 15 CoeffFromHalfByte(𝑏)
@@ -45,7 +49,11 @@ pub(crate) fn coeff_from_half_byte<const ETA: usize>(b: u8) -> Result<i32, ()> {
         };
         Ok(2 - b as i32)
     } else {
-        if ETA == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
+        if ETA == 4 && b < 9 {
+            Ok(4 - b as i32)
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -868,8 +876,7 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
 
     // By the powers of someone much more clever than me, this is equivalent.
 
-    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0)
-    {
+    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0) {
         0
     } else {
         1
@@ -909,9 +916,17 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
     match GAMMA2 {
         MLDSA44_GAMMA2 => {
             if a1 > 0 {
-                if a0 == 43 { 0 } else { a0 + 1 }
+                if a0 == 43 {
+                    0
+                } else {
+                    a0 + 1
+                }
             } else {
-                if a0 == 0 { 43 } else { a0 - 1 }
+                if a0 == 0 {
+                    43
+                } else {
+                    a0 - 1
+                }
             }
         }
         // ML-DSA65 and 87 have the same GAMMA2
