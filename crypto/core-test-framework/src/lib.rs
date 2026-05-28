@@ -1,8 +1,8 @@
-//! This crate holds Known-Answer-Test (KAT) style frameworks for each trait in the [core-interface].
+//! This crate holds Known-Answer-Test (KAT) style frameworks for each trait in the [core].
 //! The idea is that simply providing a set of inputs and outputs to one of these test functions should give mostly complete test coverage for the implementation of a given trait.
 //! Note: the value "DUMMY_SEED" which is 512 bytes \x00..\xFF\x00..\xFF is hardcoded into this crate, and can be referenced by any input string by providing (the non-hex value) "DUMMY_SEED".
 //!
-//! The purpose of this crate is to provide unit tests for each trait in the core-interface crate in order to enforce common behaviour across implementations of a given trait.
+//! The purpose of this crate is to provide unit tests for each trait in the core crate in order to enforce common behaviour across implementations of a given trait.
 //! So, anything like error handling, handling of the lengths of input / output params, KeyMaterial entropy enforcement,
 //! etc that should be consistent for all implementations of a trait should go in here rather than in the tests for the
 //! implementations.
@@ -11,6 +11,7 @@
 
 pub mod hash;
 pub mod kdf;
+pub mod kem;
 pub mod mac;
 pub mod signature;
 

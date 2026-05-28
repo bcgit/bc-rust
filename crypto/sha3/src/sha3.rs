@@ -1,6 +1,6 @@
-use bouncycastle_core_interface::errors::{HashError, KDFError};
-use bouncycastle_core_interface::key_material::{KeyMaterialSized, KeyType};
-use bouncycastle_core_interface::traits::{Hash, KeyMaterial, SecurityStrength, KDF};
+use bouncycastle_core::errors::{HashError, KDFError};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::traits::{Hash, SecurityStrength, KDF};
 use bouncycastle_utils::{max, min};
 use crate::keccak::KeccakDigest;
 use crate::SHA3Params;
@@ -33,7 +33,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
         self.do_final_out(output)
     }
 
-    fn mix_key_internal(&mut self, key: &impl KeyMaterial) {
+    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
 
@@ -55,8 +55,8 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
     fn derive_key_final_internal(
         self,
         additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterial>, KDFError> {
-        let mut output_key = KeyMaterialSized::<64>::new();
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
+        let mut output_key = KeyMaterial::<64>::new();
         self.derive_key_out_final_internal(additional_input, &mut output_key)?;
 
         Ok(Box::new(output_key))
@@ -65,7 +65,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
     fn derive_key_out_final_internal(
         mut self,
         additional_input: &[u8],
-        output_key: &mut impl KeyMaterial,
+        output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
         // it requires full-entropy input that is at least block length.
@@ -137,6 +137,8 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
         output
     }
 
+    // todo -- why doesn't this take a &mut [u8; HASH_LEN] ?
+    //  That's probably more user-friendly than this auto-truncating that I have here.
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
         self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed."); // this shouldn't fail because by construction you can only enter this function once, and this is the only way to absorb partial bits.
 
@@ -194,23 +196,23 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
 
 /// SHA3 is allowed to be used as a KDF in the form HASH(X) as per NIST SP 800-56C.
 impl<PARAMS: SHA3Params> KDF for SHA3<PARAMS> {
-    /// Returns a [KeyMaterialSized].
+    /// Returns a [KeyMaterial].
     /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
     /// it requires full-entropy input that is at least the bit size (ie 256 bits for SHA3-256, etc).
     fn derive_key(
         mut self,
-        key: &impl KeyMaterial,
+        key: &impl KeyMaterialTrait,
         additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterial>, KDFError> {
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         self.mix_key_internal(key);
         self.derive_key_final_internal(additional_input)
     }
 
     fn derive_key_out(
         mut self,
-        key: &impl KeyMaterial,
+        key: &impl KeyMaterialTrait,
         additional_input: &[u8],
-        output_key: &mut impl KeyMaterial,
+        output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // self.derive_key_from_multiple_out(&[key], additional_input, output_key)
         self.mix_key_internal(key);
@@ -219,9 +221,9 @@ impl<PARAMS: SHA3Params> KDF for SHA3<PARAMS> {
 
     fn derive_key_from_multiple(
         mut self,
-        keys: &[&impl KeyMaterial],
+        keys: &[&impl KeyMaterialTrait],
         additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterial>, KDFError> {
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         for key in keys {
             self.mix_key_internal(*key);
         }
@@ -230,9 +232,9 @@ impl<PARAMS: SHA3Params> KDF for SHA3<PARAMS> {
 
     fn derive_key_from_multiple_out(
         mut self,
-        keys: &[&impl KeyMaterial],
+        keys: &[&impl KeyMaterialTrait],
         additional_input: &[u8],
-        output_key: &mut impl KeyMaterial,
+        output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // self.derive_key_from_multiple_internal(keys, additional_input, output_key)
         for key in keys {

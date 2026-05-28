@@ -1,12 +1,13 @@
 //! Provides simplified abstracted APIs over classes of cryptigraphic primitives, such as Hash, KDF, etc.
 
-use std::fmt::{Debug, Display};
-use crate::errors::{HashError, KDFError, MACError, RNGError, SignatureError};
-pub use crate::key_material::KeyMaterial;
+use core::marker::Sized;
+use core::fmt::{Debug, Display};
+use crate::errors::{HashError, KDFError, KEMError, MACError, RNGError, SignatureError};
+use crate::key_material::KeyMaterialTrait;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use crate::key_material::KeyMaterialSized;
+use crate::key_material::KeyMaterial;
 #[allow(unused_imports)]
 use crate::key_material::KeyType;
 // end of imports needed for docs
@@ -99,16 +100,16 @@ pub trait KDF : Default {
     ///
     /// If provided with an input key, even if it is [KeyType::BytesFullEntropy], but that
     /// contains less key material than the internal block size of the KDF, then the KDF
-    /// will not be considered properly seeded, and the output [KeyMaterialSized] will be set to
-    /// [KeyType::BytesLowEntropy] -- for example, seeding SHA3-256 with a [KeyMaterialSized] containing
+    /// will not be considered properly seeded, and the output [KeyMaterial] will be set to
+    /// [KeyType::BytesLowEntropy] -- for example, seeding SHA3-256 with a [KeyMaterial] containing
     /// only 128 bits of key material.
     ///
     /// An implement can, and in most cases SHOULD, return a [HashError] if provided
-    /// with a [KeyMaterialSized] of type [KeyType::Zeroized].
+    /// with a [KeyMaterial] of type [KeyType::Zeroized].
     ///
     /// # Additional Input
     /// The `additional_input` parameter is used in deriving the key, but is not credited with any entropy,
-    /// and therefore does not affect the type of the output [KeyMaterialSized].
+    /// and therefore does not affect the type of the output [KeyMaterial].
     /// This corresponds directly to `FixedInfo` as defined in NIST SP 800-56C.
     /// The `additional_input` parameter can be empty by passing in `&[0u8; 0]`.
     ///
@@ -116,21 +117,21 @@ pub trait KDF : Default {
     /// of the underlying hash primitive.
     fn derive_key(
         self,
-        key: &impl KeyMaterial,
+        key: &impl KeyMaterialTrait,
         additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterial>, KDFError>;
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError>;
 
-    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterialSized].
+    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterial].
     ///
     /// Output length: this function will behave differently depending on the underlying hash primitive;
     /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
     /// will fill the provided KeyMaterial to capacity and require you to truncate it afterwards
-    /// using [KeyMaterial::truncate].
+    /// using [KeyMaterialTrait::truncate].
     fn derive_key_out(
         self,
-        key: &impl KeyMaterial,
+        key: &impl KeyMaterialTrait,
         additional_input: &[u8],
-        output_key: &mut impl KeyMaterial,
+        output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError>;
 
     /// Meant to be used for hybrid key establishment schemes or other spit-key scenarios where multiple
@@ -145,7 +146,7 @@ pub trait KDF : Default {
     /// a KDF that is only full-entropy when keyed in the first input SHOULD return a full entropy key
     /// only if the first input is full entropy.
     ///
-    /// Implementations can, and in most cases SHOULD, return a [KeyMaterialSized] of the same type as the
+    /// Implementations can, and in most cases SHOULD, return a [KeyMaterial] of the same type as the
     /// strongest key, and SHOULD throw a [HashError] if all input keys are zeroized.
     /// For example output a [KeyType::BytesFullEntropy] key whenever any one of
     /// the input keys is a [KeyType::BytesFullEntropy] key.
@@ -156,26 +157,72 @@ pub trait KDF : Default {
     /// of the underlying hash primitive.
     fn derive_key_from_multiple(
         self,
-        keys: &[&impl KeyMaterial],
+        keys: &[&impl KeyMaterialTrait],
         additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterial>, KDFError>;
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError>;
 
-    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterialSized].
+    /// Same as [KDF::derive_key], but fills the provided output [KeyMaterial].
     ///
     /// Output length: this function will behave differently depending on the underlying hash primitive;
     /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
     /// will fill the provided KeyMaterial to capacity and require you to truncate it afterwards
-    /// by using [KeyMaterial::truncate].
+    /// by using [KeyMaterialTrait::truncate].
     fn derive_key_from_multiple_out(
         self,
-        keys: &[&impl KeyMaterial],
+        keys: &[&impl KeyMaterialTrait],
         additional_input: &[u8],
-        output_key: &mut impl KeyMaterial,
+        output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError>;
 
     /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
     fn max_security_strength(&self) -> SecurityStrength;
 }
+
+/// A Key Encapsulation Mechanism
+pub trait KEM<
+    PK: KEMPublicKey<PK_LEN>,
+    SK: KEMPrivateKey<SK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+>: Sized {
+    /// Generate a keypair.
+    /// Error condition: Basically only on RNG failures
+    fn keygen() -> Result<(PK, SK), KEMError>;
+    
+    /// Performs an encapsulation against the given public key.
+    /// Returns the ciphertext and derived shared secret.
+    fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+
+    /// Performs a decapsulation of the given ciphertext.
+    /// Returns the derived shared secret.
+    fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError>;
+}
+
+// todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>
+// todo: that automatically call the encode and from_bytes() ?
+
+/// A public key for a KEM algorithm, often denoted "pk".
+pub trait KEMPublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; PK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
+}
+
+/// A private key for a KEM algorithm, often denoted "sk" (for "secret key").
+pub trait KEMPrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret + Sized {
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; SK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
+}
+
 
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
 /// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that
@@ -200,7 +247,6 @@ pub trait KDF : Default {
 ///
 /// MACs do not implement Default because they do not have a sensible no-args constructor.
 pub trait MAC: Sized {
-
     /// Create a new MAC instance with the given key.
     ///
     /// This is a common constructor whether creating or verifying a MAC value.
@@ -216,7 +262,7 @@ pub trait MAC: Sized {
     /// ```
     /// There are situations in which it is completely reasonable and secure to provide low-entropy
     /// (and sometimes all-zero) keys / salts; for these cases we have provided [MAC::new_allow_weak_key].
-    fn new(key: &impl KeyMaterial) -> Result<Self, MACError>;
+    fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError>;
 
     /// Create a new HMAC instance with the given key.
     ///
@@ -225,7 +271,7 @@ pub trait MAC: Sized {
     /// but use of this constructor is discouraged and you should really be asking yourself why you need it;
     /// in most cases it indicates that your key is not long enough to support the security level of this
     /// HMAC instance, or the key was derived using algorithms at a lower security level, etc.
-    fn new_allow_weak_key(key: &impl KeyMaterial) -> Result<Self, MACError>;
+    fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError>;
 
     /// The size of the output in bytes.
     fn output_len(&self) -> usize;
@@ -334,12 +380,12 @@ impl SecurityStrength {
 /// `rng` crate, but that one should
 /// be used by applications that intend to submit to FIPS certification as it more closely aligns with the
 /// requirements of SP 800-90A.
-/// Note: this interface produces bytes. If you want a [KeyMaterial], then use [KeyMaterialSized::from_rng].
+/// Note: this interface produces bytes. If you want a [KeyMaterialTrait], then use [KeyMaterial::from_rng].
 pub trait RNG : Default {
     // TODO: add back once we figure out streaming interaction with entropy sources.
     // fn add_seed_bytes(&mut self, additional_seed: &[u8]) -> Result<(), RNGError>;
 
-    fn add_seed_keymaterial(&mut self, additional_seed: impl KeyMaterial) -> Result<(), RNGError>;
+    fn add_seed_keymaterial(&mut self, additional_seed: impl KeyMaterialTrait) -> Result<(), RNGError>;
     fn next_int(&mut self) -> Result<u32, RNGError>;
 
     /// Returns the number of requested bytes.
@@ -348,7 +394,7 @@ pub trait RNG : Default {
     /// Returns the number of bytes written.
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError>;
 
-    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterial) -> Result<usize, RNGError>;
+    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterialTrait) -> Result<usize, RNGError>;
 
     /// Returns the Security Strength of this RNG.
     fn security_strength(&self) -> SecurityStrength;
@@ -423,7 +469,8 @@ pub trait Signature<
     SK: SignaturePrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
-    const SIG_LEN: usize>: Sized {
+    const SIG_LEN: usize
+>: Sized {
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), SignatureError>;
@@ -495,25 +542,22 @@ pub trait Signature<
 pub trait SignaturePublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; PK_LEN];
-
     /// Write it out to bytes in its standard encoding.
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
-
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
 
 /// A private key for a signature algorithm, often denoted "sk" (for "secret key").
-pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
+pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret + Sized {
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; SK_LEN];
-
     /// Write it out to bytes in its standard encoding.
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
-
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
+
 
 /// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
 /// The naming used for the functions of this trait are borrowed from the SHA3-style sponge constructions that split XOF operation

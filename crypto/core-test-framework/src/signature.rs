@@ -1,6 +1,6 @@
 use crate::DUMMY_SEED_1024;
-use bouncycastle_core_interface::errors::SignatureError;
-use bouncycastle_core_interface::traits::{PHSignature, Signature, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{PHSignature, Signature, SignaturePrivateKey, SignaturePublicKey};
 
 pub struct TestFrameworkSignature {
     // Put any config options here
@@ -244,10 +244,13 @@ impl TestFrameworkSignature {
         SigAlg::verify(&pk, DUMMY_SEED_1024, None, &sig).unwrap();
 
 
-        // the ::verify API should accept a sig value that's too long and just ignore the extra bytes
+        // the ::verify API should not accept a sig value that's too
         let mut sig_val_too_long = vec![1u8; SIG_LEN + 2];
         sig_val_too_long[..SIG_LEN].copy_from_slice(&sig);
-        SigAlg::verify(&pk, DUMMY_SEED_1024, None, &sig_val_too_long).unwrap();
+        match SigAlg::verify(&pk, DUMMY_SEED_1024, None, &sig_val_too_long) {
+            Err(SignatureError::LengthError(_)) => (),
+            _ => panic!("Unexpected error"),
+        }
     }
 }
 

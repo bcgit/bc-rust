@@ -7,7 +7,7 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
@@ -18,7 +18,7 @@
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
-//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F
@@ -37,7 +37,7 @@
 //! It is also possible to provide input where the final byte contains less than 8 bits of data (ie is a partial byte);
 //! for example, the following code uses only 3 bits of the final byte:
 //! ```
-//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
@@ -54,7 +54,7 @@
 //!
 //! The simplest usage is via the static functions. The following example produces a 16 byte (128-bit) and 16KiB output:
 //!```
-//! use bouncycastle_core_interface::traits::XOF;
+//! use bouncycastle_core::traits::XOF;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
@@ -66,23 +66,23 @@
 //! Unlike [Hash::do_final], [XOF::squeeze] can be called multiple times.
 //! The following code produces the same output as the previous example:
 //!```
-//! use bouncycastle_core_interface::traits::XOF;
+//! use bouncycastle_core::traits::XOF;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let mut shake = sha3::SHAKE128::new();
-//! shake.absorb(data).expect("Failed to absorb data.");
-//! let output_16byte: Vec<u8> = shake.squeeze(16).expect("Is infallible");
+//! shake.absorb(data);
+//! let output_16byte: Vec<u8> = shake.squeeze(16);
 //!
 //! let mut shake = sha3::SHAKE128::new();
 //! let mut output_16KiB: Vec<u8> = vec![];
-//! for i in 0..16 { output_16KiB.extend_from_slice(&shake.squeeze(1024).expect("Is infallible")) }
+//! for i in 0..16 { output_16KiB.extend_from_slice(&shake.squeeze(1024)) }
 //! ```
 //!
 //! ## KDF
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [KDF] trait,
 //! which is implemented by all SHA3 and SHAKE variants.
-//! [KDF] acts on [KeyMaterialSized] objects as both the input and output values.
+//! [KDF] acts on [KeyMaterial] objects as both the input and output values.
 //! In the case of SHA3, the [KDF] interfaces are simple wrapper functions around the underlying SHA3 or SHAKE
 //! primitive that correctly maintains the length and entropy metadata of the key material that it is acting on.
 //! This is intended to act as a developer ait to prevent  some classes of developer mistakes, such as
@@ -90,31 +90,31 @@
 //! input key material to derive a MAC, symmetric, or asymmetric key.
 //!
 //! ```
-//! use bouncycastle_core_interface::traits::KDF;
-//! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::KDF;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let input_key = KeyMaterial256::from_bytes(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F").unwrap();
 //! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input").unwrap();
 //!```
-//! In the previous example, since [KeyMaterialSized::from_bytes] cannot know the amount of entropy in the input data,
+//! In the previous example, since [KeyMaterial::from_bytes] cannot know the amount of entropy in the input data,
 //! it automatically tags it as [KeyType::BytesLowEntropy], and thus [SHA3::derive_key] produces an output key
 //! which also has type [KeyType::BytesLowEntropy].
 //! This would also be the case even if the input had type
-//! [KeyType::BytesFullEntropy] since the input [KeyMaterialSized] is 16 bytes but [SHA3_256] needs at least 32 bytes of
+//! [KeyType::BytesFullEntropy] since the input [KeyMaterial] is 16 bytes but [SHA3_256] needs at least 32 bytes of
 //! full-entropy input key material in order to be able to produce full entropy output key material.
 
 #![forbid(unsafe_code)]
 #![allow(private_bounds)]
 
-use crate::keccak::{KeccakSize};
-use bouncycastle_core_interface::traits::{Algorithm, HashAlgParams, SecurityStrength};
+use crate::keccak::KeccakSize;
+use bouncycastle_core::traits::{Algorithm, HashAlgParams, SecurityStrength};
 
 // imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core_interface::traits::{Hash, KDF, XOF};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core_interface::key_material::{KeyMaterialSized, KeyType};
+use bouncycastle_core::traits::{Hash, KDF, XOF};
 // end of doc-only imports
 
 mod keccak;
@@ -167,7 +167,8 @@ impl HashAlgParams for SHA3_224Params {
     const BLOCK_LEN: usize = 144; // FIPS 202 Table 3
 }
 impl SHA3Params for SHA3_224Params {
-    const SIZE: KeccakSize = KeccakSize::_224;}
+    const SIZE: KeccakSize = KeccakSize::_224;
+}
 
 impl Algorithm for SHA3_256 {
     const ALG_NAME: &'static str = SHA3_256_NAME;
@@ -258,4 +259,3 @@ impl Algorithm for SHAKE256Params {
 impl SHAKEParams for SHAKE256Params {
     const SIZE: KeccakSize = KeccakSize::_256;
 }
-

@@ -1,8 +1,8 @@
-use bouncycastle::core_interface::traits::{RNG};
+use bouncycastle::core::traits::{RNG};
 use bouncycastle::factory::AlgorithmFactory;
 use bouncycastle::factory::rng_factory::RNGFactory;
 
-use crate::write_bytes_or_hex;
+use crate::helpers::write_bytes_or_hex;
 
 pub(crate) fn rng_cmd(len: Option<u32>, output_hex: bool) {
     let mut rng = RNGFactory::default_256_bit();

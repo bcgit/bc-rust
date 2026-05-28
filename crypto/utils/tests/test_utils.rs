@@ -1,4 +1,4 @@
-use bouncycastle_core_interface::key_material::KeyType;
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_utils::{max, min};
 
 #[test]

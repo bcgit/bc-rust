@@ -5,41 +5,40 @@
 //!
 //! Example usage:
 //! ```
-//! use factory::AlgorithmFactory;
-//! use core_interface::traits::Hash;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //!
-//! let h = factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
+//! let h = bouncycastle_factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
 //! let output: Vec<u8> = h.hash(data);
 //! ```
 //! You can equivalently invoke this by string instead of using the constant:
 //!
 //! ```
-//! use factory::AlgorithmFactory;
-//! use core_interface::traits::Hash;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_core::traits::Hash;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //!
-//! let h = factory::hash_factory::HashFactory::new("SHA3-256").unwrap();
+//! let h = bouncycastle_factory::hash_factory::HashFactory::new("SHA3-256").unwrap();
 //! let output: Vec<u8> = h.hash(data);
 //! ```
 
-use bouncycastle_core_interface::errors::HashError;
-use bouncycastle_core_interface::traits::{Hash, SecurityStrength};
-use bouncycastle_sha2 as sha2;
-use bouncycastle_sha3 as sha3;
-use bouncycastle_sha2::{SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_NAME};
-use bouncycastle_sha3::{SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME};
 use crate::{AlgorithmFactory, FactoryError};
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
-
+use bouncycastle_core::errors::HashError;
+use bouncycastle_core::traits::{Hash, SecurityStrength};
+use bouncycastle_sha2 as sha2;
+use bouncycastle_sha2::{SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_NAME};
+use bouncycastle_sha3 as sha3;
+use bouncycastle_sha3::{SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME};
 
 /*** Defaults ***/
 pub const DEFAULT_HASH_NAME: &str = SHA3_256_NAME;
 pub const DEFAULT_128BIT_HASH_NAME: &str = SHA3_256_NAME;
 pub const DEFAULT_256BIT_HASH_NAME: &str = SHA3_512_NAME;
-
 
 /// All members must impl Hash.
 /// Note: no SHAKE because SHAKE is not NIST approved as a hash function. See FIPS 202 section A.2.
@@ -55,12 +54,18 @@ pub enum HashFactory {
 }
 
 impl Default for HashFactory {
-    fn default() -> HashFactory { Self::new(DEFAULT_HASH_NAME).unwrap() }
+    fn default() -> HashFactory {
+        Self::new(DEFAULT_HASH_NAME).unwrap()
+    }
 }
 
 impl AlgorithmFactory for HashFactory {
-    fn default_128_bit() -> HashFactory { Self::new(DEFAULT_128BIT_HASH_NAME).unwrap() }
-    fn default_256_bit() -> HashFactory { Self::new(DEFAULT_256BIT_HASH_NAME).unwrap() }
+    fn default_128_bit() -> HashFactory {
+        Self::new(DEFAULT_128BIT_HASH_NAME).unwrap()
+    }
+    fn default_256_bit() -> HashFactory {
+        Self::new(DEFAULT_256BIT_HASH_NAME).unwrap()
+    }
 
     fn new(alg_name: &str) -> Result<Self, FactoryError> {
         match alg_name {
@@ -75,7 +80,10 @@ impl AlgorithmFactory for HashFactory {
             SHA3_256_NAME => Ok(Self::SHA3_256(sha3::SHA3_256::new())),
             SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),
             SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
-            _ => Err(FactoryError::UnsupportedAlgorithm(format!("The algorithm: \"{}\" is not a known Hash", alg_name))),
+            _ => Err(FactoryError::UnsupportedAlgorithm(format!(
+                "The algorithm: \"{}\" is not a known Hash",
+                alg_name
+            ))),
         }
     }
 }
@@ -172,7 +180,11 @@ impl Hash for HashFactory {
         }
     }
 
-    fn do_final_partial_bits(self, partial_byte: u8, num_partial_bits: usize) -> Result<Vec<u8>, HashError> {
+    fn do_final_partial_bits(
+        self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+    ) -> Result<Vec<u8>, HashError> {
         match self {
             Self::SHA224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
@@ -185,16 +197,29 @@ impl Hash for HashFactory {
         }
     }
 
-    fn do_final_partial_bits_out(self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> Result<usize, HashError> {
+    fn do_final_partial_bits_out(
+        self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> Result<usize, HashError> {
         match self {
             Self::SHA224(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
             Self::SHA256(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
             Self::SHA384(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
             Self::SHA512(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA3_224(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA3_256(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA3_384(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA3_512(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
+            Self::SHA3_224(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
+            Self::SHA3_256(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
+            Self::SHA3_384(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
+            Self::SHA3_512(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
         }
     }
 

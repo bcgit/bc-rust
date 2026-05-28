@@ -1,8 +1,8 @@
 use crate::DUMMY_SEED_512;
-use bouncycastle_core_interface::errors::{KeyMaterialError, MACError};
-use bouncycastle_core_interface::key_material::{KeyMaterial512, KeyType};
-use bouncycastle_core_interface::traits::MAC;
-use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength};
+use bouncycastle_core::errors::{KeyMaterialError, MACError};
+use bouncycastle_core::key_material::{KeyMaterial512, KeyType, KeyMaterialTrait};
+use bouncycastle_core::traits::MAC;
+use bouncycastle_core::traits::{SecurityStrength};
 
 pub struct TestFrameworkMAC {
     // Put any config options here
@@ -17,7 +17,7 @@ impl TestFrameworkMAC {
     /// This gives good baseline test coverage, but is not exhaustive.
     pub fn test_mac<M: MAC>(
         &self,
-        key: &impl KeyMaterial,
+        key: &impl KeyMaterialTrait,
         input: &[u8],
         expected_output: &[u8],
     ) {

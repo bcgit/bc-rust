@@ -1,4 +1,4 @@
-use bouncycastle_core_interface::errors::HashError;
+use bouncycastle_core::errors::HashError;
 
 const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
     0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,

@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod sha2_tests {
-    use bouncycastle_core_interface::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
+    use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
     use bouncycastle_core_test_framework::DUMMY_SEED_512;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_sha2::*;

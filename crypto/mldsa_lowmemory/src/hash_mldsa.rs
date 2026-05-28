@@ -6,9 +6,9 @@
 //! HashML-DSA is a full signature algorithm implementing the [Signature] trait:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
-//! use bouncycastle_mldsa_lowmemory::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_mldsa_lowmemory::{MLDSATrait, HashMLDSA65_with_SHA512, HashMLDSA44_with_SHA512};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
@@ -27,10 +27,10 @@
 //! But you also have access to the pre-hashed function available from [PHSignature]:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::{Signature, PHSignature, Hash};
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::{Signature, PHSignature, Hash};
 //! use bouncycastle_sha2::SHA512;
-//! use bouncycastle_mldsa_lowmemory::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
+//! use bouncycastle_mldsa_lowmemory::{MLDSATrait, HashMLDSA65_with_SHA512, HashMLDSA44_with_SHA512};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
@@ -63,34 +63,42 @@
 //! so if you need the fancy keygen functions, just use them from [MLDSA].
 //! But a simple [HashMLDSA::keygen] is provided in order to have conformance to the [Signature] trait.
 
-use core::marker::PhantomData;
-use crate::mldsa::{H, MLDSATrait, MU_LEN, RND_LEN};
+use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSATrait};
 use crate::mldsa::{
-    MLDSA44_BETA, MLDSA44_C_TILDE, MLDSA44_ETA, MLDSA44_GAMMA1, MLDSA44_GAMMA1_MASK_LEN,
-    MLDSA44_GAMMA2, MLDSA44_LAMBDA, MLDSA44_LAMBDA_over_4, MLDSA44_OMEGA, MLDSA44_PK_LEN,
-    MLDSA44_POLY_ETA_PACKED_LEN, MLDSA44_POLY_W1_PACKED_LEN, MLDSA44_POLY_Z_PACKED_LEN,
-    MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44_TAU, MLDSA44_S1_PACKED_LEN, MLDSA44_S2_PACKED_LEN, MLDSA44_k, MLDSA44_l,
-};
-use crate::mldsa::{
-    MLDSA65_BETA, MLDSA65_C_TILDE, MLDSA65_ETA, MLDSA65_GAMMA1, MLDSA65_GAMMA1_MASK_LEN,
-    MLDSA65_GAMMA2, MLDSA65_LAMBDA, MLDSA65_LAMBDA_over_4, MLDSA65_OMEGA, MLDSA65_PK_LEN,
-    MLDSA65_POLY_ETA_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, MLDSA65_POLY_Z_PACKED_LEN,
-    MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65_TAU, MLDSA65_S1_PACKED_LEN, MLDSA65_S2_PACKED_LEN, MLDSA65_k, MLDSA65_l,
-};
-use crate::mldsa::{
-    MLDSA87_BETA, MLDSA87_C_TILDE, MLDSA87_ETA, MLDSA87_GAMMA1, MLDSA87_GAMMA1_MASK_LEN,
-    MLDSA87_GAMMA2, MLDSA87_LAMBDA, MLDSA87_LAMBDA_over_4, MLDSA87_OMEGA, MLDSA87_PK_LEN,
-    MLDSA87_POLY_ETA_PACKED_LEN, MLDSA87_POLY_W1_PACKED_LEN, MLDSA87_POLY_Z_PACKED_LEN,
-    MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87_TAU, MLDSA87_S1_PACKED_LEN, MLDSA87_S2_PACKED_LEN, MLDSA87_k, MLDSA87_l,
+    MLDSA44_BETA, MLDSA44_C_TILDE, MLDSA44_ETA, MLDSA44_FULL_SK_LEN, MLDSA44_GAMMA1,
+    MLDSA44_GAMMA1_MASK_LEN, MLDSA44_GAMMA2, MLDSA44_LAMBDA, MLDSA44_LAMBDA_over_4, MLDSA44_OMEGA,
+    MLDSA44_PK_LEN, MLDSA44_POLY_ETA_PACKED_LEN, MLDSA44_POLY_W1_PACKED_LEN,
+    MLDSA44_POLY_Z_PACKED_LEN, MLDSA44_S1_PACKED_LEN, MLDSA44_S2_PACKED_LEN, MLDSA44_SIG_LEN,
+    MLDSA44_SK_LEN, MLDSA44_TAU, MLDSA44_k, MLDSA44_l,
 };
 use crate::mldsa::{MLDSA44_T1_PACKED_LEN, MLDSA65_T1_PACKED_LEN, MLDSA87_T1_PACKED_LEN};
+use crate::mldsa::{
+    MLDSA65_BETA, MLDSA65_C_TILDE, MLDSA65_ETA, MLDSA65_FULL_SK_LEN, MLDSA65_GAMMA1,
+    MLDSA65_GAMMA1_MASK_LEN, MLDSA65_GAMMA2, MLDSA65_LAMBDA, MLDSA65_LAMBDA_over_4, MLDSA65_OMEGA,
+    MLDSA65_PK_LEN, MLDSA65_POLY_ETA_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN,
+    MLDSA65_POLY_Z_PACKED_LEN, MLDSA65_S1_PACKED_LEN, MLDSA65_S2_PACKED_LEN, MLDSA65_SIG_LEN,
+    MLDSA65_SK_LEN, MLDSA65_TAU, MLDSA65_k, MLDSA65_l,
+};
+use crate::mldsa::{
+    MLDSA87_BETA, MLDSA87_C_TILDE, MLDSA87_ETA, MLDSA87_FULL_SK_LEN, MLDSA87_GAMMA1,
+    MLDSA87_GAMMA1_MASK_LEN, MLDSA87_GAMMA2, MLDSA87_LAMBDA, MLDSA87_LAMBDA_over_4, MLDSA87_OMEGA,
+    MLDSA87_PK_LEN, MLDSA87_POLY_ETA_PACKED_LEN, MLDSA87_POLY_W1_PACKED_LEN,
+    MLDSA87_POLY_Z_PACKED_LEN, MLDSA87_S1_PACKED_LEN, MLDSA87_S2_PACKED_LEN, MLDSA87_SIG_LEN,
+    MLDSA87_SK_LEN, MLDSA87_TAU, MLDSA87_k, MLDSA87_l,
+};
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPublicKeyInternalTrait};
-use crate::{MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
-use bouncycastle_core_interface::errors::SignatureError;
-use bouncycastle_core_interface::key_material::KeyMaterialSized;
-use bouncycastle_core_interface::traits::{Hash, PHSignature, RNG, Signature, XOF, Algorithm, SecurityStrength};
+use crate::{
+    MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey,
+    MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait,
+};
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::{
+    Algorithm, Hash, PHSignature, RNG, SecurityStrength, Signature, XOF,
+};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::{SHA256, SHA512};
+use core::marker::PhantomData;
 
 // Imports needed only for docs
 #[allow(unused_imports)]
@@ -102,17 +110,17 @@ const SHA512_OID: &[u8] = &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04
 /*** Constants ***/
 
 ///
-pub const Hash_ML_DSA_44_with_SHA256_NAME: &str = "HashML-DSA-44_with_SHA256";
+pub const HASH_ML_DSA_44_with_SHA256_NAME: &str = "HashML-DSA-44_with_SHA256";
 ///
-pub const Hash_ML_DSA_65_with_SHA256_NAME: &str = "HashML-DSA-65_with_SHA256";
+pub const HASH_ML_DSA_65_WITH_SHA256_NAME: &str = "HashML-DSA-65_with_SHA256";
 ///
-pub const Hash_ML_DSA_87_with_SHA256_NAME: &str = "HashML-DSA-87_with_SHA256";
+pub const HASH_ML_DSA_87_with_SHA256_NAME: &str = "HashML-DSA-87_with_SHA256";
 ///
-pub const Hash_ML_DSA_44_with_SHA512_NAME: &str = "HashML-DSA-44_with_SHA512";
+pub const HASH_ML_DSA_44_with_SHA512_NAME: &str = "HashML-DSA-44_with_SHA512";
 ///
-pub const Hash_ML_DSA_65_with_SHA512_NAME: &str = "HashML-DSA-65_with_SHA512";
+pub const HASH_ML_DSA_65_WITH_SHA512_NAME: &str = "HashML-DSA-65_with_SHA512";
 ///
-pub const Hash_ML_DSA_87_with_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
+pub const HASH_ML_DSA_87_WITH_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
 
 /*** Pub Types ***/
 
@@ -124,6 +132,7 @@ pub type HashMLDSA44_with_SHA256 = HashMLDSA<
     SHA256_OID,
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
+    MLDSA44_FULL_SK_LEN,
     MLDSA44_SIG_LEN,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
@@ -148,7 +157,7 @@ pub type HashMLDSA44_with_SHA256 = HashMLDSA<
 >;
 
 impl Algorithm for HashMLDSA44_with_SHA256 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_44_with_SHA256_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -160,6 +169,7 @@ pub type HashMLDSA65_with_SHA256 = HashMLDSA<
     SHA256_OID,
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
+    MLDSA65_FULL_SK_LEN,
     MLDSA65_SIG_LEN,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
@@ -184,7 +194,7 @@ pub type HashMLDSA65_with_SHA256 = HashMLDSA<
 >;
 
 impl Algorithm for HashMLDSA65_with_SHA256 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_65_with_SHA256_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_65_WITH_SHA256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -196,6 +206,7 @@ pub type HashMLDSA87_with_SHA256 = HashMLDSA<
     SHA256_OID,
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
+    MLDSA87_FULL_SK_LEN,
     MLDSA87_SIG_LEN,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
@@ -220,7 +231,7 @@ pub type HashMLDSA87_with_SHA256 = HashMLDSA<
 >;
 
 impl Algorithm for HashMLDSA87_with_SHA256 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_87_with_SHA256_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_87_with_SHA256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -232,6 +243,7 @@ pub type HashMLDSA44_with_SHA512 = HashMLDSA<
     SHA512_OID,
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
+    MLDSA44_FULL_SK_LEN,
     MLDSA44_SIG_LEN,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
@@ -256,7 +268,7 @@ pub type HashMLDSA44_with_SHA512 = HashMLDSA<
 >;
 
 impl Algorithm for HashMLDSA44_with_SHA512 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_44_with_SHA512_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -268,6 +280,7 @@ pub type HashMLDSA65_with_SHA512 = HashMLDSA<
     SHA512_OID,
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
+    MLDSA65_FULL_SK_LEN,
     MLDSA65_SIG_LEN,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
@@ -292,7 +305,7 @@ pub type HashMLDSA65_with_SHA512 = HashMLDSA<
 >;
 
 impl Algorithm for HashMLDSA65_with_SHA512 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_65_with_SHA512_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_65_WITH_SHA512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
@@ -304,6 +317,7 @@ pub type HashMLDSA87_with_SHA512 = HashMLDSA<
     SHA512_OID,
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
+    MLDSA87_FULL_SK_LEN,
     MLDSA87_SIG_LEN,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
@@ -328,7 +342,7 @@ pub type HashMLDSA87_with_SHA512 = HashMLDSA<
 >;
 
 impl Algorithm for HashMLDSA87_with_SHA512 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_87_with_SHA512_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_87_WITH_SHA512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
@@ -344,10 +358,30 @@ pub struct HashMLDSA<
     const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
-        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
+        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<
+            k,
+            l,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            T1_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+            FULL_SK_LEN,
+        > + MLDSAPrivateKeyInternalTrait<
+            LAMBDA,
+            GAMMA2,
+            k,
+            l,
+            ETA,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+        >,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -369,13 +403,13 @@ pub struct HashMLDSA<
 > {
     _phantom: PhantomData<(PK, SK)>,
 
-    signer_rnd: Option<[u8; RND_LEN]>,
+    signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
     /// only used in streaming sign operations
     sk: Option<SK>,
 
     /// only used in streaming sign operations instead of sk
-    seed: Option<KeyMaterialSized<32>>,
+    seed: Option<KeyMaterial<32>>,
 
     /// only used in streaming verify operations
     pk: Option<PK>,
@@ -395,10 +429,30 @@ impl<
     const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
-        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
+        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<
+            k,
+            l,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            T1_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+            FULL_SK_LEN,
+        > + MLDSAPrivateKeyInternalTrait<
+            LAMBDA,
+            GAMMA2,
+            k,
+            l,
+            ETA,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+        >,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -424,6 +478,7 @@ impl<
         oid,
         PK_LEN,
         SK_LEN,
+        FULL_SK_LEN,
         SIG_LEN,
         PK,
         SK,
@@ -448,10 +503,11 @@ impl<
     >
 {
     /// Imports a secret key from a seed.
-    pub fn keygen_from_seed(seed: &KeyMaterialSized<32>) -> Result<(PK, SK), SignatureError> {
+    pub fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
         MLDSA::<
             PK_LEN,
             SK_LEN,
+            FULL_SK_LEN,
             SIG_LEN,
             PK,
             SK,
@@ -540,14 +596,15 @@ impl<
         h.absorb(ctx);
         h.absorb(oid);
         h.absorb(ph);
-        let mut mu = [0u8; MU_LEN];
+        let mut mu = [0u8; MLDSA_MU_LEN];
         let bytes_written = h.squeeze_out(&mut mu);
-        debug_assert_eq!(bytes_written, MU_LEN);
+        debug_assert_eq!(bytes_written, MLDSA_MU_LEN);
 
         // 24: 𝜎 ← ML-DSA.Sign_internal(𝑠𝑘, 𝑀', 𝑟𝑛𝑑)
         let bytes_written = MLDSA::<
             PK_LEN,
             SK_LEN,
+            FULL_SK_LEN,
             SIG_LEN,
             PK,
             SK,
@@ -599,32 +656,53 @@ impl<
 
     /// Alternative initialization of the streaming signer where you have your private key
     /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
-    pub fn sign_init_from_seed(seed: &KeyMaterialSized<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    pub fn sign_init_from_seed(
+        seed: &KeyMaterial<32>,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(
-            Self {
-                _phantom: PhantomData,
-                signer_rnd: None,
-                sk: None,
-                seed: Some(seed.clone()),
-                pk: None,
-                hash: HASH::default(),
-                ctx,
-                ctx_len,
-            }
-        )
+        Ok(Self {
+            _phantom: PhantomData,
+            signer_rnd: None,
+            sk: None,
+            seed: Some(seed.clone()),
+            pk: None,
+            hash: HASH::default(),
+            ctx,
+            ctx_len,
+        })
     }
 }
 
 impl<
     HASH: Hash + Default,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
-        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
+        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<
+            k,
+            l,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            T1_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+            FULL_SK_LEN,
+        > + MLDSAPrivateKeyInternalTrait<
+            LAMBDA,
+            GAMMA2,
+            k,
+            l,
+            ETA,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+        >,
     const PH_LEN: usize,
     const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
     const TAU: i32,
     const LAMBDA: i32,
@@ -644,12 +722,14 @@ impl<
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN> for HashMLDSA<
+> Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+    for HashMLDSA<
         HASH,
         PH_LEN,
         oid,
         PK_LEN,
         SK_LEN,
+        FULL_SK_LEN,
         SIG_LEN,
         PK,
         SK,
@@ -678,6 +758,7 @@ impl<
         MLDSA::<
             PK_LEN,
             SK_LEN,
+            FULL_SK_LEN,
             SIG_LEN,
             PK,
             SK,
@@ -724,18 +805,16 @@ impl<
 
     fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(
-            Self {
-                _phantom: PhantomData,
-                signer_rnd: None,
-                sk: Some(sk.clone()),
-                seed: None,
-                pk: None,
-                hash: HASH::default(),
-                ctx,
-                ctx_len,
-            }
-        )
+        Ok(Self {
+            _phantom: PhantomData,
+            signer_rnd: None,
+            sk: Some(sk.clone()),
+            seed: None,
+            pk: None,
+            hash: HASH::default(),
+            ctx,
+            ctx_len,
+        })
     }
 
     fn sign_update(&mut self, msg_chunk: &[u8]) {
@@ -752,31 +831,56 @@ impl<
         let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
 
         if self.sk.is_none() && self.seed.is_none() {
-            return Err(SignatureError::GenericError("Somehow you managed to construct a streaming signer without a private key, impressive!"))
+            return Err(SignatureError::GenericError(
+                "Somehow you managed to construct a streaming signer without a private key, impressive!",
+            ));
         }
 
-        if output.len() < SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        if output.len() < SIG_LEN {
+            return Err(SignatureError::LengthError(
+                "Output buffer insufficient size to hold signature",
+            ));
+        }
         let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
-                Self::sign_ph_out(&self.sk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), output_sized)
+                Self::sign_ph_out(
+                    &self.sk.unwrap(),
+                    &ph,
+                    Some(&self.ctx[..self.ctx_len]),
+                    output_sized,
+                )
             } else {
-                Self::sign_ph_deterministic_out(&self.sk.unwrap(), Some(&self.ctx[..self.ctx_len]), &ph, self.signer_rnd.unwrap(), output_sized)
+                Self::sign_ph_deterministic_out(
+                    &self.sk.unwrap(),
+                    Some(&self.ctx[..self.ctx_len]),
+                    &ph,
+                    self.signer_rnd.unwrap(),
+                    output_sized,
+                )
             }
         } else if self.seed.is_some() {
             let rnd = if self.signer_rnd.is_some() {
                 self.signer_rnd.unwrap()
             } else {
-                let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
+                let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
                 HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
                 rnd
             };
             // since at this point we need to fully reconstruct SK in order to compute tr for mu anyway
             // there is no savings to using the fancy MLDSA::sign_from_seed
             let (_pk, sk) = Self::keygen_from_seed(&self.seed.unwrap())?;
-            Self::sign_ph_deterministic_out(&sk, Some(&self.ctx[..self.ctx_len]), &ph, rnd, output_sized)
-        } else { unreachable!() }
+            Self::sign_ph_deterministic_out(
+                &sk,
+                Some(&self.ctx[..self.ctx_len]),
+                &ph,
+                rnd,
+                output_sized,
+            )
+        } else {
+            unreachable!()
+        }
     }
 
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
@@ -788,18 +892,16 @@ impl<
 
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(
-            Self {
-                _phantom: Default::default(),
-                signer_rnd: None,
-                sk: None,
-                seed: None,
-                pk: Some(pk.clone()),
-                hash: HASH::default(),
-                ctx,
-                ctx_len,
-            }
-        )
+        Ok(Self {
+            _phantom: Default::default(),
+            signer_rnd: None,
+            sk: None,
+            seed: None,
+            pk: Some(pk.clone()),
+            hash: HASH::default(),
+            ctx,
+            ctx_len,
+        })
     }
 
     fn verify_update(&mut self, msg_chunk: &[u8]) {
@@ -807,12 +909,14 @@ impl<
     }
 
     fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
+        assert!(
+            self.pk.is_some(),
+            "Somehow you managed to construct a streaming verifier without a public key, impressive!"
+        );
         let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
         Self::verify_ph(&self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), &sig[..SIG_LEN])
     }
 }
-
 
 impl<
     HASH: Hash + Default,
@@ -820,10 +924,30 @@ impl<
     const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
-        + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
+        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<
+            k,
+            l,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            T1_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+            FULL_SK_LEN,
+        > + MLDSAPrivateKeyInternalTrait<
+            LAMBDA,
+            GAMMA2,
+            k,
+            l,
+            ETA,
+            S1_PACKED_LEN,
+            S2_PACKED_LEN,
+            PK_LEN,
+            SK_LEN,
+        >,
     const TAU: i32,
     const LAMBDA: i32,
     const GAMMA1: i32,
@@ -849,6 +973,7 @@ impl<
         oid,
         PK_LEN,
         SK_LEN,
+        FULL_SK_LEN,
         SIG_LEN,
         PK,
         SK,
@@ -872,7 +997,11 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
-    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
+    fn sign_ph(
+        sk: &SK,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+    ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, ph, ctx, &mut out)?;
 
@@ -895,7 +1024,7 @@ impl<
             ));
         }
 
-        let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
+        let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
         Self::sign_ph_deterministic_out(sk, ctx, ph, rnd, output)
     }
@@ -906,10 +1035,10 @@ impl<
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        if sig.len() < SIG_LEN {
+        if sig.len() != SIG_LEN {
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
-        let sig_sized = &sig[..SIG_LEN].try_into().unwrap();
+        let sig_sized = &sig.try_into().unwrap();
 
         let ctx = if ctx.is_some() { ctx.unwrap() } else { &[] };
 
@@ -932,12 +1061,13 @@ impl<
         h.absorb(ctx);
         h.absorb(oid);
         h.absorb(ph);
-        let mut mu = [0u8; MU_LEN];
+        let mut mu = [0u8; MLDSA_MU_LEN];
         _ = h.squeeze_out(&mut mu);
 
         if MLDSA::<
             PK_LEN,
             SK_LEN,
+            FULL_SK_LEN,
             SIG_LEN,
             PK,
             SK,

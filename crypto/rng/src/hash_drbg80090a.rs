@@ -5,9 +5,9 @@
 
 use crate::Sp80090ADrbg;
 
-use bouncycastle_core_interface::errors::{KeyMaterialError, RNGError};
-use bouncycastle_core_interface::key_material::{KeyMaterial512, KeyType};
-use bouncycastle_core_interface::traits::{Hash, HashAlgParams, KeyMaterial, RNG, SecurityStrength};
+use bouncycastle_core::errors::{KeyMaterialError, RNGError};
+use bouncycastle_core::key_material::{KeyMaterial512, KeyType, KeyMaterialTrait};
+use bouncycastle_core::traits::{Hash, HashAlgParams, RNG, SecurityStrength};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::min;
 
@@ -175,8 +175,8 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
     fn instantiate(
         &mut self,
         prediction_resistance: bool,
-        seed: impl KeyMaterial,
-        nonce: &impl KeyMaterial,
+        seed: impl KeyMaterialTrait,
+        nonce: &impl KeyMaterialTrait,
         personalization_string: &[u8],
         security_strength: SecurityStrength,
     ) -> Result<(), RNGError> {
@@ -266,7 +266,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         Ok(())
     }
 
-    fn reseed(&mut self, seed: &impl KeyMaterial, additional_input: &[u8]) -> Result<(), RNGError> {
+    fn reseed(&mut self, seed: &impl KeyMaterialTrait, additional_input: &[u8]) -> Result<(), RNGError> {
         // Hash_DRBG Reseed Process:
         // 1. seed_material = 0x01 || V || entropy_input || additional_input.
         // 2. seed = Hash_df (seed_material, seedlen).
@@ -452,7 +452,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
     fn generate_keymaterial_out(
         &mut self,
         additional_input: &[u8],
-        out: &mut impl KeyMaterial,
+        out: &mut impl KeyMaterialTrait,
     ) -> Result<usize, RNGError> {
         out.allow_hazardous_operations();
         let bytes_written = self.generate_out(additional_input, out.mut_ref_to_bytes().unwrap())?;
@@ -475,7 +475,7 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
     //     todo!()
     // }
 
-    fn add_seed_keymaterial(&mut self, additional_seed: impl KeyMaterial) -> Result<(), RNGError> {
+    fn add_seed_keymaterial(&mut self, additional_seed: impl KeyMaterialTrait) -> Result<(), RNGError> {
         self.reseed(&additional_seed, "add_seed_keymaterial".as_bytes())
     }
 
@@ -493,7 +493,7 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
         self.generate_out("next_bytes_out".as_bytes(), out)
     }
 
-    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterial) -> Result<usize, RNGError> {
+    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterialTrait) -> Result<usize, RNGError> {
         self.generate_keymaterial_out("fill_keymaterial".as_bytes(), out)
     }
 

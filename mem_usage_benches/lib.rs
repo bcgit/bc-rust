@@ -1,0 +1,2 @@
+mod bench_mldsa_mem_usage;
+mod bench_mlkem_mem_usage;

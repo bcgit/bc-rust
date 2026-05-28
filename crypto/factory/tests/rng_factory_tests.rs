@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use bouncycastle_core_interface::traits::{SecurityStrength, RNG};
+    use bouncycastle_core::traits::{SecurityStrength, RNG};
     use bouncycastle_factory::AlgorithmFactory;
     use bouncycastle_factory as factory;
 

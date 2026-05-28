@@ -1,5 +1,5 @@
-use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType};
-use bouncycastle_core_interface::traits::{KDF, KeyMaterial, SecurityStrength};
+use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterial, KeyType, KeyMaterialTrait};
+use bouncycastle_core::traits::{KDF, SecurityStrength};
 
 pub struct TestFrameworkKDF {}
 
@@ -10,9 +10,9 @@ impl TestFrameworkKDF {
 
     pub fn test_kdf_single_key<H: KDF + Default>(
         &self,
-        key: &impl KeyMaterial,
+        key: &impl KeyMaterialTrait,
         additional_input: &[u8],
-        expected_output: &impl KeyMaterial,
+        expected_output: &impl KeyMaterialTrait,
     ) {
         /*** Test derive_key() ***/
         let kdf = H::default();
@@ -41,7 +41,7 @@ impl TestFrameworkKDF {
 
         let kdf = H::default();
         // Give it a KeyMaterial with a capacity of 10 bytes
-        let mut output = KeyMaterialSized::<10>::new();
+        let mut output = KeyMaterial::<10>::new();
         let bytes_written = kdf.derive_key_out(key, additional_input, &mut output).unwrap();
         assert_eq!(bytes_written, 10);
         assert_eq!(output.key_len(), 10);
@@ -87,9 +87,9 @@ impl TestFrameworkKDF {
 
     pub fn test_kdf_multiple_key<H: KDF + Default>(
         &self,
-        keys: &[&impl KeyMaterial],
+        keys: &[&impl KeyMaterialTrait],
         additional_input: &[u8],
-        expected_output: &mut impl KeyMaterial,
+        expected_output: &mut impl KeyMaterialTrait,
     ) {
         /*** test derive_key_from_multiple() ***/
         let kdf = H::default();
@@ -124,7 +124,7 @@ impl TestFrameworkKDF {
 
         let kdf = H::default();
         // Give it a KeyMaterial with a capacity of 10 bytes
-        let mut output = KeyMaterialSized::<10>::new();
+        let mut output = KeyMaterial::<10>::new();
         let bytes_written =
             kdf.derive_key_from_multiple_out(keys, additional_input, &mut output).unwrap();
         assert_eq!(bytes_written, 10);

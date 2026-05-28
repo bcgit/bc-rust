@@ -1,7 +1,7 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_core_interface::traits::{Hash, RNG};
+use bouncycastle_core::traits::{Hash, RNG};
 use bouncycastle_rng as rng;
 use bouncycastle_sha2::*;
 

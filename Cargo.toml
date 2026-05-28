@@ -1,5 +1,5 @@
 [workspace]
-members = [ "cli", "crypto/*" ]
+members = [ "cli", "crypto/*", "mem_usage_benches" ]
 
 [workspace.package]
 edition = "2024"
@@ -9,12 +9,14 @@ edition = "2024"
 # *** Internal Dependencies ***
 bouncycastle = { path = "./", version = "0.1.1" }
 bouncycastle-base64 = { path = "./crypto/base64", version = "0.1.1"}
-bouncycastle-core-interface = { path = "./crypto/core-interface", version = "0.1.1" }
+bouncycastle-core = { path = "crypto/core", version = "0.1.1" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", version = "0.1.1"}
 bouncycastle-factory = { path = "./crypto/factory", version = "0.1.1"}
 bouncycastle-hex = { path = "./crypto/hex", version = "0.1.1" }
 bouncycastle-hkdf = { path = "./crypto/hkdf", version = "0.1.1"}
 bouncycastle-hmac = { path = "./crypto/hmac", version = "0.1.1"}
+bouncycastle-mlkem = { path = "./crypto/mlkem", version = "0.1.2" }
+bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem_lowmemory", version = "0.1.2" }
 bouncycastle-mldsa = { path = "./crypto/mldsa", version = "0.1.2" }
 bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa_lowmemory", version = "0.1.2" }
 bouncycastle-rng = { path = "./crypto/rng", version = "0.1.1" }
@@ -39,18 +41,15 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-base64.workspace = true
-bouncycastle-core-interface.workspace = true
+bouncycastle-core.workspace = true
 bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-mldsa.workspace = true
 bouncycastle-mldsa-lowmemory.workspace = true
+bouncycastle-mlkem.workspace = true
+bouncycastle-mlkem-lowmemory.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
-
-
-[[bin]]
-name = "bench_mldsa_mem_usage"
-path = "src/bench_mldsa_mem_usage.rs"

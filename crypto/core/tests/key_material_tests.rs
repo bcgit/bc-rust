@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod test_key_material {
-    use bouncycastle_core_interface::errors::KeyMaterialError;
-    use bouncycastle_core_interface::key_material::{
-        KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterialSized, KeyType,
+    use bouncycastle_core::errors::KeyMaterialError;
+    use bouncycastle_core::key_material::{
+        KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterial, KeyType, KeyMaterialTrait,
     };
-    use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength};
+    use bouncycastle_core::traits::{SecurityStrength};
 
     const DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
                                    \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
@@ -106,9 +106,9 @@ mod test_key_material {
         let key = KeyMaterial512::new();
         assert_eq!(key.capacity(), 64);
 
-        let key16 = KeyMaterialSized::<16>::new();
+        let key16 = KeyMaterial::<16>::new();
         assert_eq!(key16.capacity(), 16);
-        match KeyMaterialSized::<16>::from_bytes(&[1u8; 17]) {
+        match KeyMaterial::<16>::from_bytes(&[1u8; 17]) {
             Ok(_) => {
                 panic!("should have thrown a KeyMaterialError::InputDataLongerThanMaxKeyLen error.")
             }
@@ -120,13 +120,13 @@ mod test_key_material {
             }
         }
 
-        let key1024 = KeyMaterialSized::<1024>::new();
+        let key1024 = KeyMaterial::<1024>::new();
         assert_eq!(key1024.capacity(), 1024);
         assert_eq!(key1024.key_len(), 0);
-        let key1024 = KeyMaterialSized::<1024>::from_bytes(&[1u8; 1024]).unwrap();
+        let key1024 = KeyMaterial::<1024>::from_bytes(&[1u8; 1024]).unwrap();
         assert_eq!(key1024.key_len(), 1024);
 
-        match KeyMaterialSized::<1024>::from_bytes(&[1u8; 1025]) {
+        match KeyMaterial::<1024>::from_bytes(&[1u8; 1025]) {
             Ok(_) => {
                 panic!("should have thrown a KeyMaterialError::InputDataLongerThanMaxKeyLen error.")
             }

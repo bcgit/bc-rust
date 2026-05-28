@@ -5,11 +5,12 @@ mod mac_cmd;
 mod hkdf_cmd;
 mod rng_cmd;
 mod mldsa_cmd;
+mod mlkem_cmd;
+mod helpers;
 
-use std::io;
-use std::io::Write;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use crate::mac_cmd::HMACVariant;
+use crate::mldsa_cmd::MLDSAAction;
 
 #[derive(Parser)]
 #[command(version, about, long_about=None, arg_required_else_help=true)]
@@ -273,6 +274,69 @@ enum Subcommands {
         x: bool,
     },
 
+    /// The ML-KEM-512 key encapsulation algorithm.
+    MLKEM512 {
+        action: mlkem_cmd::MLKEMAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps
+        pkfile: Option<String>,
+        
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-KEM-768 key encapsulation algorithm.
+    MLKEM768 {
+        action: mlkem_cmd::MLKEMAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-KEM-1024 key encapsulation algorithm.
+    MLKEM1024 {
+        action: mlkem_cmd::MLKEMAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-DSA-44 signature algorithm.
     MLDSA44 {
         action: MLDSAAction,
@@ -292,7 +356,6 @@ enum Subcommands {
         #[arg(long)]
         /// The signature value file (in hex or binary) for verifying
         sigfile: Option<String>,
-
 
         #[arg(short)]
         /// Output in hex format.
@@ -319,7 +382,6 @@ enum Subcommands {
         /// The signature value file (in hex or binary) for verifying
         sigfile: Option<String>,
 
-
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -344,7 +406,6 @@ enum Subcommands {
         #[arg(long)]
         /// The signature value file (in hex or binary) for verifying
         sigfile: Option<String>,
-
 
         #[arg(short)]
         /// Output in hex format.
@@ -430,37 +491,6 @@ enum Subcommands {
     },
 }
 
-#[derive(ValueEnum, Clone, Debug)]
-pub(crate) enum MLDSAAction {
-    /// Generate and output a new private key
-    Keygen,
-    /// Generate and output a private key from a seed read from stdin.
-    /// Accepts either binary or hex.
-    KeygenFromSeed,
-    /// Generate and output a new public key from a private key read from stdin.
-    /// Accepts either binary or hex.
-    PkFromSk,
-    /// Accepts a sk and pk, and checks that they match.
-    CheckConsistency,
-    /// Sign a message read from stdin with a private key file and output the signature.
-    /// Accepts private key as full or seed, binary or hex.
-    Sign,
-    /// Verify a message read from stdin with a public key file and a signature file
-    /// Accepts the public key and signature as binary or hex.
-    Verify,
-}
-
-pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
-    // first flush stdout to ensure any buffered data is written
-    io::stdout().flush().unwrap();
-    if output_hex {
-        for b in bytes.iter() {
-            print!("{b:02x}");
-        }
-    } else {
-        io::stdout().write_all(bytes).unwrap();
-    }
-}
 
 fn main() {
     let cli = Cli::parse();
@@ -485,6 +515,9 @@ fn main() {
         Some(Subcommands::HKDF_SHA256 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::HKDF_SHA512 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
         Some(Subcommands::RNG {  len, x}) => { rng_cmd::rng_cmd(*len, *x)},
+        Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => { mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x); }
+        Some(Subcommands::MLKEM768 { action, skfile, pkfile, ctfile, x }) => { mlkem_cmd::mlkem768_cmd(action, skfile, pkfile, ctfile, *x); }
+        Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => { mlkem_cmd::mlkem1024_cmd(action, skfile, pkfile, ctfile, *x); }
         Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
         Some(Subcommands::MLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa65_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
         Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }

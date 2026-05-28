@@ -1,13 +1,13 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
 // use crate::matrix::{Matrix, Vector};
-use crate::mldsa::{G, H};
+use crate::mldsa::{G, H, POLY_T0PACKED_LEN};
 use crate::mldsa::{
     MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N,
     POLY_T1PACKED_LEN, d, q,
 };
 use crate::polynomial::Polynomial;
-use bouncycastle_core_interface::traits::XOF;
+use bouncycastle_core::traits::XOF;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞 or ⊥.
@@ -55,11 +55,11 @@ pub(crate) fn coeff_from_half_byte<const ETA: usize>(b: u8) -> Result<i32, ()> {
 pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
     let mut output = [0u8; POLY_T1PACKED_LEN];
     for i in 0..N / 4 {
-        output[5 * i] = w.0[4 * i] as u8;
-        output[5 * i + 1] = ((w.0[4 * i] >> 8) | (w.0[4 * i + 1] << 2)) as u8;
-        output[5 * i + 2] = ((w.0[4 * i + 1] >> 6) | (w.0[4 * i + 2] << 4)) as u8;
-        output[5 * i + 3] = ((w.0[4 * i + 2] >> 4) | (w.0[4 * i + 3] << 6)) as u8;
-        output[5 * i + 4] = (w.0[4 * i + 3] >> 2) as u8;
+        output[5 * i] = w[4 * i] as u8;
+        output[5 * i + 1] = ((w[4 * i] >> 8) | (w[4 * i + 1] << 2)) as u8;
+        output[5 * i + 2] = ((w[4 * i + 1] >> 6) | (w[4 * i + 2] << 4)) as u8;
+        output[5 * i + 3] = ((w[4 * i + 2] >> 4) | (w[4 * i + 3] << 6)) as u8;
+        output[5 * i + 4] =  (w[4 * i + 3] >> 2) as u8;
     }
     output
 }
@@ -93,14 +93,14 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
         2 => {
             let eta: i32 = 2;
             for i in 0..N / 8 {
-                t[0] = (eta - w.0[8 * i]) as u8;
-                t[1] = (eta - w.0[8 * i + 1]) as u8;
-                t[2] = (eta - w.0[8 * i + 2]) as u8;
-                t[3] = (eta - w.0[8 * i + 3]) as u8;
-                t[4] = (eta - w.0[8 * i + 4]) as u8;
-                t[5] = (eta - w.0[8 * i + 5]) as u8;
-                t[6] = (eta - w.0[8 * i + 6]) as u8;
-                t[7] = (eta - w.0[8 * i + 7]) as u8;
+                t[0] = (eta - w[8 * i]) as u8;
+                t[1] = (eta - w[8 * i + 1]) as u8;
+                t[2] = (eta - w[8 * i + 2]) as u8;
+                t[3] = (eta - w[8 * i + 3]) as u8;
+                t[4] = (eta - w[8 * i + 4]) as u8;
+                t[5] = (eta - w[8 * i + 5]) as u8;
+                t[6] = (eta - w[8 * i + 6]) as u8;
+                t[7] = (eta - w[8 * i + 7]) as u8;
 
                 r[3 * i] = t[0] | (t[1] << 3) | (t[2] << 6);
                 r[3 * i + 1] = (t[2] >> 2) | (t[3] << 1) | (t[4] << 4) | (t[5] << 7);
@@ -111,13 +111,56 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
         4 => {
             let eta: i32 = 4;
             for i in 0..N / 2 {
-                t[0] = (eta - w.0[2 * i]) as u8;
-                t[1] = (eta - w.0[2 * i + 1]) as u8;
+                t[0] = (eta - w[2 * i]) as u8;
+                t[1] = (eta - w[2 * i + 1]) as u8;
                 r[i] = t[0] | t[1] << 4;
             }
         }
         _ => panic!("Invalid eta value"),
     }
+}
+
+/// A variant of Algorithm 17 BitPack specific to packing the t0 polynomial with a=2^{d-1}-1, b=2^{d-1}
+/// Encodes a polynomial 𝑤 into a byte string.
+/// Input: 𝑎, 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in \[−eta, eta].
+/// Output: A byte string of length 32 ⋅ bitlen (𝑎 + 𝑏).
+pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
+    let mut r = [0u8; POLY_T0PACKED_LEN];
+
+    let mut t = [0; 8];
+    for i in 0..N / 8 {
+        t[0] = (1 << (d - 1)) - t0[8 * i];
+        t[1] = (1 << (d - 1)) - t0[8 * i + 1];
+        t[2] = (1 << (d - 1)) - t0[8 * i + 2];
+        t[3] = (1 << (d - 1)) - t0[8 * i + 3];
+        t[4] = (1 << (d - 1)) - t0[8 * i + 4];
+        t[5] = (1 << (d - 1)) - t0[8 * i + 5];
+        t[6] = (1 << (d - 1)) - t0[8 * i + 6];
+        t[7] = (1 << (d - 1)) - t0[8 * i + 7];
+
+        r[13 * i] = t[0] as u8;
+        r[13 * i + 1] = (t[0] >> 8) as u8;
+        r[13 * i + 1] |= (t[1] << 5) as u8;
+        r[13 * i + 2] = (t[1] >> 3) as u8;
+        r[13 * i + 3] = (t[1] >> 11) as u8;
+        r[13 * i + 3] |= (t[2] << 2) as u8;
+        r[13 * i + 4] = (t[2] >> 6) as u8;
+        r[13 * i + 4] |= (t[3] << 7) as u8;
+        r[13 * i + 5] = (t[3] >> 1) as u8;
+        r[13 * i + 6] = (t[3] >> 9) as u8;
+        r[13 * i + 6] |= (t[4] << 4) as u8;
+        r[13 * i + 7] = (t[4] >> 4) as u8;
+        r[13 * i + 8] = (t[4] >> 12) as u8;
+        r[13 * i + 8] |= (t[5] << 1) as u8;
+        r[13 * i + 9] = (t[5] >> 7) as u8;
+        r[13 * i + 9] |= (t[6] << 6) as u8;
+        r[13 * i + 10] = (t[6] >> 2) as u8;
+        r[13 * i + 11] = (t[6] >> 10) as u8;
+        r[13 * i + 11] |= (t[7] << 3) as u8;
+        r[13 * i + 12] = (t[7] >> 5) as u8;
+    }
+
+    r
 }
 
 /// A variant of Algorithm 17 specific to packing z in the signature value in \[−𝛾1 + 1, 𝛾1].
@@ -128,10 +171,10 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
     match GAMMA1 {
         MLDSA44_GAMMA1 => {
             for i in 0..N / 4 {
-                t[0] = (GAMMA1 - z.0[4 * i]) as u32;
-                t[1] = (GAMMA1 - z.0[4 * i + 1]) as u32;
-                t[2] = (GAMMA1 - z.0[4 * i + 2]) as u32;
-                t[3] = (GAMMA1 - z.0[4 * i + 3]) as u32;
+                t[0] = (GAMMA1 - z[4 * i]) as u32;
+                t[1] = (GAMMA1 - z[4 * i + 1]) as u32;
+                t[2] = (GAMMA1 - z[4 * i + 2]) as u32;
+                t[3] = (GAMMA1 - z[4 * i + 3]) as u32;
 
                 out[9 * i] = t[0] as u8;
                 out[9 * i + 1] = (t[0] >> 8) as u8;
@@ -147,8 +190,8 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
         // MLDSA-65 and 87 have the same GAMMA1 value
         MLDSA65_GAMMA1 => {
             for i in 0..N / 2 {
-                t[0] = (GAMMA1 - z.0[2 * i]) as u32;
-                t[1] = (GAMMA1 - z.0[2 * i + 1]) as u32;
+                t[0] = (GAMMA1 - z[2 * i]) as u32;
+                t[1] = (GAMMA1 - z[2 * i + 1]) as u32;
 
                 out[5 * i] = t[0] as u8;
                 out[5 * i + 1] = (t[0] >> 8) as u8;
@@ -174,11 +217,11 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 
     let mut w = Polynomial::new();
 
-    for i in 0..N / 4 {
-        w.0[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
-        w.0[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
-        w.0[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
-        w.0[4 * i + 3] = (((v[5 * i + 3] as i32) >> 6) | ((v[5 * i + 4] as i32) << 2)) & 0x3FF;
+    for i in 0..N/4 {
+        w[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
+        w[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
+        w[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
+        w[4 * i + 3] = (((v[5 * i + 3] as i32) >> 6) | ((v[5 * i + 4] as i32) << 2)) & 0x3FF;
     }
 
     w
@@ -205,34 +248,34 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
         2 => {
             let eta: i32 = 2;
             for i in 0..N / 8 {
-                w.0[8 * i] = (v[3 * i] & 7) as i32;
-                w.0[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
-                w.0[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
-                w.0[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
-                w.0[8 * i + 4] = ((v[3 * i + 1] >> 4) & 7) as i32;
-                w.0[8 * i + 5] = ((v[3 * i + 1] >> 7) | (v[3 * i + 2] << 1) & 7) as i32;
-                w.0[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
-                w.0[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
+                w[8 * i] = (v[3 * i] & 7) as i32;
+                w[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
+                w[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
+                w[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
+                w[8 * i + 4] = ((v[3 * i + 1] >> 4) & 7) as i32;
+                w[8 * i + 5] = ((v[3 * i + 1] >> 7) | (v[3 * i + 2] << 1) & 7) as i32;
+                w[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
+                w[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
 
-                w.0[8 * i] = eta - w.0[8 * i];
-                w.0[8 * i + 1] = eta - w.0[8 * i + 1];
-                w.0[8 * i + 2] = eta - w.0[8 * i + 2];
-                w.0[8 * i + 3] = eta - w.0[8 * i + 3];
-                w.0[8 * i + 4] = eta - w.0[8 * i + 4];
-                w.0[8 * i + 5] = eta - w.0[8 * i + 5];
-                w.0[8 * i + 6] = eta - w.0[8 * i + 6];
-                w.0[8 * i + 7] = eta - w.0[8 * i + 7];
+                w[8 * i] = eta - w[8 * i];
+                w[8 * i + 1] = eta - w[8 * i + 1];
+                w[8 * i + 2] = eta - w[8 * i + 2];
+                w[8 * i + 3] = eta - w[8 * i + 3];
+                w[8 * i + 4] = eta - w[8 * i + 4];
+                w[8 * i + 5] = eta - w[8 * i + 5];
+                w[8 * i + 6] = eta - w[8 * i + 6];
+                w[8 * i + 7] = eta - w[8 * i + 7];
             }
         }
         // MLDSA65
         4 => {
             let eta: i32 = 4;
             for i in 0..N / 2 {
-                w.0[2 * i] = (v[i] & 0x0F) as i32;
-                w.0[2 * i + 1] = (v[i] >> 4) as i32;
+                w[2 * i] = (v[i] & 0x0F) as i32;
+                w[2 * i + 1] = (v[i] >> 4) as i32;
 
-                w.0[2 * i] = eta - w.0[2 * i];
-                w.0[2 * i + 1] = eta - w.0[2 * i + 1];
+                w[2 * i] = eta - w[2 * i];
+                w[2 * i + 1] = eta - w[2 * i + 1];
             }
         }
         _ => panic!("Invalid eta value"),
@@ -258,38 +301,38 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
         MLDSA44_GAMMA1 => {
             // const gamma1: i32 = 1<<17;
             for i in 0..N / 4 {
-                w.0[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
+                w[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
                     | ((v[9 * i + 2] as i32) << 16))
                     & 0x3FFFF;
-                w.0[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2) | ((v[9 * i + 3] as i32) << 6))
+                w[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2) | ((v[9 * i + 3] as i32) << 6))
                     | ((v[9 * i + 4] as i32) << 14))
                     & 0x3FFFF;
-                w.0[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4) | ((v[9 * i + 5] as i32) << 4))
+                w[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4) | ((v[9 * i + 5] as i32) << 4))
                     | ((v[9 * i + 6] as i32) << 12))
                     & 0x3FFFF;
-                w.0[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6) | ((v[9 * i + 7] as i32) << 2))
+                w[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6) | ((v[9 * i + 7] as i32) << 2))
                     | ((v[9 * i + 8] as i32) << 10))
                     & 0x3FFFF;
 
-                w.0[4 * i] = GAMMA1 - w.0[4 * i];
-                w.0[4 * i + 1] = GAMMA1 - w.0[4 * i + 1];
-                w.0[4 * i + 2] = GAMMA1 - w.0[4 * i + 2];
-                w.0[4 * i + 3] = GAMMA1 - w.0[4 * i + 3];
+                w[4 * i] = GAMMA1 - w[4 * i];
+                w[4 * i + 1] = GAMMA1 - w[4 * i + 1];
+                w[4 * i + 2] = GAMMA1 - w[4 * i + 2];
+                w[4 * i + 3] = GAMMA1 - w[4 * i + 3];
             }
         }
         // MLDSA-65 and 87 have the same GAMMA1 value
         MLDSA65_GAMMA1 => {
             // const gamma1: i32 = 1<<19;
             for i in 0..N / 2 {
-                w.0[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
+                w[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
                     | ((v[5 * i + 2] as i32) << 16))
                     & 0xFFFFF;
-                w.0[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4))
+                w[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4))
                     | ((v[5 * i + 4] as i32) << 12))
                     & 0xFFFFF;
 
-                w.0[2 * i] = GAMMA1 - w.0[2 * i];
-                w.0[2 * i + 1] = GAMMA1 - w.0[2 * i + 1];
+                w[2 * i] = GAMMA1 - w[2 * i];
+                w[2 * i + 1] = GAMMA1 - w[2 * i + 1];
             }
         }
         _ => {
@@ -379,7 +422,7 @@ pub(crate) fn unpack_h_row<
             return None;
         }
         // 12: 𝐡[𝑖]_𝑦[Index] ← 1
-        h.0[sig[pos + j] as usize] = 1;
+        h[sig[pos + j] as usize] = 1;
 
         // 13: Index ← Index + 1
         //  > done by for loop
@@ -442,10 +485,10 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
         }
 
         // 11: 𝑐𝑖 ← 𝑐𝑗
-        c.0[i] = c.0[j[0] as usize];
+        c[i] = c[j[0] as usize];
 
         // 12: 𝑐𝑗 ← (−1)^ℎ[𝑖+𝜏−256]
-        c.0[j[0] as usize] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
+        c[j[0] as usize] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
         signs >>= 1;
     }
 
@@ -455,8 +498,8 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     {
         let mut hamming_weight: i32 = 0;
         for i in 0..N {
-            debug_assert!((-1..=1).contains(&c.0[i]));
-            if c.0[i] != 0 {
+            debug_assert!((-1..=1).contains(&c[i]));
+            if c[i] != 0 {
                 hamming_weight += 1;
             }
         }
@@ -478,6 +521,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     g.absorb(rho);
     g.absorb(nonce);
 
+    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
     // size doesn't really matter, so long as it's a multiple of 3.
     // 288 seemed to be the sweet spot from playing with benchmarks
     // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
@@ -491,7 +535,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
             g.squeeze_out(&mut s);
             idx = 0;
         }
-        w_hat.0[j] = match coeff_from_three_bytes(&s[idx..idx + 3].try_into().unwrap()) {
+        w_hat[j] = match coeff_from_three_bytes(&s[idx..idx + 3].try_into().unwrap()) {
             Ok(c) => c,
             Err(_) => {
                 // those three bytes were out of range for a coefficient, so go again with the next three bytes
@@ -522,6 +566,7 @@ pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]
     h.absorb(rho);
     h.absorb(nonce);
 
+    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
     // size doesn't really matter
     // 312 seemed to be the sweet spot from playing with benchmarks
     // maybe something to do with the average rejection rate?
@@ -535,11 +580,11 @@ pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]
         let z1 = coeff_from_half_byte::<ETA>(z_arr[idx] >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
 
         if z0.is_ok() {
-            a.0[j] = z0.unwrap();
+            a[j] = z0.unwrap();
             j += 1;
         } /* else: do nothing */
         if z1.is_ok() && j < 256 {
-            a.0[j] = z1.unwrap();
+            a[j] = z1.unwrap();
             j += 1;
         } /* else: do nothing */
 
@@ -698,7 +743,6 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
         1
     }
 }
-
 
 /// Algorithm 40 UseHint(ℎ, 𝑟)
 /// Returns the high bits of 𝑟 adjusted according to hint ℎ.

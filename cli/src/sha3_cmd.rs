@@ -1,4 +1,4 @@
-use bouncycastle::core_interface::traits::{Hash, XOF};
+use bouncycastle::core::traits::{Hash, XOF};
 use std::io;
 use std::io::{Read, Write};
 

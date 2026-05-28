@@ -1,21 +1,20 @@
-use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core_interface::traits::{Hash, Signature};
-use bouncycastle_mldsa::{HashMLDSA44_with_SHA512, MLDSA44_SIG_LEN};
-use bouncycastle_sha2::SHA512;
-use bouncycastle_hex as hex;
-
 #[cfg(test)]
 mod hash_mldsa_tests {
-    use super::*;
-    use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core_interface::traits::{Hash};
+    use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+    use bouncycastle_core::traits::{Hash, Signature};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
-    use bouncycastle_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA256, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA256, HashMLDSA87_with_SHA512, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
-    use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN};
-    use bouncycastle_mldsa::{MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN};
-    use bouncycastle_mldsa::{MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN};
+    use bouncycastle_hex as hex;
+    use bouncycastle_mldsa::{
+        HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA256,
+        HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA256, HashMLDSA87_with_SHA512, MLDSA44,
+        MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87,
+        MLDSA87PrivateKey, MLDSA87PublicKey, MLDSATrait,
+    };
+    use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
+    use bouncycastle_mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
+    use bouncycastle_mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
     use bouncycastle_sha2::SHA512;
-
 
     #[test]
     fn core_framework_signature() {
@@ -38,17 +37,63 @@ mod hash_mldsa_tests {
     }
 
     #[test]
+    fn test_boundary_conditions() {
+        let msg = b"The quick brown fox jumped over the lazy dog";
+
+        // ctx too long
+        // this is common to all parameter sets, so I'll just test MLDSA44
+        let (_pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
+
+        // ctx with len 255 works
+        HashMLDSA44_with_SHA256::sign_init(&sk, Some(&[1u8; 255])).unwrap();
+
+        // ctx with len 256 is too long
+        let too_long_ctx = [1u8; 256];
+        match HashMLDSA44_with_SHA256::sign_init(&sk, Some(&too_long_ctx)) {
+            Err(SignatureError::LengthError(_)) => { /* good */ }
+            _ => panic!("Expected error for ctx too long"),
+        }
+
+        // test various things that are shorter / longer than required
+
+        // sig too long / too short
+
+        // MLDSA44
+        let (pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
+        let sig = HashMLDSA44_with_SHA256::sign(&sk, msg, None).unwrap();
+        // too short
+        match HashMLDSA44_with_SHA256::verify(&pk, msg, None, &sig[..MLDSA44_SIG_LEN - 1]) {
+            Err(SignatureError::LengthError(_)) => { /* good */ }
+            _ => panic!("Expected error for sig too short"),
+        }
+
+        // too long
+        let mut sig_too_long = [0u8; MLDSA44_SIG_LEN + 2];
+        sig_too_long[..MLDSA44_SIG_LEN].copy_from_slice(&sig);
+        sig_too_long[MLDSA44_SIG_LEN..].copy_from_slice(&[1u8, 0u8]);
+        match HashMLDSA44_with_SHA256::verify(&pk, msg, None, &sig_too_long) {
+            Err(SignatureError::LengthError(_)) => { /* good */ }
+            _ => panic!("Expected error for sig too short"),
+        }
+    }
+
+    #[test]
     fn test_hash_quick_brown_fox() {
         // Tests a single test vector for each alg generated manually be bc-java
         // bc-java only supports HashML-DSA with SHA512, not with SHA256, so can't cross-test that.
 
         let seed = KeyMaterial256::from_bytes_as_type(
-            &hex::decode("000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f").unwrap(),
+            &hex::decode("000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f")
+                .unwrap(),
             KeyType::Seed,
-        ).unwrap();
-        let rnd: [u8; 32] = hex::decode("000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f").unwrap()[..32].try_into().unwrap();
+        )
+        .unwrap();
+        let rnd: [u8; 32] =
+            hex::decode("000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f")
+                .unwrap()[..32]
+                .try_into()
+                .unwrap();
         let msg = b"The quick brown fox";
-
 
         // HashML-DSA-44_with_SHA512
 
@@ -58,9 +103,9 @@ mod hash_mldsa_tests {
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
         let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
-        let sig = HashMLDSA44_with_SHA512::sign_ph_deterministic(&sk, None, &ph, rnd).unwrap();
+        let sig =
+            HashMLDSA44_with_SHA512::sign_ph_deterministic(&sk, None, None, &ph, rnd).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
-
 
         // HashML-DSA-65_with_SHA512
 
@@ -70,9 +115,9 @@ mod hash_mldsa_tests {
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
         let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
-        let sig = HashMLDSA65_with_SHA512::sign_ph_deterministic(&sk, None, &ph, rnd).unwrap();
+        let sig =
+            HashMLDSA65_with_SHA512::sign_ph_deterministic(&sk, None, None, &ph, rnd).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
-
 
         // HashML-DSA-87_with_SHA512
 
@@ -82,60 +127,144 @@ mod hash_mldsa_tests {
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
         let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
-        let sig = HashMLDSA87_with_SHA512::sign_ph_deterministic(&sk, None, &ph, rnd).unwrap();
+        let sig =
+            HashMLDSA87_with_SHA512::sign_ph_deterministic(&sk, None, None, &ph, rnd).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
     }
-}
 
-#[test]
-fn test_streaming_api() {
-    // I don't have a KAT, so I'll test against the regular implementation
+    #[test]
+    fn test_streaming_api() {
+        // I don't have a KAT, so I'll test against the regular implementation
 
-    let msg = b"The quick brown fox jumped over the lazy dog.";
+        let msg = b"The quick brown fox jumped over the lazy dog.";
 
-    // ML-DSA-44
+        // ML-DSA-44
 
-    let seed = KeyMaterial256::from_bytes_as_type(
-        &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
-        KeyType::Seed,
-    ).unwrap();
+        let seed = KeyMaterial256::from_bytes_as_type(
+            &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+                .unwrap(),
+            KeyType::Seed,
+        )
+        .unwrap();
 
-    let rnd = [1u8; 32];
+        let rnd = [1u8; 32];
 
-    let ctx: Option<&[u8]> = Some(b"testing streaming API");
+        let ctx: Option<&[u8]> = Some(b"testing streaming API");
 
-    // BEGIN expected values
-    let (expected_pk, expected_sk) = HashMLDSA44_with_SHA512::keygen_from_seed(&seed).unwrap();
-    let expected_ph: [u8; 64] = SHA512::new().hash(msg).try_into().unwrap();
-    let mut expected_sig = [0u8; MLDSA44_SIG_LEN];
-    let bytes_written = HashMLDSA44_with_SHA512::sign_ph_deterministic_out(
-        &expected_sk, ctx, &expected_ph, rnd, &mut expected_sig).unwrap();
-    assert_eq!(bytes_written, MLDSA44_SIG_LEN);
-    HashMLDSA44_with_SHA512::verify(&expected_pk, msg, ctx, &expected_sig).unwrap();
-    // END expected values
+        // BEGIN expected values
+        let (expected_pk, expected_sk) = HashMLDSA44_with_SHA512::keygen_from_seed(&seed).unwrap();
+        let expected_ph: [u8; 64] = SHA512::new().hash(msg).try_into().unwrap();
+        let mut expected_sig = [0u8; MLDSA44_SIG_LEN];
+        let bytes_written = HashMLDSA44_with_SHA512::sign_ph_deterministic_out(
+            &expected_sk, None, ctx, &expected_ph, rnd, &mut expected_sig,
+        )
+        .unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        HashMLDSA44_with_SHA512::verify(&expected_pk, msg, ctx, &expected_sig).unwrap();
+        // END expected values
 
+        // test the streaming API from sk
+        let mut s = HashMLDSA44_with_SHA512::sign_init(&expected_sk, ctx).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(msg);
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &expected_sig);
 
-    // test the streaming API from sk
+        // test the streaming API from seed
+        let mut s = HashMLDSA44_with_SHA512::sign_init_from_seed(&seed, ctx).unwrap();
+        s.set_signer_rnd(rnd);
+        s.sign_update(msg);
+        let sig = s.sign_final().unwrap();
+        assert_eq!(&sig, &expected_sig);
 
-    let mut s = HashMLDSA44_with_SHA512::sign_init(&expected_sk, ctx).unwrap();
-    s.set_signer_rnd(rnd);
-    s.sign_update(msg);
-    let sig = s.sign_final().unwrap();
-    assert_eq!(&sig, &expected_sig);
+        // test the streaming verifier
+        let mut v = HashMLDSA44_with_SHA512::verify_init(&expected_pk, ctx).unwrap();
+        v.verify_update(msg);
+        v.verify_final(&expected_sig).unwrap();
+    }
 
+    #[test]
+    fn test_expanded_key() {
+        use bouncycastle_mldsa::{MLDSA44PrivateKeyExpanded, MLDSA44PublicKeyExpanded};
+        use bouncycastle_mldsa::{MLDSA65PrivateKeyExpanded, MLDSA65PublicKeyExpanded};
+        use bouncycastle_mldsa::{MLDSA87PrivateKeyExpanded, MLDSA87PublicKeyExpanded};
 
-    // test the streaming API from seed
+        let msg = b"The quick brown fox jumped over the lazy dog";
 
-    let mut s = HashMLDSA44_with_SHA512::sign_init_from_seed(&seed, ctx).unwrap();
-    s.set_signer_rnd(rnd);
-    s.sign_update(msg);
-    let sig = s.sign_final().unwrap();
-    assert_eq!(&sig, &expected_sig);
+        /* ML-DSA-44 */
 
+        let (pk, sk) = MLDSA44::keygen().unwrap();
 
-    // test the streaming verifier
+        let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
+        let sig = HashMLDSA44_with_SHA256::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
 
-    let mut v = HashMLDSA44_with_SHA512::verify_init(&expected_pk, ctx).unwrap();
-    v.verify_update(msg);
-    v.verify_final(&expected_sig).unwrap();
+        let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
+        HashMLDSA44_with_SHA256::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        // test also sign_ph_with_expanded_key
+
+        // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
+        // we have to compute the ph manually here
+        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let sig =
+            HashMLDSA44_with_SHA512::sign_ph_with_expanded_key(&sk_expanded, &ph, None).unwrap();
+        HashMLDSA44_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        // and sign_ph_with_expanded_key_out
+        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let mut sig = [0u8; MLDSA44_SIG_LEN];
+        let bytes_written = HashMLDSA44_with_SHA512::sign_ph_with_expanded_key_out(
+            &sk_expanded, &ph, None, &mut sig,
+        )
+        .unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        HashMLDSA44_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        /* ML-DSA-65 */
+
+        let (pk, sk) = MLDSA65::keygen().unwrap();
+
+        let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
+        let sig = HashMLDSA65_with_SHA256::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+
+        let pk_expanded = MLDSA65PublicKeyExpanded::from(&pk);
+        HashMLDSA65_with_SHA256::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
+        // we have to compute the ph manually here
+        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let sig =
+            HashMLDSA65_with_SHA512::sign_ph_with_expanded_key(&sk_expanded, &ph, None).unwrap();
+        HashMLDSA65_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        /* ML-DSA-87 */
+
+        let (pk, sk) = MLDSA87::keygen().unwrap();
+
+        let sk_expanded = MLDSA87PrivateKeyExpanded::from(&sk);
+        let sig = HashMLDSA87_with_SHA256::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+
+        let pk_expanded = MLDSA87PublicKeyExpanded::from(&pk);
+        HashMLDSA87_with_SHA256::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
+        // we have to compute the ph manually here
+        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let sig =
+            HashMLDSA87_with_SHA512::sign_ph_with_expanded_key(&sk_expanded, &ph, None).unwrap();
+        HashMLDSA87_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        /* sign_with_expanded_key_out */
+        let (pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
+
+        let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
+        let mut sig = [0u8; MLDSA44_SIG_LEN];
+        let bytes_written =
+            HashMLDSA44_with_SHA256::sign_with_expanded_key_out(&sk_expanded, msg, None, &mut sig)
+                .unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+
+        let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
+        HashMLDSA44_with_SHA256::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+    }
 }

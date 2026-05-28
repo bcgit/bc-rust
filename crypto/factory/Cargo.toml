@@ -4,7 +4,7 @@ version = "0.1.1"
 edition.workspace = true
 
 [dependencies]
-bouncycastle-core-interface.workspace = true
+bouncycastle-core.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-sha2.workspace = true

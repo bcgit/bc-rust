@@ -28,6 +28,19 @@ pub enum KDFError {
 }
 
 #[derive(Debug)]
+pub enum KEMError {
+    GenericError(&'static str),
+    ConsistencyCheckFailed(&'static str),
+    EncodingError(&'static str),
+    DecapsulationFailed,
+    DecodingError(&'static str),
+    KeyGenError(&'static str),
+    KeyMaterialError(KeyMaterialError),
+    LengthError(&'static str),
+    RNGError(RNGError),
+}
+
+#[derive(Debug)]
 pub enum MACError {
     GenericError(&'static str),
     HashError(HashError),
@@ -61,10 +74,10 @@ pub enum SignatureError {
     EncodingError(&'static str),
     DecodingError(&'static str),
     KeyGenError(&'static str),
-    LengthError(&'static str),
-    RNGError(RNGError),
     KeyMaterialError(KeyMaterialError),
+    LengthError(&'static str),
     SignatureVerificationFailed,
+    RNGError(RNGError),
 }
 
 
@@ -93,6 +106,16 @@ impl From<KeyMaterialError> for KDFError {
     fn from(e: KeyMaterialError) -> KDFError {
         Self::KeyMaterialError(e)
     }
+}
+
+impl From<KeyMaterialError> for KEMError {
+    fn from(e: KeyMaterialError) -> KEMError {
+        Self::KeyMaterialError(e)
+    }
+}
+
+impl From<RNGError> for KEMError {
+    fn from(e: RNGError) -> KEMError { Self::RNGError(e) }
 }
 
 impl From<KeyMaterialError> for MACError {

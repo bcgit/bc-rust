@@ -8,8 +8,8 @@
 //! No worries, we got you covered!
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
@@ -50,8 +50,8 @@
 //! which are explained in more detail below.
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
@@ -96,8 +96,8 @@
 //! along with the public key hash `tr`:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let (pk, _) = MLDSA65::keygen().unwrap();
@@ -115,8 +115,8 @@
 //! computing mu:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let (pk, _) = MLDSA65::keygen().unwrap();
@@ -135,8 +135,8 @@
 //! Given a mu value, you can compute a signature that verifies as normal (no mu's required!):
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
@@ -180,8 +180,8 @@
 //! Example of signing and verifying with a `ctx` value:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let msg = b"The quick brown fox";
@@ -219,8 +219,8 @@
 //! Here is an example of using the [MLDSA::sign_mu_deterministic] function:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
@@ -264,10 +264,9 @@
 //! Example usage:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
-//! use bouncycastle_core_interface::traits::KeyMaterial;
-//! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
 //! use bouncycastle_hex as hex;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
@@ -316,20 +315,20 @@ use crate::low_memory_helpers::{compute_ct0_component, compute_w0cs2_component, 
 use crate::mldsa_keys::{MLDSAPublicKeyTrait, MLDSAPublicKeyInternalTrait};
 use crate::mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPrivateKeyInternalTrait};
 use crate::{MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA87PublicKey, MLDSA87PrivateKey};
-use bouncycastle_core_interface::errors::SignatureError;
-use bouncycastle_core_interface::key_material::{KeyMaterialSized};
-use bouncycastle_core_interface::traits::{RNG, SecurityStrength, XOF, Signature, Algorithm};
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::key_material::{KeyMaterial};
+use bouncycastle_core::traits::{RNG, SecurityStrength, XOF, Signature, Algorithm};
 use bouncycastle_rng::{HashDRBG_SHA512};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 
 // imports needed just for docs
 #[allow(unused_imports)]
-use bouncycastle_core_interface::traits::PHSignature;
+use bouncycastle_core::traits::PHSignature;
+#[allow(unused_imports)]
+use bouncycastle_core::key_material::KeyMaterial256;
 #[allow(unused_imports)]
 use crate::hash_mldsa;
-#[allow(unused_imports)]
-use bouncycastle_core_interface::key_material::KeyMaterial256;
 /*** Constants ***/
 
 ///
@@ -347,11 +346,12 @@ pub(crate) const q: i32 = 8380417;
 pub(crate) const q_inv: i32 = 58728449; // q ^ (-1) mod 2 ^32
 pub(crate) const d: i32 = 13;
 /// Length of the \[u8] holding a ML-DSA signing random value.
-pub const RND_LEN: usize = 32;
+pub const MLDSA_RND_LEN: usize = 32;
 /// Length of the \[u8] holding a ML-DSA tr value (which is the SHAKE256 hash of the public key).
-pub const TR_LEN: usize = 64;
+pub const MLDSA_TR_LEN: usize = 64;
 /// Length of the \[u8] holding a ML-DSA mu value.
-pub const MU_LEN: usize = 64;
+pub const MLDSA_MU_LEN: usize = 64;
+pub(crate) const POLY_T0PACKED_LEN: usize = 416;
 pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 
 
@@ -361,6 +361,8 @@ pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 pub const MLDSA44_PK_LEN: usize = 1312;
 /// Length of the \[u8] holding a ML-DSA-44 private key, which in this implementation is just a 32-byte seed.
 pub const MLDSA44_SK_LEN: usize = 32;
+/// The length of the FIPS representation of the private key, which can be produced by [MLDSAPrivateKeyTrait::encode_full_sk]
+pub const MLDSA44_FULL_SK_LEN: usize = 2560;
 /// Length of the \[u8] holding a ML-DSA-44 signature value.
 pub const MLDSA44_SIG_LEN: usize = 2420;
 pub(crate) const MLDSA44_TAU: i32 = 39;
@@ -377,9 +379,9 @@ pub(crate) const MLDSA44_OMEGA: i32 = 80;
 pub(crate) const MLDSA44_C_TILDE: usize = 32;
 pub(crate) const MLDSA44_POLY_Z_PACKED_LEN: usize = 576;
 pub(crate) const MLDSA44_POLY_W1_PACKED_LEN: usize = 192;
-pub(crate) const MLDSA44_S1_PACKED_LEN: usize = bitlen_eta(MLDSA44_ETA)  * MLDSA44_l;
-pub(crate) const MLDSA44_S2_PACKED_LEN: usize = bitlen_eta(MLDSA44_ETA)  * MLDSA44_k;
-pub(crate) const MLDSA44_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA44_k;
+pub(crate) const MLDSA44_S1_PACKED_LEN: usize = bitlen_eta(MLDSA44_ETA) * MLDSA44_l;  // 384 bytes
+pub(crate) const MLDSA44_S2_PACKED_LEN: usize = bitlen_eta(MLDSA44_ETA) * MLDSA44_k;  // 384 bytes
+pub(crate) const MLDSA44_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA44_k;  // 768 bytes
 pub(crate) const MLDSA44_POLY_ETA_PACKED_LEN: usize = 32*3;
 pub(crate) const MLDSA44_LAMBDA_over_4: usize = 128/4;
 
@@ -394,6 +396,8 @@ pub(crate) const MLDSA44_GAMMA1_MASK_LEN: usize = 576;  // 32*(1 + bitlen (𝛾1
 pub const MLDSA65_PK_LEN: usize = 1952;
 /// Length of the \[u8] holding a ML-DSA-65 private key, which in this implementation is just a 32-byte seed.
 pub const MLDSA65_SK_LEN: usize = 32;
+/// The length of the FIPS representation of the private key, which can be produced by [MLDSAPrivateKeyTrait::encode_full_sk]
+pub const MLDSA65_FULL_SK_LEN: usize = 4032;
 /// Length of the \[u8] holding a ML-DSA-65 signature value.
 pub const MLDSA65_SIG_LEN: usize = 3309;
 pub(crate) const MLDSA65_TAU: i32 = 49;
@@ -410,9 +414,9 @@ pub(crate) const MLDSA65_OMEGA: i32 = 55;
 pub(crate) const MLDSA65_C_TILDE: usize = 48;
 pub(crate) const MLDSA65_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA65_POLY_W1_PACKED_LEN: usize = 128;
-pub(crate) const MLDSA65_S1_PACKED_LEN: usize = bitlen_eta(MLDSA65_ETA)  * MLDSA65_l;
-pub(crate) const MLDSA65_S2_PACKED_LEN: usize = bitlen_eta(MLDSA65_ETA)  * MLDSA65_k;
-pub(crate) const MLDSA65_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA65_k;
+pub(crate) const MLDSA65_S1_PACKED_LEN: usize = bitlen_eta(MLDSA65_ETA) * MLDSA65_l;  // 640 bytes
+pub(crate) const MLDSA65_S2_PACKED_LEN: usize = bitlen_eta(MLDSA65_ETA) * MLDSA65_k;  // 768 bytes
+pub(crate) const MLDSA65_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA65_k;  // 1152 bytes
 pub(crate) const MLDSA65_POLY_ETA_PACKED_LEN: usize = 32*4;
 pub(crate) const MLDSA65_LAMBDA_over_4: usize = 192/4;
 
@@ -428,6 +432,8 @@ pub(crate) const MLDSA65_GAMMA1_MASK_LEN: usize = 640;
 pub const MLDSA87_PK_LEN: usize = 2592;
 /// Length of the \[u8] holding a ML-DSA-87 private key, which in this implementation is just a 32-byte seed.
 pub const MLDSA87_SK_LEN: usize = 32;
+/// The length of the FIPS representation of the private key, which can be produced by [MLDSAPrivateKeyTrait::encode_full_sk]
+pub const MLDSA87_FULL_SK_LEN: usize = 4896;
 /// Length of the \[u8] holding a ML-DSA-87 signature value.
 pub const MLDSA87_SIG_LEN: usize = 4627;
 pub(crate) const MLDSA87_TAU: i32 = 60;
@@ -444,9 +450,9 @@ pub(crate) const MLDSA87_OMEGA: i32 = 75;
 pub(crate) const MLDSA87_C_TILDE: usize = 64;
 pub(crate) const MLDSA87_POLY_Z_PACKED_LEN: usize = 640;
 pub(crate) const MLDSA87_POLY_W1_PACKED_LEN: usize = 128;
-pub(crate) const MLDSA87_S1_PACKED_LEN: usize = bitlen_eta(MLDSA87_ETA)  * MLDSA87_l;
-pub(crate) const MLDSA87_S2_PACKED_LEN: usize = bitlen_eta(MLDSA87_ETA)  * MLDSA87_k;
-pub(crate) const MLDSA87_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA87_k;
+pub(crate) const MLDSA87_S1_PACKED_LEN: usize = bitlen_eta(MLDSA87_ETA) * MLDSA87_l;  // 672 bytes
+pub(crate) const MLDSA87_S2_PACKED_LEN: usize = bitlen_eta(MLDSA87_ETA) * MLDSA87_k;  // 768 bytes
+pub(crate) const MLDSA87_T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * MLDSA87_k;  // 1024 bytes
 pub(crate) const MLDSA87_POLY_ETA_PACKED_LEN: usize = 32*3;
 pub(crate) const MLDSA87_LAMBDA_over_4: usize = 256/4;
 
@@ -467,6 +473,7 @@ pub(crate) type G = SHAKE128;
 pub type MLDSA44 = MLDSA<
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
+    MLDSA44_FULL_SK_LEN,
     MLDSA44_SIG_LEN,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
@@ -499,6 +506,7 @@ impl Algorithm for MLDSA44 {
 pub type MLDSA65 = MLDSA<
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
+    MLDSA65_FULL_SK_LEN,
     MLDSA65_SIG_LEN,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
@@ -531,6 +539,7 @@ impl Algorithm for MLDSA65 {
 pub type MLDSA87 = MLDSA<
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
+    MLDSA87_FULL_SK_LEN,
     MLDSA87_SIG_LEN,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
@@ -565,9 +574,10 @@ impl Algorithm for MLDSA87 {
 pub struct MLDSA<
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
     PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN, FULL_SK_LEN>
         + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
@@ -593,13 +603,13 @@ pub struct MLDSA<
     /// used for streaming the message for both signing and verifying
     mu_builder: MuBuilder,
 
-    signer_rnd: Option<[u8; RND_LEN]>,
+    signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
     /// only used in streaming sign operations
     sk: Option<SK>,
 
     /// only used in streaming sign operations instead of sk
-    seed: Option<KeyMaterialSized<32>>,
+    seed: Option<KeyMaterial<32>>,
 
     /// only used in streaming verify operations
     pk: Option<PK>,
@@ -608,9 +618,10 @@ pub struct MLDSA<
 impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
     PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN, FULL_SK_LEN>
         + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
@@ -633,6 +644,7 @@ impl<
 > MLDSA<
     PK_LEN,
     SK_LEN,
+    FULL_SK_LEN,
     SIG_LEN,
     PK,
     SK,
@@ -661,28 +673,26 @@ impl<
         (PK, SK),
         SignatureError,
     > {
-        let mut seed = KeyMaterialSized::<32>::new();
+        let mut seed = KeyMaterial::<32>::new();
         HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
         Self::keygen_internal(&seed)
     }
-    /// Implements Algorithm 6 of FIPS 204
-    /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
-    /// may in fact be exposed outside the crypto module.
+    /// Performs the first step of key generation to transform the single provided seed into a set of internal intermediate seeds.
     ///
     /// Unlike other interfaces across the library that take an &impl KeyMaterial, this one
     /// specifically takes a 32-byte [KeyMaterial256] and checks that it has [KeyType::Seed] and
-    /// [SecurityStrength::_256bit].
+    /// the appropriate [SecurityStrength] for the requested ML-DSA parameter set.
     /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
-    /// [KeyMaterial::from_key]
+    /// [KeyMaterial::from_key].
     pub(crate) fn keygen_internal(
-            seed: &KeyMaterialSized<32>,
+        seed: &KeyMaterial<32>,
         ) -> Result<
             (PK, SK),
             SignatureError,
         > {
         let sk = SK::from_keymaterial(seed)?;
         let pk = sk.derive_pk();
-        let pk = PK::new(&pk.rho, &pk.t1_packed); // stupid conversion, but it gets around these overly-generified rust types
+        let pk = PK::new(pk.rho, pk.t1_packed); // stupid conversion, but it gets around these overly-generified rust types
         Ok((pk, sk))
     }
 }
@@ -690,9 +700,10 @@ impl<
 impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
     PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN, FULL_SK_LEN>
         + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, eta, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
@@ -712,9 +723,10 @@ impl<
     const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, LAMBDA, GAMMA2, k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, eta> for MLDSA<
+> MLDSATrait<PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN, PK, SK, LAMBDA, GAMMA2, k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, eta> for MLDSA<
     PK_LEN,
     SK_LEN,
+    FULL_SK_LEN,
     SIG_LEN,
     PK,
     SK,
@@ -740,7 +752,7 @@ impl<
     /*** Key Generation and PK / SK consistency checks ***/
 
     /// Imports a secret key from a seed.
-    fn keygen_from_seed(seed: &KeyMaterialSized<32>) -> Result<(PK, SK), SignatureError> {
+    fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
         Self::keygen_internal(seed)
     }
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -750,7 +762,7 @@ impl<
     /// If everything checks out, the secret key is returned fully populated with pk and seed.
     /// If the provided key and derived key don't match, an error is returned.
     fn keygen_from_seed_and_encoded(
-        seed: &KeyMaterialSized<32>,
+        seed: &KeyMaterial<32>,
         encoded_sk: &[u8; SK_LEN],
     ) -> Result<
         (PK, SK),
@@ -865,7 +877,7 @@ impl<
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
+        let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
 
         Self::sign_mu_deterministic_out(sk, mu, rnd, output)
@@ -877,16 +889,15 @@ impl<
         debug_assert_eq!(bytes_written, SIG_LEN);
         Ok(out)
     }
-
+    /// This function is a mash-up of keyGen (Algorithm 6) and sign (Algorithm 7),
+    /// with a special emphasis on deriving values only as we need them, which in particular
+    /// means that we'll process matrices and vectors row or component-wise.
     fn sign_mu_deterministic_out(
         sk: &SK,
         mu: &[u8; 64],
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        // This function is a mash-up of keyGen (Algorithm 6) and sign (Algorithm 7),
-        // with a special emphasis on deriving values only as we need them, which in particular
-        // means that we'll process matrices and vectors row or component-wise.
 
         // I have tried to keep this as clean as possible for correspondence with the FIPS,
         // but I have moved things around so that I can use unnamed scopes to limit how many
@@ -970,6 +981,8 @@ impl<
                 let z = match compute_z_component::<GAMMA1, GAMMA1_MASK_LEN, BETA>(
                     // [Optimization Note]:
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
+                    // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
+                    // maybe because re-computing the intermediates adds more to the widest point of the alg?
                     // &sk.compute_s1_row(col),
                     &s_unpack::<eta>(&s1_packed, col),
                     &rho_p_p, &c_hat, kappa, col,
@@ -1031,7 +1044,7 @@ impl<
                 }
 
                 for idx in 0..N {
-                    if hint_row.0[idx] != 0 {
+                    if hint_row[idx] != 0 {
                         output[hint_offset + hint_count] = idx as u8;
                         hint_count += 1;
                     }
@@ -1051,14 +1064,14 @@ impl<
         Ok(SIG_LEN)
     }
 
-    fn sign_mu_deterministic_from_seed(seed: &KeyMaterialSized<32>, mu: &[u8; 64], rnd: [u8; 32]) -> Result<[u8; SIG_LEN], SignatureError> {
+    fn sign_mu_deterministic_from_seed(seed: &KeyMaterial<32>, mu: &[u8; 64], rnd: [u8; 32]) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         SK::from_keymaterial(&seed)?;
         Self::sign_mu_deterministic_out(&SK::from_keymaterial(&seed)?, mu, rnd, &mut out)?;
         Ok(out)
     }
 
-    fn sign_mu_deterministic_from_seed_out(seed: &KeyMaterialSized<32>, mu: &[u8; 64], rnd: [u8; 32], output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+    fn sign_mu_deterministic_from_seed_out(seed: &KeyMaterial<32>, mu: &[u8; 64], rnd: [u8; 32], output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         SK::from_keymaterial(&seed)?;
         Self::sign_mu_deterministic_out(&SK::from_keymaterial(&seed)?, mu, rnd, output)
     }
@@ -1072,7 +1085,7 @@ impl<
 
     /// Alternative initialization of the streaming signer where you have your private key
     /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
-    fn sign_init_from_seed(seed: &KeyMaterialSized<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn sign_init_from_seed(seed: &KeyMaterial<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (_pk, sk) = Self::keygen_from_seed(seed)?;
         Ok(
             Self {
@@ -1160,9 +1173,10 @@ impl<
 pub trait MLDSATrait<
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
     PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN, FULL_SK_LEN>
         + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const LAMBDA: i32,
     const GAMMA2: i32,
@@ -1174,7 +1188,7 @@ pub trait MLDSATrait<
     const ETA: usize
 > : Sized {
     /// Imports a secret key from a seed.
-    fn keygen_from_seed(seed: &KeyMaterialSized<32>) -> Result<(PK, SK), SignatureError>;
+    fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError>;
     /// Imports a secret key from both a seed and an encoded_sk.
     ///
     /// This is a convenience function to expand the key from seed and compare it against
@@ -1182,7 +1196,7 @@ pub trait MLDSATrait<
     /// If everything checks out, the secret key is returned fully populated with pk and seed.
     /// If the provided key and derived key don't match, an error is returned.
     fn keygen_from_seed_and_encoded(
-        seed: &KeyMaterialSized<32>,
+        seed: &KeyMaterial<32>,
         encoded_sk: &[u8; SK_LEN],
     ) -> Result<
         (PK, SK),
@@ -1326,7 +1340,7 @@ pub trait MLDSATrait<
     /// memory usage by never having the full secret key in memory at the same time,
     /// and by deriving intermediate values piece-wise as needed.
     fn sign_mu_deterministic_from_seed(
-        seed: &KeyMaterialSized<32>,
+        seed: &KeyMaterial<32>,
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; SIG_LEN], SignatureError>;
@@ -1334,7 +1348,7 @@ pub trait MLDSATrait<
     /// memory usage by never having the full secret key in memory at the same time,
     /// and by deriving intermediate values piece-wise as needed.
     fn sign_mu_deterministic_from_seed_out(
-        seed: &KeyMaterialSized<32>,
+        seed: &KeyMaterial<32>,
         mu: &[u8; 64],
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
@@ -1343,7 +1357,7 @@ pub trait MLDSATrait<
     /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final]
     fn set_signer_rnd(&mut self, rnd: [u8; 32]);
     /// An alternate way to start the streaming signing mode by providing a private key seed instead of an expanded private key
-    fn sign_init_from_seed(seed: &KeyMaterialSized<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
+    fn sign_init_from_seed(seed: &KeyMaterial<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
     /// Algorithm 8 ML-DSA.Verify_internal(𝑝𝑘, 𝑀′, 𝜎)
     /// Internal function to verify a signature 𝜎 for a formatted message 𝑀′ .
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑) and message 𝑀′ ∈ {0, 1}∗ .
@@ -1358,9 +1372,10 @@ pub trait MLDSATrait<
 impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
     PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN> + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN>
+    SK: MLDSAPrivateKeyTrait<k, l, S1_PACKED_LEN, S2_PACKED_LEN, T1_PACKED_LEN, PK_LEN, SK_LEN, FULL_SK_LEN>
         + MLDSAPrivateKeyInternalTrait<LAMBDA, GAMMA2, k, l, ETA, S1_PACKED_LEN, S2_PACKED_LEN, PK_LEN, SK_LEN>,
     const TAU: i32,
     const LAMBDA: i32,
@@ -1383,6 +1398,7 @@ impl<
 > Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN> for MLDSA<
     PK_LEN,
     SK_LEN,
+    FULL_SK_LEN,
     SIG_LEN,
     PK,
     SK,
@@ -1466,7 +1482,7 @@ impl<
             let rnd = if self.signer_rnd.is_some() {
                 self.signer_rnd.unwrap()
             } else {
-                let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
+                let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
                 HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
                 rnd
             };

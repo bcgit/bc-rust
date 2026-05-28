@@ -1,0 +1,16 @@
+[package]
+name = "mem_usage_benches"
+version = "0.1.2"
+edition.workspace = true
+
+[dependencies]
+bouncycastle.workspace = true
+
+
+[[bin]]
+name = "bench_mldsa_mem_usage"
+path = "bench_mldsa_mem_usage.rs"
+
+[[bin]]
+name = "bench_mlkem_mem_usage"
+path = "bench_mlkem_mem_usage.rs"

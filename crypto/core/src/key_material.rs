@@ -3,9 +3,9 @@
 //! entropy content to prevent accidental misuse security bugs, such as deriving cryptographic keys
 //! from uninitialized data.
 //!
-//! This object allows several types of manual-overrides, which typically require setting the [KeyMaterialSized::allow_hazardous_operations] flag.
+//! This object allows several types of manual-overrides, which typically require setting the [KeyMaterial::allow_hazardous_operations] flag.
 //! For example, the raw bytes data can be extracted, or the key forced to a certain type,
-//! but well-designed use of the bc-rust.test library should not need to ever set the [KeyMaterialSized::allow_hazardous_operations] flag.
+//! but well-designed use of the bc-rust.test library should not need to ever set the [KeyMaterial::allow_hazardous_operations] flag.
 //! The core idea of this wrapper is to keep track of the usage of the key material, including
 //! the amount of entropy that it is presumed to contain in order to prevent users from accidentally
 //! using it inappropriately in a way that could lead to security weaknesses.
@@ -21,7 +21,7 @@
 //! * Keyed KDFs that are given a key of RawFullEntropy or KeyedHashKey a KeyMaterial data of type RawLowEntropy or RawUnknownEntropy will promote it into RawFullEntropy.
 //! * Symmetric ciphers or asymmetric ciphers such as X25519 or ML-KEM that accept private key seeds will expect KeyMaterial of type AsymmetricPrivateKeySeed.
 //!
-//! However, there is a [KeyMaterialSized::convert_key_type] for cases where the user has more context knowledge than the library.
+//! However, there is a [KeyMaterial::convert_key_type] for cases where the user has more context knowledge than the library.
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
 //! the user has explicitly allowed them via calling allow_hazardous_operations() prior to the conversion.
 //!
@@ -41,29 +41,29 @@ use crate::errors::KeyMaterialError;
 use crate::traits::{RNG, SecurityStrength, Secret};
 use bouncycastle_utils::{ct, max, min};
 
-use std::cmp::{Ordering, PartialOrd};
-use std::fmt;
+use core::cmp::{Ordering, PartialOrd};
+use core::fmt;
 
 /// Sometimes you just need a zero-length dummy key.
-pub type KeyMaterial0 = KeyMaterialSized<0>;
+pub type KeyMaterial0 = KeyMaterial<0>;
 
-pub type KeyMaterial128 = KeyMaterialSized<16>;
-pub type KeyMaterial256 = KeyMaterialSized<32>;
-pub type KeyMaterial512 = KeyMaterialSized<64>;
+pub type KeyMaterial128 = KeyMaterial<16>;
+pub type KeyMaterial256 = KeyMaterial<32>;
+pub type KeyMaterial512 = KeyMaterial<64>;
 
 
 /// A helper class used across the bc-rust.test library to hold bytes-like key material.
-/// See [KeyMaterialSized] for for details, such as constructors.
-pub trait KeyMaterial {
+/// See [KeyMaterial] for for details, such as constructors.
+pub trait KeyMaterialTrait {
     /// Loads the provided data into a new KeyMaterial of the specified type.
     /// This is discouraged unless the caller knows the provenance of the data, such as loading it
     /// from a cryptographic private key file.
     /// It will detect if you give it all-zero source data and set the key type to [KeyType::Zeroized] instead.
     /// Since this zeroizes and resets the key material, this is considered a dangerous conversion.
     ///
-    /// The only hazardous operation here that requires setting [KeyMaterial::allow_hazardous_operations] is giving it
+    /// The only hazardous operation here that requires setting [KeyMaterialTrait::allow_hazardous_operations] is giving it
     /// an all-zero key, which is checked as a courtesy to catch mistakes of feeding an initialized buffer
-    /// instead of an actual key. See the note on [KeyMaterialSized::set_bytes_as_type] for suggestions
+    /// instead of an actual key. See the note on [KeyMaterial::set_bytes_as_type] for suggestions
     /// for handling this.
     fn set_bytes_as_type(
         &mut self,
@@ -73,9 +73,9 @@ pub trait KeyMaterial {
 
     /// Get a reference to the underlying key material bytes.
     ///
-    /// By reading the key bytes out of the [KeyMaterial] object, you lose the protections that it offers,
-    /// however, this does not require [KeyMaterial::allow_hazardous_operations] in the name of API ergonomics:
-    /// setting [KeyMaterial::allow_hazardous_operations] requires a mutable reference and reading the bytes
+    /// By reading the key bytes out of the [KeyMaterialTrait] object, you lose the protections that it offers,
+    /// however, this does not require [KeyMaterialTrait::allow_hazardous_operations] in the name of API ergonomics:
+    /// setting [KeyMaterialTrait::allow_hazardous_operations] requires a mutable reference and reading the bytes
     /// is not an operation that should require mutability.
     /// TODO -- consider whether this should consume the object
     fn ref_to_bytes(&self) -> &[u8];
@@ -83,9 +83,9 @@ pub trait KeyMaterial {
     /// Get a mutable reference to the underlying key material bytes so that you can read or write
     /// to the underlying bytes without needing to create a temporary buffer, especially useful in
     /// cases where the required size of that buffer may be tricky to figure out at compile-time.
-    /// This requires [KeyMaterial::allow_hazardous_operations] to be set.
+    /// This requires [KeyMaterialTrait::allow_hazardous_operations] to be set.
     /// When writing directly to the buffer, you are responsible for setting the key_len and key_type afterwards,
-    /// and you should [KeyMaterial::drop_hazardous_operations].
+    /// and you should [KeyMaterialTrait::drop_hazardous_operations].
     fn mut_ref_to_bytes(&mut self) -> Result<&mut [u8], KeyMaterialError>;
 
     /// The size of the internal buffer; ie the largest key that this instance can hold.
@@ -95,12 +95,12 @@ pub trait KeyMaterial {
     /// Length of the key material in bytes.
     fn key_len(&self) -> usize;
 
-    /// Requires [KeyMaterial::allow_hazardous_operations].
+    /// Requires [KeyMaterialTrait::allow_hazardous_operations].
     fn set_key_len(&mut self, key_len: usize) -> Result<(), KeyMaterialError>;
 
     fn key_type(&self) -> KeyType;
 
-    /// Requires [KeyMaterial::allow_hazardous_operations].
+    /// Requires [KeyMaterialTrait::allow_hazardous_operations].
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError>;
 
     /// Security Strength, as used here, aligns with NIST SP 800-90A guidance for random number generation,
@@ -116,16 +116,16 @@ pub trait KeyMaterial {
     /// tracked independantly from key length and entropy level / key type.
     fn security_strength(&self) -> SecurityStrength;
 
-    /// Requires [KeyMaterial::allow_hazardous_operations] to raise the security strength, but not to lower it.
+    /// Requires [KeyMaterialTrait::allow_hazardous_operations] to raise the security strength, but not to lower it.
     /// Throws [KeyMaterialError::HazardousOperationNotPermitted] on a request to raise the security level without
-    /// [KeyMaterial::allow_hazardous_operations] set.
+    /// [KeyMaterialTrait::allow_hazardous_operations] set.
     /// Throws [KeyMaterialError::InvalidLength] on a request to set the security level higher than the current key length.
     fn set_security_strength(&mut self, strength: SecurityStrength)
                              -> Result<(), KeyMaterialError>;
 
     /// Sets this instance to be able to perform potentially hazardous conversions such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
-    /// or manually setting the key bytes via [KeyMaterial::mut_ref_to_bytes], which then requires you to be responsible
+    /// or manually setting the key bytes via [KeyMaterialTrait::mut_ref_to_bytes], which then requires you to be responsible
     /// for setting the key_len and key_type afterwards.
     ///
     /// The purpose of the hazardous_conversions guard is not to prevent the user from accessing their data,
@@ -149,13 +149,13 @@ pub trait KeyMaterial {
 
     fn zeroize(&mut self);
 
-    /// Is simply an alias to [KeyMaterial::set_key_len], however, this does not require [KeyMaterial::allow_hazardous_operations]
+    /// Is simply an alias to [KeyMaterialTrait::set_key_len], however, this does not require [KeyMaterialTrait::allow_hazardous_operations]
     /// since truncation is a safe operation.
     /// If truncating below the current security strength, the security strength will be lowered accordingly.
     fn truncate(&mut self, new_len: usize) -> Result<(), KeyMaterialError>;
 
     /// Adds the other KeyMaterial into this one, assuming there is space.
-    /// Does not require [KeyMaterial::allow_hazardous_operations].
+    /// Does not require [KeyMaterialTrait::allow_hazardous_operations].
     /// Throws [KeyMaterialError::InvalidLength] if this object does not have enough space to add the other one.
     /// The resulting [KeyType] and security strength will be the lesser of the two keys.
     /// In other words, concatenating two 128-bit full entropy keys generated at a 128-bit DRBG security level
@@ -163,18 +163,18 @@ pub trait KeyMaterial {
     /// Concatenating a full entropy key with a low entropy key will result in a low entropy key.
     ///
     /// Returns the new key_len.
-    fn concatenate(&mut self, other: &dyn KeyMaterial) -> Result<usize, KeyMaterialError>;
+    fn concatenate(&mut self, other: &dyn KeyMaterialTrait) -> Result<usize, KeyMaterialError>;
 
     /// Perform a constant-time comparison between the two key material buffers,
     /// ignoring differences in capacity, [KeyType], [SecurityStrength], etc.
-    fn equals(&self, other: &dyn KeyMaterial) -> bool;
+    fn equals(&self, other: &dyn KeyMaterialTrait) -> bool;
 }
 
 /// A wrapper for holding bytes-like key material (symmetric keys or seeds) which aims to apply a
 /// strict typing system to prevent many kinds of mis-use mistakes.
 /// The capacity of the internal buffer can be set at compile-time via the <KEY_LEN> param.
 #[derive(Clone)]
-pub struct KeyMaterialSized<const KEY_LEN: usize> {
+pub struct KeyMaterial<const KEY_LEN: usize> {
     buf: [u8; KEY_LEN],
     key_len: usize,
     key_type: KeyType,
@@ -182,7 +182,7 @@ pub struct KeyMaterialSized<const KEY_LEN: usize> {
     allow_hazardous_operations: bool,
 }
 
-impl<const KEY_LEN: usize> Secret for KeyMaterialSized<KEY_LEN> {}
+impl<const KEY_LEN: usize> Secret for KeyMaterial<KEY_LEN> {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyType {
@@ -205,14 +205,14 @@ pub enum KeyType {
     SymmetricCipherKey,
 }
 
-impl<const KEY_LEN: usize> Default for KeyMaterialSized<KEY_LEN> {
+impl<const KEY_LEN: usize> Default for KeyMaterial<KEY_LEN> {
     /// Create a new empty (zeroized) instance.
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<const KEY_LEN: usize> KeyMaterialSized<KEY_LEN> {
+impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     pub fn new() -> Self {
         Self {
             buf: [0u8; KEY_LEN],
@@ -269,7 +269,7 @@ impl<const KEY_LEN: usize> KeyMaterialSized<KEY_LEN> {
     }
 
     /// Copy constructor
-    pub fn from_key(other: &impl KeyMaterial) -> Result<Self, KeyMaterialError> {
+    pub fn from_key(other: &impl KeyMaterialTrait) -> Result<Self, KeyMaterialError> {
         if other.key_len() > KEY_LEN {
             return Err(KeyMaterialError::InputDataLongerThanKeyCapacity);
         }
@@ -286,21 +286,21 @@ impl<const KEY_LEN: usize> KeyMaterialSized<KEY_LEN> {
     }
 }
 
-impl<const KEY_LEN: usize> KeyMaterial for KeyMaterialSized<KEY_LEN> {
+impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     /// Loads the provided data into a new KeyMaterial of the specified type.
     /// This is discouraged unless the caller knows the provenance of the data, such as loading it
     /// from a cryptographic private key file.
     ///
-    /// This behaves differently on all-zero input key depending on whether [KeyMaterial::allow_hazardous_operations] is set:
+    /// This behaves differently on all-zero input key depending on whether [KeyMaterialTrait::allow_hazardous_operations] is set:
     /// if not set, then it will succeed, setting the key type to [KeyType::Zeroized] and also return a [KeyMaterialError::ActingOnZeroizedKey]
     /// to indicate that you may want to perform error-handling, which could be manually setting the key type
     /// if you intend to allow zero keys, or do some other error-handling, like figure out why your RNG is broken.
     /// Note that even if a [KeyMaterialError::ActingOnZeroizedKey] is returned, the object is still populated and usable.
     /// For example, you could catch it like this:
     /// ```
-    /// use core_interface::key_material::{KeyMaterial256, KeyType};
-    /// use core_interface::key_material::KeyMaterial;
-    /// use core_interface::errors::KeyMaterialError;
+    /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
+    /// use bouncycastle_core::key_material::KeyMaterial;
+    /// use bouncycastle_core::errors::KeyMaterialError;
     ///
     /// let key_bytes = [0u8; 16];
     /// let mut key = KeyMaterial256::new();
@@ -317,7 +317,7 @@ impl<const KEY_LEN: usize> KeyMaterial for KeyMaterialSized<KEY_LEN> {
     ///   Ok(_) => { /* good */ },
     /// }
     /// ```
-    /// On the other hand, if [KeyMaterial::allow_hazardous_operations] is set then it will just do what you asked without complaining.
+    /// On the other hand, if [KeyMaterialTrait::allow_hazardous_operations] is set then it will just do what you asked without complaining.
     ///
     /// Since this zeroizes and resets the key material, this is considered a dangerous conversion.
     ///
@@ -562,7 +562,7 @@ impl<const KEY_LEN: usize> KeyMaterial for KeyMaterialSized<KEY_LEN> {
         Ok(())
     }
 
-    fn concatenate(&mut self, other: &dyn KeyMaterial) -> Result<usize, KeyMaterialError> {
+    fn concatenate(&mut self, other: &dyn KeyMaterialTrait) -> Result<usize, KeyMaterialError> {
         let new_key_len = self.key_len() + other.key_len();
         if self.key_len() + other.key_len() > KEY_LEN {
             return Err(KeyMaterialError::InputDataLongerThanKeyCapacity);
@@ -574,7 +574,7 @@ impl<const KEY_LEN: usize> KeyMaterial for KeyMaterialSized<KEY_LEN> {
         Ok(self.key_len())
     }
 
-    fn equals(&self, other: &dyn KeyMaterial) -> bool {
+    fn equals(&self, other: &dyn KeyMaterialTrait) -> bool {
         if self.key_len() != other.key_len() {
             return false;
         }
@@ -586,7 +586,7 @@ impl<const KEY_LEN: usize> KeyMaterial for KeyMaterialSized<KEY_LEN> {
 /// the two keys have the same type.
 /// Therefore, for example, two keys loaded from the same bytes, one with type [KeyType::BytesLowEntropy] and
 /// the other with [KeyType::MACKey] will be considered equal.
-impl<const KEY_LEN: usize> PartialEq for KeyMaterialSized<KEY_LEN> {
+impl<const KEY_LEN: usize> PartialEq for KeyMaterial<KEY_LEN> {
     fn eq(&self, other: &Self) -> bool {
         if self.key_len != other.key_len {
             return false;
@@ -594,7 +594,7 @@ impl<const KEY_LEN: usize> PartialEq for KeyMaterialSized<KEY_LEN> {
         ct::ct_eq_bytes(&self.buf[..self.key_len], &other.buf[..self.key_len])
     }
 }
-impl<const KEY_LEN: usize> Eq for KeyMaterialSized<KEY_LEN> {}
+impl<const KEY_LEN: usize> Eq for KeyMaterial<KEY_LEN> {}
 
 /// Ordering is as follows:
 /// Zeroized < BytesLowEntropy < BytesFullEntropy < {Seed = MACKey = SymmetricCipherKey}
@@ -628,7 +628,7 @@ impl PartialOrd for KeyType {
 }
 
 /// Block accidental logging of the internal key material buffer.
-impl<const KEY_LEN: usize> fmt::Display for KeyMaterialSized<KEY_LEN> {
+impl<const KEY_LEN: usize> fmt::Display for KeyMaterial<KEY_LEN> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -639,7 +639,7 @@ impl<const KEY_LEN: usize> fmt::Display for KeyMaterialSized<KEY_LEN> {
 }
 
 /// Block accidental logging of the internal key material buffer.
-impl<const KEY_LEN: usize> fmt::Debug for KeyMaterialSized<KEY_LEN> {
+impl<const KEY_LEN: usize> fmt::Debug for KeyMaterial<KEY_LEN> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -650,7 +650,7 @@ impl<const KEY_LEN: usize> fmt::Debug for KeyMaterialSized<KEY_LEN> {
 }
 
 /// Zeroize the key material on drop.
-impl<const KEY_LEN: usize> Drop for KeyMaterialSized<KEY_LEN> {
+impl<const KEY_LEN: usize> Drop for KeyMaterial<KEY_LEN> {
     fn drop(&mut self) {
         self.zeroize()
     }

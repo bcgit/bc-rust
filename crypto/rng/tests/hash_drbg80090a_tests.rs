@@ -1,10 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use bouncycastle_core_interface::errors::{KeyMaterialError, RNGError};
-    use bouncycastle_core_interface::key_material::{
-        KeyMaterial0, KeyMaterial256, KeyMaterialSized, KeyType,
-    };
-    use bouncycastle_core_interface::traits::{KeyMaterial, RNG, SecurityStrength};
+    use bouncycastle_core::errors::{KeyMaterialError, RNGError};
+    use bouncycastle_core::key_material::{KeyMaterial0, KeyMaterial256, KeyMaterial, KeyType, KeyMaterialTrait};
+    use bouncycastle_core::traits::{RNG, SecurityStrength};
     use bouncycastle_core_test_framework::DUMMY_SEED_512;
     use bouncycastle_rng::Sp80090ADrbg;
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
@@ -266,7 +264,7 @@ mod tests {
 
         // Success case: one-byte output
         let mut rng = HashDRBG_SHA256::new_from_os();
-        let mut out = KeyMaterialSized::<1>::new();
+        let mut out = KeyMaterial::<1>::new();
         let bytes_written = rng.generate_keymaterial_out(&[], &mut out).unwrap();
         assert_eq!(bytes_written, 1);
         assert_eq!(out.key_len(), 1);
@@ -274,7 +272,7 @@ mod tests {
 
         // Success case: more than a block of output
         let mut rng = HashDRBG_SHA256::new_from_os();
-        let mut out = KeyMaterialSized::<1024>::new();
+        let mut out = KeyMaterial::<1024>::new();
         let bytes_written = rng.generate_keymaterial_out(&[], &mut out).unwrap();
         assert_eq!(bytes_written, 1024);
         assert_eq!(out.key_len(), 1024);

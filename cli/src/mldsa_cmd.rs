@@ -1,16 +1,34 @@
 //! Yup, this file is as absolutely atrocious mess of duplicate code that could be much improved
 //! by using generics or macros. I just, haven't ... yet.
 
-use crate::{MLDSAAction, write_bytes_or_hex};
-use bouncycastle::core_interface::key_material::{KeyMaterial256, KeyType};
-use bouncycastle::core_interface::traits::{
-    KeyMaterial, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
-};
+use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
+use bouncycastle::core::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle::hex;
-use bouncycastle::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA87PrivateKey, MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
-use std::{fs, io};
+use bouncycastle::mldsa::{MLDSA_SEED_LEN, MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA87PrivateKey, MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
+use std::{io};
 use std::io::{Read};
 use std::process::exit;
+use clap::ValueEnum;
+
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum MLDSAAction {
+    /// Generate and output a new private key
+    Keygen,
+    /// Generate and output a private key from a seed read from stdin.
+    /// Accepts either binary or hex.
+    KeygenFromSeed,
+    /// Generate and output a new public key from a private key read from stdin.
+    /// Accepts either binary or hex.
+    PkFromSk,
+    /// Accepts a sk and pk, and checks that they match.
+    CheckConsistency,
+    /// Sign a message read from stdin with a private key file and output the signature.
+    /// Accepts private key as full or seed, binary or hex.
+    Sign,
+    /// Verify a message read from stdin with a public key file and a signature file
+    /// Accepts the public key and signature as binary or hex.
+    Verify,
+}
 
 pub(crate) fn mldsa44_cmd(
     action: &MLDSAAction,
@@ -26,17 +44,21 @@ pub(crate) fn mldsa44_cmd(
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
-            let mut buf = [0u8; 100]; // comfortably above a hex'd seed
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let seed = parse_seed(&buf[..bytes_read]).unwrap();
+            let buf = read_from_file_or_stdin(skfile);
+            let seed = match parse_seed::<MLDSA_SEED_LEN>(&buf) {
+                Ok(seed) => seed,
+                Err(()) => {
+                    eprintln!("Error: input could not be parsed as a {} byte seed in either hex or bin", MLDSA_SEED_LEN);
+                    exit(-1);
+                }
+            };
 
             let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
-            let mut buf = [0u8; 2*2560+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa44_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa44_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -47,9 +69,8 @@ pub(crate) fn mldsa44_cmd(
             write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let mut buf = [0u8; 2*2560+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa44_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa44_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -58,15 +79,13 @@ pub(crate) fn mldsa44_cmd(
             };
 
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1312+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa44_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa44_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -84,30 +103,20 @@ pub(crate) fn mldsa44_cmd(
         }
         MLDSAAction::Sign => {
             // first, read the sk
-            let mut sk_bytes = [0u8; 2*2560+1];
-            let sk_len: usize;
-            if skfile.is_some() {
-                sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
+            let sk_bytes = if skfile.is_some() {
+                read_from_file(skfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no skfile provided.");
                 exit(-1);
-            }
+            };
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid context.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa44_sk(&sk_bytes[..sk_len]) {
+            let sk = match parse_mldsa44_sk(&sk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -130,15 +139,13 @@ pub(crate) fn mldsa44_cmd(
         }
         MLDSAAction::Verify => {
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1312+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa44_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa44_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -148,29 +155,12 @@ pub(crate) fn mldsa44_cmd(
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255+1];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid ctx.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // then read the sig
             let sig = if sigfile.is_some() {
-                let mut sigbuf = [0u8; 2 * 2420];
-                let bytes_read = read_from_file(sigfile.as_ref().unwrap(), &mut sigbuf);
-
-                // first try hex, by length
-                match hex::decode(&sigbuf[..bytes_read]) {
-                    Ok(sig) => sig,
-                    Err(_) => {
-                        Vec::from(&sigbuf[..bytes_read])
-                    },
-                }
+                read_from_file(sigfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no sigfile provided.");
                 exit(-1);
@@ -213,17 +203,15 @@ pub(crate) fn mldsa65_cmd(
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
-            let mut buf = [0u8; 100]; // comfortably above a hex'd seed
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let seed = parse_seed(&buf[..bytes_read]).unwrap();
+            let buf = read_from_file_or_stdin(skfile);
+            let seed = parse_seed(&buf).unwrap();
 
             let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
-            let mut buf = [0u8; 2*4032+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa65_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa65_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -234,9 +222,8 @@ pub(crate) fn mldsa65_cmd(
             write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let mut buf = [0u8; 2*4032+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa65_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa65_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -245,15 +232,13 @@ pub(crate) fn mldsa65_cmd(
             };
 
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1952+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa65_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa65_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -271,30 +256,20 @@ pub(crate) fn mldsa65_cmd(
         }
         MLDSAAction::Sign => {
             // first, read the sk
-            let mut sk_bytes = [0u8; 2*4032+1];
-            let sk_len: usize;
-            if skfile.is_some() {
-                sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
+            let sk_bytes = if skfile.is_some() {
+                read_from_file(skfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no skfile provided.");
                 exit(-1);
-            }
+            };
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid context.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa65_sk(&sk_bytes[..sk_len]) {
+            let sk = match parse_mldsa65_sk(&sk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -317,15 +292,13 @@ pub(crate) fn mldsa65_cmd(
         }
         MLDSAAction::Verify => {
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1952+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa65_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa65_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -335,29 +308,12 @@ pub(crate) fn mldsa65_cmd(
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255+1];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid ctx.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // then read the sig
             let sig = if sigfile.is_some() {
-                let mut sigbuf = [0u8; 2 * 3309];
-                let bytes_read = read_from_file(sigfile.as_ref().unwrap(), &mut sigbuf);
-
-                // first try hex, by length
-                match hex::decode(&sigbuf[..bytes_read]) {
-                    Ok(sig) => sig,
-                    Err(_) => {
-                        Vec::from(&sigbuf[..bytes_read])
-                    },
-                }
+                read_from_file(sigfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no sigfile provided.");
                 exit(-1);
@@ -399,17 +355,15 @@ pub(crate) fn mldsa87_cmd(
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
-            let mut buf = [0u8; 100]; // comfortably above a hex'd seed
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let seed = parse_seed(&buf[..bytes_read]).unwrap();
+            let buf = read_from_file_or_stdin(skfile);
+            let seed = parse_seed(&buf).unwrap();
 
             let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
-            let mut buf = [0u8; 2*4627+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa87_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa87_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -420,9 +374,8 @@ pub(crate) fn mldsa87_cmd(
             write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let mut buf = [0u8; 2*4627+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa87_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa87_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -432,15 +385,13 @@ pub(crate) fn mldsa87_cmd(
 
 
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*2592+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa87_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa87_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -458,30 +409,20 @@ pub(crate) fn mldsa87_cmd(
         }
         MLDSAAction::Sign => {
             // first, read the sk
-            let mut sk_bytes = [0u8; 2*4627+1];
-            let sk_len: usize;
-            if skfile.is_some() {
-                sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
+            let sk_bytes = if skfile.is_some() {
+                read_from_file(skfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no skfile provided.");
                 exit(-1);
-            }
+            };
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid context.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa87_sk(&sk_bytes[..sk_len]) {
+            let sk = match parse_mldsa87_sk(&sk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -504,15 +445,13 @@ pub(crate) fn mldsa87_cmd(
         }
         MLDSAAction::Verify => {
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*2592+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa87_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa87_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -522,29 +461,12 @@ pub(crate) fn mldsa87_cmd(
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255+1];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid ctx.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // then read the sig
             let sig = if sigfile.is_some() {
-                let mut sigbuf = [0u8; 2 * 4627];
-                let bytes_read = read_from_file(sigfile.as_ref().unwrap(), &mut sigbuf);
-
-                // first try hex, by length
-                match hex::decode(&sigbuf[..bytes_read]) {
-                    Ok(sig) => sig,
-                    Err(_) => {
-                        Vec::from(&sigbuf[..bytes_read])
-                    },
-                }
+                read_from_file(sigfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no sigfile provided.");
                 exit(-1);
@@ -587,17 +509,15 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
-            let mut buf = [0u8; 100]; // comfortably above a hex'd seed
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let seed = parse_seed(&buf[..bytes_read]).unwrap();
+            let buf = read_from_file_or_stdin(skfile);
+            let seed = parse_seed(&buf).unwrap();
 
             let (_pk, sk) = HashMLDSA44_with_SHA512::keygen_from_seed(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
-            let mut buf = [0u8; 2*2560+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa44_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa44_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -608,9 +528,8 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let mut buf = [0u8; 2*2560+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa44_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa44_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -619,15 +538,13 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             };
 
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1312+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa44_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa44_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -645,30 +562,20 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
         }
         MLDSAAction::Sign => {
             // first, read the sk
-            let mut sk_bytes = [0u8; 2*2560+1];
-            let sk_len: usize;
-            if skfile.is_some() {
-                sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
+            let sk_bytes = if skfile.is_some() {
+                read_from_file(skfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no skfile provided.");
                 exit(-1);
-            }
+            };
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid context.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa44_sk(&sk_bytes[..sk_len]) {
+            let sk = match parse_mldsa44_sk(&sk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -691,15 +598,13 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
         }
         MLDSAAction::Verify => {
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1312+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa44_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa44_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -709,29 +614,12 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255+1];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid ctx.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // then read the sig
             let sig = if sigfile.is_some() {
-                let mut sigbuf = [0u8; 2 * 2420];
-                let bytes_read = read_from_file(sigfile.as_ref().unwrap(), &mut sigbuf);
-
-                // first try hex, by length
-                match hex::decode(&sigbuf[..bytes_read]) {
-                    Ok(sig) => sig,
-                    Err(_) => {
-                        Vec::from(&sigbuf[..bytes_read])
-                    },
-                }
+                read_from_file(sigfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no sigfile provided.");
                 exit(-1);
@@ -774,17 +662,15 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
-            let mut buf = [0u8; 100]; // comfortably above a hex'd seed
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let seed = parse_seed(&buf[..bytes_read]).unwrap();
+            let buf = read_from_file_or_stdin(skfile);
+            let seed = parse_seed(&buf).unwrap();
 
             let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
-            let mut buf = [0u8; 2*4032+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa65_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa65_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -795,9 +681,8 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let mut buf = [0u8; 2*4032+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa65_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa65_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -806,15 +691,13 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             };
 
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1952+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa65_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa65_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -832,30 +715,20 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
         }
         MLDSAAction::Sign => {
             // first, read the sk
-            let mut sk_bytes = [0u8; 2*4032+1];
-            let sk_len: usize;
-            if skfile.is_some() {
-                sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
+            let sk_bytes = if skfile.is_some() {
+                read_from_file(skfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no skfile provided.");
                 exit(-1);
-            }
+            };
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid context.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa65_sk(&sk_bytes[..sk_len]) {
+            let sk = match parse_mldsa65_sk(&sk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -878,15 +751,13 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
         }
         MLDSAAction::Verify => {
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*1952+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa65_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa65_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -896,29 +767,12 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255+1];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid ctx.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // then read the sig
             let sig = if sigfile.is_some() {
-                let mut sigbuf = [0u8; 2 * 3309];
-                let bytes_read = read_from_file(sigfile.as_ref().unwrap(), &mut sigbuf);
-
-                // first try hex, by length
-                match hex::decode(&sigbuf[..bytes_read]) {
-                    Ok(sig) => sig,
-                    Err(_) => {
-                        Vec::from(&sigbuf[..bytes_read])
-                    },
-                }
+                read_from_file(sigfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no sigfile provided.");
                 exit(-1);
@@ -960,17 +814,15 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
-            let mut buf = [0u8; 100]; // comfortably above a hex'd seed
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let seed = parse_seed(&buf[..bytes_read]).unwrap();
+            let buf = read_from_file_or_stdin(skfile);
+            let seed = parse_seed(&buf).unwrap();
 
             let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
-            let mut buf = [0u8; 2*4627+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa87_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa87_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -981,9 +833,8 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let mut buf = [0u8; 2*4627+1];
-            let bytes_read = read_from_file_or_stdin(skfile, &mut buf);
-            let sk = match parse_mldsa87_sk(&buf[..bytes_read]) {
+            let buf = read_from_file_or_stdin(skfile);
+            let sk = match parse_mldsa87_sk(&buf) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -992,15 +843,13 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             };
 
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*2592+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa87_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa87_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -1018,30 +867,20 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
         }
         MLDSAAction::Sign => {
             // first, read the sk
-            let mut sk_bytes = [0u8; 2*4627+1];
-            let sk_len: usize;
-            if skfile.is_some() {
-                sk_len = read_from_file(skfile.as_ref().unwrap(), &mut sk_bytes);
+            let sk_bytes = if skfile.is_some() {
+                read_from_file(skfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no skfile provided.");
                 exit(-1);
-            }
+            };
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid context.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa87_sk(&sk_bytes[..sk_len]) {
+            let sk = match parse_mldsa87_sk(&sk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -1064,15 +903,13 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
         }
         MLDSAAction::Verify => {
             // first, read the pk
-            let mut pk_bytes = [0u8; 2*2592+1];
-            let pk_len: usize;
-            if pkfile.is_some() {
-                pk_len = read_from_file(pkfile.as_ref().unwrap(), &mut pk_bytes);
+            let pk_bytes = if pkfile.is_some() {
+                read_from_file(pkfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no pkfile provided.");
                 exit(-1);
-            }
-            let pk = match parse_mldsa87_pk(&pk_bytes[..pk_len]) {
+            };
+            let pk = match parse_mldsa87_pk(&pk_bytes) {
                 Ok(sk) => sk,
                 Err(estr) => {
                     eprintln!("{}", estr);
@@ -1082,29 +919,12 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
 
             // then read ctx
             let ctx = if ctxfile.is_some() {
-                let mut ctxbuf = [0u8; 2*255+1];
-                let bytes_read = read_from_file(ctxfile.as_ref().unwrap(), &mut ctxbuf);
-                match hex::decode(&ctxbuf[..bytes_read]) {
-                    Ok(ctx) => ctx,
-                    Err(_) => {
-                        eprintln!("Error: couldn't parse the input as a valid ctx.");
-                        exit(-1);
-                    }
-                }
+                read_from_file(ctxfile.as_ref().unwrap())
             } else { vec![0u8;0] };
 
             // then read the sig
             let sig = if sigfile.is_some() {
-                let mut sigbuf = [0u8; 2 * 4627];
-                let bytes_read = read_from_file(sigfile.as_ref().unwrap(), &mut sigbuf);
-
-                // first try hex, by length
-                match hex::decode(&sigbuf[..bytes_read]) {
-                    Ok(sig) => sig,
-                    Err(_) => {
-                        Vec::from(&sigbuf[..bytes_read])
-                    },
-                }
+                read_from_file(sigfile.as_ref().unwrap())
             } else {
                 eprintln!("Error: no sigfile provided.");
                 exit(-1);
@@ -1131,85 +951,6 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             }
         },
     }
-}
-
-fn read_from_file(filename: &str, buf: &mut [u8]) -> usize {
-    let file = fs::File::open(&filename);
-    if file.is_ok() {
-        match file.unwrap().read(buf) {
-            Ok(bytes_read) => { return bytes_read },
-            Err(_) => {
-                eprintln!("Error: couldn't open file '{}'", &filename);
-                exit(-1);
-            },
-        }
-    } else {
-        eprintln!("Error: couldn't open file '{}'", &filename);
-        exit(-1);
-    }
-}
-fn read_from_file_or_stdin(filename: &Option<String>, buf: &mut [u8]) -> usize {
-    if filename.is_some() {
-        return read_from_file(filename.as_ref().unwrap(), buf);
-    }
-
-    let mut bytes_read = io::stdin().read(buf).expect("Failed to read from stdin");
-    let mut pos = bytes_read;
-    while bytes_read != 0 {
-        bytes_read = io::stdin().read(&mut buf[pos..]).expect("Failed to read from stdin");
-        pos += bytes_read;
-    }
-
-    pos
-}
-
-/// Loads it as either hex or bytes
-fn parse_seed(bytes: &[u8]) -> Result<KeyMaterial256, &'static str> {
-    let bytes = if bytes.len() == 65 { &bytes[..64] } else { bytes };
-
-    // try decoding it as hex first
-    let seed_bytes: [u8; 32] = match &hex::decode(&bytes) {
-        Ok(bytes) => {
-            if bytes.len() < 32 {
-                // it was valid hex, but too short
-                eprintln!("Error: seed must be at least 32 bytes of binary or hex.");
-                exit(-1)
-            }
-            // otherwise it was valid hex; just use the first 32 bytes .. whatever they are
-            if bytes.len() > 33 {
-                // just cause things often have a trailing \0 or \n which is not worth complaining about
-                eprintln!("Warning: seed input longer than 32 bytes; truncating");
-            }
-            bytes[..32].try_into().unwrap()
-        }
-        Err(_) => {
-            // it's not hex, so just take the fist 32 bytes
-            if bytes.len() < 32 {
-                return Err("Error: seed must be at least 32 bytes of binary or hex.");
-            }
-            // otherwise just use the first 32 bytes .. whatever they are
-            if bytes.len() > 33 {
-                // just cause things often have a trailing \0 or \n which is not worth complaining about
-                eprintln!("Warning: seed input longer than 32 bytes; truncating");
-            }
-            bytes[..32].try_into().unwrap()
-        }
-    };
-
-    // I think I've checked for all the error conditions, so this shouldn't fail.
-    let mut seed = KeyMaterial256::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
-
-    if seed.key_type() == KeyType::Zeroized || seed.security_strength() < SecurityStrength::_256bit
-    {
-        eprintln!(
-            "Warning: low entropy seed provided. We'll still process it, but it may be insecure."
-        );
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-        seed.drop_hazardous_operations();
-    }
-    Ok(seed)
 }
 
 fn parse_mldsa44_sk(bytes: &[u8]) -> Result<MLDSA44PrivateKey, &'static str> {
@@ -1245,7 +986,7 @@ fn parse_mldsa44_sk(bytes: &[u8]) -> Result<MLDSA44PrivateKey, &'static str> {
         } // else: we're out of things to try
     }
 
-    Err("Error: couldn't parse the input as a valid MLDSA44 private key or seed.")
+    Err("Error: couldn't parse the input as a valid ML-DSA-44 private key or seed.")
 }
 
 fn parse_mldsa44_pk(bytes: &[u8]) -> Result<MLDSA44PublicKey, &'static str> {
@@ -1269,19 +1010,9 @@ fn parse_mldsa44_pk(bytes: &[u8]) -> Result<MLDSA44PublicKey, &'static str> {
         if pk.is_ok() {
             return Ok(pk.unwrap());
         }
-    } // else: keep trying things
+    } // else: we're out of things to try
 
-    // try it as a seed
-    let seed = parse_seed(bytes);
-    if seed.is_ok() {
-        let maybe_sk = MLDSA44::keygen_from_seed(&seed.unwrap());
-        if maybe_sk.is_ok() {
-            let (pk, _sk) = maybe_sk.unwrap();
-            return Ok(pk);
-        } // else: we're out of things to try
-    }
-
-    Err("Error: couldn't parse the input as a valid MLDSA44 public key or seed.")
+    Err("Error: couldn't parse the input as a valid ML-DSA-44 public key.")
 }
 
 fn parse_mldsa65_sk(bytes: &[u8]) -> Result<MLDSA65PrivateKey, &'static str> {
@@ -1317,7 +1048,7 @@ fn parse_mldsa65_sk(bytes: &[u8]) -> Result<MLDSA65PrivateKey, &'static str> {
         } // else: we're out of things to try
     }
 
-    Err("Error: couldn't parse the input as a valid MLDSA44 private key or seed.")
+    Err("Error: couldn't parse the input as a valid ML-DSA-65 private key or seed.")
 }
 
 fn parse_mldsa65_pk(bytes: &[u8]) -> Result<MLDSA65PublicKey, &'static str> {
@@ -1341,19 +1072,9 @@ fn parse_mldsa65_pk(bytes: &[u8]) -> Result<MLDSA65PublicKey, &'static str> {
         if pk.is_ok() {
             return Ok(pk.unwrap());
         }
-    } // else: keep trying things
+    } // else: we're out of things to try
 
-    // try it as a seed
-    let seed = parse_seed(bytes);
-    if seed.is_ok() {
-        let maybe_sk = MLDSA65::keygen_from_seed(&seed.unwrap());
-        if maybe_sk.is_ok() {
-            let (pk, _sk) = maybe_sk.unwrap();
-            return Ok(pk);
-        } // else: we're out of things to try
-    }
-
-    Err("Error: couldn't parse the input as a valid MLDSA44 public key or seed.")
+    Err("Error: couldn't parse the input as a valid ML-DSA-65 public key or seed.")
 }
 
 fn parse_mldsa87_sk(bytes: &[u8]) -> Result<MLDSA87PrivateKey, &'static str> {
@@ -1389,7 +1110,7 @@ fn parse_mldsa87_sk(bytes: &[u8]) -> Result<MLDSA87PrivateKey, &'static str> {
         } // else: we're out of things to try
     }
 
-    Err("Error: couldn't parse the input as a valid MLDSA44 private key or seed.")
+    Err("Error: couldn't parse the input as a valid ML-DSA-87 private key.")
 }
 
 fn parse_mldsa87_pk(bytes: &[u8]) -> Result<MLDSA87PublicKey, &'static str> {
@@ -1413,17 +1134,7 @@ fn parse_mldsa87_pk(bytes: &[u8]) -> Result<MLDSA87PublicKey, &'static str> {
         if pk.is_ok() {
             return Ok(pk.unwrap());
         }
-    } // else: keep trying things
+    } // else: we're out of things to try
 
-    // try it as a seed
-    let seed = parse_seed(bytes);
-    if seed.is_ok() {
-        let maybe_sk = MLDSA87::keygen_from_seed(&seed.unwrap());
-        if maybe_sk.is_ok() {
-            let (pk, _sk) = maybe_sk.unwrap();
-            return Ok(pk);
-        } // else: we're out of things to try
-    }
-
-    Err("Error: couldn't parse the input as a valid MLDSA44 public key or seed.")
+    Err("Error: couldn't parse the input as a valid ML-DSA-87 public key.")
 }

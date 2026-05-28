@@ -1,5 +1,5 @@
-use bouncycastle_core_interface::key_material::{KeyMaterial0, KeyMaterial256, KeyMaterial512, KeyType};
-use bouncycastle_core_interface::traits::{RNG, SecurityStrength};
+use bouncycastle_core::key_material::{KeyMaterial0, KeyMaterial256, KeyMaterial512, KeyType};
+use bouncycastle_core::traits::{RNG, SecurityStrength};
 use bouncycastle_core_test_framework::DUMMY_SEED_512;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512, Sp80090ADrbg};

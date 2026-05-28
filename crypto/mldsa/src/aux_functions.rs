@@ -1,14 +1,13 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
 use crate::matrix::{Matrix, Vector};
-use crate::mldsa::{G, H};
+use crate::mldsa::{q_inv, G, H};
 use crate::mldsa::{
     MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N, POLY_T0PACKED_LEN,
     POLY_T1PACKED_LEN, d, q,
 };
-use crate::polynomial;
 use crate::polynomial::Polynomial;
-use bouncycastle_core_interface::traits::XOF;
+use bouncycastle_core::traits::XOF;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞 or ⊥.
@@ -56,11 +55,11 @@ pub(crate) fn coeff_from_half_byte<const ETA: usize>(b: u8) -> Result<i32, ()> {
 pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
     let mut output = [0u8; POLY_T1PACKED_LEN];
     for i in 0..N / 4 {
-        output[5 * i] = w.0[4 * i] as u8;
-        output[5 * i + 1] = ((w.0[4 * i] >> 8) | (w.0[4 * i + 1] << 2)) as u8;
-        output[5 * i + 2] = ((w.0[4 * i + 1] >> 6) | (w.0[4 * i + 2] << 4)) as u8;
-        output[5 * i + 3] = ((w.0[4 * i + 2] >> 4) | (w.0[4 * i + 3] << 6)) as u8;
-        output[5 * i + 4] = (w.0[4 * i + 3] >> 2) as u8;
+        output[5 * i] = w[4 * i] as u8;
+        output[5 * i + 1] = ((w[4 * i] >> 8) | (w[4 * i + 1] << 2)) as u8;
+        output[5 * i + 2] = ((w[4 * i + 1] >> 6) | (w[4 * i + 2] << 4)) as u8;
+        output[5 * i + 3] = ((w[4 * i + 2] >> 4) | (w[4 * i + 3] << 6)) as u8;
+        output[5 * i + 4] = (w[4 * i + 3] >> 2) as u8;
     }
     output
 }
@@ -85,7 +84,6 @@ pub const fn bitlen_eta(eta: usize) -> usize {
 #[inline(always)]
 pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
     debug_assert!(r.len() >= bitlen_eta(ETA));
-    // let mut r: [u8; bitlen_eta(ETA)] = [0; bitlen_eta(ETA)];
 
     // temp swap space
     let mut t: [u8; 8] = [0; 8];
@@ -95,14 +93,14 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
         2 => {
             let eta: i32 = 2;
             for i in 0..N / 8 {
-                t[0] = (eta - w.0[8 * i]) as u8;
-                t[1] = (eta - w.0[8 * i + 1]) as u8;
-                t[2] = (eta - w.0[8 * i + 2]) as u8;
-                t[3] = (eta - w.0[8 * i + 3]) as u8;
-                t[4] = (eta - w.0[8 * i + 4]) as u8;
-                t[5] = (eta - w.0[8 * i + 5]) as u8;
-                t[6] = (eta - w.0[8 * i + 6]) as u8;
-                t[7] = (eta - w.0[8 * i + 7]) as u8;
+                t[0] = (eta - w[8 * i]) as u8;
+                t[1] = (eta - w[8 * i + 1]) as u8;
+                t[2] = (eta - w[8 * i + 2]) as u8;
+                t[3] = (eta - w[8 * i + 3]) as u8;
+                t[4] = (eta - w[8 * i + 4]) as u8;
+                t[5] = (eta - w[8 * i + 5]) as u8;
+                t[6] = (eta - w[8 * i + 6]) as u8;
+                t[7] = (eta - w[8 * i + 7]) as u8;
 
                 r[3 * i] = t[0] | (t[1] << 3) | (t[2] << 6);
                 r[3 * i + 1] = (t[2] >> 2) | (t[3] << 1) | (t[4] << 4) | (t[5] << 7);
@@ -113,15 +111,13 @@ pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
         4 => {
             let eta: i32 = 4;
             for i in 0..N / 2 {
-                t[0] = (eta - w.0[2 * i]) as u8;
-                t[1] = (eta - w.0[2 * i + 1]) as u8;
+                t[0] = (eta - w[2 * i]) as u8;
+                t[1] = (eta - w[2 * i + 1]) as u8;
                 r[i] = t[0] | t[1] << 4;
             }
         }
         _ => panic!("Invalid eta value"),
     }
-
-    // r
 }
 
 /// A variant of Algorithm 17 BitPack specific to packing the t0 polynomial with a=2^{d-1}-1, b=2^{d-1}
@@ -133,14 +129,14 @@ pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
 
     let mut t = [0; 8];
     for i in 0..N / 8 {
-        t[0] = (1 << (d - 1)) - t0.0[8 * i];
-        t[1] = (1 << (d - 1)) - t0.0[8 * i + 1];
-        t[2] = (1 << (d - 1)) - t0.0[8 * i + 2];
-        t[3] = (1 << (d - 1)) - t0.0[8 * i + 3];
-        t[4] = (1 << (d - 1)) - t0.0[8 * i + 4];
-        t[5] = (1 << (d - 1)) - t0.0[8 * i + 5];
-        t[6] = (1 << (d - 1)) - t0.0[8 * i + 6];
-        t[7] = (1 << (d - 1)) - t0.0[8 * i + 7];
+        t[0] = (1 << (d - 1)) - t0[8 * i];
+        t[1] = (1 << (d - 1)) - t0[8 * i + 1];
+        t[2] = (1 << (d - 1)) - t0[8 * i + 2];
+        t[3] = (1 << (d - 1)) - t0[8 * i + 3];
+        t[4] = (1 << (d - 1)) - t0[8 * i + 4];
+        t[5] = (1 << (d - 1)) - t0[8 * i + 5];
+        t[6] = (1 << (d - 1)) - t0[8 * i + 6];
+        t[7] = (1 << (d - 1)) - t0[8 * i + 7];
 
         r[13 * i] = t[0] as u8;
         r[13 * i + 1] = (t[0] >> 8) as u8;
@@ -177,10 +173,10 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
     match GAMMA1 {
         MLDSA44_GAMMA1 => {
             for i in 0..N / 4 {
-                t[0] = (GAMMA1 - z.0[4 * i]) as u32;
-                t[1] = (GAMMA1 - z.0[4 * i + 1]) as u32;
-                t[2] = (GAMMA1 - z.0[4 * i + 2]) as u32;
-                t[3] = (GAMMA1 - z.0[4 * i + 3]) as u32;
+                t[0] = (GAMMA1 - z[4 * i]) as u32;
+                t[1] = (GAMMA1 - z[4 * i + 1]) as u32;
+                t[2] = (GAMMA1 - z[4 * i + 2]) as u32;
+                t[3] = (GAMMA1 - z[4 * i + 3]) as u32;
 
                 r[9 * i] = t[0] as u8;
                 r[9 * i + 1] = (t[0] >> 8) as u8;
@@ -196,8 +192,8 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
         // MLDSA-65 and 87 have the same GAMMA1 value
         MLDSA65_GAMMA1 => {
             for i in 0..N / 2 {
-                t[0] = (GAMMA1 - z.0[2 * i]) as u32;
-                t[1] = (GAMMA1 - z.0[2 * i + 1]) as u32;
+                t[0] = (GAMMA1 - z[2 * i]) as u32;
+                t[1] = (GAMMA1 - z[2 * i + 1]) as u32;
 
                 r[5 * i] = t[0] as u8;
                 r[5 * i + 1] = (t[0] >> 8) as u8;
@@ -221,15 +217,13 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
 ///
 /// Note: caller is responsible for ensuring correct input array size
 pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
-    // debug_assert_eq!(v.len(), POLY_T1PACKED_LEN);
-
     let mut w = Polynomial::new();
 
     for i in 0..N / 4 {
-        w.0[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
-        w.0[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
-        w.0[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
-        w.0[4 * i + 3] = (((v[5 * i + 3] as i32) >> 6) | ((v[5 * i + 4] as i32) << 2)) & 0x3FF;
+        w[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
+        w[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
+        w[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
+        w[4 * i + 3] = (((v[5 * i + 3] as i32) >> 6) | ((v[5 * i + 4] as i32) << 2)) & 0x3FF;
     }
 
     w
@@ -255,34 +249,34 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
         2 => {
             let eta: i32 = 2;
             for i in 0..N / 8 {
-                w.0[8 * i] = (v[3 * i] & 7) as i32;
-                w.0[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
-                w.0[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
-                w.0[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
-                w.0[8 * i + 4] = ((v[3 * i + 1] >> 4) & 7) as i32;
-                w.0[8 * i + 5] = ((v[3 * i + 1] >> 7) | (v[3 * i + 2] << 1) & 7) as i32;
-                w.0[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
-                w.0[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
+                w[8 * i] = (v[3 * i] & 7) as i32;
+                w[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
+                w[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
+                w[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
+                w[8 * i + 4] = ((v[3 * i + 1] >> 4) & 7) as i32;
+                w[8 * i + 5] = ((v[3 * i + 1] >> 7) | (v[3 * i + 2] << 1) & 7) as i32;
+                w[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
+                w[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
 
-                w.0[8 * i] = eta - w.0[8 * i];
-                w.0[8 * i + 1] = eta - w.0[8 * i + 1];
-                w.0[8 * i + 2] = eta - w.0[8 * i + 2];
-                w.0[8 * i + 3] = eta - w.0[8 * i + 3];
-                w.0[8 * i + 4] = eta - w.0[8 * i + 4];
-                w.0[8 * i + 5] = eta - w.0[8 * i + 5];
-                w.0[8 * i + 6] = eta - w.0[8 * i + 6];
-                w.0[8 * i + 7] = eta - w.0[8 * i + 7];
+                w[8 * i] = eta - w[8 * i];
+                w[8 * i + 1] = eta - w[8 * i + 1];
+                w[8 * i + 2] = eta - w[8 * i + 2];
+                w[8 * i + 3] = eta - w[8 * i + 3];
+                w[8 * i + 4] = eta - w[8 * i + 4];
+                w[8 * i + 5] = eta - w[8 * i + 5];
+                w[8 * i + 6] = eta - w[8 * i + 6];
+                w[8 * i + 7] = eta - w[8 * i + 7];
             }
         }
         // MLDSA65
         4 => {
             let eta: i32 = 4;
             for i in 0..N / 2 {
-                w.0[2 * i] = (v[i] & 0x0F) as i32;
-                w.0[2 * i + 1] = (v[i] >> 4) as i32;
+                w[2 * i] = (v[i] & 0x0F) as i32;
+                w[2 * i + 1] = (v[i] >> 4) as i32;
 
-                w.0[2 * i] = eta - w.0[2 * i];
-                w.0[2 * i + 1] = eta - w.0[2 * i + 1];
+                w[2 * i] = eta - w[2 * i];
+                w[2 * i + 1] = eta - w[2 * i + 1];
             }
         }
         _ => panic!("Invalid eta value"),
@@ -299,32 +293,32 @@ pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
     let mut t0 = Polynomial::new();
 
     for i in 0..N / 8 {
-        t0.0[8 * i] = ((a[13 * i] as i32) | ((a[13 * i + 1] as i32) << 8)) & 0x1FFF;
-        t0.0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5) | (a[13 * i + 2] as i32) << 3)
+        t0[8 * i] = ((a[13 * i] as i32) | ((a[13 * i + 1] as i32) << 8)) & 0x1FFF;
+        t0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5) | (a[13 * i + 2] as i32) << 3)
             | ((a[13 * i + 3] as i32) << 11))
             & 0x1FFF;
-        t0.0[8 * i + 2] = (((a[13 * i + 3] as i32) >> 2) | ((a[13 * i + 4] as i32) << 6)) & 0x1FFF;
-        t0.0[8 * i + 3] = ((((a[13 * i + 4] as i32) >> 7) | (a[13 * i + 5] as i32) << 1)
+        t0[8 * i + 2] = (((a[13 * i + 3] as i32) >> 2) | ((a[13 * i + 4] as i32) << 6)) & 0x1FFF;
+        t0[8 * i + 3] = ((((a[13 * i + 4] as i32) >> 7) | (a[13 * i + 5] as i32) << 1)
             | ((a[13 * i + 6] as i32) << 9))
             & 0x1FFF;
-        t0.0[8 * i + 4] = ((((a[13 * i + 6] as i32) >> 4) | (a[13 * i + 7] as i32) << 4)
+        t0[8 * i + 4] = ((((a[13 * i + 6] as i32) >> 4) | (a[13 * i + 7] as i32) << 4)
             | ((a[13 * i + 8] as i32) << 12))
             & 0x1FFF;
-        t0.0[8 * i + 5] = (((a[13 * i + 8] as i32) >> 1) | ((a[13 * i + 9] as i32) << 7)) & 0x1FFF;
-        t0.0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6) | (a[13 * i + 10] as i32) << 2)
+        t0[8 * i + 5] = (((a[13 * i + 8] as i32) >> 1) | ((a[13 * i + 9] as i32) << 7)) & 0x1FFF;
+        t0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6) | (a[13 * i + 10] as i32) << 2)
             | ((a[13 * i + 11] as i32) << 10))
             & 0x1FFF;
-        t0.0[8 * i + 7] =
+        t0[8 * i + 7] =
             (((a[13 * i + 11] as i32) >> 3) | ((a[13 * i + 12] as i32) << 5)) & 0x1FFF;
 
-        t0.0[8 * i] = (1 << (d - 1)) - t0.0[8 * i];
-        t0.0[8 * i + 1] = (1 << (d - 1)) - t0.0[8 * i + 1];
-        t0.0[8 * i + 2] = (1 << (d - 1)) - t0.0[8 * i + 2];
-        t0.0[8 * i + 3] = (1 << (d - 1)) - t0.0[8 * i + 3];
-        t0.0[8 * i + 4] = (1 << (d - 1)) - t0.0[8 * i + 4];
-        t0.0[8 * i + 5] = (1 << (d - 1)) - t0.0[8 * i + 5];
-        t0.0[8 * i + 6] = (1 << (d - 1)) - t0.0[8 * i + 6];
-        t0.0[8 * i + 7] = (1 << (d - 1)) - t0.0[8 * i + 7];
+        t0[8 * i] = (1 << (d - 1)) - t0[8 * i];
+        t0[8 * i + 1] = (1 << (d - 1)) - t0[8 * i + 1];
+        t0[8 * i + 2] = (1 << (d - 1)) - t0[8 * i + 2];
+        t0[8 * i + 3] = (1 << (d - 1)) - t0[8 * i + 3];
+        t0[8 * i + 4] = (1 << (d - 1)) - t0[8 * i + 4];
+        t0[8 * i + 5] = (1 << (d - 1)) - t0[8 * i + 5];
+        t0[8 * i + 6] = (1 << (d - 1)) - t0[8 * i + 6];
+        t0[8 * i + 7] = (1 << (d - 1)) - t0[8 * i + 7];
     }
 
     t0
@@ -336,49 +330,43 @@ pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
 /// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
 ///
 /// Note: caller is responsible for ensuring correct input array size
-
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
-#[inline(always)]
 pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
     let mut w = Polynomial::new();
 
     match GAMMA1 {
         MLDSA44_GAMMA1 => {
-            // const gamma1: i32 = 1<<17;
             for i in 0..N / 4 {
-                w.0[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
+                w[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
                     | ((v[9 * i + 2] as i32) << 16))
                     & 0x3FFFF;
-                w.0[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2) | ((v[9 * i + 3] as i32) << 6))
+                w[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2) | ((v[9 * i + 3] as i32) << 6))
                     | ((v[9 * i + 4] as i32) << 14))
                     & 0x3FFFF;
-                w.0[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4) | ((v[9 * i + 5] as i32) << 4))
+                w[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4) | ((v[9 * i + 5] as i32) << 4))
                     | ((v[9 * i + 6] as i32) << 12))
                     & 0x3FFFF;
-                w.0[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6) | ((v[9 * i + 7] as i32) << 2))
+                w[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6) | ((v[9 * i + 7] as i32) << 2))
                     | ((v[9 * i + 8] as i32) << 10))
                     & 0x3FFFF;
 
-                w.0[4 * i] = GAMMA1 - w.0[4 * i];
-                w.0[4 * i + 1] = GAMMA1 - w.0[4 * i + 1];
-                w.0[4 * i + 2] = GAMMA1 - w.0[4 * i + 2];
-                w.0[4 * i + 3] = GAMMA1 - w.0[4 * i + 3];
+                w[4 * i] = GAMMA1 - w[4 * i];
+                w[4 * i + 1] = GAMMA1 - w[4 * i + 1];
+                w[4 * i + 2] = GAMMA1 - w[4 * i + 2];
+                w[4 * i + 3] = GAMMA1 - w[4 * i + 3];
             }
         }
         // MLDSA-65 and 87 have the same GAMMA1 value
         MLDSA65_GAMMA1 => {
-            // const gamma1: i32 = 1<<19;
             for i in 0..N / 2 {
-                w.0[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
+                w[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
                     | ((v[5 * i + 2] as i32) << 16))
                     & 0xFFFFF;
-                w.0[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4))
+                w[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4))
                     | ((v[5 * i + 4] as i32) << 12))
                     & 0xFFFFF;
 
-                w.0[2 * i] = GAMMA1 - w.0[2 * i];
-                w.0[2 * i + 1] = GAMMA1 - w.0[2 * i + 1];
+                w[2 * i] = GAMMA1 - w[2 * i];
+                w[2 * i + 1] = GAMMA1 - w[2 * i + 1];
             }
         }
         _ => {
@@ -425,7 +413,7 @@ pub(crate) fn sig_encode<
     let mut m: usize = 0;
     for i in 0..k {
         for j in 0..N {
-            if h.vec[i].0[j] != 0 {
+            if h.vec[i][j] != 0 {
                 output[pos + m] = j as u8;
                 m += 1;
             }
@@ -493,7 +481,7 @@ pub(crate) fn sig_decode<
                 return Err(());
             }
             // 12: 𝐡[𝑖]_𝑦[Index] ← 1
-            h.vec[i].0[sig[pos + j] as usize] = 1;
+            h.vec[i][sig[pos + j] as usize] = 1;
 
             // 13: Index ← Index + 1
             //  > done by for loop
@@ -556,10 +544,10 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
         }
 
         // 11: 𝑐𝑖 ← 𝑐𝑗
-        c.0[i] = c.0[j[0] as usize];
+        c[i] = c[j[0] as usize];
 
         // 12: 𝑐𝑗 ← (−1)^ℎ[𝑖+𝜏−256]
-        c.0[j[0] as usize] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
+        c[j[0] as usize] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
         signs >>= 1;
     }
 
@@ -569,8 +557,8 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     {
         let mut hamming_weight: i32 = 0;
         for i in 0..N {
-            debug_assert!((-1..=1).contains(&c.0[i]));
-            if c.0[i] != 0 {
+            debug_assert!((-1..=1).contains(&c[i]));
+            if c[i] != 0 {
                 hamming_weight += 1;
             }
         }
@@ -592,6 +580,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     g.absorb(rho);
     g.absorb(nonce);
 
+    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
     // size doesn't really matter, so long as it's a multiple of 3.
     // 288 seemed to be the sweet spot from playing with benchmarks
     // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
@@ -605,7 +594,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
             g.squeeze_out(&mut s);
             idx = 0;
         }
-        w_hat.0[j] = match coeff_from_three_bytes(&s[idx..idx + 3].try_into().unwrap()) {
+        w_hat[j] = match coeff_from_three_bytes(&s[idx..idx + 3].try_into().unwrap()) {
             Ok(c) => c,
             Err(_) => {
                 // those three bytes were out of range for a coefficient, so go again with the next three bytes
@@ -649,11 +638,11 @@ pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]
         let z1 = coeff_from_half_byte::<ETA>(z_arr[idx] >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
 
         if z0.is_ok() {
-            a.0[j] = z0.unwrap();
+            a[j] = z0.unwrap();
             j += 1;
         } /* else: do nothing */
         if z1.is_ok() && j < 256 {
-            a.0[j] = z1.unwrap();
+            a[j] = z1.unwrap();
             j += 1;
         } /* else: do nothing */
 
@@ -677,7 +666,7 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
 
     for r in 0..k {
         for s in 0..l {
-            A_hat.matrix[r][s] = rej_ntt_poly(rho, &[s as u8, r as u8]);
+            A_hat[r][s] = rej_ntt_poly(rho, &[s as u8, r as u8]);
         }
     }
 
@@ -714,7 +703,7 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(v: &Vector<LEN>) -> (Vector<LE
 
     for i in 0..LEN {
         for j in 0..N {
-            (r1.vec[i].0[j], r0.vec[i].0[j]) = power_2_round(v.vec[i].0[j]);
+            (r1.vec[i][j], r0.vec[i][j]) = power_2_round(v.vec[i][j]);
         }
     }
 
@@ -738,11 +727,14 @@ pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_L
     for r in 0..l {
         // 3: 𝜌′ ← 𝜌||IntegerToBytes(𝜇 + 𝑟, 2)
         // 4: 𝑣 ← H(𝜌′, 32𝑐)
-        let mut h = H::new();
-        h.absorb(rho);
-        h.absorb(&(mu + (r as u16)).to_le_bytes());
-        let mut v = [0u8; GAMMA1_MASK_LEN];
-        h.squeeze_out(&mut v);
+        let v = {
+            let mut h = H::new();
+            h.absorb(rho);
+            h.absorb(&(mu + (r as u16)).to_le_bytes());
+            let mut v = [0u8; GAMMA1_MASK_LEN];
+            h.squeeze_out(&mut v);
+            v
+        };
 
         // 5: 𝐲[𝑟] ← BitUnpack(𝑣, 𝛾1 − 1, 𝛾1)
         y.vec[r] = bit_unpack_gamma1::<GAMMA1>(&v);
@@ -788,9 +780,6 @@ fn test_power_2_round() {
 /// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1(2𝛾2) + 𝑟0 mod 𝑞.
 /// Input: 𝑟 ∈ ℤ𝑞.
 /// Output: Integers (𝑟1, 𝑟0).
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
-#[inline(always)]
 pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     // 1: 𝑟+ ← 𝑟 mod 𝑞
     // 2: 𝑟0 ← 𝑟+ mod±(2𝛾2)
@@ -825,6 +814,10 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     }
 
     r1 = r - r0 * 2 * GAMMA2;
+
+    // mutants note: the choice of (q - 1) is a bit arbitrary in that after doing the bit-shifting,
+    // this seems to work out mathematically equivalent if you do q/2, or (q+3)/2, but we'll leave it as (q-1)/2
+    // since that's algorithmically correct, and just ignore the mutants results.
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 
     (r0, r1)
@@ -908,6 +901,8 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
 
     match GAMMA2 {
         MLDSA44_GAMMA2 => {
+            // mutants note: this passes unit tests if it's a1 >= 0
+            //      we'll leave it like this because it matches the spec
             if a1 > 0 {
                 if a0 == 43 { 0 } else { a0 + 1 }
             } else {
@@ -916,6 +911,8 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
         }
         // ML-DSA65 and 87 have the same GAMMA2
         MLDSA65_GAMMA2 => {
+            // mutants note: this passes unit tests if it's a1 >= 0
+            //      we'll leave it like this because it matches the spec
             if a1 > 0 {
                 (a0 + 1) & 15
             } else {
@@ -934,7 +931,7 @@ pub(crate) fn use_hint_polys<const GAMMA2: i32>(
     out: &mut Polynomial,
 ) {
     for i in 0..N {
-        out.0[i] = use_hint::<GAMMA2>(wp_approx.0[i], h.0[i]);
+        out[i] = use_hint::<GAMMA2>(wp_approx[i], h[i]);
     }
 }
 
@@ -950,8 +947,58 @@ pub(crate) fn use_hint_vecs<const k: usize, const GAMMA2: i32>(
     out
 }
 
+/// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
+/// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+/// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
+/// Output: 𝑐 ∈ 𝑇𝑞.
+/// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
+/// Also called pointwise montgomery multiplication
+pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
+    let mut out = Polynomial::new();
+    for i in 0..N {
+        out[i] = montgomery_reduce((a[i] as i64) * (b[i] as i64));
+    }
+
+    out
+}
+
+/// FIPS 204 Algorithm 49
+/// As described in FIPS 204 Appendix A, montgomery reduction allows for efficient computation
+/// of expressions of the form c = a * b (mod q).
+/// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
+pub(crate) fn montgomery_reduce(a: i64) -> i32 {
+    debug_assert!(a > - ((q as i64) <<31) && a < ((q as i64) <<31));
+
+    // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
+    let t: i32 = (a as i32).wrapping_mul(q_inv);
+
+    // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
+    ((a - ((t as i64) * (q as i64))) >> 32) as i32
+}
+
+pub(crate) fn conditional_add_q(a: i32) -> i32 {
+    a + ((a >> 31) & q)
+}
+
+
+#[test]
+/// These are the results it's giving; I'm not sure if these are "correct" or not.
+fn test_conditional_add_q() {
+    assert_eq!(conditional_add_q(-q -1), -1);
+    assert_eq!(conditional_add_q(-q), 0);
+    assert_eq!(conditional_add_q(-q -2), -2);
+    assert_eq!(conditional_add_q(-q +1), 1);
+    assert_eq!(conditional_add_q(-1), q-1);
+    assert_eq!(conditional_add_q(0), 0);
+    assert_eq!(conditional_add_q(1), 1);
+    assert_eq!(conditional_add_q(q -1), q-1);
+    assert_eq!(conditional_add_q(q), q);
+    assert_eq!(conditional_add_q(q +1), q+1);
+}
+
+
 /// Constants for NTT
-const ZETAS: [i32; 256] = [
+pub(crate) const ZETAS: [i32; 256] = [
     0, 25847, -2608894, -518909, 237124, -777960, -876248, 466468, 1826347, 2353451, -359251,
     -2091905, 3119733, -2884855, 3111497, 2680103, 2725464, 1024112, -1079900, 3585928, -549488,
     -1119584, 2619752, -2108549, -2118186, -3859737, -1399561, -3277672, 1757237, -19422, 4010497,
@@ -980,91 +1027,3 @@ const ZETAS: [i32; 256] = [
     -1362209, 3937738, 1400424, -846154, 1976782,
 ];
 
-/// Algorithm 41 NTT(𝑤)
-/// Computes the NTT.
-/// Input: Polynomial 𝑤(𝑋)
-/// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞.
-/// Output: 𝑤_hat = (𝑤_hat\[0], ..., 𝑤_hat\[255]) ∈ 𝑇𝑞.
-///
-/// Note: by convention, variables holding the output of the NTT function should be named "_ntt"
-/// to indicate that they are in the NTT domain (sometimes called the frequency domain), not the natural domain.
-/// I considered using the rust type system to enforce this, but it seemed like overkill, cause that's what
-/// NIST test vectors are for.
-///
-/// Design choice: don't do the NTT in-place, but copy data to a new array.
-/// This uses slightly more memory and requires a copy, but makes the code easier to read
-/// and less likely to contain a bug. But this optimization could be considered in the future.
-pub(crate) fn ntt(w: &Polynomial) -> Polynomial {
-    let mut w_ntt = w.clone();
-
-    let mut m: usize = 0;
-    let mut len: usize = 128;
-
-    while len >= 1 {
-        let mut start: usize = 0;
-        while start < N {
-            m += 1;
-            let z: i32 = ZETAS[m];
-
-            for j in start..start + len {
-                let t = polynomial::montgomery_reduce(z as i64 * w_ntt.0[j + len] as i64);
-                w_ntt.0[j + len] = w_ntt.0[j] - t; // '% q' not strictly needed cause it gets reduced at some point later. Removing it gave +5% in benchmarking
-                w_ntt.0[j] = w_ntt.0[j] + t; // '% q' not strictly needed
-            }
-            start = start + 2 * len;
-        }
-        len >>= 1;
-    }
-
-    w_ntt
-}
-
-/// Algorithm 42 NTT−1(𝑤)̂
-/// Computes the inverse of the NTT.
-/// Input: ̂̂ ̂ 𝑤 = (𝑤\[0], … , 𝑤\[255]) ∈ 𝑇𝑞.
-/// Output: Polynomial 𝑤(𝑋) = ∑255
-/// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
-pub(crate) fn inv_ntt(w_hat: &Polynomial) -> Polynomial {
-    let mut w = w_hat.clone();
-
-    let mut m: usize = N;
-    let mut len: usize = 1;
-
-    while len < N {
-        let mut start: usize = 0;
-        while start < N {
-            m -= 1;
-            let z = (-1) * ZETAS[m];
-
-            // j = start;
-            // while j < start + len {
-            for j in start..start + len {
-                // 𝑡 ← 𝑤𝑗
-                let t: i32 = w.0[j];
-
-                // 𝑤𝑗 ← (𝑡 + 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                w.0[j] = t + w.0[j + len];
-
-                // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑡 − 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                w.0[j + len] = t - w.0[j + len];
-
-                // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
-                w.0[j + len] = polynomial::montgomery_reduce(z as i64 * w.0[j + len] as i64);
-                print!("");
-            }
-            start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.
-        }
-        len <<= 1;
-    }
-
-    // f = 256^-1 mod q
-    // const f: i64 = 8347681;
-    // bc-java uses this value rather than the one in FIPS 204
-    const f: i64 = 41978;
-    for j in 0..N {
-        // equiv. to the global constant N
-        w.0[j] = polynomial::montgomery_reduce(f * w.0[j] as i64);
-    }
-
-    w
-}
