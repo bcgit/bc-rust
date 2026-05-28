@@ -1,0 +1,12 @@
+[package]
+name = "ascon"
+version = "0.0.0"
+edition.workspace = true
+
+[dependencies]
+arrayref.workspace = true
+core-interface.workspace = true
+utils.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
