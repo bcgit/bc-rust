@@ -2,10 +2,15 @@
 //! and other intermediate values by never holding the whole thing in memory at once, but re-constructing
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
-use bouncycastle_core_interface::errors::SignatureError;
+use bouncycastle_core::errors::SignatureError;
 use crate::mldsa::{d};
 use crate::aux_functions::{bit_unpack_eta, bitlen_eta, expand_mask_poly, rej_ntt_poly, unpack_z_row};
 use crate::polynomial::Polynomial;
+
+#[inline(always)]
+pub(crate) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
+    rej_ntt_poly(&rho, &[j as u8, i as u8])
+}
 
 /// Compute a row of the core signing operation
 /// Alg 7: 12: 𝐰 ← NTT−1(𝐀_hat ∘ NTT(𝐲))
@@ -124,6 +129,13 @@ pub(crate) fn compute_w0cs2_component<
     let mut cs2 = s2_hat; // rename
     cs2.inv_ntt();
 
+
+    //  Note: this could be further optimized by using the optimization described in
+    //  https://pq-crystals.org/dilithium/data/dilithium-specification-round3-20210208.pdf section 5.1:
+    //    "instead of computing (r1, r0) = Decomposeq (w − cs2, α)
+    //      and checking whether ‖r0‖∞ < γ2 − β and r1 = w1, it is equivalent to just check that
+    //      ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part of w. If this check passes, w0 − cs2
+    //      is the low part of w − cs2."
     let mut w0cs2 = w.clone();
     w0cs2.low_bits::<GAMMA2>();
     w0cs2.sub(&cs2);

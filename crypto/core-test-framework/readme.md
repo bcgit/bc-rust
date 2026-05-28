@@ -1,2 +1,2 @@
-The purpose of this crate is to provide unit tests for each trait in the core-interface crate in order to enforce common behaviour across implementations of a given trait.
+The purpose of this crate is to provide unit tests for each trait in the core crate in order to enforce common behaviour across implementations of a given trait.
 So, anything like error handling, handling of the lengths of input / output params, KeyMaterial entropy enforcement, etc that should be consistent for all implementations of a trait should go in here rather than in the tests for the implementations.

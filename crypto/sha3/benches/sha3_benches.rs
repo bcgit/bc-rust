@@ -2,7 +2,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use bouncycastle_rng as rng;
 use std::hint::black_box;
 
-use bouncycastle_core_interface::traits::{Hash, RNG, XOF};
+use bouncycastle_core::traits::{Hash, RNG, XOF};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 
 fn bench_sha3_224_static(c: &mut Criterion) {

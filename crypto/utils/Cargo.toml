@@ -6,4 +6,4 @@ edition.workspace = true
 [dependencies]
 
 [dev-dependencies]
-bouncycastle-core-interface.workspace = true
+bouncycastle-core.workspace = true

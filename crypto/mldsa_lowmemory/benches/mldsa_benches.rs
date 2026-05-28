@@ -1,8 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use std::hint::black_box;
-use bouncycastle_core_interface::traits::Signature;
-use bouncycastle_mldsa_lowmemory::{MLDSATrait, MLDSA44, MLDSA65, MLDSA87};
+use bouncycastle_core::traits::Signature;
+use bouncycastle_mldsa_lowmemory::{MLDSATrait, MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA65_SIG_LEN, MLDSA87, MLDSA87_SIG_LEN};
 use bouncycastle_hex as hex;
 
 fn bench_mldsa_keygen(c: &mut Criterion) {
@@ -122,7 +122,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
 
     // Create a vec of 1000  different signatures to verify
     // use ctx to make them different (in addition to the signing nonce being different)
-    let mut sigs = Vec::< (Vec<u8>, u128) >::with_capacity(1000);
+    let mut sigs = Vec::< ([u8; MLDSA44_SIG_LEN], u128) >::with_capacity(1000);
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
@@ -136,7 +136,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), &sig).unwrap() )
+                black_box( MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap() )
             }
         })
     });
@@ -147,7 +147,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
 
     // Create a vec of 1000  different signatures to verify
     // use ctx to make them different (in addition to the signing nonce being different)
-    let mut sigs = Vec::< (Vec<u8>, u128) >::with_capacity(1000);
+    let mut sigs = Vec::< ([u8; MLDSA65_SIG_LEN], u128) >::with_capacity(1000);
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
@@ -161,7 +161,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), &sig).unwrap() )
+                black_box( MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap() )
             }
         })
     });
@@ -172,7 +172,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
 
     // Create a vec of 1000  different signatures to verify
     // use ctx to make them different (in addition to the signing nonce being different)
-    let mut sigs = Vec::< (Vec<u8>, u128) >::with_capacity(1000);
+    let mut sigs = Vec::< ([u8; MLDSA87_SIG_LEN], u128) >::with_capacity(1000);
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
@@ -186,7 +186,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), &sig).unwrap() )
+                black_box( MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap() )
             }
         })
     });

@@ -1,14 +1,14 @@
 //! Factory crate for creating instances of different types.
 //! Factory objects behave like other crypto providers in that they take an algorithm by string name and return an instance of the corresponding type.
-//! Generally, there is one factory for each trait in [bouncycastle_core_interface::traits].
+//! Generally, there is one factory for each trait in [bouncycastle_core::traits].
 //!
 //! All factories are based on the rust enum factory pattern where, for example, the [hash_factory::HashFactory]
-//! can hold any Hash type in the library, and [hash_factory::HashFactory] itself impls [bouncycastle_core_interface::traits::Hash]
+//! can hold any Hash type in the library, and [hash_factory::HashFactory] itself impls [bouncycastle_core::traits::Hash]
 //! and so can be called directly as if it is a hash.
 //!
 //! Example usage:
 //! ```
-//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_factory::AlgorithmFactory;
 //! use bouncycastle_factory::hash_factory::HashFactory;
 //!
@@ -25,7 +25,7 @@
 //! It also exposes [AlgorithmFactory::new] which can be used to create an instance of the algorithm
 //! by string name according to the string constants associated with the respective factory type.
 
-use bouncycastle_core_interface::errors::{MACError};
+use bouncycastle_core::errors::{MACError};
 
 pub mod hash_factory;
 pub mod kdf_factory;

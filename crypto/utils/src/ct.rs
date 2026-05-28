@@ -320,3 +320,30 @@ pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
     }
     result == 0
 }
+
+/// Copies either the contents of `a` or `b` into `out` according to `take_a`
+/// and it does it in a constant-time manner without branching.
+pub fn conditional_copy_bytes<const LEN: usize>(
+    a: &[u8; LEN],
+    b: &[u8; LEN],
+    out: &mut [u8; LEN],
+    take_a: bool) {
+    
+    // we want the behaviour of 
+    //  if take_a { 0xFF } else { 0x00 }
+    // but without using any branches that could leak timing signals
+    let mask: u8 = (take_a as u8) |
+        (take_a as u8) <<1 |
+        (take_a as u8) <<2 |
+        (take_a as u8) <<3 |
+        (take_a as u8) <<4 |
+        (take_a as u8) <<5 |
+        (take_a as u8) <<6 |
+        (take_a as u8) <<7;
+    
+    debug_assert_eq!(mask, if take_a { 0xFF } else { 0x00 });
+    
+    for i in 0..LEN {
+        out[i] = std::hint::black_box(a[i] & mask) | std::hint::black_box(b[i] & !mask);
+    }
+}

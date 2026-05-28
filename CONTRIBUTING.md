@@ -61,6 +61,7 @@ Except where otherwise noted, all crates must have:
 * benchmarks
 * unit tests that (mostly) satisfy cargo mutants
 * lib.rs needs to compile with: #![forbid(missing_docs)], #![no_std]
+* Fallibility: as much as humanly possible, Result and unwrap() should be used for "Bad input data" type things and not "Programmer didn't read the docs" type things. Things like \[u8]'s of the wrong length, or trying to call an algorithm with a key of the wrong parameter set should be detected at compile time via the typing system and should not require a Result / unwrap() mechanism. Please run `./dev_scripts/quality_stats.sh` before and after your change to see if you have increased the fallibility of the code you changed.
 
 Code submissions that do not meet these standards, or that require significant effort from the maintainers in order to meet these standards, will not be accepted.
 

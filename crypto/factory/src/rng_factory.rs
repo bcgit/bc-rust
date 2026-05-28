@@ -20,28 +20,30 @@
 //!
 //! Example usage:
 //! ```
-//! use factory::AlgorithmFactory;
-//! use core_interface::traits::Hash;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //!
-//! let h = factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
+//! let h = bouncycastle_factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
 //! let output: Vec<u8> = h.hash(data);
 //! ```
 //! You can equivalently invoke this by string instead of using the constant:
 //!
 //! ```
-//! use factory::AlgorithmFactory;
-//! use core_interface::traits::Hash;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_core::traits::Hash;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //!
-//! let h = factory::hash_factory::HashFactory::new("SHA3-256").unwrap();
+//! let h = bouncycastle_factory::hash_factory::HashFactory::new("SHA3-256").unwrap();
 //! let output: Vec<u8> = h.hash(data);
 //! ```
 
-use bouncycastle_core_interface::errors::RNGError;
-use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength, RNG};
+use bouncycastle_core::errors::RNGError;
+use bouncycastle_core::traits::{SecurityStrength, RNG};
+use bouncycastle_core::key_material::KeyMaterialTrait;
 use crate::{AlgorithmFactory, FactoryError};
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
 
@@ -84,7 +86,7 @@ impl AlgorithmFactory for RNGFactory {
 }
 
 impl RNG for RNGFactory {
-    fn add_seed_keymaterial(&mut self, additional_seed: impl KeyMaterial) -> Result<(), RNGError> {
+    fn add_seed_keymaterial(&mut self, additional_seed: impl KeyMaterialTrait) -> Result<(), RNGError> {
         match self {
             Self::HashDRBG_SHA256(rng) => {rng.add_seed_keymaterial(additional_seed) },
             Self::HashDRBG_SHA512(rng) => { rng.add_seed_keymaterial(additional_seed) },
@@ -112,7 +114,7 @@ impl RNG for RNGFactory {
         }
     }
 
-    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterial) -> Result<usize, RNGError> {
+    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterialTrait) -> Result<usize, RNGError> {
         match self {
             Self::HashDRBG_SHA256(rng) => {rng.fill_keymaterial_out(out) },
             Self::HashDRBG_SHA512(rng) => { rng.fill_keymaterial_out(out) },

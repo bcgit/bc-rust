@@ -7,11 +7,11 @@
 //! Generating and verifying a MAC value for a given piece of data:
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use core_interface::traits::MAC;
-//! use encoders::hex;
-//! use factory::AlgorithmFactory;
-//! use factory::mac_factory::MACFactory;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_hex as hex;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_factory::mac_factory::MACFactory;
 //!
 //! let data = b"Hi There!";
 //! let key = KeyMaterial256::from_bytes_as_type(
@@ -20,44 +20,67 @@
 //!         &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
 //!         KeyType::MACKey,
 //!     ).unwrap();
-//! let hmac = MACFactory::new(hmac::HMAC_SHA3_256_NAME).unwrap();
+//! let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA3_256_NAME, &key).unwrap();
 //!
 //! // Generate the MAC value
-//! let mac_value: Vec<u8> = hmac.mac(&key, data).unwrap();
+//! let mac_value: Vec<u8> = hmac.mac(data);
 //!
 //! // Verify the MAC value
-//! match hmac.verify(&key, data, &mac_value,) {
-//!     Ok(()) => println!("MAC verified successfully!"),
-//!     Err(e) => println!("MAC verification failed"),
+//! let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA3_256_NAME, &key).unwrap();
+//! if hmac.verify(data, &mac_value,) {
+//!     println!("MAC verified successfully!")
+//! } else {
+//!     println!("MAC verification failed")
 //! }
 //! ```
 //!
 //! You can equivalently construct an instance of [MACFactory] by string instead of using the constant:
 //!
 //! ```
-//! use factory::AlgorithmFactory;
-//! use factory::mac_factory::MACFactory;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_hex as hex;
+//! use bouncycastle_factory::mac_factory::MACFactory;
 //!
-//! let hmac = MACFactory::new("HMAC-SHA256").unwrap();
+//! let key = KeyMaterial256::from_bytes_as_type(
+//!         // Note: This would be a bad key to use in a production application!
+//!         // But we'll hard-code a silly key for demonstration purposes.
+//!         &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
+//!         KeyType::MACKey,
+//!     ).unwrap();
+//!
+//! let hmac = MACFactory::new("HMAC-SHA256", &key).unwrap();
 //! ```
 //!
 //! Or if you don't particularly care which algorithm is used, you can use the built-in default:
 //!
 //! ```
-//! use factory::AlgorithmFactory;
-//! use factory::mac_factory::MACFactory;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_hex as hex;
+//! use bouncycastle_factory::mac_factory::MACFactory;
 //!
-//! let hmac = MACFactory::default();
+//! let key = KeyMaterial256::from_bytes_as_type(
+//!         // Note: This would be a bad key to use in a production application!
+//!         // But we'll hard-code a silly key for demonstration purposes.
+//!         &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
+//!         KeyType::MACKey,
+//!     ).unwrap();
+//!
+//! let hmac = MACFactory::default(&key);
 //! ```
 
-use bouncycastle_core_interface::errors::MACError;
-use crate::{FactoryError, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
-use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength, MAC};
+use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
+use bouncycastle_core::errors::MACError;
+use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::traits::{MAC, SecurityStrength};
 use bouncycastle_hmac as hmac;
+use bouncycastle_hmac::{
+    HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME,
+};
+use bouncycastle_hmac::{HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_NAME};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha3 as sha3;
-use bouncycastle_hmac::{HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_NAME};
-use bouncycastle_hmac::{HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME};
 
 /*** Defaults ***/
 pub const DEFAULT_MAC_NAME: &str = HMAC_SHA256_NAME;
@@ -67,7 +90,7 @@ pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
 #[allow(non_camel_case_types)]
 
 /// MACFactory deviates from the usual AlgorithmFactory trait because MAC objects do not have a no-arg constructor;
-/// instead they have a constructor that takes a [KeyMaterial] and can return an error.
+/// instead they have a constructor that takes a [KeyMaterialTrait] and can return an error.
 pub enum MACFactory {
     // All members must impl MAC.
     HMAC_SHA224(hmac::HMAC<sha2::SHA224>),
@@ -80,21 +103,20 @@ pub enum MACFactory {
     HMAC_SHA3_512(hmac::HMAC<sha3::SHA3_512>),
 }
 
-
 impl MACFactory {
-    pub fn default(key: &impl KeyMaterial) -> Result<Self, FactoryError> {
+    pub fn default(key: &impl KeyMaterialTrait) -> Result<Self, FactoryError> {
         Self::new(DEFAULT_MAC_NAME, key)
     }
 
-    pub fn default_128_bit(key: &impl KeyMaterial) -> Result<Self, FactoryError> {
+    pub fn default_128_bit(key: &impl KeyMaterialTrait) -> Result<Self, FactoryError> {
         Self::new(DEFAULT_128BIT_MAC_NAME, key)
     }
 
-    pub fn default_256_bit(key: &impl KeyMaterial) -> Result<Self, FactoryError> {
+    pub fn default_256_bit(key: &impl KeyMaterialTrait) -> Result<Self, FactoryError> {
         Self::new(DEFAULT_256BIT_MAC_NAME, key)
     }
 
-    pub fn new(alg_name: &str, key: &impl KeyMaterial) -> Result<Self, FactoryError> {
+    pub fn new(alg_name: &str, key: &impl KeyMaterialTrait) -> Result<Self, FactoryError> {
         match alg_name {
             DEFAULT => Self::default(key),
             DEFAULT_128_BIT => Self::default_128_bit(key),
@@ -107,19 +129,22 @@ impl MACFactory {
             HMAC_SHA3_256_NAME => Ok(Self::HMAC_SHA3_256(hmac::HMAC::<sha3::SHA3_256>::new(key)?)),
             HMAC_SHA3_384_NAME => Ok(Self::HMAC_SHA3_384(hmac::HMAC::<sha3::SHA3_384>::new(key)?)),
             HMAC_SHA3_512_NAME => Ok(Self::HMAC_SHA3_512(hmac::HMAC::<sha3::SHA3_512>::new(key)?)),
-            _ => Err(FactoryError::UnsupportedAlgorithm(format!("The algorithm: \"{}\" is not a known MAC", alg_name))),
+            _ => Err(FactoryError::UnsupportedAlgorithm(format!(
+                "The algorithm: \"{}\" is not a known MAC",
+                alg_name
+            ))),
         }
     }
 }
 
 impl MAC for MACFactory {
     /// This is a dummy function, required by the [MAC] trait. Don't call it, it doesn't do anything.
-    fn new(_key: &impl KeyMaterial) -> Result<Self, MACError> {
+    fn new(_key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
         unimplemented!()
     }
 
     /// This is a dummy function, required by the [MAC] trait. Don't call it, it doesn't do anything.
-    fn new_allow_weak_key(_key: &impl KeyMaterial) -> Result<Self, MACError> {
+    fn new_allow_weak_key(_key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
         unimplemented!()
     }
 

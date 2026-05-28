@@ -7,6 +7,7 @@
 //! We are extremely happy with!
 //!
 //! # Philosophy of a low-memory implementation
+//!
 //! First, a little primer on the objects that make up an ML-DSA key pair.
 //! The "elements" of the lattice are polynomials of degree 256, represented in memory as
 //! arrays of 256 i32's. That's 1 kb per polynomial.
@@ -23,7 +24,7 @@
 //! For ML-DSA-65, you expect to use 53 kb of RAM just for holding expanded key material, and then
 //! you expect the `.sign()` operation to require several multiples of that as variables for holding
 //! intermediate values as the computation proceeds.
-//! A well-written but not memory-optimized ML-DSA-65 can be expected to consume 200 - 250 kb of RAM
+//! A well-written but not memory-optimized ML-DSA-65 can be expected to consume approximately 150 kb of RAM
 //! at the widest point of the `.sign()` operation.
 //!
 //! This crate strives to do better!
@@ -35,7 +36,7 @@
 //! This is because the ML-DSA keygen algorithm starts with a single 32-byte seed and expands that
 //! into intermediate seeds `rho` (32 byte), `rho_prime`(64 byte), and `K` (32 byte), from which all
 //! of the vectors and matrices are derived via hash functions.
-//! The public matrix A can be derived in a random-access fashion from `rho` and the matrix index `k,l`.
+//! The public matrix A can be derived in a random-access fashion from `rho` and the matrix index `i,j`.
 //! The various vectors cannot, but the polynomial compression algorithm given in FIPS 204 as part of
 //! the key encoding procedure can be used to hold the vectors in memory compressed and only un-compress
 //! a single polynomial entry at a time.
@@ -57,51 +58,61 @@
 //!
 //! All this combined, we achieve an approximate *1/10 the memory footprint* at a cost of approximately *3x
 //! the runtime for signing and no appreciable difference for keygen and verification*,
-//! compared with our un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! We are extremely happy with!
+//! compared with our un-optimized implementation in the \[bouncycastle_mldsa] crate, which we are extremely happy with!
 //!
-//! # Performance and size numbers
+//! # Memory Footprint
+//!
 //! Below, find performance charts relative to the standard ML-DSA implementation in the \[bouncycastle_mldsa] crate.
 //!
 //! ## Keys sizes in memory and on disk
+//!
 //! This implementation greatly reduces the size of keys both on disk and in memory
 //! by only handling the matrices and vectors either as seeds or in their compressed representation
 //! expanding on-demand as part of a sign or verify operation rather than storing them in memory as part of a keygen or key load.
 //!
 //! | Key Object | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
 //! |------------|-----------------|-------------------|-----------------|-------------------|
-//! | ML-DSA-44  | 1312 (1312)     | 1312 (4128)       | 32 (2560) | 192 (12416) |
-//! | ML-DSA-65  | 1952 (1952)     | 1952 (6176)       | 32 (4032) | 192 (17536) |
-//! | ML-DSA-87  | 2592 (2592)     | 2592 (8224)       | 32 (4896) | 192 (23680) |
+//! | ML-DSA-44  | 1312 (1312)     | 1312 (4128)       | 32 (2560)       | 176 (12464) |
+//! | ML-DSA-65  | 1952 (1952)     | 1952 (6176)       | 32 (4032)       | 176 (17584) |
+//! | ML-DSA-87  | 2592 (2592)     | 2592 (8224)       | 32 (4896)       | 176 (23728) |
 //!
-//! All values are in bytes.
+//! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! These are the sizes of the data objects, not necessarily the physical size of stack memory usage.
 //!
 //!
-//! ## Algorithm performance and peak memory usage
-//! The table below shows the performance and peak memory usage of the ML-DSA algorithms.
+//! ## Algorithm Peak Memory Usage
+//! The table below shows peak memory usage of the ML-DSA algorithms and the rough performanc (throughput) impact.
+//!
+//! Measuring peak application memory usage can be a bit tricky, and the numbers you get depend heavily on how you designed your
+//! measurement harness. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
+//! over-estimate so that any deployment within an existing application will use incrementally less additional memory
+//! than the amount stated here.
+//!
+//! Our measurement methodology is to compile a simple standalone HelloWorld application that only calls the function under test
+//! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
+//! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
+//! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
+//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
+//! HelloWorld rust application.
+//!
+//! | Algorithm | Peak swap memory usage (kB) | Throughput (ops/s) |
+//! |-----------|-----------------------|-------------------|
+//! | MLDSA44_lowmemory/KeyGen  | 12.6 (113.8)   | 11,800 (11,300) |
+//! | MLDSA65_lowmemory/KeyGen  | 15.0 (124.1)   | 5,500 (7.000) |
+//! | MLDSA87_lowmemory/KeyGen  | 15.2 (197.8)   | 3,300 (4,200) |
+//! | MLDSA44_lowmemory/Sign    | 24.8 (117.7)   | 850 (4,000)  |
+//! | MLDSA65_lowmemory/Sign    | 28.2 (159.6)   | 580 (2,900) |
+//! | MLDSA87_lowmemory/Sign    | 31.1 (236.7)   | 315 (2,000) |
+//! | MLDSA44_lowmemory/Verify  | 17.1 (73.0)    | 10,100 (14,000) |
+//! | MLDSA65_lowmemory/Verify  | 18.0 (134.4)   | 6,300 (8,400) |
+//! | MLDSA87_lowmemory/Verify  | 20.6 (211.6)   | 3,500 (5,000) |
+//!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
 //! Performance throughput numbers were collected on my laptop using the library's provided benchmarks, so
-//! performance throughput numbers should be taken with an extreme grain of salt.
+//! performance they should be taken with an extreme grain of salt.
 //!
-//! Actual values may vary based on build configuration.
-//!
-//! | Algorithm | Peak memory usage (kB) | Throughput (ops/s) |
-//! |-----------|-----------------------|-------------------|
-//! | MLDSA44_lowmemory/KeyGen  | 12.9 (77.9)    | 8100 (8700) |
-//! | MLDSA65_lowmemory/KeyGen  | 14.8 (156.9)   | 4900 (5400) |
-//! | MLDSA87_lowmemory/KeyGen  | 16.1 (270.7)   | 2900 (3400) |
-//! | MLDSA44_lowmemory/Sign    | 25.5 (135.3)   | 630 (1400) |
-//! | MLDSA65_lowmemory/Sign    | 29.8 (227.6)   | 370 (960) |
-//! | MLDSA87_lowmemory/Sign    | 32.8 (362.0)   | 250 (730) |
-//! | MLDSA44_lowmemory/Verify  | 15.8 (68.9)    | 7500 (9000) |
-//! | MLDSA65_lowmemory/Verify  | 19.0 (115.7)   | 4500 (5700) |
-//! | MLDSA87_lowmemory/Verify  | 20.6 (237.2)   | 2700 (3600) |
-//!
-//! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//!
+//! Actual values may vary based on build configuration and target architecture.
 //!
 //! # Usage
 //!
@@ -117,20 +128,20 @@
 //! ## Generating Keys
 //!
 //! ```rust
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::MLDSA65;
-//! use bouncycastle_core_interface::traits::Signature;
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //! ```
 //! That's it. That will use the library's default OS-backend RNG.
 //!
 //! Commonly with the ML-DSA algorithm, a 32-byte seed is used as the private key, and expanded into
-//! a full private key as needed. This is offered through the library's [KeyMaterial] object:
+//! a full private key as needed. This is offered through the library's [KeyMaterialTrait] object:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::traits::KeyMaterial;
-//! use bouncycastle_core_interface::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
+//! use bouncycastle_hex as hex;
+//! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let seed = KeyMaterial256::from_bytes_as_type(
 //!     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
@@ -147,15 +158,15 @@
 //! ## Generating and Verifying Signatures
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::errors::SignatureError;
+//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let msg = b"The quick brown fox";
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = MLDSA65::sign(&sk, msg, None).unwrap();
+//! let sig = MLDSA65::sign(&sk, msg, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! match MLDSA65::verify(&pk, msg, None, &sig) {
@@ -189,64 +200,68 @@
 //! of the Rust compiler's optimizer for whether our bitshift-and-xor code actually remains
 //! constant-time after compilation.
 
-// todo -- need to tag the all the vec's with the alloc feature
-// #![no_std]
-
+#![no_std]
 #![forbid(missing_docs)]
-
 #![forbid(unsafe_code)]
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
 #![feature(generic_const_exprs)]
-#![feature(int_roundings)]
-#![feature(inherent_associated_types)]
 #![feature(adt_const_params)]
-
 // These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',
 // or 'A' and 'a' are used and have specific meanings.
 // But need to tell the rust linter to not care.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-
 // so I can use private traits to hide internal stuff that needs to be generic within the
 // MLDSA implementation, but I don't want accessed from outside, such as FIPS-internal functions.
 #![allow(private_bounds)]
-
 // Used in HashMLDSA
 #![feature(unsized_const_params)]
 
 // imports needed just for docs
 #[allow(unused_imports)]
-use bouncycastle_core_interface::traits::{KeyMaterial, Signature, PHSignature};
+use bouncycastle_core::key_material::KeyMaterialTrait;
+#[allow(unused_imports)]
+use bouncycastle_core::traits::Signature;
 
-pub mod mldsa;
+// todo -- re-run mutants
+
+// todo -- crucible tests
+
+mod aux_functions;
 pub mod hash_mldsa;
+mod low_memory_helpers;
+pub mod mldsa;
 mod mldsa_keys;
 mod polynomial;
-mod aux_functions;
-mod low_memory_helpers;
+
 /*** Exported types ***/
-pub use mldsa::{MLDSATrait, MLDSA, MLDSA44, MLDSA65, MLDSA87};
 pub use hash_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA65_with_SHA256, HashMLDSA87_with_SHA256};
 pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
+pub use mldsa::MuBuilder;
+pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87, MLDSATrait};
+pub use mldsa_keys::{
+    MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey, MLDSASeedPrivateKey,
+};
+pub use mldsa_keys::{MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey, MLDSAPublicKey};
 pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
-pub use mldsa_keys::{MLDSAPublicKey, MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey};
-pub use mldsa_keys::{MLDSASeedPrivateKey, MLDSA44PrivateKey, MLDSA65PrivateKey, MLDSA87PrivateKey};
-pub use mldsa::{MuBuilder};
 
 /*** Exported constants ***/
 pub use mldsa::ML_DSA_44_NAME;
 pub use mldsa::ML_DSA_65_NAME;
 pub use mldsa::ML_DSA_87_NAME;
 
-pub use hash_mldsa::Hash_ML_DSA_44_with_SHA256_NAME;
-pub use hash_mldsa::Hash_ML_DSA_65_with_SHA256_NAME;
-pub use hash_mldsa::Hash_ML_DSA_87_with_SHA256_NAME;
+pub use hash_mldsa::HASH_ML_DSA_44_with_SHA256_NAME;
+pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA256_NAME;
+pub use hash_mldsa::HASH_ML_DSA_87_with_SHA256_NAME;
 
-pub use hash_mldsa::Hash_ML_DSA_44_with_SHA512_NAME;
-pub use hash_mldsa::Hash_ML_DSA_65_with_SHA512_NAME;
-pub use hash_mldsa::Hash_ML_DSA_87_with_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_87_WITH_SHA512_NAME;
 
-pub use mldsa::{TR_LEN, RND_LEN, MU_LEN};
-pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN};
-pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN};
-pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN};
+pub use mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSA_TR_LEN};
+pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
+pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
+pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
+
+// re-export just so it's visible to unit tests
+pub use polynomial::Polynomial;

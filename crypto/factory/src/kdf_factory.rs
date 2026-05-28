@@ -5,56 +5,58 @@
 //!
 //! Example usage:
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use factory::AlgorithmFactory;
-//! use core_interface::traits::KDF;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::KDF;
+//! use bouncycastle_factory::AlgorithmFactory;
 //!
 //! // get your key material from a secure place; here we'll use the default RNG, seeded from the OS
-//! let seed_key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+//! let seed_key = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
 //! let additional_input: &[u8] = b"some additional input";
 //!
-//! let mut h = factory::kdf_factory::KDFFactory::new(hkdf::HKDF_SHA256_NAME).unwrap();
+//! let mut h = bouncycastle_factory::kdf_factory::KDFFactory::new(bouncycastle_hkdf::HKDF_SHA256_NAME).unwrap();
 //! let new_key = h.derive_key(&seed_key, additional_input).unwrap();
 //! ```
 //!
 //! You can equivalently invoke this by string instead of using the constant:
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use factory::AlgorithmFactory;
-//! use core_interface::traits::KDF;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::KDF;
+//! use bouncycastle_factory::AlgorithmFactory;
 //!
 //! // get your key material from a secure place; here we'll use the default RNG, seeded from the OS
-//! let seed_key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+//! let seed_key = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
 //! let additional_input: &[u8] = b"some additional input";
 //!
-//! let h = factory::kdf_factory::KDFFactory::new("HKDF-SHA256").unwrap();
+//! let h = bouncycastle_factory::kdf_factory::KDFFactory::new("HKDF-SHA256").unwrap();
 //! let new_key = h.derive_key(&seed_key, additional_input).unwrap();
 //! ```
 //!
 //! Or if you don't particularly care which algorithm is used, you can use the built-in default:
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use factory::AlgorithmFactory;
-//! use core_interface::traits::KDF;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::KDF;
+//! use bouncycastle_factory::AlgorithmFactory;
 //!
 //! // get your key material from a secure place; here we'll use the default RNG, seeded from the OS
-//! let seed_key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+//! let seed_key = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
 //! let additional_input: &[u8] = b"some additional input";
 //!
-//! let h = factory::kdf_factory::KDFFactory::default();
+//! let h = bouncycastle_factory::kdf_factory::KDFFactory::default();
 //! let new_key = h.derive_key(&seed_key, additional_input).unwrap();
 //! ```
 
+use crate::{AlgorithmFactory, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
+use bouncycastle_core::errors::KDFError;
+use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::traits::{KDF, SecurityStrength};
 use bouncycastle_hkdf as hkdf;
-use bouncycastle_sha3 as sha3;
-use bouncycastle_core_interface::errors::KDFError;
-use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength, KDF};
-use bouncycastle_sha3::{SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME, SHAKE128_NAME, SHAKE256_NAME};
 use bouncycastle_hkdf::{HKDF_SHA256_NAME, HKDF_SHA512_NAME};
-use crate::{AlgorithmFactory, FactoryError, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
-
+use bouncycastle_sha3 as sha3;
+use bouncycastle_sha3::{
+    SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME, SHAKE128_NAME, SHAKE256_NAME,
+};
 
 /*** Defaults ***/
 pub const DEFAULT_KDF_NAME: &str = HKDF_SHA512_NAME;
@@ -103,13 +105,20 @@ impl AlgorithmFactory for KDFFactory {
             SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
             SHAKE128_NAME => Ok(Self::SHAKE128(sha3::SHAKE128::new())),
             SHAKE256_NAME => Ok(Self::SHAKE256(sha3::SHAKE256::new())),
-            _ => Err(FactoryError::UnsupportedAlgorithm(format!("The algorithm: \"{}\" is not a known KDF", alg_name))),
+            _ => Err(FactoryError::UnsupportedAlgorithm(format!(
+                "The algorithm: \"{}\" is not a known KDF",
+                alg_name
+            ))),
         }
     }
 }
 
 impl KDF for KDFFactory {
-    fn derive_key(self, key: &impl KeyMaterial, additional_input: &[u8]) -> Result<Box<dyn KeyMaterial>, KDFError> {
+    fn derive_key(
+        self,
+        key: &impl KeyMaterialTrait,
+        additional_input: &[u8],
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         match self {
             Self::HKDF_SHA256(h) => h.derive_key(key, additional_input),
             Self::HKDF_SHA512(h) => h.derive_key(key, additional_input),
@@ -122,7 +131,12 @@ impl KDF for KDFFactory {
         }
     }
 
-    fn derive_key_out(self, key: &impl KeyMaterial, additional_input: &[u8], output_key: &mut impl KeyMaterial) -> Result<usize, KDFError> {
+    fn derive_key_out(
+        self,
+        key: &impl KeyMaterialTrait,
+        additional_input: &[u8],
+        output_key: &mut impl KeyMaterialTrait,
+    ) -> Result<usize, KDFError> {
         match self {
             Self::HKDF_SHA256(h) => h.derive_key_out(key, additional_input, output_key),
             Self::HKDF_SHA512(h) => h.derive_key_out(key, additional_input, output_key),
@@ -135,7 +149,11 @@ impl KDF for KDFFactory {
         }
     }
 
-    fn derive_key_from_multiple(self, keys: &[&impl KeyMaterial], additional_input: &[u8]) -> Result<Box<dyn KeyMaterial>, KDFError> {
+    fn derive_key_from_multiple(
+        self,
+        keys: &[&impl KeyMaterialTrait],
+        additional_input: &[u8],
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         match self {
             Self::HKDF_SHA256(h) => h.derive_key_from_multiple(keys, additional_input),
             Self::HKDF_SHA512(h) => h.derive_key_from_multiple(keys, additional_input),
@@ -148,10 +166,19 @@ impl KDF for KDFFactory {
         }
     }
 
-    fn derive_key_from_multiple_out(self, keys: &[&impl KeyMaterial], additional_input: &[u8], output_key: &mut impl KeyMaterial) -> Result<usize, KDFError> {
+    fn derive_key_from_multiple_out(
+        self,
+        keys: &[&impl KeyMaterialTrait],
+        additional_input: &[u8],
+        output_key: &mut impl KeyMaterialTrait,
+    ) -> Result<usize, KDFError> {
         match self {
-            Self::HKDF_SHA256(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
-            Self::HKDF_SHA512(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
+            Self::HKDF_SHA256(h) => {
+                h.derive_key_from_multiple_out(keys, additional_input, output_key)
+            }
+            Self::HKDF_SHA512(h) => {
+                h.derive_key_from_multiple_out(keys, additional_input, output_key)
+            }
             Self::SHA3_224(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::SHA3_256(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::SHA3_384(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),

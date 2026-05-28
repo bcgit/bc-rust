@@ -1,21 +1,34 @@
 //! These are somewhat unnecessary wrappers around simple arrays, but they are helpful to me in clearly
 //! keeping the types and sizes obvious.
 
-use bouncycastle_core_interface::traits::XOF;
-use crate::aux_functions::{inv_ntt, ntt};
+use crate::aux_functions::multiply_ntt;
 use crate::mldsa::H;
-use crate::polynomial;
-use crate::polynomial::{Polynomial};
+use crate::polynomial::Polynomial;
+use bouncycastle_core::traits::XOF;
+use core::ops::{Index, IndexMut};
 
+/// A matrix over the ML-DSA ring.
+#[derive(Clone)]
+pub struct Matrix<const k: usize, const l: usize>(/*pub(crate)*/ [[Polynomial; l]; k]);
 
-pub(crate) struct Matrix<const k: usize, const l: usize>
-{
-    pub(crate) matrix: [[Polynomial; l]; k],
+/// Convenience function to avoid ".0" all over the place.
+impl<const k: usize, const l: usize> Index<usize> for Matrix<k, l> {
+    type Output = [Polynomial; l];
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+/// Convenience function to avoid ".0" all over the place.
+impl<const k: usize, const l: usize> IndexMut<usize> for Matrix<k, l> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.0[index]
+    }
 }
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
-    pub fn new() -> Self {
-        Self { matrix: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
+    pub(crate) fn new() -> Self {
+        Self { 0: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
     }
 
     /// Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
@@ -27,17 +40,17 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// Output: vector of length k
     pub fn matrix_vector_ntt(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
-        for i in 0 .. k {
+        for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
-            w.vec[i].0.copy_from_slice(&polynomial::multiply_ntt(&self.matrix[i][0], &v.vec[0]).0);
+            w[i].coeffs.copy_from_slice(&multiply_ntt(&self[i][0], &v[0]).coeffs);
 
             let mut w1: Polynomial;
-            for j in 1 .. l {
+            for j in 1..l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
-                w1 = polynomial::multiply_ntt(&self.matrix[i][j], &v.vec[j]);
-                w.vec[i].add_ntt(&w1);
+                w1 = multiply_ntt(&self[i][j], &v[j]);
+                w[i].add_ntt(&w1);
             }
         }
 
@@ -49,15 +62,27 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
 // but I'll leave it zeroizing for now and leave this as a potential future optimization.
 
-
 #[derive(Clone)]
-pub(crate) struct Vector<const LEN: usize>
-{
-    pub(crate) vec: [Polynomial; LEN],
+pub(crate) struct Vector<const k: usize> {
+    pub(crate) vec: [Polynomial; k],
 }
 
-impl<const LEN: usize> Vector<LEN>
-{
+/// Convenience function to avoid ".0" all over the place.
+impl<const k: usize> Index<usize> for Vector<k> {
+    type Output = Polynomial;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.vec[index]
+    }
+}
+/// Convenience function to avoid ".0" all over the place.
+impl<const k: usize> IndexMut<usize> for Vector<k> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.vec[index]
+    }
+}
+
+impl<const LEN: usize> Vector<LEN> {
     pub(crate) fn new() -> Self {
         Self { vec: [(); LEN].map(|_| Polynomial::new()) }
     }
@@ -68,16 +93,16 @@ impl<const LEN: usize> Vector<LEN>
     /// Output: u_hat ∈ T^ℓ_𝑞.
     /// Add another vector to this vector
     pub(crate) fn add_vector_ntt(&mut self, s: &Self) {
-        for i in 0 .. LEN {
+        for i in 0..LEN {
             // perform montgomery addition of each polynomial in the vector
-            self.vec[i].add_ntt(&s.vec[i]);
+            self[i].add_ntt(&s[i]);
         }
     }
 
     pub(crate) fn sub_vector(&self, s: &Self) -> Self {
         let mut out = self.clone();
-        for i in 0 .. LEN {
-            out.vec[i].sub(&s.vec[i]);
+        for i in 0..LEN {
+            out[i].sub(&s[i]);
         }
         out
     }
@@ -89,27 +114,33 @@ impl<const LEN: usize> Vector<LEN>
     pub(crate) fn scalar_vector_ntt(&self, w: &Polynomial) -> Self {
         let mut s_hat = Self::new();
         for i in 0..LEN {
-            s_hat.vec[i] = polynomial::multiply_ntt(&self.vec[i], &w);
+            s_hat[i] = multiply_ntt(&self[i], &w);
         }
 
         s_hat
     }
 
     pub(crate) fn conditional_add_q(&mut self) {
-        for i in 0 .. LEN {
-            self.vec[i].conditional_add_q();
+        for i in 0..LEN {
+            self[i].conditional_add_q();
         }
     }
 
-    pub(crate) fn ntt(&mut self){
+    pub(crate) fn reduce(&mut self) {
         for i in 0..LEN {
-            self.vec[i] = ntt(&self.vec[i]);
+            self[i].reduce();
+        }
+    }
+
+    pub(crate) fn ntt(&mut self) {
+        for i in 0..LEN {
+            self[i].ntt();
         }
     }
 
     pub(crate) fn inv_ntt(&mut self) {
         for i in 0..LEN {
-            self.vec[i] = inv_ntt(&self.vec[i]);
+            self[i].inv_ntt();
         }
     }
 
@@ -117,7 +148,7 @@ impl<const LEN: usize> Vector<LEN>
         let mut s = Self::new();
 
         for i in 0..LEN {
-            s.vec[i] = self.vec[i].high_bits::<GAMMA2>();
+            s[i] = self[i].high_bits::<GAMMA2>();
         }
 
         s
@@ -127,7 +158,7 @@ impl<const LEN: usize> Vector<LEN>
         let mut s = Self::new();
 
         for i in 0..LEN {
-            s.vec[i] = self.vec[i].low_bits::<GAMMA2>();
+            s[i] = self[i].low_bits::<GAMMA2>();
         }
 
         s
@@ -136,16 +167,16 @@ impl<const LEN: usize> Vector<LEN>
     pub(crate) fn shift_left<const d: i32>(&self) -> Self {
         let mut out = self.clone();
         for i in 0..LEN {
-            out.vec[i].shift_left::<d>();
+            out[i].shift_left::<d>();
         }
 
         out
     }
 
-    pub(crate) fn check_norm(&self, bound: i32) -> bool {
+    pub(crate) fn check_norm<const BOUND: i32>(&self) -> bool {
         // Fine that this is not constant-time because it is used in a rejection loop -- the early quit leads to rejection.
         for x in self.vec.iter() {
-            if x.check_norm(bound) {
+            if x.check_norm::<BOUND>() {
                 return true;
             }
         }
@@ -157,7 +188,7 @@ impl<const LEN: usize> Vector<LEN>
     /// Input: 𝐰1 ∈ 𝑅𝑘 whose polynomial coordinates have coefficients in \[0, (𝑞 − 1)/(2𝛾2) − 1].
     /// Output: A byte string representation 𝐰1_tilde ∈ 𝔹32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)
     /// Optimized from FIPS 204 to feed into the hash one row at a time to reduce overall memory footprint.
-    pub(crate) fn w1_encode_and_hash<const W1_PACKED_LEN: usize, const POLY_W1_PACKED_LEN: usize>(&self, h: &mut H)  {
+    pub(crate) fn w1_encode_and_hash<const POLY_W1_PACKED_LEN: usize>(&self, h: &mut H) {
         // 1: 𝐰̃1 ← ()
         // don't need to allocate anything since we're feeding it into the hash row-wise
 
@@ -166,7 +197,6 @@ impl<const LEN: usize> Vector<LEN>
         // 4: end for
         for w in self.vec.iter() {
             h.absorb(&w.w1_encode::<POLY_W1_PACKED_LEN>());
-
         }
     }
 }

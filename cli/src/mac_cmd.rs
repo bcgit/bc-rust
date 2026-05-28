@@ -2,8 +2,8 @@ use std::io::{Read, Write};
 use std::process::exit;
 use std::{fs, io};
 
-use bouncycastle::core_interface::key_material::{KeyMaterial512, KeyType};
-use bouncycastle::core_interface::traits::{KeyMaterial, MAC};
+use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
 use bouncycastle::hmac::{HMAC_SHA256, HMAC_SHA512};
 

@@ -6,8 +6,9 @@
 //! Here's the basic way to get some random bytes:
 //!
 //! ```
-//! use core_interface::traits::RNG;
-//! use rng;
+//! use bouncycastle_core::traits::RNG;
+//! use bouncycastle_rng as rng;
+//!
 //! let random_bytes = rng::DefaultRNG::default().next_bytes(32);
 //! ```
 //! This is secure because `::default()` seeds the RNG from the OS, configured for general use.
@@ -22,22 +23,24 @@
 //! and will therefore compromise any cryptographic operation built on top of those outputs.
 //! You should only be here if your application requires direct control over configuring the internals of the DRBG.
 //!
-//! This crate contains the [Sp80090ADrbg] trait, which is intentionally defined here and not in [core-interface::traits]
+//! This crate contains the [Sp80090ADrbg] trait, which is intentionally defined here and not in [bouncycastle_core::traits]
 //! since misuse of [Sp80090ADrbg::instantiate] can completely undermine the security of your entire
 //! cryptographic application.
 
 #![forbid(unsafe_code)]
-
 #![allow(incomplete_features)] // Need this because generic_const_exprs is currently experimental.
 #![feature(generic_const_exprs)]
 
-use bouncycastle_core_interface::errors::RNGError;
-use bouncycastle_core_interface::traits::{KeyMaterial, SecurityStrength};
-use crate::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256, HashDRBG80090AParams_SHA512,};
+use crate::hash_drbg80090a::{
+    HashDRBG80090A, HashDRBG80090AParams_SHA256, HashDRBG80090AParams_SHA512,
+};
+use bouncycastle_core::errors::RNGError;
+use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::traits::SecurityStrength;
 
 // needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core_interface::key_material::KeyType;
+use bouncycastle_core::key_material::KeyType;
 // end doc-only imports
 
 pub mod hash_drbg80090a;
@@ -83,15 +86,19 @@ pub trait Sp80090ADrbg {
     fn instantiate(
         &mut self,
         prediction_resistance: bool,
-        seed: impl KeyMaterial,
-        nonce: &impl KeyMaterial,
+        seed: impl KeyMaterialTrait,
+        nonce: &impl KeyMaterialTrait,
         personalization_string: &[u8],
         security_strength: SecurityStrength,
     ) -> Result<(), RNGError>;
 
     /// Reseeds the DRBG with the provided seed.
     /// TODO: this needs to be thought out to take some sort of EntropySource object that'll work well with DRBGs that require frequent reseeding.
-    fn reseed(&mut self, seed: &impl KeyMaterial, additional_input: &[u8]) -> Result<(), RNGError>;
+    fn reseed(
+        &mut self,
+        seed: &impl KeyMaterialTrait,
+        additional_input: &[u8],
+    ) -> Result<(), RNGError>;
 
     /// Note that for a calling application to be in compliance with SP 800-90A, this requirement
     /// from section 8.4 must be met:
@@ -117,13 +124,13 @@ pub trait Sp80090ADrbg {
     fn generate_out(&mut self, additional_input: &[u8], out: &mut [u8]) -> Result<usize, RNGError>;
 
     /// As per [Sp80090ADrbg::generate], but writes to the provided KeyMaterial.
-    /// The output [KeyMaterial] is filled to capacity.
+    /// The output [KeyMaterialTrait] is filled to capacity.
     /// Throws a [RNGError::InsufficientSeedEntropy] if the capacity of the output KeyMaterial exceeds [SecurityStrength].
     /// Retruns the number of bits output.
     fn generate_keymaterial_out(
         &mut self,
         additional_input: &[u8],
-        out: &mut impl KeyMaterial,
+        out: &mut impl KeyMaterialTrait,
     ) -> Result<usize, RNGError>;
 
     // TODO -- implement FIPS health tests

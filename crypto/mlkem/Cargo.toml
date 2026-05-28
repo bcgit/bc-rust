@@ -1,0 +1,20 @@
+[package]
+name = "bouncycastle-mlkem"
+version = "0.1.2"
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-sha3.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "mlkem_benches"
+harness = false

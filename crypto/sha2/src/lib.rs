@@ -2,12 +2,13 @@
 //!
 //! # Examples
 //! ## Hash
-//! Hash functionality is accessed via the [bouncycastle_core_interface::traits::Hash] trait,
+//! Hash functionality is accessed via the [bouncycastle_core::traits::Hash] trait,
 //! which is implemented by [SHA224], [SHA256], [SHA384] and [SHA512].
 //!
 //! The simplest usage is via the static functions.
 //! ```
-//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha2 as sha2;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let output: Vec<u8> = sha2::SHA256::new().hash(data);
@@ -17,7 +18,7 @@
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
-//! use bouncycastle_core_interface::traits::Hash;
+//! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sha2 as sha2;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F
@@ -41,7 +42,7 @@ mod sha512;
 
 pub use self::sha256::SHA256Internal;
 pub use self::sha512::Sha512Internal;
-use bouncycastle_core_interface::traits::{Algorithm, HashAlgParams, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, HashAlgParams, SecurityStrength};
 
 /*** String constants ***/
 pub const SHA224_NAME: &str = "SHA224";

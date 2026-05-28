@@ -28,9 +28,9 @@
 //! The following object instantiations are equivalent:
 //!
 //! ```
-//! use hmac::HMAC_SHA256;
-//! use core_interface::traits::MAC;
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
@@ -40,15 +40,10 @@
 //! ```
 //! and
 //! ```
-//! use hmac::HMAC;
-//! use sha2::SHA256;
-//! use core_interface::traits::MAC;
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//!
-//! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
+//! use bouncycastle_hmac::HMAC;
+//! use bouncycastle_sha2::SHA256;
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
@@ -62,13 +57,14 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use hmac::HMAC_SHA256;
-//! use core_interface::traits::MAC;
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::MACKey).unwrap();
+//!
 //! let data: &[u8] = b"Hello, world!";
 //! let hmac = HMAC_SHA256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
 //! let output: Vec<u8> = hmac.mac(data);
@@ -78,9 +74,9 @@
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use core_interface::traits::MAC;
-//! use hmac::HMAC_SHA256;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_hmac::HMAC_SHA256;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
@@ -98,8 +94,8 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use core_interface::traits::MAC;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::MAC;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
@@ -107,7 +103,7 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! // .verify() returns a bool: true if the MAC is valid, false otherwise.
-//! if hmac::HMAC_SHA256::new(&key).unwrap()
+//! if bouncycastle_hmac::HMAC_SHA256::new(&key).unwrap()
 //!                 .verify(data,
 //!                         b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90\x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9"
 //!                         )
@@ -122,9 +118,9 @@
 //! computing a mac value, but calls [MAC::do_verify_final] instead of [MAC::do_final].
 //!
 //! ```
-//! use core_interface::key_material::{KeyMaterial256, KeyType};
-//! use core_interface::traits::MAC;
-//! use hmac::HMAC_SHA256;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_hmac::HMAC_SHA256;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
@@ -155,21 +151,18 @@
 //! really like.
 //!
 //! We would love feedback on an alternate design for this API than carries less runtime error
-//! conditions, without sacrificing the key strength checking that the metadata in the [KeyMaterial] object allows.
-
+//! conditions, without sacrificing the key strength checking that the metadata in the [KeyMaterialTrait] object allows.
 
 #![forbid(unsafe_code)]
-
 #![allow(incomplete_features)] // because at time of writing, generic_const_exprs is not a stable feature
 #![feature(generic_const_exprs)]
 
-use bouncycastle_core_interface::errors::{KeyMaterialError, MACError};
-use bouncycastle_core_interface::traits::{Algorithm, Hash, KeyMaterial, SecurityStrength, MAC};
-use bouncycastle_core_interface::key_material::{KeyType};
+use bouncycastle_core::errors::{KeyMaterialError, MACError};
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, SecurityStrength};
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_utils::ct;
-
 
 /*** String constants ***/
 pub const HMAC_SHA224_NAME: &str = "HMAC-SHA224";
@@ -277,7 +270,7 @@ impl<HASH: Hash + Default> HMAC<HASH> {
         //     HASH::default().hash_out(&self.key[..self.key_len], &mut padded[..self.hasher.output_len()])?;
         // } else {
         // TODO: does this need a guard for a key_len longer than the block length?
-            padded[..self.key_len].copy_from_slice(&self.key[..self.key_len]);
+        padded[..self.key_len].copy_from_slice(&self.key[..self.key_len]);
         // }
 
         // XXX: easier way to xor over Vec?
@@ -292,11 +285,11 @@ impl<HASH: Hash + Default> HMAC<HASH> {
 
     /// Private init so that users are forced to go through one of the public new methods and thus we
     /// don't need to track state errors.
-    fn init(&mut self, key: &impl KeyMaterial, allow_weak_keys: bool) -> Result<(), MACError> {
+    fn init(&mut self, key: &impl KeyMaterialTrait, allow_weak_keys: bool) -> Result<(), MACError> {
         // check that the key is of type KeyMaterial::MACKey
         // Make an exception for all-zero keys, which is allowed (which can be zero-length or non-zero-length,
         // because it's just a nuisance to force users to set KeyType::MACKey for an all-zero key.
-        if ! (key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
+        if !(key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
             return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
                 "Key type must be a MAC key.",
             )));
@@ -311,7 +304,6 @@ impl<HASH: Hash + Default> HMAC<HASH> {
             // then we have to pre-hash it -- use a new instance of the hasher rather than the internal one
             HASH::default().hash_out(key.ref_to_bytes(), &mut self.key[..self.hasher.output_len()]);
             self.key_len = self.hasher.output_len();
-
         } else {
             self.key[..key.key_len()].copy_from_slice(key.ref_to_bytes());
             self.key_len = key.key_len();
@@ -321,7 +313,9 @@ impl<HASH: Hash + Default> HMAC<HASH> {
 
         // check that the key had enough security level
         if !allow_weak_keys && key.security_strength() < HASH::default().max_security_strength() {
-            Err(KeyMaterialError::SecurityStrength("HMAC::init(): provided key has a lower security strength than the instantiated HMAC"))?
+            Err(KeyMaterialError::SecurityStrength(
+                "HMAC::init(): provided key has a lower security strength than the instantiated HMAC",
+            ))?
         } else {
             Ok(())
         }
@@ -331,7 +325,9 @@ impl<HASH: Hash + Default> HMAC<HASH> {
     /// Returns the number of bytes written.
     fn do_final_internal_out(mut self, out: &mut [u8]) -> Result<usize, MACError> {
         if out.len() < MIN_FIPS_DIGEST_LEN {
-            return Err(MACError::InvalidLength("HMAC truncation too short for FIPS 140-2 guidelines"));
+            return Err(MACError::InvalidLength(
+                "HMAC truncation too short for FIPS 140-2 guidelines",
+            ));
         }
 
         // Per RFC 2104 Section 2, save our inner digest to calculate our
@@ -357,22 +353,16 @@ impl<HASH: Hash + Default> HMAC<HASH> {
 // TODO: against different data.
 
 impl<HASH: Hash + Default> MAC for HMAC<HASH> {
-    fn new(key: &impl KeyMaterial) -> Result<Self, MACError> {
-        let mut hmac = Self {
-            hasher: HASH::default(),
-            key: [0u8; LARGEST_HASHER_OUTPUT_LEN],
-            key_len: 0,
-        };
+    fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
+        let mut hmac =
+            Self { hasher: HASH::default(), key: [0u8; LARGEST_HASHER_OUTPUT_LEN], key_len: 0 };
         hmac.init(key, false)?;
         Ok(hmac)
     }
 
-    fn new_allow_weak_key(key: &impl KeyMaterial) -> Result<Self, MACError> {
-        let mut hmac = Self {
-            hasher: HASH::default(),
-            key: [0u8; LARGEST_HASHER_OUTPUT_LEN],
-            key_len: 0,
-        };
+    fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
+        let mut hmac =
+            Self { hasher: HASH::default(), key: [0u8; LARGEST_HASHER_OUTPUT_LEN], key_len: 0 };
         hmac.init(key, true)?;
         Ok(hmac)
     }
@@ -397,7 +387,6 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
         self.do_verify_final(mac)
     }
 
-
     fn do_update(&mut self, data: &[u8]) {
         self.hasher.do_update(data)
     }
@@ -415,7 +404,9 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
     fn do_verify_final(self, mac: &[u8]) -> bool {
         let mut out = vec![0_u8; HASH::default().output_len()];
         let output_len = self.do_final_internal_out(&mut out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
-        if mac.len() != output_len { return false }
+        if mac.len() != output_len {
+            return false;
+        }
         ct::ct_eq_bytes(mac, &out[..output_len])
     }
 

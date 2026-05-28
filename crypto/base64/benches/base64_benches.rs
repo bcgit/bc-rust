@@ -1,7 +1,7 @@
 use std::hint::black_box;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use bouncycastle_rng as rng;
-use bouncycastle_core_interface::traits::RNG;
+use bouncycastle_core::traits::RNG;
 use bouncycastle_base64::{Base64Encoder, Base64Decoder};
 
 fn bench_base64_encode(c: &mut Criterion) {

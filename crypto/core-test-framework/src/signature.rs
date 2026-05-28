@@ -1,6 +1,6 @@
 use crate::DUMMY_SEED_1024;
-use bouncycastle_core_interface::errors::SignatureError;
-use bouncycastle_core_interface::traits::{PHSignature, Signature, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{PHSignature, Signature, SignaturePrivateKey, SignaturePublicKey};
 
 pub struct TestFrameworkSignature {
     // Put any config options here
@@ -19,9 +19,11 @@ impl TestFrameworkSignature {
     /// Test all the members of trait Hash against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
     pub fn test_signature<
-        PK: SignaturePublicKey,
-        SK: SignaturePrivateKey,
-        SigAlg: Signature<PK, SK>,
+        PK: SignaturePublicKey<PK_LEN>,
+        SK: SignaturePrivateKey<SK_LEN>,
+        SigAlg: Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>,
+        const PK_LEN: usize,
+        const SK_LEN: usize,
         const SIG_LEN: usize,
     >(
         &self,
@@ -92,21 +94,6 @@ impl TestFrameworkSignature {
         let bytes_written = SigAlg::sign_out(&sk, msg, None, &mut output).unwrap();
         assert_eq!(bytes_written, SIG_LEN);
         SigAlg::verify(&pk, msg, None, &sig_val).unwrap();
-
-        // A larger output buf should be fine
-        let mut output = vec![0u8; 2 * SIG_LEN];
-        let bytes_written = SigAlg::sign_out(&sk, msg, None, &mut output).unwrap();
-        assert_eq!(bytes_written, SIG_LEN);
-        SigAlg::verify(&pk, msg, None, &sig_val).unwrap();
-
-        // A smaller output buf is not fine
-        let mut output = vec![0u8; SIG_LEN - 2];
-        match SigAlg::sign_out(&sk, msg, None, &mut output) {
-            Err(SignatureError::LengthError(_)) => (),
-            _ => panic!(
-                "This should have thrown an error but it didn't when using a smaller output buffer"
-            ),
-        }
 
         // test with a large message
         let sig = SigAlg::sign(&sk, DUMMY_SEED_1024, None).unwrap();
@@ -163,17 +150,25 @@ impl TestFrameworkSignature {
         let bytes_written = s.sign_final_out(&mut sig_val).unwrap();
         assert_eq!(bytes_written, SIG_LEN);
         SigAlg::verify(&pk, DUMMY_SEED_1024, Some(b"streaming API"), &sig_val).unwrap();
+
+
+        // the ::verify API should accept a sig value that's too long and just ignore the extra bytes
+        let mut sig_val_too_long = vec![1u8; SIG_LEN + 2];
+        sig_val_too_long[..SIG_LEN].copy_from_slice(&sig_val);
+        SigAlg::verify(&pk, DUMMY_SEED_1024, Some(b"streaming API"), &sig_val).unwrap();
     }
 
 
     /// Test all the members of trait Hash against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
     pub fn test_ph_signature<
-        PK: SignaturePublicKey,
-        SK: SignaturePrivateKey,
-        const PH_LEN: usize,
-        SigAlg: PHSignature<PK, SK, PH_LEN>,
+        PK: SignaturePublicKey<PK_LEN>,
+        SK: SignaturePrivateKey<SK_LEN>,
+        SigAlg: PHSignature<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>,
+        const PK_LEN: usize,
+        const SK_LEN: usize,
         const SIG_LEN: usize,
+        const PH_LEN: usize,
     >(
         &self,
         run_full_bitflipping_tests: bool,
@@ -244,25 +239,18 @@ impl TestFrameworkSignature {
         assert_eq!(bytes_written, SIG_LEN);
         SigAlg::verify(&pk, msg, None, &sig_val).unwrap();
 
-        // A larger output buf should be fine
-        let mut output = vec![0u8; 2 * SIG_LEN];
-        let bytes_written = SigAlg::sign_out(&sk, msg, None, &mut output).unwrap();
-        assert_eq!(bytes_written, SIG_LEN);
-        SigAlg::verify(&pk, msg, None, &sig_val).unwrap();
-
-        // A smaller output buf is not fine
-        let mut output = vec![0u8; SIG_LEN - 2];
-        match SigAlg::sign_out(&sk, msg, None, &mut output) {
-            Err(SignatureError::LengthError(_)) => (),
-            _ => panic!(
-                "This should have thrown an error but it didn't when using a smaller output buffer"
-            ),
-        }
-
         // test with a large message
         let sig = SigAlg::sign(&sk, DUMMY_SEED_1024, None).unwrap();
         SigAlg::verify(&pk, DUMMY_SEED_1024, None, &sig).unwrap();
 
+
+        // the ::verify API should not accept a sig value that's too
+        let mut sig_val_too_long = vec![1u8; SIG_LEN + 2];
+        sig_val_too_long[..SIG_LEN].copy_from_slice(&sig);
+        match SigAlg::verify(&pk, DUMMY_SEED_1024, None, &sig_val_too_long) {
+            Err(SignatureError::LengthError(_)) => (),
+            _ => panic!("Unexpected error"),
+        }
     }
 }
 
@@ -275,22 +263,24 @@ impl TestFrameworkSignatureKeys {
     }
 
     pub fn test_keys<
-        PK: SignaturePublicKey,
-        SK: SignaturePrivateKey,
-        SigAlg: Signature<PK, SK>,
+        PK: SignaturePublicKey<PK_LEN>,
+        SK: SignaturePrivateKey<SK_LEN>,
+        SigAlg: Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
+        const SIG_LEN: usize,
     >(&self) {
-        self.test_boundary_conditions::<PK, SK, SigAlg, PK_LEN, SK_LEN>();
+        self.test_boundary_conditions::<PK, SK, SigAlg, PK_LEN, SK_LEN, SIG_LEN>();
     }
 
     /// Tests the correct behaviour on buffers too large / too small.
     fn test_boundary_conditions<
-        PK: SignaturePublicKey,
-        SK: SignaturePrivateKey,
-        SigAlg: Signature<PK, SK>,
+        PK: SignaturePublicKey<PK_LEN>,
+        SK: SignaturePrivateKey<SK_LEN>,
+        SigAlg: Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
+        const SIG_LEN: usize,
     >(&self) {
         let (pk, sk) = SigAlg::keygen().unwrap();
 

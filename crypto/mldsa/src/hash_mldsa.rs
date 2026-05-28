@@ -6,15 +6,15 @@
 //! HashML-DSA is a full signature algorithm implementing the [Signature] trait:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_core::errors::SignatureError;
 //! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
-//! use bouncycastle_core_interface::traits::Signature;
+//! use bouncycastle_core::traits::Signature;
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
+//! let sig = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
@@ -27,9 +27,9 @@
 //! But you also have access to the pre-hashed function available from [PHSignature]:
 //!
 //! ```rust
-//! use bouncycastle_core_interface::errors::SignatureError;
+//! use bouncycastle_core::errors::SignatureError;
 //! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
-//! use bouncycastle_core_interface::traits::{Signature, PHSignature, Hash};
+//! use bouncycastle_core::traits::{Signature, PHSignature, Hash};
 //! use bouncycastle_sha2::SHA512;
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
@@ -41,7 +41,7 @@
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
-//! let sig: Vec<u8> = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
+//! let sig = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
 //! // This verifies either through the usual one-shot API of the [Signature] trait
@@ -63,33 +63,39 @@
 //! so if you need the fancy keygen functions, just use them from [MLDSA].
 //! But a simple [HashMLDSA::keygen] is provided in order to have conformance to the [Signature] trait.
 
-use std::marker::PhantomData;
-use crate::mldsa::{H, MLDSATrait, MU_LEN, RND_LEN};
+use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSATrait};
 use crate::mldsa::{
     MLDSA44_BETA, MLDSA44_C_TILDE, MLDSA44_ETA, MLDSA44_GAMMA1, MLDSA44_GAMMA1_MASK_LEN,
-    MLDSA44_GAMMA2, MLDSA44_LAMBDA, MLDSA44_LAMBDA_over_4, MLDSA44_OMEGA, MLDSA44_PK_LEN,
-    MLDSA44_POLY_ETA_PACKED_LEN, MLDSA44_POLY_W1_PACKED_LEN, MLDSA44_POLY_Z_PACKED_LEN,
-    MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44_TAU, MLDSA44_W1_PACKED_LEN, MLDSA44_k, MLDSA44_l,
+    MLDSA44_GAMMA1_MINUS_BETA, MLDSA44_GAMMA2, MLDSA44_GAMMA2_MINUS_BETA, MLDSA44_LAMBDA,
+    MLDSA44_LAMBDA_over_4, MLDSA44_OMEGA, MLDSA44_PK_LEN, MLDSA44_POLY_W1_PACKED_LEN,
+    MLDSA44_POLY_Z_PACKED_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44_TAU, MLDSA44_k, MLDSA44_l,
 };
 use crate::mldsa::{
     MLDSA65_BETA, MLDSA65_C_TILDE, MLDSA65_ETA, MLDSA65_GAMMA1, MLDSA65_GAMMA1_MASK_LEN,
-    MLDSA65_GAMMA2, MLDSA65_LAMBDA, MLDSA65_LAMBDA_over_4, MLDSA65_OMEGA, MLDSA65_PK_LEN,
-    MLDSA65_POLY_ETA_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, MLDSA65_POLY_Z_PACKED_LEN,
-    MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65_TAU, MLDSA65_W1_PACKED_LEN, MLDSA65_k, MLDSA65_l,
+    MLDSA65_GAMMA1_MINUS_BETA, MLDSA65_GAMMA2, MLDSA65_GAMMA2_MINUS_BETA, MLDSA65_LAMBDA,
+    MLDSA65_LAMBDA_over_4, MLDSA65_OMEGA, MLDSA65_PK_LEN, MLDSA65_POLY_W1_PACKED_LEN,
+    MLDSA65_POLY_Z_PACKED_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65_TAU, MLDSA65_k, MLDSA65_l,
 };
 use crate::mldsa::{
     MLDSA87_BETA, MLDSA87_C_TILDE, MLDSA87_ETA, MLDSA87_GAMMA1, MLDSA87_GAMMA1_MASK_LEN,
-    MLDSA87_GAMMA2, MLDSA87_LAMBDA, MLDSA87_LAMBDA_over_4, MLDSA87_OMEGA, MLDSA87_PK_LEN,
-    MLDSA87_POLY_ETA_PACKED_LEN, MLDSA87_POLY_W1_PACKED_LEN, MLDSA87_POLY_Z_PACKED_LEN,
-    MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87_TAU, MLDSA87_W1_PACKED_LEN, MLDSA87_k, MLDSA87_l,
+    MLDSA87_GAMMA1_MINUS_BETA, MLDSA87_GAMMA2, MLDSA87_GAMMA2_MINUS_BETA, MLDSA87_LAMBDA,
+    MLDSA87_LAMBDA_over_4, MLDSA87_OMEGA, MLDSA87_PK_LEN, MLDSA87_POLY_W1_PACKED_LEN,
+    MLDSA87_POLY_Z_PACKED_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87_TAU, MLDSA87_k, MLDSA87_l,
 };
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPublicKeyInternalTrait};
-use crate::{MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
-use bouncycastle_core_interface::errors::SignatureError;
-use bouncycastle_core_interface::key_material::KeyMaterialSized;
-use bouncycastle_core_interface::traits::{Hash, PHSignature, RNG, Signature, XOF, Algorithm, SecurityStrength};
+use crate::{
+    MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey,
+    MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyExpanded, MLDSAPrivateKeyTrait,
+    MLDSAPublicKeyExpanded, MLDSAPublicKeyTrait, Matrix,
+};
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::{
+    Algorithm, Hash, PHSignature, RNG, SecurityStrength, Signature, XOF,
+};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::{SHA256, SHA512};
+use core::marker::PhantomData;
 
 // Imports needed only for docs
 #[allow(unused_imports)]
@@ -101,17 +107,17 @@ const SHA512_OID: &[u8] = &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04
 /*** Constants ***/
 
 ///
-pub const Hash_ML_DSA_44_with_SHA256_NAME: &str = "HashML-DSA-44_with_SHA256";
+pub const HASH_ML_DSA_44_with_SHA256_NAME: &str = "HashML-DSA-44_with_SHA256";
 ///
-pub const Hash_ML_DSA_65_with_SHA256_NAME: &str = "HashML-DSA-65_with_SHA256";
+pub const HASH_ML_DSA_65_WITH_SHA256_NAME: &str = "HashML-DSA-65_with_SHA256";
 ///
-pub const Hash_ML_DSA_87_with_SHA256_NAME: &str = "HashML-DSA-87_with_SHA256";
+pub const HASH_ML_DSA_87_with_SHA256_NAME: &str = "HashML-DSA-87_with_SHA256";
 ///
-pub const Hash_ML_DSA_44_with_SHA512_NAME: &str = "HashML-DSA-44_with_SHA512";
+pub const HASH_ML_DSA_44_with_SHA512_NAME: &str = "HashML-DSA-44_with_SHA512";
 ///
-pub const Hash_ML_DSA_65_with_SHA512_NAME: &str = "HashML-DSA-65_with_SHA512";
+pub const HASH_ML_DSA_65_WITH_SHA512_NAME: &str = "HashML-DSA-65_with_SHA512";
 ///
-pub const Hash_ML_DSA_87_with_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
+pub const HASH_ML_DSA_87_WITH_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
 
 /*** Pub Types ***/
 
@@ -138,14 +144,14 @@ pub type HashMLDSA44_with_SHA256 = HashMLDSA<
     MLDSA44_C_TILDE,
     MLDSA44_POLY_Z_PACKED_LEN,
     MLDSA44_POLY_W1_PACKED_LEN,
-    MLDSA44_W1_PACKED_LEN,
-    MLDSA44_POLY_ETA_PACKED_LEN,
     MLDSA44_LAMBDA_over_4,
     MLDSA44_GAMMA1_MASK_LEN,
+    MLDSA44_GAMMA1_MINUS_BETA,
+    MLDSA44_GAMMA2_MINUS_BETA,
 >;
 
 impl Algorithm for HashMLDSA44_with_SHA256 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_44_with_SHA256_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -172,14 +178,14 @@ pub type HashMLDSA65_with_SHA256 = HashMLDSA<
     MLDSA65_C_TILDE,
     MLDSA65_POLY_Z_PACKED_LEN,
     MLDSA65_POLY_W1_PACKED_LEN,
-    MLDSA65_W1_PACKED_LEN,
-    MLDSA65_POLY_ETA_PACKED_LEN,
     MLDSA65_LAMBDA_over_4,
     MLDSA65_GAMMA1_MASK_LEN,
+    MLDSA65_GAMMA1_MINUS_BETA,
+    MLDSA65_GAMMA2_MINUS_BETA,
 >;
 
 impl Algorithm for HashMLDSA65_with_SHA256 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_65_with_SHA256_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_65_WITH_SHA256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -206,14 +212,14 @@ pub type HashMLDSA87_with_SHA256 = HashMLDSA<
     MLDSA87_C_TILDE,
     MLDSA87_POLY_Z_PACKED_LEN,
     MLDSA87_POLY_W1_PACKED_LEN,
-    MLDSA87_W1_PACKED_LEN,
-    MLDSA87_POLY_ETA_PACKED_LEN,
     MLDSA87_LAMBDA_over_4,
     MLDSA87_GAMMA1_MASK_LEN,
+    MLDSA87_GAMMA1_MINUS_BETA,
+    MLDSA87_GAMMA2_MINUS_BETA,
 >;
 
 impl Algorithm for HashMLDSA87_with_SHA256 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_87_with_SHA256_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_87_with_SHA256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -240,14 +246,14 @@ pub type HashMLDSA44_with_SHA512 = HashMLDSA<
     MLDSA44_C_TILDE,
     MLDSA44_POLY_Z_PACKED_LEN,
     MLDSA44_POLY_W1_PACKED_LEN,
-    MLDSA44_W1_PACKED_LEN,
-    MLDSA44_POLY_ETA_PACKED_LEN,
     MLDSA44_LAMBDA_over_4,
     MLDSA44_GAMMA1_MASK_LEN,
+    MLDSA44_GAMMA1_MINUS_BETA,
+    MLDSA44_GAMMA2_MINUS_BETA,
 >;
 
 impl Algorithm for HashMLDSA44_with_SHA512 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_44_with_SHA512_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -274,14 +280,14 @@ pub type HashMLDSA65_with_SHA512 = HashMLDSA<
     MLDSA65_C_TILDE,
     MLDSA65_POLY_Z_PACKED_LEN,
     MLDSA65_POLY_W1_PACKED_LEN,
-    MLDSA65_W1_PACKED_LEN,
-    MLDSA65_POLY_ETA_PACKED_LEN,
     MLDSA65_LAMBDA_over_4,
     MLDSA65_GAMMA1_MASK_LEN,
+    MLDSA65_GAMMA1_MINUS_BETA,
+    MLDSA65_GAMMA2_MINUS_BETA,
 >;
 
 impl Algorithm for HashMLDSA65_with_SHA512 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_65_with_SHA512_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_65_WITH_SHA512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
@@ -308,14 +314,14 @@ pub type HashMLDSA87_with_SHA512 = HashMLDSA<
     MLDSA87_C_TILDE,
     MLDSA87_POLY_Z_PACKED_LEN,
     MLDSA87_POLY_W1_PACKED_LEN,
-    MLDSA87_W1_PACKED_LEN,
-    MLDSA87_POLY_ETA_PACKED_LEN,
     MLDSA87_LAMBDA_over_4,
     MLDSA87_GAMMA1_MASK_LEN,
+    MLDSA87_GAMMA1_MINUS_BETA,
+    MLDSA87_GAMMA2_MINUS_BETA,
 >;
 
 impl Algorithm for HashMLDSA87_with_SHA512 {
-    const ALG_NAME: &'static str = Hash_ML_DSA_87_with_SHA512_NAME;
+    const ALG_NAME: &'static str = HASH_ML_DSA_87_WITH_SHA512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
@@ -332,7 +338,7 @@ pub struct HashMLDSA<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
@@ -347,20 +353,20 @@ pub struct HashMLDSA<
     const C_TILDE: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
-    const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
+    const GAMMA1_MINUS_BETA: i32,
+    const GAMMA2_MINUS_BETA: i32,
 > {
     _phantom: PhantomData<(PK, SK)>,
 
-    signer_rnd: Option<[u8; RND_LEN]>,
+    signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
     /// only used in streaming sign operations
     sk: Option<SK>,
 
     /// only used in streaming sign operations instead of sk
-    seed: Option<KeyMaterialSized<32>>,
+    seed: Option<KeyMaterial<32>>,
 
     /// only used in streaming verify operations
     pk: Option<PK>,
@@ -381,7 +387,7 @@ impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
@@ -396,10 +402,10 @@ impl<
     const C_TILDE: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
-    const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
+    const GAMMA1_MINUS_BETA: i32,
+    const GAMMA2_MINUS_BETA: i32,
 >
     HashMLDSA<
         HASH,
@@ -422,14 +428,14 @@ impl<
         C_TILDE,
         POLY_Z_PACKED_LEN,
         POLY_W1_PACKED_LEN,
-        W1_PACKED_LEN,
-        POLY_ETA_PACKED_LEN,
         LAMBDA_over_4,
         GAMMA1_MASK_LEN,
+        GAMMA1_MINUS_BETA,
+        GAMMA2_MINUS_BETA,
     >
 {
     /// Imports a secret key from a seed.
-    pub fn keygen_from_seed(seed: &KeyMaterialSized<32>) -> Result<(PK, SK), SignatureError> {
+    pub fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
         MLDSA::<
             PK_LEN,
             SK_LEN,
@@ -448,13 +454,56 @@ impl<
             C_TILDE,
             POLY_Z_PACKED_LEN,
             POLY_W1_PACKED_LEN,
-            W1_PACKED_LEN,
-            POLY_ETA_PACKED_LEN,
             LAMBDA_over_4,
             GAMMA1_MASK_LEN,
+            GAMMA1_MINUS_BETA,
+            GAMMA2_MINUS_BETA,
         >::keygen_internal(seed)
     }
+    /// Same as [Signature::sign], but signs from an [MLDSAPrivateKeyExpanded].
+    pub fn sign_with_expanded_key(
+        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+    ) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
+        Self::sign_with_expanded_key_out(sk, msg, ctx, &mut out)?;
 
+        Ok(out)
+    }
+    /// Same as [Signature::sign_out], but signs from an [MLDSAPrivateKeyExpanded].
+    pub fn sign_with_expanded_key_out(
+        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let mut ph_m = [0u8; PH_LEN];
+        _ = HASH::default().hash_out(msg, &mut ph_m);
+        Self::sign_ph_with_expanded_key_out(sk, &ph_m, ctx, output)
+    }
+    /// Same as [PHSignature::sign_ph], but signs from an [MLDSAPrivateKeyExpanded].
+    pub fn sign_ph_with_expanded_key(
+        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+    ) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
+        _ = Self::sign_ph_with_expanded_key_out(sk, ph, ctx, &mut out);
+
+        Ok(out)
+    }
+    /// Same as [PHSignature::sign_ph_out], but signs from an [MLDSAPrivateKeyExpanded].
+    pub fn sign_ph_with_expanded_key_out(
+        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
+        HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
+        Self::sign_ph_deterministic_out(&sk.sk, Some(&sk.A_hat), ctx, ph, rnd, output)
+    }
     /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
     /// (modified to take an externally-computed ph instead of M', thus combining Algorithm 4 with Algorithm 7).
     ///
@@ -470,15 +519,15 @@ impl<
     /// prevent accidental nonce reuse, this function moves `rnd`.
     pub fn sign_ph_deterministic(
         sk: &SK,
+        A_hat: Option<&Matrix<k, l>>,
         ctx: Option<&[u8]>,
         ph: &[u8; PH_LEN],
         rnd: [u8; 32],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
-        Self::sign_ph_deterministic_out(sk, ctx, ph, rnd, &mut out)?;
+        Self::sign_ph_deterministic_out(sk, A_hat, ctx, ph, rnd, &mut out)?;
         Ok(out)
     }
-
     /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
     /// (modified to take an externally-computed ph instead of M', thus combining Algorithm 4 with Algorithm 7).
     ///
@@ -493,6 +542,7 @@ impl<
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     pub fn sign_ph_deterministic_out(
         sk: &SK,
+        A_hat: Option<&Matrix<k, l>>,
         ctx: Option<&[u8]>,
         ph: &[u8; PH_LEN],
         rnd: [u8; 32],
@@ -508,20 +558,24 @@ impl<
 
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
-        let mut h = H::new();
-        h.absorb(sk.tr());
+        let mu = {
+            let mut h = H::new();
+            h.absorb(sk.tr());
 
-        // Algorithm 4
-        // 23: 𝑀' ← BytesToBits(IntegerToBytes(1, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥 ∥ OID ∥ PH𝑀)
-        // all done together
-        h.absorb(&[1u8]);
-        h.absorb(&[ctx.len() as u8]);
-        h.absorb(ctx);
-        h.absorb(oid);
-        h.absorb(ph);
-        let mut mu = [0u8; MU_LEN];
-        let bytes_written = h.squeeze_out(&mut mu);
-        debug_assert_eq!(bytes_written, MU_LEN);
+            // Algorithm 4
+            // 23: 𝑀' ← BytesToBits(IntegerToBytes(1, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥 ∥ OID ∥ PH𝑀)
+            // all done together
+            h.absorb(&[1u8]);
+            h.absorb(&[ctx.len() as u8]);
+            h.absorb(ctx);
+            h.absorb(oid);
+            h.absorb(ph);
+            let mut mu = [0u8; MLDSA_MU_LEN];
+            let bytes_written = h.squeeze_out(&mut mu);
+            debug_assert_eq!(bytes_written, MLDSA_MU_LEN);
+
+            mu
+        };
 
         // 24: 𝜎 ← ML-DSA.Sign_internal(𝑠𝑘, 𝑀', 𝑟𝑛𝑑)
         let bytes_written = MLDSA::<
@@ -542,11 +596,11 @@ impl<
             C_TILDE,
             POLY_Z_PACKED_LEN,
             POLY_W1_PACKED_LEN,
-            W1_PACKED_LEN,
-            POLY_ETA_PACKED_LEN,
             LAMBDA_over_4,
             GAMMA1_MASK_LEN,
-        >::sign_mu_deterministic_out(sk, &mu, rnd, output)?;
+            GAMMA1_MINUS_BETA,
+            GAMMA2_MINUS_BETA,
+        >::sign_mu_deterministic_out(sk, A_hat, &mu, rnd, output)?;
 
         Ok(bytes_written)
     }
@@ -576,26 +630,143 @@ impl<
 
     /// Alternative initialization of the streaming signer where you have your private key
     /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
-    pub fn sign_init_from_seed(seed: &KeyMaterialSized<32>, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    pub fn sign_init_from_seed(
+        seed: &KeyMaterial<32>,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(
-            Self {
-                _phantom: PhantomData,
-                signer_rnd: None,
-                sk: None,
-                seed: Some(seed.clone()),
-                pk: None,
-                hash: HASH::default(),
-                ctx,
-                ctx_len,
+        Ok(Self {
+            _phantom: PhantomData,
+            signer_rnd: None,
+            sk: None,
+            seed: Some(seed.clone()),
+            pk: None,
+            hash: HASH::default(),
+            ctx,
+            ctx_len,
+        })
+    }
+    /// Same as [Signature::verify], but verifies from an [MLDSAPublicKeyExpanded].
+    pub fn verify_with_expanded_key(
+        pk: &MLDSAPublicKeyExpanded<k, l, PK, PK_LEN>,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        let mut ph_m = [0u8; PH_LEN];
+        _ = HASH::default().hash_out(msg, &mut ph_m);
+
+        Self::verify_ph_internal(&pk.pk, Some(&pk.A_hat()), &ph_m, ctx, sig)
+    }
+
+    fn verify_ph_internal(
+        pk: &PK,
+        A_hat: Option<&Matrix<k, l>>,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        if sig.len() != SIG_LEN {
+            return Err(SignatureError::LengthError("Signature value is not the correct length."));
+        }
+        let sig_sized: &[u8; SIG_LEN] = sig[..SIG_LEN].try_into().unwrap();
+
+        let ctx = if ctx.is_some() { ctx.unwrap() } else { &[] };
+
+        // Algorithm 5
+        // 1: if |𝑐𝑡𝑥| > 255 then
+        if ctx.len() > 255 {
+            return Err(SignatureError::LengthError("ctx value is longer than 255 bytes"));
+        }
+
+        // Algorithm 7
+        // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
+        let mu = {
+            let mut h = H::new();
+            h.absorb(&pk.compute_tr());
+
+            // Algorithm 4
+            // 23: 𝑀 ← BytesToBits(IntegerToBytes(1, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥 ∥ OID ∥ PH𝑀)
+            // all done together
+            h.absorb(&[1u8]);
+            h.absorb(&[ctx.len() as u8]);
+            h.absorb(ctx);
+            h.absorb(oid);
+            h.absorb(ph);
+            let mut mu = [0u8; MLDSA_MU_LEN];
+            _ = h.squeeze_out(&mut mu);
+
+            mu
+        };
+
+        match A_hat {
+            Some(A_hat) => {
+                if MLDSA::<
+                    PK_LEN,
+                    SK_LEN,
+                    SIG_LEN,
+                    PK,
+                    SK,
+                    TAU,
+                    LAMBDA,
+                    GAMMA1,
+                    GAMMA2,
+                    k,
+                    l,
+                    ETA,
+                    BETA,
+                    OMEGA,
+                    C_TILDE,
+                    POLY_Z_PACKED_LEN,
+                    POLY_W1_PACKED_LEN,
+                    LAMBDA_over_4,
+                    GAMMA1_MASK_LEN,
+                    GAMMA1_MINUS_BETA,
+                    GAMMA2_MINUS_BETA,
+                >::verify_mu_internal(pk, A_hat, &mu, sig_sized)
+                {
+                    Ok(())
+                } else {
+                    Err(SignatureError::SignatureVerificationFailed)
+                }
             }
-        )
+            None => {
+                if MLDSA::<
+                    PK_LEN,
+                    SK_LEN,
+                    SIG_LEN,
+                    PK,
+                    SK,
+                    TAU,
+                    LAMBDA,
+                    GAMMA1,
+                    GAMMA2,
+                    k,
+                    l,
+                    ETA,
+                    BETA,
+                    OMEGA,
+                    C_TILDE,
+                    POLY_Z_PACKED_LEN,
+                    POLY_W1_PACKED_LEN,
+                    LAMBDA_over_4,
+                    GAMMA1_MASK_LEN,
+                    GAMMA1_MINUS_BETA,
+                    GAMMA2_MINUS_BETA,
+                >::verify_mu_internal(pk, &pk.A_hat(), &mu, sig_sized)
+                {
+                    Ok(())
+                } else {
+                    Err(SignatureError::SignatureVerificationFailed)
+                }
+            }
+        }
     }
 }
 
 impl<
     HASH: Hash + Default,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
@@ -615,11 +786,11 @@ impl<
     const C_TILDE: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
-    const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> Signature<PK, SK>
+    const GAMMA1_MINUS_BETA: i32,
+    const GAMMA2_MINUS_BETA: i32,
+> Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>
     for HashMLDSA<
         HASH,
         PH_LEN,
@@ -641,10 +812,10 @@ impl<
         C_TILDE,
         POLY_Z_PACKED_LEN,
         POLY_W1_PACKED_LEN,
-        W1_PACKED_LEN,
-        POLY_ETA_PACKED_LEN,
         LAMBDA_over_4,
         GAMMA1_MASK_LEN,
+        GAMMA1_MINUS_BETA,
+        GAMMA2_MINUS_BETA,
     >
 {
     /// Keygen, and keys in general, are interchangeable between MLDSA and HashMLDSA.
@@ -667,17 +838,17 @@ impl<
             C_TILDE,
             POLY_Z_PACKED_LEN,
             POLY_W1_PACKED_LEN,
-            W1_PACKED_LEN,
-            POLY_ETA_PACKED_LEN,
             LAMBDA_over_4,
             GAMMA1_MASK_LEN,
+            GAMMA1_MINUS_BETA,
+            GAMMA2_MINUS_BETA,
         >::keygen()
     }
 
     /// Algorithm 4 HashML-DSA.Sign(𝑠𝑘, 𝑀 , 𝑐𝑡𝑥, PH)
     /// Generate a “pre-hash” ML-DSA signature.
-    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; SIG_LEN];
+    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
 
         Ok(out)
@@ -687,7 +858,7 @@ impl<
         sk: &SK,
         msg: &[u8],
         ctx: Option<&[u8]>,
-        output: &mut [u8],
+        output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         let mut ph_m = [0u8; PH_LEN];
         _ = HASH::default().hash_out(msg, &mut ph_m);
@@ -696,59 +867,84 @@ impl<
 
     fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(
-            Self {
-                _phantom: PhantomData,
-                signer_rnd: None,
-                sk: Some(sk.clone()),
-                seed: None,
-                pk: None,
-                hash: HASH::default(),
-                ctx,
-                ctx_len,
-            }
-        )
+        Ok(Self {
+            _phantom: PhantomData,
+            signer_rnd: None,
+            sk: Some(sk.clone()),
+            seed: None,
+            pk: None,
+            hash: HASH::default(),
+            ctx,
+            ctx_len,
+        })
     }
 
     fn sign_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<Vec<u8>, SignatureError> {
+    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         self.sign_final_out(&mut out)?;
-        Ok(Vec::from(out))
+        Ok(out)
     }
 
-    fn sign_final_out(self, output: &mut [u8]) -> Result<usize, SignatureError> {
+    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
 
         if self.sk.is_none() && self.seed.is_none() {
-            return Err(SignatureError::GenericError("Somehow you managed to construct a streaming signer without a private key, impressive!"))
+            return Err(SignatureError::GenericError(
+                "Somehow you managed to construct a streaming signer without a private key, impressive!",
+            ));
         }
 
-        if output.len() < SIG_LEN { return Err(SignatureError::LengthError("Output buffer insufficient size to hold signature")) }
+        if output.len() < SIG_LEN {
+            return Err(SignatureError::LengthError(
+                "Output buffer insufficient size to hold signature",
+            ));
+        }
         let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
-                Self::sign_ph_out(&self.sk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), output_sized)
+                Self::sign_ph_out(
+                    &self.sk.unwrap(),
+                    &ph,
+                    Some(&self.ctx[..self.ctx_len]),
+                    output_sized,
+                )
             } else {
-                Self::sign_ph_deterministic_out(&self.sk.unwrap(), Some(&self.ctx[..self.ctx_len]), &ph, self.signer_rnd.unwrap(), output_sized)
+                Self::sign_ph_deterministic_out(
+                    &self.sk.unwrap(),
+                    None,
+                    Some(&self.ctx[..self.ctx_len]),
+                    &ph,
+                    self.signer_rnd.unwrap(),
+                    output_sized,
+                )
             }
         } else if self.seed.is_some() {
             let rnd = if self.signer_rnd.is_some() {
                 self.signer_rnd.unwrap()
             } else {
-                let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
+                let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
                 HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
                 rnd
             };
             // since at this point we need to fully reconstruct SK in order to compute tr for mu anyway
             // there is no savings to using the fancy MLDSA::sign_from_seed
             let (_pk, sk) = Self::keygen_from_seed(&self.seed.unwrap())?;
-            Self::sign_ph_deterministic_out(&sk, Some(&self.ctx[..self.ctx_len]), &ph, rnd, output_sized)
-        } else { unreachable!() }
+            Self::sign_ph_deterministic_out(
+                &sk,
+                None,
+                Some(&self.ctx[..self.ctx_len]),
+                &ph,
+                rnd,
+                output_sized,
+            )
+        } else {
+            unreachable!()
+        }
     }
 
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
@@ -760,18 +956,16 @@ impl<
 
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(
-            Self {
-                _phantom: Default::default(),
-                signer_rnd: None,
-                sk: None,
-                seed: None,
-                pk: Some(pk.clone()),
-                hash: HASH::default(),
-                ctx,
-                ctx_len,
-            }
-        )
+        Ok(Self {
+            _phantom: Default::default(),
+            signer_rnd: None,
+            sk: None,
+            seed: None,
+            pk: Some(pk.clone()),
+            hash: HASH::default(),
+            ctx,
+            ctx_len,
+        })
     }
 
     fn verify_update(&mut self, msg_chunk: &[u8]) {
@@ -779,12 +973,12 @@ impl<
     }
 
     fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+        assert!(
+            self.pk.is_some(),
+            "Somehow you managed to construct a streaming verifier without a public key, impressive!"
+        );
         let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
-
-        assert!(self.pk.is_some(), "Somehow you managed to construct a streaming verifier without a public key, impressive!");
-
-        if sig.len() != SIG_LEN { return Err(SignatureError::LengthError("Signature value is not the correct length.")) }
-        Self::verify_ph(&self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), &sig[..SIG_LEN])
+        Self::verify_ph(&self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), sig)
     }
 }
 
@@ -795,7 +989,7 @@ impl<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const TAU: i32,
@@ -810,11 +1004,11 @@ impl<
     const C_TILDE: usize,
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
-    const W1_PACKED_LEN: usize,
-    const POLY_ETA_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
     const GAMMA1_MASK_LEN: usize,
-> PHSignature<PK, SK, PH_LEN>
+    const GAMMA1_MINUS_BETA: i32,
+    const GAMMA2_MINUS_BETA: i32,
+> PHSignature<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>
     for HashMLDSA<
         HASH,
         PH_LEN,
@@ -836,15 +1030,18 @@ impl<
         C_TILDE,
         POLY_Z_PACKED_LEN,
         POLY_W1_PACKED_LEN,
-        W1_PACKED_LEN,
-        POLY_ETA_PACKED_LEN,
         LAMBDA_over_4,
         GAMMA1_MASK_LEN,
+        GAMMA1_MINUS_BETA,
+        GAMMA2_MINUS_BETA,
     >
 {
-
-    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<Vec<u8>, SignatureError> {
-        let mut out = vec![0u8; SIG_LEN];
+    fn sign_ph(
+        sk: &SK,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+    ) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, ph, ctx, &mut out)?;
 
         Ok(out)
@@ -858,18 +1055,11 @@ impl<
         sk: &SK,
         ph: &[u8; PH_LEN],
         ctx: Option<&[u8]>,
-        output: &mut [u8],
+        output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
-        if output.len() < SIG_LEN {
-            return Err(SignatureError::LengthError(
-                "Output buffer insufficient size to hold signature",
-            ));
-        }
-        let output_sized: &mut [u8; SIG_LEN] = output[..SIG_LEN].as_mut().try_into().unwrap();
-
-        let mut rnd: [u8; RND_LEN] = [0u8; RND_LEN];
+        let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
-        Self::sign_ph_deterministic_out(sk, ctx, ph, rnd, output_sized)
+        Self::sign_ph_deterministic_out(sk, None, ctx, ph, rnd, output)
     }
 
     fn verify_ph(
@@ -878,61 +1068,6 @@ impl<
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        if sig.len() != SIG_LEN {
-            return Err(SignatureError::LengthError("Signature value is not the correct length."));
-        }
-
-        let ctx = if ctx.is_some() { ctx.unwrap() } else { &[] };
-
-        // Algorithm 5
-        // 1: if |𝑐𝑡𝑥| > 255 then
-        if ctx.len() > 255 {
-            return Err(SignatureError::LengthError("ctx value is longer than 255 bytes"));
-        }
-
-        // Algorithm 7
-        // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
-        let mut h = H::new();
-        h.absorb(&pk.compute_tr());
-
-        // Algorithm 4
-        // 23: 𝑀 ← BytesToBits(IntegerToBytes(1, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥 ∥ OID ∥ PH𝑀)
-        // all done together
-        h.absorb(&[1u8]);
-        h.absorb(&[ctx.len() as u8]);
-        h.absorb(ctx);
-        h.absorb(oid);
-        h.absorb(ph);
-        let mut mu = [0u8; MU_LEN];
-        _ = h.squeeze_out(&mut mu);
-
-        if MLDSA::<
-            PK_LEN,
-            SK_LEN,
-            SIG_LEN,
-            PK,
-            SK,
-            TAU,
-            LAMBDA,
-            GAMMA1,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            BETA,
-            OMEGA,
-            C_TILDE,
-            POLY_Z_PACKED_LEN,
-            POLY_W1_PACKED_LEN,
-            W1_PACKED_LEN,
-            POLY_ETA_PACKED_LEN,
-            LAMBDA_over_4,
-            GAMMA1_MASK_LEN,
-        >::verify_mu_internal(pk, &mu, &sig[..SIG_LEN].try_into().unwrap())
-        {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
+        Self::verify_ph_internal(pk, None, ph, ctx, sig)
     }
 }

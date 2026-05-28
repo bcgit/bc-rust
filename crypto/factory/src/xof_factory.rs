@@ -5,46 +5,45 @@
 //!
 //! Example usage:
 //! ```
-//! use core_interface::traits::XOF;
-//! use factory::AlgorithmFactory;
-//! use factory::xof_factory::XOFFactory;
+//! use bouncycastle_core::traits::XOF;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_factory::xof_factory::XOFFactory;
+//! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! let mut h = XOFFactory::new(sha3::SHAKE128_NAME).unwrap();
-//! h.absorb(data).unwrap();
-//! let output: Vec<u8> = h.squeeze(16).unwrap();
+//! h.absorb(data);
+//! let output: Vec<u8> = h.squeeze(16);
 //! ```
 //! You can equivalently invoke this by string instead of using the constant:
 //!
 //! ```
-//! use factory::AlgorithmFactory;
-//! use factory::xof_factory::XOFFactory;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_factory::xof_factory::XOFFactory;
 //!
-//! let mut h = XOFFactory::new("SHAKE128").unwrap();
+//! let mut h = XOFFactory::new("SHAKE128");
 //! ```
 //!
 //! Or, if you don't particularly care which algorithm you get, you can use the configured default:
 //!
 //! ```
-//! use factory::AlgorithmFactory;
-//! use factory::xof_factory::XOFFactory;
+//! use bouncycastle_factory::AlgorithmFactory;
+//! use bouncycastle_factory::xof_factory::XOFFactory;
 //!
 //! let mut h = XOFFactory::default();
 //! ```
 
-use bouncycastle_sha3 as sha3;
-use bouncycastle_core_interface::errors::HashError;
-use bouncycastle_core_interface::traits::{SecurityStrength, KDF, XOF};
-use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 use crate::{AlgorithmFactory, FactoryError};
-
+use bouncycastle_core::errors::HashError;
+use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
+use bouncycastle_sha3 as sha3;
+use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 
 /*** Defaults ***/
 pub const DEFAULT_XOF_NAME: &str = SHAKE128_NAME;
 pub const DEFAULT_128BIT_XOF_NAME: &str = SHAKE128_NAME;
 pub const DEFAULT_256BIT_XOF_NAME: &str = SHAKE256_NAME;
-
 
 // All members must impl XOF.
 pub enum XOFFactory {
@@ -63,13 +62,18 @@ impl AlgorithmFactory for XOFFactory {
         Self::new(DEFAULT_128BIT_XOF_NAME).unwrap()
     }
 
-    fn default_256_bit() -> Self { Self::new(DEFAULT_256BIT_XOF_NAME).unwrap() }
+    fn default_256_bit() -> Self {
+        Self::new(DEFAULT_256BIT_XOF_NAME).unwrap()
+    }
 
     fn new(alg_name: &str) -> Result<Self, FactoryError> {
         match alg_name {
             SHAKE128_NAME => Ok(Self::SHAKE128(sha3::SHAKE128::new())),
             SHAKE256_NAME => Ok(Self::SHAKE256(sha3::SHAKE256::new())),
-            _ => Err(FactoryError::UnsupportedAlgorithm(format!("The algorithm: \"{}\" is not a known XOF", alg_name))),
+            _ => Err(FactoryError::UnsupportedAlgorithm(format!(
+                "The algorithm: \"{}\" is not a known XOF",
+                alg_name
+            ))),
         }
     }
 }
@@ -95,7 +99,11 @@ impl XOF for XOFFactory {
         }
     }
 
-    fn absorb_last_partial_byte(&mut self, partial_byte: u8, num_partial_bits: usize) -> Result<(), HashError> {
+    fn absorb_last_partial_byte(
+        &mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+    ) -> Result<(), HashError> {
         match self {
             Self::SHAKE128(h) => h.absorb_last_partial_byte(partial_byte, num_partial_bits),
             Self::SHAKE256(h) => h.absorb_last_partial_byte(partial_byte, num_partial_bits),
@@ -123,7 +131,11 @@ impl XOF for XOFFactory {
         }
     }
 
-    fn squeeze_partial_byte_final_out(self, num_bits: usize, output: &mut u8) -> Result<(), HashError> {
+    fn squeeze_partial_byte_final_out(
+        self,
+        num_bits: usize,
+        output: &mut u8,
+    ) -> Result<(), HashError> {
         match self {
             Self::SHAKE128(h) => h.squeeze_partial_byte_final_out(num_bits, output),
             Self::SHAKE256(h) => h.squeeze_partial_byte_final_out(num_bits, output),
