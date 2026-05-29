@@ -620,8 +620,9 @@ mod test_key_material {
         assert_eq!(zeroized_key.key_len(), 8);
         zeroized_key.concatenate(&key2).unwrap();
         assert_eq!(zeroized_key.key_len(), 24);
-        // should take max(Zeroized, BytesLowEntropy)
-        assert_eq!(zeroized_key.key_type(), KeyType::BytesLowEntropy);
+        // The result takes the lesser (min) of the two key types: min(Zeroized, BytesLowEntropy).
+        // Folding in zeroized (uninitialized) bytes taints the whole buffer as Zeroized.
+        assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
         assert_eq!(zeroized_key.security_strength(), SecurityStrength::None);
 
         // This should be symmetric, so test it in the other direction too.
@@ -634,8 +635,8 @@ mod test_key_material {
         let mut key2 = KeyMaterial256::from_bytes(&[1u8; 16]).unwrap();
         key2.concatenate(&zeroized_key).unwrap();
         assert_eq!(key2.key_len(), 24);
-        // should take max(Zeroized, BytesLowEntropy)
-        assert_eq!(key2.key_type(), KeyType::BytesLowEntropy);
+        // The result takes the lesser (min) of the two key types: min(BytesLowEntropy, Zeroized).
+        assert_eq!(key2.key_type(), KeyType::Zeroized);
         assert_eq!(key2.security_strength(), SecurityStrength::None);
 
         // now try it with keys of different key types
@@ -644,10 +645,11 @@ mod test_key_material {
         let full_entropy_key =
             KeyMaterial256::from_bytes_as_type(&[2u8; 16], KeyType::BytesFullEntropy).unwrap();
         low_entropy_key.concatenate(&full_entropy_key).unwrap();
-        // should take max(BytesLowEntropy, BytesFullEntropy)
-        assert_eq!(low_entropy_key.key_type(), KeyType::BytesFullEntropy);
-        // should take max(None, _128Bit)
-        assert_eq!(low_entropy_key.security_strength(), SecurityStrength::_128bit);
+        // Conservative model: concatenating a full-entropy key with a low-entropy key yields a
+        // low-entropy key. min(BytesLowEntropy, BytesFullEntropy) == BytesLowEntropy.
+        assert_eq!(low_entropy_key.key_type(), KeyType::BytesLowEntropy);
+        // min(None, _128bit) == None (and BytesLowEntropy keys must have strength None anyway).
+        assert_eq!(low_entropy_key.security_strength(), SecurityStrength::None);
 
         // and in the other direction too
         let low_entropy_key =
@@ -655,22 +657,22 @@ mod test_key_material {
         let mut full_entropy_key =
             KeyMaterial256::from_bytes_as_type(&[2u8; 16], KeyType::BytesFullEntropy).unwrap();
         full_entropy_key.concatenate(&low_entropy_key).unwrap();
-        // should take max(BytesLowEntropy, BytesFullEntropy)
-        assert_eq!(full_entropy_key.key_type(), KeyType::BytesFullEntropy);
-        // should take max(None, _128Bit)
-        assert_eq!(full_entropy_key.security_strength(), SecurityStrength::_128bit);
+        // min(BytesFullEntropy, BytesLowEntropy) == BytesLowEntropy.
+        assert_eq!(full_entropy_key.key_type(), KeyType::BytesLowEntropy);
+        // min(_128bit, None) == None.
+        assert_eq!(full_entropy_key.security_strength(), SecurityStrength::None);
 
         // now with full entropy keys at different security levels
-        let mut low_entropy_key =
+        let mut full_entropy_key_112 =
             KeyMaterial512::from_bytes_as_type(&[1u8; 16], KeyType::BytesFullEntropy).unwrap();
         // Now we're gonna explictly tag it at the 112bit security level -- does not require allow_hazardous_operations().
-        low_entropy_key.set_security_strength(SecurityStrength::_112bit).unwrap();
+        full_entropy_key_112.set_security_strength(SecurityStrength::_112bit).unwrap();
         let full_entropy_key =
             KeyMaterial256::from_bytes_as_type(&[2u8; 32], KeyType::BytesFullEntropy).unwrap();
-        low_entropy_key.concatenate(&full_entropy_key).unwrap();
-        assert_eq!(low_entropy_key.key_type(), KeyType::BytesFullEntropy);
-        // should take max(_112Bit, _256Bit)
-        assert_eq!(low_entropy_key.security_strength(), SecurityStrength::_256bit);
+        full_entropy_key_112.concatenate(&full_entropy_key).unwrap();
+        assert_eq!(full_entropy_key_112.key_type(), KeyType::BytesFullEntropy);
+        // The combined key keeps the lower of the two security strengths: min(_112bit, _256bit).
+        assert_eq!(full_entropy_key_112.security_strength(), SecurityStrength::_112bit);
     }
 
     #[test]
