@@ -17,6 +17,23 @@ pub trait Algorithm {
     const MAX_SECURITY_STRENGTH: SecurityStrength;
 }
 
+pub trait AeadCipher {
+    fn process_aad_byte(&mut self, input: u8);
+    fn process_aad_bytes(&mut self, in_bytes: &[u8]);
+
+    fn process_byte(&mut self, input: u8, out_bytes: &mut [u8]) -> usize;
+    fn process_bytes(&mut self, in_bytes: &[u8], out_bytes: &mut [u8]) -> usize;
+
+    // [28MAY2026 | 18:23 MST] Changed to use self 
+    fn do_final(self, out_bytes: &mut [u8]);
+
+    // [28MAY2026 | 18:20 MST] Might want to remove as tag rexposure encourages misuse
+    fn get_mac(&self) -> Vec<u8>;
+
+    fn get_update_output_size(&self, len: usize) -> usize;
+    fn get_output_size(&self, len: usize) -> usize;
+}
+
 pub trait Hash : Default {
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
