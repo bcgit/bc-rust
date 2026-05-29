@@ -2,9 +2,7 @@
 #![allow(non_snake_case)]
 
 use arrayref::{array_mut_ref, array_ref};
-use core_interface::traits::{AeadCipher, Algorithm, SecurityStrength};
-use utils::parameters::AeadParameters;
-use utils::CipherParameters;
+use bouncycastle_core::traits::{AeadCipher, Algorithm, SecurityStrength};
 
 const CRYPTO_KEYBYTES: usize = 16;
 const CRYPTO_ABYTES: usize = 16;
@@ -26,15 +24,14 @@ enum State {
     DecFinal,
 }
 
-/// An implementation of the Ascon‑AEAD128 algorithm (as updated by NIST)
-/// with careful attention to constant–time and side–channel best practices.
+/// An implementation of the Ascon-AEAD128 algorithm (as updated by NIST).
 pub struct AsconAead128 {
     // Secret key and nonce (both 128 bits)
     k0: u64,
     k1: u64,
     n0: u64,
     n1: u64,
-    // 320–bit internal state (five 64–bit words)
+    // 320-bit internal state (five 64-bit words)
     s0: u64,
     s1: u64,
     s2: u64,
@@ -44,11 +41,9 @@ pub struct AsconAead128 {
     // For decryption the buffer size is RATE + CRYPTO_ABYTES = 32 bytes.
     buf: [u8; BUF_SIZE_DECRYPT],
     buf_pos: usize,
-    // The associated data provided at initialization.
-    initial_ad: Option<Vec<u8>>,
     // The computed MAC (after encryption finalization).
     mac: Option<[u8; CRYPTO_ABYTES]>,
-    // State machine for processing (initial AAD, data‐processing, finalization, etc.).
+    // State machine for processing.
     state: State,
     // true for encryption mode; false for decryption.
     for_encryption: bool,
@@ -56,34 +51,10 @@ pub struct AsconAead128 {
 }
 
 impl AsconAead128 {
-    /// Create an uninitialized instance for use with the `AeadCipher` trait.
-    /// Call `AeadCipher::init()` before use.
-    #[allow(clippy::new_without_default)]
-    pub fn new_uninit() -> Self {
-        Self {
-            k0: 0,
-            k1: 0,
-            n0: 0,
-            n1: 0,
-            s0: 0,
-            s1: 0,
-            s2: 0,
-            s3: 0,
-            s4: 0,
-            buf: [0u8; BUF_SIZE_DECRYPT],
-            buf_pos: 0,
-            initial_ad: None,
-            mac: None,
-            state: State::Uninitialized,
-            for_encryption: false,
-            finished: false,
-        }
-    }
-
     /// Create a new instance.
     /// * `key` must be exactly 16 bytes.
     /// * `nonce` must be exactly 16 bytes.
-    /// * `ad` is an optional associated–data slice.
+    /// * `ad` is an optional associated-data slice (processed immediately).
     /// * `for_encryption` is true for encryption, false for decryption.
     pub fn new(key: &[u8], nonce: &[u8], ad: Option<&[u8]>, for_encryption: bool) -> Self {
         assert_eq!(key.len(), CRYPTO_KEYBYTES, "Key must be 16 bytes");
@@ -105,15 +76,16 @@ impl AsconAead128 {
             s4: 0,
             buf: [0u8; BUF_SIZE_DECRYPT],
             buf_pos: 0,
-            initial_ad: ad.map(|a| a.to_vec()),
             mac: None,
             state,
             for_encryption,
             finished: false,
         };
         aead.init_state();
-        if let Some(ad_bytes) = aead.initial_ad.clone() {
-            aead.process_aad_bytes(&ad_bytes);
+        if let Some(ad_bytes) = ad {
+            if !ad_bytes.is_empty() {
+                aead.process_aad_bytes(ad_bytes);
+            }
         }
         aead
     }
@@ -160,7 +132,7 @@ impl AsconAead128 {
         self.s4 = t4 ^ t4.rotate_right(7) ^ t4.rotate_right(41);
     }
 
-    /// Returns a 64–bit value with a single “1” at bit position (i*8).
+    /// Returns a 64-bit value with a single "1" at bit position (i*8).
     fn pad(i: usize) -> u64 {
         debug_assert!(i < 8);
         0x01u64 << (i * 8)
@@ -181,7 +153,6 @@ impl AsconAead128 {
             State::DecAad | State::EncAad => {
                 debug_assert!(self.buf_pos < RATE);
 
-                // Pad buffer instead of XOR with Pad(m_bufPos)
                 self.buf[self.buf_pos] = 0x01;
 
                 let block0 = u64::from_le_bytes(*array_ref![self.buf, 0, 8]);
@@ -232,7 +203,6 @@ impl AsconAead128 {
 
     /// Process associated data (AAD) bytes.
     pub fn process_aad_bytes(&mut self, input: &[u8]) {
-        // Don't enter AAD state until we actually get input
         if input.is_empty() {
             return;
         }
@@ -253,11 +223,9 @@ impl AsconAead128 {
             input = &input[available..];
 
             {
-                // TODO Break up our state so we don't need this copy to avoid borrowing conflict on self
                 let tmp = *array_ref![self.buf, 0, RATE];
                 self.process_buffer_aad(&tmp);
             }
-            // self.buf_pos = 0;
         }
 
         while input.len() >= RATE {
@@ -306,7 +274,6 @@ impl AsconAead128 {
         self.p8();
     }
 
-    // Helper for final encryption when processing a block of less than 8 bytes.
     fn process_final_encrypt_64(input: &[u8], output: &mut [u8], s: &mut u64) {
         debug_assert!((1..8).contains(&input.len()));
         debug_assert!(output.len() >= input.len());
@@ -342,7 +309,6 @@ impl AsconAead128 {
         self.finish_data(State::EncFinal);
     }
 
-    // Helper for final decryption when processing a block of less than 8 bytes.
     fn process_final_decrypt_64(input: &[u8], output: &mut [u8], s: &mut u64) {
         debug_assert!((1..8).contains(&input.len()));
         debug_assert!(output.len() >= input.len());
@@ -393,8 +359,6 @@ impl AsconAead128 {
             self.check_data();
         }
 
-        // TODO Check sufficient space in 'output'?
-
         let mut in_off = 0;
         let mut len = plaintext.len();
         let mut out_off = 0;
@@ -409,7 +373,6 @@ impl AsconAead128 {
             in_off += available;
             len -= available;
             {
-                // TODO Break up our state so we don't need this copy to avoid borrowing conflict on self
                 let tmp = *array_ref![self.buf, 0, RATE];
                 self.process_buffer_encrypt(&tmp, &mut output[out_off..out_off + RATE]);
             }
@@ -446,7 +409,6 @@ impl AsconAead128 {
         }
         let in_len = self.buf_pos;
         {
-            // TODO Break up our state so we don't need this copy to avoid borrowing conflict on self
             let tmp = *array_ref![self.buf, 0, RATE];
             self.process_final_encrypt(&tmp[..in_len], output);
         }
@@ -475,8 +437,6 @@ impl AsconAead128 {
             self.check_data();
         }
 
-        // TODO Check sufficient space in 'output'?
-
         let mut len = ciphertext.len();
         let mut out_off = 0;
         let available = BUF_SIZE_DECRYPT - self.buf_pos;
@@ -486,11 +446,9 @@ impl AsconAead128 {
             return 0;
         }
 
-        // NOTE: Need 'while' here if RATE < CRYPTO_ABYTES (as in some legacy parameter sets)
         debug_assert!(RATE >= CRYPTO_ABYTES);
         if self.buf_pos >= RATE {
             {
-                // TODO Break up our state so we don't need this copy to avoid borrowing conflict on self
                 let tmp = *array_ref![self.buf, 0, RATE];
                 self.process_buffer_decrypt(&tmp, &mut output[..RATE]);
             }
@@ -513,12 +471,10 @@ impl AsconAead128 {
         let mut in_off = fill;
         len -= fill;
         {
-            // TODO Break up our state so we don't need this copy to avoid borrowing conflict on self
             let tmp = *array_ref![self.buf, 0, RATE];
             self.process_buffer_decrypt(&tmp, &mut output[out_off..out_off + RATE]);
         }
         out_off += RATE;
-        // self.buf_pos = 0;
 
         while len >= BUF_SIZE_DECRYPT {
             self.process_buffer_decrypt(
@@ -550,7 +506,6 @@ impl AsconAead128 {
 
         let data_len = self.buf_pos - CRYPTO_ABYTES;
         {
-            // TODO Break up our state so we don't need this copy to avoid borrowing conflict on self
             let tmp = *array_ref![self.buf, 0, RATE];
             self.process_final_decrypt(&tmp[..data_len], output);
         }
@@ -568,23 +523,6 @@ impl AsconAead128 {
     pub fn get_tag(&self) -> Option<[u8; CRYPTO_ABYTES]> {
         self.mac
     }
-
-    /// Reset the instance. (Encryption re–use is not permitted.)
-    pub fn reset(&mut self) {
-        if self.for_encryption {
-            self.state = State::EncFinal;
-            return;
-        } else {
-            self.state = State::DecInit;
-        }
-        self.buf = [0u8; BUF_SIZE_DECRYPT];
-        self.buf_pos = 0;
-        self.mac = None;
-        self.init_state();
-        if let Some(ad) = self.initial_ad.clone() {
-            self.process_aad_bytes(&ad);
-        }
-    }
 }
 
 impl Algorithm for AsconAead128 {
@@ -593,38 +531,6 @@ impl Algorithm for AsconAead128 {
 }
 
 impl AeadCipher for AsconAead128 {
-    fn init(&mut self, for_encryption: bool, parameters: Box<dyn CipherParameters>) {
-        let params = parameters
-            .as_any()
-            .downcast_ref::<AeadParameters>()
-            .expect("AsconAead128::init requires AeadParameters");
-
-        let key = params.get_key().get_key();
-        let nonce = params.get_nonce();
-
-        assert_eq!(key.len(), CRYPTO_KEYBYTES, "Key must be 16 bytes");
-        assert_eq!(nonce.len(), CRYPTO_KEYBYTES, "Nonce must be 16 bytes");
-
-        self.k0 = u64::from_le_bytes(*array_ref![key, 0, 8]);
-        self.k1 = u64::from_le_bytes(*array_ref![key, 8, 8]);
-        self.n0 = u64::from_le_bytes(*array_ref![nonce, 0, 8]);
-        self.n1 = u64::from_le_bytes(*array_ref![nonce, 8, 8]);
-        self.for_encryption = for_encryption;
-        self.state = if for_encryption { State::EncInit } else { State::DecInit };
-        self.buf = [0u8; BUF_SIZE_DECRYPT];
-        self.buf_pos = 0;
-        self.mac = None;
-        self.finished = false;
-
-        let ad = params.get_associated_text();
-        self.initial_ad = ad.clone();
-
-        self.init_state();
-        if let Some(ad_bytes) = ad {
-            self.process_aad_bytes(&ad_bytes);
-        }
-    }
-
     fn process_aad_byte(&mut self, input: u8) {
         self.process_aad_bytes(&[input]);
     }
@@ -649,7 +555,7 @@ impl AeadCipher for AsconAead128 {
         }
     }
 
-    fn do_final(&mut self, out_bytes: &mut [u8]) {
+    fn do_final(mut self, out_bytes: &mut [u8]) {
         if self.for_encryption {
             self.encrypt_finalize(out_bytes);
         } else {
@@ -692,9 +598,5 @@ impl AeadCipher for AsconAead128 {
                 (self.buf_pos + len).saturating_sub(CRYPTO_ABYTES)
             }
         }
-    }
-
-    fn reset(&mut self) {
-        self.reset();
     }
 }

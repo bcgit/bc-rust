@@ -1,18 +1,6 @@
 use arrayref::{array_mut_ref, array_ref};
-use core_interface::errors::HashError;
-use core_interface::traits::{Algorithm, SecurityStrength, XOF};
-
-// Ensuring constant-time by avoiding secret-dependent branches or indexing should not be an issue
-// for this construction, as we are dealing with hashing/XOF mode without secret keys. We just need
-// to ensure standard best practices and avoid secret-dependent data flow. The code below follows
-// the logic from the provided C# reference as closely as possible, using Rust idioms.
-//
-// The permutation and transformations are from the Ascon specification. All operations that might
-// cause overflow are performed using wrapping arithmetic if needed, and no secret values are used
-// in conditions or loops. Input length and buffer positions are public information, so using loops
-// on them is acceptable.
-//
-// Endianness has been updated to little endian as required by the specification update.
+use bouncycastle_core::errors::HashError;
+use bouncycastle_core::traits::{Algorithm, SecurityStrength, XOF};
 
 pub struct AsconCXof128 {
     s0: u64,
@@ -21,7 +9,7 @@ pub struct AsconCXof128 {
     s3: u64,
     s4: u64,
 
-    // Cached initial state
+    // Cached initial state (post-customization) for reset
     z0: u64,
     z1: u64,
     z2: u64,
@@ -35,7 +23,6 @@ pub struct AsconCXof128 {
 
 impl AsconCXof128 {
     /// Create a new Ascon-CXOF128 instance with no customization string.
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self::with_customization(&[])
     }
@@ -63,18 +50,7 @@ impl AsconCXof128 {
             squeezing: false,
         };
 
-        // st.s0 = 0x0000080000CC0004;
-        // st.s1 = 0;
-        // st.s2 = 0;
-        // st.s3 = 0;
-        // st.s4 = 0;
-        // st.p12();
-
         if z.is_empty() {
-            // st.p12();
-            // st.pad_and_absorb();
-            // st.p12();
-
             st.s0 = 0x500CCCC894E3C9E8;
             st.s1 = 0x5BED06F28F71248D;
             st.s2 = 0x3B03A0F930AFD512;
@@ -138,7 +114,6 @@ impl AsconCXof128 {
             self.s0 ^= u64::from_le_bytes(self.buf);
             self.p12();
             input = &input[available..];
-            // self.buf_pos = 0;
         }
 
         while input.len() >= 8 {
@@ -208,7 +183,6 @@ impl AsconCXof128 {
         n
     }
 
-    // TODO Simplify
     fn pad_and_absorb(&mut self) {
         let final_bits = (self.buf_pos << 3) as u32;
         let mask: u64 = if final_bits == 0 {
@@ -227,7 +201,7 @@ impl AsconCXof128 {
         }
 
         self.s0 ^= block_val & mask;
-        self.s0 ^= 0x01u64 << final_bits; // padding bit
+        self.s0 ^= 0x01u64 << final_bits;
     }
 
     fn p12(&mut self) {
@@ -263,6 +237,12 @@ impl AsconCXof128 {
     }
 }
 
+impl Default for AsconCXof128 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Algorithm for AsconCXof128 {
     const ALG_NAME: &'static str = "Ascon-CXOF128";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
@@ -281,9 +261,8 @@ impl XOF for AsconCXof128 {
         self.output(output)
     }
 
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
+    fn absorb(&mut self, data: &[u8]) {
         self.update(data);
-        Ok(())
     }
 
     fn absorb_last_partial_byte(
@@ -294,14 +273,14 @@ impl XOF for AsconCXof128 {
         Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte input"))
     }
 
-    fn squeeze(&mut self, num_bytes: usize) -> Result<Vec<u8>, HashError> {
+    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
         self.output(&mut out);
-        Ok(out)
+        out
     }
 
-    fn squeeze_out(&mut self, output: &mut [u8]) -> Result<usize, HashError> {
-        Ok(self.output(output))
+    fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
+        self.output(output)
     }
 
     fn squeeze_partial_byte_final(self, _num_bits: usize) -> Result<u8, HashError> {

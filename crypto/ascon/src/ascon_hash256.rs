@@ -2,9 +2,9 @@
 
 //! Ascon-Hash256 implementation.
 
-use core_interface::errors::HashError;
-use core_interface::traits::{Algorithm, Hash, SecurityStrength};
-use utils::pack;
+use arrayref::{array_ref};
+use bouncycastle_core::errors::HashError;
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength};
 
 #[derive(Clone)]
 pub struct AsconHash256 {
@@ -19,7 +19,6 @@ pub struct AsconHash256 {
 
 impl AsconHash256 {
     /// Creates a new AsconHash256 instance.
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut hasher = Self { buf: [0u8; 8], buf_pos: 0, s0: 0, s1: 0, s2: 0, s3: 0, s4: 0 };
         hasher.reset();
@@ -36,8 +35,7 @@ impl AsconHash256 {
         self.buf[self.buf_pos] = input;
         self.buf_pos += 1;
         if self.buf_pos == 8 {
-            let x = pack::little_endian_to_u64(&self.buf);
-            self.s0 ^= x;
+            self.s0 ^= u64::from_le_bytes(self.buf);
             self.p12();
             self.buf_pos = 0;
         }
@@ -60,8 +58,7 @@ impl AsconHash256 {
                 return;
             } else {
                 self.buf[self.buf_pos..].copy_from_slice(&input[..available]);
-                let x = pack::little_endian_to_u64(&self.buf);
-                self.s0 ^= x;
+                self.s0 ^= u64::from_le_bytes(self.buf);
                 self.p12();
                 self.buf_pos = 0;
                 in_pos += available;
@@ -69,8 +66,7 @@ impl AsconHash256 {
         }
 
         while input.len() - in_pos >= RATE {
-            let x = pack::little_endian_to_u64(&input[in_pos..in_pos + RATE]);
-            self.s0 ^= x;
+            self.s0 ^= u64::from_le_bytes(*array_ref![input, in_pos, 8]);
             self.p12();
             in_pos += RATE;
         }
@@ -86,11 +82,11 @@ impl AsconHash256 {
 
         self.pad_and_absorb();
 
-        pack::u64_to_little_endian(self.s0, &mut output[0..8]);
+        output[0..8].copy_from_slice(&self.s0.to_le_bytes());
 
         for i in 1..4 {
             self.p12();
-            pack::u64_to_little_endian(self.s0, &mut output[i * 8..(i + 1) * 8]);
+            output[i * 8..(i + 1) * 8].copy_from_slice(&self.s0.to_le_bytes());
         }
 
         self.reset();
@@ -110,7 +106,7 @@ impl AsconHash256 {
 
     fn pad_and_absorb(&mut self) {
         let final_bits = self.buf_pos << 3;
-        let x = pack::little_endian_to_u64(&self.buf);
+        let x = u64::from_le_bytes(self.buf);
         let mask =
             if final_bits == 0 { 0u64 } else { 0x00FF_FFFF_FFFF_FFFF_u64 >> (56 - final_bits) };
         self.s0 ^= x & mask;
@@ -150,6 +146,12 @@ impl AsconHash256 {
     }
 }
 
+impl Default for AsconHash256 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Algorithm for AsconHash256 {
     const ALG_NAME: &'static str = "Ascon-Hash256";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
@@ -171,26 +173,25 @@ impl Hash for AsconHash256 {
         out
     }
 
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> Result<usize, HashError> {
+    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.update_bytes(data);
         self.finalize(output);
-        Ok(32)
+        32
     }
 
-    fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> {
+    fn do_update(&mut self, data: &[u8]) {
         self.update_bytes(data);
-        Ok(())
     }
 
-    fn do_final(mut self) -> Result<Vec<u8>, HashError> {
+    fn do_final(mut self) -> Vec<u8> {
         let mut out = vec![0u8; 32];
         self.finalize(&mut out);
-        Ok(out)
+        out
     }
 
-    fn do_final_out(mut self, output: &mut [u8]) -> Result<usize, HashError> {
+    fn do_final_out(mut self, output: &mut [u8]) -> usize {
         self.finalize(output);
-        Ok(32)
+        32
     }
 
     fn do_final_partial_bits(

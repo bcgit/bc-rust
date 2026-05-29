@@ -2,6 +2,7 @@ use ascon::ascon_aead128::AsconAead128;
 use ascon::ascon_cxof128::AsconCXof128;
 use ascon::ascon_hash256::AsconHash256;
 use ascon::ascon_xof128::AsconXof128;
+use bouncycastle_hex as hex;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -41,7 +42,7 @@ fn decode_hex(label: &str, value: &str) -> TestResult<Vec<u8>> {
         Ok(Vec::new())
     } else {
         hex::decode(clean)
-            .map_err(|e| format!("invalid hex for {label}: {clean:?}: {e}").into())
+            .map_err(|e| format!("invalid hex for {label}: {clean:?}: {e:?}").into())
     }
 }
 
@@ -132,7 +133,7 @@ fn test_hardcoded_ascon_hash256_vector() -> TestResult {
 
     println!(
         "[hardcoded Ascon-Hash256]\n  Msg:      {msg_hex}\n  Expected: {expected_hex}\n  Got:      {}\n  Result:   {}",
-        hex::encode_upper(got),
+        hex::encode(got).to_uppercase(),
         if got.as_slice() == expected.as_slice() { "PASS" } else { "FAIL" }
     );
 
@@ -156,7 +157,7 @@ fn test_hardcoded_ascon_xof128_vector() -> TestResult {
 
     println!(
         "[hardcoded Ascon-XOF128]\n  Msg:      {msg_hex}\n  Expected: {expected_hex}\n  Got:      {}\n  Result:   {}",
-        hex::encode_upper(&got),
+        hex::encode(&got).to_uppercase(),
         if got == expected { "PASS" } else { "FAIL" }
     );
 
@@ -181,7 +182,7 @@ fn test_hardcoded_ascon_aead128_vector() -> TestResult {
     let got_ct = aead_encrypt(&key, &nonce, &ad, &pt);
     println!(
         "[hardcoded Ascon-AEAD128 encrypt]\n  Key:      {key_hex}\n  Nonce:    {nonce_hex}\n  AD:       {ad_hex}\n  PT:       {pt_hex}\n  Expected: {ct_hex}\n  Got:      {}\n  Result:   {}",
-        hex::encode_upper(&got_ct),
+        hex::encode(&got_ct).to_uppercase(),
         if got_ct == expected_ct { "PASS" } else { "FAIL" }
     );
     assert_eq!(got_ct, expected_ct, "hardcoded Ascon-AEAD128 encrypt failed");
@@ -189,7 +190,7 @@ fn test_hardcoded_ascon_aead128_vector() -> TestResult {
     let got_pt = aead_decrypt(&key, &nonce, &ad, &expected_ct)?;
     println!(
         "[hardcoded Ascon-AEAD128 decrypt]\n  CT:       {ct_hex}\n  Expected: {pt_hex}\n  Got:      {}\n  Result:   {}",
-        hex::encode_upper(&got_pt),
+        hex::encode(&got_pt).to_uppercase(),
         if got_pt == pt { "PASS" } else { "FAIL" }
     );
     assert_eq!(got_pt, pt, "hardcoded Ascon-AEAD128 decrypt failed");
@@ -309,7 +310,7 @@ fn test_hash256_file(path: &Path) -> TestResult<usize> {
             "  [Count {count}]\n    Msg({}B):  {msg_hex}\n    Expected: {} \n    Got:      {}\n    Result:   {}",
             msg.len(),
             md_hex,
-            hex::encode_upper(got),
+            hex::encode(got).to_uppercase(),
             if pass { "PASS" } else { "FAIL" }
         );
 
@@ -360,7 +361,7 @@ fn test_xof128_file(path: &Path) -> TestResult<usize> {
             "  [Count {count}]\n    Msg({}B):  {msg_hex}\n    Expected: {}\n    Got:      {}\n    Result:   {}",
             msg.len(),
             out_hex,
-            hex::encode_upper(&got),
+            hex::encode(&got).to_uppercase(),
             if pass { "PASS" } else { "FAIL" }
         );
 
@@ -414,7 +415,7 @@ fn test_cxof128_file(path: &Path) -> TestResult<usize> {
             z.len(),
             msg.len(),
             out_hex,
-            hex::encode_upper(&got),
+            hex::encode(&got).to_uppercase(),
             if pass { "PASS" } else { "FAIL" }
         );
 
@@ -470,7 +471,7 @@ fn test_aead128_file(path: &Path) -> TestResult<usize> {
         println!(
             "    Encrypt expected: {}\n    Encrypt got:      {}\n    Encrypt result:   {}",
             ct_hex,
-            hex::encode_upper(&got_ct),
+            hex::encode(&got_ct).to_uppercase(),
             if enc_pass { "PASS" } else { "FAIL" }
         );
 
@@ -488,7 +489,7 @@ fn test_aead128_file(path: &Path) -> TestResult<usize> {
         println!(
             "    Decrypt expected: {}\n    Decrypt got:      {}\n    Decrypt result:   {}",
             pt_hex,
-            hex::encode_upper(&got_pt),
+            hex::encode(&got_pt).to_uppercase(),
             if dec_pass { "PASS" } else { "FAIL" }
         );
 

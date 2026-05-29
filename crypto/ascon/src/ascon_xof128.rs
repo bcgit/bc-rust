@@ -1,6 +1,6 @@
 use arrayref::{array_mut_ref, array_ref};
-use core_interface::errors::HashError;
-use core_interface::traits::{Algorithm, SecurityStrength, XOF};
+use bouncycastle_core::errors::HashError;
+use bouncycastle_core::traits::{Algorithm, SecurityStrength, XOF};
 
 /// Ascon-XOF128 as specified in NIST SP 800-232.
 pub struct AsconXof128 {
@@ -15,7 +15,6 @@ pub struct AsconXof128 {
 }
 
 impl AsconXof128 {
-    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let mut instance =
             Self { s0: 0, s1: 0, s2: 0, s3: 0, s4: 0, buf: [0u8; 8], buf_pos: 0, squeezing: false };
@@ -23,22 +22,7 @@ impl AsconXof128 {
         instance
     }
 
-    // pub fn digest_size() -> usize {
-    //     32
-    // }
-
-    // fn rate() -> usize {
-    //     8
-    // }
-
     pub fn reset(&mut self) {
-        // self.s0 = 0x0000080000CC0003;
-        // self.s1 = 0;
-        // self.s2 = 0;
-        // self.s3 = 0;
-        // self.s4 = 0;
-        // self.p12();
-
         self.s0 = 0xDA82CE768D9447EB;
         self.s1 = 0xCC7CE6C75F1EF969;
         self.s2 = 0xE7508FD780085631;
@@ -69,7 +53,6 @@ impl AsconXof128 {
             self.s0 ^= u64::from_le_bytes(self.buf);
             self.p12();
             input = &input[available..];
-            // self.buf_pos = 0;
         }
 
         while input.len() >= 8 {
@@ -139,7 +122,6 @@ impl AsconXof128 {
         n
     }
 
-    // TODO Simplify
     fn pad_and_absorb(&mut self) {
         let final_bits = (self.buf_pos << 3) as u32;
         let mask: u64 = if final_bits == 0 {
@@ -158,7 +140,7 @@ impl AsconXof128 {
         }
 
         self.s0 ^= block_val & mask;
-        self.s0 ^= 0x01u64 << final_bits; // padding bit
+        self.s0 ^= 0x01u64 << final_bits;
     }
 
     fn p12(&mut self) {
@@ -194,6 +176,12 @@ impl AsconXof128 {
     }
 }
 
+impl Default for AsconXof128 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Algorithm for AsconXof128 {
     const ALG_NAME: &'static str = "Ascon-XOF128";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
@@ -212,9 +200,8 @@ impl XOF for AsconXof128 {
         self.output(output)
     }
 
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
+    fn absorb(&mut self, data: &[u8]) {
         self.update(data);
-        Ok(())
     }
 
     fn absorb_last_partial_byte(
@@ -225,14 +212,14 @@ impl XOF for AsconXof128 {
         Err(HashError::InvalidInput("Ascon-XOF128 does not support partial byte input"))
     }
 
-    fn squeeze(&mut self, num_bytes: usize) -> Result<Vec<u8>, HashError> {
+    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
         self.output(&mut out);
-        Ok(out)
+        out
     }
 
-    fn squeeze_out(&mut self, output: &mut [u8]) -> Result<usize, HashError> {
-        Ok(self.output(output))
+    fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
+        self.output(output)
     }
 
     fn squeeze_partial_byte_final(self, _num_bits: usize) -> Result<u8, HashError> {
