@@ -4,9 +4,13 @@ version = "0.0.0"
 edition.workspace = true
 
 [dependencies]
-arrayref.workspace = true
-core-interface.workspace = true
-utils.workspace = true
+arrayref = "0.3"
+bouncycastle-core.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-hex.workspace = true
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
