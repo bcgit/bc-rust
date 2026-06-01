@@ -2,9 +2,8 @@
 
 [remove this section before publication]
 
-* EdDSA
 * ML-DSA & ML-KEM
-    * Check the crate release checklist
+    * Check the crate release checklist and run claude against the style guide (maybe Francis could cross-check me)
     * Run Crucible testing
     * Run Wycheproof tests
     * Add factories for ML-DSA and ML-KEM (if we are keeping factories, see below)
@@ -46,6 +45,9 @@
   KECCAK primitive raw. We need to make a decision on how to handle this, and provide some sample code in crate docs.
 * Need a rust expert: I use a bunch of #![feature(_)]'s that are only available in nightly. ... what should I do
   about that?
+* Research task: no_std means that everything is on the stack, which can cause you to blow your stack limit. Research
+  how an application that itself is not no_std can put our large structs (like key objects) on the heap. Is this what
+  Box is for?
 * Deal with as many of the inline TODOs as possible
 * Close all open github issues and document them in this file.
 
