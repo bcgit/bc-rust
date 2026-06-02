@@ -60,6 +60,8 @@ yourself whether this function would take 6-months-from-now-you more than 10 min
 there comments you could add that would help future you get back up to speed faster about what this code is doing and
 which parts were done for a very specific reason and should not be changed on a whim.
 
+All source should be formatted with rustfmt. Please configure your IDE to run rustfmt on file save.
+
 ## APIs
 
 Where possible, primitives should expose "one-shot APIs" that simply take data and return a result as a static member
