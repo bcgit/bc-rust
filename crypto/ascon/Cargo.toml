@@ -1,5 +1,5 @@
 [package]
-name = "ascon"
+name = "bouncycastle-ascon"
 version = "0.0.0"
 edition.workspace = true
 
