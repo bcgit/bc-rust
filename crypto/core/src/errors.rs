@@ -80,10 +80,29 @@ pub enum SignatureError {
     RNGError(RNGError),
 }
 
-
-
+#[derive(Debug)]
+pub enum SymmetricCipherError {
+    GenericError(&'static str),
+    AEADTagCheckFailed,
+    DecryptionFailed,
+    KeyMaterialError(KeyMaterialError),
+    RNGError(RNGError),
+    StateError(&'static str),
+}
 
 /*** Promotion functions ***/
+impl From<KeyMaterialError> for SymmetricCipherError {
+    fn from(e: KeyMaterialError) -> SymmetricCipherError {
+        Self::KeyMaterialError(e)
+    }
+}
+
+impl From<RNGError> for SymmetricCipherError {
+    fn from(e: RNGError) -> SymmetricCipherError {
+        Self::RNGError(e)
+    }
+}
+
 impl From<KeyMaterialError> for HashError {
     fn from(e: KeyMaterialError) -> HashError {
         Self::KeyMaterialError(e)
@@ -115,7 +134,9 @@ impl From<KeyMaterialError> for KEMError {
 }
 
 impl From<RNGError> for KEMError {
-    fn from(e: RNGError) -> KEMError { Self::RNGError(e) }
+    fn from(e: RNGError) -> KEMError {
+        Self::RNGError(e)
+    }
 }
 
 impl From<KeyMaterialError> for MACError {
@@ -143,5 +164,7 @@ impl From<KeyMaterialError> for SignatureError {
 }
 
 impl From<RNGError> for SignatureError {
-    fn from(e: RNGError) -> SignatureError { Self::RNGError(e) }
+    fn from(e: RNGError) -> SignatureError {
+        Self::RNGError(e)
+    }
 }
