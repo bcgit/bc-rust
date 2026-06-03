@@ -1,6 +1,9 @@
 //! Provides simplified abstracted APIs over classes of cryptigraphic primitives, such as Hash, KDF, etc.
 
-use crate::errors::{HashError, KDFError, KEMError, MACError, RNGError, SignatureError};
+use crate::errors::{
+    AEADError, HashError, KDFError, KEMError, MACError, RNGError, SignatureError,
+    SymmetricCipherError,
+};
 use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
@@ -15,6 +18,206 @@ use crate::key_material::KeyType;
 pub trait Algorithm {
     const ALG_NAME: &'static str;
     const MAX_SECURITY_STRENGTH: SecurityStrength;
+}
+
+/// The basic one-shat encrypt and decrypt that all types of symmetric ciphers must implement.
+/// These are meant to be simple, easy to use, secure, and fool-proof APIs, but they may result in
+/// ciphertexts that are incompatible with other implementations as ciphers in more complex modes, such
+/// as AEADs or stream ciphers may need to stick extra data either at the beginning or end of the ciphertext.
+/// See the documentation of the underlying implementation for more details.
+pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
+    Algorithm + Secret
+{
+    #[cfg(std)]
+    /// A one-shot API to encrypt some plaintext with the given key.
+    /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
+    /// Returns a tuple containing the initialization data and the ciphertext.
+    fn encrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        plaintext: &[u8],
+    ) -> Result<([u8; INIT_DATA_LEN], Vec<u8>), SymmetricCipherError>;
+    /// A one-shot API to encrypt some plaintext with the given key.
+    /// This function takes a reference to the output buffer for the ciphertext, and is therefore available in no_std.
+    /// See the documentation for the underlying implementation for details on providing a ciphertext buffer of sufficient size;
+    /// typically the ciphertext is the same length as the plaintext, but some ciphers may have an expansion factor or require
+    /// extra space for a nonce or tag.
+    /// Returns a tuple containing the initialization data and the number of bytes written to the ciphertext buffer.
+    fn encrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError>;
+    #[cfg(std)]
+    /// A one-shot API to decrypt some ciphertext with the given key.
+    /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
+    fn decrypt(
+        &self,
+        key: &KeyMaterial<KEY_LEN>,
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError>;
+    /// A one-shot API to decrypt some ciphertext with the given key.
+    /// This function takes a reference to the output buffer for the plaintext, and is therefore available in no_std.
+    /// See the documentation for the underlying implementation for details on providing a plaintext buffer of sufficient size;
+    /// typically the ciphertext is the same length as the plaintext, but some ciphers may have an expansion factor or require
+    /// extra space for a nonce or tag.
+    /// Returns a tuple containing the initialization data and the number of bytes written to the plaintext buffer.
+    fn decrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: [u8; INIT_DATA_LEN],
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>;
+}
+
+/// The basic functions of a block cipher.
+/// This trait allows for a block cipher to generate initialization data, such as an Initialization Vector (IV) or Counter (CTR)
+/// which is not technically part of the ciphertext, but must be transmitted along with the ciphertext in order for the
+/// recipient to perform successful decryption. The length of the initialization data is specified by the implementing struct
+/// via the `INIT_DATA_SIZE` constant.
+/// In order for these one-shot APIs to be usable securely in all contexts, the init data will be generated
+/// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
+/// user to provide the init data. If you require this functionality, see the documentation for the underlying implementation.
+pub trait BlockCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
+    SymmetricCipher<KEY_LEN, INIT_DATA_LEN> + Sized
+{
+    /// Constructor that begins a flow of the streaming API for encrypting one block at a time.
+    /// Allows for the implementation to return init data such as an IV which is generated prior to encrypting the first block.
+    fn do_encrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    /// Encrypts a single block of plaintext.
+    fn do_encrypt_block(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
+    /// Encrypts a single block of plaintext and writes the ciphertext to the provided buffer.
+    fn do_encrypt_block_out(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+        ciphertext: &mut [u8; BLOCK_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+    /// Constructor that begins a flow of the streaming API for decryption one block at a time.
+    fn do_decrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Result<Self, SymmetricCipherError>;
+    /// Decrypts a single block of ciphertext.
+    fn do_decrypt_block(
+        &mut self,
+        ciphertext: &[u8; BLOCK_LEN],
+    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
+    /// Decrypts a single block of ciphertext and writes the plaintext to the provided buffer.
+    fn do_decrypt_block_out(
+        &mut self,
+        ciphertext: &[u8; BLOCK_LEN],
+        plaintext: &mut [u8; BLOCK_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+}
+
+/// The basic functions of an Authenticated Encryption with Addititional Data cipher.
+pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>:
+    SymmetricCipher<KEY_LEN, NONCE_LEN> + Sized
+{
+    #[cfg(std)]
+    /// A one-shot API to encrypt some plaintext with the given key.
+    /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
+    /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
+    /// and any tampering with it will result in the decryption operation failing the tag check.
+    /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
+    /// Returns a tuple containing the ciphertext and the tag.
+    fn aead_encrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<(Vec<u8>, [u8; TAG_LEN]), AEADError>;
+    /// A one-shot API to encrypt some plaintext with the given key.
+    /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
+    /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
+    /// and any tampering with it will result in the decryption operation failing the tag check.
+    /// Returns a tuple containing the randomly-generated nonce, number of bytes written to the ciphertext buffer, and the tag.
+    /// If you need a deterministic mode where you feed in the nonce, use the streaming API of [BlockCipher]
+    /// or [StreamCipher] as appropriate and feed the nonce into the IV field.
+    fn aead_encrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), AEADError>;
+    /// All AEAD ciphers will also be either a [BlockCipher] or a [StreamCipher], and so will already
+    /// have a streaming API.
+    /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
+    /// that computes and returns the authentication tag.
+    fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], AEADError>;
+    #[cfg(std)]
+    /// A one-shot API to decrypt some ciphertext with the given key.
+    /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
+    fn aead_decrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<Vec<u8>, AEADError>;
+    /// A one-shot API to decrypt some ciphertext with the given key.
+    /// This function takes a reference to the output buffer for the plaintext, and is therefore available in no_std.
+    /// See the documentation for the underlying implementation for details on providing a plaintext buffer of sufficient size;
+    /// typically the ciphertext is the same length as the plaintext, but some ciphers may have an expansion factor or require
+    /// extra space for a nonce or tag.
+    /// Returns a tuple containing the initialization data and the number of bytes written to the plaintext buffer.
+    fn aead_decrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8],
+    ) -> Result<usize, AEADError>;
+    /// All AEAD ciphers will also be either a [BlockCipher] or a [StreamCipher], and so will already
+    /// have a streaming API.
+    /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
+    /// that computes and returns the authentication tag.
+    fn do_aead_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), AEADError>;
+}
+
+/// The basic functions of a stream cipher, which differ from those of a block cipher only in that
+/// a stream cipher is assumed to have no underlying block size tied to the implementation, and so the caller gets to specify
+/// the block size for the streaming APIs.
+pub trait StreamCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
+    SymmetricCipher<KEY_LEN, INIT_DATA_LEN> + Sized
+{
+    /// Constructor that begins a flow of the streaming API for encrypting one block at a time.
+    /// Allows for the implementation to return init data such as an IV which is generated prior to encrypting the first block.
+    fn do_stream_encrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    /// Encrypts a single block of plaintext.
+    fn do_stream_encrypt_block<const BLOCK_LEN: usize>(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
+    /// Encrypts a single block of plaintext and writes the ciphertext to the provided buffer.
+    fn do_stream_encrypt_block_out<const BLOCK_LEN: usize>(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+        ciphertext: &mut [u8; BLOCK_LEN],
+    ) -> Result<(), SymmetricCipherError>;
+    /// Constructor that begins a flow of the streaming API for decryption one block at a time.
+    fn do_stream_decrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Result<Self, SymmetricCipherError>;
+    /// Decrypts a single block of ciphertext.
+    fn do_stream_decrypt_block<const BLOCK_LEN: usize>(
+        &mut self,
+        ciphertext: &[u8; BLOCK_LEN],
+    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
+    /// Decrypts a single block of ciphertext and writes the plaintext to the provided buffer.
+    fn do_stream_decrypt_block_out<const BLOCK_LEN: usize>(
+        &mut self,
+        ciphertext: &[u8; BLOCK_LEN],
+        plaintext: &mut [u8; BLOCK_LEN],
+    ) -> Result<(), SymmetricCipherError>;
 }
 
 pub trait Hash: Default {
@@ -37,12 +240,10 @@ pub trait Hash: Default {
     /// Provide a chunk of data to be absorbed into the hashes.
     /// `data` can be of any length, including zero bytes.
     /// do_update() is intended to be used as part of a streaming interface, and so may by called multiple times.
-    // fn do_update(&mut self, data: &[u8]) -> Result<(), HashError>;
     fn do_update(&mut self, data: &[u8]);
 
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
-    // fn do_final(self) -> Result<Vec<u8>, HashError>;
     fn do_final(self) -> Vec<u8>;
 
     /// Finish absorbing input and produce the hashes output.

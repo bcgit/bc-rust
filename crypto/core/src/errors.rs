@@ -1,4 +1,23 @@
 #[derive(Debug)]
+pub enum AEADError {
+    GenericError(&'static str),
+    DecryptionFailed,
+    KeyMaterialError(KeyMaterialError),
+    RNGError(RNGError),
+    StateError(&'static str),
+    TagCheckFailed,
+}
+
+#[derive(Debug)]
+pub enum SymmetricCipherError {
+    GenericError(&'static str),
+    DecryptionFailed,
+    KeyMaterialError(KeyMaterialError),
+    RNGError(RNGError),
+    StateError(&'static str),
+}
+
+#[derive(Debug)]
 pub enum HashError {
     GenericError(&'static str),
     InvalidLength(&'static str),
