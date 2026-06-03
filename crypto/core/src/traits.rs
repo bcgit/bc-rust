@@ -1,8 +1,7 @@
 //! Provides simplified abstracted APIs over classes of cryptigraphic primitives, such as Hash, KDF, etc.
 
 use crate::errors::{
-    AEADError, HashError, KDFError, KEMError, MACError, RNGError, SignatureError,
-    SymmetricCipherError,
+    HashError, KDFError, KEMError, MACError, RNGError, SignatureError, SymmetricCipherError,
 };
 use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
@@ -130,7 +129,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         plaintext: &[u8],
-    ) -> Result<(Vec<u8>, [u8; TAG_LEN]), AEADError>;
+    ) -> Result<(Vec<u8>, [u8; TAG_LEN]), SymmetricCipherError>;
     /// A one-shot API to encrypt some plaintext with the given key.
     /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
     /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
@@ -143,12 +142,12 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), AEADError>;
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError>;
     /// All AEAD ciphers will also be either a [BlockCipher] or a [StreamCipher], and so will already
     /// have a streaming API.
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
-    fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], AEADError>;
+    fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError>;
     #[cfg(std)]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
@@ -158,7 +157,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
         aad: &[u8],
         ciphertext: &[u8],
         tag: &[u8; TAG_LEN],
-    ) -> Result<Vec<u8>, AEADError>;
+    ) -> Result<Vec<u8>, SymmetricCipherError>;
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function takes a reference to the output buffer for the plaintext, and is therefore available in no_std.
     /// See the documentation for the underlying implementation for details on providing a plaintext buffer of sufficient size;
@@ -172,12 +171,12 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
         ciphertext: &[u8],
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
-    ) -> Result<usize, AEADError>;
+    ) -> Result<usize, SymmetricCipherError>;
     /// All AEAD ciphers will also be either a [BlockCipher] or a [StreamCipher], and so will already
     /// have a streaming API.
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
-    fn do_aead_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), AEADError>;
+    fn do_aead_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError>;
 }
 
 /// The basic functions of a stream cipher, which differ from those of a block cipher only in that
