@@ -1,5 +1,5 @@
 use crate::{DUMMY_SEED_512, DUMMY_SEED_1024};
-use bouncycastle_core::errors::{AEADError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     AEADCipher, BlockCipher, SecurityStrength, StreamCipher, SymmetricCipher,
@@ -141,7 +141,7 @@ impl TestFrameworkBlockCipher {
 
         let mut ct = [0u8; BLOCK_LEN];
         let mut pt = [0u8; BLOCK_LEN];
-        for msg_chunk in DUMMY_SEED_512.as_chunks::<BLOCK_LEN>().0.iter() {
+        for msg_chunk in DUMMY_SEED_1024.as_chunks::<BLOCK_LEN>().0.iter() {
             let ct_bytes_written = encryptor.do_encrypt_block_out(msg_chunk, &mut ct).unwrap();
             assert_eq!(ct_bytes_written, BLOCK_LEN);
 
@@ -160,7 +160,7 @@ impl TestFrameworkBlockCipher {
         let mac_key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED_512[..KEY_LEN], KeyType::MACKey)
                 .unwrap();
-        match C::do_encrypt_init(&key) {
+        match C::do_encrypt_init(&mac_key) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
@@ -255,7 +255,7 @@ impl TestFrameworkAEADCipher {
                 assert_eq!(bytes_written, pt_bytes_written);
                 assert_ne!(&pt[..bytes_written], msg);
             }
-            Err(AEADError::DecryptionFailed) => { /* also ok */ }
+            Err(SymmetricCipherError::DecryptionFailed) => { /* also ok */ }
             _ => panic!("Unexpected error"),
         };
 
@@ -268,7 +268,7 @@ impl TestFrameworkAEADCipher {
             &tag,
             &mut pt,
         ) {
-            Err(AEADError::TagCheckFailed) => { /* good */ }
+            Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             _ => panic!("Expected TagCheckFailed error"),
         };
 
@@ -281,7 +281,7 @@ impl TestFrameworkAEADCipher {
             &[3u8; TAG_LEN],
             &mut pt,
         ) {
-            Err(AEADError::TagCheckFailed) => { /* good */ }
+            Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             _ => panic!("Expected TagCheckFailed error"),
         };
 
