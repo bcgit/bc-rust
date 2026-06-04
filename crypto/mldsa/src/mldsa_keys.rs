@@ -92,6 +92,8 @@ impl<const k: usize, const l: usize, const PK_LEN: usize> MLDSAPublicKey<k, l, P
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
     /// Output: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
     fn pk_encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        out.fill(0);
+
         out[0..32].copy_from_slice(&self.rho);
 
         let (pk_chunks, last_chunk) = out[32..].as_chunks_mut::<POLY_T1PACKED_LEN>();
@@ -420,135 +422,9 @@ pub struct MLDSAPrivateKey<
     seed: Option<KeyMaterial<32>>,
 }
 
-/// General trait for all ML-DSA private keys types.
-pub trait MLDSAPrivateKeyTrait<
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
->: SignaturePrivateKey<SK_LEN>
-{
-    /// Get a ref to the seed, if there is one stored with this private key
-    fn seed(&self) -> &Option<KeyMaterial<32>>;
-
-    /// Get a ref to the key hash `tr`.
-    fn tr(&self) -> &[u8; 64];
-
-    /// Get the public matrix A_hat.
-    fn A_hat(&self) -> Matrix<k, l>;
-
-    /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
-    fn derive_pk(&self) -> MLDSAPublicKey<k, l, PK_LEN>;
-    /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
-    /// Encodes a secret key for ML-DSA into a byte string.
-    /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
-    /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
-    fn sk_encode(&self) -> [u8; SK_LEN];
-    /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
-    /// Encodes a secret key for ML-DSA into a byte string.
-    /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
-    /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
-    fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
-    /// Algorithm 25 skDecode(𝑠𝑘)
-    /// Reverses the procedure skEncode.
-    /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘).
-    /// Output: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 ,
-    /// 𝐬1 ∈ 𝑅ℓ, 𝐬2 ∈ 𝑅𝑘, 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    ///
-    /// Note: this object contains only the simple decoding routine to unpack a semi-expanded key.
-    /// See [MLDSATrait] for key generation functions, including derive-from-seed and consistency-check functions.
-    fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError>;
-}
-
-pub(crate) trait MLDSAPrivateKeyInternalTrait<
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
->
-{
-    /// Not exposing a constructor publicly because you should have to get an instance either by
-    /// running a keygen, or by decoding an existing key.
-    fn new(
-        rho: [u8; 32],
-        K: [u8; 32],
-        tr: [u8; 64],
-        s1_hat: Vector<l>,
-        s2_hat: Vector<k>,
-        t0_hat: Vector<k>,
-        seed: Option<KeyMaterial<32>>,
-    ) -> Self;
-    /// Get a ref to K
-    fn K(&self) -> &[u8; 32];
-    /// Get a ref to s1
-    fn s1_hat(&self) -> &Vector<l>;
-    /// Get a ref to s2
-    fn s2_hat(&self) -> &Vector<k>;
-    /// Get a ref to t0
-    fn t0_hat(&self) -> &Vector<k>;
-}
-
 impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
-    MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
+    MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
 {
-    fn seed(&self) -> &Option<KeyMaterial<32>> {
-        &self.seed
-    }
-
-    fn tr(&self) -> &[u8; 64] {
-        &self.tr
-    }
-
-    fn A_hat(&self) -> Matrix<k, l> {
-        expandA::<k, l>(&self.rho)
-    }
-
-    fn derive_pk(&self) -> MLDSAPublicKey<k, l, PK_LEN> {
-        // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
-        //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-        let mut t = {
-            // scope for A_hat
-            // 3: 𝐀 ← ExpandA(𝜌)
-            //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<k, l>(&self.rho);
-
-            let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
-            t_ntt.inv_ntt();
-            t_ntt
-        };
-
-        {
-            // Deviation from the FIPS:
-            //  Because we're holding s2 in ntt form, we need to reverse that here before adding it to t
-            let mut s2 = self.s2_hat.clone();
-            s2.reduce();
-            s2.inv_ntt();
-
-            t.add_vector_ntt(&s2);
-            t.conditional_add_q();
-        }
-        // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
-        //   ▷ compress 𝐭
-        //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-        let (t1, _) = power_2_round_vec::<k>(&t);
-
-        MLDSAPublicKey::<k, l, PK_LEN>::new(self.rho.clone(), t1)
-    }
-    /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
-    /// Encodes a secret key for ML-DSA into a byte string.
-    /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
-    /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
-    fn sk_encode(&self) -> [u8; SK_LEN] {
-        let mut out = [0u8; SK_LEN];
-        let bytes_written = self.sk_encode_out(&mut out);
-        debug_assert_eq!(bytes_written, SK_LEN);
-        out
-    }
     /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
     /// Encodes a secret key for ML-DSA into a byte string.
     /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
@@ -610,6 +486,117 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
 
         SK_LEN
+    }
+}
+
+/// General trait for all ML-DSA private keys types.
+pub trait MLDSAPrivateKeyTrait<
+    const k: usize,
+    const l: usize,
+    const eta: usize,
+    const SK_LEN: usize,
+    const PK_LEN: usize,
+>: SignaturePrivateKey<SK_LEN>
+{
+    /// Get a ref to the seed, if there is one stored with this private key
+    fn seed(&self) -> Option<&KeyMaterial<32>>;
+
+    /// Get a ref to the key hash `tr`.
+    fn tr(&self) -> &[u8; 64];
+
+    /// Get the public matrix A_hat.
+    fn A_hat(&self) -> Matrix<k, l>;
+
+    /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
+    fn derive_pk(&self) -> MLDSAPublicKey<k, l, PK_LEN>;
+    /// Algorithm 25 skDecode(𝑠𝑘)
+    /// Reverses the procedure skEncode.
+    /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘).
+    /// Output: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 ,
+    /// 𝐬1 ∈ 𝑅ℓ, 𝐬2 ∈ 𝑅𝑘, 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
+    ///
+    /// Note: this object contains only the simple decoding routine to unpack a semi-expanded key.
+    /// See [MLDSATrait] for key generation functions, including derive-from-seed and consistency-check functions.
+    fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError>;
+}
+
+pub(crate) trait MLDSAPrivateKeyInternalTrait<
+    const k: usize,
+    const l: usize,
+    const eta: usize,
+    const SK_LEN: usize,
+    const PK_LEN: usize,
+>
+{
+    /// Not exposing a constructor publicly because you should have to get an instance either by
+    /// running a keygen, or by decoding an existing key.
+    fn new(
+        rho: [u8; 32],
+        K: [u8; 32],
+        tr: [u8; 64],
+        s1_hat: Vector<l>,
+        s2_hat: Vector<k>,
+        t0_hat: Vector<k>,
+        seed: Option<KeyMaterial<32>>,
+    ) -> Self;
+    /// Get a ref to K
+    fn K(&self) -> &[u8; 32];
+    /// Get a ref to s1
+    fn s1_hat(&self) -> &Vector<l>;
+    /// Get a ref to s2
+    fn s2_hat(&self) -> &Vector<k>;
+    /// Get a ref to t0
+    fn t0_hat(&self) -> &Vector<k>;
+}
+
+impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
+    MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
+{
+    fn seed(&self) -> Option<&KeyMaterial<32>> {
+        match self.seed {
+            Some(_) => self.seed.as_ref(),
+            None => None,
+        }
+    }
+
+    fn tr(&self) -> &[u8; 64] {
+        &self.tr
+    }
+
+    fn A_hat(&self) -> Matrix<k, l> {
+        expandA::<k, l>(&self.rho)
+    }
+
+    fn derive_pk(&self) -> MLDSAPublicKey<k, l, PK_LEN> {
+        // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
+        //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
+        let mut t = {
+            // scope for A_hat
+            // 3: 𝐀 ← ExpandA(𝜌)
+            //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
+            let A_hat = expandA::<k, l>(&self.rho);
+
+            let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
+            t_ntt.inv_ntt();
+            t_ntt
+        };
+
+        {
+            // Deviation from the FIPS:
+            //  Because we're holding s2 in ntt form, we need to reverse that here before adding it to t
+            let mut s2 = self.s2_hat.clone();
+            s2.reduce();
+            s2.inv_ntt();
+
+            t.add_vector_ntt(&s2);
+            t.conditional_add_q();
+        }
+        // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
+        //   ▷ compress 𝐭
+        //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
+        let (t1, _) = power_2_round_vec::<k>(&t);
+
+        MLDSAPublicKey::<k, l, PK_LEN>::new(self.rho.clone(), t1)
     }
     fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
         let rho = sk[0..32].try_into().unwrap();
@@ -725,7 +712,11 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     SignaturePrivateKey<SK_LEN> for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
 {
     fn encode(&self) -> [u8; SK_LEN] {
-        self.sk_encode()
+        let mut out = [0u8; SK_LEN];
+        let bytes_written = self.sk_encode_out(&mut out);
+        debug_assert_eq!(bytes_written, SK_LEN);
+
+        out
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
@@ -753,8 +744,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     PartialEq for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
 {
     fn eq(&self, other: &Self) -> bool {
-        let self_encoded = self.sk_encode();
-        let other_encoded = other.sk_encode();
+        let self_encoded = self.encode();
+        let other_encoded = other.encode();
         bouncycastle_utils::ct::ct_eq_bytes(self_encoded.as_ref(), other_encoded.as_ref())
     }
 }
@@ -1006,7 +997,7 @@ impl<
 > MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN>
     for MLDSAPrivateKeyExpanded<k, l, eta, PK, SK, SK_LEN, PK_LEN>
 {
-    fn seed(&self) -> &Option<KeyMaterial<32>> {
+    fn seed(&self) -> Option<&KeyMaterial<32>> {
         self.sk.seed()
     }
 
@@ -1020,14 +1011,6 @@ impl<
 
     fn derive_pk(&self) -> MLDSAPublicKey<k, l, PK_LEN> {
         self.sk.derive_pk()
-    }
-
-    fn sk_encode(&self) -> [u8; SK_LEN] {
-        self.sk.sk_encode()
-    }
-
-    fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        self.sk.sk_encode_out(out)
     }
 
     fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {

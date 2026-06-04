@@ -1,6 +1,8 @@
 use crate::DUMMY_SEED_1024;
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{PHSignature, Signature, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{
+    Hash, PHSignature, Signature, SignaturePrivateKey, SignaturePublicKey,
+};
 
 pub struct TestFrameworkSignature {
     // Put any config options here
@@ -106,7 +108,7 @@ impl TestFrameworkSignature {
         // fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
 
         // First, test the streaming API with one call to .sign_update
-        let mut s = SigAlg::sign_init(&sk, Some(b"streaming API")).unwrap();        
+        let mut s = SigAlg::sign_init(&sk, Some(b"streaming API")).unwrap();
         s.sign_update(DUMMY_SEED_1024);
         let sig_val = s.sign_final().unwrap();
         SigAlg::verify(&pk, DUMMY_SEED_1024, Some(b"streaming API"), &sig_val).unwrap();
@@ -151,13 +153,11 @@ impl TestFrameworkSignature {
         assert_eq!(bytes_written, SIG_LEN);
         SigAlg::verify(&pk, DUMMY_SEED_1024, Some(b"streaming API"), &sig_val).unwrap();
 
-
         // the ::verify API should accept a sig value that's too long and just ignore the extra bytes
         let mut sig_val_too_long = vec![1u8; SIG_LEN + 2];
         sig_val_too_long[..SIG_LEN].copy_from_slice(&sig_val);
         SigAlg::verify(&pk, DUMMY_SEED_1024, Some(b"streaming API"), &sig_val).unwrap();
     }
-
 
     /// Test all the members of trait Hash against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
@@ -165,6 +165,7 @@ impl TestFrameworkSignature {
         PK: SignaturePublicKey<PK_LEN>,
         SK: SignaturePrivateKey<SK_LEN>,
         SigAlg: PHSignature<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>,
+        HASH: Hash + Default,
         const PK_LEN: usize,
         const SK_LEN: usize,
         const SIG_LEN: usize,
@@ -243,7 +244,6 @@ impl TestFrameworkSignature {
         let sig = SigAlg::sign(&sk, DUMMY_SEED_1024, None).unwrap();
         SigAlg::verify(&pk, DUMMY_SEED_1024, None, &sig).unwrap();
 
-
         // the ::verify API should not accept a sig value that's too
         let mut sig_val_too_long = vec![1u8; SIG_LEN + 2];
         sig_val_too_long[..SIG_LEN].copy_from_slice(&sig);
@@ -251,15 +251,30 @@ impl TestFrameworkSignature {
             Err(SignatureError::LengthError(_)) => (),
             _ => panic!("Unexpected error"),
         }
+
+        // sign_ph
+        let (pk, sk) = SigAlg::keygen().unwrap();
+        let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
+        let sig_val = SigAlg::sign_ph(&sk, &ph, None).unwrap();
+        SigAlg::verify(&pk, msg, None, &sig_val).unwrap();
+        SigAlg::verify_ph(&pk, &ph, None, &sig_val).unwrap();
+
+        // sign_ph_out
+        let (pk, sk) = SigAlg::keygen().unwrap();
+        let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
+        let mut sig_val = [0u8; SIG_LEN];
+        let bytes_written = SigAlg::sign_ph_out(&sk, &ph, None, &mut sig_val).unwrap();
+        assert_eq!(bytes_written, SIG_LEN);
+        SigAlg::verify_ph(&pk, &ph, None, &sig_val).unwrap();
+        SigAlg::verify(&pk, msg, None, &sig_val).unwrap();
     }
 }
 
 pub struct TestFrameworkSignatureKeys {}
 
 impl TestFrameworkSignatureKeys {
-
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 
     pub fn test_keys<
@@ -269,7 +284,9 @@ impl TestFrameworkSignatureKeys {
         const PK_LEN: usize,
         const SK_LEN: usize,
         const SIG_LEN: usize,
-    >(&self) {
+    >(
+        &self,
+    ) {
         self.test_boundary_conditions::<PK, SK, SigAlg, PK_LEN, SK_LEN, SIG_LEN>();
     }
 
@@ -281,7 +298,9 @@ impl TestFrameworkSignatureKeys {
         const PK_LEN: usize,
         const SK_LEN: usize,
         const SIG_LEN: usize,
-    >(&self) {
+    >(
+        &self,
+    ) {
         let (pk, sk) = SigAlg::keygen().unwrap();
 
         let pk_bytes = pk.encode();
@@ -299,7 +318,6 @@ impl TestFrameworkSignatureKeys {
             Err(SignatureError::DecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
-
 
         let sk_bytes = sk.encode();
         assert_eq!(sk_bytes.len(), SK_LEN);

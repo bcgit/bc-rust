@@ -2,7 +2,7 @@
 mod hash_mldsa_tests {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core::traits::{Hash, Signature};
+    use bouncycastle_core::traits::{Hash, PHSignature, Signature};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{
@@ -14,7 +14,7 @@ mod hash_mldsa_tests {
     use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
     use bouncycastle_mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
     use bouncycastle_mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
-    use bouncycastle_sha2::SHA512;
+    use bouncycastle_sha2::{SHA256, SHA512};
 
     #[test]
     fn core_framework_signature() {
@@ -26,14 +26,14 @@ mod hash_mldsa_tests {
         tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(false);
 
         // Test HashML-DSA-SHA256 as a ph signature alg
-        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA256, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 32>(false);
-        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA256, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 32>(false);
-        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA256, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 32>(false);
+        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA256, SHA256, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 32>(false);
+        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA256, SHA256, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 32>(false);
+        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA256, SHA256, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 32>(false);
 
         // Test HashML-DSA-SHA512 as a ph signature alg
-        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA512, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 64>(false);
-        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA512, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 64>(false);
-        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 64>(false);
+        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA512, SHA512, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 64>(false);
+        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA512, SHA512, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 64>(false);
+        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 64>(false);
     }
 
     #[test]
@@ -67,7 +67,7 @@ mod hash_mldsa_tests {
             _ => panic!("Expected error for sig too short"),
         }
 
-        // too long
+        // sig too long
         let mut sig_too_long = [0u8; MLDSA44_SIG_LEN + 2];
         sig_too_long[..MLDSA44_SIG_LEN].copy_from_slice(&sig);
         sig_too_long[MLDSA44_SIG_LEN..].copy_from_slice(&[1u8, 0u8]);
@@ -75,6 +75,79 @@ mod hash_mldsa_tests {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
+
+        // sign_ph_deterministic ctx just right at 255
+        let sig = HashMLDSA44_with_SHA512::sign_ph_deterministic(
+            &sk,
+            None,
+            /*ctx*/ Some(&[1u8; 255]),
+            /*ph*/ &[2u8; 64],
+            [3u8; 32],
+        )
+        .unwrap();
+        HashMLDSA44_with_SHA512::verify_ph(&pk, &[2u8; 64], Some(&[1u8; 255]), &sig).unwrap();
+
+        // sign_ph_deterministic ctx too long
+        match HashMLDSA44_with_SHA512::sign_ph_deterministic(
+            &sk,
+            None,
+            /*ctx*/ Some(&[1u8; 256]),
+            /*ph*/ &[2u8; 64],
+            [3u8; 32],
+        ) {
+            Err(SignatureError::LengthError(_)) => { /* good */ }
+            _ => panic!("Expected error"),
+        }
+
+        // sign_ph_deterministic ctx just right at 255
+        let sig = HashMLDSA44_with_SHA512::sign_ph_deterministic(
+            &sk,
+            None,
+            Some(&[1u8; 255]),
+            &[2u8; 64],
+            [3u8; 32],
+        )
+        .unwrap();
+        HashMLDSA44_with_SHA512::verify_ph(&pk, &[2u8; 64], Some(&[1u8; 255]), &sig).unwrap();
+
+        // sign_ph_deterministic ctx too long
+        match HashMLDSA44_with_SHA512::sign_ph_deterministic(
+            &sk,
+            None,
+            Some(&[2u8; 256]),
+            &[2u8; 64],
+            [3u8; 32],
+        ) {
+            Err(SignatureError::LengthError(_)) => { /* good */ }
+            _ => panic!("Expected error"),
+        }
+
+        // verify_ph ctx too long
+        match HashMLDSA44_with_SHA512::verify_ph(&pk, &[2u8; 64], Some(&[2u8; 256]), &sig) {
+            Err(SignatureError::LengthError(_)) => { /* good */ }
+            _ => panic!("Expected error"),
+        }
+    }
+
+    #[test]
+    fn test_ph() {
+        let msg = b"The quick brown fox jumped over the lazy dog";
+
+        let (pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
+        let ph: [u8; 32] = SHA256::default().hash(msg)[..32].try_into().unwrap();
+        let sig_val = HashMLDSA44_with_SHA256::sign_ph(&sk, &ph, None).unwrap();
+        HashMLDSA44_with_SHA256::verify_ph(&pk, &ph, None, &sig_val).unwrap();
+        HashMLDSA44_with_SHA256::verify(&pk, msg, None, &sig_val).unwrap();
+
+        // sign_ph_out
+        let (pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
+        let ph: [u8; 32] = SHA256::default().hash(msg)[..32].try_into().unwrap();
+        let mut sig_val = [0u8; MLDSA44_SIG_LEN];
+        let bytes_written =
+            HashMLDSA44_with_SHA256::sign_ph_out(&sk, &ph, None, &mut sig_val).unwrap();
+        assert_eq!(bytes_written, MLDSA44_SIG_LEN);
+        HashMLDSA44_with_SHA256::verify_ph(&pk, &ph, None, &sig_val).unwrap();
+        HashMLDSA44_with_SHA256::verify(&pk, msg, None, &sig_val).unwrap();
     }
 
     #[test]
@@ -129,6 +202,21 @@ mod hash_mldsa_tests {
         let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
         let sig =
             HashMLDSA87_with_SHA512::sign_ph_deterministic(&sk, None, None, &ph, rnd).unwrap();
+
+        assert_eq!(&sig, expected_sig.as_slice());
+
+        // with ctx
+        let expected_sig = hex::decode("213c4f1ee1e26373499a705a1bfaab92ad7f5cdb9b29c8838816abc078e3aff3bd67ca6541bab93c0ec533c8acd215ab9e1b35a5a3ca4aee64f2562f1160c6102ce6dd274016cee192b2745dac6772bc20e1e050aa1cb5d64bdf1e6e4ea812fd44b5d44d98b472f66a2b3521aa1ad917a94186258ca0e42143892eff70be17b68d0066652bb96b8867e53cc2889db8b4210e296195cbb44c6611bf572aa40732e92a7fdb79e15fbc8321fc028d9f3385af0720b8a84eefa5675d0d9980ed78f64d5d368c7f8f0cb0fe9189514ebb6b3cb7d8f25ba9180525c82ea3d3953de9029dc53fd8a66f8d4f812b8c536cddd576e3f021d2baa01caae5872dce9da75aa9991110e5081825adab38c53d8482abfa04897ecd0905691b376ad06071dec0b18ca8f3c77d222006c57a753417bd03dcdd8518b16d56edce148b70ded34444f9a3816bc938b14f5f1220076b3569668ccaf99a7567b90b1e7c29b7a6a26b6e12d9a2ad0a5ee2bf87249c87f70d732e68427646ae295579d284181b0603c75507bb1d0e1ed1b00d06b48569c2882cde3078594a2bfa7d3bbfe17528507911e4af5cb443e85e04cb5f78503cfd43a49856cc45624108f72225bf91ffd2f3fde47411870c585062955254dea26d774df2e14a93d66e9948d00ce23bf365fb7e708c85db93097321734ba8d4cc752f4c17e908ab99284f017e631afa3a34be474b20ea2d530778d3f070848db0d88bfbce1dab12bd2dcb47d7ed33f0ed48d55ff4d16fe60275a8d885c63807fb2433864a016eddb3f0ba3f4abdbeb9a76e124fc81a7b4e2e2fb2cb9f6580175eb2db4640eca230f51c4400f147fb7b5cdca3e29c91bcfeefb400ff3c77526b13a3939b0658cefa34754bdb0914d0a7fdedc95d6f40c8a2fc74c0b36c8e4a1337351df0e7402d4494b3770e80aa41fea78536473236a8229b1d2d1fa936b0a9d023d4f8c6b8b553702ac47c74493d753cca3cd9fc3c9be7a97920216e0d13a1a2d6443bc0ce85a6c4160ded6e75e428e52b481ac15972c89ef9072f383ebc94b822dfc463ca540eda14212018ad87322558e09a25be72e6c3eb11409fc4c750f92e14756f1551233bb6dbdf5b26b4b101d7c44e5c6241373b0f83f2e25d666d61b154a5544c3607cacbf569e41011cadc870584416ae532c1c7a47eee17b7d5253fce7588fc28f09c48edf825add943b982b996b7e73112f48d8984fd331ea4fcdfa3d70bb591614fda037ee515ef1038bf7ef8acf17d1f310b0e3d8e98b03f4a9e73e4cddc512a236d2d47f08518d4d069b6e370732a5f6bfddd7f1dcadf64b90cf381f41cdc600e67727c7264b969811a234e8b66351fd6c5dd36185dc8cb883cabadf6d74a7bc6ff813a4d64d4de4205fc9eeffc1312a40275e329f84b75f64302ee80ebb7fdb3d74ccc16fa8b2ddd55e2bb6712f9f4e015a2580b311afa8ec30b8f1f258430e7d7c45cb05de4ef68072bae302a1da26906c234ffa43874041b2226f5142b4fb1b2a79d122f3cb0909ec5c530563fcf4464406ec54f489ab9964949669078f6b2261f1ccd2efc8a2440f97e956da919b03f027aaf0553bffa2f9b6c997fe013a581f53043595b1a86a51a1e98cad9550a79ac8faa2813b1a7d1d238c8c0ef8ae8399c74050c96d05fb1740fb09d2fce49cc2fed955d455f42f24535236499b36d9c7815916c084922df523e8b6a83c31c062b89b332adfd5af45acacb51fc3d75097518a8033aca238ecb59f7defc07a647c31712d0095c77fefe8b0ed248f98cfddd1be5a4e480161942271755293b4d0ef462797b05c36c316af817f7120c03d45883462f33a5f2ba3de277c34b2c51a193a87611291acc02c1adf7ed076078a5ec43e1b040bb5dc851413c093730dfa6ef8b275f24c3bc69d5807c27aa172006dbbbf88592630f1b1d4c35c6a670a16b5a4b3e600d0378c181eb3238e443188a0d629a0bf3e632acf0a9e755d64086e24747f1141b7bb1220cd0236aaf317c0fabab43a9ae001e9897830aefb7ffeba844cf02e929746f068e7370827b7929ca22f1d9f5d532608c1e0847843e051c10e2cab84df928ee5315d2e7317c41cd6d3aaf437fd89eb030f7c5f051d60a6576f42f855ec49007f50dd8d300832591ccf983bca9c9c152232c4d672d5d31d7b2f2730af0247cd0b2ef5421751b0c65e5fcab3483706eda5f67461524f80f04049b6e725e061b37c79b15a28a177a8f3b44029820d83acf747ae0a00bb096ead483cfec37f5ee249eb41fea4d607946f35165b21fa4ac1ff831b7ec177cf413dba3cd7cc16755b07f1917e0b61581f6974eaa78a4cd58941ec11658eea54e7f2c92f16f0db47f785b6b831241dbdc8acf428727ffaf9e229c85e4cada02cf42f16582279485bb72e6070d75d5b80b12737f9fb23866ba09c4c9c222153c555b72daceb19633715c875c7ccf9e11c2d3f2d62fa0ed53d545e8763bce260386107d95419311795ec0ac1f4a910c2bc4b4aefec2356ec96e847766898d1d52ec160fcf64d21d93315cfc7371f08594e8cdcf16fc5630eedd93062cafb1658494dd58d6cc1d4bfd9a9d1e22f1642842fba0574eda075c8831eb122664f06aa1cd345922faf87d0188db80d94689ca157cff03d4f52285c0e5a735dce00c37bf7836af992412614336b1bea7650853f158c5f1e73cff825c9e43a30a6496fa80a77e5147fb89399139447e8df9771c11282c9a2a1b12829dfa397c14a621c5ff564b86201f524c1beb1af5731489f23c56abdbd595e85e8e41932f1d3dd4663a9961bd8eeeac8b0228ba41324e7da88ad57a75654a331baf3c867be9c12b8cdce95358f75a0de570a03990c205dfe281f2af61f2458b0da3d9712002667f8d75957bfd03124300280d7b5d82fbe914003a401fd781f22461795590f93150ca0b9d6c865e5dabfeffa238a57e9dfbca35a0206116cf1f353e1292d02719116381e15f372114edd4dcddee6749604035ace9af15a912c88d36475d66bd5b716bd957aecf6ca76c9c42db81df8ca64e86ebc198daad2b6074635d979edbeec999fe27d251b732a1d3b4d418cef442be5c2e04026a4387520dc23c49f16142b157548174ead74f73e188b6b8c8a1df79b905966da8c31ac3cb28e56abb693b786d1183486d30fcdb2858ea46ca72488cd07597451c974e2f6c6862ffdd2f8d26125ca88608dc3ecca8331c799aac4aeb6c24a6cd88c892b8d1ab2edb276d9a841b9ab830a0ebaaeaa4d8555f812bcc2fec4673e4c9c90cd1342525a6f489531c3605111f4551696a6b91a7bac6cfd0dfe6f0f50203081743465b627bb3b5b6d2d5d901414e639fb1e3f2f9fd16335a656d7c8a999dadb7bbc7cad5f0fafc0000000000000000000000000000000000000012212b3d").unwrap();
+        let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+
+        let ctx = b"testing streaming API";
+
+        // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
+        // we have to compute the ph manually here
+        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let sig =
+            HashMLDSA44_with_SHA512::sign_ph_deterministic(&sk, None, Some(ctx), &ph, rnd).unwrap();
+
         assert_eq!(&sig, expected_sig.as_slice());
     }
 
@@ -200,6 +288,14 @@ mod hash_mldsa_tests {
 
         let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
         HashMLDSA44_with_SHA256::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+
+        // negative case
+        match HashMLDSA44_with_SHA256::verify_with_expanded_key(
+            &pk_expanded, msg, None, &[1u8; MLDSA44_SIG_LEN],
+        ) {
+            Err(SignatureError::SignatureVerificationFailed) => { /* good */ }
+            _ => panic!("Expected error"),
+        }
 
         // test also sign_ph_with_expanded_key
 

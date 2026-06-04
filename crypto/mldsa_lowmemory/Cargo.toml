@@ -15,6 +15,7 @@ bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
+serde_json = "1.0"
 
 [[bench]]
 name = "mldsa_benches"

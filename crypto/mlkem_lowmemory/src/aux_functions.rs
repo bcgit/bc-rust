@@ -1,7 +1,7 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
 use crate::mlkem::{N, q, q_inv};
-use crate::polynomial::{Polynomial};
+use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::XOF;
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
@@ -14,7 +14,7 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial)
 
     let mut B = [0u8; PACK_LEN];
 
-    for i in 0 .. N {
+    for i in 0..N {
         let mut alpha = F[i];
 
         // For efficiency, the library is happy to work with values outside the range [0..q],
@@ -88,9 +88,9 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
     // size doesn't really matter, so long as it's a multiple of 3.
     // 288 seemed to be the sweet spot from playing with benchmarks
-    // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
+    // It's probably around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
-    let mut C = [0u8; 288];
+    let mut C = [0u8; 216];
     xof.squeeze_out(&mut C);
     let mut idx: usize = 0;
 
@@ -105,7 +105,7 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 
         // 6: 𝑑1 ← 𝐶[0] + 256 ⋅ (𝐶[1] mod 16)
         //  ▷ 0 ≤ 𝑑1 < 2^12
-        let d1: i16 = (C[idx+0] as i16) | ((C[idx+1] as i32)  << 8) as i16 & 0xFFF;
+        let d1: i16 = (C[idx] as i16) | ((C[idx + 1] as i32) << 8) as i16 & 0xFFF;
         debug_assert!(d1 < 2 << 12);
 
         // 7: 𝑑2 ← ⌊𝐶[1]/16⌋ + 16 ⋅ 𝐶[2]
@@ -269,18 +269,27 @@ pub(crate) fn barrett_reduce(a: i16) -> i16 {
     a - (((t as i32) * q as i32) as i16)
 }
 
-pub(super) fn cond_sub_q(a: i16) -> i16 {
-    let tmp = a - q;
-    tmp + ((tmp >> 15) & q)
-}
-
+// not currently used, but I'll leave it here because it's useful for debugging if you want to output values
+// that are normalized to [0,q] to compare against intermediate results from other libraries.
+// pub(super) fn cond_sub_q(a: i16) -> i16 {
+//     let tmp = a - q;
+//     tmp + ((tmp >> 15) & q)
+// }
 
 /// Multiplication of polynomials in Zq\[X]/(X^2-zeta)
 /// used for multiplication of elements in Rq in NTT domain
 ///
 /// Borrowed from:
 /// https://github.com/pq-crystals/kyber/blob/main/ref/ntt.c#L139
-pub(crate) fn ntt_base_mult(r: &mut [i16], off: usize, a0: i16, a1: i16, b0: i16, b1: i16, zeta: i16) {
+pub(crate) fn ntt_base_mult(
+    r: &mut [i16],
+    off: usize,
+    a0: i16,
+    a1: i16,
+    b0: i16,
+    b1: i16,
+    zeta: i16,
+) {
     let mut out_val0 = mul_mont(a1, b1);
     out_val0 = mul_mont(out_val0, zeta);
     out_val0 += mul_mont(a0, b0);

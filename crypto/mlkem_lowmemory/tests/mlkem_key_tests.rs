@@ -1,17 +1,23 @@
 #[cfg(test)]
 mod mlkem_key_tests {
-    use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
-    use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey, KEM};
-    use bouncycastle_mlkem_lowmemory::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait, MLKEMTrait};
-    use bouncycastle_mlkem_lowmemory::{MLKEM512, MLKEM768, MLKEM1024};
-    use bouncycastle_mlkem_lowmemory::{MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024PrivateKey, MLKEM1024PublicKey};
-    use bouncycastle_mlkem_lowmemory::{MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN};
+    use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+    use bouncycastle_core::traits::{KEM, KEMPrivateKey, KEMPublicKey, SecurityStrength};
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem_lowmemory::mlkem::MLKEM512_FULL_SK_LEN;
+    use bouncycastle_mlkem_lowmemory::{
+        MLKEM_SS_LEN, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM768_CT_LEN,
+        MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN,
+    };
+    use bouncycastle_mlkem_lowmemory::{MLKEM512, MLKEM768, MLKEM1024};
+    use bouncycastle_mlkem_lowmemory::{
+        MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768PrivateKey, MLKEM768PublicKey,
+        MLKEM1024PrivateKey, MLKEM1024PublicKey,
+    };
+    use bouncycastle_mlkem_lowmemory::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait, MLKEMTrait};
 
     #[test]
     fn core_framework_tests() {
-        use bouncycastle_core_test_framework::kem::{TestFrameworkKEMKeys};
+        use bouncycastle_core_test_framework::kem::TestFrameworkKEMKeys;
         let tf = TestFrameworkKEMKeys::new();
 
         tf.test_keys::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>();
@@ -58,10 +64,12 @@ mod mlkem_key_tests {
         // 3) does it reject a private key if the H(ek) is wrong?
 
         let seed = KeyMaterial512::from_bytes_as_type(
-            &hex::decode("000102030405060708090a0b0c0d0e0f
-                                101112131415161718191a1b1c1d1e1f
-                                202122232425262728292a2b2c2d2e2f
-                                303132333435363738393a3b3c3d3e3f").unwrap(),
+            &hex::decode(
+                "000102030405060708090a0b0c0d0e0f
+                101112131415161718191a1b1c1d1e1f
+                202122232425262728292a2b2c2d2e2f
+                303132333435363738393a3b3c3d3e3f",
+            ).unwrap(),
             KeyType::Seed,
         ).unwrap();
         let (_pk, mut sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
@@ -73,7 +81,9 @@ mod mlkem_key_tests {
         // generation of KAT
         // let h_ek = pk.compute_hash();
         // println!("H(ek) for public key: {}", hex::encode(h_ek));
-        let expected_h_ek: [u8; 32] = hex::decode("82f101ff648063b376e2bb6c5b7455f655a50c2feadade150efa0e0e6f365aea").unwrap().try_into().unwrap();
+        let expected_h_ek: [u8; 32] =
+            hex::decode("82f101ff648063b376e2bb6c5b7455f655a50c2feadade150efa0e0e6f365aea")
+                .unwrap().try_into().unwrap();
 
         assert_eq!(pk.compute_hash(), expected_h_ek);
         assert_eq!(sk.pk_hash(), &expected_h_ek);
@@ -82,10 +92,12 @@ mod mlkem_key_tests {
     #[test]
     fn encode_decode() {
         let seed = KeyMaterial512::from_bytes_as_type(
-            &hex::decode("000102030405060708090a0b0c0d0e0f
-                                101112131415161718191a1b1c1d1e1f
-                                202122232425262728292a2b2c2d2e2f
-                                303132333435363738393a3b3c3d3e3f").unwrap(),
+            &hex::decode(
+                "000102030405060708090a0b0c0d0e0f
+                101112131415161718191a1b1c1d1e1f
+                202122232425262728292a2b2c2d2e2f
+                303132333435363738393a3b3c3d3e3f",
+            ).unwrap(),
             KeyType::Seed,
         ).unwrap();
 
@@ -106,10 +118,12 @@ mod mlkem_key_tests {
     #[test]
     fn seed() {
         let seed = KeyMaterial512::from_bytes_as_type(
-            &hex::decode("000102030405060708090a0b0c0d0e0f
-                                101112131415161718191a1b1c1d1e1f
-                                202122232425262728292a2b2c2d2e2f
-                                303132333435363738393a3b3c3d3e3f").unwrap(),
+            &hex::decode(
+                "000102030405060708090a0b0c0d0e0f
+                101112131415161718191a1b1c1d1e1f
+                202122232425262728292a2b2c2d2e2f
+                303132333435363738393a3b3c3d3e3f",
+            ).unwrap(),
             KeyType::Seed,
         ).unwrap();
 
@@ -117,6 +131,16 @@ mod mlkem_key_tests {
 
         assert!(sk.seed().is_some());
         assert_eq!(sk.seed().as_ref().unwrap(), &seed);
+
+        // When you pop the seed out, its SecurityStrength will match the ML-DSA algorithm
+        let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
+        assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_128bit);
+
+        let (_pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
+        assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_192bit);
+
+        let (_pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
+        assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_256bit);
     }
 
     #[test]

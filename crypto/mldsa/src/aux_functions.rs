@@ -1,7 +1,7 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
 use crate::matrix::{Matrix, Vector};
-use crate::mldsa::{q_inv, G, H};
+use crate::mldsa::{G, H, q_inv};
 use crate::mldsa::{
     MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N, POLY_T0PACKED_LEN,
     POLY_T1PACKED_LEN, d, q,
@@ -24,6 +24,7 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 
     let z: i32 = ((b2_prime as i32) << 16) | ((b[1] as i32) << 8) | (b[0] as i32);
 
+    // mutants note: yeah, this could be z <= q and nothing changes because z == q is the same as z == 0
     if z < q { Ok(z) } else { Err(()) }
 }
 
@@ -308,8 +309,7 @@ pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
         t0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6) | (a[13 * i + 10] as i32) << 2)
             | ((a[13 * i + 11] as i32) << 10))
             & 0x1FFF;
-        t0[8 * i + 7] =
-            (((a[13 * i + 11] as i32) >> 3) | ((a[13 * i + 12] as i32) << 5)) & 0x1FFF;
+        t0[8 * i + 7] = (((a[13 * i + 11] as i32) >> 3) | ((a[13 * i + 12] as i32) << 5)) & 0x1FFF;
 
         t0[8 * i] = (1 << (d - 1)) - t0[8 * i];
         t0[8 * i + 1] = (1 << (d - 1)) - t0[8 * i + 1];
@@ -464,6 +464,8 @@ pub(crate) fn sig_decode<
     //  ▷ reconstruct 𝐡[𝑖]
     for i in 0..k {
         // 4: if 𝑦[𝜔 + 𝑖] < Index or 𝑦[𝜔 + 𝑖] > 𝜔 then return ⊥
+        // todo: this needs a specific test for malformed signature values. Maybe crucible coveres this case?
+        //  ... could hide an assert here and see if it triggers.
         if sig[pos + (OMEGA as usize) + i] < (idx as u8)
             || sig[pos + (OMEGA as usize) + i] > OMEGA as u8
         {
@@ -816,8 +818,8 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     r1 = r - r0 * 2 * GAMMA2;
 
     // mutants note: the choice of (q - 1) is a bit arbitrary in that after doing the bit-shifting,
-    // this seems to work out mathematically equivalent if you do q/2, or (q+3)/2, but we'll leave it as (q-1)/2
-    // since that's algorithmically correct, and just ignore the mutants results.
+    //  this seems to work out mathematically equivalent if you do q/2, or (q+3)/2, but we'll leave it as (q-1)/2
+    //  since that's algorithmically correct, and just ignore the mutants results.
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 
     (r0, r1)
@@ -860,13 +862,8 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
     // if r1 != v1 { 1 } else { 0 }
 
     // By the powers of someone much more clever than me, this is equivalent.
-
-    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0)
-    {
-        0
-    } else {
-        1
-    }
+    // mutants note: we do not have KATs that exercise all branches of this if
+    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0) { 0 } else { 1 }
 }
 
 /// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
@@ -880,6 +877,8 @@ pub(crate) fn make_hint_vecs<const k: usize, const GAMMA2: i32>(
     for i in 0..k {
         let (w, c) = r.vec[i].make_hint::<GAMMA2>(&s.vec[i]);
         out.vec[i] = w;
+
+        // mutants note: this chains up to hint_hamming_weight > OMEGA and there is no test KAT that triggers this branch
         count += c;
     }
 
@@ -913,11 +912,7 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
         MLDSA65_GAMMA2 => {
             // mutants note: this passes unit tests if it's a1 >= 0
             //      we'll leave it like this because it matches the spec
-            if a1 > 0 {
-                (a0 + 1) & 15
-            } else {
-                (a0 - 1) & 15
-            }
+            if a1 > 0 { (a0 + 1) & 15 } else { (a0 - 1) & 15 }
         }
         _ => {
             panic!("Invalid GAMMA2 value")
@@ -967,7 +962,7 @@ pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
 /// of expressions of the form c = a * b (mod q).
 /// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
 pub(crate) fn montgomery_reduce(a: i64) -> i32 {
-    debug_assert!(a > - ((q as i64) <<31) && a < ((q as i64) <<31));
+    debug_assert!(a > -((q as i64) << 31) && a < ((q as i64) << 31));
 
     // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
     let t: i32 = (a as i32).wrapping_mul(q_inv);
@@ -980,22 +975,20 @@ pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)
 }
 
-
 #[test]
 /// These are the results it's giving; I'm not sure if these are "correct" or not.
 fn test_conditional_add_q() {
-    assert_eq!(conditional_add_q(-q -1), -1);
+    assert_eq!(conditional_add_q(-q - 1), -1);
     assert_eq!(conditional_add_q(-q), 0);
-    assert_eq!(conditional_add_q(-q -2), -2);
-    assert_eq!(conditional_add_q(-q +1), 1);
-    assert_eq!(conditional_add_q(-1), q-1);
+    assert_eq!(conditional_add_q(-q - 2), -2);
+    assert_eq!(conditional_add_q(-q + 1), 1);
+    assert_eq!(conditional_add_q(-1), q - 1);
     assert_eq!(conditional_add_q(0), 0);
     assert_eq!(conditional_add_q(1), 1);
-    assert_eq!(conditional_add_q(q -1), q-1);
+    assert_eq!(conditional_add_q(q - 1), q - 1);
     assert_eq!(conditional_add_q(q), q);
-    assert_eq!(conditional_add_q(q +1), q+1);
+    assert_eq!(conditional_add_q(q + 1), q + 1);
 }
-
 
 /// Constants for NTT
 pub(crate) const ZETAS: [i32; 256] = [
@@ -1026,4 +1019,3 @@ pub(crate) const ZETAS: [i32; 256] = [
     -2235985, -420899, -2286327, 183443, -976891, 1612842, -3545687, -554416, 3919660, -48306,
     -1362209, 3937738, 1400424, -846154, 1976782,
 ];
-

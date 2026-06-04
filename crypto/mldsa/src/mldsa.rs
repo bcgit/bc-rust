@@ -566,9 +566,9 @@ pub type MLDSA44 = MLDSA<
     MLDSA44_POLY_Z_PACKED_LEN,
     MLDSA44_POLY_W1_PACKED_LEN,
     MLDSA44_LAMBDA_over_4,
-    MLDSA44_GAMMA1_MASK_LEN,
     MLDSA44_GAMMA1_MINUS_BETA,
     MLDSA44_GAMMA2_MINUS_BETA,
+    MLDSA44_GAMMA1_MASK_LEN,
 >;
 
 impl Algorithm for MLDSA44 {
@@ -596,9 +596,9 @@ pub type MLDSA65 = MLDSA<
     MLDSA65_POLY_Z_PACKED_LEN,
     MLDSA65_POLY_W1_PACKED_LEN,
     MLDSA65_LAMBDA_over_4,
-    MLDSA65_GAMMA1_MASK_LEN,
     MLDSA65_GAMMA1_MINUS_BETA,
     MLDSA65_GAMMA2_MINUS_BETA,
+    MLDSA65_GAMMA1_MASK_LEN,
 >;
 
 impl Algorithm for MLDSA65 {
@@ -626,9 +626,9 @@ pub type MLDSA87 = MLDSA<
     MLDSA87_POLY_Z_PACKED_LEN,
     MLDSA87_POLY_W1_PACKED_LEN,
     MLDSA87_LAMBDA_over_4,
-    MLDSA87_GAMMA1_MASK_LEN,
     MLDSA87_GAMMA1_MINUS_BETA,
     MLDSA87_GAMMA2_MINUS_BETA,
+    MLDSA87_GAMMA1_MASK_LEN,
 >;
 
 impl Algorithm for MLDSA87 {
@@ -659,9 +659,9 @@ pub struct MLDSA<
     const POLY_VEC_H_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
-    const GAMMA1_MASK_LEN: usize,
     const GAMMA1_MINUS_BETA: i32,
     const GAMMA2_MINUS_BETA: i32,
+    const GAMMA1_MASK_LEN: usize,
 > {
     _phantom: PhantomData<(PK, SK)>,
 
@@ -700,9 +700,9 @@ impl<
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
-    const GAMMA1_MASK_LEN: usize,
     const GAMMA1_MINUS_BETA: i32,
     const GAMMA2_MINUS_BETA: i32,
+    const GAMMA1_MASK_LEN: usize,
 >
     MLDSA<
         PK_LEN,
@@ -723,9 +723,9 @@ impl<
         POLY_Z_PACKED_LEN,
         POLY_W1_PACKED_LEN,
         LAMBDA_over_4,
-        GAMMA1_MASK_LEN,
         GAMMA1_MINUS_BETA,
         GAMMA2_MINUS_BETA,
+        GAMMA1_MASK_LEN,
     >
 {
     /// Should still be ok in FIPS mode
@@ -888,6 +888,7 @@ impl<
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
+            // mutants note: there is no test for this because we don't know of a KAT that will exceed this limit.
             if kappa > 1000 * k as u16 {
                 return Err(SignatureError::GenericError(
                     "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
@@ -971,13 +972,14 @@ impl<
                 continue;
             };
 
-            // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
+            // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat)
             let mut ct0 = sk.t0_hat().scalar_vector_ntt(&c_hat);
             ct0.inv_ntt();
 
             // 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             // out-of-order on purpose for performance reasons:
             //   might as well do the rejection sampling check before any extra heavy computation
+            // mutants note: there is currently no unit test that triggers this branch
             if ct0.check_norm::<GAMMA2>() {
                 kappa += l as u16;
                 continue;
@@ -996,6 +998,7 @@ impl<
             };
 
             // 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
+            // mutants note: there is no test KAT that triggers this branch
             if hint_hamming_weight > OMEGA {
                 kappa += l as u16;
                 continue;
@@ -1040,9 +1043,9 @@ impl<
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
-    const GAMMA1_MASK_LEN: usize,
     const GAMMA1_MINUS_BETA: i32,
     const GAMMA2_MINUS_BETA: i32,
+    const GAMMA1_MASK_LEN: usize,
 > MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, k, l, ETA>
     for MLDSA<
         PK_LEN,
@@ -1063,9 +1066,9 @@ impl<
         POLY_Z_PACKED_LEN,
         POLY_W1_PACKED_LEN,
         LAMBDA_over_4,
-        GAMMA1_MASK_LEN,
         GAMMA1_MINUS_BETA,
         GAMMA2_MINUS_BETA,
+        GAMMA1_MASK_LEN,
     >
 {
     fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
@@ -1217,6 +1220,8 @@ impl<
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         // This has been kept as clean as possible for correspondence with the FIPS,
         // but things have been moved around so that unnamed scopes can be used to limit how many
         // stack variables are alive at the same time.
@@ -1310,6 +1315,7 @@ impl<
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
+            // mutants note: there is no test for this because we don't know of a KAT that will exceed this limit.
             if kappa > 1000 * k as u16 {
                 return Err(SignatureError::GenericError(
                     "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
@@ -1444,6 +1450,7 @@ impl<
             // Alg 7; 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             // out-of-order on purpose for performance reasons:
             //   might as well do the rejection sampling check before any extra heavy computation
+            // mutants note: there is currently no unit test that triggers this branch
             if ct0.check_norm::<GAMMA2>() {
                 kappa += l as u16;
                 continue;
@@ -1462,6 +1469,7 @@ impl<
             };
 
             // Alg 7; 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
+            // mutants note: there is currently no unit test that triggers this branch
             if hint_hamming_weight > OMEGA {
                 kappa += l as u16;
                 continue;
@@ -1877,9 +1885,9 @@ impl<
     const POLY_Z_PACKED_LEN: usize,
     const POLY_W1_PACKED_LEN: usize,
     const LAMBDA_over_4: usize,
-    const GAMMA1_MASK_LEN: usize,
     const GAMMA1_MINUS_BETA: i32,
     const GAMMA2_MINUS_BETA: i32,
+    const GAMMA1_MASK_LEN: usize,
 > Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>
     for MLDSA<
         PK_LEN,
@@ -1900,9 +1908,9 @@ impl<
         POLY_Z_PACKED_LEN,
         POLY_W1_PACKED_LEN,
         LAMBDA_over_4,
-        GAMMA1_MASK_LEN,
         GAMMA1_MINUS_BETA,
         GAMMA2_MINUS_BETA,
+        GAMMA1_MASK_LEN,
     >
 {
     fn keygen() -> Result<(PK, SK), SignatureError> {
@@ -1990,7 +1998,7 @@ impl<
         if sig.len() != SIG_LEN {
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
-        if Self::verify_mu_internal(pk, &pk.A_hat(), &mu, &sig[..SIG_LEN].try_into().unwrap()) {
+        if Self::verify_mu_internal(pk, &pk.A_hat(), &mu, &sig.try_into().unwrap()) {
             Ok(())
         } else {
             Err(SignatureError::SignatureVerificationFailed)

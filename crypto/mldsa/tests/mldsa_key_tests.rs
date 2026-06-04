@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod mldsa_key_tests {
     use bouncycastle_core::errors::SignatureError;
-    use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
+    use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+    use bouncycastle_core::traits::{
+        SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
+    };
     use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{
@@ -111,6 +113,10 @@ mod mldsa_key_tests {
 
         assert_eq!(pk1_bytes, pk1_bytes_out);
         assert_eq!(sk1_bytes, sk1_bytes_out);
+
+        let bytes_written = sk1_expanded.encode_out(&mut sk1_bytes_out);
+        assert_eq!(bytes_written, MLDSA65_SK_LEN);
+        assert_eq!(sk1_expanded.encode(), sk2_expanded.encode());
     }
 
     #[test]
@@ -122,15 +128,85 @@ mod mldsa_key_tests {
         )
         .unwrap();
 
+        // todo change mlkem to also hold the whole keymaterial?
+
         let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
 
-        assert!(sk.seed().is_some());
-        assert_eq!(sk.seed().as_ref().unwrap(), &seed);
+        assert_eq!(sk.seed(), Some(&seed));
+
+        // it'll reject a keyen with a seed too weak, and preserve the seed otherwise
+        let mut seed128 = seed.clone();
+        seed128.allow_hazardous_operations();
+        seed128.set_security_strength(SecurityStrength::_128bit).unwrap();
+        seed128.drop_hazardous_operations();
+
+        let mut seed192 = seed.clone();
+        seed192.allow_hazardous_operations();
+        seed192.set_security_strength(SecurityStrength::_192bit).unwrap();
+        seed192.drop_hazardous_operations();
+
+        let mut seed256 = seed.clone();
+        seed256.allow_hazardous_operations();
+        seed256.set_security_strength(SecurityStrength::_256bit).unwrap();
+        seed256.drop_hazardous_operations();
+
+        // MLDSA44
+        let (_pk, sk) = MLDSA44::keygen_from_seed(&seed128).unwrap();
+        assert_eq!(sk.seed(), Some(&seed128));
+
+        let (_pk, sk) = MLDSA44::keygen_from_seed(&seed192).unwrap();
+        assert_eq!(sk.seed(), Some(&seed192));
+
+        let (_pk, sk) = MLDSA44::keygen_from_seed(&seed256).unwrap();
+        assert_eq!(sk.seed(), Some(&seed256));
+
+        // MLDSA65
+        match MLDSA65::keygen_from_seed(&seed128) {
+            Err(SignatureError::KeyGenError(_)) => { /* good */ }
+            _ => {
+                panic!("unexpected error")
+            }
+        }
+
+        let (_pk, sk) = MLDSA65::keygen_from_seed(&seed192).unwrap();
+        assert_eq!(sk.seed(), Some(&seed192));
+
+        let (_pk, sk) = MLDSA65::keygen_from_seed(&seed256).unwrap();
+        assert_eq!(sk.seed(), Some(&seed256));
+
+        // MLDSA87
+        match MLDSA87::keygen_from_seed(&seed128) {
+            Err(SignatureError::KeyGenError(_)) => { /* good */ }
+            _ => {
+                panic!("unexpected error")
+            }
+        }
+        match MLDSA87::keygen_from_seed(&seed192) {
+            Err(SignatureError::KeyGenError(_)) => { /* good */ }
+            _ => {
+                panic!("unexpected error")
+            }
+        }
+        let (_pk, sk) = MLDSA87::keygen_from_seed(&seed256).unwrap();
+        assert_eq!(sk.seed(), Some(&seed256));
 
         // now load a key from bytes so that it doesn't have a seed
+        let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
         let sk_bytes = sk.encode();
-        let sk2 = MLDSA44PrivateKey::from_bytes(&sk_bytes).unwrap();
-        assert!(sk2.seed().is_none());
+        let sk_no_seed = MLDSA44PrivateKey::from_bytes(&sk_bytes).unwrap();
+        assert!(sk_no_seed.seed().is_none());
+
+        /* Expanded key */
+        let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
+        match sk_expanded.seed() {
+            Some(s) => assert_eq!(s, &seed),
+            None => panic!("Expected expanded key to have seed"),
+        }
+
+        // now try an expanded key that doesn't have a seed
+        let sk_expanded_no_seed = MLDSA44PrivateKeyExpanded::from(&sk_no_seed);
+        assert!(sk_expanded_no_seed.seed().is_none());
     }
 
     #[test]
@@ -213,96 +289,118 @@ mod mldsa_key_tests {
     #[test]
     fn test_eq() {
         // MLDSA-44
+        {
+            let (pk, sk) = MLDSA44::keygen().unwrap();
 
-        let (pk, sk) = MLDSA44::keygen().unwrap();
+            // basic equality checks
+            assert_eq!(pk, pk);
+            assert_eq!(pk, pk.clone());
+            assert_eq!(pk, MLDSA44PublicKey::from_bytes(&pk.encode()).unwrap());
 
-        // basic equality checks
-        assert_eq!(pk, pk);
-        assert_eq!(pk, pk.clone());
-        assert_eq!(pk, MLDSA44PublicKey::from_bytes(&pk.encode()).unwrap());
+            assert_eq!(sk, sk);
+            assert_eq!(sk, sk.clone());
+            assert_eq!(sk, MLDSA44PrivateKey::from_bytes(&sk.encode()).unwrap());
 
-        assert_eq!(sk, sk);
-        assert_eq!(sk, sk.clone());
-        assert_eq!(sk, MLDSA44PrivateKey::from_bytes(&sk.sk_encode()).unwrap());
+            let mut sk_bytes = [0u8; MLDSA44_SK_LEN];
+            sk.encode_out(&mut sk_bytes);
+            assert_eq!(sk_bytes, sk.encode());
 
-        // inequality checks
-        let mut bytes = pk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(pk, MLDSA44PublicKey::from_bytes(&bytes).unwrap());
+            // inequality checks
+            let mut bytes = pk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(pk, MLDSA44PublicKey::from_bytes(&bytes).unwrap());
 
-        let mut bytes = sk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(sk, MLDSA44PrivateKey::from_bytes(&bytes).unwrap());
+            let mut bytes = sk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(sk, MLDSA44PrivateKey::from_bytes(&bytes).unwrap());
+        }
 
         // MLDSA-65
+        mldsa65();
+        fn mldsa65() {
+            let (pk, sk) = MLDSA65::keygen().unwrap();
 
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+            // basic equality checks
+            assert_eq!(pk, pk);
+            assert_eq!(pk, pk.clone());
+            assert_eq!(pk, MLDSA65PublicKey::from_bytes(&pk.encode()).unwrap());
 
-        // basic equality checks
-        assert_eq!(pk, pk);
-        assert_eq!(pk, pk.clone());
-        assert_eq!(pk, MLDSA65PublicKey::from_bytes(&pk.encode()).unwrap());
+            assert_eq!(sk, sk);
+            assert_eq!(sk, sk.clone());
+            assert_eq!(sk, MLDSA65PrivateKey::from_bytes(&sk.encode()).unwrap());
 
-        assert_eq!(sk, sk);
-        assert_eq!(sk, sk.clone());
-        assert_eq!(sk, MLDSA65PrivateKey::from_bytes(&sk.sk_encode()).unwrap());
+            // inequality checks
+            let mut bytes = pk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(pk, MLDSA65PublicKey::from_bytes(&bytes).unwrap());
 
-        // inequality checks
-        let mut bytes = pk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(pk, MLDSA65PublicKey::from_bytes(&bytes).unwrap());
-
-        let mut bytes = sk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(sk, MLDSA65PrivateKey::from_bytes(&bytes).unwrap());
+            let mut bytes = sk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(sk, MLDSA65PrivateKey::from_bytes(&bytes).unwrap());
+        }
 
         // MLDSA-87
+        mldsa87();
+        fn mldsa87() {
+            let (pk, sk) = MLDSA87::keygen().unwrap();
 
-        let (pk, sk) = MLDSA87::keygen().unwrap();
+            // basic equality checks
+            assert_eq!(pk, pk);
+            assert_eq!(pk, pk.clone());
+            assert_eq!(pk, MLDSA87PublicKey::from_bytes(&pk.encode()).unwrap());
 
-        // basic equality checks
-        assert_eq!(pk, pk);
-        assert_eq!(pk, pk.clone());
-        assert_eq!(pk, MLDSA87PublicKey::from_bytes(&pk.encode()).unwrap());
+            assert_eq!(sk, sk);
+            assert_eq!(sk, sk.clone());
+            assert_eq!(sk, MLDSA87PrivateKey::from_bytes(&sk.encode()).unwrap());
 
-        assert_eq!(sk, sk);
-        assert_eq!(sk, sk.clone());
-        assert_eq!(sk, MLDSA87PrivateKey::from_bytes(&sk.sk_encode()).unwrap());
+            // inequality checks
+            let mut bytes = pk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(pk, MLDSA87PublicKey::from_bytes(&bytes).unwrap());
 
-        // inequality checks
-        let mut bytes = pk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(pk, MLDSA87PublicKey::from_bytes(&bytes).unwrap());
-
-        let mut bytes = sk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(sk, MLDSA87PrivateKey::from_bytes(&bytes).unwrap());
+            let mut bytes = sk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(sk, MLDSA87PrivateKey::from_bytes(&bytes).unwrap());
+        }
 
         /* Expanded keys */
+        expanded_keys();
+        fn expanded_keys() {
+            let (pk, sk) = MLDSA65::keygen().unwrap();
+            let pk_expanded = MLDSA65PublicKeyExpanded::from_bytes(&pk.encode()).unwrap();
+            let sk_expanded = MLDSA65PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap();
 
-        let (pk, sk) = MLDSA65::keygen().unwrap();
-        let pk_expanded = MLDSA65PublicKeyExpanded::from_bytes(&pk.encode()).unwrap();
-        let sk_expanded = MLDSA65PrivateKeyExpanded::from_bytes(&sk.sk_encode()).unwrap();
+            // basic equality checks
+            assert_eq!(pk_expanded, pk_expanded);
+            assert_eq!(pk_expanded, pk_expanded.clone());
+            assert_eq!(pk_expanded, MLDSA65PublicKeyExpanded::from_bytes(&pk.encode()).unwrap());
+            assert_eq!(pk_expanded.encode(), pk.encode());
 
-        // basic equality checks
-        assert_eq!(pk_expanded, pk_expanded);
-        assert_eq!(pk_expanded, pk_expanded.clone());
-        assert_eq!(pk_expanded, MLDSA65PublicKeyExpanded::from_bytes(&pk.encode()).unwrap());
-        assert_eq!(pk_expanded.encode(), pk.encode());
+            assert_eq!(sk_expanded, sk_expanded);
+            assert_eq!(sk_expanded, sk_expanded.clone());
+            assert_eq!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap());
+            assert_eq!(sk_expanded.encode(), sk.encode());
+            assert_eq!(sk_expanded.encode(), sk.encode());
 
-        assert_eq!(sk_expanded, sk_expanded);
-        assert_eq!(sk_expanded, sk_expanded.clone());
-        assert_eq!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&sk.sk_encode()).unwrap());
-        assert_eq!(sk_expanded.encode(), sk.encode());
+            let mut sk_bytes = [0u8; MLDSA65_SK_LEN];
+            let bytes_writen = sk_expanded.encode_out(&mut sk_bytes);
+            assert_eq!(bytes_writen, MLDSA65_SK_LEN);
+            assert_eq!(sk_bytes, sk.encode());
 
-        // inequality checks
-        let mut bytes = pk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(pk_expanded, MLDSA65PublicKeyExpanded::from_bytes(&bytes).unwrap());
+            assert_eq!(sk_expanded, sk_expanded);
+            assert_eq!(sk_expanded, sk_expanded.clone());
+            assert_eq!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap());
+            assert_eq!(sk_expanded.encode(), sk.encode());
 
-        let mut bytes = sk.encode();
-        bytes[17] ^= 0x01;
-        assert_ne!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&bytes).unwrap());
+            // inequality checks
+            let mut bytes = pk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(pk_expanded, MLDSA65PublicKeyExpanded::from_bytes(&bytes).unwrap());
+
+            let mut bytes = sk.encode();
+            bytes[17] ^= 0x01;
+            assert_ne!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&bytes).unwrap());
+        }
     }
 
     /// Tests that no private data is displayed

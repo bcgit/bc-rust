@@ -3,8 +3,7 @@
 // use crate::matrix::{Matrix, Vector};
 use crate::mldsa::{G, H, POLY_T0PACKED_LEN};
 use crate::mldsa::{
-    MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N,
-    POLY_T1PACKED_LEN, d, q,
+    MLDSA44_GAMMA1, MLDSA44_GAMMA2, MLDSA65_GAMMA1, MLDSA65_GAMMA2, N, POLY_T1PACKED_LEN, d, q,
 };
 use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::XOF;
@@ -24,6 +23,7 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 
     let z: i32 = ((b2_prime as i32) << 16) | ((b[1] as i32) << 8) | (b[0] as i32);
 
+    // mutants note: yeah, this could be z <= q and nothing changes because z == q is the same as z == 0
     if z < q { Ok(z) } else { Err(()) }
 }
 
@@ -63,7 +63,6 @@ pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
     }
     output
 }
-
 
 /// As defined in Algorithm 17, this gives the length of a packed bitstring representing a polynomial
 /// whose coefficients have been rounded to \[-eta, eta], which is 32*bitlen(2*eta).
@@ -166,7 +165,8 @@ pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
 /// A variant of Algorithm 17 specific to packing z in the signature value in \[−𝛾1 + 1, 𝛾1].
 pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
     z: &Polynomial,
-    out: &mut [u8; POLY_Z_PACKED_LEN]) {
+    out: &mut [u8; POLY_Z_PACKED_LEN],
+) {
     let mut t: [u32; 4] = [0; 4];
     match GAMMA1 {
         MLDSA44_GAMMA1 => {
@@ -226,7 +226,6 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 
     w
 }
-
 
 /// A variant of Algorithm 19 BitUnpack specific to a=eta, b=eta
 /// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
@@ -344,15 +343,13 @@ pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
 }
 
 /// Part of unpacking the sig value
-pub(crate) fn unpack_c_tilde<
-    const LAMBDA_over_4: usize,
->(sig: &[u8]) -> &[u8; LAMBDA_over_4] {
+pub(crate) fn unpack_c_tilde<const LAMBDA_over_4: usize>(sig: &[u8]) -> &[u8; LAMBDA_over_4] {
     sig[..LAMBDA_over_4].try_into().unwrap()
 }
 /// Part of unpacking the sig value
 pub(crate) fn unpack_z_row<
     const GAMMA1: i32,
-    const BETA: i32,
+    const GAMMA1_MINUS_BETA: i32,
     const LAMBDA_over_4: usize,
     const POLY_Z_PACKED_LEN: usize,
     const SIG_LEN: usize,
@@ -360,16 +357,17 @@ pub(crate) fn unpack_z_row<
     idx: usize,
     sig: &[u8; SIG_LEN],
 ) -> Result<Polynomial, ()> {
-    // assert: idx < l
+    // assert: idx < l, but we don't have easy access to l
 
     // skip to the start of the z's
     let pos = LAMBDA_over_4;
     let z = bit_unpack_gamma1::<GAMMA1>(
-        &sig[pos + idx * POLY_Z_PACKED_LEN..pos + (idx + 1) * POLY_Z_PACKED_LEN]);
+        &sig[pos + idx * POLY_Z_PACKED_LEN..pos + (idx + 1) * POLY_Z_PACKED_LEN],
+    );
 
     // Perform the norm check from
     // Alg 8; Line 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
-    if z.check_norm(GAMMA1 - BETA) { Err(()) } else { Ok(z) }
+    if z.check_norm::<GAMMA1_MINUS_BETA>() { Err(()) } else { Ok(z) }
 }
 /// Part of unpacking the sig value
 pub(crate) fn unpack_h_row<
@@ -391,7 +389,6 @@ pub(crate) fn unpack_h_row<
     // skip over the other stuff in the encoded sig value
     let pos = LAMBDA_over_4 + l * POLY_Z_PACKED_LEN;
 
-
     // This inlines Algorithm 21 HintBitUnpack(𝑦)
 
     // 2: Index ← 0
@@ -399,12 +396,13 @@ pub(crate) fn unpack_h_row<
     // let mut idx = 0usize;
     // This row calc is a bit weird because technically it's supposed to be done at the end
     // of the previous loop
-    let idx = if row == 0 { 0 } else { sig[pos + OMEGA as usize + row-1] as usize };
+    let idx = if row == 0 { 0 } else { sig[pos + OMEGA as usize + row - 1] as usize };
 
     // 3: for 𝑖 from 0 to 𝑘 − 1 do
     //  ▷ reconstruct 𝐡[𝑖]
     // for i in 0..k {
     // 4: if 𝑦[𝜔 + 𝑖] < Index or 𝑦[𝜔 + 𝑖] > 𝜔 then return ⊥
+    // mutants note: don't have test vectors that exercise this condition
     if sig[pos + (OMEGA as usize) + row] < (idx as u8)
         || sig[pos + (OMEGA as usize) + row] > OMEGA as u8
     {
@@ -418,6 +416,7 @@ pub(crate) fn unpack_h_row<
         // 8: if Index > First then
         // 9:   if 𝑦[Index − 1] ≥ 𝑦[Index] then return ⊥
         //       ▷ malformed input
+        // mutants note: don't have test vectors that exercise this condition
         if j > idx && sig[pos + j - 1] >= sig[pos + j] {
             return None;
         }
@@ -429,6 +428,7 @@ pub(crate) fn unpack_h_row<
     }
 
     // ▷ read any leftover bytes in the first 𝜔 bytes of 𝑦 for malformed (nonzero) bytes
+    // mutants note:
     if row == k - 1 {
         let idx = sig[pos + OMEGA as usize + row] as usize;
         for j in idx..OMEGA as usize {
@@ -693,6 +693,10 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     }
 
     r1 = r - r0 * 2 * GAMMA2;
+
+    // mutants note: the choice of (q - 1) is a bit arbitrary in that after doing the bit-shifting,
+    // this seems to work out mathematically equivalent if you do q/2, or (q+3)/2, but we'll leave it as (q-1)/2
+    // since that's algorithmically correct, and just ignore the mutants results.
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 
     (r0, r1)
@@ -735,13 +739,8 @@ pub(crate) fn make_hint<const GAMMA2: i32>(z: i32, r: i32) -> i32 {
     // if r1 != v1 { 1 } else { 0 }
 
     // By the powers of someone much more clever than me, this is equivalent.
-
-    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0)
-    {
-        0
-    } else {
-        1
-    }
+    // mutants note: we do not have KATs that exercise all branches of this if
+    if z <= GAMMA2 || z > q - GAMMA2 || (z == q - GAMMA2 && r == 0) { 0 } else { 1 }
 }
 
 /// Algorithm 40 UseHint(ℎ, 𝑟)
@@ -759,6 +758,8 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
 
     match GAMMA2 {
         MLDSA44_GAMMA2 => {
+            // mutants note: this passes unit tests if it's a1 >= 0
+            //      we'll leave it like this because it matches the spec
             if a1 > 0 {
                 if a0 == 43 { 0 } else { a0 + 1 }
             } else {
@@ -767,11 +768,9 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
         }
         // ML-DSA65 and 87 have the same GAMMA2
         MLDSA65_GAMMA2 => {
-            if a1 > 0 {
-                (a0 + 1) & 15
-            } else {
-                (a0 - 1) & 15
-            }
+            // mutants note: this passes unit tests if it's a0 >= 0
+            //      we'll leave it like this because it matches the spec
+            if a1 > 0 { (a0 + 1) & 15 } else { (a0 - 1) & 15 }
         }
         _ => {
             panic!("Invalid GAMMA2 value")

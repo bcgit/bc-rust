@@ -1,18 +1,20 @@
 //! Represents a polynomial over the ML-DSA ring.
 
+use crate::aux_functions::{high_bits, low_bits, make_hint, use_hint};
+use crate::mldsa::{MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N, q, q_inv};
+use bouncycastle_core::traits::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
-use bouncycastle_core::traits::Secret;
-use crate::mldsa::{N, q, q_inv, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN};
-use crate::aux_functions::{high_bits, low_bits, make_hint, use_hint};
 
 /// A polynomial over the ML-DSA ring.
 /// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
 /// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
 /// and the real unit tests are in a different crate, so here we are.
 #[derive(Clone)]
-pub struct Polynomial{ pub(crate) coeffs: [i32; N] }
+pub struct Polynomial {
+    pub(crate) coeffs: [i32; N],
+}
 
 /// Convenience function to avoid ".0" all over the place.
 impl Index<usize> for Polynomial {
@@ -32,7 +34,7 @@ impl IndexMut<usize> for Polynomial {
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
     pub const fn new() -> Self {
-        Self{ coeffs: [0i32; N] }
+        Self { coeffs: [0i32; N] }
     }
 
     pub(crate) fn conditional_add_q(&mut self) {
@@ -80,20 +82,24 @@ impl Polynomial {
         }
     }
 
-    pub(crate) fn check_norm(&self, bound: i32) -> bool {
+    pub(crate) fn check_norm<const BOUND: i32>(&self) -> bool {
         // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
         // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing the signature validation.
         // So the i32 that we just checked in a non-constant-time manner is about to get thrown away.
-        if bound > (q - 1) / 8 {
-            return true;
-        }
+
+        // Note: this formulation of the check_norm function usually requires this bounds check
+        //  if bound > (q - 1) / 8 {
+        //     return true;
+        //  }
+        // but since BOUND is a constant here, we'll just do a debug_assert to make sure the value is what we expect.
+        debug_assert!(BOUND <= (q - 1) / 8);
 
         let mut t: i32;
         for x in self.coeffs.iter() {
             t = *x >> 31;
             t = *x - (t & (2 * *x));
 
-            if t >= bound {
+            if t >= BOUND {
                 return true;
             }
         }
@@ -128,29 +134,28 @@ impl Polynomial {
         // then it's free to optimize all of the computation into CPU registers and skip, in this case,
         // several hundred physical memory writes.
         // So while it looks odd to use a scope variable in a low-memory implementation, it's way faster
-        // and I'm not convinced that it uses any more physical memory.        
+        // and I'm not convinced that it uses any more physical memory.
         let mut r = [0u8; POLY_W1_PACKED_LEN];
 
         match POLY_W1_PACKED_LEN {
             MLDSA44_POLY_W1_PACKED_LEN => {
-                for i in 0..N/4 {
-                    r[3 * i] =
-                        ((self[4 * i]) as u8) | ((self[4 * i + 1] << 6) as u8);
-                    r[3 * i + 1] =
-                        ((self[4 * i + 1] >> 2) as u8) | ((self[4 * i + 2] << 4) as u8);
-                    r[3 * i + 2] =
-                        ((self[4 * i + 2] >> 4) as u8) | ((self[4 * i + 3] << 2) as u8);
+                for i in 0..N / 4 {
+                    r[3 * i] = ((self[4 * i]) as u8) | ((self[4 * i + 1] << 6) as u8);
+                    r[3 * i + 1] = ((self[4 * i + 1] >> 2) as u8) | ((self[4 * i + 2] << 4) as u8);
+                    r[3 * i + 2] = ((self[4 * i + 2] >> 4) as u8) | ((self[4 * i + 3] << 2) as u8);
                 }
-            },
+            }
             // ML-DSA65 and 87 share a POLY_W1_PACKED_LEN value
             MLDSA65_POLY_W1_PACKED_LEN => {
-                for i in 0..N/2 {
+                for i in 0..N / 2 {
                     r[i] = ((self[2 * i]) | (self[2 * i + 1] << 4)) as u8;
                 }
-            },
-            _ => { unreachable!() }
+            }
+            _ => {
+                unreachable!()
+            }
         }
-        
+
         r
     }
 
@@ -234,11 +239,7 @@ impl Polynomial {
         }
     }
 
-
-    pub(crate) fn use_hint<const GAMMA2: i32>(
-        &mut self,
-        h: &Polynomial,
-    ) {
+    pub(crate) fn use_hint<const GAMMA2: i32>(&mut self, h: &Polynomial) {
         for i in 0..N {
             self[i] = use_hint::<GAMMA2>(self[i], h[i]);
         }
@@ -270,7 +271,7 @@ impl Display for Polynomial {
 /// of expressions of the form c = a * b (mod q).
 /// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
 pub(crate) fn montgomery_reduce(a: i64) -> i32 {
-    debug_assert!(a > - ((q as i64) <<31) && a < ((q as i64) <<31));
+    debug_assert!(a > -((q as i64) << 31) && a < ((q as i64) << 31));
 
     // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
     let t: i32 = (a as i32).wrapping_mul(q_inv);
@@ -279,7 +280,6 @@ pub(crate) fn montgomery_reduce(a: i64) -> i32 {
     ((a - ((t as i64) * (q as i64))) >> 32) as i32
 }
 
-
 pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)
 }
@@ -287,16 +287,16 @@ pub(crate) fn conditional_add_q(a: i32) -> i32 {
 #[test]
 /// These are the results it's giving; I'm not sure if these are "correct" or not.
 fn test_conditional_add_q() {
-    assert_eq!(conditional_add_q(-q -1), -1);
+    assert_eq!(conditional_add_q(-q - 1), -1);
     assert_eq!(conditional_add_q(-q), 0);
-    assert_eq!(conditional_add_q(-q -2), -2);
-    assert_eq!(conditional_add_q(-q +1), 1);
-    assert_eq!(conditional_add_q(-1), q-1);
+    assert_eq!(conditional_add_q(-q - 2), -2);
+    assert_eq!(conditional_add_q(-q + 1), 1);
+    assert_eq!(conditional_add_q(-1), q - 1);
     assert_eq!(conditional_add_q(0), 0);
     assert_eq!(conditional_add_q(1), 1);
-    assert_eq!(conditional_add_q(q -1), q-1);
+    assert_eq!(conditional_add_q(q - 1), q - 1);
     assert_eq!(conditional_add_q(q), q);
-    assert_eq!(conditional_add_q(q +1), q+1);
+    assert_eq!(conditional_add_q(q + 1), q + 1);
 }
 
 /// Constants for NTT

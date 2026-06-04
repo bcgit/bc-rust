@@ -40,7 +40,7 @@ impl Polynomial {
             *x = conditional_add_q(*x);
         }
     }
-    
+
     pub(crate) fn reduce(&mut self) {
         for i in 0..N {
             self[i] = montgomery_reduce(self[i] as i64);
@@ -84,15 +84,15 @@ impl Polynomial {
         // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
         // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing the signature validation.
         // So the i32 that we just checked in a non-constant-time manner is about to get thrown away.
-        
+
         // Note: this formulation of the check_norm function usually requires this bounds check
         //  if bound > (q - 1) / 8 {
         //     return true;
         //  }
         // but since BOUND is a constant here, we'll just do a debug_assert to make sure the value is what we expect.
         debug_assert!(BOUND <= (q - 1) / 8);
-        
-        
+
+
         let mut t: i32;
         for x in self.coeffs.iter() {
             t = *x >> 31;
@@ -118,6 +118,8 @@ impl Polynomial {
         for i in 0..N {
             let x = make_hint::<GAMMA2>(self[i], r[i]);
             out[i] = x;
+
+            // mutants note: this chains up to hint_hamming_weight > OMEGA and there is no test KAT that triggers this branch
             count += x;
         }
 

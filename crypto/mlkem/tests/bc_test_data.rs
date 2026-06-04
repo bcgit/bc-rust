@@ -4,18 +4,52 @@
 
 #[cfg(test)]
 mod bc_test_data {
-    use std::{fs};
+    use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+    use bouncycastle_core::traits::{KEM, KEMPrivateKey, KEMPublicKey, SecurityStrength};
     use bouncycastle_hex as hex;
-    use bouncycastle_core::key_material::{KeyMaterialTrait, KeyMaterial512, KeyType};
-    use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey, SecurityStrength, KEM};
-    use bouncycastle_mlkem::{MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768PrivateKey, MLKEM768PublicKey, MLKEMTrait, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN};
+    use bouncycastle_mlkem::{
+        MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey, MLKEM512PublicKey,
+        MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768PrivateKey, MLKEM768PublicKey,
+        MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024PrivateKey, MLKEM1024PublicKey,
+        MLKEMTrait,
+    };
+    use std::fs;
+    use std::path::Path;
+    use std::process::exit;
+    use std::sync::Once;
 
-    const TEST_DATA_PATH: &str = "../../../bc-test-data/pqc/crypto/mlkem";
+    const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/pqc/crypto/mlkem";
+    const TEST_DATA_PATH: &str = "../bc-test-data/pqc/crypto/mlkem";
+
+    static TEST_DATA_CHECK: Once = Once::new();
+
+    fn test_for_presence_of_test_data() {
+        TEST_DATA_CHECK.call_once(|| {
+            if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+                println!("bc-test-data found at: {:?}", TEST_DATA_PATH_RELATIVE);
+            } else if !Path::new(TEST_DATA_PATH).exists() {
+                println!("bc-test-data found at: {:?}", TEST_DATA_PATH);
+            } else {
+                println!("bc-test-data directory not found");
+                exit(0);
+            }
+        });
+    }
 
     #[test]
     #[allow(non_snake_case)]
     fn ML_KEM_keyGen() {
-        let contents = fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-KEM-keyGen.txt").unwrap();
+        test_for_presence_of_test_data();
+
+        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/ML-KEM-keyGen.txt").unwrap()
+        } else if Path::new(TEST_DATA_PATH).exists() {
+            fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-KEM-keyGen.txt").unwrap()
+        } else {
+            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
+            panic!("Test data directory not found")
+        };
+
         let test_cases = KeyGenTestCase::parse(contents);
 
         for test_case in test_cases {
@@ -42,7 +76,21 @@ mod bc_test_data {
 
     impl KeyGenTestCase {
         fn new() -> Self {
-            Self { vs_id: 0, algorithm: String::new(), mode: String::new(), revision: String::new(), is_sample: false, tg_id: 0, test_type: String::new(), parameter_set: String::new(), tc_id: 0, z: String::new(), d: String::new(), ek: String::new(), dk: String::new() }
+            Self {
+                vs_id: 0,
+                algorithm: String::new(),
+                mode: String::new(),
+                revision: String::new(),
+                is_sample: false,
+                tg_id: 0,
+                test_type: String::new(),
+                parameter_set: String::new(),
+                tc_id: 0,
+                z: String::new(),
+                d: String::new(),
+                ek: String::new(),
+                dk: String::new(),
+            }
         }
 
         fn is_full(&self) -> bool {
@@ -56,7 +104,9 @@ mod bc_test_data {
                 let (tag, value) = match line.split_once(" = ") {
                     Some(pair) => pair,
                     None => {
-                        if test_case.is_full() { test_cases.push(test_case.clone()); }
+                        if test_case.is_full() {
+                            test_cases.push(test_case.clone());
+                        }
                         continue;
                     }
                 };
@@ -103,23 +153,29 @@ mod bc_test_data {
             match self.parameter_set.as_str() {
                 "ML-KEM-512" => {
                     let (pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-                    let pk_sized: [u8; MLKEM512_PK_LEN] = hex::decode(&self.ek).unwrap().try_into().unwrap();
+                    let pk_sized: [u8; MLKEM512_PK_LEN] =
+                        hex::decode(&self.ek).unwrap().try_into().unwrap();
                     assert_eq!(pk.encode(), pk_sized);
-                    let sk_sized: [u8; MLKEM512_SK_LEN] = hex::decode(&self.dk).unwrap().try_into().unwrap();
+                    let sk_sized: [u8; MLKEM512_SK_LEN] =
+                        hex::decode(&self.dk).unwrap().try_into().unwrap();
                     assert_eq!(sk.encode(), sk_sized);
                 },
                 "ML-KEM-768" => {
                     let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-                    let pk_sized: [u8; MLKEM768_PK_LEN] = hex::decode(&self.ek).unwrap().try_into().unwrap();
+                    let pk_sized: [u8; MLKEM768_PK_LEN] =
+                        hex::decode(&self.ek).unwrap().try_into().unwrap();
                     assert_eq!(pk.encode(), pk_sized);
-                    let sk_sized: [u8; MLKEM768_SK_LEN] = hex::decode(&self.dk).unwrap().try_into().unwrap();
+                    let sk_sized: [u8; MLKEM768_SK_LEN] =
+                        hex::decode(&self.dk).unwrap().try_into().unwrap();
                     assert_eq!(sk.encode(), sk_sized);
                 },
                 "ML-KEM-1024" => {
                     let (pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-                    let pk_sized: [u8; MLKEM1024_PK_LEN] = hex::decode(&self.ek).unwrap().try_into().unwrap();
+                    let pk_sized: [u8; MLKEM1024_PK_LEN] =
+                        hex::decode(&self.ek).unwrap().try_into().unwrap();
                     assert_eq!(pk.encode(), pk_sized);
-                    let sk_sized: [u8; MLKEM1024_SK_LEN] = hex::decode(&self.dk).unwrap().try_into().unwrap();
+                    let sk_sized: [u8; MLKEM1024_SK_LEN] =
+                        hex::decode(&self.dk).unwrap().try_into().unwrap();
                     assert_eq!(sk.encode(), sk_sized);
                 },
                 val => panic!("Invalid parameter set: {}", val),
@@ -130,7 +186,18 @@ mod bc_test_data {
     #[test]
     #[allow(non_snake_case)]
     fn ML_KEM_encapDecap() {
-        let contents = fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-KEM-encapDecap.txt").unwrap();
+        test_for_presence_of_test_data();
+
+        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/ML-KEM-encapDecap.txt")
+                .unwrap()
+        } else if Path::new(TEST_DATA_PATH).exists() {
+            fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-KEM-encapDecap.txt").unwrap()
+        } else {
+            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
+            panic!("Test data directory not found")
+        };
+
         let test_cases = EncapDecapTestCase::parse(contents);
 
         let num_tests = test_cases.len();
@@ -162,7 +229,23 @@ mod bc_test_data {
 
     impl EncapDecapTestCase {
         fn new() -> Self {
-            Self { vs_id: 0, algorithm: String::new(), mode: String::new(), revision: String::new(), is_sample: false, tg_id: 0, test_type: String::new(), parameter_set: String::new(), function: String::new(), tc_id: 0, ek: String::new(), dk: String::new(), m: String::new(), c: String::new(), k: String::new() }
+            Self {
+                vs_id: 0,
+                algorithm: String::new(),
+                mode: String::new(),
+                revision: String::new(),
+                is_sample: false,
+                tg_id: 0,
+                test_type: String::new(),
+                parameter_set: String::new(),
+                function: String::new(),
+                tc_id: 0,
+                ek: String::new(),
+                dk: String::new(),
+                m: String::new(),
+                c: String::new(),
+                k: String::new(),
+            }
         }
 
         fn is_full(&self) -> bool {
@@ -176,7 +259,9 @@ mod bc_test_data {
                 let (tag, value) = match line.split_once(" = ") {
                     Some(pair) => pair,
                     None => {
-                        if test_case.is_full() { test_cases.push(test_case.clone()); }
+                        if test_case.is_full() {
+                            test_cases.push(test_case.clone());
+                        }
                         continue;
                     }
                 };
@@ -211,7 +296,8 @@ mod bc_test_data {
                 "ML-KEM-512" => {
                     match self.function.as_str() {
                         "encapsulation" => {
-                            let pk = MLKEM512PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
+                            let pk = MLKEM512PublicKey::from_bytes(&hex::decode(&self.ek).unwrap())
+                                .unwrap();
                             let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
                             let (ss, ct) = MLKEM512::encaps_internal(&pk, None, m);
 
@@ -222,7 +308,9 @@ mod bc_test_data {
                             assert_eq!(ct, expected_ct.as_slice());
                         },
                         "decapsulation" => {
-                            let sk = MLKEM512PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap()).unwrap();
+                            let sk =
+                                MLKEM512PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
+                                    .unwrap();
                             let ct = hex::decode(&self.c).unwrap();
                             let ss = MLKEM512::decaps(&sk, ct.as_slice()).unwrap();
 
@@ -235,7 +323,8 @@ mod bc_test_data {
                 "ML-KEM-768" => {
                     match self.function.as_str() {
                         "encapsulation" => {
-                            let pk = MLKEM768PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
+                            let pk = MLKEM768PublicKey::from_bytes(&hex::decode(&self.ek).unwrap())
+                                .unwrap();
                             let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
                             let (ss, ct) = MLKEM768::encaps_internal(&pk, None, m);
 
@@ -246,7 +335,9 @@ mod bc_test_data {
                             assert_eq!(ct, expected_ct.as_slice());
                         },
                         "decapsulation" => {
-                            let sk = MLKEM768PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap()).unwrap();
+                            let sk =
+                                MLKEM768PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
+                                    .unwrap();
                             let ct = hex::decode(&self.c).unwrap();
                             let ss = MLKEM768::decaps(&sk, ct.as_slice()).unwrap();
 
@@ -259,7 +350,9 @@ mod bc_test_data {
                 "ML-KEM-1024" => {
                     match self.function.as_str() {
                         "encapsulation" => {
-                            let pk = MLKEM1024PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
+                            let pk =
+                                MLKEM1024PublicKey::from_bytes(&hex::decode(&self.ek).unwrap())
+                                    .unwrap();
                             let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
                             let (ss, ct) = MLKEM1024::encaps_internal(&pk, None, m);
 
@@ -270,7 +363,9 @@ mod bc_test_data {
                             assert_eq!(ct, expected_ct.as_slice());
                         },
                         "decapsulation" => {
-                            let sk = MLKEM1024PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap()).unwrap();
+                            let sk =
+                                MLKEM1024PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
+                                    .unwrap();
                             let ct = hex::decode(&self.c).unwrap();
                             let ss = MLKEM1024::decaps(&sk, ct.as_slice()).unwrap();
 
