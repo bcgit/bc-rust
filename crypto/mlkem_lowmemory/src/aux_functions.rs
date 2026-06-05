@@ -9,10 +9,13 @@ use bouncycastle_sha3::{SHAKE128, SHAKE256};
 /// Encodes an array of 𝑑-bit integers into a byte array for 1 ≤ 𝑑 ≤ 12.
 /// Input: integer array 𝐹 ∈ ℤ_M^256 , where 𝑚 = 2^𝑑 if 𝑑 < 12, and 𝑚 = 𝑞 if 𝑑 = 12.
 /// Output: byte array 𝐵 ∈ 𝔹32𝑑 .
-pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial) -> [u8; PACK_LEN] {
-    debug_assert_eq!(PACK_LEN, 32 * d);
+pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(
+    F: &Polynomial,
+    B: &mut [u8; PACK_LEN],
+) {
+    B.fill(0);
 
-    let mut B = [0u8; PACK_LEN];
+    debug_assert_eq!(PACK_LEN, 32 * d);
 
     for i in 0..N {
         let mut alpha = F[i];
@@ -20,16 +23,17 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial)
         // For efficiency, the library is happy to work with values outside the range [0..q],
         // but we need to reduce it for the canonical encoding.
         alpha = barrett_reduce(alpha);
+        alpha = cond_sub_q(alpha);
 
         for j in 0..d {
             // alpha % 2, but without using % for constant-time reasons
+            //  although "& 1" may lead to other, more subtle timing issues. Research topic.
             let tmp = (alpha & 1) as u8;
 
             // 4: 𝑏[𝑖⋅𝑑 + 𝑗] ← 𝑎 mod 2
             //  constant-time note: yes, % is not constant-time,
             //   but all of the values in (i*d + j) % 8 are loop indices and not part of the secret key.
-            B[(i*d + j)/8] |= tmp << ((i*d + j) % 8);
-
+            B[(i * d + j) / 8] |= tmp << ((i * d + j) % 8);
 
             // 5: 𝑎 ← (𝑎 − 𝑏[𝑖⋅𝑑 + 𝑗])/2
             //   ▷ note 𝑎 − 𝑏[𝑖⋅𝑑 + 𝑗] is always even
@@ -42,8 +46,6 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial)
             alpha >>= 1;
         }
     }
-
-    B
 }
 
 /// Algorithm 6 ByteDecode_d(𝐵)
@@ -59,11 +61,12 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
         // 3: F[i] = SUM_j=0..d-1{ 𝑏[𝑖 ⋅ 𝑑 + 𝑗] ⋅ 2𝑗 } mod m
         for j in 0..d {
             // select the next bit, according to bitcount, then shift it up by j
-            F[i] |= (((B[(i*d + j)/8] >> (i*d + j)%8) & 1) as i16) << j; // there's supposed to be a `mod m` here, but that shouldn't matter; we'll check it below anyway.
+            F[i] |= (((B[(i * d + j) / 8] >> (i * d + j) % 8) & 1) as i16) << j; // there's supposed to be a `mod m` here, but that shouldn't matter; we'll check it below anyway.
         }
         // assert the mod m
+        // We'll relax these because it's being checked above in MLKEMPublicKey::pk_decode()
         debug_assert!(F[i] >= 0);
-        debug_assert!(F[i] <= if d<12 {2<<d} else { q });
+        // debug_assert!(F[i] <= if d<12 {2<<d} else { q });
     }
 
     F
@@ -110,7 +113,7 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 
         // 7: 𝑑2 ← ⌊𝐶[1]/16⌋ + 16 ⋅ 𝐶[2]
         //  ▷ 0 ≤ 𝑑2 < 2^12
-        let d2: i16 = ((C[idx+1] as i16) >> 4) | ((C[idx+2] as i32) << 4) as i16 & 0xFFF;
+        let d2: i16 = ((C[idx + 1] as i16) >> 4) | ((C[idx + 2] as i32) << 4) as i16 & 0xFFF;
         debug_assert!(d2 < 2 << 12);
 
         // 8: if 𝑑1 < 𝑞 then
@@ -149,8 +152,8 @@ pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
 
     match eta {
         2 => {
-            for i in 0..N/8 {
-                let t = u32::from_le_bytes(bytes[4*i .. 4*i + 4].try_into().unwrap());
+            for i in 0..N / 8 {
+                let t = u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap());
                 let mut d = t & 0x55555555;
                 d += (t >> 1) & 0x55555555;
                 for j in 0..8usize {
@@ -165,7 +168,7 @@ pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
             }
         }
         3 => {
-            for i in 0..N/4 {
+            for i in 0..N / 4 {
                 let t = little_endian_to_u24(bytes, 3 * i);
                 let mut d = t & 0x00249249;
                 d += (t >> 1) & 0x00249249;
@@ -190,7 +193,6 @@ pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
 /// SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
 /// Performs both the PRF and SamplePolyCBD steps
 pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial {
-
     // Alg 13: 9: 𝐬[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
     //  ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
     match eta {
@@ -206,7 +208,7 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
             };
 
             sample_poly_cbd::<eta>(&buf)
-        },
+        }
         3 => {
             let buf = {
                 let mut xof = SHAKE256::new();
@@ -218,8 +220,8 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
             };
 
             sample_poly_cbd::<eta>(&buf)
-        },
-        _ => unreachable!()
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -269,12 +271,10 @@ pub(crate) fn barrett_reduce(a: i16) -> i16 {
     a - (((t as i32) * q as i32) as i16)
 }
 
-// not currently used, but I'll leave it here because it's useful for debugging if you want to output values
-// that are normalized to [0,q] to compare against intermediate results from other libraries.
-// pub(super) fn cond_sub_q(a: i16) -> i16 {
-//     let tmp = a - q;
-//     tmp + ((tmp >> 15) & q)
-// }
+pub(super) fn cond_sub_q(a: i16) -> i16 {
+    let tmp = a - q;
+    tmp + ((tmp >> 15) & q)
+}
 
 /// Multiplication of polynomials in Zq\[X]/(X^2-zeta)
 /// used for multiplication of elements in Rq in NTT domain

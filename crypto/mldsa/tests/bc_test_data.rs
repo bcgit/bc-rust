@@ -27,7 +27,6 @@ mod bc_test_data {
     use bouncycastle_sha2::SHA512;
     use std::fs;
     use std::path::Path;
-    use std::process::exit;
     use std::sync::Once;
 
     const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/pqc/crypto/mldsa";
@@ -35,31 +34,44 @@ mod bc_test_data {
 
     static TEST_DATA_CHECK: Once = Once::new();
 
-    fn test_for_presence_of_test_data() {
-        TEST_DATA_CHECK.call_once(|| {
-            if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-                println!("bc-test-data found at: {:?}", TEST_DATA_PATH_RELATIVE);
-            } else if !Path::new(TEST_DATA_PATH).exists() {
-                println!("bc-test-data found at: {:?}", TEST_DATA_PATH);
-            } else {
-                println!("bc-test-data directory not found");
-                exit(0);
-            }
+    fn get_test_data(filename: &str) -> Result<String, ()> {
+        let found: u8;
+        if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+            found = 1;
+        } else if Path::new(TEST_DATA_PATH).exists() {
+            found = 2;
+        } else {
+            found = 3;
+        };
+
+        // just print once
+        TEST_DATA_CHECK.call_once(|| match found {
+            1 => println!("wycheproof found at: {:?}", TEST_DATA_PATH_RELATIVE),
+            2 => println!("wycheproof found at: {:?}", TEST_DATA_PATH),
+            _ => println!("WARNING: wycheproof directory not found; tests will be skipped"),
         });
+
+        if !found == 3 {
+            return Err(());
+        }
+
+        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/" + filename).unwrap()
+        } else if Path::new(TEST_DATA_PATH).exists() {
+            fs::read_to_string(TEST_DATA_PATH.to_string() + "/" + filename).unwrap()
+        } else {
+            return Err(());
+        };
+
+        Ok(contents)
     }
 
     #[test]
     #[allow(non_snake_case)]
     fn ML_DSA_keyGen() {
-        test_for_presence_of_test_data();
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/ML-DSA-keyGen.txt").unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-DSA-keyGen.txt").unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("ML-DSA-keyGen.txt") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = KeyGenTestCase::parse(contents);
@@ -191,12 +203,9 @@ mod bc_test_data {
     #[test]
     #[allow(non_snake_case)]
     fn ML_DSA_sigGen() {
-        test_for_presence_of_test_data();
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/ML-DSA-sigGen.txt").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-DSA-sigGen.txt").unwrap()
+        let contents = match get_test_data("ML-DSA-sigGen.txt") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = SigGenTestCase::parse(contents);
@@ -370,12 +379,9 @@ mod bc_test_data {
     #[allow(unused)]
     #[allow(non_snake_case)]
     fn ML_DSA_sigVer() {
-        test_for_presence_of_test_data();
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/ML-DSA-sigVer.txt").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-DSA-sigVer.txt").unwrap()
+        let contents = match get_test_data("ML-DSA-sigVer.txt") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = SigVerTestCase::parse(contents);
@@ -550,13 +556,10 @@ mod bc_test_data {
     #[allow(unused)]
     #[allow(non_snake_case)]
     fn ML_DSA_rsp() {
-        test_for_presence_of_test_data();
-
         // MLDsa44
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa44.rsp").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa44.rsp").unwrap()
+        let contents = match get_test_data("mldsa44.rsp") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = MldsaRspTestCase::<false>::parse(contents);
@@ -565,10 +568,9 @@ mod bc_test_data {
         }
 
         // MLDsa65
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa65.rsp").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa65.rsp").unwrap()
+        let contents = match get_test_data("mldsa65.rsp") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = MldsaRspTestCase::<false>::parse(contents);
@@ -577,10 +579,9 @@ mod bc_test_data {
         }
 
         // MLDsa87
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa87.rsp").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa87.rsp").unwrap()
+        let contents = match get_test_data("mldsa87.rsp") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = MldsaRspTestCase::<false>::parse(contents);
@@ -589,10 +590,9 @@ mod bc_test_data {
         }
 
         // MLDsa44sha512
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa44sha512.rsp").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa44sha512.rsp").unwrap()
+        let contents = match get_test_data("mldsa44sha512.rsp") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = MldsaRspTestCase::<true>::parse(contents);
@@ -601,10 +601,9 @@ mod bc_test_data {
         }
 
         // MLDsa65sha512
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa65sha512.rsp").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa65sha512.rsp").unwrap()
+        let contents = match get_test_data("mldsa65sha512.rsp") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = MldsaRspTestCase::<true>::parse(contents);
@@ -613,10 +612,9 @@ mod bc_test_data {
         }
 
         // MLDsa87sha512
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa87sha512.rsp").unwrap()
-        } else {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa87sha512.rsp").unwrap()
+        let contents = match get_test_data("mldsa87sha512.rsp") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = MldsaRspTestCase::<true>::parse(contents);

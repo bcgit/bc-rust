@@ -38,6 +38,7 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial)
 
         for j in 0..d {
             // alpha % 2, but without using % for constant-time reasons
+            //  although "& 1" may lead to other, more subtle timing issues. Research topic.
             let tmp = (alpha & 1) as u8;
 
             // 4: 𝑏[𝑖⋅𝑑 + 𝑗] ← 𝑎 mod 2

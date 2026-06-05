@@ -42,7 +42,7 @@ mod wycheproof {
 
     static TEST_DATA_CHECK: Once = Once::new();
 
-    fn test_for_presence_of_test_data() -> Result<(), ()> {
+    fn get_test_data(filename: &str) -> Result<String, ()> {
         let found: u8;
         if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
             found = 1;
@@ -59,28 +59,27 @@ mod wycheproof {
             _ => println!("WARNING: wycheproof directory not found; tests will be skipped"),
         });
 
-        if found == 1 || found == 2 { Ok(()) } else { Err(()) }
+        if !found == 3 {
+            return Err(());
+        }
+
+        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/" + filename).unwrap()
+        } else if Path::new(TEST_DATA_PATH).exists() {
+            fs::read_to_string(TEST_DATA_PATH.to_string() + "/" + filename).unwrap()
+        } else {
+            return Err(());
+        };
+
+        Ok(contents)
     }
 
     #[test]
     fn mldsa_44_sign_seed_test() {
-        if test_for_presence_of_test_data().is_err() {
-            return;
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(
-                TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa_44_sign_seed_test.json",
-            )
-            .unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa_44_sign_seed_test.json")
-                .unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("mldsa_44_sign_seed_test.json") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
-
         let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa44);
 
         let num_test_cases = test_cases.len();
@@ -93,20 +92,10 @@ mod wycheproof {
 
     #[test]
     fn mldsa_44_verify_test() {
-        if test_for_presence_of_test_data().is_err() {
-            return;
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa_44_verify_test.json")
-                .unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa_44_verify_test.json").unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("mldsa_44_verify_test.json") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
-
         let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa44);
 
         let num_test_cases = test_cases.len();
@@ -119,23 +108,10 @@ mod wycheproof {
 
     #[test]
     fn mldsa_65_sign_seed_test() {
-        if test_for_presence_of_test_data().is_err() {
-            return;
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(
-                TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa_65_sign_seed_test.json",
-            )
-            .unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa_65_sign_seed_test.json")
-                .unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("mldsa_65_sign_seed_test.json") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
-
         let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa65);
 
         let num_test_cases = test_cases.len();
@@ -148,20 +124,10 @@ mod wycheproof {
 
     #[test]
     fn mldsa_65_verify_test() {
-        if test_for_presence_of_test_data().is_err() {
-            return;
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa_65_verify_test.json")
-                .unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa_65_verify_test.json").unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("mldsa_65_verify_test.json") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
-
         let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa65);
 
         let num_test_cases = test_cases.len();
@@ -174,23 +140,10 @@ mod wycheproof {
 
     #[test]
     fn mldsa_87_sign_seed_test() {
-        if test_for_presence_of_test_data().is_err() {
-            return;
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(
-                TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa_87_sign_seed_test.json",
-            )
-            .unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa_87_sign_seed_test.json")
-                .unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("mldsa_87_sign_seed_test.json") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
-
         let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa87);
 
         let num_test_cases = test_cases.len();
@@ -203,20 +156,10 @@ mod wycheproof {
 
     #[test]
     fn mldsa_87_verify_test() {
-        if test_for_presence_of_test_data().is_err() {
-            return;
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/mldsa_87_verify_test.json")
-                .unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/mldsa_87_verify_test.json").unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("mldsa_87_verify_test.json") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
-
         let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa87);
 
         let num_test_cases = test_cases.len();

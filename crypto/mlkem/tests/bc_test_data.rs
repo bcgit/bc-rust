@@ -15,7 +15,6 @@ mod bc_test_data {
     };
     use std::fs;
     use std::path::Path;
-    use std::process::exit;
     use std::sync::Once;
 
     const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/pqc/crypto/mlkem";
@@ -23,31 +22,43 @@ mod bc_test_data {
 
     static TEST_DATA_CHECK: Once = Once::new();
 
-    fn test_for_presence_of_test_data() {
-        TEST_DATA_CHECK.call_once(|| {
-            if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-                println!("bc-test-data found at: {:?}", TEST_DATA_PATH_RELATIVE);
-            } else if !Path::new(TEST_DATA_PATH).exists() {
-                println!("bc-test-data found at: {:?}", TEST_DATA_PATH);
-            } else {
-                println!("bc-test-data directory not found");
-                exit(0);
-            }
-        });
-    }
+    fn get_test_data(filename: &str) -> Result<String, ()> {
+        let found: u8;
+        if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+            found = 1;
+        } else if Path::new(TEST_DATA_PATH).exists() {
+            found = 2;
+        } else {
+            found = 3;
+        };
 
+        // just print once
+        TEST_DATA_CHECK.call_once(|| match found {
+            1 => println!("wycheproof found at: {:?}", TEST_DATA_PATH_RELATIVE),
+            2 => println!("wycheproof found at: {:?}", TEST_DATA_PATH),
+            _ => println!("WARNING: wycheproof directory not found; tests will be skipped"),
+        });
+
+        if !found == 3 {
+            return Err(());
+        }
+
+        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
+            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/" + filename).unwrap()
+        } else if Path::new(TEST_DATA_PATH).exists() {
+            fs::read_to_string(TEST_DATA_PATH.to_string() + "/" + filename).unwrap()
+        } else {
+            return Err(());
+        };
+
+        Ok(contents)
+    }
     #[test]
     #[allow(non_snake_case)]
     fn ML_KEM_keyGen() {
-        test_for_presence_of_test_data();
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/ML-KEM-keyGen.txt").unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-KEM-keyGen.txt").unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("ML-KEM-keyGen.txt") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = KeyGenTestCase::parse(contents);
@@ -136,13 +147,10 @@ mod bc_test_data {
             assert_eq!(self.mode, "keyGen");
 
             let mut seed_bytes = [0u8; 64];
-            seed_bytes[..32].copy_from_slice(&hex::decode(&self.d).unwrap());
-            seed_bytes[32..].copy_from_slice(&hex::decode(&self.z).unwrap());
+            seed_bytes[..32].copy_from_slice(&*hex::decode(&self.d).unwrap());
+            seed_bytes[32..].copy_from_slice(&*hex::decode(&self.z).unwrap());
 
-            let mut seed = KeyMaterial512::from_bytes_as_type(
-                &seed_bytes,
-                KeyType::Seed,
-            ).unwrap();
+            let mut seed = KeyMaterial512::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
 
             // for the purposes of the test cases, accept an all-zero seed
             seed.allow_hazardous_operations();
@@ -159,7 +167,7 @@ mod bc_test_data {
                     let sk_sized: [u8; MLKEM512_SK_LEN] =
                         hex::decode(&self.dk).unwrap().try_into().unwrap();
                     assert_eq!(sk.encode(), sk_sized);
-                },
+                }
                 "ML-KEM-768" => {
                     let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
                     let pk_sized: [u8; MLKEM768_PK_LEN] =
@@ -168,7 +176,7 @@ mod bc_test_data {
                     let sk_sized: [u8; MLKEM768_SK_LEN] =
                         hex::decode(&self.dk).unwrap().try_into().unwrap();
                     assert_eq!(sk.encode(), sk_sized);
-                },
+                }
                 "ML-KEM-1024" => {
                     let (pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
                     let pk_sized: [u8; MLKEM1024_PK_LEN] =
@@ -177,7 +185,7 @@ mod bc_test_data {
                     let sk_sized: [u8; MLKEM1024_SK_LEN] =
                         hex::decode(&self.dk).unwrap().try_into().unwrap();
                     assert_eq!(sk.encode(), sk_sized);
-                },
+                }
                 val => panic!("Invalid parameter set: {}", val),
             }
         }
@@ -186,16 +194,9 @@ mod bc_test_data {
     #[test]
     #[allow(non_snake_case)]
     fn ML_KEM_encapDecap() {
-        test_for_presence_of_test_data();
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/ML-KEM-encapDecap.txt")
-                .unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/ML-KEM-encapDecap.txt").unwrap()
-        } else {
-            println!("Current working directory: {:?}", std::env::current_dir().unwrap());
-            panic!("Test data directory not found")
+        let contents = match get_test_data("ML-KEM-encapDecap.txt") {
+            Ok(contents) => contents,
+            Err(()) => return,
         };
 
         let test_cases = EncapDecapTestCase::parse(contents);
@@ -306,7 +307,7 @@ mod bc_test_data {
 
                             assert_eq!(ss, expected_ss.as_slice());
                             assert_eq!(ct, expected_ct.as_slice());
-                        },
+                        }
                         "decapsulation" => {
                             let sk =
                                 MLKEM512PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
@@ -316,10 +317,10 @@ mod bc_test_data {
 
                             let expected_ss = hex::decode(&self.k).unwrap();
                             assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());
-                        },
+                        }
                         _ => panic!("Invalid function: {}", self.function),
                     };
-                },
+                }
                 "ML-KEM-768" => {
                     match self.function.as_str() {
                         "encapsulation" => {
@@ -333,7 +334,7 @@ mod bc_test_data {
 
                             assert_eq!(ss, expected_ss.as_slice());
                             assert_eq!(ct, expected_ct.as_slice());
-                        },
+                        }
                         "decapsulation" => {
                             let sk =
                                 MLKEM768PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
@@ -343,10 +344,10 @@ mod bc_test_data {
 
                             let expected_ss = hex::decode(&self.k).unwrap();
                             assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());
-                        },
+                        }
                         _ => panic!("Invalid function: {}", self.function),
                     };
-                },
+                }
                 "ML-KEM-1024" => {
                     match self.function.as_str() {
                         "encapsulation" => {
@@ -361,7 +362,7 @@ mod bc_test_data {
 
                             assert_eq!(ss, expected_ss.as_slice());
                             assert_eq!(ct, expected_ct.as_slice());
-                        },
+                        }
                         "decapsulation" => {
                             let sk =
                                 MLKEM1024PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
@@ -371,10 +372,10 @@ mod bc_test_data {
 
                             let expected_ss = hex::decode(&self.k).unwrap();
                             assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());
-                        },
+                        }
                         _ => panic!("Invalid function: {}", self.function),
                     };
-                },
+                }
                 val => panic!("Invalid parameter set: {}", val),
             }
         }

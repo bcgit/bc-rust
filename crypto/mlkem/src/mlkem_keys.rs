@@ -389,6 +389,8 @@ impl<
     /// As described on Algorithm 16 line
     ///   3: dk ← (dkPKE ‖ ek ‖ H(ek) ‖ 𝑧)
     fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+        
         debug_assert_eq!(SK_LEN, /* dk_pke*/12*k*32 + /*ek*/PK_LEN + /*H(ek)*/32 + /*z*/32);
 
         let mut pos = 0usize;
