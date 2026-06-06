@@ -5,3 +5,6 @@ mutants.out*/
 
 .idea/
 .vscode/
+
+# To not port 
+CLAUDE.md

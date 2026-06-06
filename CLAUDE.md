@@ -93,3 +93,240 @@ These are non-obvious house rules — follow them when writing or modifying code
 ## CI
 
 The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test` is the gate.
+
+## Purpose
+
+This repository is implementing the next-generation Bouncy Castle Rust ecosystem. Code must prioritize:
+
+- correctness
+- misuse resistance
+- API consistency
+- explicit semantics
+- security-by-construction
+- FIPS-readiness
+- low-allocation/no_std compatibility
+- long-term maintainability
+
+The alpha release is centered primarily around the `core-interface` trait and error system architecture.
+
+Read before coding:
+- https://github.com/bcgit/bc-rust/wiki/Introduction-to-the-Alpha-Release
+- https://github.com/bcgit/bc-rust/wiki/Bouncy-Castle-Rust-Roadmap
+
+---
+
+# Core Philosophy
+
+BC-Rust is NOT:
+- a loose collection of crypto implementations
+- a direct Rust clone of JCE
+- string-driven transformation APIs
+- convenience-first at the expense of correctness
+
+BC-Rust IS:
+- trait-driven
+- strongly typed
+- misuse-resistant
+- metadata-aware
+- explicit
+- cryptographically conservative
+- designed for safe composition
+
+The API should guide developers toward correct usage and make incorrect usage difficult.
+
+---
+
+# Trait-Oriented Design
+
+Algorithms should conform to shared interfaces whenever appropriate.
+
+Examples:
+- `Hash`
+- `XOF`
+- `AeadCipher`
+- `MAC`
+- `KDF`
+- `Signature`
+
+Do NOT implement standalone APIs if an existing trait abstraction is appropriate.
+
+Before adding a new trait:
+- verify an existing abstraction does not already fit
+- avoid premature generalization
+- avoid unnecessary hierarchy depth
+- preserve backwards compatibility where possible
+
+When introducing new abstractions:
+- separate generic behavior from specialized behavior
+- prefer extension/specialization over duplication
+
+Example:
+- `Cipher` → generic encrypt/decrypt flow
+- `AeadCipher` → AEAD specialization with AAD + MAC/tag semantics
+
+---
+
+# Key Material Philosophy
+
+BC-Rust is intentionally more key-aware and type-driven than JCE.
+
+Keys are NOT merely opaque byte parameters.
+
+`KeyMaterial` and related metadata exist to:
+- prevent misuse
+- encode semantics
+- carry security information
+- constrain inappropriate operations
+
+Prefer APIs where:
+- types encode intent
+- misuse becomes harder
+- unsafe combinations become explicit
+
+---
+
+# Cryptographic Coding Requirements
+
+## Constant-Time / Side-Channel Resistance
+
+DO NOT:
+- branch on secret data
+- index memory using secret-dependent values
+- use secret-dependent timing behavior
+- use variable-time comparisons for secrets
+
+Avoid:
+- secret-dependent early returns
+- secret-dependent allocations
+- secret-dependent error behavior
+
+Use constant-time operations where appropriate.
+
+Assume attackers can observe:
+- timing
+- branching
+- cache behavior
+- memory access patterns
+
+---
+
+# Allocation / no_std
+
+Prefer:
+- caller-provided output buffers
+- streaming APIs
+- explicit sizing methods
+
+Avoid:
+- unnecessary heap allocation
+- hidden allocation
+- allocation-heavy convenience paths
+
+Support:
+- `no_std`
+- embedded targets
+- constrained environments
+
+Ergonomic APIs are acceptable IF:
+- explicit
+- allocation behavior is obvious
+- low-level APIs remain available
+
+---
+
+# Error Handling
+
+Errors should be:
+- explicit
+- typed
+- deterministic
+- non-leaky
+
+Do not leak sensitive state through:
+- panic messages
+- debug output
+- secret-dependent errors
+
+Avoid panics in normal cryptographic flows.
+
+---
+
+# API Design
+
+Prefer:
+- explicit initialization
+- explicit parameters
+- explicit modes
+- explicit sizes
+
+Avoid:
+- magic defaults
+- hidden transformations
+- ambiguous semantics
+- stringly-typed crypto APIs
+
+The Rust type system should help prevent misuse.
+
+---
+
+# Testing Expectations
+
+Every implementation should include:
+- official test vectors
+- edge-case tests
+- invalid-input tests
+- streaming/update tests
+- reset/reuse tests
+- output sizing tests
+
+Where applicable:
+- differential tests
+- Wycheproof vectors
+- cross-implementation verification
+
+---
+
+# Performance
+
+Optimize ONLY after correctness.
+
+Priorities:
+1. correctness
+2. side-channel safety
+3. API clarity
+4. maintainability
+5. performance
+
+Avoid micro-optimizations that:
+- reduce readability
+- increase audit difficulty
+- introduce side-channel risk
+
+---
+
+# Documentation Expectations
+
+Public cryptographic APIs should clearly document:
+- security assumptions
+- nonce/IV requirements
+- padding behavior
+- ownership/lifetime expectations
+- allocation behavior
+- streaming semantics
+- failure conditions
+
+Misuse-resistant documentation is part of the security model.
+
+---
+
+# Engineering Guidance
+
+When uncertain:
+- favor explicitness
+- favor conservative design
+- favor trait consistency
+- favor auditability
+- favor maintainability
+- ask before introducing new abstractions
+
+BC-Rust is intended to be a long-lived cryptographic ecosystem, not merely a collection of working implementations.
