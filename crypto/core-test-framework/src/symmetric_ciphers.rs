@@ -82,7 +82,7 @@ impl TestFrameworkSymmetricCipher {
         for ss in security_strengths.iter() {
             key.set_security_strength(ss.clone()).unwrap();
 
-            match C::encrypt_out(&mac_key, msg, &mut ct) {
+            match C::encrypt_out(&key, msg, &mut ct) {
                 Ok(_) => {
                     if ss >= &C::MAX_SECURITY_STRENGTH { /* good */
                     } else {

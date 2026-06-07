@@ -19,7 +19,7 @@ pub trait Algorithm {
     const MAX_SECURITY_STRENGTH: SecurityStrength;
 }
 
-/// The basic one-shat encrypt and decrypt that all types of symmetric ciphers must implement.
+/// The basic one-shot encrypt and decrypt that all types of symmetric ciphers must implement.
 /// These are meant to be simple, easy to use, secure, and fool-proof APIs, but they may result in
 /// ciphertexts that are incompatible with other implementations as ciphers in more complex modes, such
 /// as AEADs or stream ciphers may need to stick extra data either at the beginning or end of the ciphertext.
@@ -50,8 +50,8 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
     fn decrypt(
-        &self,
         key: &KeyMaterial<KEY_LEN>,
+        init_data: [u8; INIT_DATA_LEN],
         ciphertext: &[u8],
     ) -> Result<Vec<u8>, SymmetricCipherError>;
     /// A one-shot API to decrypt some ciphertext with the given key.
@@ -123,13 +123,12 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
     /// and any tampering with it will result in the decryption operation failing the tag check.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
-    /// Returns a tuple containing the ciphertext and the tag.
+    /// Returns a tuple containing a generated nonce, the ciphertext and the tag.
     fn aead_encrypt(
         key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         plaintext: &[u8],
-    ) -> Result<(Vec<u8>, [u8; TAG_LEN]), SymmetricCipherError>;
+    ) -> Result<([u8; NONCE_LEN], Vec<u8>, [u8; TAG_LEN]), SymmetricCipherError>;
     /// A one-shot API to encrypt some plaintext with the given key.
     /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
     /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
