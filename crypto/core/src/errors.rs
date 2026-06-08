@@ -145,3 +145,4 @@ impl From<KeyMaterialError> for SignatureError {
 impl From<RNGError> for SignatureError {
     fn from(e: RNGError) -> SignatureError { Self::RNGError(e) }
 }
+

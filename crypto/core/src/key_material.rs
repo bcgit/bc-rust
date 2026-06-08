@@ -39,7 +39,7 @@
 
 use crate::errors::KeyMaterialError;
 use crate::traits::{RNG, SecurityStrength, Secret};
-use bouncycastle_utils::{ct, max, min};
+use bouncycastle_utils::{ct, min};
 
 use core::cmp::{Ordering, PartialOrd};
 use core::fmt;
@@ -569,8 +569,8 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
         self.buf[self.key_len..new_key_len].copy_from_slice(other.ref_to_bytes());
         self.key_len += other.key_len();
-        self.key_type = max(&self.key_type, &other.key_type()).clone();
-        self.security_strength = max(&self.security_strength, &other.security_strength()).clone();
+        self.key_type = min(&self.key_type, &other.key_type()).clone();
+        self.security_strength = min(&self.security_strength, &other.security_strength()).clone();
         Ok(self.key_len())
     }
 

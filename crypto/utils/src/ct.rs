@@ -38,7 +38,9 @@ impl Condition<i64> {
     // MikeO: TODO: there are a bunch of impls in here that seem to be generic and not related to i64,
     // MikeO: TODO: could those be moved to a generic impl<T> for Condition<T> ?
 
-    pub const TRUE: Self = Self(1);
+    /// TRUE is the bit vector of all 1's
+    pub const TRUE: Self = Self(-1);
+    /// FALSE is the bit vector of all 0's
     pub const FALSE: Self = Self(0);
 
     pub const fn from_bool<const VALUE: bool>() -> Self {
@@ -111,13 +113,31 @@ impl Condition<i64> {
         *dst = self.select(src, *dst);
     }
 
-    // MikeO: TODO: I have no idea what this does, .negate(-1) seems to give -3 ?? Is that a bug?
     /// Conditionally negate the value.
+    ///
+    /// negate(-1) gives -3
+    ///
+    /// `value` is `-1` (i.e., all bits are `1`, `...1111`)
+    ///
+    /// Condition `self.0` is 1 (`...0001`) (assuming `TRUE`)
+    ///
+    /// XOR operation was executed as `value ^ self.0`
+    ///
+    /// Then `...1111 XOR ...0001 = ...1110` (i.e., `-2`)
+    ///
+    /// Subtraction operation is `wrapping_sub(self.0)`
+    ///
+    /// Then `-2 - 1 = -3`
+    ///
+    /// As a result, `1`, which is the negation of `-1`, should be returned, but `-3` is output.
+    ///
+    /// Therefore, if the [Self::TRUE] constant value of the i64 [Condition] implementation is changed to `-1`,
+    /// the test also runs normally.
     pub const fn negate(self, value: i64) -> i64 {
         (value ^ self.0).wrapping_sub(self.0)
     }
 
-    const fn or_halves(value: i64) -> i64 {
+    pub const fn or_halves(value: i64) -> i64 {
         (value | (value >> 32)) & 0xFFFFFFFF
     }
 
@@ -136,93 +156,36 @@ impl Condition<i64> {
     }
 }
 
-// TODO: ... this doesn't ... work. We should get this working and then then do u8.
+// TODO: We should do Condition<u8>.
 // TODO: then and change Hex and Base64 to use this.
 // TODO: (there's probably no noticeable performance difference u8 and u64 bit ops on a 64-bit machine,
 // TODO:  but there would be on a 8, 16, or 32-bit machine.)
-// impl Condition<u64> {
-//     pub const TRUE: Self = Self(1);
-//     pub const FALSE: Self = Self(0);
-// 
-//     pub const fn new<const VALUE: bool>() -> Self {
-//         Self((VALUE as u64).wrapping_neg())
-//     }
-// 
-//     pub const fn from_bool(value: bool) -> Self {
-//         Self((value as u64).wrapping_neg())
-//     }
-// 
-//     pub const fn is_bit_set(value: u64, bit: u64) -> Self {
-//         Self(((value >> bit) & 1).wrapping_neg())
-//     }
-// 
-//     // MikeO: TODO ?? What does "negative" mean for an unsigned value?
-//     pub const fn is_negative(value: u64) -> Self {
-//         Self(((value as i64) >> 63) as u64)
-//     }
-// 
-//     pub const fn is_not_zero(value: u64) -> Self {
-//         Self::is_negative(Self::or_halves(value).wrapping_neg())
-//     }
-// 
-//     pub const fn is_zero(value: u64) -> Self {
-//         Self::is_negative(Self::or_halves(value).wrapping_sub(1))
-//     }
-// 
-//     // MikeO: TODO: I borrowed this formula from Botan, but rust complains about u64 subtraction overflow if x < y, so this works in C but won't work in rust.
-//     // MikeO: TODO: I played with u64.wrapping_sub(y) but that doesn't work either.
-//     pub const fn is_lt(x: u64, y: u64) -> Self {
-//         Self::is_zero(x ^ ((x ^ y) | (x.wrapping_sub(y)) ^ x))
-//     }
-// 
-//     // Note: haven't found a clever way to make this const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
-//     // pub fn is_lte(x: i64, y: i64) -> Self { !Self::is_gt(x, y) }
-// 
-//     // pub const fn is_gt(x: i64, y: i64) -> Self { Self::is_lt(y, x) }
-// 
-//     // Note: haven't found a clever way to make this const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
-//     // pub fn is_gte(x: i64, y: i64) -> Self { !Self::is_lt(x, y) }
-// 
-//     pub fn is_in_list(value: u64, list: &[u64]) -> Self {
-//         // Research question: is this actually constant-time?
-//         // A clever compiler might turn this into a short-circuiting loop.
-//         // A quick google search shows that rust doesn't have the ability to annotate specific code blocks
-//         // as no-optimize; the only option is to insert direct assembly.
-// 
-//         let mut c = Self::FALSE;
-//         for i in 0..list.len() {
-//             let diff = value ^ list[i];
-//             c |= Condition::<u64>::is_zero(diff);
-//         }
-// 
-//         c
-//     }
-// 
-//     pub fn mov(self, src: u64, dst: &mut u64) {
-//         *dst = self.select(src, *dst);
-//     }
-// 
-//     // MikeO: TODO: This needs a docstring because I have no idea what this does.
-//     pub const fn negate(self, value: u64) -> u64 {
-//         (value ^ self.0).wrapping_sub(self.0)
-//     }
-// 
-//     const fn or_halves(value: u64) -> u64 {
-//         (value & 0xFFFFFFFF) | (value >> 32)
-//     }
-// 
-//     pub const fn select(self, true_value: u64, false_value: u64) -> u64 {
-//         (true_value & self.0) | (false_value & !self.0)
-//     }
-// 
-//     pub const fn swap(self, lhs: u64, rhs: u64) -> (u64, u64) {
-//         (self.select(rhs, lhs), self.select(lhs, rhs))
-//     }
-// 
-//     pub const fn to_bool_var(self) -> bool {
-//         self.0 != 0
-//     }
-// }
+impl Condition<u64> {
+    /// TRUE is the bit vector of all 1's
+    pub const TRUE: Self = Self(u64::MAX);
+    /// FALSE is the bit vector of all 0's
+    pub const FALSE: Self = Self(0);
+
+    // this is the core logic for constant-time mask generation for unsigned integers
+    //   Unlike signed integers where we can rely on Two's Complement via negation `-(v as i64)`,
+    //   for u64 we must use wrapping subtraction to achieve the all-ones bit pattern (u64::MAX) for true
+    pub const fn from_bool<const VALUE: bool>() -> Self {
+        // If VALUE is true (1) -> 0 - 1 = u64::MAX (All 1s)
+        // If VALUE is false (0) -> 0 - 0 = 0 (All 0s)
+        Self(0u64.wrapping_sub(VALUE as u64))
+    }
+
+    // the select function manually for u64
+    //    although a fully generic impl<T> would be the ultimate long-term goal
+    pub fn select(self, a: u64, b: u64) -> u64 {
+        let mask = self.0;
+        (a & mask) | (b & !mask)
+    }
+
+    pub fn is_true(&self) -> bool {
+        self.0 != 0
+    }
+}
 
 impl<T> BitAnd for Condition<T>
 where
@@ -327,22 +290,22 @@ pub fn conditional_copy_bytes<const LEN: usize>(
     a: &[u8; LEN],
     b: &[u8; LEN],
     out: &mut [u8; LEN],
-    take_a: bool) {
-    
-    // we want the behaviour of 
+    take_a: bool,
+) {
+    // we want the behaviour of
     //  if take_a { 0xFF } else { 0x00 }
     // but without using any branches that could leak timing signals
-    let mask: u8 = (take_a as u8) |
-        (take_a as u8) <<1 |
-        (take_a as u8) <<2 |
-        (take_a as u8) <<3 |
-        (take_a as u8) <<4 |
-        (take_a as u8) <<5 |
-        (take_a as u8) <<6 |
-        (take_a as u8) <<7;
-    
+    let mask: u8 = (take_a as u8)
+        | (take_a as u8) << 1
+        | (take_a as u8) << 2
+        | (take_a as u8) << 3
+        | (take_a as u8) << 4
+        | (take_a as u8) << 5
+        | (take_a as u8) << 6
+        | (take_a as u8) << 7;
+
     debug_assert_eq!(mask, if take_a { 0xFF } else { 0x00 });
-    
+
     for i in 0..LEN {
         out[i] = std::hint::black_box(a[i] & mask) | std::hint::black_box(b[i] & !mask);
     }

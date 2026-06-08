@@ -37,21 +37,22 @@ jobs:
         with:
           name: code_quality_stats
           path: ./code_stats.txt
-  run_benches:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - run: cargo bench --all
-      - name: Save artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: bc-rust-benches
-          path: ./target/criterion
+  # the benches run crazy slow on the github agent. So there's really no point because it's not useful data.
+  # run_benches:
+  #   runs-on: ubuntu-latest
+  #   if: github.ref == 'refs/heads/main'
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #     - run: cargo bench --all
+  #     - name: Save artifacts
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: bc-rust-benches
+  #         path: ./target/criterion
   collect_ghpages:
     if: github.ref == 'refs/heads/main'
-    needs: [build_docs, code_stats, run_benches]
+    needs: [build_docs, code_stats]
     runs-on: ubuntu-latest
     steps:
       - run: mkdir ./gh-pages
@@ -65,11 +66,11 @@ jobs:
         with:
           name: code_quality_stats
           path: ./gh-pages/
-      - name: Get benches from previous job
-        uses: actions/download-artifact@v4
-        with:
-          name: bc-rust-benches
-          path: ./gh-pages/benches
+      # - name: Get benches from previous job
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: bc-rust-benches
+      #     path: ./gh-pages/benches
       - name: Archive Compatibility Matrix For Download
         uses:  actions/upload-pages-artifact@v3
         with:
