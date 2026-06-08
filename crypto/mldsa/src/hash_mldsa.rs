@@ -94,7 +94,7 @@ use bouncycastle_core::traits::{
     Algorithm, Hash, PHSignature, RNG, SecurityStrength, Signature, XOF,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::{SHA256, SHA512};
+use bouncycastle_sha2::{SHA256, SHA256_NAME, SHA512, SHA512_NAME};
 use core::marker::PhantomData;
 
 // Imports needed only for docs
@@ -126,7 +126,6 @@ pub const HASH_ML_DSA_87_WITH_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
 pub type HashMLDSA44_with_SHA256 = HashMLDSA<
     SHA256,
     32,
-    SHA256_OID,
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
     MLDSA44_SIG_LEN,
@@ -160,7 +159,6 @@ impl Algorithm for HashMLDSA44_with_SHA256 {
 pub type HashMLDSA65_with_SHA256 = HashMLDSA<
     SHA256,
     32,
-    SHA256_OID,
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
     MLDSA65_SIG_LEN,
@@ -194,7 +192,6 @@ impl Algorithm for HashMLDSA65_with_SHA256 {
 pub type HashMLDSA87_with_SHA256 = HashMLDSA<
     SHA256,
     32,
-    SHA256_OID,
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
     MLDSA87_SIG_LEN,
@@ -228,7 +225,6 @@ impl Algorithm for HashMLDSA87_with_SHA256 {
 pub type HashMLDSA44_with_SHA512 = HashMLDSA<
     SHA512,
     64,
-    SHA512_OID,
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
     MLDSA44_SIG_LEN,
@@ -262,7 +258,6 @@ impl Algorithm for HashMLDSA44_with_SHA512 {
 pub type HashMLDSA65_with_SHA512 = HashMLDSA<
     SHA512,
     64,
-    SHA512_OID,
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
     MLDSA65_SIG_LEN,
@@ -296,7 +291,6 @@ impl Algorithm for HashMLDSA65_with_SHA512 {
 pub type HashMLDSA87_with_SHA512 = HashMLDSA<
     SHA512,
     64,
-    SHA512_OID,
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
     MLDSA87_SIG_LEN,
@@ -332,9 +326,8 @@ impl Algorithm for HashMLDSA87_with_SHA512 {
 /// by specifying the hash function to use (in the verifier), and specifying the bytes of the OID to
 /// to use as its domain separator in constructing the message representative M'.
 pub struct HashMLDSA<
-    HASH: Hash + Default,
+    HASH: Hash + Algorithm + Default,
     const HASH_LEN: usize,
-    const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -381,9 +374,8 @@ pub struct HashMLDSA<
 }
 
 impl<
-    HASH: Hash + Default,
+    HASH: Hash + Algorithm + Default,
     const PH_LEN: usize,
-    const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -410,7 +402,6 @@ impl<
     HashMLDSA<
         HASH,
         PH_LEN,
-        oid,
         PK_LEN,
         SK_LEN,
         SIG_LEN,
@@ -568,7 +559,20 @@ impl<
             h.absorb(&[1u8]);
             h.absorb(&[ctx.len() as u8]);
             h.absorb(ctx);
-            h.absorb(oid);
+
+            // this is all statics, so the branch should compile out.
+            // Really, this should be a generic param of HashMLDSA, but unsized_const_params is currently
+            // a nightly-only feature.
+            match HASH::ALG_NAME {
+                SHA256_NAME => h.absorb(SHA256_OID),
+                SHA512_NAME => h.absorb(SHA512_OID),
+                _ => {
+                    return Err(SignatureError::GenericError(
+                        "Unsupported hash algorithm; you need to add it to the switch",
+                    ));
+                }
+            };
+
             h.absorb(ph);
             let mut mu = [0u8; MLDSA_MU_LEN];
             let bytes_written = h.squeeze_out(&mut mu);
@@ -691,7 +695,18 @@ impl<
             h.absorb(&[1u8]);
             h.absorb(&[ctx.len() as u8]);
             h.absorb(ctx);
-            h.absorb(oid);
+            // this is all statics, so the branch should compile out.
+            // Really, this should be a generic param of HashMLDSA, but unsized_const_params is currently
+            // a nightly-only feature.
+            match HASH::ALG_NAME {
+                SHA256_NAME => h.absorb(SHA256_OID),
+                SHA512_NAME => h.absorb(SHA512_OID),
+                _ => {
+                    return Err(SignatureError::GenericError(
+                        "Unsupported hash algorithm; you need to add it to the switch",
+                    ));
+                }
+            };
             h.absorb(ph);
             let mut mu = [0u8; MLDSA_MU_LEN];
             _ = h.squeeze_out(&mut mu);
@@ -765,12 +780,11 @@ impl<
 }
 
 impl<
-    HASH: Hash + Default,
+    HASH: Hash + Algorithm + Default,
     PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
-    const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -794,7 +808,6 @@ impl<
     for HashMLDSA<
         HASH,
         PH_LEN,
-        oid,
         PK_LEN,
         SK_LEN,
         SIG_LEN,
@@ -971,9 +984,8 @@ impl<
 }
 
 impl<
-    HASH: Hash + Default,
+    HASH: Hash + Algorithm + Default,
     const PH_LEN: usize,
-    const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -1000,7 +1012,6 @@ impl<
     for HashMLDSA<
         HASH,
         PH_LEN,
-        oid,
         PK_LEN,
         SK_LEN,
         SIG_LEN,

@@ -23,6 +23,8 @@
   appropriate.
 * Probably it makes sense to leave Hex and Base64 as requiring std; ... or maybe add a no_std version that uses
   fixed-sized blocks?
+* Make this build on the stable compiler. IE Remove the rust-toolchain.toml file that builds with nightly. Will require
+  some refactoring.
 * Create a cargo feature #[cfg(feature='rng')] and put it around things like keygen that takes an rng so that the build
   dependency on bouncycastle_rng is optional.
 * Enhance the default HashDRBG instantiation to take in NIST-compatible CPU jitter entropy? Or not? Maybe this is the
