@@ -115,9 +115,6 @@
 #![no_std]
 #![forbid(missing_docs)]
 #![forbid(unsafe_code)]
-#![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
-#![feature(generic_const_exprs)]
-#![feature(adt_const_params)]
 // These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',
 // or 'A' and 'a' are used and have specific meanings.
 // But need to tell the rust linter to not care.
@@ -127,16 +124,16 @@
 // MLDSA implementation, but I don't want accessed from outside, such as FIPS-internal functions.
 #![allow(private_bounds)]
 #![allow(private_interfaces)]
-// Used in HashMLDSA
-#![feature(unsized_const_params)]
+// Used in HashMLDSA for oid: &'static [u8] params.
+// #![allow(incomplete_features)] // needed because currently unsized_const_params is experimental
+// #![feature(adt_const_params)]
+// #![feature(unsized_const_params)]
 
 // imports needed just for docs
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::Signature;
-
-// todo -- re-run mutants
 
 // todo -- crucible tests
 
