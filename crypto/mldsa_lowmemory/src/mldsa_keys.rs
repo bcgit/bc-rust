@@ -183,6 +183,8 @@ impl<const k: usize, const T1_PACKED_LEN: usize, const PK_LEN: usize> SignatureP
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
         debug_assert_eq!(out.len(), PK_LEN);
 
+        out.fill(0);
+
         out[..32].copy_from_slice(&self.rho);
         out[32..].copy_from_slice(&self.t1_packed);
 

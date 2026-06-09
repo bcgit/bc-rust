@@ -54,6 +54,8 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
     }
 
     fn hash_internal_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.absorb(data);
         self.squeeze_out(output)
     }
@@ -200,6 +202,8 @@ impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
     }
 
     fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.hash_internal_out(data, output)
     }
 
@@ -239,6 +243,8 @@ impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
     }
 
     fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
         if !self.keccak.squeezing {
             self.keccak.absorb_bits(0x0F, 4).expect("Absorb_bits failed");
         };
@@ -261,6 +267,8 @@ impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
         if !(1..=7).contains(&num_bits) {
             return Err(HashError::InvalidLength("must be in the range [0,7]"));
         }
+
+        *output = 0;
 
         let mut buf = [0u8; 1];
         self.keccak.squeeze(&mut buf);

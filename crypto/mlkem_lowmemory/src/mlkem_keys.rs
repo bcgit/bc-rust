@@ -174,6 +174,8 @@ impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> KEMPublicKe
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
         debug_assert_eq!(self.t_hat_packed.len(), T_PACKED_LEN);
 
+        out.fill(0);
+
         out[..T_PACKED_LEN].copy_from_slice(&self.t_hat_packed);
         debug_assert_eq!(out[T_PACKED_LEN..].len(), 32);
         out[T_PACKED_LEN..].copy_from_slice(&self.rho);
@@ -548,6 +550,8 @@ impl<
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
         debug_assert_eq!(SK_LEN, 64);
+
+        out.fill(0);
 
         out[..32].copy_from_slice(&self.seed_d);
         out[32..].copy_from_slice(&self.z);

@@ -397,6 +397,8 @@ pub(crate) fn sig_encode<
     h: &Vector<k>,
     output: &mut [u8; SIG_LEN],
 ) -> usize {
+    output.fill(0);
+
     let mut pos = 0;
 
     output[..LAMBDA_over_4].copy_from_slice(c_tilde);

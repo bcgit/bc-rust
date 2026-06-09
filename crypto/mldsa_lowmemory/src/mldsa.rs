@@ -949,6 +949,8 @@ impl<
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
 
@@ -1181,6 +1183,8 @@ impl<
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         SK::from_keymaterial(&seed)?;
         Self::sign_mu_deterministic_out(&SK::from_keymaterial(&seed)?, mu, rnd, output)
     }
@@ -1586,6 +1590,8 @@ impl<
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         let mu = MuBuilder::compute_mu(&sk.tr(), msg, ctx)?;
         let bytes_written = Self::sign_mu_out(sk, &mu, output)?;
 
@@ -1621,6 +1627,8 @@ impl<
                 "Somehow you managed to construct a streaming signer without a private key, impressive!",
             ));
         }
+
+        output.fill(0);
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {

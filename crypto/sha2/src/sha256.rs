@@ -197,6 +197,8 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.do_update(data);
         self.do_final_out(output)
     }
@@ -241,6 +243,8 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
     }
 
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
         let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
 
         let bit_len: u64 = self.byte_count << 3;

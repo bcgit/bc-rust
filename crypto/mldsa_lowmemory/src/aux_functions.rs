@@ -167,6 +167,8 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
     z: &Polynomial,
     out: &mut [u8; POLY_Z_PACKED_LEN],
 ) {
+    out.fill(0);
+
     let mut t: [u32; 4] = [0; 4];
     match GAMMA1 {
         MLDSA44_GAMMA1 => {

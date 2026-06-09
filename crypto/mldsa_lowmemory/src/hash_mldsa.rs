@@ -590,6 +590,8 @@ impl<
             return Err(SignatureError::LengthError("ctx value is longer than 255 bytes"));
         }
 
+        output.fill(0);
+
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
         let mut h = H::new();
@@ -809,6 +811,8 @@ impl<
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         let mut ph_m = [0u8; PH_LEN];
         _ = HASH::default().hash_out(msg, &mut ph_m);
         Self::sign_ph_out(sk, &ph_m, ctx, output)
@@ -846,6 +850,8 @@ impl<
                 "Somehow you managed to construct a streaming signer without a private key, impressive!",
             ));
         }
+
+        output.fill(0);
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
@@ -1024,6 +1030,8 @@ impl<
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
         Self::sign_ph_deterministic_out(sk, ctx, ph, rnd, output)

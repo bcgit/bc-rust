@@ -330,6 +330,8 @@ impl<HASH: Hash + Default> HMAC<HASH> {
             ));
         }
 
+        out.fill(0);
+
         // Per RFC 2104 Section 2, save our inner digest to calculate our
         // outer digest. Note that we can't (necessarily) reuse out as a
         // scratch pad here: if we're truncating the output but not
@@ -378,6 +380,8 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
     }
 
     fn mac_out(mut self, data: &[u8], mut out: &mut [u8]) -> Result<usize, MACError> {
+        out.fill(0);
+
         self.do_update(data);
         self.do_final_out(&mut out)
     }
@@ -398,6 +402,8 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
     }
 
     fn do_final_out(self, mut out: &mut [u8]) -> Result<usize, MACError> {
+        out.fill(0);
+
         self.do_final_internal_out(&mut out)
     }
 

@@ -180,6 +180,8 @@ impl<const k: usize, const PK_LEN: usize>  KEMPublicKey<PK_LEN> for MLKEMPublicK
         debug_assert_eq!(PK_LEN, 12*k*32 + 32);
         debug_assert_eq!(POLY_BYTES, 12*32);
 
+        out.fill(0);
+
         let (pk_chunks, last_chunk) = out.as_chunks_mut::<POLY_BYTES>();
 
         // that should divide evenly the remainder of the array, leaving space for rho at the end
@@ -276,6 +278,8 @@ impl<const k: usize, PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>, const PK_LEN: u
     }
 
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        out.fill(0);
+
         self.ek.encode_out(out)
     }
 
@@ -390,7 +394,7 @@ impl<
     ///   3: dk ← (dkPKE ‖ ek ‖ H(ek) ‖ 𝑧)
     fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
         out.fill(0);
-        
+
         debug_assert_eq!(SK_LEN, /* dk_pke*/12*k*32 + /*ek*/PK_LEN + /*H(ek)*/32 + /*z*/32);
 
         let mut pos = 0usize;
@@ -584,6 +588,8 @@ impl<
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+
         self.sk_encode_out(out)
     }
 
@@ -751,6 +757,8 @@ impl<
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+
         self.dk.encode_out(out)
     }
 
