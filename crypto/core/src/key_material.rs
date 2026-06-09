@@ -38,7 +38,7 @@
 //! It as always possible, for example, to extract the bytes from a KeyMaterial object, manipulate them, and then re-wrap them in a new KeyMaterial object.
 
 use crate::errors::KeyMaterialError;
-use crate::traits::{RNG, SecurityStrength, Secret};
+use crate::traits::{RNG, Secret, SecurityStrength};
 use bouncycastle_utils::{ct, max, min};
 
 use core::cmp::{Ordering, PartialOrd};
@@ -50,7 +50,6 @@ pub type KeyMaterial0 = KeyMaterial<0>;
 pub type KeyMaterial128 = KeyMaterial<16>;
 pub type KeyMaterial256 = KeyMaterial<32>;
 pub type KeyMaterial512 = KeyMaterial<64>;
-
 
 /// A helper class used across the bc-rust.test library to hold bytes-like key material.
 /// See [KeyMaterial] for for details, such as constructors.
@@ -77,7 +76,6 @@ pub trait KeyMaterialTrait {
     /// however, this does not require [KeyMaterialTrait::allow_hazardous_operations] in the name of API ergonomics:
     /// setting [KeyMaterialTrait::allow_hazardous_operations] requires a mutable reference and reading the bytes
     /// is not an operation that should require mutability.
-    /// TODO -- consider whether this should consume the object
     fn ref_to_bytes(&self) -> &[u8];
 
     /// Get a mutable reference to the underlying key material bytes so that you can read or write
@@ -121,7 +119,11 @@ pub trait KeyMaterialTrait {
     /// [KeyMaterialTrait::allow_hazardous_operations] set.
     /// Throws [KeyMaterialError::InvalidLength] on a request to set the security level higher than the current key length.
     fn set_security_strength(&mut self, strength: SecurityStrength)
-                             -> Result<(), KeyMaterialError>;
+    -> Result<(), KeyMaterialError>;
+
+    fn do_hazardous_operations<F>(f: F)
+    where
+        F: FnOnce(&dyn KeyMaterialTrait);
 
     /// Sets this instance to be able to perform potentially hazardous conversions such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
@@ -286,6 +288,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     }
 }
 
+// todo -- you don't need to duplicate all the docstrings
 impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     /// Loads the provided data into a new KeyMaterial of the specified type.
     /// This is discouraged unless the caller knows the provenance of the data, such as loading it
@@ -453,6 +456,14 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.security_strength = strength;
         self.drop_hazardous_operations();
         Ok(())
+    }
+    fn do_hazardous_operations<F>(&mut self, f: F)
+    where
+        F: FnOnce(),
+    {
+        self.allow_hazardous_operations = true;
+        f();
+        self.allow_hazardous_operations = false;
     }
     /// Sets this instance to be able to perform potentially hazardous operations such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey.
