@@ -54,7 +54,11 @@
 
 # 0.1.2 Features / Changelog
 
-* ML-DSA
-* Low-Memory ML-DSA -- runs in about 1/10th of the usual memory (~ 30 kb of stack) with only minor performance impact.
+* New algorithms added to crypto/ :
+    * mldsa (FIPS 204)
+    * mldsa-lowmemory -- runs in about 1/10th of the usual memory (~ 30 kb of stack) with comparable performance impact.
+    * mlkem (FIPS 203)
+    * mlkem-lowmemory -- runs in about 1/4th of the usual memory (~ 12 kb of stack) with comparable performance impact.
 * Github issues resolved:
-    * #2, or whatever
+    * #6: https://github.com/bcgit/bc-rust/issues/6, thanks to Q. T. Felix (github: @Quant-TheodoreFelix)
+    * #10: https://github.com/bcgit/bc-rust/issues/10, thanks to Nicola Tuveri (github: @romen)
