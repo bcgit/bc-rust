@@ -103,7 +103,6 @@ pub trait KeyMaterialTrait {
     /// however, this does not require [KeyMaterialTrait::allow_hazardous_operations] in the name of API ergonomics:
     /// setting [KeyMaterialTrait::allow_hazardous_operations] requires a mutable reference and reading the bytes
     /// is not an operation that should require mutability.
-    /// TODO -- consider whether this should consume the object
     fn ref_to_bytes(&self) -> &[u8];
 
     /// Get a mutable reference to the underlying key material bytes so that you can read or write
@@ -148,6 +147,10 @@ pub trait KeyMaterialTrait {
     /// Throws [KeyMaterialError::InvalidLength] on a request to set the security level higher than the current key length.
     fn set_security_strength(&mut self, strength: SecurityStrength)
     -> Result<(), KeyMaterialError>;
+
+    fn do_hazardous_operations<F>(f: F)
+    where
+        F: FnOnce(&dyn KeyMaterialTrait);
 
     /// Sets this instance to be able to perform potentially hazardous operations such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
@@ -312,6 +315,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     }
 }
 
+// todo -- you don't need to duplicate all the docstrings
 impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     fn set_bytes_as_type(
         &mut self,
@@ -443,6 +447,21 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.drop_hazardous_operations();
         Ok(())
     }
+    fn do_hazardous_operations<F>(&mut self, f: F)
+    where
+        F: FnOnce(),
+    {
+        self.allow_hazardous_operations = true;
+        f();
+        self.allow_hazardous_operations = false;
+    }
+    /// Sets this instance to be able to perform potentially hazardous operations such as
+    /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey.
+    ///
+    /// The purpose of the hazardous operations guard is not to prevent the user from accessing their data,
+    /// but rather to make the developer think carefully about the operation they are about to perform,
+    /// and to give static analysis tools an obvious marker that a given KeyMaterial variable warrants
+    /// further inspection.
     fn allow_hazardous_operations(&mut self) {
         self.allow_hazardous_operations = true;
     }

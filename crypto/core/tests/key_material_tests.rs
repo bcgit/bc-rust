@@ -841,4 +841,17 @@ mod test_key_material {
             }
         }
     }
+
+    // TODO -- PLAYING WITH CLOSURES
+    #[test]
+    fn play_with_closures() {
+        do_closure(|| println!("Closure ran"));
+
+        fn do_closure<F>(f: F)
+        where
+            F: FnOnce(),
+        {
+            f()
+        }
+    }
 }
