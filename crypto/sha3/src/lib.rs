@@ -2,23 +2,23 @@
 //!
 //! # Examples
 //! ## Hash
-//! Hash functionality is accessed via the [Hash] trait,
-//! which is implemented by [SHA3_224], [SHA3_256], [SHA3_384] and [SHA3_512].
+//! Hash functionality is accessed via the [Hash] and [HashFixedOutput] traits,
+//! which are implemented by [SHA3_224], [SHA3_256], [SHA3_384] and [SHA3_512].
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::HashFixedOutput;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output: Vec<u8> = sha3::SHA3_256::new().hash(data);
+//! let output: [u8; 32] = sha3::SHA3_256::new().hash(data);
 //! ```
 //!
 //! More advanced usage will require creating a SHA3 or SHAKE object to hold state between successive calls,
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::{Hash, HashFixedOutput};
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F
@@ -31,20 +31,20 @@
 //!     sha3.do_update(chunk);
 //! }
 //!
-//! let output: Vec<u8> = sha3.do_final();
+//! let output: [u8; 32] = sha3.do_final();
 //! ```
 //!
 //! It is also possible to provide input where the final byte contains less than 8 bits of data (ie is a partial byte);
 //! for example, the following code uses only 3 bits of the final byte:
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::{Hash, HashFixedOutput};
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
 //! let mut sha3 = sha3::SHA3_256::new();
 //! sha3.do_update(&data[..data.len()-1]);
 //! let final_byte = data[data.len()-1];
-//! let output: Vec<u8> = sha3.do_final_partial_bits(final_byte, 3).expect("Failed to finalize hash state.");
+//! let output: [u8; 32] = sha3.do_final_partial_bits(final_byte, 3).expect("Failed to finalize hash state.");
 //! ```
 //!
 //! ## XOF
@@ -63,7 +63,7 @@
 //! ```
 //!
 //! As with [Hash] above, the [XOF] trait has streaming APIs in the form of [XOF::absorb] and [XOF::squeeze].
-//! Unlike [Hash::do_final], [XOF::squeeze] can be called multiple times.
+//! Unlike [HashFixedOutput::do_final], [XOF::squeeze] can be called multiple times.
 //! The following code produces the same output as the previous example:
 //!```
 //! use bouncycastle_core::traits::XOF;
@@ -108,7 +108,7 @@
 #![allow(private_bounds)]
 
 use crate::keccak::KeccakSize;
-use bouncycastle_core::traits::{Algorithm, HashAlgParams, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashFixedOutput, SecurityStrength};
 
 // imports needed for docs
 #[allow(unused_imports)]
@@ -238,6 +238,11 @@ impl HashAlgParams for SHA3_512Params {
 impl SHA3Params for SHA3_512Params {
     const SIZE: KeccakSize = KeccakSize::_512;
 }
+
+impl HashFixedOutput<{ SHA3_224Params::OUTPUT_LEN }> for SHA3_224 {}
+impl HashFixedOutput<{ SHA3_256Params::OUTPUT_LEN }> for SHA3_256 {}
+impl HashFixedOutput<{ SHA3_384Params::OUTPUT_LEN }> for SHA3_384 {}
+impl HashFixedOutput<{ SHA3_512Params::OUTPUT_LEN }> for SHA3_512 {}
 
 trait SHAKEParams: Algorithm {
     const SIZE: KeccakSize;

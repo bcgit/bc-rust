@@ -202,12 +202,6 @@ impl<PARAMS: SHA2Params> Hash for Sha512Internal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output = vec![0u8; self.output_len()];
-        self.hash_out(data, &mut output);
-        output
-    }
-
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         output.fill(0);
 
@@ -247,12 +241,6 @@ impl<PARAMS: SHA2Params> Hash for Sha512Internal<PARAMS> {
         self.x_buf_off = remaining;
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
-        self.do_final_out(&mut output);
-        output
-    }
-
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
         output.fill(0);
 
@@ -286,18 +274,6 @@ impl<PARAMS: SHA2Params> Hash for Sha512Internal<PARAMS> {
         }
 
         n
-    }
-
-    /// TODO: This is defined in FIPS 180-4 s. 5.1.2
-    /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: Could implement if there is demand.
-    #[allow(unused)]
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        unimplemented!()
     }
 
     /// TODO: This is defined in FIPS 180-4 s. 5.1.2

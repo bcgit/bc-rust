@@ -116,12 +116,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output: Vec<u8> = vec![0u8; PARAMS::OUTPUT_LEN];
-        _ = self.hash_internal(data, &mut output[..]);
-        output
-    }
-
     fn hash_out(self, data: &[u8], mut output: &mut [u8]) -> usize {
         output.fill(0);
 
@@ -130,15 +124,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
 
     fn do_update(&mut self, data: &[u8]) {
         self.keccak.absorb(data)
-    }
-
-    fn do_final(self) -> Vec<u8> {
-        let dbg_rslt_len = self.output_len();
-        let mut output: Vec<u8> = vec![0u8; self.output_len()];
-        let bytes_written = self.do_final_out(output.as_mut_slice());
-        debug_assert_eq!(bytes_written, dbg_rslt_len);
-
-        output
     }
 
     // todo -- why doesn't this take a &mut [u8; HASH_LEN] ?
@@ -156,20 +141,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
             self.keccak.squeeze(&mut output[..min])
         };
         bytes_written
-    }
-
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        let dbg_rslt_len = self.output_len();
-        let mut output: Vec<u8> = vec![0u8; self.output_len()];
-        let bytes_written =
-            self.do_final_partial_bits_out(partial_byte, num_partial_bits, output.as_mut_slice())?;
-        debug_assert_eq!(bytes_written, dbg_rslt_len);
-
-        Ok(output)
     }
 
     fn do_final_partial_bits_out(

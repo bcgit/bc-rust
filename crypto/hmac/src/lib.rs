@@ -53,12 +53,12 @@
 //! ```
 //!
 //! ## Computing a MAC
-//! MAC functionality is accessed via the [MAC] trait.
+//! MAC functionality is accessed via the [MAC] and [MACFixedOutput] traits.
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
 //! use bouncycastle_hmac::HMAC_SHA256;
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::traits::{MAC, MACFixedOutput};
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
@@ -67,7 +67,7 @@
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let hmac = HMAC_SHA256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
-//! let output: Vec<u8> = hmac.mac(data);
+//! let output: [u8; 32] = hmac.mac(data);
 //! ```
 //!
 //! More advanced usage will require creating an HMAC object to hold state between successive calls,
@@ -75,7 +75,7 @@
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::traits::{MAC, MACFixedOutput};
 //! use bouncycastle_hmac::HMAC_SHA256;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
@@ -84,7 +84,7 @@
 //! let mut hmac = HMAC_SHA256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
 //! hmac.do_update(b"Hello,");
 //! hmac.do_update(b" world!");
-//! let output: Vec<u8> = hmac.do_final();
+//! let output: [u8; 32] = hmac.do_final();
 //! ```
 //!
 //! ## Verifying a MAC
@@ -115,7 +115,7 @@
 //! ```
 //!
 //! Similarly, a streaming version is available, which is identical to the streaming interface for
-//! computing a mac value, but calls [MAC::do_verify_final] instead of [MAC::do_final].
+//! computing a mac value, but calls [MAC::do_verify_final] instead of [MACFixedOutput::do_final].
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
@@ -159,7 +159,7 @@
 
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, Hash, HashFixedOutput, MAC, MACFixedOutput, SecurityStrength};
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_utils::ct;
@@ -337,14 +337,15 @@ impl<HASH: Hash + Default> HMAC<HASH> {
         // scratch pad here: if we're truncating the output but not
         // truncating the underlying hashes, we'd lose bytes and compute an
         // invalid outer hashes.
-        // TODO: rework this to be no_std friendly (ie no vec!)
-        let mut ihash = vec![0u8; self.hasher.output_len()];
-        self.hasher.do_final_out(&mut ihash);
+        let mut ihash = [0u8; LARGEST_HASHER_OUTPUT_LEN];
+        let ihash_len = self.hasher.output_len();
+        self.hasher.do_final_out(&mut ihash[..ihash_len]);
 
         // ohash
         self.hasher = HASH::default();
         self.pad_key_into_hasher(OPAD_BYTE);
-        self.hasher.do_update(&ihash);
+        self.hasher.do_update(&ihash[..ihash_len]);
+        ihash.fill(0);
         Ok(self.hasher.do_final_out(out))
     }
 }
@@ -373,12 +374,6 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
         self.hasher.output_len()
     }
 
-    fn mac(self, data: &[u8]) -> Vec<u8> {
-        let mut out = vec![0_u8; self.hasher.output_len()];
-        let bytes_written = self.mac_out(data, &mut out).expect("HMAC::mac(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
-        out[..bytes_written].to_vec()
-    }
-
     fn mac_out(mut self, data: &[u8], mut out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
 
@@ -395,12 +390,6 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
         self.hasher.do_update(data)
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let mut out = vec![0_u8; self.hasher.output_len()];
-        self.do_final_internal_out(&mut out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
-        out
-    }
-
     fn do_final_out(self, mut out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
 
@@ -408,15 +397,23 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
     }
 
     fn do_verify_final(self, mac: &[u8]) -> bool {
-        let mut out = vec![0_u8; HASH::default().output_len()];
+        let mut out = [0_u8; LARGEST_HASHER_OUTPUT_LEN];
         let output_len = self.do_final_internal_out(&mut out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
         if mac.len() != output_len {
+            out.fill(0);
             return false;
         }
-        ct::ct_eq_bytes(mac, &out[..output_len])
+        let matches = ct::ct_eq_bytes(mac, &out[..output_len]);
+        out.fill(0);
+        matches
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
         HASH::default().max_security_strength()
     }
+}
+
+impl<HASH: HashFixedOutput<OUTPUT_LEN> + Default, const OUTPUT_LEN: usize> MACFixedOutput<OUTPUT_LEN>
+    for HMAC<HASH>
+{
 }

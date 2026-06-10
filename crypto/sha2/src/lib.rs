@@ -2,23 +2,24 @@
 //!
 //! # Examples
 //! ## Hash
-//! Hash functionality is accessed via the [bouncycastle_core::traits::Hash] trait,
-//! which is implemented by [SHA224], [SHA256], [SHA384] and [SHA512].
+//! Hash functionality is accessed via the [bouncycastle_core::traits::Hash] and
+//! [bouncycastle_core::traits::HashFixedOutput] traits,
+//! which are implemented by [SHA224], [SHA256], [SHA384] and [SHA512].
 //!
 //! The simplest usage is via the static functions.
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::HashFixedOutput;
 //! use bouncycastle_sha2 as sha2;
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output: Vec<u8> = sha2::SHA256::new().hash(data);
+//! let output: [u8; 32] = sha2::SHA256::new().hash(data);
 //! ```
 //!
 //! More advanced usage will require creating a SHA3 or SHAKE object to hold state between successive calls,
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::{Hash, HashFixedOutput};
 //! use bouncycastle_sha2 as sha2;
 //!
 //! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F
@@ -31,7 +32,7 @@
 //!     sha2.do_update(chunk);
 //! }
 //!
-//! let output: Vec<u8> = sha2.do_final();
+//! let output: [u8; 32] = sha2.do_final();
 //! ```
 
 #![forbid(unsafe_code)]
@@ -42,7 +43,7 @@ mod sha512;
 
 pub use self::sha256::SHA256Internal;
 pub use self::sha512::Sha512Internal;
-use bouncycastle_core::traits::{Algorithm, HashAlgParams, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashFixedOutput, SecurityStrength};
 
 /*** String constants ***/
 pub const SHA224_NAME: &str = "SHA224";
@@ -135,3 +136,8 @@ impl HashAlgParams for SHA512Params {
     const BLOCK_LEN: usize = 128;
 }
 impl SHA2Params for SHA512Params {}
+
+impl HashFixedOutput<{ SHA224Params::OUTPUT_LEN }> for SHA224 {}
+impl HashFixedOutput<{ SHA256Params::OUTPUT_LEN }> for SHA256 {}
+impl HashFixedOutput<{ SHA384Params::OUTPUT_LEN }> for SHA384 {}
+impl HashFixedOutput<{ SHA512Params::OUTPUT_LEN }> for SHA512 {}
