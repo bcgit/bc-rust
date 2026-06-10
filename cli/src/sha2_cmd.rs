@@ -24,12 +24,14 @@ fn do_sha2(mut sha2: impl Hash, output_hex: bool) {
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
-    let out = sha2.do_final();
+    let mut out = [0u8; 64];
+    let bytes_written = sha2.do_final_out(&mut out);
+    let out = &out[..bytes_written];
 
     if output_hex {
         for b in out.iter() {
             print!("{b:02x}");
         }
-    } else { io::stdout().write(&out).unwrap(); }
+    } else { io::stdout().write(out).unwrap(); }
     println!();
 }

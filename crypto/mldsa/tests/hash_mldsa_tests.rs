@@ -2,7 +2,7 @@
 mod hash_mldsa_tests {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core::traits::{Hash, PHSignature, Signature};
+    use bouncycastle_core::traits::{HashFixedOutput, PHSignature, Signature};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{
@@ -134,14 +134,14 @@ mod hash_mldsa_tests {
         let msg = b"The quick brown fox jumped over the lazy dog";
 
         let (pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
-        let ph: [u8; 32] = SHA256::default().hash(msg)[..32].try_into().unwrap();
+        let ph: [u8; 32] = SHA256::default().hash(msg);
         let sig_val = HashMLDSA44_with_SHA256::sign_ph(&sk, &ph, None).unwrap();
         HashMLDSA44_with_SHA256::verify_ph(&pk, &ph, None, &sig_val).unwrap();
         HashMLDSA44_with_SHA256::verify(&pk, msg, None, &sig_val).unwrap();
 
         // sign_ph_out
         let (pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
-        let ph: [u8; 32] = SHA256::default().hash(msg)[..32].try_into().unwrap();
+        let ph: [u8; 32] = SHA256::default().hash(msg);
         let mut sig_val = [0u8; MLDSA44_SIG_LEN];
         let bytes_written =
             HashMLDSA44_with_SHA256::sign_ph_out(&sk, &ph, None, &mut sig_val).unwrap();
@@ -175,7 +175,7 @@ mod hash_mldsa_tests {
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let sig =
             HashMLDSA44_with_SHA512::sign_ph_deterministic(&sk, None, None, &ph, rnd).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
@@ -187,7 +187,7 @@ mod hash_mldsa_tests {
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let sig =
             HashMLDSA65_with_SHA512::sign_ph_deterministic(&sk, None, None, &ph, rnd).unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
@@ -199,7 +199,7 @@ mod hash_mldsa_tests {
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let sig =
             HashMLDSA87_with_SHA512::sign_ph_deterministic(&sk, None, None, &ph, rnd).unwrap();
 
@@ -213,7 +213,7 @@ mod hash_mldsa_tests {
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let sig =
             HashMLDSA44_with_SHA512::sign_ph_deterministic(&sk, None, Some(ctx), &ph, rnd).unwrap();
 
@@ -241,7 +241,7 @@ mod hash_mldsa_tests {
 
         // BEGIN expected values
         let (expected_pk, expected_sk) = HashMLDSA44_with_SHA512::keygen_from_seed(&seed).unwrap();
-        let expected_ph: [u8; 64] = SHA512::new().hash(msg).try_into().unwrap();
+        let expected_ph: [u8; 64] = SHA512::new().hash(msg);
         let mut expected_sig = [0u8; MLDSA44_SIG_LEN];
         let bytes_written = HashMLDSA44_with_SHA512::sign_ph_deterministic_out(
             &expected_sk, None, ctx, &expected_ph, rnd, &mut expected_sig,
@@ -301,13 +301,13 @@ mod hash_mldsa_tests {
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let sig =
             HashMLDSA44_with_SHA512::sign_ph_with_expanded_key(&sk_expanded, &ph, None).unwrap();
         HashMLDSA44_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
 
         // and sign_ph_with_expanded_key_out
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let mut sig = [0u8; MLDSA44_SIG_LEN];
         let bytes_written = HashMLDSA44_with_SHA512::sign_ph_with_expanded_key_out(
             &sk_expanded, &ph, None, &mut sig,
@@ -328,7 +328,7 @@ mod hash_mldsa_tests {
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let sig =
             HashMLDSA65_with_SHA512::sign_ph_with_expanded_key(&sk_expanded, &ph, None).unwrap();
         HashMLDSA65_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
@@ -345,7 +345,7 @@ mod hash_mldsa_tests {
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
-        let ph: [u8; 64] = SHA512::new().hash(msg)[..64].try_into().unwrap();
+        let ph: [u8; 64] = SHA512::new().hash(msg);
         let sig =
             HashMLDSA87_with_SHA512::sign_ph_with_expanded_key(&sk_expanded, &ph, None).unwrap();
         HashMLDSA87_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();

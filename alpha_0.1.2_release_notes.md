@@ -17,8 +17,9 @@
 * Ensure that all crates have `#![forbid(missing_docs)]`
 * Apply Secret trait consistently across the library --> study the `Zeroize` trait in RustCrypto
 * Change all "[u8;0]" to "[]" throughout the code and docs ... or better yet, change the APIs to take an Option<>
-* Change all `-> Vec<u8>` to `-> [u8; CONST_LEN]`, and the `output: &mut [u8]` to `output: &mut [u8; CONST_LEN]` where
-  appropriate.
+* Change the `output: &mut [u8]` to `output: &mut [u8; CONST_LEN]` where appropriate. (The `-> Vec<u8>` half of this
+  item is done, see changelog. The `*_out` slice parameters were deliberately left as `&mut [u8]` because the
+  documented truncation / oversized-buffer semantics depend on them; revisit per-API.)
 * Probably it makes sense to leave Hex and Base64 as requiring std; ... or maybe add a no_std version that uses
   fixed-sized blocks?
 * Create a cargo feature #[cfg(feature='rng')] and put it around things like keygen that takes an rng so that the build
@@ -52,6 +53,15 @@
 
 * ML-DSA
 * Low-Memory ML-DSA -- runs in about 1/10th of the usual memory (~ 30 kb of stack) with only minor performance impact.
+* (Breaking, progress on #14) Removed all heap-allocating `-> Vec<u8>` functions from the `Hash` and `MAC` traits
+  (`hash`, `do_final`, `do_final_partial_bits`, `mac`). They are replaced by the new `HashFixedOutput<const OUTPUT_LEN>`
+  and `MACFixedOutput<const OUTPUT_LEN>` traits which return `[u8; OUTPUT_LEN]` stack arrays, following the same
+  const-generic pattern as the `KEM` and `Signature` traits. All concrete algorithms (SHA2, SHA3, HMAC) implement the
+  new traits; the factory enums keep only the `*_out` functions because their output length is a runtime property.
+  The XOF functions (`hash_xof`, `squeeze`) keep returning `Vec<u8>` because their output length is inherently a
+  runtime parameter.
+* HMAC no longer heap-allocates its intermediate inner digest (was an internal `vec!`, now a fixed stack buffer),
+  and the inner digest buffer is zeroized after use.
 * All public `*_out(.., out: &mut [u8])` functions now begin by zeroizing the entire output buffer with `.fill(0)`,
   preventing exposure of stale data in oversized output buffers or on early error returns.
 * Github issues resolved:

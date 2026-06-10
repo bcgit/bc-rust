@@ -63,14 +63,17 @@ fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
 
     if verify_val.is_none() {
         // compute a MAC value
-        let out = mac.do_final();
+        let mut out = [0u8; 64];
+        let bytes_written =
+            mac.do_final_out(&mut out).expect("Failed to compute the MAC value");
+        let out = &out[..bytes_written];
 
         if output_hex {
             for b in out.iter() {
                 print!("{b:02x}");
             }
         } else {
-            io::stdout().write(&out).unwrap();
+            io::stdout().write(out).unwrap();
         }
         println!();
     } else {

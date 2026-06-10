@@ -1,7 +1,7 @@
 use crate::DUMMY_SEED_512;
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType, KeyMaterialTrait};
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::traits::MACFixedOutput;
 use bouncycastle_core::traits::{SecurityStrength};
 
 pub struct TestFrameworkMAC {
@@ -15,7 +15,7 @@ impl TestFrameworkMAC {
 
     /// Test all the members of trait Hash against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
-    pub fn test_mac<M: MAC>(
+    pub fn test_mac<M: MACFixedOutput<N>, const N: usize>(
         &self,
         key: &impl KeyMaterialTrait,
         input: &[u8],
@@ -23,7 +23,7 @@ impl TestFrameworkMAC {
     ) {
         // Test ::mac()
         let out = M::new_allow_weak_key(key).unwrap().mac(input);
-        assert_eq!(out, expected_output);
+        assert_eq!(&out[..], expected_output);
 
         // Test ::mac_out
         let mut out = vec![0u8; expected_output.len()];
@@ -53,7 +53,7 @@ impl TestFrameworkMAC {
         let output_len = mac.output_len();
         mac.do_update(input);
         let out = mac.do_final();
-        assert_eq!(out, expected_output);
+        assert_eq!(&out[..], expected_output);
 
         // Test .output_len()
         assert_eq!(output_len, out.len());

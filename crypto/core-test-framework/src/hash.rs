@@ -1,4 +1,4 @@
-use bouncycastle_core::traits::{Hash, HashAlgParams};
+use bouncycastle_core::traits::{HashAlgParams, HashFixedOutput};
 
 pub struct TestFrameworkHash {
     pub enable_partial_final_input_tests: bool,
@@ -13,17 +13,18 @@ impl TestFrameworkHash {
     /// This gives good baseline test coverage, but is not exhaustive; for example it does not test
     /// do_final_partial_bits() or do_final_partial_bits_out()
     /// because those require different input-output pairs.
-    pub fn test_hash<H: Hash + HashAlgParams + Default>(
+    pub fn test_hash<H: HashFixedOutput<N> + HashAlgParams + Default, const N: usize>(
         &self,
         input: &[u8],
         expected_output: &[u8],
     ) {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
+        assert_eq!(N, H::OUTPUT_LEN);
 
-        /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
-        let output_vec = H::default().hash(input);
-        assert_eq!(output_vec, expected_output);
+        /*** fn hash(self, data: &[u8]) -> [u8; N] **/
+        let output_arr = H::default().hash(input);
+        assert_eq!(&output_arr[..], expected_output);
 
         /*** fn hash_out(self, data: &[u8], output: &mut [u8]) -> Result<usize, HashError> ***/
         let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
@@ -31,12 +32,12 @@ impl TestFrameworkHash {
         assert_eq!(output_buf, expected_output);
 
         /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
-        /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
+        /*** fn do_final(self) -> [u8; N] **/
 
         let mut message_digest = H::default();
         message_digest.do_update(input);
         let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+        assert_eq!(expected_output, &output_buf[..], "Incorrect output for input (update_bytes)");
 
         for length in 1..output_buf.len() {
             let mut truncated = vec![0_u8; length];
@@ -58,7 +59,7 @@ impl TestFrameworkHash {
             message_digest.do_update(chunk);
         }
         let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+        assert_eq!(expected_output, &output_buf[..], "Incorrect output for input (update_bytes)");
 
         /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
         /*** fn do_final_out(self, output: &mut [u8]) -> Result<usize, HashError> ***/

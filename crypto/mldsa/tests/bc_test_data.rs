@@ -14,7 +14,7 @@ mod bc_test_data {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
-        Hash, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
+        HashFixedOutput, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
     };
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{
@@ -722,10 +722,7 @@ mod bc_test_data {
                     if IS_HASH_MLDSA {
                         // we're only testing SHA512
                         let ph: [u8; 64] = SHA512::new()
-                            .hash(&hex::decode(&self.msg).unwrap())
-                            .as_slice()
-                            .try_into()
-                            .unwrap();
+                            .hash(&hex::decode(&self.msg).unwrap());
                         assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
                         let sig = HashMLDSA44_with_SHA512::sign_ph_deterministic(
@@ -800,10 +797,7 @@ mod bc_test_data {
                     if IS_HASH_MLDSA {
                         // we're only testing SHA512
                         let ph: [u8; 64] = SHA512::new()
-                            .hash(&hex::decode(&self.msg).unwrap())
-                            .as_slice()
-                            .try_into()
-                            .unwrap();
+                            .hash(&hex::decode(&self.msg).unwrap());
                         assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
                         let sig = HashMLDSA65_with_SHA512::sign_ph_deterministic(
@@ -872,10 +866,7 @@ mod bc_test_data {
                     if IS_HASH_MLDSA {
                         // we're only testing SHA512
                         let ph: [u8; 64] = SHA512::new()
-                            .hash(&hex::decode(&self.msg).unwrap())
-                            .as_slice()
-                            .try_into()
-                            .unwrap();
+                            .hash(&hex::decode(&self.msg).unwrap());
                         assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
                         let sig = HashMLDSA87_with_SHA512::sign_ph_deterministic(
