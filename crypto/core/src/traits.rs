@@ -24,10 +24,6 @@ pub trait Hash : Default {
     /// The size of the output in bytes.
     fn output_len(&self) -> usize;
 
-    /// A static one-shot API that hashes the provided data.
-    /// `data` can be of any length, including zero bytes.
-    fn hash(self, data: &[u8]) -> Vec<u8>;
-
     /// A static one-shot API that hashes the provided data into the provided output slice.
     /// `data` can be of any length, including zero bytes.
     /// The entire output buffer is zeroized before the hash output is written.
@@ -42,11 +38,6 @@ pub trait Hash : Default {
 
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
-    // fn do_final(self) -> Result<Vec<u8>, HashError>;
-    fn do_final(self) -> Vec<u8>;
-
-    /// Finish absorbing input and produce the hashes output.
-    /// Consumes self, so this must be the final call to this object.
     ///
     /// If the provided buffer is smaller than the hash's output length, the output will be truncated.
     /// If the provided buffor is larger than the hash's output length, the output  will be placed in
@@ -56,14 +47,6 @@ pub trait Hash : Default {
     ///
     /// The return value is the number of bytes written.
     fn do_final_out(self, output: &mut [u8]) -> usize;
-
-    /// The same as [Hash::do_final], but allows for supplying a partial byte as the last input.
-    /// Assumes that the input is in the least significant bits (big endian).
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError>;
 
     /// The same as [Hash::do_final_out], but allows for supplying a partial byte as the last input.
     /// Assumes that the input is in the least significant bits (big endian).
@@ -79,6 +62,49 @@ pub trait Hash : Default {
 
     /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
     fn max_security_strength(&self) -> SecurityStrength;
+}
+
+/// An extension to [Hash] for algorithms whose output length is known at compile time.
+///
+/// `OUTPUT_LEN` is the output length of the hash in bytes and must equal [Hash::output_len];
+/// implementors are expected to declare it via the matching [HashAlgParams::OUTPUT_LEN] constant,
+/// for example `impl HashFixedOutput<{ SHA256Params::OUTPUT_LEN }> for SHA256 {}`.
+///
+/// The provided methods return fixed-size arrays instead of heap allocations, so they are
+/// usable in `no_std` environments and keep all intermediate state on the stack.
+/// Runtime-dispatching wrappers (such as factory enums) whose output length varies by variant
+/// cannot implement this trait and offer only the `*_out` functions of [Hash].
+pub trait HashFixedOutput<const OUTPUT_LEN: usize>: Hash {
+    /// A static one-shot API that hashes the provided data.
+    /// `data` can be of any length, including zero bytes.
+    fn hash(self, data: &[u8]) -> [u8; OUTPUT_LEN] {
+        let mut output = [0u8; OUTPUT_LEN];
+        let written = self.hash_out(data, &mut output);
+        debug_assert_eq!(written, OUTPUT_LEN);
+        output
+    }
+
+    /// Finish absorbing input and produce the hashes output.
+    /// Consumes self, so this must be the final call to this object.
+    fn do_final(self) -> [u8; OUTPUT_LEN] {
+        let mut output = [0u8; OUTPUT_LEN];
+        let written = self.do_final_out(&mut output);
+        debug_assert_eq!(written, OUTPUT_LEN);
+        output
+    }
+
+    /// The same as [HashFixedOutput::do_final], but allows for supplying a partial byte as the last input.
+    /// Assumes that the input is in the least significant bits (big endian).
+    fn do_final_partial_bits(
+        self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+    ) -> Result<[u8; OUTPUT_LEN], HashError> {
+        let mut output = [0u8; OUTPUT_LEN];
+        let written = self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
+        debug_assert_eq!(written, OUTPUT_LEN);
+        Ok(output)
+    }
 }
 
 pub trait HashAlgParams: Algorithm {
@@ -234,13 +260,14 @@ pub trait KEMPrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret +
 /// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that
 /// can be used to verify the integrity of data.
 ///
-/// This trait provides one-shot functions [MAC::mac], [MAC::mac_out], and [MAC::verify].
-/// It also provides streaming functions [MAC::do_update], [MAC::do_final], [MAC::do_final_out],
+/// This trait provides one-shot functions [MAC::mac_out] and [MAC::verify].
+/// It also provides streaming functions [MAC::do_update], [MAC::do_final_out],
 /// and [MAC::do_verify_final].
+/// Fixed-size variants that return the MAC value as an array are provided by [MACFixedOutput].
 /// The workflow is that a MAC object is initialized with a key with [MAC::new] -- or [MAC::new_allow_weak_key] if you
 /// need to disable the library's safety mechanism to prevent the use of weak keys -- then data is
 /// processed into one or more calls to [MAC::do_update],
-/// after that the object can either create a MAC with [MAC::do_final] or [MAC::do_final_out] (which are final functions, and so consume the object),
+/// after that the object can either create a MAC with [MACFixedOutput::do_final] or [MAC::do_final_out] (which are final functions, and so consume the object),
 /// or the object can be used to verify a MAC.
 ///
 /// For varifying an existing MAC, it is functionally equivalent to use the provided [MAC::verify] and [MAC::do_verify_final]
@@ -282,17 +309,6 @@ pub trait MAC: Sized {
     /// The size of the output in bytes.
     fn output_len(&self) -> usize;
 
-    /// One-shot API that computes a MAC for the provided data.
-    /// `data` can be of any length, including zero bytes.
-    ///
-    /// Note about the security strength of the provided key:
-    /// If the provided key is tagged at a lower [SecurityStrength] than the instantiated MAC algorithm,
-    /// this will fail with an error:
-    /// ```text
-    /// MACError::KeyMaterialError(KeyMaterialError::SecurityStrength("HMAC::init(): provided key has a lower security strength than the instantiated HMAC")
-    /// ```
-    fn mac(self, data: &[u8]) -> Vec<u8>;
-
     /// One-shot API that computes a MAC for the provided data and writes it into the provided output slice.
     /// `data` can be of any length, including zero bytes.
     ///
@@ -321,8 +337,6 @@ pub trait MAC: Sized {
     /// do_update() is intended to be used as part of a streaming interface, and so may by called multiple times.
     fn do_update(&mut self, data: &[u8]);
 
-    fn do_final(self) -> Vec<u8>;
-
     /// Depending on the underlying MAC implementation, NIST may require that the library enforce
     /// a minimum length on the mac output value. See documentation for the underlying implementation
     /// to see conditions under which it throws [MACError::InvalidLength].
@@ -342,6 +356,42 @@ pub trait MAC: Sized {
 
     /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
     fn max_security_strength(&self) -> SecurityStrength;
+}
+
+/// An extension to [MAC] for algorithms whose output length is known at compile time.
+///
+/// `OUTPUT_LEN` is the full (untruncated) MAC output length in bytes and must equal [MAC::output_len].
+///
+/// The provided methods return fixed-size arrays instead of heap allocations, so they are
+/// usable in `no_std` environments and keep all intermediate state on the stack.
+/// Runtime-dispatching wrappers (such as factory enums) whose output length varies by variant
+/// cannot implement this trait and offer only the `*_out` functions of [MAC].
+pub trait MACFixedOutput<const OUTPUT_LEN: usize>: MAC {
+    /// One-shot API that computes a MAC for the provided data.
+    /// `data` can be of any length, including zero bytes.
+    fn mac(self, data: &[u8]) -> [u8; OUTPUT_LEN] {
+        let mut output = [0u8; OUTPUT_LEN];
+        // Infallible: OUTPUT_LEN is the full MAC output length, so the minimum-length
+        // check on truncated MAC values in mac_out() cannot fail.
+        let written = self
+            .mac_out(data, &mut output)
+            .expect("MACFixedOutput::mac(): full-length output buffer was rejected");
+        debug_assert_eq!(written, OUTPUT_LEN);
+        output
+    }
+
+    /// Finish absorbing input and produce the MAC value.
+    /// Consumes self, so this must be the final call to this object.
+    fn do_final(self) -> [u8; OUTPUT_LEN] {
+        let mut output = [0u8; OUTPUT_LEN];
+        // Infallible: OUTPUT_LEN is the full MAC output length, so the minimum-length
+        // check on truncated MAC values in do_final_out() cannot fail.
+        let written = self
+            .do_final_out(&mut output)
+            .expect("MACFixedOutput::do_final(): full-length output buffer was rejected");
+        debug_assert_eq!(written, OUTPUT_LEN);
+        output
+    }
 }
 
 #[derive(Eq, PartialEq, PartialOrd, Clone, Debug)]
