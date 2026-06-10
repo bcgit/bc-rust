@@ -14,7 +14,9 @@ use crate::mlkem_keys::{MLKEMPublicKeyInternalTrait, MLKEMPublicKeyTrait};
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, KEM, RNG, SecurityStrength, XOF};
+use bouncycastle_core::traits::{
+    Algorithm, Hash, KEMDecapsulator, KEMEncapsulator, RNG, SecurityStrength, XOF,
+};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
 use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes};
@@ -233,6 +235,15 @@ impl<
         T_PACKED_LEN,
     >
 {
+    /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
+    ///
+    /// Key generation is intentionally not part of the [KEMEncapsulator] / [KEMDecapsulator] traits;
+    /// it is provided as an inherent associated function directly on the algorithm struct.
+    /// Error condition: basically only on RNG failures.
+    pub fn keygen() -> Result<(PK, SK), KEMError> {
+        Self::keygen_from_os_rng()
+    }
+
     /// Should still be ok in FIPS mode
     pub fn keygen_from_os_rng() -> Result<(PK, SK), KEMError> {
         let mut seed = KeyMaterial::<64>::new();
@@ -333,13 +344,13 @@ impl<
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
     /// Output: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     ///
-    /// Unlike the more public function exposed by [KEM::encaps], this returns the shared secret as raw bytes
+    /// Unlike the more public function exposed by [KEMEncapsulator::encaps], this returns the shared secret as raw bytes
     /// instead of wrapped in an appropriately-set [KeyMaterialTrait], so you're on your own for handling it properly.
     ///
     /// Note: this is an internal function that allows the caller to specify the encapsulation
     /// randomness (which is the message `m` to be encrypted by the underlying PKE scheme).
     /// This function should not be used directly unless you really have a
-    /// good reason. [KEM::encaps] should be used in 99.9% of cases.
+    /// good reason. [KEMEncapsulator::encaps] should be used in 99.9% of cases.
     /// The reason this is exposed publicly is: A) for unit testing that requires access
     /// to the deterministically reproducible function, and B) for operational environments
     /// that wish to provide randomness from their own source instead of the built-in RNG in bc-rust.
@@ -657,7 +668,7 @@ impl<
     const dv: i16,
     const LAMBDA: i16,
     const T_PACKED_LEN: usize,
-> KEM<PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>
+> KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN>
     for MLKEM<
         PK_LEN,
         SK_LEN,
@@ -674,11 +685,6 @@ impl<
         T_PACKED_LEN,
     >
 {
-    /// Generates a fresh key pair.
-    fn keygen() -> Result<(PK, SK), KEMError> {
-        Self::keygen_from_os_rng()
-    }
-
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         let mut m = [0u8; 32];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut m)?;
@@ -693,7 +699,41 @@ impl<
 
         Ok((ss_keymaterial, ct))
     }
+}
 
+impl<
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+    PK: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
+        + MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+        + MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>,
+    const k: usize,
+    const eta: i16,
+    const du: i16,
+    const dv: i16,
+    const LAMBDA: i16,
+    const T_PACKED_LEN: usize,
+> KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>
+    for MLKEM<
+        PK_LEN,
+        SK_LEN,
+        FULL_SK_LEN,
+        CT_LEN,
+        SS_LEN,
+        PK,
+        SK,
+        k,
+        eta,
+        du,
+        dv,
+        LAMBDA,
+        T_PACKED_LEN,
+    >
+{
     fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         if ct.len() != CT_LEN {
             return Err(KEMError::LengthError("Invalid ciphertext length"));

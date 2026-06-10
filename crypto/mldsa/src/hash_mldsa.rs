@@ -968,12 +968,11 @@ impl<
 }
 
 impl<
-    HASH: Hash + Default,
+    HASH: Hash + Algorithm + Default,
     PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
-    const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -997,7 +996,6 @@ impl<
     for HashMLDSA<
         HASH,
         PH_LEN,
-        oid,
         PK_LEN,
         SK_LEN,
         SIG_LEN,
@@ -1138,9 +1136,8 @@ impl<
 }
 
 impl<
-    HASH: Hash + Default,
+    HASH: Hash + Algorithm + Default,
     const PH_LEN: usize,
-    const oid: &'static [u8],
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
@@ -1167,7 +1164,6 @@ impl<
     for HashMLDSA<
         HASH,
         PH_LEN,
-        oid,
         PK_LEN,
         SK_LEN,
         SIG_LEN,

@@ -46,7 +46,6 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem::MLKEM768;
-//! use bouncycastle_core::traits::KEM;
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
 //! ```
@@ -76,7 +75,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::traits::KEM;
+//! use bouncycastle_core::traits::{KEMEncapsulator, KEMDecapsulator};
 //! use bouncycastle_core::errors::KEMError;
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
