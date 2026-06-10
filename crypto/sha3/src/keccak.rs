@@ -271,6 +271,8 @@ impl KeccakDigest {
     /// Panics if the output buffer is too small.
     /// Returns the number of bytes written.
     pub(super) fn squeeze(&mut self, out: &mut [u8]) -> usize {
+        out.fill(0);
+
         if !self.squeezing {
             self.pad_and_switch_to_squeezing_phase();
         }

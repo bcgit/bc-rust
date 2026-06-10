@@ -1,9 +1,11 @@
-use criterion::{Criterion, criterion_group, criterion_main};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use std::hint::black_box;
 use bouncycastle_core::traits::Signature;
-use bouncycastle_mldsa_lowmemory::{MLDSATrait, MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA65_SIG_LEN, MLDSA87, MLDSA87_SIG_LEN};
 use bouncycastle_hex as hex;
+use bouncycastle_mldsa_lowmemory::{
+    MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA65_SIG_LEN, MLDSA87, MLDSA87_SIG_LEN, MLDSATrait,
+};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 fn bench_mldsa_keygen(c: &mut Criterion) {
     let mut group = c.benchmark_group("KeyGen");
@@ -18,11 +20,11 @@ fn bench_mldsa_keygen(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(seeds.len() as u64));
 
     group.bench_function("ML-DSA-44_lowmemory", |b| {
-       b.iter(|| {
-           for seed in seeds.iter() {
-               black_box(MLDSA44::keygen_from_seed(seed)).unwrap();
-           }
-       })
+        b.iter(|| {
+            for seed in seeds.iter() {
+                black_box(MLDSA44::keygen_from_seed(seed)).unwrap();
+            }
+        })
     });
 
     group.bench_function("ML-DSA-65_lowmemory", |b| {
@@ -52,16 +54,16 @@ fn bench_mldsa_sign(c: &mut Criterion) {
     let seed = KeyMaterial256::from_bytes_as_type(
         &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
         KeyType::Seed,
-    ).unwrap();
+    )
+    .unwrap();
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     /*** ML-DSA-44 ***/
     let (_mldsa44_pk, mldsa44_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
 
-
     // signing nonce; we'll increment each time
-    let mut rnd= [0u8; 32];
+    let mut rnd = [0u8; 32];
 
     group.throughput(criterion::Throughput::Elements(1_u64));
 
@@ -74,7 +76,6 @@ fn bench_mldsa_sign(c: &mut Criterion) {
         })
     });
 
-
     /*** ML-DSA-65 ***/
     let (_mldsa65_pk, mldsa65_sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 
@@ -86,7 +87,6 @@ fn bench_mldsa_sign(c: &mut Criterion) {
             rnd[31] = rnd[31].wrapping_add(1);
         })
     });
-
 
     /*** ML-DSA-87 ***/
 
@@ -112,21 +112,21 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     let seed = KeyMaterial256::from_bytes_as_type(
         &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
         KeyType::Seed,
-    ).unwrap();
+    )
+    .unwrap();
 
     let msg = b"The quick brown fox jumped over the lazy dog";
-
 
     /*** ML-DSA-44 ***/
     let (mldsa44_pk, mldsa44_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
 
     // Create a vec of 1000  different signatures to verify
     // use ctx to make them different (in addition to the signing nonce being different)
-    let mut sigs = Vec::< ([u8; MLDSA44_SIG_LEN], u128) >::with_capacity(1000);
+    let mut sigs = Vec::<([u8; MLDSA44_SIG_LEN], u128)>::with_capacity(1000);
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
-        sigs.push( (MLDSA44::sign(&mldsa44_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx) );
+        sigs.push((MLDSA44::sign(&mldsa44_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
         ctx += 1
     }
 
@@ -136,22 +136,21 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap() )
+                black_box(MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap())
             }
         })
     });
-
 
     /*** ML-DSA-65 ***/
     let (mldsa65_pk, mldsa65_sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 
     // Create a vec of 1000  different signatures to verify
     // use ctx to make them different (in addition to the signing nonce being different)
-    let mut sigs = Vec::< ([u8; MLDSA65_SIG_LEN], u128) >::with_capacity(1000);
+    let mut sigs = Vec::<([u8; MLDSA65_SIG_LEN], u128)>::with_capacity(1000);
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
-        sigs.push( (MLDSA65::sign(&mldsa65_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx) );
+        sigs.push((MLDSA65::sign(&mldsa65_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
         ctx += 1
     }
 
@@ -161,22 +160,21 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap() )
+                black_box(MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap())
             }
         })
     });
-
 
     /*** ML-DSA-87 ***/
     let (mldsa87_pk, mldsa87_sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
 
     // Create a vec of 1000  different signatures to verify
     // use ctx to make them different (in addition to the signing nonce being different)
-    let mut sigs = Vec::< ([u8; MLDSA87_SIG_LEN], u128) >::with_capacity(1000);
+    let mut sigs = Vec::<([u8; MLDSA87_SIG_LEN], u128)>::with_capacity(1000);
 
     let mut ctx = 0u128;
     for _ in 0..1000 {
-        sigs.push( (MLDSA87::sign(&mldsa87_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx) );
+        sigs.push((MLDSA87::sign(&mldsa87_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
         ctx += 1
     }
 
@@ -186,14 +184,13 @@ fn bench_mldsa_verify(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..sigs.len() {
                 let (sig, ctx) = &sigs[i];
-                black_box( MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap() )
+                black_box(MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap())
             }
         })
     });
 
     group.finish();
 }
-
 
 criterion_group!(benches, bench_mldsa_keygen, bench_mldsa_sign, bench_mldsa_verify);
 criterion_main!(benches);

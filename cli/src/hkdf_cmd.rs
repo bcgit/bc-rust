@@ -1,20 +1,22 @@
-use std::{fs, io};
 use std::io::Write;
 use std::process::exit;
+use std::{fs, io};
 
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::hex;
 use bouncycastle::hkdf;
 
-pub(crate) fn hkdf_cmd(hkdfname: &str,
-                       salt: &Option<String>,
-                       salt_file: &Option<String>,
-                       ikm: &Option<String>,
-                       ikm_file: &Option<String>,
-                       additional_input: &Option<String>,
-                       additional_input_file: &Option<String>,
-                       len: usize,
-                       output_hex: bool ) {
+pub(crate) fn hkdf_cmd(
+    hkdfname: &str,
+    salt: &Option<String>,
+    salt_file: &Option<String>,
+    ikm: &Option<String>,
+    ikm_file: &Option<String>,
+    additional_input: &Option<String>,
+    additional_input_file: &Option<String>,
+    len: usize,
+    output_hex: bool,
+) {
     let salt_bytes: Vec<u8>;
     let ikm_bytes: Vec<u8>;
     let additional_input_bytes: Vec<u8>;
@@ -53,7 +55,6 @@ pub(crate) fn hkdf_cmd(hkdfname: &str,
         exit(-1)
     };
 
-
     additional_input_bytes = if additional_input.is_some() {
         hex::decode(additional_input.as_ref().unwrap()).unwrap()
     } else if additional_input.is_some() {
@@ -72,21 +73,24 @@ pub(crate) fn hkdf_cmd(hkdfname: &str,
             h.do_extract_update_bytes(ikm_bytes.as_slice()).unwrap();
             h.do_extract_update_bytes(additional_input_bytes.as_slice()).unwrap();
             h.do_extract_final_out(&mut out_key).unwrap();
-        },
+        }
         "HKDF-SHA512" => {
             let mut h = hkdf::HKDF_SHA512::new();
             h.do_extract_init(&salt_key).unwrap();
             h.do_extract_update_bytes(ikm_bytes.as_slice()).unwrap();
             h.do_extract_update_bytes(additional_input_bytes.as_slice()).unwrap();
             h.do_extract_final_out(&mut out_key).unwrap();
-        },
-        _ => { panic!("{} is not a supported HKDF variant.", hkdfname); }
+        }
+        _ => {
+            panic!("{} is not a supported HKDF variant.", hkdfname);
+        }
     }
-
 
     if output_hex {
         for b in out_key.ref_to_bytes().iter() {
             print!("{b:02x}");
         }
-    } else { io::stdout().write(&out_key.ref_to_bytes()).unwrap(); }
+    } else {
+        io::stdout().write(&out_key.ref_to_bytes()).unwrap();
+    }
 }

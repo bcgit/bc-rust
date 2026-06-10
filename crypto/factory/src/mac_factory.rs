@@ -175,6 +175,8 @@ impl MAC for MACFactory {
     }
 
     fn mac_out(self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
+        out.fill(0);
+
         match self {
             Self::HMAC_SHA224(h) => h.mac_out(data, out),
             Self::HMAC_SHA256(h) => h.mac_out(data, out),
@@ -227,6 +229,8 @@ impl MAC for MACFactory {
     }
 
     fn do_final_out(self, mut out: &mut [u8]) -> Result<usize, MACError> {
+        out.fill(0);
+
         match self {
             Self::HMAC_SHA224(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA256(h) => h.do_final_out(&mut out),

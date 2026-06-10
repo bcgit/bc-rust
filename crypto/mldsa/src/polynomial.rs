@@ -1,18 +1,22 @@
 //! Represents a polynomial over the ML-DSA ring.
 
+use crate::aux_functions::{
+    ZETAS, conditional_add_q, high_bits, low_bits, make_hint, montgomery_reduce,
+};
+use crate::mldsa::{MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N, q};
+use bouncycastle_core::traits::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
-use bouncycastle_core::traits::Secret;
-use crate::mldsa::{N, MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, q};
-use crate::aux_functions::{conditional_add_q, high_bits, low_bits, make_hint, montgomery_reduce, ZETAS};
 
 /// A polynomial over the ML-DSA ring.
 /// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
 /// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
 /// and the real unit tests are in a different crate, so here we are.
 #[derive(Clone)]
-pub struct Polynomial{ pub(crate) coeffs: [i32; N] }
+pub struct Polynomial {
+    pub(crate) coeffs: [i32; N],
+}
 
 /// Convenience function to avoid ".0" all over the place.
 impl Index<usize> for Polynomial {
@@ -32,7 +36,7 @@ impl IndexMut<usize> for Polynomial {
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
     pub const fn new() -> Self {
-        Self{ coeffs: [0i32; N] }
+        Self { coeffs: [0i32; N] }
     }
 
     pub(crate) fn conditional_add_q(&mut self) {
@@ -92,7 +96,6 @@ impl Polynomial {
         // but since BOUND is a constant here, we'll just do a debug_assert to make sure the value is what we expect.
         debug_assert!(BOUND <= (q - 1) / 8);
 
-
         let mut t: i32;
         for x in self.coeffs.iter() {
             t = *x >> 31;
@@ -131,22 +134,21 @@ impl Polynomial {
 
         match POLY_W1_PACKED_LEN {
             MLDSA44_POLY_W1_PACKED_LEN => {
-                for i in 0..N/4 {
-                    r[3 * i] =
-                        ((self[4 * i]) as u8) | ((self[4 * i + 1] << 6) as u8);
-                    r[3 * i + 1] =
-                        ((self[4 * i + 1] >> 2) as u8) | ((self[4 * i + 2] << 4) as u8);
-                    r[3 * i + 2] =
-                        ((self[4 * i + 2] >> 4) as u8) | ((self[4 * i + 3] << 2) as u8);
+                for i in 0..N / 4 {
+                    r[3 * i] = ((self[4 * i]) as u8) | ((self[4 * i + 1] << 6) as u8);
+                    r[3 * i + 1] = ((self[4 * i + 1] >> 2) as u8) | ((self[4 * i + 2] << 4) as u8);
+                    r[3 * i + 2] = ((self[4 * i + 2] >> 4) as u8) | ((self[4 * i + 3] << 2) as u8);
                 }
-            },
+            }
             // ML-DSA65 and 87 share a POLY_W1_PACKED_LEN value
             MLDSA65_POLY_W1_PACKED_LEN => {
-                for i in 0..N/2 {
+                for i in 0..N / 2 {
                     r[i] = ((self[2 * i]) | (self[2 * i + 1] << 4)) as u8;
                 }
-            },
-            _ => { unreachable!() }
+            }
+            _ => {
+                unreachable!()
+            }
         }
 
         r

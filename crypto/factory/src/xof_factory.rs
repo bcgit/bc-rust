@@ -86,6 +86,8 @@ impl XOF for XOFFactory {
     }
 
     fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         match self {
             Self::SHAKE128(h) => h.hash_xof_out(data, output),
             Self::SHAKE256(h) => h.hash_xof_out(data, output),
@@ -118,6 +120,8 @@ impl XOF for XOFFactory {
     }
 
     fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
         match self {
             Self::SHAKE128(h) => h.squeeze_out(output),
             Self::SHAKE256(h) => h.squeeze_out(output),
@@ -136,6 +140,8 @@ impl XOF for XOFFactory {
         num_bits: usize,
         output: &mut u8,
     ) -> Result<(), HashError> {
+        *output = 0;
+
         match self {
             Self::SHAKE128(h) => h.squeeze_partial_byte_final_out(num_bits, output),
             Self::SHAKE256(h) => h.squeeze_partial_byte_final_out(num_bits, output),

@@ -1,8 +1,8 @@
 use crate::SHA2Params;
-use core::slice;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, SecurityStrength};
 use bouncycastle_utils::min;
+use core::slice;
 
 const SHA512_K: [u64; 80] = [
     0x428A2F98D728AE22, 0x7137449123EF65CD, 0xB5C0FBCFEC4D3B2F, 0xE9B5DBA58189DBBC,
@@ -209,6 +209,8 @@ impl<PARAMS: SHA2Params> Hash for Sha512Internal<PARAMS> {
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.do_update(data);
         self.do_final_out(output)
     }
@@ -252,6 +254,8 @@ impl<PARAMS: SHA2Params> Hash for Sha512Internal<PARAMS> {
     }
 
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
         let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
 
         let bit_len_hi: u64 = self.byte_count >> 61;

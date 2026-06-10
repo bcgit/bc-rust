@@ -1,9 +1,9 @@
+use crate::SHA3Params;
+use crate::keccak::KeccakDigest;
 use bouncycastle_core::errors::{HashError, KDFError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, SecurityStrength, KDF};
+use bouncycastle_core::traits::{Hash, KDF, SecurityStrength};
 use bouncycastle_utils::{max, min};
-use crate::keccak::KeccakDigest;
-use crate::SHA3Params;
 
 #[derive(Clone)]
 pub struct SHA3<PARAMS: SHA3Params> {
@@ -29,6 +29,8 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
 
     /// Swallows errors and simply returns an empty Vec<u8> if the hashes fails for whatever reason.
     fn hash_internal(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.do_update(data);
         self.do_final_out(output)
     }
@@ -46,7 +48,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
                 &self.kdf_security_strength,
                 &SecurityStrength::from_bits(PARAMS::OUTPUT_LEN * 8 / 2),
             )
-                .clone();
+            .clone();
         }
 
         self.do_update(key.ref_to_bytes())
@@ -121,6 +123,8 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
     }
 
     fn hash_out(self, data: &[u8], mut output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.hash_internal(data, &mut output)
     }
 
@@ -140,6 +144,8 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
     // todo -- why doesn't this take a &mut [u8; HASH_LEN] ?
     //  That's probably more user-friendly than this auto-truncating that I have here.
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed."); // this shouldn't fail because by construction you can only enter this function once, and this is the only way to absorb partial bits.
 
         let bytes_written = if output.len() <= self.output_len() {
@@ -172,6 +178,8 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        output.fill(0);
+
         // Mutants note: yep, this is just bit-setting into empty space, so it doesn't matter whether it's OR or XOR.
         let mut final_input: u16 =
             ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);

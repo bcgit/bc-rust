@@ -1,10 +1,10 @@
-use std::{io};
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle::core::traits::SecurityStrength;
+use bouncycastle::hex;
 use std::fs::File;
+use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
-use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle::core::traits::{SecurityStrength};
-use bouncycastle::hex;
 
 /// Reads either bin or hex
 pub(crate) fn read_from_file(filename: &str) -> Vec<u8> {
@@ -12,20 +12,20 @@ pub(crate) fn read_from_file(filename: &str) -> Vec<u8> {
     if file.is_ok() {
         let mut buf = Vec::<u8>::new();
         match file.unwrap().read_to_end(&mut buf) {
-            Ok(_bytes_read) => { 
+            Ok(_bytes_read) => {
                 // try hex decoding it
                 match hex::decode(&buf) {
-                    Ok(decoded) => { decoded },
+                    Ok(decoded) => decoded,
                     Err(_) => {
                         // well, it's not hex, so return it raw
                         buf
-                    },
+                    }
                 }
-            },
+            }
             Err(_) => {
                 eprintln!("Error: couldn't open file '{}'", &filename);
                 exit(-1);
-            },
+            }
         }
     } else {
         eprintln!("Error: couldn't open file '{}'", &filename);
@@ -35,22 +35,21 @@ pub(crate) fn read_from_file(filename: &str) -> Vec<u8> {
 
 /// Reads either bin or hex
 pub(crate) fn read_from_file_or_stdin(filename: &Option<String>) -> Vec<u8> {
-    
     if filename.is_some() {
         // This already reads either bin or hex
         return read_from_file(filename.as_ref().unwrap());
     }
-    
+
     let mut buf = Vec::<u8>::new();
     io::stdin().read_to_end(&mut buf).expect("Failed to read from stdin");
 
     // try hex decoding it
     match hex::decode(&buf) {
-        Ok(decoded) => { decoded },
+        Ok(decoded) => decoded,
         Err(_) => {
             // well, it's not hex, so return it raw
             buf
-        },
+        }
     }
 }
 
@@ -84,7 +83,7 @@ pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMater
     // try decoding it as hex first
     let seed_bytes: [u8; SEED_LEN] = match &hex::decode(&bytes) {
         Ok(decoded_bytes) => {
-            if decoded_bytes.len() < SEED_LEN || decoded_bytes.len() > SEED_LEN +1  {
+            if decoded_bytes.len() < SEED_LEN || decoded_bytes.len() > SEED_LEN + 1 {
                 // it was valid hex, but the wrong length
                 return Err(());
             }
@@ -92,7 +91,7 @@ pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMater
         }
         Err(_) => {
             // it's not hex, so take the fist SEED_LEN bytes of the raw binary
-            if bytes.len() < SEED_LEN || bytes.len() > SEED_LEN +1 {
+            if bytes.len() < SEED_LEN || bytes.len() > SEED_LEN + 1 {
                 return Err(());
             }
             bytes[..SEED_LEN].try_into().unwrap()

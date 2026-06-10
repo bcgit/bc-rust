@@ -59,7 +59,7 @@ pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
         output[5 * i + 1] = ((w[4 * i] >> 8) | (w[4 * i + 1] << 2)) as u8;
         output[5 * i + 2] = ((w[4 * i + 1] >> 6) | (w[4 * i + 2] << 4)) as u8;
         output[5 * i + 3] = ((w[4 * i + 2] >> 4) | (w[4 * i + 3] << 6)) as u8;
-        output[5 * i + 4] =  (w[4 * i + 3] >> 2) as u8;
+        output[5 * i + 4] = (w[4 * i + 3] >> 2) as u8;
     }
     output
 }
@@ -167,6 +167,8 @@ pub(crate) fn bitpack_gamma1<const POLY_Z_PACKED_LEN: usize, const GAMMA1: i32>(
     z: &Polynomial,
     out: &mut [u8; POLY_Z_PACKED_LEN],
 ) {
+    out.fill(0);
+
     let mut t: [u32; 4] = [0; 4];
     match GAMMA1 {
         MLDSA44_GAMMA1 => {
@@ -217,7 +219,7 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 
     let mut w = Polynomial::new();
 
-    for i in 0..N/4 {
+    for i in 0..N / 4 {
         w[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
         w[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
         w[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;

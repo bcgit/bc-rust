@@ -1,17 +1,17 @@
 #[cfg(test)]
 mod hash_factory_tests {
-    use bouncycastle_factory::AlgorithmFactory;
-    use bouncycastle_factory::hash_factory::{HashFactory};
-    use bouncycastle_factory::xof_factory::{XOFFactory};
     use bouncycastle_core::traits::{Hash, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED_512;
+    use bouncycastle_factory::AlgorithmFactory;
+    use bouncycastle_factory::hash_factory::HashFactory;
+    use bouncycastle_factory::xof_factory::XOFFactory;
 
     mod sha3_tests {
         use super::*;
-        use bouncycastle_sha2::SHA224;
-        use bouncycastle_sha2 as sha2;
-        use bouncycastle_sha3 as sha3;
         use bouncycastle_factory as factory;
+        use bouncycastle_sha2 as sha2;
+        use bouncycastle_sha2::SHA224;
+        use bouncycastle_sha3 as sha3;
 
         #[test]
         fn sha2_hash_tests() {
@@ -20,7 +20,6 @@ mod hash_factory_tests {
             let h = SHA224::new();
             h.hash(&DUMMY_SEED_512[..24]);
 
-
             let sha2 = HashFactory::new("SHA224").unwrap();
             assert_eq!(sha2.output_len(), 28);
             assert_eq!(sha2.hash(DUMMY_SEED_512), b"\xb8\x06\x0c\xcc\x82\xd4\x0c\x57\x61\x56\xf7\xca\x03\x33\xe4\x38\x9e\x41\x0d\xf0\x27\xd2\xfb\x8f\x76\x4f\xa6\x03");
@@ -28,7 +27,6 @@ mod hash_factory_tests {
             let sha2 = HashFactory::new(sha2::SHA224_NAME).unwrap();
             assert_eq!(sha2.output_len(), 28);
             assert_eq!(sha2.hash(DUMMY_SEED_512), b"\xb8\x06\x0c\xcc\x82\xd4\x0c\x57\x61\x56\xf7\xca\x03\x33\xe4\x38\x9e\x41\x0d\xf0\x27\xd2\xfb\x8f\x76\x4f\xa6\x03");
-
 
             // SHA256
             let sha2 = HashFactory::new("SHA256").unwrap();
@@ -69,7 +67,6 @@ mod hash_factory_tests {
             assert_eq!(sha3.output_len(), 28);
             assert_eq!(sha3.hash(DUMMY_SEED_512), b"\xFE\x51\xC5\xD7\x62\x48\xE1\xE9\xD3\x01\x29\x6A\xE8\xAB\x94\x69\xD2\x86\x34\xB4\xAD\x3E\x9E\x78\xC8\xB0\x9D\x47");
 
-
             // SHA3-256
             let sha3 = HashFactory::new("SHA3-256").unwrap();
             assert_eq!(sha3.output_len(), 32);
@@ -102,7 +99,6 @@ mod hash_factory_tests {
         fn sha3_xof_tests() {
             assert_eq!(XOFFactory::new("SHAKE128").unwrap().hash_xof(DUMMY_SEED_512, 32), b"\x88\x90\xed\x20\x4d\x22\x89\xe1\x72\xe9\xae\x68\x48\x18\x23\x77\x08\x20\x90\x80\x60\xa4\xdf\x33\x51\xa3\xf1\x84\xeb\xb6\xdd\x0f");
             assert_eq!(XOFFactory::new("SHAKE256").unwrap().hash_xof(DUMMY_SEED_512, 32), b"\xa1\xd7\x18\x85\xb0\xa8\x41\xf0\x3d\x1d\xc7\xf2\x73\x8a\x15\xcc\x98\x40\x71\xa1\x7f\xfe\xd5\xec\xac\xb9\xf5\x87\x20\xa4\x73\xbe");
-
         }
 
         #[test]

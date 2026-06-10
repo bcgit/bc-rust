@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod hash_factory_tests {
-    use bouncycastle_hex as hex;
-    use bouncycastle_factory::mac_factory::{MACFactory};
-    use bouncycastle_core::traits::{MAC};
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle_core::traits::MAC;
+    use bouncycastle_factory::mac_factory::MACFactory;
+    use bouncycastle_hex as hex;
 
     mod sha3_tests {
         use super::*;
@@ -14,7 +14,8 @@ mod hash_factory_tests {
             let key = KeyMaterial::<32>::from_bytes_as_type(
                 &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
                 KeyType::MACKey,
-            ).unwrap();
+            )
+            .unwrap();
             let hmac = MACFactory::new("HMAC-SHA224", &key).unwrap();
             assert!(hmac.verify(
                 b"Hi There",

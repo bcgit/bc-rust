@@ -1,13 +1,21 @@
 //! Yup, this file is as absolutely atrocious mess of duplicate code that could be much improved
 //! by using generics or macros. I just, haven't ... yet.
 
-use std::process::exit;
-use clap::ValueEnum;
+use crate::helpers::{
+    parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex,
+    write_bytes_or_hex_to_file,
+};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, KEM};
+use bouncycastle::core::traits::{KEM, KEMPrivateKey, KEMPublicKey};
 use bouncycastle::hex;
-use bouncycastle::mlkem::{MLKEM512, MLKEMTrait, MLKEM512PrivateKey, MLKEM512_SK_LEN, MLKEM512PublicKey, MLKEM512_PK_LEN, MLKEMPrivateKeyTrait, MLKEM512_CT_LEN, MLKEM768PrivateKey, MLKEM768_SK_LEN, MLKEM768, MLKEM768PublicKey, MLKEM768_PK_LEN, MLKEM1024PrivateKey, MLKEM1024_SK_LEN, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024PublicKey, MLKEM768_CT_LEN, MLKEM1024_CT_LEN};
-use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file};
+use bouncycastle::mlkem::{
+    MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
+    MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
+    MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN,
+    MLKEM1024_SK_LEN, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMPrivateKeyTrait, MLKEMTrait,
+};
+use clap::ValueEnum;
+use std::process::exit;
 
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum MLKEMAction {
@@ -94,13 +102,15 @@ pub(crate) fn mlkem512_cmd(
             };
 
             match MLKEM512::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
                 }
             }
-        },
+        }
         MLKEMAction::Encaps => {
             // first, read the pk
             let pk_bytes = read_from_file_or_stdin(pkfile);
@@ -124,8 +134,7 @@ pub(crate) fn mlkem512_cmd(
                 println!();
                 write_bytes_or_hex(ss.ref_to_bytes(), true);
             }
-
-        },
+        }
         MLKEMAction::Decaps => {
             // first, read the sk
             let sk_bytes = read_from_file_or_stdin(skfile);
@@ -216,13 +225,15 @@ pub(crate) fn mlkem768_cmd(
             };
 
             match MLKEM768::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
                 }
             }
-        },
+        }
         MLKEMAction::Encaps => {
             // first, read the pk
             let pk_bytes = read_from_file_or_stdin(pkfile);
@@ -246,7 +257,7 @@ pub(crate) fn mlkem768_cmd(
                 println!();
                 write_bytes_or_hex(ss.ref_to_bytes(), true);
             }
-        },
+        }
         MLKEMAction::Decaps => {
             // first, read the sk
             let sk_bytes = read_from_file_or_stdin(skfile);
@@ -337,13 +348,15 @@ pub(crate) fn mlkem1024_cmd(
             };
 
             match MLKEM1024::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
                 }
             }
-        },
+        }
         MLKEMAction::Encaps => {
             // first, read the pk
             let pk_bytes = read_from_file_or_stdin(pkfile);
@@ -367,7 +380,7 @@ pub(crate) fn mlkem1024_cmd(
                 println!();
                 write_bytes_or_hex(ss.ref_to_bytes(), true);
             }
-        },
+        }
         MLKEMAction::Decaps => {
             // first, read the sk
             let sk_bytes = read_from_file_or_stdin(skfile);
@@ -400,7 +413,6 @@ pub(crate) fn mlkem1024_cmd(
         }
     }
 }
-
 
 fn parse_mlkem512_sk(bytes: &[u8]) -> Result<MLKEM512PrivateKey, &'static str> {
     // try it in Biggest -> Smallest order
@@ -459,7 +471,7 @@ fn parse_mlkem512_pk(bytes: &[u8]) -> Result<MLKEM512PublicKey, &'static str> {
         if pk.is_ok() {
             return Ok(pk.unwrap());
         }
-    }  // else: we're out of things to try
+    } // else: we're out of things to try
 
     Err("Error: couldn't parse the input as a valid ML-KEM-768 public key.")
 }
@@ -521,7 +533,7 @@ fn parse_mlkem768_pk(bytes: &[u8]) -> Result<MLKEM768PublicKey, &'static str> {
         if pk.is_ok() {
             return Ok(pk.unwrap());
         }
-    }  // else: we're out of things to try
+    } // else: we're out of things to try
 
     Err("Error: couldn't parse the input as a valid ML-KEM-768 public key.")
 }
@@ -583,8 +595,7 @@ fn parse_mlkem1024_pk(bytes: &[u8]) -> Result<MLKEM1024PublicKey, &'static str> 
         if pk.is_ok() {
             return Ok(pk.unwrap());
         }
-    }  // else: we're out of things to try
+    } // else: we're out of things to try
 
     Err("Error: couldn't parse the input as a valid ML-KEM-1024 public key.")
 }
-

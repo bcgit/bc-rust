@@ -1,8 +1,8 @@
-use crate::{SHA2Params};
-use core::slice;
+use crate::SHA2Params;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, SecurityStrength};
 use bouncycastle_utils::min;
+use core::slice;
 
 const SHA256_K: [u32; 64] = [
     0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1, 0x923F82A4, 0xAB1C5ED5,
@@ -160,7 +160,8 @@ pub struct SHA256Internal<PARAMS: SHA2Params> {
 impl<PARAMS: SHA2Params> Drop for SHA256Internal<PARAMS> {
     fn drop(&mut self) {
         self.x_buf.fill(0);
-    }}
+    }
+}
 
 impl<PARAMS: SHA2Params> SHA256Internal<PARAMS> {
     pub fn new() -> Self {
@@ -197,6 +198,8 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         self.do_update(data);
         self.do_final_out(output)
     }
@@ -241,6 +244,8 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
     }
 
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
         let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
 
         let bit_len: u64 = self.byte_count << 3;
