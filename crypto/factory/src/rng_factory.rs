@@ -27,7 +27,9 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! let h = bouncycastle_factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
-//! let output: Vec<u8> = h.hash(data);
+//! let mut output = [0u8; 64];
+//! let written = h.hash_out(data, &mut output);
+//! let digest = &output[..written];
 //! ```
 //! You can equivalently invoke this by string instead of using the constant:
 //!
@@ -38,7 +40,9 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! let h = bouncycastle_factory::hash_factory::HashFactory::new("SHA3-256").unwrap();
-//! let output: Vec<u8> = h.hash(data);
+//! let mut output = [0u8; 64];
+//! let written = h.hash_out(data, &mut output);
+//! let digest = &output[..written];
 //! ```
 
 use bouncycastle_core::errors::RNGError;

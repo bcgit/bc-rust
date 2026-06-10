@@ -15,7 +15,9 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! let h = HashFactory::new("SHA3-256").unwrap();
-//! let output: Vec<u8> = h.hash(data);
+//! let mut output = [0u8; 64];
+//! let written = h.hash_out(data, &mut output);
+//! let digest = &output[..written];
 //! ```
 //!
 //! All other factory types similarly implement their underlying trait and thus behave the same way.

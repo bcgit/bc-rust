@@ -23,11 +23,13 @@
 //! let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA3_256_NAME, &key).unwrap();
 //!
 //! // Generate the MAC value
-//! let mac_value: Vec<u8> = hmac.mac(data);
+//! let mut mac_buf = [0u8; 64];
+//! let written = hmac.mac_out(data, &mut mac_buf).unwrap();
+//! let mac_value = &mac_buf[..written];
 //!
 //! // Verify the MAC value
 //! let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA3_256_NAME, &key).unwrap();
-//! if hmac.verify(data, &mac_value,) {
+//! if hmac.verify(data, mac_value,) {
 //!     println!("MAC verified successfully!")
 //! } else {
 //!     println!("MAC verification failed")
@@ -161,19 +163,6 @@ impl MAC for MACFactory {
         }
     }
 
-    fn mac(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            Self::HMAC_SHA224(h) => h.mac(data),
-            Self::HMAC_SHA256(h) => h.mac(data),
-            Self::HMAC_SHA384(h) => h.mac(data),
-            Self::HMAC_SHA512(h) => h.mac(data),
-            Self::HMAC_SHA3_224(h) => h.mac(data),
-            Self::HMAC_SHA3_256(h) => h.mac(data),
-            Self::HMAC_SHA3_384(h) => h.mac(data),
-            Self::HMAC_SHA3_512(h) => h.mac(data),
-        }
-    }
-
     fn mac_out(self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
 
@@ -212,19 +201,6 @@ impl MAC for MACFactory {
             Self::HMAC_SHA3_256(h) => h.do_update(data),
             Self::HMAC_SHA3_384(h) => h.do_update(data),
             Self::HMAC_SHA3_512(h) => h.do_update(data),
-        }
-    }
-
-    fn do_final(self) -> Vec<u8> {
-        match self {
-            Self::HMAC_SHA224(h) => h.do_final(),
-            Self::HMAC_SHA256(h) => h.do_final(),
-            Self::HMAC_SHA384(h) => h.do_final(),
-            Self::HMAC_SHA512(h) => h.do_final(),
-            Self::HMAC_SHA3_224(h) => h.do_final(),
-            Self::HMAC_SHA3_256(h) => h.do_final(),
-            Self::HMAC_SHA3_384(h) => h.do_final(),
-            Self::HMAC_SHA3_512(h) => h.do_final(),
         }
     }
 

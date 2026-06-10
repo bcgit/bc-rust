@@ -12,7 +12,9 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! let h = bouncycastle_factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
-//! let output: Vec<u8> = h.hash(data);
+//! let mut output = [0u8; 64];
+//! let written = h.hash_out(data, &mut output);
+//! let digest = &output[..written];
 //! ```
 //! You can equivalently invoke this by string instead of using the constant:
 //!
@@ -23,7 +25,9 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! let h = bouncycastle_factory::hash_factory::HashFactory::new("SHA3-256").unwrap();
-//! let output: Vec<u8> = h.hash(data);
+//! let mut output = [0u8; 64];
+//! let written = h.hash_out(data, &mut output);
+//! let digest = &output[..written];
 //! ```
 
 use crate::{AlgorithmFactory, FactoryError};
@@ -115,19 +119,6 @@ impl Hash for HashFactory {
         }
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            Self::SHA224(h) => h.hash(data),
-            Self::SHA256(h) => h.hash(data),
-            Self::SHA384(h) => h.hash(data),
-            Self::SHA512(h) => h.hash(data),
-            Self::SHA3_224(h) => h.hash(data),
-            Self::SHA3_256(h) => h.hash(data),
-            Self::SHA3_384(h) => h.hash(data),
-            Self::SHA3_512(h) => h.hash(data),
-        }
-    }
-
     fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
         output.fill(0);
 
@@ -156,19 +147,6 @@ impl Hash for HashFactory {
         }
     }
 
-    fn do_final(self) -> Vec<u8> {
-        match self {
-            Self::SHA224(h) => h.do_final(),
-            Self::SHA256(h) => h.do_final(),
-            Self::SHA384(h) => h.do_final(),
-            Self::SHA512(h) => h.do_final(),
-            Self::SHA3_224(h) => h.do_final(),
-            Self::SHA3_256(h) => h.do_final(),
-            Self::SHA3_384(h) => h.do_final(),
-            Self::SHA3_512(h) => h.do_final(),
-        }
-    }
-
     fn do_final_out(self, output: &mut [u8]) -> usize {
         output.fill(0);
 
@@ -181,23 +159,6 @@ impl Hash for HashFactory {
             Self::SHA3_256(h) => h.do_final_out(output),
             Self::SHA3_384(h) => h.do_final_out(output),
             Self::SHA3_512(h) => h.do_final_out(output),
-        }
-    }
-
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        match self {
-            Self::SHA224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
         }
     }
 
