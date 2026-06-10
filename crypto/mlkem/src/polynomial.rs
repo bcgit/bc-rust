@@ -127,8 +127,6 @@ impl Polynomial {
         // each of the N i16's will take dv bits
         debug_assert_eq!(out.len(), N * (dv as usize) / 8);
 
-        out.fill(0);
-
         let mut t = [0u8; 8];
         let mut idx = 0;
 

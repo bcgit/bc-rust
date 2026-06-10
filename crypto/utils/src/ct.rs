@@ -292,8 +292,6 @@ pub fn conditional_copy_bytes<const LEN: usize>(
     out: &mut [u8; LEN],
     take_a: bool,
 ) {
-    out.fill(0);
-
     // we want the behaviour of
     //  if take_a { 0xFF } else { 0x00 }
     // but without using any branches that could leak timing signals

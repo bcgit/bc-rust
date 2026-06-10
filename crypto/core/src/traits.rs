@@ -30,6 +30,7 @@ pub trait Hash : Default {
 
     /// A static one-shot API that hashes the provided data into the provided output slice.
     /// `data` can be of any length, including zero bytes.
+    /// The entire output buffer is zeroized before the hash output is written.
     /// The return value is the number of bytes written.
     fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize;
 
@@ -50,6 +51,8 @@ pub trait Hash : Default {
     /// If the provided buffer is smaller than the hash's output length, the output will be truncated.
     /// If the provided buffor is larger than the hash's output length, the output  will be placed in
     /// the first [Hash::output_len] bytes.
+    /// The entire output buffer is zeroized before the hash output is written, so any bytes past
+    /// [Hash::output_len] will be 0.
     ///
     /// The return value is the number of bytes written.
     fn do_final_out(self, output: &mut [u8]) -> usize;
@@ -65,6 +68,7 @@ pub trait Hash : Default {
     /// The same as [Hash::do_final_out], but allows for supplying a partial byte as the last input.
     /// Assumes that the input is in the least significant bits (big endian).
     /// will be placed in the first [Hash::output_len] bytes.
+    /// The entire output buffer is zeroized before the hash output is written.
     /// The return value is the number of bytes written.
     fn do_final_partial_bits_out(
         self,
@@ -208,6 +212,7 @@ pub trait KEMPublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + D
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; PK_LEN];
     /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
@@ -218,6 +223,7 @@ pub trait KEMPrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret +
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; SK_LEN];
     /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
@@ -293,6 +299,8 @@ pub trait MAC: Sized {
     /// Depending on the underlying MAC implementation, NIST may require that the library enforce
     /// a minimum length on the mac output value. See documentation for the underlying implementation
     /// to see conditions under which it throws [MACError::InvalidLength].
+    ///
+    /// The entire output buffer is zeroized before the MAC value is written.
     fn mac_out(self, data: &[u8],out: &mut [u8]) -> Result<usize, MACError>;
 
     /// One-shot API that verifies a MAC for the provided data.
@@ -318,6 +326,8 @@ pub trait MAC: Sized {
     /// Depending on the underlying MAC implementation, NIST may require that the library enforce
     /// a minimum length on the mac output value. See documentation for the underlying implementation
     /// to see conditions under which it throws [MACError::InvalidLength].
+    ///
+    /// The entire output buffer is zeroized before the MAC value is written.
     fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError>;
 
     /// Internally, this will re-compute the MAC value and then compare it to the provided mac value
@@ -392,6 +402,7 @@ pub trait RNG : Default {
     fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError>;
 
     /// Returns the number of bytes written.
+    /// The entire output buffer is zeroized before the random bytes are written.
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError>;
 
     fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterialTrait) -> Result<usize, RNGError>;
@@ -443,6 +454,7 @@ pub trait PHSignature<
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
     fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError>;
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    /// The entire output buffer is zeroized before the signature is written.
     fn sign_ph_out(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
@@ -501,6 +513,7 @@ pub trait Signature<
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError>;
 
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    /// The entire output buffer is zeroized before the signature is written.
     fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
 
     /* streaming signing API */
@@ -516,6 +529,7 @@ pub trait Signature<
     fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError>;
 
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
+    /// The entire output buffer is zeroized before the signature is written.
     fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
 
     /// On success, returns Ok(())
@@ -543,6 +557,7 @@ pub trait SignaturePublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Deb
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; PK_LEN];
     /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
@@ -553,6 +568,7 @@ pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Se
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; SK_LEN];
     /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
@@ -583,6 +599,7 @@ pub trait XOF : Default {
 
     /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
     /// Fills the provided output slice.
+    /// The entire output buffer is zeroized before the output is written.
     fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize;
 
     fn absorb(&mut self, data: &[u8]);
@@ -599,6 +616,7 @@ pub trait XOF : Default {
 
     /// Can be called multiple times.
     /// Fills the provided output slice.
+    /// The entire output buffer is zeroized before the output is written.
     fn squeeze_out(&mut self, output: &mut [u8]) -> usize;
 
     /// Squeezes a partial byte from the XOF.
@@ -606,6 +624,8 @@ pub trait XOF : Default {
     /// This is a final call and consumes self.
     fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError>;
 
+    /// The same as [XOF::squeeze_partial_byte_final], but writes into the provided output byte.
+    /// The output byte is zeroized before the result is written.
     fn squeeze_partial_byte_final_out(
         self,
         num_bits: usize,

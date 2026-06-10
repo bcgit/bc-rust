@@ -171,8 +171,6 @@ impl<const k: usize> Vector<k>
         // let mut s = self.clone();
         // s.conditional_sub_q();
 
-        out.fill(0);
-
         let mut idx = 0;
         match du {
             10 => { // MLKEM512 and MLKEM 768
