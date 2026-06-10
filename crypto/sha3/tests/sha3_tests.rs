@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod sha3_tests {
     use super::sha3_test_helpers::*;
-    use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterial, KeyType, KeyMaterialTrait,};
+    use bouncycastle_core::key_material::{
+        KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
+    };
     use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, SecurityStrength};
     use bouncycastle_core_test_framework::DUMMY_SEED_512;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
@@ -20,10 +22,10 @@ mod sha3_tests {
         assert_eq!(SHA3_384::BLOCK_LEN, 104);
         assert_eq!(SHA3_512::BLOCK_LEN, 72);
 
-        assert_eq!(SHA3_224::new().block_bitlen(), 144*8);
-        assert_eq!(SHA3_256::new().block_bitlen(), 136*8);
-        assert_eq!(SHA3_384::new().block_bitlen(), 104*8);
-        assert_eq!(SHA3_512::new().block_bitlen(), 72*8);
+        assert_eq!(SHA3_224::new().block_bitlen(), 144 * 8);
+        assert_eq!(SHA3_256::new().block_bitlen(), 136 * 8);
+        assert_eq!(SHA3_384::new().block_bitlen(), 104 * 8);
+        assert_eq!(SHA3_512::new().block_bitlen(), 72 * 8);
     }
 
     #[test]

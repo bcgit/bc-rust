@@ -1,5 +1,5 @@
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey, KEM};
+use bouncycastle_core::traits::{KEM, KEMPrivateKey, KEMPublicKey};
 
 pub struct TestFrameworkKEM {
     // Put any config options here
@@ -53,11 +53,14 @@ impl TestFrameworkKEM {
             assert_ne!(ss, ss2);
         } else {
             match KEMAlg::decaps(&sk, &ct) {
-                Err(KEMError::DecapsulationFailed) => /* good */ (),
+                Err(KEMError::DecapsulationFailed) =>
+                /* good */
+                {
+                    ()
+                }
                 _ => panic!("This should have thrown an error but it didn't."),
             }
         }
-
 
         // test flipping every bit ... this will take some time to run
         if run_full_bitflipping_tests {
@@ -72,30 +75,33 @@ impl TestFrameworkKEM {
                         assert_ne!(ss, ss2);
                     } else {
                         match KEMAlg::decaps(&sk, &ct) {
-                            Err(KEMError::DecapsulationFailed) => /* good */ (),
+                            Err(KEMError::DecapsulationFailed) =>
+                            /* good */
+                            {
+                                ()
+                            }
                             _ => panic!("This should have thrown an error but it didn't."),
                         }
                     }
                 }
             }
         }
-        
 
         // test ct the wrong length
         let (pk, sk) = KEMAlg::keygen().unwrap();
         let (_ss, ct) = KEMAlg::encaps(&pk).unwrap();
-     
+
         // too short
-        match KEMAlg::decaps(&sk, &ct[..CT_LEN-1]) {
-            Err(KEMError::LengthError(_)) => { /* good */ },
+        match KEMAlg::decaps(&sk, &ct[..CT_LEN - 1]) {
+            Err(KEMError::LengthError(_)) => { /* good */ }
             _ => panic!("This should have thrown an error but it didn't."),
         };
-        
+
         // too long
         let mut long_ct = vec![1u8; CT_LEN + 2];
         long_ct.as_mut_slice()[..CT_LEN].copy_from_slice(&ct);
         match KEMAlg::decaps(&sk, &long_ct) {
-            Err(KEMError::LengthError(_)) => { /* good */ },
+            Err(KEMError::LengthError(_)) => { /* good */ }
             _ => panic!("This should have thrown an error but it didn't."),
         };
     }
@@ -104,9 +110,8 @@ impl TestFrameworkKEM {
 pub struct TestFrameworkKEMKeys {}
 
 impl TestFrameworkKEMKeys {
-
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 
     pub fn test_keys<
@@ -117,7 +122,9 @@ impl TestFrameworkKEMKeys {
         const SK_LEN: usize,
         const CT_LEN: usize,
         const SS_LEN: usize,
-    >(&self) {
+    >(
+        &self,
+    ) {
         self.test_boundary_conditions::<PK, SK, KEMAlg, PK_LEN, SK_LEN, CT_LEN, SS_LEN>();
     }
 
@@ -130,7 +137,9 @@ impl TestFrameworkKEMKeys {
         const SK_LEN: usize,
         const CT_LEN: usize,
         const SS_LEN: usize,
-    >(&self) {
+    >(
+        &self,
+    ) {
         let (pk, sk) = KEMAlg::keygen().unwrap();
 
         let pk_bytes = pk.encode();
@@ -148,7 +157,6 @@ impl TestFrameworkKEMKeys {
             Err(KEMError::DecodingError(_)) => { /* good */ }
             _ => panic!("Should have failed"),
         }
-
 
         let sk_bytes = sk.encode();
         assert_eq!(sk_bytes.len(), SK_LEN);

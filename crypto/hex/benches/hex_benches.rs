@@ -1,5 +1,5 @@
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use bouncycastle_hex as hex;
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 fn bench_hex_encode(c: &mut Criterion) {

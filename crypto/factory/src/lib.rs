@@ -25,7 +25,7 @@
 //! It also exposes [AlgorithmFactory::new] which can be used to create an instance of the algorithm
 //! by string name according to the string constants associated with the respective factory type.
 
-use bouncycastle_core::errors::{MACError};
+use bouncycastle_core::errors::MACError;
 
 pub mod hash_factory;
 pub mod kdf_factory;
@@ -37,7 +37,6 @@ pub mod xof_factory;
 pub const DEFAULT: &str = "Default";
 pub const DEFAULT_128_BIT: &str = "Default128Bit";
 pub const DEFAULT_256_BIT: &str = "Default256Bit";
-
 
 #[derive(Debug)]
 pub enum FactoryError {
@@ -52,7 +51,6 @@ impl From<MACError> for FactoryError {
 }
 
 pub trait AlgorithmFactory: Sized + Default {
-
     // Get the default configured algorithm.
     // Not implemented because all factories MUST impl Default.
     // fn default() -> Self;

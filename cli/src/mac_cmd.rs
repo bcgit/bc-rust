@@ -37,20 +37,18 @@ pub(crate) fn mac_cmd(
     key.allow_hazardous_operations();
     key.convert_key_type(KeyType::MACKey).unwrap();
 
-
     // instantiate the MAC object and call do_mac()
     match hmac_variant {
         HMACVariant::SHA256 => {
             let mac = HMAC_SHA256::new_allow_weak_key(&key).unwrap();
             do_mac(mac, verify_val, output_hex);
-        },
+        }
         HMACVariant::SHA512 => {
             let mac = HMAC_SHA512::new_allow_weak_key(&key).unwrap();
             do_mac(mac, verify_val, output_hex);
         }
     }
 }
-
 
 fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
     // read the content to be MAC'd from stdin

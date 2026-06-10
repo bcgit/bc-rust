@@ -224,20 +224,16 @@
 //! constant-time after compilation.
 
 #![no_std]
-
 #![forbid(missing_docs)]
-
 #![forbid(unsafe_code)]
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
 #![feature(generic_const_exprs)]
 #![feature(adt_const_params)]
-
 // These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',
 // or 'A' and 'a' are used and have specific meanings.
 // But need to tell the rust linter to not care.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-
 // so I can use private traits to hide internal stuff that needs to be generic within the
 // MLKEM implementation, but I don't want accessed from outside, such as FIPS-internal functions.
 #![allow(private_bounds)]
@@ -250,28 +246,30 @@ use bouncycastle_core::key_material::KeyMaterialTrait;
 
 // todo -- crucible tests
 
+mod aux_functions;
+mod low_memory_helpers;
 pub mod mlkem;
 mod mlkem_keys;
 mod polynomial;
-mod aux_functions;
-mod low_memory_helpers;
 
 /*** Exported types ***/
-pub use mlkem::{MLKEMTrait, MLKEM, MLKEM512, MLKEM768, MLKEM1024};
+pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};
+pub use mlkem_keys::{
+    MLKEM512PrivateKey, MLKEM768PrivateKey, MLKEM1024PrivateKey, MLKEMSeedPrivateKey,
+};
+pub use mlkem_keys::{MLKEM512PublicKey, MLKEM768PublicKey, MLKEM1024PublicKey, MLKEMPublicKey};
 pub use mlkem_keys::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait};
-pub use mlkem_keys::{MLKEMPublicKey, MLKEM512PublicKey, MLKEM768PublicKey, MLKEM1024PublicKey};
-pub use mlkem_keys::{MLKEMSeedPrivateKey, MLKEM512PrivateKey, MLKEM768PrivateKey, MLKEM1024PrivateKey};
 
 /*** Exported constants ***/
 pub use mlkem::ML_KEM_512_NAME;
 pub use mlkem::ML_KEM_768_NAME;
 pub use mlkem::ML_KEM_1024_NAME;
 
-pub use mlkem::{MLKEM_SEED_LEN, MLKEM_SS_LEN, MLKEM_RND_LEN};
+pub use mlkem::{MLKEM_RND_LEN, MLKEM_SEED_LEN, MLKEM_SS_LEN};
 
-pub use mlkem::{MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN};
-pub use mlkem::{MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN};
-pub use mlkem::{MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN};
+pub use mlkem::{MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN};
+pub use mlkem::{MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN};
+pub use mlkem::{MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
 
 // re-export just so it's visible to unit tests
 pub use polynomial::Polynomial;

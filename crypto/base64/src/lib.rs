@@ -81,7 +81,6 @@
 //     /// "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_="
 //     URLSafe,
 
-
 use bouncycastle_utils::ct::Condition;
 
 /// One-shot encode from bytes to a base64-encoded string using a constant-time implementation.
@@ -229,7 +228,7 @@ impl Base64Decoder {
         #[allow(non_snake_case)]
         let c_AZ: i64 = b as i64 - 'A' as i64;
         let c_az: i64 = b as i64 - 'a' as i64 + 26;
-        let c_09: i64 = b as i64 - '0' as i64 + 2*26;
+        let c_09: i64 = b as i64 - '0' as i64 + 2 * 26;
 
         let mut ret: i64 = 0xFFi64;
 
@@ -307,7 +306,9 @@ impl Base64Decoder {
         let mut out = match self.decode_internal(input, false) {
             Ok(out) => out,
             Err(Base64Error::PaddingEnconteredDuringDoUpdate) => {
-                panic!("rollback_if_padding = false should not produce a Base64Error::PaddingEnconteredDuringDoUpdate");
+                panic!(
+                    "rollback_if_padding = false should not produce a Base64Error::PaddingEnconteredDuringDoUpdate"
+                );
             }
             Err(e) => return Err(e),
         };

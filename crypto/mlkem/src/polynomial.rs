@@ -67,7 +67,7 @@ impl Polynomial {
         // self.cond_sub_q();
 
         // for (i, item) in msg.iter_mut().enumerate().take(N/8) {
-        for i in 0 .. N/8 {
+        for i in 0..N / 8 {
             for j in 0..8 {
                 let c_j = self[8 * i + j] as i32;
                 let t = (((LOWER - c_j) & (c_j - UPPER)) >> 31) & 0x01;
@@ -140,8 +140,7 @@ impl Polynomial {
                 for i in 0..N / 8 {
                     // fill the temp array t
                     for (j, item) in t.iter_mut().enumerate() {
-                        *item = ((((self[8 * i + j] as i32) << 4) + (q as i32 /2))
-                            / (q as i32)
+                        *item = ((((self[8 * i + j] as i32) << 4) + (q as i32 / 2)) / (q as i32)
                             & 15) as u8;
                     }
 
@@ -151,13 +150,13 @@ impl Polynomial {
                     out[idx + 3] = t[6] | (t[7] << 4);
                     idx += 4;
                 }
-            },
-            5 => { // MLKEM1024
-                for i in 0..N/8 {
+            }
+            5 => {
+                // MLKEM1024
+                for i in 0..N / 8 {
                     // fill the temp array t
                     for (j, item) in t.iter_mut().enumerate() {
-                        *item = (((((self[8 * i + j] as i32) << 5) + (q as i32 /2))
-                            / (q as i32))
+                        *item = (((((self[8 * i + j] as i32) << 5) + (q as i32 / 2)) / (q as i32))
                             & 31) as u8;
                     }
 
@@ -168,7 +167,7 @@ impl Polynomial {
                     out[idx + 4] = (t[6] >> 2) | (t[7] << 3);
                     idx += 5;
                 }
-            },
+            }
             _ => unreachable!(),
         };
     }
@@ -194,35 +193,30 @@ impl Polynomial {
                 // MLKEM512 and MLKEM768
                 for i in 0..N / 2 {
                     v[2 * i] =
-                        (((((compressed_v[idx] & 15) as i16) as i32 * (q as i32)) + 8) >> 4)
-                            as i16;
+                        (((((compressed_v[idx] & 15) as i16) as i32 * (q as i32)) + 8) >> 4) as i16;
                     v[2 * i + 1] =
-                        (((((compressed_v[idx] >> 4) as i16) as i32 * (q as i32)) + 8) >> 4)
-                            as i16;
+                        (((((compressed_v[idx] >> 4) as i16) as i32 * (q as i32)) + 8) >> 4) as i16;
                     idx += 1;
                 }
-            },
-            5 => { // MLKEM1024
+            }
+            5 => {
+                // MLKEM1024
                 let mut t = [0u8; 8];
-                for i in 0..N/8 {
+                for i in 0..N / 8 {
                     t[0] = compressed_v[idx];
-                    t[1] =
-                        (compressed_v[idx] >> 5) | (compressed_v[idx + 1] << 3);
+                    t[1] = (compressed_v[idx] >> 5) | (compressed_v[idx + 1] << 3);
                     t[2] = compressed_v[idx + 1] >> 2;
-                    t[3] = (compressed_v[idx + 1] >> 7)
-                        | (compressed_v[idx + 2] << 1);
-                    t[4] = (compressed_v[idx + 2] >> 4)
-                        | (compressed_v[idx + 3] << 4);
+                    t[3] = (compressed_v[idx + 1] >> 7) | (compressed_v[idx + 2] << 1);
+                    t[4] = (compressed_v[idx + 2] >> 4) | (compressed_v[idx + 3] << 4);
                     t[5] = compressed_v[idx + 3] >> 1;
-                    t[6] = (compressed_v[idx + 3] >> 6)
-                        | (compressed_v[idx + 4] << 2);
+                    t[6] = (compressed_v[idx + 3] >> 6) | (compressed_v[idx + 4] << 2);
                     t[7] = compressed_v[idx + 4] >> 3;
                     idx += 5;
                     for (j, item) in t.iter_mut().enumerate() {
                         v[8 * i + j] = (((*item & 31) as i32 * (q as i32) + 16) >> 5) as i16;
                     }
                 }
-            },
+            }
             _ => unreachable!(),
         }
 
@@ -308,7 +302,7 @@ impl Polynomial {
 pub(crate) fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     let mut r = Polynomial::new();
 
-    for i in 0..(N/4) {
+    for i in 0..(N / 4) {
         ntt_base_mult(
             &mut r.coeffs,
             4 * i,

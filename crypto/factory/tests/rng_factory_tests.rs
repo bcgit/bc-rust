@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use bouncycastle_core::traits::{SecurityStrength, RNG};
-    use bouncycastle_factory::AlgorithmFactory;
+    use bouncycastle_core::traits::{RNG, SecurityStrength};
     use bouncycastle_factory as factory;
+    use bouncycastle_factory::AlgorithmFactory;
 
     #[test]
     fn test_defaults() {
@@ -19,7 +19,6 @@ mod tests {
         let out = rng.next_bytes(10).unwrap();
         assert_ne!(out, &[0u8; 10],);
 
-
         // All the ways to get "default_128_bit"
         let mut rng = factory::rng_factory::RNGFactory::default_128_bit();
         assert_eq!(rng.security_strength(), SecurityStrength::_128bit);
@@ -35,7 +34,6 @@ mod tests {
         assert_eq!(rng.security_strength(), SecurityStrength::_128bit);
         let out = rng.next_bytes(10).unwrap();
         assert_ne!(out, &[0u8; 10],);
-
 
         // All the ways to get "default_256_bit"
         let mut rng = factory::rng_factory::RNGFactory::default_256_bit();

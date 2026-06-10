@@ -1,9 +1,9 @@
 //! Provides simplified abstracted APIs over classes of cryptigraphic primitives, such as Hash, KDF, etc.
 
-use core::marker::Sized;
-use core::fmt::{Debug, Display};
 use crate::errors::{HashError, KDFError, KEMError, MACError, RNGError, SignatureError};
 use crate::key_material::KeyMaterialTrait;
+use core::fmt::{Debug, Display};
+use core::marker::Sized;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -17,7 +17,7 @@ pub trait Algorithm {
     const MAX_SECURITY_STRENGTH: SecurityStrength;
 }
 
-pub trait Hash : Default {
+pub trait Hash: Default {
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
 
@@ -84,7 +84,7 @@ pub trait HashAlgParams: Algorithm {
 
 /// A Key Derivation Function (KDF) is a function that takes in one or more input key and some unstructured
 /// additional input, and uses them to produces a derived key.
-pub trait KDF : Default {
+pub trait KDF: Default {
     /// Implementations of this function are capable of deriving an output key from an input key,
     /// assuming that they have been properly initialized.
     ///
@@ -186,11 +186,12 @@ pub trait KEM<
     const SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
->: Sized {
+>: Sized
+{
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), KEMError>;
-    
+
     /// Performs an encapsulation against the given public key.
     /// Returns the ciphertext and derived shared secret.
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
@@ -204,7 +205,9 @@ pub trait KEM<
 // todo: that automatically call the encode and from_bytes() ?
 
 /// A public key for a KEM algorithm, often denoted "pk".
-pub trait KEMPublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
+pub trait KEMPublicKey<const PK_LEN: usize>:
+    PartialEq + Eq + Clone + Debug + Display + Sized
+{
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; PK_LEN];
     /// Write it out to bytes in its standard encoding.
@@ -214,7 +217,7 @@ pub trait KEMPublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + D
 }
 
 /// A private key for a KEM algorithm, often denoted "sk" (for "secret key").
-pub trait KEMPrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret + Sized {
+pub trait KEMPrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Secret + Sized {
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; SK_LEN];
     /// Write it out to bytes in its standard encoding.
@@ -222,7 +225,6 @@ pub trait KEMPrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret +
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
 }
-
 
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
 /// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that
@@ -293,7 +295,7 @@ pub trait MAC: Sized {
     /// Depending on the underlying MAC implementation, NIST may require that the library enforce
     /// a minimum length on the mac output value. See documentation for the underlying implementation
     /// to see conditions under which it throws [MACError::InvalidLength].
-    fn mac_out(self, data: &[u8],out: &mut [u8]) -> Result<usize, MACError>;
+    fn mac_out(self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError>;
 
     /// One-shot API that verifies a MAC for the provided data.
     /// `data` can be of any length, including zero bytes.
@@ -381,11 +383,14 @@ impl SecurityStrength {
 /// be used by applications that intend to submit to FIPS certification as it more closely aligns with the
 /// requirements of SP 800-90A.
 /// Note: this interface produces bytes. If you want a [KeyMaterialTrait], then use [KeyMaterial::from_rng].
-pub trait RNG : Default {
+pub trait RNG: Default {
     // TODO: add back once we figure out streaming interaction with entropy sources.
     // fn add_seed_bytes(&mut self, additional_seed: &[u8]) -> Result<(), RNGError>;
 
-    fn add_seed_keymaterial(&mut self, additional_seed: impl KeyMaterialTrait) -> Result<(), RNGError>;
+    fn add_seed_keymaterial(
+        &mut self,
+        additional_seed: impl KeyMaterialTrait,
+    ) -> Result<(), RNGError>;
     fn next_int(&mut self) -> Result<u32, RNGError>;
 
     /// Returns the number of requested bytes.
@@ -403,9 +408,9 @@ pub trait RNG : Default {
 /// A trait that forces an object to implement a zeroizing Drop() as well as Debug and Display that
 /// will not log the sensitive contents, even in error or crash-dump scenarios.
 #[allow(drop_bounds)] // Since rust auto-implements Drop, there's a lint that explicitly bounding on Drop is useless.
-                      // I disagree because I want to force things that are secrets to manually implement Drop that zeroizes the data.
-                      // So I'm turning off this lint.
-pub trait Secret : Drop + Debug + Display {}
+// I disagree because I want to force things that are secrets to manually implement Drop that zeroizes the data.
+// So I'm turning off this lint.
+pub trait Secret: Drop + Debug + Display {}
 
 /// Pre-Hashed Signature is an extension to [Signature] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.
@@ -415,8 +420,9 @@ pub trait PHSignature<
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    const PH_LEN: usize>:
-    Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>{
+    const PH_LEN: usize,
+>: Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+{
     /// Produce a signature for the provided pre-hashed message and context.
     ///
     /// `ctx` accepts a zero-length byte array.
@@ -441,12 +447,26 @@ pub trait PHSignature<
     /// Not all signature primitives will support a context value, so you may need to consult the
     /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
     /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign_ph(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError>;
+    fn sign_ph(
+        sk: &SK,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+    ) -> Result<[u8; SIG_LEN], SignatureError>;
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_ph_out(sk: &SK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
+    fn sign_ph_out(
+        sk: &SK,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>;
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
-    fn verify_ph(pk: &PK, ph: &[u8; PH_LEN], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
+    fn verify_ph(
+        pk: &PK,
+        ph: &[u8; PH_LEN],
+        ctx: Option<&[u8]>,
+        sig: &[u8],
+    ) -> Result<(), SignatureError>;
 }
 
 /// A digital signature algorithm is defined as a set of three operations:
@@ -469,8 +489,9 @@ pub trait Signature<
     SK: SignaturePrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
-    const SIG_LEN: usize
->: Sized {
+    const SIG_LEN: usize,
+>: Sized
+{
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), SignatureError>;
@@ -501,7 +522,12 @@ pub trait Signature<
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError>;
 
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    fn sign_out(sk: &SK, msg: &[u8], ctx: Option<&[u8]>, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
+    fn sign_out(
+        sk: &SK,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>;
 
     /* streaming signing API */
     /// Initialize a signer for streaming mode with the provided private key.
@@ -539,7 +565,9 @@ pub trait Signature<
 // todo: that automatically call the encode and from_bytes() ?
 
 /// A public key for a signature algorithm, often denoted "pk".
-pub trait SignaturePublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
+pub trait SignaturePublicKey<const PK_LEN: usize>:
+    PartialEq + Eq + Clone + Debug + Display + Sized
+{
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; PK_LEN];
     /// Write it out to bytes in its standard encoding.
@@ -549,7 +577,9 @@ pub trait SignaturePublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Deb
 }
 
 /// A private key for a signature algorithm, often denoted "sk" (for "secret key").
-pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret + Sized {
+pub trait SignaturePrivateKey<const SK_LEN: usize>:
+    PartialEq + Eq + Clone + Secret + Sized
+{
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; SK_LEN];
     /// Write it out to bytes in its standard encoding.
@@ -557,7 +587,6 @@ pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Se
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
-
 
 /// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
 /// The naming used for the functions of this trait are borrowed from the SHA3-style sponge constructions that split XOF operation
@@ -577,7 +606,7 @@ pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Se
 /// to break anonymity-preserving technology.
 /// Applications that require the arbitrary-length output of an XOF, but also care about these
 /// distinguishing attacks should consider adding a cryptographic salt to diversify the inputs.
-pub trait XOF : Default {
+pub trait XOF: Default {
     /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
     fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8>;
 

@@ -4,11 +4,16 @@
 use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
 use bouncycastle::core::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle::hex;
-use bouncycastle::mldsa::{MLDSA_SEED_LEN, MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA87PrivateKey, MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
-use std::{io};
-use std::io::{Read};
-use std::process::exit;
+use bouncycastle::mldsa::{
+    HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA_SEED_LEN,
+    MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65,
+    MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN,
+    MLDSA87_SK_LEN, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait,
+};
 use clap::ValueEnum;
+use std::io;
+use std::io::Read;
+use std::process::exit;
 
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum MLDSAAction {
@@ -48,7 +53,10 @@ pub(crate) fn mldsa44_cmd(
             let seed = match parse_seed::<MLDSA_SEED_LEN>(&buf) {
                 Ok(seed) => seed,
                 Err(()) => {
-                    eprintln!("Error: input could not be parsed as a {} byte seed in either hex or bin", MLDSA_SEED_LEN);
+                    eprintln!(
+                        "Error: input could not be parsed as a {} byte seed in either hex or bin",
+                        MLDSA_SEED_LEN
+                    );
                     exit(-1);
                 }
             };
@@ -94,7 +102,9 @@ pub(crate) fn mldsa44_cmd(
             };
 
             match MLDSA44::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
@@ -113,7 +123,9 @@ pub(crate) fn mldsa44_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // and now sign, streaming the message from stdin
             let sk = match parse_mldsa44_sk(&sk_bytes) {
@@ -156,7 +168,9 @@ pub(crate) fn mldsa44_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // then read the sig
             let sig = if sigfile.is_some() {
@@ -185,7 +199,7 @@ pub(crate) fn mldsa44_cmd(
                 eprintln!("Signature is invalid.");
                 exit(-1);
             }
-        },
+        }
     }
 }
 
@@ -247,7 +261,9 @@ pub(crate) fn mldsa65_cmd(
             };
 
             match MLDSA65::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
@@ -266,7 +282,9 @@ pub(crate) fn mldsa65_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // and now sign, streaming the message from stdin
             let sk = match parse_mldsa65_sk(&sk_bytes) {
@@ -309,7 +327,9 @@ pub(crate) fn mldsa65_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // then read the sig
             let sig = if sigfile.is_some() {
@@ -338,7 +358,7 @@ pub(crate) fn mldsa65_cmd(
                 eprintln!("Signature is invalid.");
                 exit(-1);
             }
-        },
+        }
     }
 }
 pub(crate) fn mldsa87_cmd(
@@ -383,7 +403,6 @@ pub(crate) fn mldsa87_cmd(
                 }
             };
 
-
             // first, read the pk
             let pk_bytes = if pkfile.is_some() {
                 read_from_file(pkfile.as_ref().unwrap())
@@ -400,7 +419,9 @@ pub(crate) fn mldsa87_cmd(
             };
 
             match MLDSA87::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
@@ -419,7 +440,9 @@ pub(crate) fn mldsa87_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // and now sign, streaming the message from stdin
             let sk = match parse_mldsa87_sk(&sk_bytes) {
@@ -462,7 +485,9 @@ pub(crate) fn mldsa87_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // then read the sig
             let sig = if sigfile.is_some() {
@@ -491,7 +516,7 @@ pub(crate) fn mldsa87_cmd(
                 eprintln!("Signature is invalid.");
                 exit(-1);
             }
-        },
+        }
     }
 }
 
@@ -553,7 +578,9 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             };
 
             match MLDSA44::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
@@ -572,7 +599,9 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // and now sign, streaming the message from stdin
             let sk = match parse_mldsa44_sk(&sk_bytes) {
@@ -615,7 +644,9 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // then read the sig
             let sig = if sigfile.is_some() {
@@ -644,7 +675,7 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
                 eprintln!("Signature is invalid.");
                 exit(-1);
             }
-        },
+        }
     }
 }
 
@@ -706,7 +737,9 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             };
 
             match MLDSA65::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
@@ -725,7 +758,9 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // and now sign, streaming the message from stdin
             let sk = match parse_mldsa65_sk(&sk_bytes) {
@@ -768,7 +803,9 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // then read the sig
             let sig = if sigfile.is_some() {
@@ -797,7 +834,7 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
                 eprintln!("Signature is invalid.");
                 exit(-1);
             }
-        },
+        }
     }
 }
 pub(crate) fn hash_mldsa87_sha512_cmd(
@@ -858,7 +895,9 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             };
 
             match MLDSA87::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => { println!("SUCCESS: pk and sk match."); }
+                Ok(_) => {
+                    println!("SUCCESS: pk and sk match.");
+                }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
@@ -877,7 +916,9 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // and now sign, streaming the message from stdin
             let sk = match parse_mldsa87_sk(&sk_bytes) {
@@ -920,7 +961,9 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             // then read ctx
             let ctx = if ctxfile.is_some() {
                 read_from_file(ctxfile.as_ref().unwrap())
-            } else { vec![0u8;0] };
+            } else {
+                vec![0u8; 0]
+            };
 
             // then read the sig
             let sig = if sigfile.is_some() {
@@ -949,7 +992,7 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
                 eprintln!("Signature is invalid.");
                 exit(-1);
             }
-        },
+        }
     }
 }
 

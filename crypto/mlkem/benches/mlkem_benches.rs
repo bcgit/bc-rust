@@ -1,9 +1,13 @@
-use criterion::{Criterion, criterion_group, criterion_main};
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
-use std::hint::black_box;
 use bouncycastle_core::traits::KEM;
 use bouncycastle_hex as hex;
-use bouncycastle_mlkem::{MLKEM1024PrivateKeyExpanded, MLKEM512PrivateKeyExpanded, MLKEM768PrivateKeyExpanded, MLKEMPublicKeyTrait, MLKEMTrait, MLKEM1024, MLKEM1024_CT_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM768, MLKEM768_CT_LEN, MLKEM_RND_LEN};
+use bouncycastle_mlkem::{
+    MLKEM_RND_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM512PrivateKeyExpanded, MLKEM768,
+    MLKEM768_CT_LEN, MLKEM768PrivateKeyExpanded, MLKEM1024, MLKEM1024_CT_LEN,
+    MLKEM1024PrivateKeyExpanded, MLKEMPublicKeyTrait, MLKEMTrait,
+};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 fn bench_mlkem_keygen(c: &mut Criterion) {
     let mut group = c.benchmark_group("KeyGen");
@@ -18,11 +22,11 @@ fn bench_mlkem_keygen(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Elements(seeds.len() as u64));
 
     group.bench_function("ML-KEM-512", |b| {
-       b.iter(|| {
-           for seed in seeds.iter() {
-               black_box(MLKEM512::keygen_from_seed(seed)).unwrap();
-           }
-       })
+        b.iter(|| {
+            for seed in seeds.iter() {
+                black_box(MLKEM512::keygen_from_seed(seed)).unwrap();
+            }
+        })
     });
 
     group.bench_function("ML-KEM-768", |b| {
@@ -43,7 +47,6 @@ fn bench_mlkem_keygen(c: &mut Criterion) {
 
     group.finish();
 }
-
 
 fn bench_mlkem_keygen_and_expand(c: &mut Criterion) {
     let mut group = c.benchmark_group("KeyGen_and_expand");
@@ -69,7 +72,7 @@ fn bench_mlkem_keygen_and_expand(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for seed in seeds.iter() {
-                let(_pk, sk) = MLKEM768::keygen_from_seed(seed).unwrap();
+                let (_pk, sk) = MLKEM768::keygen_from_seed(seed).unwrap();
                 black_box(MLKEM768PrivateKeyExpanded::from(&sk));
             }
         })
@@ -78,7 +81,7 @@ fn bench_mlkem_keygen_and_expand(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for seed in seeds.iter() {
-                let(_pk, sk) = MLKEM1024::keygen_from_seed(seed).unwrap();
+                let (_pk, sk) = MLKEM1024::keygen_from_seed(seed).unwrap();
                 black_box(MLKEM1024PrivateKeyExpanded::from(&sk));
             }
         })
@@ -93,12 +96,16 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     // set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
-        &hex::decode("000102030405060708090a0b0c0d0e0f
+        &hex::decode(
+            "000102030405060708090a0b0c0d0e0f
                             101112131415161718191a1b1c1d1e1f
                             202122232425262728292a2b2c2d2e2f
-                            303132333435363738393a3b3c3d3e3f").unwrap(),
+                            303132333435363738393a3b3c3d3e3f",
+        )
+        .unwrap(),
         KeyType::Seed,
-    ).unwrap();
+    )
+    .unwrap();
 
     // create a vector of signing nonces so that we're not measuring the time of the RNG
     const NUM_ELEMS: usize = 256;
@@ -119,7 +126,6 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
             }
         })
     });
-
 
     /*** ML-KEM-768 ***/
     let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
@@ -150,19 +156,22 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     group.finish();
 }
 
-
 fn bench_mlkem_encaps_for_expanded(c: &mut Criterion) {
     let mut group = c.benchmark_group("Encaps_for_expanded_key");
 
     // set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
-        &hex::decode("000102030405060708090a0b0c0d0e0f
+        &hex::decode(
+            "000102030405060708090a0b0c0d0e0f
                             101112131415161718191a1b1c1d1e1f
                             202122232425262728292a2b2c2d2e2f
-                            303132333435363738393a3b3c3d3e3f").unwrap(),
+                            303132333435363738393a3b3c3d3e3f",
+        )
+        .unwrap(),
         KeyType::Seed,
-    ).unwrap();
+    )
+    .unwrap();
 
     // create a vector of signing nonces so that we're not measuring the time of the RNG
     const NUM_ELEMS: usize = 256;
@@ -184,7 +193,6 @@ fn bench_mlkem_encaps_for_expanded(c: &mut Criterion) {
             }
         })
     });
-
 
     /*** ML-KEM-768 ***/
     let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
@@ -223,12 +231,16 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     // set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
-        &hex::decode("000102030405060708090a0b0c0d0e0f
+        &hex::decode(
+            "000102030405060708090a0b0c0d0e0f
                             101112131415161718191a1b1c1d1e1f
                             202122232425262728292a2b2c2d2e2f
-                            303132333435363738393a3b3c3d3e3f").unwrap(),
+                            303132333435363738393a3b3c3d3e3f",
+        )
+        .unwrap(),
         KeyType::Seed,
-    ).unwrap();
+    )
+    .unwrap();
 
     const NUM_ELEMS: usize = 256;
 
@@ -236,7 +248,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     let (pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -248,7 +260,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM512::decaps(&sk, &cts[i]) );
+                _ = black_box(MLKEM512::decaps(&sk, &cts[i]));
             }
         })
     });
@@ -257,7 +269,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -269,7 +281,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM768::decaps(&sk, &cts[i]) );
+                _ = black_box(MLKEM768::decaps(&sk, &cts[i]));
             }
         })
     });
@@ -278,7 +290,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     let (pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -290,7 +302,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM1024::decaps(&sk, &cts[i]) );
+                _ = black_box(MLKEM1024::decaps(&sk, &cts[i]));
             }
         })
     });
@@ -298,19 +310,22 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.finish();
 }
 
-
 fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let mut group = c.benchmark_group("Decaps_with_expanded_key");
 
     // set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
-        &hex::decode("000102030405060708090a0b0c0d0e0f
+        &hex::decode(
+            "000102030405060708090a0b0c0d0e0f
                             101112131415161718191a1b1c1d1e1f
                             202122232425262728292a2b2c2d2e2f
-                            303132333435363738393a3b3c3d3e3f").unwrap(),
+                            303132333435363738393a3b3c3d3e3f",
+        )
+        .unwrap(),
         KeyType::Seed,
-    ).unwrap();
+    )
+    .unwrap();
 
     const NUM_ELEMS: usize = 256;
 
@@ -319,7 +334,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let sk_expanded = MLKEM512PrivateKeyExpanded::from(&sk);
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -331,7 +346,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM512::decaps_with_expanded_key(&sk_expanded, &cts[i]) );
+                _ = black_box(MLKEM512::decaps_with_expanded_key(&sk_expanded, &cts[i]));
             }
         })
     });
@@ -341,7 +356,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let sk_expanded = MLKEM768PrivateKeyExpanded::from(&sk);
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -353,7 +368,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM768::decaps_with_expanded_key(&sk_expanded, &cts[i]) );
+                _ = black_box(MLKEM768::decaps_with_expanded_key(&sk_expanded, &cts[i]));
             }
         })
     });
@@ -363,7 +378,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let sk_expanded = MLKEM1024PrivateKeyExpanded::from(&sk);
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -375,7 +390,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM1024::decaps_with_expanded_key(&sk_expanded, &cts[i]) );
+                _ = black_box(MLKEM1024::decaps_with_expanded_key(&sk_expanded, &cts[i]));
             }
         })
     });
@@ -383,19 +398,22 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.finish();
 }
 
-
 fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     let mut group = c.benchmark_group("decaps_from_seed");
 
     // set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
-        &hex::decode("000102030405060708090a0b0c0d0e0f
+        &hex::decode(
+            "000102030405060708090a0b0c0d0e0f
                             101112131415161718191a1b1c1d1e1f
                             202122232425262728292a2b2c2d2e2f
-                            303132333435363738393a3b3c3d3e3f").unwrap(),
+                            303132333435363738393a3b3c3d3e3f",
+        )
+        .unwrap(),
         KeyType::Seed,
-    ).unwrap();
+    )
+    .unwrap();
 
     const NUM_ELEMS: usize = 256;
 
@@ -403,7 +421,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -415,7 +433,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM512::decaps_from_seed(&seed, &cts[i]) );
+                _ = black_box(MLKEM512::decaps_from_seed(&seed, &cts[i]));
             }
         })
     });
@@ -424,7 +442,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
@@ -436,7 +454,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM768::decaps_from_seed(&seed, &cts[i]) );
+                _ = black_box(MLKEM768::decaps_from_seed(&seed, &cts[i]));
             }
         })
     });
@@ -445,11 +463,11 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
 
     // create a bunch of ciphertexts to decaps
-    let mut cts = [ [0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
+    let mut cts = [[0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
-        cts[i].copy_from_slice(&MLKEM1024::encaps_internal(&pk, None,[i as u8; MLKEM_RND_LEN]).1);
+        cts[i].copy_from_slice(&MLKEM1024::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -457,7 +475,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box( MLKEM1024::decaps_from_seed(&seed, &cts[i]) );
+                _ = black_box(MLKEM1024::decaps_from_seed(&seed, &cts[i]));
             }
         })
     });
@@ -465,9 +483,16 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_mlkem_keygen, bench_mlkem_keygen_and_expand,
-    bench_mlkem_encaps, bench_mlkem_encaps_for_expanded,
-    bench_mlkem_decaps, bench_mlkem_decaps_with_expanded_key, bench_mlkem_decaps_from_seed);
+criterion_group!(
+    benches,
+    bench_mlkem_keygen,
+    bench_mlkem_keygen_and_expand,
+    bench_mlkem_encaps,
+    bench_mlkem_encaps_for_expanded,
+    bench_mlkem_decaps,
+    bench_mlkem_decaps_with_expanded_key,
+    bench_mlkem_decaps_from_seed
+);
 
 criterion_main!(benches);
 

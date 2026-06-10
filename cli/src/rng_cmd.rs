@@ -1,4 +1,4 @@
-use bouncycastle::core::traits::{RNG};
+use bouncycastle::core::traits::RNG;
 use bouncycastle::factory::AlgorithmFactory;
 use bouncycastle::factory::rng_factory::RNGFactory;
 
@@ -13,7 +13,9 @@ pub(crate) fn rng_cmd(len: Option<u32>, output_hex: bool) {
     while loop_forever || bytes_left_to_write > 0 {
         rng.next_bytes_out(&mut buf).unwrap();
 
-        if bytes_left_to_write < buf.len() { buf.truncate(bytes_left_to_write); }
+        if bytes_left_to_write < buf.len() {
+            buf.truncate(bytes_left_to_write);
+        }
         write_bytes_or_hex(&buf, output_hex);
         bytes_left_to_write -= buf.len();
     }

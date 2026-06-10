@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     use bouncycastle_core::errors::{KeyMaterialError, RNGError};
-    use bouncycastle_core::key_material::{KeyMaterial0, KeyMaterial256, KeyMaterial, KeyType, KeyMaterialTrait};
+    use bouncycastle_core::key_material::{
+        KeyMaterial, KeyMaterial0, KeyMaterial256, KeyMaterialTrait, KeyType,
+    };
     use bouncycastle_core::traits::{RNG, SecurityStrength};
     use bouncycastle_core_test_framework::DUMMY_SEED_512;
     use bouncycastle_rng::Sp80090ADrbg;

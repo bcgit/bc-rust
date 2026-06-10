@@ -1,21 +1,20 @@
-mod sha3_cmd;
 mod encoders_cmd;
-mod sha2_cmd;
-mod mac_cmd;
+mod helpers;
 mod hkdf_cmd;
-mod rng_cmd;
+mod mac_cmd;
 mod mldsa_cmd;
 mod mlkem_cmd;
-mod helpers;
+mod rng_cmd;
+mod sha2_cmd;
+mod sha3_cmd;
 
-use clap::{Parser, Subcommand};
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(version, about, long_about=None, arg_required_else_help=true)]
 struct Cli {
-
     #[command(subcommand)]
     subcommands: Option<Subcommands>,
 }
@@ -30,7 +29,7 @@ enum Subcommands {
     /// Decode base64 data from stdin to binary.
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexDecode,
-    
+
     /// Encode binary data from stdin to base64.
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     Base64Encode,
@@ -163,7 +162,7 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
-        
+
         /// A MAC value to be verified.
         /// The command will output either 0 for success or -1 for verification failure.
         #[arg(short, long)]
@@ -173,7 +172,6 @@ enum Subcommands {
         /// Output the hashes in hex format.
         x: bool,
     },
-
 
     /// Perform HMAC-SHA256 of the content provided on stdin.
     ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
@@ -217,7 +215,6 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
-
 
     /// Perform HMAC-SHA512 of the content provided on stdin.
     ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
@@ -285,7 +282,7 @@ enum Subcommands {
         #[arg(long)]
         /// The public key file (in hex or binary) for encaps
         pkfile: Option<String>,
-        
+
         #[arg(long)]
         /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
         ctfile: Option<String>,
@@ -432,7 +429,6 @@ enum Subcommands {
         /// The signature value file (in hex or binary) for verifying
         sigfile: Option<String>,
 
-
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -457,7 +453,6 @@ enum Subcommands {
         #[arg(long)]
         /// The signature value file (in hex or binary) for verifying
         sigfile: Option<String>,
-
 
         #[arg(short)]
         /// Output in hex format.
@@ -484,46 +479,120 @@ enum Subcommands {
         /// The signature value file (in hex or binary) for verifying
         sigfile: Option<String>,
 
-
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 }
 
-
 fn main() {
     let cli = Cli::parse();
 
     match &cli.subcommands {
-        Some(Subcommands::HexEncode) => { encoders_cmd::hex_encode_cmd(); }
-        Some(Subcommands::HexDecode) => { encoders_cmd::hex_decode_cmd(); }
-        Some(Subcommands::Base64Encode) => { encoders_cmd::base64_encode_cmd(); }
-        Some(Subcommands::Base64Decode) => { encoders_cmd::base64_decode_cmd(); }
-        Some(Subcommands::SHA224 { x}) => { sha2_cmd::sha2_cmd(224, *x); },
-        Some(Subcommands::SHA256 { x}) => { sha2_cmd::sha2_cmd(256, *x); },
-        Some(Subcommands::SHA384 { x}) => { sha2_cmd::sha2_cmd(384, *x); },
-        Some(Subcommands::SHA512 { x}) => { sha2_cmd::sha2_cmd(512, *x); },
-        Some(Subcommands::SHA3_224 { x}) => { sha3_cmd::sha3_cmd(224, *x); },
-        Some(Subcommands::SHA3_256 { x}) => { sha3_cmd::sha3_cmd(256, *x); },
-        Some(Subcommands::SHA3_384 { x}) => { sha3_cmd::sha3_cmd(384, *x); },
-        Some(Subcommands::SHA3_512 { x}) => { sha3_cmd::sha3_cmd(512, *x); },
-        Some(Subcommands::SHAKE128 { length, x}) => { sha3_cmd::shake_cmd(128, *length, *x); },
-        Some(Subcommands::SHAKE256 { length, x}) => { sha3_cmd::shake_cmd(256, *length, *x); },
-        Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x}) => { mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)},
-        Some(Subcommands::HMAC_SHA512 { key, key_file, verify, x}) => { mac_cmd::mac_cmd(HMACVariant::SHA512, key, key_file, verify, *x)},
-        Some(Subcommands::HKDF_SHA256 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
-        Some(Subcommands::HKDF_SHA512 { salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, len, x}) => { hkdf_cmd::hkdf_cmd("HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file, *len, *x)},
-        Some(Subcommands::RNG {  len, x}) => { rng_cmd::rng_cmd(*len, *x)},
-        Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => { mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x); }
-        Some(Subcommands::MLKEM768 { action, skfile, pkfile, ctfile, x }) => { mlkem_cmd::mlkem768_cmd(action, skfile, pkfile, ctfile, *x); }
-        Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => { mlkem_cmd::mlkem1024_cmd(action, skfile, pkfile, ctfile, *x); }
-        Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
-        Some(Subcommands::MLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa65_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
-        Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
-        Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
-        Some(Subcommands::HashMLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::hash_mldsa65_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
-        Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => { mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x); }
-        None => { eprintln!("No command provided. See -h") },
+        Some(Subcommands::HexEncode) => {
+            encoders_cmd::hex_encode_cmd();
+        }
+        Some(Subcommands::HexDecode) => {
+            encoders_cmd::hex_decode_cmd();
+        }
+        Some(Subcommands::Base64Encode) => {
+            encoders_cmd::base64_encode_cmd();
+        }
+        Some(Subcommands::Base64Decode) => {
+            encoders_cmd::base64_decode_cmd();
+        }
+        Some(Subcommands::SHA224 { x }) => {
+            sha2_cmd::sha2_cmd(224, *x);
+        }
+        Some(Subcommands::SHA256 { x }) => {
+            sha2_cmd::sha2_cmd(256, *x);
+        }
+        Some(Subcommands::SHA384 { x }) => {
+            sha2_cmd::sha2_cmd(384, *x);
+        }
+        Some(Subcommands::SHA512 { x }) => {
+            sha2_cmd::sha2_cmd(512, *x);
+        }
+        Some(Subcommands::SHA3_224 { x }) => {
+            sha3_cmd::sha3_cmd(224, *x);
+        }
+        Some(Subcommands::SHA3_256 { x }) => {
+            sha3_cmd::sha3_cmd(256, *x);
+        }
+        Some(Subcommands::SHA3_384 { x }) => {
+            sha3_cmd::sha3_cmd(384, *x);
+        }
+        Some(Subcommands::SHA3_512 { x }) => {
+            sha3_cmd::sha3_cmd(512, *x);
+        }
+        Some(Subcommands::SHAKE128 { length, x }) => {
+            sha3_cmd::shake_cmd(128, *length, *x);
+        }
+        Some(Subcommands::SHAKE256 { length, x }) => {
+            sha3_cmd::shake_cmd(256, *length, *x);
+        }
+        Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HMAC_SHA512 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA512, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HKDF_SHA256 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            "HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
+            *len, *x,
+        ),
+        Some(Subcommands::HKDF_SHA512 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            "HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
+            *len, *x,
+        ),
+        Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
+        Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
+            mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::MLKEM768 { action, skfile, pkfile, ctfile, x }) => {
+            mlkem_cmd::mlkem768_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => {
+            mlkem_cmd::mlkem1024_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::MLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::mldsa65_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::HashMLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::hash_mldsa65_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        None => {
+            eprintln!("No command provided. See -h")
+        }
     }
 }

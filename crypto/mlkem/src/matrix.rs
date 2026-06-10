@@ -3,16 +3,18 @@
 
 use core::ops::{Index, IndexMut};
 
-use crate::mlkem::{q, N};
+use crate::mlkem::{N, q};
 use crate::polynomial;
-use crate::polynomial::{Polynomial};
+use crate::polynomial::Polynomial;
 
 #[derive(Clone)]
 /// A matrix over the ML-KEM ring.
-pub struct Matrix<const k: usize, const l: usize>{ /*pub(crate)*/ mat: [[Polynomial; l]; k] }
+pub struct Matrix<const k: usize, const l: usize> {
+    /*pub(crate)*/ mat: [[Polynomial; l]; k],
+}
 
 /// Convenience function to avoid ".0" all over the place.
-impl<const k: usize, const l: usize> Index<usize> for Matrix<k,l> {
+impl<const k: usize, const l: usize> Index<usize> for Matrix<k, l> {
     type Output = [Polynomial; l];
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -20,7 +22,7 @@ impl<const k: usize, const l: usize> Index<usize> for Matrix<k,l> {
     }
 }
 /// Convenience function to avoid ".0" all over the place.
-impl<const k: usize, const l: usize> IndexMut<usize> for Matrix<k,l> {
+impl<const k: usize, const l: usize> IndexMut<usize> for Matrix<k, l> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.mat[index]
     }
@@ -28,7 +30,7 @@ impl<const k: usize, const l: usize> IndexMut<usize> for Matrix<k,l> {
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
     pub(crate) fn new() -> Self {
-        Self{ mat: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
+        Self { mat: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
     }
 
     /// FIPS 204 Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
@@ -41,16 +43,16 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// transpose: False will multiply A, where as True will multiply A^T
     pub(crate) fn matrix_vector_ntt<const transpose: bool>(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
-        for i in 0 .. k {
+        for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
-            w[i] = if transpose{
+            w[i] = if transpose {
                 polynomial::base_mult_montgomery(&self.mat[0][i], &v[0])
             } else {
                 polynomial::base_mult_montgomery(&self.mat[i][0], &v[0])
             };
 
             let mut w1: Polynomial;
-            for j in 1 .. l {
+            for j in 1..l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
@@ -79,9 +81,10 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
 // but I'll leave it zeroizing for now and leave this as a potential future optimization.
 
-
 #[derive(Clone)]
-pub(crate) struct Vector<const k: usize>{ pub(crate) vec: [Polynomial; k] }
+pub(crate) struct Vector<const k: usize> {
+    pub(crate) vec: [Polynomial; k],
+}
 
 /// Convenience function to avoid ".0" all over the place.
 impl<const k: usize> Index<usize> for Vector<k> {
@@ -98,10 +101,9 @@ impl<const k: usize> IndexMut<usize> for Vector<k> {
     }
 }
 
-impl<const k: usize> Vector<k>
-{
+impl<const k: usize> Vector<k> {
     pub(crate) fn new() -> Self {
-        Self {vec: [(); k].map(|_| Polynomial::new()) }
+        Self { vec: [(); k].map(|_| Polynomial::new()) }
     }
 
     /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂
@@ -110,7 +112,7 @@ impl<const k: usize> Vector<k>
     /// Output: u_hat ∈ T^ℓ_𝑞.
     /// Add another vector to this vector
     pub(crate) fn add_vector_ntt(&mut self, s: &Self) {
-        for i in 0 ..k {
+        for i in 0..k {
             // perform montgomery addition of each polynomial in the vector
             self[i].add(&s[i]);
         }
@@ -138,7 +140,7 @@ impl<const k: usize> Vector<k>
         }
     }
 
-    pub(crate) fn ntt(&mut self){
+    pub(crate) fn ntt(&mut self) {
         for i in 0..k {
             self[i].ntt();
         }
@@ -151,7 +153,7 @@ impl<const k: usize> Vector<k>
     }
 
     pub(crate) fn convert_to_mont(&mut self) {
-        for i in 0 ..k {
+        for i in 0..k {
             self[i].convert_to_mont();
         }
     }
@@ -165,7 +167,7 @@ impl<const k: usize> Vector<k>
 
         // make sure we were given the right size output buffer
         // each of the N i16's will take dv bits
-        debug_assert_eq!(out.len(), k *(N * (du as usize) / 8));
+        debug_assert_eq!(out.len(), k * (N * (du as usize) / 8));
 
         // bc-java has a conditional_sub_q() here, but I pass all unit tests without it, so I'm taking it out for performance.
         // let mut s = self.clone();
@@ -173,10 +175,11 @@ impl<const k: usize> Vector<k>
 
         let mut idx = 0;
         match du {
-            10 => { // MLKEM512 and MLKEM 768
+            10 => {
+                // MLKEM512 and MLKEM 768
                 let mut t = [0i16; 4];
                 for i in 0..k {
-                    for j in 0..N/4 {
+                    for j in 0..N / 4 {
                         // fill the temp array t
                         for (l, item) in t.iter_mut().enumerate() {
                             *item = (((((self[i][4 * j + l] as u32) << 10) as i32
@@ -193,11 +196,11 @@ impl<const k: usize> Vector<k>
                         idx += 5;
                     }
                 }
-            },
+            }
             11 => {
                 let mut t = [0i16; 8];
                 for i in 0..k {
-                    for j in 0..N/8 {
+                    for j in 0..N / 8 {
                         for (l, item) in t.iter_mut().enumerate() {
                             *item = (((((self[i][8 * j + l] as u32) << 11) as i32
                                 + (q as i32 / 2))
@@ -219,7 +222,7 @@ impl<const k: usize> Vector<k>
                         idx += 11;
                     }
                 }
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -232,17 +235,17 @@ impl<const k: usize> Vector<k>
 
         // make sure we were given the right size output buffer
         // each of the N i16's will take dv bits
-        debug_assert_eq!(compressed_u.len(), k *(N * (du as usize) / 8));
+        debug_assert_eq!(compressed_u.len(), k * (N * (du as usize) / 8));
 
         let mut idx = 0;
 
         match du {
-            10 => { // MLKEM512 and MLKEM768
+            10 => {
+                // MLKEM512 and MLKEM768
                 let mut t = [0i16; 4];
                 for i in 0..k {
-                    for j in 0..(N/4) {
-                        t[0] = ((compressed_u[idx] as u16)
-                            | (compressed_u[idx + 1] as u16) << 8)
+                    for j in 0..(N / 4) {
+                        t[0] = ((compressed_u[idx] as u16) | (compressed_u[idx + 1] as u16) << 8)
                             as i16;
                         t[1] = (((compressed_u[idx + 1] as u16) >> 2)
                             | (compressed_u[idx + 2] as u16) << 6)
@@ -260,11 +263,12 @@ impl<const k: usize> Vector<k>
                         }
                     }
                 }
-        },
-            11 => { // MLKEM1024
+            }
+            11 => {
+                // MLKEM1024
                 let mut t = [0i16; 8];
                 for i in 0..k {
-                    for j in 0..N/8 {
+                    for j in 0..N / 8 {
                         t[0] = (compressed_u[idx] as i32
                             | ((compressed_u[idx + 1] as u16) as i32) << 8)
                             as i16;
@@ -298,7 +302,7 @@ impl<const k: usize> Vector<k>
                         }
                     }
                 }
-            },
+            }
             _ => unreachable!(),
         }
 

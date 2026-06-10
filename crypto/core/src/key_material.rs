@@ -38,7 +38,7 @@
 //! It as always possible, for example, to extract the bytes from a KeyMaterial object, manipulate them, and then re-wrap them in a new KeyMaterial object.
 
 use crate::errors::KeyMaterialError;
-use crate::traits::{RNG, SecurityStrength, Secret};
+use crate::traits::{RNG, Secret, SecurityStrength};
 use bouncycastle_utils::{ct, min};
 
 use core::cmp::{Ordering, PartialOrd};
@@ -50,7 +50,6 @@ pub type KeyMaterial0 = KeyMaterial<0>;
 pub type KeyMaterial128 = KeyMaterial<16>;
 pub type KeyMaterial256 = KeyMaterial<32>;
 pub type KeyMaterial512 = KeyMaterial<64>;
-
 
 /// A helper class used across the bc-rust.test library to hold bytes-like key material.
 /// See [KeyMaterial] for for details, such as constructors.
@@ -121,7 +120,7 @@ pub trait KeyMaterialTrait {
     /// [KeyMaterialTrait::allow_hazardous_operations] set.
     /// Throws [KeyMaterialError::InvalidLength] on a request to set the security level higher than the current key length.
     fn set_security_strength(&mut self, strength: SecurityStrength)
-                             -> Result<(), KeyMaterialError>;
+    -> Result<(), KeyMaterialError>;
 
     /// Sets this instance to be able to perform potentially hazardous conversions such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,

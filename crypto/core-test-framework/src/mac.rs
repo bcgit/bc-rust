@@ -1,8 +1,8 @@
 use crate::DUMMY_SEED_512;
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
-use bouncycastle_core::key_material::{KeyMaterial512, KeyType, KeyMaterialTrait};
+use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::MAC;
-use bouncycastle_core::traits::{SecurityStrength};
+use bouncycastle_core::traits::SecurityStrength;
 
 pub struct TestFrameworkMAC {
     // Put any config options here
@@ -71,7 +71,6 @@ impl TestFrameworkMAC {
         mac.do_update(input);
         mac.do_verify_final(expected_output);
 
-
         // entropy of input key
 
         // MACs of all security strengths should throw an error on a no-security (and non-zero) key.
@@ -81,8 +80,10 @@ impl TestFrameworkMAC {
         key_none.set_security_strength(SecurityStrength::None).unwrap();
 
         match M::new(&key_none) {
-            Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ },
-            _ => panic!("This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"),
+            Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
+            _ => panic!(
+                "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"
+            ),
         }
 
         let mut low_security_key =
@@ -113,11 +114,18 @@ impl TestFrameworkMAC {
         low_security_key.drop_hazardous_operations();
 
         // init
-        assert!(low_security_key.security_strength() < M::new_allow_weak_key(key).unwrap().max_security_strength());
+        assert!(
+            low_security_key.security_strength()
+                < M::new_allow_weak_key(key).unwrap().max_security_strength()
+        );
         // complains at first
         match M::new(&low_security_key) {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
-            _ => { panic!("This should have thrown a KeyMaterialError::SecurityStrength error but it didn't") }
+            _ => {
+                panic!(
+                    "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"
+                )
+            }
         }
         // but fine if you do it with .allow_weak_keys()
         let mut hmac = M::new_allow_weak_key(&low_security_key).unwrap();

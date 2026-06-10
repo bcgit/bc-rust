@@ -1,4 +1,4 @@
-use bouncycastle::core::traits::{Hash};
+use bouncycastle::core::traits::Hash;
 use std::io;
 use std::io::{Read, Write};
 
@@ -10,7 +10,7 @@ pub(crate) fn sha2_cmd(bit_len: usize, output_hex: bool) {
         256 => do_sha2(SHA256::new(), output_hex),
         384 => do_sha2(SHA384::new(), output_hex),
         512 => do_sha2(SHA512::new(), output_hex),
-        _ => panic!("Unsupported algorithm: SHA{}", bit_len)
+        _ => panic!("Unsupported algorithm: SHA{}", bit_len),
     }
 }
 
@@ -30,6 +30,8 @@ fn do_sha2(mut sha2: impl Hash, output_hex: bool) {
         for b in out.iter() {
             print!("{b:02x}");
         }
-    } else { io::stdout().write(&out).unwrap(); }
+    } else {
+        io::stdout().write(&out).unwrap();
+    }
     println!();
 }

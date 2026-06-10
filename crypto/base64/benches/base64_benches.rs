@@ -1,8 +1,8 @@
-use std::hint::black_box;
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use bouncycastle_rng as rng;
+use bouncycastle_base64::{Base64Decoder, Base64Encoder};
 use bouncycastle_core::traits::RNG;
-use bouncycastle_base64::{Base64Encoder, Base64Decoder};
+use bouncycastle_rng as rng;
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
 
 fn bench_base64_encode(c: &mut Criterion) {
     const INPUT_SIZE: usize = 16 * 1024;
@@ -37,7 +37,7 @@ fn bench_base64_decode(c: &mut Criterion) {
 
     // Generate some base65-encoded data.
     let mut encoder = Base64Encoder::new();
-    let input: String = encoder.do_update(&data);  // will be 1024 * 4 / 3 + 2 = 1368 bytes long.
+    let input: String = encoder.do_update(&data); // will be 1024 * 4 / 3 + 2 = 1368 bytes long.
 
     let mut output = vec![0u8; INPUT_SIZE];
 
@@ -47,16 +47,21 @@ fn bench_base64_decode(c: &mut Criterion) {
         b.iter(|| {
             let mut decoder = Base64Decoder::new(false);
             for _ in 0..16 {
-                output.extend_from_slice(&*decoder.do_update(black_box(&input)).expect("TODO: panic message"));
+                output.extend_from_slice(
+                    &*decoder.do_update(black_box(&input)).expect("TODO: panic message"),
+                );
             }
-            output.extend_from_slice(decoder.do_final(&str::from_utf8(&[0u8; 0]).expect("TODO: panic message"))
-                .expect("TODO: panic message").as_slice());
+            output.extend_from_slice(
+                decoder
+                    .do_final(&str::from_utf8(&[0u8; 0]).expect("TODO: panic message"))
+                    .expect("TODO: panic message")
+                    .as_slice(),
+            );
             black_box(&output);
         })
     });
     group.finish();
 }
-
 
 criterion_group!(benches, bench_base64_encode, bench_base64_decode);
 criterion_main!(benches);

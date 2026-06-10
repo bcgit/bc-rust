@@ -1,4 +1,6 @@
-use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterial512, KeyMaterial, KeyType, KeyMaterialTrait};
+use bouncycastle_core::key_material::{
+    KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
+};
 use bouncycastle_core::traits::{KDF, SecurityStrength};
 
 pub struct TestFrameworkKDF {}
