@@ -2,7 +2,7 @@
 //! by using generics or macros. I just, haven't ... yet.
 
 use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
-use bouncycastle::core::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::traits::{SignatureVerifier, Signer, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle::hex;
 use bouncycastle::mldsa::{MLDSA_SEED_LEN, MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait, MLDSA44PublicKey, MLDSA44_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65, MLDSA65PublicKey, MLDSA65_PK_LEN, MLDSA87PrivateKey, MLDSA87, MLDSA87PublicKey, MLDSA87_PK_LEN, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
 use std::{io};

@@ -5,7 +5,7 @@ mod mldsa_tests {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
-        RNG, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
+        RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED_1024;
     use bouncycastle_core_test_framework::signature::*;
@@ -22,9 +22,9 @@ mod mldsa_tests {
     fn test_framework_signature() {
         let tf = TestFrameworkSignature::new(false, true);
 
-        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(false);
-        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(false);
-        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(false);
+        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(MLDSA44::keygen, false);
+        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(MLDSA65::keygen, false);
+        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(MLDSA87::keygen, false);
     }
 
     /// This runs the full bitflipping tests and takes several minutes.

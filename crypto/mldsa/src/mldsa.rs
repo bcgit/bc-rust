@@ -9,7 +9,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
@@ -51,7 +51,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
@@ -98,7 +98,7 @@
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //!
 //! let (pk, _) = MLDSA65::keygen().unwrap();
 //!
@@ -116,7 +116,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let (pk, _) = MLDSA65::keygen().unwrap();
@@ -136,7 +136,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
@@ -182,7 +182,7 @@
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //!
 //! let msg = b"The quick brown fox";
 //! let ctx = b"FooTextDocumentFormat";
@@ -220,7 +220,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
@@ -258,7 +258,7 @@
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //! use bouncycastle_mldsa::{MLDSA65PublicKeyExpanded, MLDSA65PrivateKeyExpanded};
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_core::errors::SignatureError;
 //!
 //! let msg = b"The quick brown fox";
@@ -303,7 +303,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
 //! use bouncycastle_hex as hex;
 //! use bouncycastle_mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
@@ -375,7 +375,7 @@
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //! use bouncycastle_mldsa::{MLDSA65PublicKeyExpanded, MLDSA65PrivateKeyExpanded};
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_core::errors::SignatureError;
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
@@ -412,7 +412,7 @@ use crate::{
 };
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, RNG, SecurityStrength, Signature, XOF};
+use bouncycastle_core::traits::{Algorithm, RNG, SecurityStrength, SignatureVerifier, Signer, XOF};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 use core::marker::PhantomData;
@@ -421,7 +421,7 @@ use core::marker::PhantomData;
 #[allow(unused_imports)]
 use crate::hash_mldsa;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::PHSignature;
+use bouncycastle_core::traits::{PHSignatureVerifier, PHSigner};
 
 /*** Constants ***/
 
@@ -728,6 +728,15 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
+    /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
+    ///
+    /// Key generation is intentionally not part of the [Signer] / [SignatureVerifier] traits;
+    /// it is provided as an inherent associated function directly on the algorithm struct.
+    /// Error condition: basically only on RNG failures.
+    pub fn keygen() -> Result<(PK, SK), SignatureError> {
+        Self::keygen_from_os_rng()
+    }
+
     /// Should still be ok in FIPS mode
     pub fn keygen_from_os_rng() -> Result<(PK, SK), SignatureError> {
         let mut seed = KeyMaterial256::new();
@@ -1712,7 +1721,7 @@ pub trait MLDSATrait<
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; 64], SignatureError>;
-    /// Same as [Signature::sign], but signs from an [MLDSAPrivateKeyExpanded].
+    /// Same as [Signer::sign], but signs from an [MLDSAPrivateKeyExpanded].
     fn sign_with_expanded_key(
         sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
@@ -1750,13 +1759,13 @@ pub trait MLDSATrait<
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
-    /// Same as [Signature::sign_mu], but signs from an [MLDSAPrivateKeyExpanded].
+    /// Same as [MLDSATrait::sign_mu], but signs from an [MLDSAPrivateKeyExpanded].
     fn sign_mu_with_expanded_key(
         sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
         A_hat: Option<&Matrix<k, l>>,
         mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError>;
-    /// Same as [Signature::sign_mu_out], but signs from an [MLDSAPrivateKeyExpanded].
+    /// Same as [MLDSATrait::sign_mu_out], but signs from an [MLDSAPrivateKeyExpanded].
     fn sign_mu_with_expanded_key_out(
         sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
         A_hat: Option<&Matrix<k, l>>,
@@ -1846,7 +1855,7 @@ pub trait MLDSATrait<
         seed: &KeyMaterial<32>,
         ctx: Option<&[u8]>,
     ) -> Result<Self, SignatureError>;
-    /// Same as [Signature::verify], but signs from an expanded key object.
+    /// Same as [SignatureVerifier::verify], but signs from an expanded key object.
     fn verify_with_expanded_key(
         pk: &MLDSAPublicKeyExpanded<k, l, PK, PK_LEN>,
         msg: &[u8],
@@ -1888,7 +1897,7 @@ impl<
     const GAMMA1_MINUS_BETA: i32,
     const GAMMA2_MINUS_BETA: i32,
     const GAMMA1_MASK_LEN: usize,
-> Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+> Signer<SK, SK_LEN, SIG_LEN>
     for MLDSA<
         PK_LEN,
         SK_LEN,
@@ -1913,10 +1922,6 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
-    fn keygen() -> Result<(PK, SK), SignatureError> {
-        Self::keygen_from_os_rng()
-    }
-
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
@@ -1991,7 +1996,56 @@ impl<
             unreachable!()
         }
     }
+}
 
+impl<
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    const TAU: i32,
+    const LAMBDA: i32,
+    const GAMMA1: i32,
+    const GAMMA2: i32,
+    const k: usize,
+    const l: usize,
+    const ETA: usize,
+    const BETA: i32,
+    const OMEGA: i32,
+    const C_TILDE: usize,
+    const POLY_Z_PACKED_LEN: usize,
+    const POLY_W1_PACKED_LEN: usize,
+    const LAMBDA_over_4: usize,
+    const GAMMA1_MINUS_BETA: i32,
+    const GAMMA2_MINUS_BETA: i32,
+    const GAMMA1_MASK_LEN: usize,
+> SignatureVerifier<PK, PK_LEN, SIG_LEN>
+    for MLDSA<
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+        PK,
+        SK,
+        TAU,
+        LAMBDA,
+        GAMMA1,
+        GAMMA2,
+        k,
+        l,
+        ETA,
+        BETA,
+        OMEGA,
+        C_TILDE,
+        POLY_Z_PACKED_LEN,
+        POLY_W1_PACKED_LEN,
+        LAMBDA_over_4,
+        GAMMA1_MINUS_BETA,
+        GAMMA2_MINUS_BETA,
+        GAMMA1_MASK_LEN,
+    >
+{
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)?;
 
@@ -2048,7 +2102,7 @@ impl<
 /// Note: this struct is only exposed for "pure" ML-DSA and not for HashML-DSA because HashML-DSA
 /// does not benefit from allowing external construction of the message representative mu.
 /// You can get the same behaviour by computing the pre-hash `ph` with the appropriate hash function
-/// and providing that to HashMLDSA via [PHSignature::sign_ph].
+/// and providing that to HashMLDSA via [PHSigner::sign_ph].
 pub struct MuBuilder {
     h: H,
 }

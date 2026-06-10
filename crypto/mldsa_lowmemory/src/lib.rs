@@ -128,7 +128,6 @@
 //! ## Generating Keys
 //!
 //! ```rust
-//! use bouncycastle_core::traits::Signature;
 //! use bouncycastle_mldsa_lowmemory::MLDSA65;
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
@@ -153,13 +152,13 @@
 //!
 //! See [MLDSATrait] and [MLDSATrait::sign_mu_deterministic_from_seed] for an API flow that uses a merged
 //! keygen-and-sign function to provide improved speed and memory performance compared with making
-//! separate calls to [MLDSATrait::keygen_from_seed] followed by [Signature::sign].
+//! separate calls to [MLDSATrait::keygen_from_seed] followed by [Signer::sign].
 //!
 //! ## Generating and Verifying Signatures
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::Signature;
+//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let msg = b"The quick brown fox";
@@ -221,7 +220,7 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::Signature;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
 
 // todo -- re-run mutants
 
