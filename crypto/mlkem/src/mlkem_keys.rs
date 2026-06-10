@@ -9,7 +9,7 @@ use crate::mlkem::{MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_k};
 use crate::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME};
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, Secret, SecurityStrength};
+use bouncycastle_core::traits::{Hash, HashFixedOutput, KEMPrivateKey, KEMPublicKey, Secret, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
 
 

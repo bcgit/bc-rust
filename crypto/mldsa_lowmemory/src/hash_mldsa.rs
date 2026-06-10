@@ -28,7 +28,7 @@
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::{Signature, PHSignature, Hash};
+//! use bouncycastle_core::traits::{Signature, PHSignature, HashFixedOutput};
 //! use bouncycastle_sha2::SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSATrait, HashMLDSA65_with_SHA512, HashMLDSA44_with_SHA512};
 //!
@@ -36,7 +36,7 @@
 //!
 //! // Here, and in contrast to External Mu mode of ML-DSA, we can pre-hash the message before
 //! // even generating the signing key.
-//! let ph: [u8; 64] = SHA512::default().hash(msg).as_slice().try_into().unwrap();
+//! let ph: [u8; 64] = SHA512::default().hash(msg);
 //!
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
@@ -843,7 +843,9 @@ impl<
     }
 
     fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
-        let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
+        let mut ph = [0u8; PH_LEN];
+        let written = self.hash.do_final_out(&mut ph);
+        debug_assert_eq!(written, PH_LEN);
 
         if self.sk.is_none() && self.seed.is_none() {
             return Err(SignatureError::GenericError(
@@ -923,7 +925,9 @@ impl<
             self.pk.is_some(),
             "Somehow you managed to construct a streaming verifier without a public key, impressive!"
         );
-        let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
+        let mut ph = [0u8; PH_LEN];
+        let written = self.hash.do_final_out(&mut ph);
+        debug_assert_eq!(written, PH_LEN);
         Self::verify_ph(&self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), &sig[..SIG_LEN])
     }
 }
