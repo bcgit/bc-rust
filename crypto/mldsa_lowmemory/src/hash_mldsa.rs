@@ -65,23 +65,26 @@
 
 use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSATrait};
 use crate::mldsa::{
-    MLDSA44_BETA, MLDSA44_C_TILDE, MLDSA44_ETA, MLDSA44_GAMMA1, MLDSA44_GAMMA1_MINUS_BETA, MLDSA44_GAMMA2_MINUS_BETA, MLDSA44_GAMMA1_MASK_LEN,
-    MLDSA44_GAMMA2, MLDSA44_LAMBDA, MLDSA44_LAMBDA_over_4, MLDSA44_OMEGA, MLDSA44_PK_LEN,
-    MLDSA44_POLY_W1_PACKED_LEN, MLDSA44_POLY_Z_PACKED_LEN,
-    MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44_FULL_SK_LEN, MLDSA44_TAU, MLDSA44_S1_PACKED_LEN, MLDSA44_S2_PACKED_LEN, MLDSA44_k, MLDSA44_l,
+    MLDSA44_BETA, MLDSA44_C_TILDE, MLDSA44_ETA, MLDSA44_FULL_SK_LEN, MLDSA44_GAMMA1,
+    MLDSA44_GAMMA1_MASK_LEN, MLDSA44_GAMMA1_MINUS_BETA, MLDSA44_GAMMA2, MLDSA44_GAMMA2_MINUS_BETA,
+    MLDSA44_LAMBDA, MLDSA44_LAMBDA_over_4, MLDSA44_OMEGA, MLDSA44_PK_LEN,
+    MLDSA44_POLY_W1_PACKED_LEN, MLDSA44_POLY_Z_PACKED_LEN, MLDSA44_S1_PACKED_LEN,
+    MLDSA44_S2_PACKED_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44_TAU, MLDSA44_k, MLDSA44_l,
 };
 use crate::mldsa::{MLDSA44_T1_PACKED_LEN, MLDSA65_T1_PACKED_LEN, MLDSA87_T1_PACKED_LEN};
 use crate::mldsa::{
-    MLDSA65_BETA, MLDSA65_C_TILDE, MLDSA65_ETA, MLDSA65_GAMMA1, MLDSA65_GAMMA1_MINUS_BETA, MLDSA65_GAMMA2_MINUS_BETA, MLDSA65_GAMMA1_MASK_LEN,
-    MLDSA65_GAMMA2, MLDSA65_LAMBDA, MLDSA65_LAMBDA_over_4, MLDSA65_OMEGA, MLDSA65_PK_LEN,
-    MLDSA65_POLY_W1_PACKED_LEN, MLDSA65_POLY_Z_PACKED_LEN,
-    MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65_FULL_SK_LEN, MLDSA65_TAU, MLDSA65_S1_PACKED_LEN, MLDSA65_S2_PACKED_LEN, MLDSA65_k, MLDSA65_l,
+    MLDSA65_BETA, MLDSA65_C_TILDE, MLDSA65_ETA, MLDSA65_FULL_SK_LEN, MLDSA65_GAMMA1,
+    MLDSA65_GAMMA1_MASK_LEN, MLDSA65_GAMMA1_MINUS_BETA, MLDSA65_GAMMA2, MLDSA65_GAMMA2_MINUS_BETA,
+    MLDSA65_LAMBDA, MLDSA65_LAMBDA_over_4, MLDSA65_OMEGA, MLDSA65_PK_LEN,
+    MLDSA65_POLY_W1_PACKED_LEN, MLDSA65_POLY_Z_PACKED_LEN, MLDSA65_S1_PACKED_LEN,
+    MLDSA65_S2_PACKED_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65_TAU, MLDSA65_k, MLDSA65_l,
 };
 use crate::mldsa::{
-    MLDSA87_BETA, MLDSA87_C_TILDE, MLDSA87_ETA, MLDSA87_GAMMA1, MLDSA87_GAMMA1_MINUS_BETA, MLDSA87_GAMMA2_MINUS_BETA, MLDSA87_GAMMA1_MASK_LEN,
-    MLDSA87_GAMMA2, MLDSA87_LAMBDA, MLDSA87_LAMBDA_over_4, MLDSA87_OMEGA, MLDSA87_PK_LEN,
-    MLDSA87_POLY_W1_PACKED_LEN, MLDSA87_POLY_Z_PACKED_LEN,
-    MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87_FULL_SK_LEN, MLDSA87_TAU, MLDSA87_S1_PACKED_LEN, MLDSA87_S2_PACKED_LEN, MLDSA87_k, MLDSA87_l,
+    MLDSA87_BETA, MLDSA87_C_TILDE, MLDSA87_ETA, MLDSA87_FULL_SK_LEN, MLDSA87_GAMMA1,
+    MLDSA87_GAMMA1_MASK_LEN, MLDSA87_GAMMA1_MINUS_BETA, MLDSA87_GAMMA2, MLDSA87_GAMMA2_MINUS_BETA,
+    MLDSA87_LAMBDA, MLDSA87_LAMBDA_over_4, MLDSA87_OMEGA, MLDSA87_PK_LEN,
+    MLDSA87_POLY_W1_PACKED_LEN, MLDSA87_POLY_Z_PACKED_LEN, MLDSA87_S1_PACKED_LEN,
+    MLDSA87_S2_PACKED_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87_TAU, MLDSA87_k, MLDSA87_l,
 };
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPublicKeyInternalTrait};
 use crate::{
@@ -849,12 +852,7 @@ impl<
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
-                Self::sign_ph_out(
-                    &self.sk.unwrap(),
-                    &ph,
-                    Some(&self.ctx[..self.ctx_len]),
-                    output,
-                )
+                Self::sign_ph_out(&self.sk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), output)
             } else {
                 Self::sign_ph_deterministic_out(
                     &self.sk.unwrap(),
@@ -875,13 +873,7 @@ impl<
             // since at this point we need to fully reconstruct SK in order to compute tr for mu anyway
             // there is no savings to using the fancy MLDSA::sign_from_seed
             let (_pk, sk) = Self::keygen_from_seed(&self.seed.unwrap())?;
-            Self::sign_ph_deterministic_out(
-                &sk,
-                Some(&self.ctx[..self.ctx_len]),
-                &ph,
-                rnd,
-                output,
-            )
+            Self::sign_ph_deterministic_out(&sk, Some(&self.ctx[..self.ctx_len]), &ph, rnd, output)
         } else {
             unreachable!()
         }

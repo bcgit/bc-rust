@@ -1,10 +1,9 @@
+use crate::SHAKEParams;
+use crate::keccak::KeccakDigest;
 use bouncycastle_core::errors::{HashError, KDFError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, SecurityStrength, KDF, XOF};
+use bouncycastle_core::traits::{Algorithm, KDF, SecurityStrength, XOF};
 use bouncycastle_utils::{max, min};
-use crate::keccak::KeccakDigest;
-use crate::SHAKEParams;
-
 
 /// Note: FIPS 202 section 7 states:
 ///
@@ -67,9 +66,11 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
             self.kdf_entropy += key.key_len();
             self.kdf_security_strength =
                 max(&self.kdf_security_strength, &key.security_strength()).clone();
-            self.kdf_security_strength =
-                min(&self.kdf_security_strength, &SecurityStrength::from_bits(PARAMS::SIZE as usize))
-                    .clone();
+            self.kdf_security_strength = min(
+                &self.kdf_security_strength,
+                &SecurityStrength::from_bits(PARAMS::SIZE as usize),
+            )
+            .clone();
         }
 
         self.absorb(key.ref_to_bytes())
@@ -108,7 +109,11 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
 
         // let mut buf = [0u8; 64];
         output_key.allow_hazardous_operations();
-        let bytes_written = self.squeeze_out(output_key.mut_ref_to_bytes().expect("We just set .allow_hazardous_operations(), so this should be fine."));
+        let bytes_written = self.squeeze_out(
+            output_key
+                .mut_ref_to_bytes()
+                .expect("We just set .allow_hazardous_operations(), so this should be fine."),
+        );
         output_key.set_key_len(bytes_written)?;
 
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.

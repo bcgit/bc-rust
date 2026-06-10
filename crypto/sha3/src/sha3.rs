@@ -1,9 +1,9 @@
+use crate::SHA3Params;
+use crate::keccak::KeccakDigest;
 use bouncycastle_core::errors::{HashError, KDFError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, SecurityStrength, KDF};
+use bouncycastle_core::traits::{Hash, KDF, SecurityStrength};
 use bouncycastle_utils::{max, min};
-use crate::keccak::KeccakDigest;
-use crate::SHA3Params;
 
 #[derive(Clone)]
 pub struct SHA3<PARAMS: SHA3Params> {
@@ -46,7 +46,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
                 &self.kdf_security_strength,
                 &SecurityStrength::from_bits(PARAMS::OUTPUT_LEN * 8 / 2),
             )
-                .clone();
+            .clone();
         }
 
         self.do_update(key.ref_to_bytes())

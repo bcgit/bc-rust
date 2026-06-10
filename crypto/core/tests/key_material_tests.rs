@@ -2,9 +2,10 @@
 mod test_key_material {
     use bouncycastle_core::errors::KeyMaterialError;
     use bouncycastle_core::key_material::{
-        KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512, KeyMaterial, KeyType, KeyMaterialTrait,
+        KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
+        KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{SecurityStrength};
+    use bouncycastle_core::traits::SecurityStrength;
 
     const DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
                                    \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
@@ -443,7 +444,7 @@ mod test_key_material {
         let key1 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
         assert_eq!(key1.key_type(), KeyType::MACKey);
         assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
-        
+
         // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
         let key2 = KeyMaterial256::from(key1.clone());
         assert_eq!(key1.key_len(), key2.key_len());

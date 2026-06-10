@@ -1,0 +1,28 @@
+name: Rust Style
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-style-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rustfmt:
+    if: github.repository == 'bcgit/bc-rust'
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install nightly rustfmt
+        run: |
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup override set nightly
+
+      - name: Check formatting
+        run: cargo fmt --all --check

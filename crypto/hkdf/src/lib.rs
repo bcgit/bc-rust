@@ -145,22 +145,22 @@
 //! let _bytes_written = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, info, 200, &mut okm).unwrap();
 //! ```
 
-
 #![forbid(unsafe_code)]
 
-use std::marker::PhantomData;
 use bouncycastle_core::errors::{KDFError, MACError};
-use bouncycastle_core::key_material::{KeyMaterial0, KeyMaterial512, KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, KDF, MAC, HashAlgParams, SecurityStrength};
+use bouncycastle_core::key_material::{
+    KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
+};
+use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, SecurityStrength};
 use bouncycastle_hmac::HMAC;
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{max, min};
+use std::marker::PhantomData;
 
 // Imports needed only for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::XOF;
 // end doc-only imports
-
 
 /*** Constants ***/
 // Slightly hacky, but set this to accomodate the underlying hash primitive with the largest output size.
@@ -172,7 +172,6 @@ const HMAC_BLOCK_LEN: usize = 64;
 pub const HKDF_SHA256_NAME: &str = "HKDF-SHA256";
 pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
 
-
 /*** Types ***/
 #[allow(non_camel_case_types)]
 pub type HKDF_SHA256 = HKDF<SHA256>;
@@ -180,9 +179,9 @@ pub type HKDF_SHA256 = HKDF<SHA256>;
 pub type HKDF_SHA512 = HKDF<SHA512>;
 
 pub struct HKDF<H: Hash + HashAlgParams + Default> {
-    hmac: Option<HMAC<H>>,  // Optional because we can't construct an HMAC until they give us a key
-                            // to initialize it with.
-                            // None should correspond to a state of Uninitialized.
+    hmac: Option<HMAC<H>>, // Optional because we can't construct an HMAC until they give us a key
+    // to initialize it with.
+    // None should correspond to a state of Uninitialized.
     entropy: HkdfEntropyTracker<H>,
     state: HkdfStates,
 }
@@ -209,7 +208,9 @@ struct HkdfEntropyTracker<H: Hash + HashAlgParams + Default> {
 }
 
 impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
-    fn new() -> Self { Self { _phantomhash: PhantomData, entropy: 0, security_strength: SecurityStrength::None } }
+    fn new() -> Self {
+        Self { _phantomhash: PhantomData, entropy: 0, security_strength: SecurityStrength::None }
+    }
 
     /// Takes in a KeyMaterial that is being mixed and figures out how much entropy to credit.
     /// Returns the amount of entropy credited.
@@ -217,7 +218,8 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
         let additional_entropy = if key.is_full_entropy() { key.key_len() } else { 0 };
         self.entropy += additional_entropy;
         self.security_strength = max(&self.security_strength, &key.security_strength()).clone();
-        self.security_strength = min(&self.security_strength, &SecurityStrength::from_bytes(H::OUTPUT_LEN/2)).clone();
+        self.security_strength =
+            min(&self.security_strength, &SecurityStrength::from_bytes(H::OUTPUT_LEN / 2)).clone();
         additional_entropy
     }
 
@@ -233,11 +235,7 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     /// Either [KeyMaterialTrait::BytesLowEntropy] or [KeyMaterialTrait::BytesFullEntropy] depending on
     /// whether enough input key material was provided for the internal hash function to have a full block.
     fn get_output_key_type(&self) -> KeyType {
-        if self.is_fully_seeded() {
-            KeyType::BytesFullEntropy
-        } else {
-            KeyType::BytesLowEntropy
-        }
+        if self.is_fully_seeded() { KeyType::BytesFullEntropy } else { KeyType::BytesLowEntropy }
     }
 }
 
@@ -249,7 +247,11 @@ fn test_entropy_tracker() {
     assert_eq!(entropy.get_entropy(), 0);
     assert_eq!(entropy.get_output_key_type(), KeyType::BytesLowEntropy);
 
-    let key = KeyMaterial512::from_bytes_as_type(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f", KeyType::BytesFullEntropy).unwrap();
+    let key = KeyMaterial512::from_bytes_as_type(
+        b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+        KeyType::BytesFullEntropy,
+    )
+    .unwrap();
     entropy.credit_entropy(&key);
     assert_eq!(entropy.get_entropy(), 16);
     assert_eq!(entropy.is_fully_seeded(), false);
@@ -399,7 +401,8 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         // Could potentially speed this up by unrolling T(0) and T(1)
 
         // We're gonna have to kludge the prk key type to MACKey to make HMAC happy, but we'll set it back to the original value afterwards.
-        let prk_as_mac_key = KeyMaterial::<HMAC_BLOCK_LEN>::from_bytes_as_type(prk.ref_to_bytes(), KeyType::MACKey)?;
+        let prk_as_mac_key =
+            KeyMaterial::<HMAC_BLOCK_LEN>::from_bytes_as_type(prk.ref_to_bytes(), KeyType::MACKey)?;
 
         #[allow(non_snake_case)]
         let mut T = [0u8; HMAC_BLOCK_LEN];
@@ -443,7 +446,10 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         if okm.key_type() <= KeyType::BytesLowEntropy {
             okm.set_security_strength(SecurityStrength::None)?;
         } else {
-            okm.set_security_strength(min(&SecurityStrength::from_bytes(okm.key_len()), &entropy.security_strength).clone())?;
+            okm.set_security_strength(
+                min(&SecurityStrength::from_bytes(okm.key_len()), &entropy.security_strength)
+                    .clone(),
+            )?;
         }
         okm.drop_hazardous_operations();
         Ok(bytes_written)
@@ -497,7 +503,10 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
     /// In particular, this function may be called multiple times to add more than one IKM.
     ///
     /// Returns the number of bits of entropy credited to this input key material.
-    pub fn do_extract_update_key(&mut self, ikm: &impl KeyMaterialTrait) -> Result<usize, MACError> {
+    pub fn do_extract_update_key(
+        &mut self,
+        ikm: &impl KeyMaterialTrait,
+    ) -> Result<usize, MACError> {
         if self.state == HkdfStates::Uninitialized {
             return Err(MACError::InvalidState(
                 "Must call do_extract_init() before calling do_extract_update_key()",
@@ -559,14 +568,18 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
 
         let output_key_type = self.entropy.get_output_key_type(); // need to do this above self.hmac.do_final_out, which will consume self.
 
-        okm.allow_hazardous_operations();  // doing it here to get mut_ref_to_bytes
-        let bytes_written = self.hmac.unwrap().do_final_out(&mut okm.mut_ref_to_bytes().unwrap())?;
+        okm.allow_hazardous_operations(); // doing it here to get mut_ref_to_bytes
+        let bytes_written =
+            self.hmac.unwrap().do_final_out(&mut okm.mut_ref_to_bytes().unwrap())?;
         okm.set_key_len(bytes_written)?;
         okm.set_key_type(output_key_type)?;
         if output_key_type <= KeyType::BytesLowEntropy {
             okm.set_security_strength(SecurityStrength::None)?;
         } else {
-            okm.set_security_strength(min(&SecurityStrength::from_bytes(okm.key_len()), &self.entropy.security_strength).clone())?;
+            okm.set_security_strength(
+                min(&SecurityStrength::from_bytes(okm.key_len()), &self.entropy.security_strength)
+                    .clone(),
+            )?;
         }
         okm.drop_hazardous_operations();
         Ok(bytes_written)
@@ -604,7 +617,13 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        let bytes_written = HKDF::<H>::extract_and_expand_out(&KeyMaterial::<0>::new(), key, additional_input, output_key.capacity(), output_key)?;
+        let bytes_written = HKDF::<H>::extract_and_expand_out(
+            &KeyMaterial::<0>::new(),
+            key,
+            additional_input,
+            output_key.capacity(),
+            output_key,
+        )?;
         Ok(bytes_written)
     }
 
@@ -627,7 +646,6 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         output_key.truncate(*min(&output_key.key_len(), &H::OUTPUT_LEN))?;
         Ok(Box::new(output_key))
     }
-
 
     /// This behaves the same as [KDF::derive_key_from_multiple], except that it fills the provided
     /// [KeyMaterialTrait] object in place of exposing a Length parameter.
@@ -655,11 +673,15 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         }
         let mut prk = KeyMaterial::<HMAC_BLOCK_LEN>::new();
         _ = hkdf.do_extract_final_out(&mut prk)?;
-        let bytes_written = HKDF::<H>::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
+        let bytes_written =
+            HKDF::<H>::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
 
         output_key.allow_hazardous_operations();
         output_key.set_key_type(entropy.get_output_key_type())?;
-        output_key.set_security_strength(min(&SecurityStrength::from_bytes(output_key.key_len()), &entropy.security_strength).clone())?;
+        output_key.set_security_strength(
+            min(&SecurityStrength::from_bytes(output_key.key_len()), &entropy.security_strength)
+                .clone(),
+        )?;
         output_key.drop_hazardous_operations();
 
         Ok(bytes_written)
