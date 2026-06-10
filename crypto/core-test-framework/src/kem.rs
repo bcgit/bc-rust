@@ -1,5 +1,5 @@
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey, KEM};
+use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey};
 
 pub struct TestFrameworkKEM {
     // Put any config options here
@@ -16,43 +16,48 @@ impl TestFrameworkKEM {
         Self { alg_is_deterministic, is_implicitly_rejecting }
     }
 
-    /// Test all the members of trait Hash against the given input-output pair.
+    /// Test all the members of traits [KEMEncapsulator] and [KEMDecapsulator] against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
+    ///
+    /// Since key generation is not part of either KEM trait, the caller supplies a
+    /// `keygen` function pointer (the inherent `keygen` associated function on the algorithm struct).
     pub fn test_kem<
         PK: KEMPublicKey<PK_LEN>,
         SK: KEMPrivateKey<SK_LEN>,
-        KEMAlg: KEM<PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>,
+        ENCAPSULATOR: KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN>,
+        DECAPSULATOR: KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
         const CT_LEN: usize,
         const SS_LEN: usize,
     >(
         &self,
+        keygen: fn() -> Result<(PK, SK), KEMError>,
         run_full_bitflipping_tests: bool,
     ) {
         // Basic test
-        let (pk, sk) = KEMAlg::keygen().unwrap();
-        let (ss, ct) = KEMAlg::encaps(&pk).unwrap();
-        let ss1 = KEMAlg::decaps(&sk, &ct).unwrap();
+        let (pk, sk) = keygen().unwrap();
+        let (ss, ct) = ENCAPSULATOR::encaps(&pk).unwrap();
+        let ss1 = DECAPSULATOR::decaps(&sk, &ct).unwrap();
         assert_eq!(ss, ss1);
 
         // Test non-determinism
         if !self.alg_is_deterministic {
-            let (ss1, ct1) = KEMAlg::encaps(&pk).unwrap();
-            let (ss2, ct2) = KEMAlg::encaps(&pk).unwrap();
+            let (ss1, ct1) = ENCAPSULATOR::encaps(&pk).unwrap();
+            let (ss2, ct2) = ENCAPSULATOR::encaps(&pk).unwrap();
             assert_ne!(ss1, ss2);
             assert_ne!(ct1, ct2);
         }
 
         // Test that decaps fails for broken ct value
-        let (pk, sk) = KEMAlg::keygen().unwrap();
-        let (ss, mut ct) = KEMAlg::encaps(&pk).unwrap();
+        let (pk, sk) = keygen().unwrap();
+        let (ss, mut ct) = ENCAPSULATOR::encaps(&pk).unwrap();
         ct[17] ^= 0xFF;
         if self.is_implicitly_rejecting {
-            let ss2 = KEMAlg::decaps(&sk, &ct).unwrap();
+            let ss2 = DECAPSULATOR::decaps(&sk, &ct).unwrap();
             assert_ne!(ss, ss2);
         } else {
-            match KEMAlg::decaps(&sk, &ct) {
+            match DECAPSULATOR::decaps(&sk, &ct) {
                 Err(KEMError::DecapsulationFailed) => /* good */ (),
                 _ => panic!("This should have thrown an error but it didn't."),
             }
@@ -68,10 +73,10 @@ impl TestFrameworkKEM {
 
                     // should throw an Err
                     if self.is_implicitly_rejecting {
-                        let ss2 = KEMAlg::decaps(&sk, &ct_copy).unwrap();
+                        let ss2 = DECAPSULATOR::decaps(&sk, &ct_copy).unwrap();
                         assert_ne!(ss, ss2);
                     } else {
-                        match KEMAlg::decaps(&sk, &ct) {
+                        match DECAPSULATOR::decaps(&sk, &ct) {
                             Err(KEMError::DecapsulationFailed) => /* good */ (),
                             _ => panic!("This should have thrown an error but it didn't."),
                         }
@@ -79,22 +84,22 @@ impl TestFrameworkKEM {
                 }
             }
         }
-        
+
 
         // test ct the wrong length
-        let (pk, sk) = KEMAlg::keygen().unwrap();
-        let (_ss, ct) = KEMAlg::encaps(&pk).unwrap();
-     
+        let (pk, sk) = keygen().unwrap();
+        let (_ss, ct) = ENCAPSULATOR::encaps(&pk).unwrap();
+
         // too short
-        match KEMAlg::decaps(&sk, &ct[..CT_LEN-1]) {
+        match DECAPSULATOR::decaps(&sk, &ct[..CT_LEN-1]) {
             Err(KEMError::LengthError(_)) => { /* good */ },
             _ => panic!("This should have thrown an error but it didn't."),
         };
-        
+
         // too long
         let mut long_ct = vec![1u8; CT_LEN + 2];
         long_ct.as_mut_slice()[..CT_LEN].copy_from_slice(&ct);
-        match KEMAlg::decaps(&sk, &long_ct) {
+        match DECAPSULATOR::decaps(&sk, &long_ct) {
             Err(KEMError::LengthError(_)) => { /* good */ },
             _ => panic!("This should have thrown an error but it didn't."),
         };
@@ -109,29 +114,25 @@ impl TestFrameworkKEMKeys {
         Self { }
     }
 
+    /// Since key generation is not part of either KEM trait, the caller supplies a
+    /// `keygen` function pointer (the inherent `keygen` associated function on the algorithm struct).
     pub fn test_keys<
         PK: KEMPublicKey<PK_LEN>,
         SK: KEMPrivateKey<SK_LEN>,
-        KEMAlg: KEM<PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
-        const CT_LEN: usize,
-        const SS_LEN: usize,
-    >(&self) {
-        self.test_boundary_conditions::<PK, SK, KEMAlg, PK_LEN, SK_LEN, CT_LEN, SS_LEN>();
+    >(&self, keygen: fn() -> Result<(PK, SK), KEMError>) {
+        self.test_boundary_conditions::<PK, SK, PK_LEN, SK_LEN>(keygen);
     }
 
     /// Tests the correct behaviour on buffers too large / too small.
     fn test_boundary_conditions<
         PK: KEMPublicKey<PK_LEN>,
         SK: KEMPrivateKey<SK_LEN>,
-        KEMAlg: KEM<PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
-        const CT_LEN: usize,
-        const SS_LEN: usize,
-    >(&self) {
-        let (pk, sk) = KEMAlg::keygen().unwrap();
+    >(&self, keygen: fn() -> Result<(PK, SK), KEMError>) {
+        let (pk, sk) = keygen().unwrap();
 
         let pk_bytes = pk.encode();
         assert_eq!(pk_bytes.len(), PK_LEN);

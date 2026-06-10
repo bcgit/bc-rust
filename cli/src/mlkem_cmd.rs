@@ -4,7 +4,7 @@
 use std::process::exit;
 use clap::ValueEnum;
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, KEM};
+use bouncycastle::core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey};
 use bouncycastle::hex;
 use bouncycastle::mlkem::{MLKEM512, MLKEMTrait, MLKEM512PrivateKey, MLKEM512_SK_LEN, MLKEM512PublicKey, MLKEM512_PK_LEN, MLKEMPrivateKeyTrait, MLKEM512_CT_LEN, MLKEM768PrivateKey, MLKEM768_SK_LEN, MLKEM768, MLKEM768PublicKey, MLKEM768_PK_LEN, MLKEM1024PrivateKey, MLKEM1024_SK_LEN, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024PublicKey, MLKEM768_CT_LEN, MLKEM1024_CT_LEN};
 use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file};

@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
 use std::hint::black_box;
-use bouncycastle_core::traits::KEM;
+use bouncycastle_core::traits::KEMDecapsulator;
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem_lowmemory::{MLKEMTrait, MLKEM1024, MLKEM1024_CT_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM768, MLKEM768_CT_LEN, MLKEM_RND_LEN};
 

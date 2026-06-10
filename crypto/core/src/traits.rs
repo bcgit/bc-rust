@@ -178,24 +178,57 @@ pub trait KDF: Default {
     fn max_security_strength(&self) -> SecurityStrength;
 }
 
-/// A Key Encapsulation Mechanism
-pub trait KEM<
+/// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
+/// key generation, encapsulation, and decapsulation.
+///
+/// This trait represents the encapsulation operation performed by the holder of the public key.
+/// Decapsulation operations are performed by the corresponding [KEMDecapsulator] trait, and key
+/// generation is provided as an inherent associated function directly on the algorithm struct.
+/// There are several reasons for this split: first is architectural; some complex algorithms may
+/// benefit from having the encapsulation and decapsulation implementations split into separate modules.
+/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new ciphertexts
+/// can no longer be created, but existing ciphertexts can still be decapsulated. Splitting the traits
+/// makes this policy easier to enforce.
+///
+/// The arrays used to encode public keys, ciphertexts, and shared secrets are statically-sized
+/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
+/// the fallibility of the library. This design choice could make this trait complicated to apply
+/// to a KEM algorithm that does not have fixed sizes for the encodings of these objects.
+pub trait KEMEncapsulator<
     PK: KEMPublicKey<PK_LEN>,
-    SK: KEMPrivateKey<SK_LEN>,
     const PK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+>: Sized
+{
+    /// Performs an encapsulation against the given public key.
+    /// Returns the ciphertext and derived shared secret.
+    fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+}
+
+/// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
+/// key generation, encapsulation, and decapsulation.
+///
+/// This trait represents the decapsulation operation performed by the holder of the private key.
+/// Encapsulation operations are performed by the corresponding [KEMEncapsulator] trait, and key
+/// generation is provided as an inherent associated function directly on the algorithm struct.
+/// There are several reasons for this split: first is architectural; some complex algorithms may
+/// benefit from having the encapsulation and decapsulation implementations split into separate modules.
+/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new ciphertexts
+/// can no longer be created, but existing ciphertexts can still be decapsulated. Splitting the traits
+/// makes this policy easier to enforce.
+///
+/// The arrays used to encode private keys, ciphertexts, and shared secrets are statically-sized
+/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
+/// the fallibility of the library. This design choice could make this trait complicated to apply
+/// to a KEM algorithm that does not have fixed sizes for the encodings of these objects.
+pub trait KEMDecapsulator<
+    SK: KEMPrivateKey<SK_LEN>,
     const SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
 >: Sized
 {
-    /// Generate a keypair.
-    /// Error condition: Basically only on RNG failures
-    fn keygen() -> Result<(PK, SK), KEMError>;
-
-    /// Performs an encapsulation against the given public key.
-    /// Returns the ciphertext and derived shared secret.
-    fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
-
     /// Performs a decapsulation of the given ciphertext.
     /// Returns the derived shared secret.
     fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError>;
@@ -620,30 +653,6 @@ pub trait SignatureVerifier<
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError>;
 }
-
-// todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>
-// todo: that automatically call the encode and from_bytes() ?
-
-/// A public key for a signature algorithm, often denoted "pk".
-pub trait SignaturePublicKey<const PK_LEN: usize> : PartialEq + Eq + Clone + Debug + Display + Sized {
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; PK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
-}
-
-/// A private key for a signature algorithm, often denoted "sk" (for "secret key").
-pub trait SignaturePrivateKey<const SK_LEN: usize> : PartialEq + Eq + Clone + Secret + Sized {
-    /// Write it out to bytes in its standard encoding.
-    fn encode(&self) -> [u8; SK_LEN];
-    /// Write it out to bytes in its standard encoding.
-    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
-    /// Read it in from bytes in its standard encoding.
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
-}
-
 
 /// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
 /// The naming used for the functions of this trait are borrowed from the SHA3-style sponge constructions that split XOF operation
