@@ -418,21 +418,22 @@ pub trait RNG: Default {
 
 /// A trait that forces an object to implement a zeroizing Drop() as well as Debug and Display that
 /// will not log the sensitive contents, even in error or crash-dump scenarios.
-#[allow(drop_bounds)] // Since rust auto-implements Drop, there's a lint that explicitly bounding on Drop is useless.
+// Since rust auto-implements Drop, there's a lint that explicitly bounding on Drop is useless.
 // I disagree because I want to force things that are secrets to manually implement Drop that zeroizes the data.
 // So I'm turning off this lint.
+#[allow(drop_bounds)]
 pub trait Secret: Drop + Debug + Display {}
 
-/// Pre-Hashed Signature is an extension to [Signature] that adds functionality specific to signature
+/// Pre-Hashed Signer is an extension to [Signer] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.
-pub trait PHSignature<
+pub trait PHSigner<
     PK: SignaturePublicKey<PK_LEN>,
     SK: SignaturePrivateKey<SK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
     const PH_LEN: usize,
->: Signature<PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+>: Signer<SK, SK_LEN, SIG_LEN>
 {
     /// Produce a signature for the provided pre-hashed message and context.
     ///
@@ -471,6 +472,17 @@ pub trait PHSignature<
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
+}
+
+/// Pre-Hashed Signature Verifier is an extension to [SignatureVerifier] that adds functionality specific to signature
+/// primatives that can operate on a pre-hashed message instead of the full message.
+pub trait PHSignatureVerifier<
+    PK: SignaturePublicKey<PK_LEN>,
+    const PK_LEN: usize,
+    const SIG_LEN: usize,
+    const PH_LEN: usize,
+>: SignatureVerifier<PK, PK_LEN, SIG_LEN>
+{
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify_ph(
@@ -481,33 +493,59 @@ pub trait PHSignature<
     ) -> Result<(), SignatureError>;
 }
 
+// todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>
+// todo: that automatically call the encode and from_bytes() ?
+
+/// A public key for a signature algorithm, often denoted "pk".
+pub trait SignaturePublicKey<const PK_LEN: usize>:
+    PartialEq + Eq + Clone + Debug + Display + Sized
+{
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; PK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
+}
+
+/// A private key for a signature algorithm, often denoted "sk" (for "secret key").
+pub trait SignaturePrivateKey<const SK_LEN: usize>:
+    PartialEq + Eq + Clone + Secret + Sized
+{
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; SK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
+}
+
 /// A digital signature algorithm is defined as a set of three operations:
 /// key generation, signing, and verification.
 ///
-/// To avoid the use of dyn, this trait does not include key generation; you'll have to consult the
-/// documentation for the underlying signature primitive for how to generate a key pair.
+/// This trait represents the operations performed by the holder of the signing private key:
+/// which include signing and key generation. Verification operations are performed by the corresponding
+/// [SignatureVerifier] trait.
+/// There are several reasons for this split: first is architectural; some complex algorithms may
+/// benefit from having the signature generation and verification implementations split into separate modules.
+/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new signatures
+/// can no longer be created, but existing signatures can still be verified. Splitting the traits
+/// makes this policy easier to enforce.
 ///
 /// This high-level trait defines the operations over a generic signature algorithm that is assumed
 /// to source all its randomness from bouncycastle's default os-backed RNG.
 /// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
 /// or deterministic seed values.
 ///
-/// Here we statically-size the arrays used to encode public keys, private keys, and signature values
+/// The arrays used to encode public keys, private keys, and signature values are statically-sized
 /// because this allows us to safely remove runtime checks for array lengths, which overall reduces
 /// the fallibility of the library. This design choice could make this trait complicated to apply
 /// to a signature algorithm that do not have fixed sizes for the encodings of these objects.
-pub trait Signature<
-    PK: SignaturePublicKey<PK_LEN>,
-    SK: SignaturePrivateKey<SK_LEN>,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
->: Sized
+pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG_LEN: usize>:
+    Sized
 {
-    /// Generate a keypair.
-    /// Error condition: Basically only on RNG failures
-    fn keygen() -> Result<(PK, SK), SignatureError>;
-
     /// Produce a signature for the provided message and context.
     /// Both the `msg` and `ctx` accept zero-length byte arrays.
     ///
@@ -557,7 +595,29 @@ pub trait Signature<
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     /// The entire output buffer is zeroized before the signature is written.
     fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
+}
 
+/// A digital signature algorithm is defined as a set of three operations:
+/// key generation, signing, and verification.
+///
+/// This trait represents the verification operations performed by the holder of the verification public key.
+/// Keygen and signing operations are performed by the corresponding [Signer] trait.
+/// There are several reasons for this split: first is architectural; some complex algorithms may
+/// benefit from having the signature generation and verification implementations split into separate modules.
+/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new signatures
+/// can no longer be created, but existing signatures can still be verified. Splitting the traits
+/// makes this policy easier to enforce.
+///
+/// Here we statically-size the arrays used to encode public keys, private keys, and signature values
+/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
+/// the fallibility of the library. This design choice could make this trait complicated to apply
+/// to a signature algorithm that do not have fixed sizes for the encodings of these objects.
+pub trait SignatureVerifier<
+    PK: SignaturePublicKey<PK_LEN>,
+    const PK_LEN: usize,
+    const SIG_LEN: usize,
+>: Sized
+{
     /// On success, returns Ok(())
     /// On failure, returns Err([SignatureError::SignatureVerificationFailed]); may also return other types of [SignatureError] as appropriate (such as for invalid-length inputs).
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;

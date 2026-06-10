@@ -1,5 +1,5 @@
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::Signature;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::{
     MLDSA44, MLDSA44_SIG_LEN, MLDSA44PrivateKeyExpanded, MLDSA44PublicKeyExpanded, MLDSA65,
