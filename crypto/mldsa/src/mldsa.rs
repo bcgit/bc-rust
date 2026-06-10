@@ -845,6 +845,8 @@ impl<
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
         // 2: 𝐬1̂_hat ← NTT(𝐬1)
         // 3: 𝐬2̂_hat ← NTT(𝐬2)
@@ -1134,6 +1136,8 @@ impl<
         ctx: Option<&[u8]>,
         out: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        out.fill(0);
+
         let mu = MuBuilder::compute_mu(&sk.tr(), msg, ctx)?;
         Self::sign_mu_out(&sk.sk, Some(&sk.A_hat), &mu, out)
     }
@@ -1154,6 +1158,8 @@ impl<
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
         HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
 
@@ -1175,6 +1181,8 @@ impl<
         mu: &[u8; 64],
         out: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        out.fill(0);
+
         Self::sign_mu_out(&sk.sk, A_hat, mu, out)
     }
 
@@ -1196,6 +1204,8 @@ impl<
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         match A_hat {
             Some(A_hat) => Self::sign_internal(sk, A_hat, mu, rnd, output),
             None => Self::sign_internal(sk, &sk.A_hat(), mu, rnd, output),
@@ -1930,6 +1940,8 @@ impl<
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
+        output.fill(0);
+
         let mu = MuBuilder::compute_mu(&sk.tr(), msg, ctx)?;
         let bytes_written = Self::sign_mu_out(sk, None, &mu, output)?;
 
@@ -1965,6 +1977,8 @@ impl<
                 "Somehow you managed to construct a streaming signer without a private key, impressive!",
             ));
         }
+
+        output.fill(0);
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {

@@ -47,6 +47,8 @@ pub fn encode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
         return Err(HexError::InsufficientOutputBufferSize);
     }
 
+    out.fill(0);
+
     for i in 0..inref.len() {
         out[2 * i] = ct_word_to_hex(inref[i] >> 4);
         out[2 * i + 1] = ct_word_to_hex(inref[i] & 0x0F);
@@ -89,6 +91,8 @@ pub fn decode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
     if out.len() < inref.len() / 2 {
         return Err(HexError::InsufficientOutputBufferSize);
     }
+
+    out.fill(0);
 
     let mut b = 0u8;
     let mut b_i = 0u8;

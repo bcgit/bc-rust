@@ -108,6 +108,8 @@ impl RNG for RNGFactory {
     }
 
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        out.fill(0);
+
         match self {
             Self::HashDRBG_SHA256(rng) => {rng.next_bytes_out(out) },
             Self::HashDRBG_SHA512(rng) => { rng.next_bytes_out(out) },

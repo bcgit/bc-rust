@@ -376,6 +376,8 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
             return Err(RNGError::ReseedRequired);
         }
 
+        out.fill(0);
+
         // 2. If (additional_input ≠ Null), then do
         //   2.1 w = Hash (0x02 || V || additional_input).
         //   2.2 V = (V + w) mod 2^seedlen.
@@ -490,6 +492,8 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
     }
 
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        out.fill(0);
+
         self.generate_out("next_bytes_out".as_bytes(), out)
     }
 
@@ -520,6 +524,8 @@ fn hash_df<H: Hash + HashAlgParams + Default>(
     if out.len() > 255 * H::OUTPUT_LEN {
         panic!("hash_df can't produce that much output!")
     }
+
+    out.fill(0);
 
     // out is "temp" in SP 800-90Ar1
     let no_of_bits_to_return: u32 = (out.len() * 8) as u32;
@@ -614,6 +620,8 @@ fn hashgen<H: Hash + HashAlgParams + Default>(v: &[u8], out: &mut [u8]) {
     // 6. Return (returned_bits).
 
     // 1. m = ceil(requested_no_of_bits / outlen)
+    out.fill(0);
+
     let m = u32::div_ceil(out.len() as u32, H::OUTPUT_LEN as u32);
 
     // requested_no_of_bits = out.len()

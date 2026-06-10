@@ -203,6 +203,8 @@ impl<const k: usize, const l: usize, const PK_LEN: usize> SignaturePublicKey<PK_
     }
 
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        out.fill(0);
+
         self.pk_encode_out(out)
     }
 
@@ -279,6 +281,8 @@ impl<
     }
 
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        out.fill(0);
+
         self.pk.encode_out(out)
     }
 
@@ -431,6 +435,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
     /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
     fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+
         // counter of progress along the output buffer
         let mut off: usize = 0;
 
@@ -720,6 +726,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+
         self.sk_encode_out(out)
     }
 
@@ -976,6 +984,8 @@ impl<
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        out.fill(0);
+
         self.sk.encode_out(out)
     }
 

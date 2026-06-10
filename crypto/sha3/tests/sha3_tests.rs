@@ -66,10 +66,10 @@ mod sha3_tests {
         assert_eq!(&out, b"\x58\x4c\xc7\x02\xc2\x22\x9a\x0a\xbc\x78\x9b\xfa\x64\xb4\x27\x1f\xb8\xf0\xbb\x78\x67\x15\x88\xb9\xef\x1d\x09\x3e\xa3\xd4\x72\x58\x4c\x6d\x43\xb5\x68\x33\x59\x47\x2f\x44\x1b\x33\x85\x6f\x68\x28\x59\xf0\xc3\x95\x4b\x56\x80\x8f\xd1\xfb\xa0\xb5\x9c\x9d\x19\x54");
         assert_eq!(bytes_written, 64);
 
-        // check that if you feed it an output slice that's bigger than it needs, that it doesn't touch the extra bytes.
+        // check that the bytes of an oversized output buffer past the digest length get zeroized.
         let mut out = DUMMY_SEED_512.clone();
         SHA3_256::new().hash_out(DUMMY_SEED_512, &mut out);
-        assert_eq!(&out[32..], &DUMMY_SEED_512[32..]);
+        assert!(out[32..].iter().all(|&b| b == 0));
     }
 
     #[test]

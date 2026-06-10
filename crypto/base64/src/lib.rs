@@ -193,6 +193,8 @@ impl Base64Encoder {
         assert!(inref.len() >= 3);
         assert!(out.len() >= 4);
 
+        out.fill(0);
+
         out[0] = Self::ct_bin_to_b64(inref[0] >> 2);
         out[1] = Self::ct_bin_to_b64(((inref[0] & 0x03) << 4) | inref[1] >> 4);
         out[2] = Self::ct_bin_to_b64(((inref[1] & 0x0F) << 2) | inref[2] >> 6);

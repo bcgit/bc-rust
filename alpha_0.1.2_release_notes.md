@@ -12,8 +12,6 @@
 * Check out Megan's email May 13 about KeyMaterial: "I was wondering if there might be scope for a closure based
   approach that could
   guarantee encapsulation of the state change from safe to hazardous back to safe again."
-* Anywhere that you have an `_out(.. out: &mut [u8])`, start by zeroizing it with .fill(0); .. a good task for Claude?
-  And should be documented in the style guide?
 * Go back to previous algs and apply memory optimization tricks like internal functions. And add a docs section "Memory
   Usage" that measures with valgrind.
 * Ensure that all crates have `#![forbid(missing_docs)]`
@@ -54,5 +52,7 @@
 
 * ML-DSA
 * Low-Memory ML-DSA -- runs in about 1/10th of the usual memory (~ 30 kb of stack) with only minor performance impact.
+* All public `*_out(.., out: &mut [u8])` functions now begin by zeroizing the entire output buffer with `.fill(0)`,
+  preventing exposure of stale data in oversized output buffers or on early error returns.
 * Github issues resolved:
     * #2, or whatever

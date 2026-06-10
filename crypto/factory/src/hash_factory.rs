@@ -129,6 +129,8 @@ impl Hash for HashFactory {
     }
 
     fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+
         match self {
             Self::SHA224(h) => h.hash_out(data, output),
             Self::SHA256(h) => h.hash_out(data, output),
@@ -168,6 +170,8 @@ impl Hash for HashFactory {
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
         match self {
             Self::SHA224(h) => h.do_final_out(output),
             Self::SHA256(h) => h.do_final_out(output),
