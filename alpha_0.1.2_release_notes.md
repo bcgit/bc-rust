@@ -47,6 +47,8 @@
   Box is for?
 * Deal with as many of the inline TODOs as possible
 * Close all open github issues and document them in this file.
+* After everything is merged, circle back to crucible, and make sure that the harness still works (and maybe remove the
+  nightly build toolchain)
 
 # 0.1.2 Features / Changelog
 
