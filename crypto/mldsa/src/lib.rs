@@ -134,8 +134,6 @@ use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{SignatureVerifier, Signer};
 
-// todo -- crucible tests
-
 mod aux_functions;
 pub mod hash_mldsa;
 mod matrix;

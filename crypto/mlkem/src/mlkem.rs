@@ -901,29 +901,21 @@ impl<
     const CT_LEN: usize,
     const SS_LEN: usize,
     PK: MLKEMPublicKeyTrait<k, PK_LEN> + MLKEMPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, PK, SK_LEN, PK_LEN> + MLKEMPrivateKeyInternalTrait<k, PK, SK_LEN, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<k, PK, SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<k, PK, SK_LEN, PK_LEN>,
     const k: usize,
     const eta: i16,
     const du: i16,
     const dv: i16,
     const LAMBDA: i16,
-> KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN> for MLKEM<
-    PK_LEN,
-    SK_LEN,
-    CT_LEN,
-    SS_LEN,
-    PK,
-    SK,
-    k,
-    eta,
-    du,
-    dv,
-    LAMBDA,
-> {
+> KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>
+    for MLKEM<PK_LEN, SK_LEN, CT_LEN, SS_LEN, PK, SK, k, eta, du, dv, LAMBDA>
+{
     /// Performs a decapsulation of the given ciphertext.
     /// Returns the shared secret key.
     /// The derived shared secret key is returned as a KeyMaterial with the SecurityStrength set to
     /// the security level of the ML-KEM parameter set.
+    /// As ML-KEM is an implicitly-rejecting KEM, this returns an error only if the ciphertext is invalid (ie the wrong length)..
     fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         Self::decaps_with_expanded_key(
             &MLKEMPrivateKeyExpanded::<k, PK, SK, SK_LEN, PK_LEN>::from(sk),

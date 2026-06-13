@@ -22,9 +22,10 @@ pub(crate) fn expandA<const k: usize>(rho: &[u8; 32]) -> Matrix<k, k> {
 
 /// Algorithm 5 ByteEncode_d(𝐹)
 /// Encodes an array of 𝑑-bit integers into a byte array for 1 ≤ 𝑑 ≤ 12.
-/// Input: integer array 𝐹 ∈ ℤ_M^256 , where 𝑚 = 2^𝑑 if 𝑑 < 12, and 𝑚 = 𝑞 if 𝑑 = 12.
-/// Output: byte array 𝐵 ∈ 𝔹32𝑑 .
-pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial) -> [u8; PACK_LEN] {
+/// Input: integer array 𝐹 ∈ ℤ_M^256, where 𝑚 = 2^𝑑 if 𝑑 < 12, and 𝑚 = 𝑞 if 𝑑 = 12.
+/// Output: byte array 𝐵 ∈ 𝔹32𝑑.
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial) -> [u8; PACK_LEN] {
     debug_assert_eq!(PACK_LEN, 32 * d);
 
     let mut B = [0u8; PACK_LEN];
@@ -65,7 +66,8 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial)
 /// Decodes a byte array into an array of 𝑑-bit integers for 1 ≤ 𝑑 ≤ 12.
 /// Input: byte array 𝐵 ∈ 𝔹32𝑑 .
 /// Output: integer array 𝐹 ∈ ℤ256 , where 𝑚 = 2𝑑 if 𝑑 < 12 and 𝑚 = 𝑞 if 𝑑 = 12.
-pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_LEN]) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_LEN]) -> Polynomial {
     debug_assert_eq!(PACK_LEN, 32 * d);
 
     let mut F = Polynomial::new();
@@ -85,7 +87,8 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
 /// Takes a 32-byte seed and two indices as input and outputs a pseudorandom element of 𝑇𝑞.
 /// Input: byte array 𝐵 ∈ 𝔹34 . ▷ a 32-byte seed along with two indices
 /// Output: array 𝑎_hat ∈ ℤ256 ▷ the coefficients of the NTT of a polynomial
-pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     let mut a_hat = Polynomial::new();
 
     // 1: ctx ← XOF.Init()
@@ -154,7 +157,8 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 /// Takes a seed as input and outputs a pseudorandom sample from the distribution D𝜂(𝑅𝑞).
 /// Input: byte array 𝐵 ∈ 𝔹64𝜂 .
 /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the sampled polynomial
-pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
     debug_assert_eq!(bytes.len(), 64 * eta as usize);
 
     let mut f = Polynomial::new();

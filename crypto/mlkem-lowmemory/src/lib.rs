@@ -241,10 +241,6 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 
-// todo -- re-run mutants
-
-// todo -- crucible tests
-
 mod aux_functions;
 mod low_memory_helpers;
 pub mod mlkem;

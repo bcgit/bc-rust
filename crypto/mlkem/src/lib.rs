@@ -155,15 +155,11 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 
-// todo -- re-run mutants
-
-// todo -- crucible tests
-
-mod aux_functions;
+pub mod aux_functions;
 mod matrix;
 pub mod mlkem;
 mod mlkem_keys;
-mod polynomial;
+pub mod polynomial;
 
 /*** Exported types ***/
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};

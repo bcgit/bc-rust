@@ -734,6 +734,11 @@ impl<
         T_PACKED_LEN,
     >
 {
+    /// Performs a decapsulation of the given ciphertext.
+    /// Returns the shared secret key.
+    /// The derived shared secret key is returned as a KeyMaterial with the SecurityStrength set to
+    /// the security level of the ML-KEM parameter set.
+    /// As ML-KEM is an implicitly-rejecting KEM, this returns an error only if the ciphertext is invalid (ie the wrong length)..
     fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         if ct.len() != CT_LEN {
             return Err(KEMError::LengthError("Invalid ciphertext length"));
