@@ -1,12 +1,11 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
-use crate::mlkem::{N, q, q_inv};
-use crate::polynomial::{Polynomial};
-use bouncycastle_core::traits::XOF;
-use bouncycastle_sha3::{SHAKE128, SHAKE256};
 use crate::Matrix;
 use crate::matrix::Vector;
-
+use crate::mlkem::{N, q, q_inv};
+use crate::polynomial::Polynomial;
+use bouncycastle_core::traits::XOF;
+use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 pub(crate) fn expandA<const k: usize>(rho: &[u8; 32]) -> Matrix<k, k> {
     let mut A_hat = Matrix::<k, k>::new();
@@ -24,14 +23,15 @@ pub(crate) fn expandA<const k: usize>(rho: &[u8; 32]) -> Matrix<k, k> {
 
 /// Algorithm 5 ByteEncode_d(𝐹)
 /// Encodes an array of 𝑑-bit integers into a byte array for 1 ≤ 𝑑 ≤ 12.
-/// Input: integer array 𝐹 ∈ ℤ_M^256 , where 𝑚 = 2^𝑑 if 𝑑 < 12, and 𝑚 = 𝑞 if 𝑑 = 12.
-/// Output: byte array 𝐵 ∈ 𝔹32𝑑 .
-pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial) -> [u8; PACK_LEN] {
+/// Input: integer array 𝐹 ∈ ℤ_M^256, where 𝑚 = 2^𝑑 if 𝑑 < 12, and 𝑚 = 𝑞 if 𝑑 = 12.
+/// Output: byte array 𝐵 ∈ 𝔹32𝑑.
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial) -> [u8; PACK_LEN] {
     debug_assert_eq!(PACK_LEN, 32 * d);
 
     let mut B = [0u8; PACK_LEN];
 
-    for i in 0 .. N {
+    for i in 0..N {
         let mut alpha = F[i];
 
         // For efficiency, the library is happy to work with values outside the range [0..q],
@@ -45,8 +45,7 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial)
             // 4: 𝑏[𝑖⋅𝑑 + 𝑗] ← 𝑎 mod 2
             //  constant-time note: yes, % is not constant-time,
             //   but all of the values in (i*d + j) % 8 are loop indices and not part of the secret key.
-            B[(i*d + j)/8] |= tmp << ((i*d + j) % 8);
-
+            B[(i * d + j) / 8] |= tmp << ((i * d + j) % 8);
 
             // 5: 𝑎 ← (𝑎 − 𝑏[𝑖⋅𝑑 + 𝑗])/2
             //   ▷ note 𝑎 − 𝑏[𝑖⋅𝑑 + 𝑗] is always even
@@ -67,7 +66,8 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial)
 /// Decodes a byte array into an array of 𝑑-bit integers for 1 ≤ 𝑑 ≤ 12.
 /// Input: byte array 𝐵 ∈ 𝔹32𝑑 .
 /// Output: integer array 𝐹 ∈ ℤ256 , where 𝑚 = 2𝑑 if 𝑑 < 12 and 𝑚 = 𝑞 if 𝑑 = 12.
-pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_LEN]) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_LEN]) -> Polynomial {
     debug_assert_eq!(PACK_LEN, 32 * d);
 
     let mut F = Polynomial::new();
@@ -76,7 +76,7 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
         // 3: F[i] = SUM_j=0..d-1{ 𝑏[𝑖 ⋅ 𝑑 + 𝑗] ⋅ 2𝑗 } mod m
         for j in 0..d {
             // select the next bit, according to bitcount, then shift it up by j
-            F[i] |= (((B[(i*d + j)/8] >> (i*d + j)%8) & 1) as i16) << j; // there's supposed to be a `mod m` here, but that shouldn't matter; we'll check it below anyway.
+            F[i] |= (((B[(i * d + j) / 8] >> (i * d + j) % 8) & 1) as i16) << j; // there's supposed to be a `mod m` here, but that shouldn't matter; we'll check it below anyway.
         }
     }
 
@@ -87,7 +87,8 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
 /// Takes a 32-byte seed and two indices as input and outputs a pseudorandom element of 𝑇𝑞.
 /// Input: byte array 𝐵 ∈ 𝔹34 . ▷ a 32-byte seed along with two indices
 /// Output: array 𝑎_hat ∈ ℤ256 ▷ the coefficients of the NTT of a polynomial
-pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     let mut a_hat = Polynomial::new();
 
     // 1: ctx ← XOF.Init()
@@ -119,12 +120,12 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 
         // 6: 𝑑1 ← 𝐶[0] + 256 ⋅ (𝐶[1] mod 16)
         //  ▷ 0 ≤ 𝑑1 < 2^12
-        let d1: i16 = (C[idx+0] as i16) | ((C[idx+1] as i32)  << 8) as i16 & 0xFFF;
+        let d1: i16 = (C[idx + 0] as i16) | ((C[idx + 1] as i32) << 8) as i16 & 0xFFF;
         debug_assert!(d1 < 2 << 12);
 
         // 7: 𝑑2 ← ⌊𝐶[1]/16⌋ + 16 ⋅ 𝐶[2]
         //  ▷ 0 ≤ 𝑑2 < 2^12
-        let d2: i16 = ((C[idx+1] as i16) >> 4) | ((C[idx+2] as i32) << 4) as i16 & 0xFFF;
+        let d2: i16 = ((C[idx + 1] as i16) >> 4) | ((C[idx + 2] as i32) << 4) as i16 & 0xFFF;
         debug_assert!(d2 < 2 << 12);
 
         // 8: if 𝑑1 < 𝑞 then
@@ -154,17 +155,18 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 
 /// Algorithm 8 SamplePolyCBD (𝐵)𝜂
 /// Takes a seed as input and outputs a pseudorandom sample from the distribution D𝜂(𝑅𝑞).
-/// Input: byte array 𝐵 ∈ 𝔹64𝜂 .
+/// Input: byte array 𝐵 ∈ 𝔹64𝜂.
 /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the sampled polynomial
-pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
     debug_assert_eq!(bytes.len(), 64 * eta as usize);
 
     let mut f = Polynomial::new();
 
     match eta {
         2 => {
-            for i in 0..N/8 {
-                let t = u32::from_le_bytes(bytes[4*i .. 4*i + 4].try_into().unwrap());
+            for i in 0..N / 8 {
+                let t = u32::from_le_bytes(bytes[4 * i..4 * i + 4].try_into().unwrap());
                 let mut d = t & 0x55555555;
                 d += (t >> 1) & 0x55555555;
                 for j in 0..8usize {
@@ -179,7 +181,7 @@ pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
             }
         }
         3 => {
-            for i in 0..N/4 {
+            for i in 0..N / 4 {
                 let t = little_endian_to_u24(bytes, 3 * i);
                 let mut d = t & 0x00249249;
                 d += (t >> 1) & 0x00249249;
@@ -204,7 +206,6 @@ pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
 /// SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
 /// Performs both the PRF and SamplePolyCBD steps
 pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial {
-
     // Alg 13: 9: 𝐬[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
     //  ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
     match eta {
@@ -220,7 +221,7 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
             };
 
             sample_poly_cbd::<eta>(&buf)
-        },
+        }
         3 => {
             let buf = {
                 let mut xof = SHAKE256::new();
@@ -232,13 +233,16 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
             };
 
             sample_poly_cbd::<eta>(&buf)
-        },
-        _ => unreachable!()
+        }
+        _ => unreachable!(),
     }
 }
 
 /// Internal helper for keygen since both s_hat and e_hat have identical sampling code
-pub(crate) fn sample_vector_CBD<const k: usize, const eta: i16>(b: &[u8; 32], mut n: u8) -> Vector<k> {
+pub(crate) fn sample_vector_CBD<const k: usize, const eta: i16>(
+    b: &[u8; 32],
+    mut n: u8,
+) -> Vector<k> {
     let mut v = Vector::<k>::new();
 
     for i in 0..k {
@@ -302,13 +306,20 @@ pub(super) fn cond_sub_q(a: i16) -> i16 {
     tmp + ((tmp >> 15) & q)
 }
 
-
 /// Multiplication of polynomials in Zq\[X]/(X^2-zeta)
 /// used for multiplication of elements in Rq in NTT domain
 ///
 /// Borrowed from:
 /// https://github.com/pq-crystals/kyber/blob/main/ref/ntt.c#L139
-pub(crate) fn ntt_base_mult(r: &mut [i16], off: usize, a0: i16, a1: i16, b0: i16, b1: i16, zeta: i16) {
+pub(crate) fn ntt_base_mult(
+    r: &mut [i16],
+    off: usize,
+    a0: i16,
+    a1: i16,
+    b0: i16,
+    b1: i16,
+    zeta: i16,
+) {
     let mut out_val0 = mul_mont(a1, b1);
     out_val0 = mul_mont(out_val0, zeta);
     out_val0 += mul_mont(a0, b0);
@@ -319,29 +330,46 @@ pub(crate) fn ntt_base_mult(r: &mut [i16], off: usize, a0: i16, a1: i16, b0: i16
     r[off + 1] = out_val1;
 }
 
-pub(crate) fn pack_ciphertext<const k: usize, const CT_LEN: usize, const du: i16, const dv: i16>(u: &Vector<k>, v: &Polynomial) -> [u8; CT_LEN] {
+pub(crate) fn pack_ciphertext<const k: usize, const CT_LEN: usize, const du: i16, const dv: i16>(
+    u: &Vector<k>,
+    v: &Polynomial,
+) -> [u8; CT_LEN] {
     let mut out = [0u8; CT_LEN];
 
     // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let lim: usize = k* (N * (du as usize) / 8);
+    let lim: usize = k * (N * (du as usize) / 8);
 
     u.compress_pol_vec::<du>(&mut out[..lim]);
     v.compress_poly::<dv>(&mut out[lim..]);
     out
 }
 
-pub(crate) fn unpack_ciphertext_u<const k: usize, const CT_LEN: usize, const du: i16, const dv: i16>(c: &[u8; CT_LEN]) -> Vector<k> {
+pub(crate) fn unpack_ciphertext_u<
+    const k: usize,
+    const CT_LEN: usize,
+    const du: i16,
+    const dv: i16,
+>(
+    c: &[u8; CT_LEN],
+) -> Vector<k> {
     // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let lim: usize = k* (N * (du as usize) / 8);
+    let lim: usize = k * (N * (du as usize) / 8);
 
     let u = Vector::<k>::decompress_pol_vec::<du>(&c[..lim]);
 
     u
 }
 
-pub(crate) fn unpack_ciphertext_v<const k: usize, const CT_LEN: usize, const du: i16, const dv: i16>(c: &[u8; CT_LEN]) -> Polynomial {
+pub(crate) fn unpack_ciphertext_v<
+    const k: usize,
+    const CT_LEN: usize,
+    const du: i16,
+    const dv: i16,
+>(
+    c: &[u8; CT_LEN],
+) -> Polynomial {
     // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let lim: usize = k* (N * (du as usize) / 8);
+    let lim: usize = k * (N * (du as usize) / 8);
 
     let v = Polynomial::decompress_poly::<dv>(&c[lim..]);
 

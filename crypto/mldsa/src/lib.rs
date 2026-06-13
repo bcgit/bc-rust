@@ -136,10 +136,6 @@ use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::Signature;
 
-// todo -- re-run mutants
-
-// todo -- crucible tests
-
 mod aux_functions;
 pub mod hash_mldsa;
 mod matrix;

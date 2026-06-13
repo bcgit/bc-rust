@@ -4,16 +4,19 @@ use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
-use bouncycastle_core::traits::Secret;
-use crate::aux_functions::{barrett_reduce, cond_sub_q, montgomery_reduce, mul_mont, ntt_base_mult, ZETAS, ZETAS_INV};
+use crate::aux_functions::{
+    ZETAS, ZETAS_INV, barrett_reduce, cond_sub_q, montgomery_reduce, mul_mont, ntt_base_mult,
+};
 use crate::mlkem::{N, q};
+use bouncycastle_core::traits::Secret;
 
 /// A polynomial over the ML-KEM ring.
-/// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
-/// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
-/// and the real unit tests are in a different crate, so here we are.
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
 #[derive(Clone)]
-pub struct Polynomial{ pub(crate) coeffs: [i16; N] }
+pub struct Polynomial {
+    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+    pub coeffs: [i16; N],
+}
 
 /// Convenience function to avoid ".0" all over the place.
 impl Index<usize> for Polynomial {
@@ -40,7 +43,7 @@ impl Polynomial {
     pub(crate) fn from_msg(m: [u8; 32]) -> Self {
         let mut w = Polynomial::new();
 
-        for (i, b) in m.iter().enumerate().take(N/8) {
+        for (i, b) in m.iter().enumerate().take(N / 8) {
             for j in 0..8 {
                 let mask = -(((*b >> j) & 1) as i16);
                 w[8 * i + j] = mask /*as i32*/ & ((q + 1) / 2);
@@ -52,8 +55,7 @@ impl Polynomial {
 
     /// Convert a Polynomial back into a message m
     pub(crate) fn to_msg(mut self) -> [u8; 32] {
-
-        const LOWER: i32 = q as i32 >> 2;  // 832
+        const LOWER: i32 = q as i32 >> 2; // 832
         const UPPER: i32 = q as i32 - LOWER; // 2497
 
         let mut msg = [0u8; 32];
@@ -63,7 +65,7 @@ impl Polynomial {
         self.cond_sub_q();
 
         // for (i, item) in msg.iter_mut().enumerate().take(N/8) {
-        for i in 0 .. N/8 {
+        for i in 0..N / 8 {
             for j in 0..8 {
                 let c_j = self[8 * i + j] as i32;
                 let t = (((LOWER - c_j) & (c_j - UPPER)) >> 31) & 0x0000000000000001;
@@ -131,12 +133,12 @@ impl Polynomial {
         // s.cond_sub_q();
 
         match dv {
-            4 => { // MLKEM512 and MLKEM768
-                for i in 0..N/8 {
+            4 => {
+                // MLKEM512 and MLKEM768
+                for i in 0..N / 8 {
                     // fill the temp array t
                     for (j, item) in t.iter_mut().enumerate() {
-                        *item = ((((self[8 * i + j] as i32) << 4) + (q as i32 /2))
-                            / (q as i32)
+                        *item = ((((self[8 * i + j] as i32) << 4) + (q as i32 / 2)) / (q as i32)
                             & 15) as u8;
                     }
 
@@ -146,13 +148,13 @@ impl Polynomial {
                     out[idx + 3] = t[6] | (t[7] << 4);
                     idx += 4;
                 }
-            },
-            5 => { // MLKEM1024
-                for i in 0..N/8 {
+            }
+            5 => {
+                // MLKEM1024
+                for i in 0..N / 8 {
                     // fill the temp array t
                     for (j, item) in t.iter_mut().enumerate() {
-                        *item = (((((self[8 * i + j] as i32) << 5) + (q as i32 /2))
-                            / (q as i32))
+                        *item = (((((self[8 * i + j] as i32) << 5) + (q as i32 / 2)) / (q as i32))
                             & 31) as u8;
                     }
 
@@ -163,7 +165,7 @@ impl Polynomial {
                     out[idx + 4] = (t[6] >> 2) | (t[7] << 3);
                     idx += 5;
                 }
-            },
+            }
             _ => unreachable!(),
         };
     }
@@ -185,38 +187,34 @@ impl Polynomial {
 
         // if self.m_engine.poly_compressed_bytes() == 128 {
         match dv {
-            4 => { // MLKEM512 and MLKEM768
-                for i in 0..N/2 {
+            4 => {
+                // MLKEM512 and MLKEM768
+                for i in 0..N / 2 {
                     v[2 * i] =
-                        (((((compressed_v[idx] & 15) as i16) as i32 * (q as i32)) + 8) >> 4)
-                            as i16;
+                        (((((compressed_v[idx] & 15) as i16) as i32 * (q as i32)) + 8) >> 4) as i16;
                     v[2 * i + 1] =
-                        (((((compressed_v[idx] >> 4) as i16) as i32 * (q as i32)) + 8) >> 4)
-                            as i16;
+                        (((((compressed_v[idx] >> 4) as i16) as i32 * (q as i32)) + 8) >> 4) as i16;
                     idx += 1;
                 }
-            },
-            5 => { // MLKEM1024
+            }
+            5 => {
+                // MLKEM1024
                 let mut t = [0u8; 8];
-                for i in 0..N/8 {
+                for i in 0..N / 8 {
                     t[0] = compressed_v[idx];
-                    t[1] =
-                        (compressed_v[idx] >> 5) | (compressed_v[idx + 1] << 3);
+                    t[1] = (compressed_v[idx] >> 5) | (compressed_v[idx + 1] << 3);
                     t[2] = compressed_v[idx + 1] >> 2;
-                    t[3] = (compressed_v[idx + 1] >> 7)
-                        | (compressed_v[idx + 2] << 1);
-                    t[4] = (compressed_v[idx + 2] >> 4)
-                        | (compressed_v[idx + 3] << 4);
+                    t[3] = (compressed_v[idx + 1] >> 7) | (compressed_v[idx + 2] << 1);
+                    t[4] = (compressed_v[idx + 2] >> 4) | (compressed_v[idx + 3] << 4);
                     t[5] = compressed_v[idx + 3] >> 1;
-                    t[6] = (compressed_v[idx + 3] >> 6)
-                        | (compressed_v[idx + 4] << 2);
+                    t[6] = (compressed_v[idx + 3] >> 6) | (compressed_v[idx + 4] << 2);
                     t[7] = compressed_v[idx + 4] >> 3;
                     idx += 5;
                     for (j, item) in t.iter_mut().enumerate() {
                         v[8 * i + j] = (((*item & 31) as i32 * (q as i32) + 16) >> 5) as i16;
                     }
                 }
-            },
+            }
             _ => unreachable!(),
         }
 
@@ -233,7 +231,8 @@ impl Polynomial {
     /// Computes the NTT representation 𝑓_hat of the given polynomial 𝑓 ∈ 𝑅𝑞.
     /// Input: array 𝑓 ∈ ℤ256  ▷ the coefficients of the input polynomial
     /// Output: array 𝑓_hat ∈ ℤ256  ▷ the coefficients of the NTT of the input polynomial
-    pub(crate) fn ntt(&mut self) {
+    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+    pub fn ntt(&mut self) {
         let mut len = 128;
         let mut k = 1;
 
@@ -259,8 +258,9 @@ impl Polynomial {
     /// Computes the polynomial 𝑓 ∈ 𝑅𝑞 that corresponds to the given NTT representation 𝑓 ∈ 𝑇𝑞.
     /// Input: array 𝑓 ∈ ℤ256  ▷ the coefficients of input NTT representation
     /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the inverse NTT of the input
-    pub(crate) fn inv_ntt(&mut self) {
-        // FIPS 203 ALg 10 wants you to copy f_hat into f, and then act of f
+    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+    pub fn inv_ntt(&mut self) {
+        // FIPS 203 Alg 10 wants you to copy f_hat into f, and then act on f
         // but we're going to do this in-place for memory-saving reasons.
 
         let mut len = 2;
@@ -297,10 +297,11 @@ impl Polynomial {
 ///
 /// Borrowed from:
 /// https://github.com/pq-crystals/kyber/blob/main/ref/poly.c#L290
-pub(crate) fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     let mut r = Polynomial::new();
 
-    for i in 0..(N/4) {
+    for i in 0..(N / 4) {
         ntt_base_mult(
             &mut r.coeffs,
             4 * i,
