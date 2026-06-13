@@ -155,7 +155,6 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem_lowmemory::MLKEM768;
-//! use bouncycastle_core::traits::KEM;
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
 //! ```
@@ -185,7 +184,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem_lowmemory::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::traits::KEM;
+//! use bouncycastle_core::traits::{KEMEncapsulator, KEMDecapsulator};
 //! use bouncycastle_core::errors::KEMError;
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
@@ -241,10 +240,6 @@
 // imports needed just for docs
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
-
-// todo -- re-run mutants
-
-// todo -- crucible tests
 
 mod aux_functions;
 mod low_memory_helpers;

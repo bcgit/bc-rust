@@ -46,7 +46,6 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem::MLKEM768;
-//! use bouncycastle_core::traits::KEM;
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
 //! ```
@@ -76,7 +75,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::traits::KEM;
+//! use bouncycastle_core::traits::{KEMEncapsulator, KEMDecapsulator};
 //! use bouncycastle_core::errors::KEMError;
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
@@ -156,15 +155,11 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 
-// todo -- re-run mutants
-
-// todo -- crucible tests
-
-mod aux_functions;
+pub mod aux_functions;
 mod matrix;
 pub mod mlkem;
 mod mlkem_keys;
-mod polynomial;
+pub mod polynomial;
 
 /*** Exported types ***/
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};

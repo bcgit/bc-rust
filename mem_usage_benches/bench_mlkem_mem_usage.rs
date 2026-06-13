@@ -26,12 +26,9 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::key_material::{KeyMaterial512, KeyType};
-use bouncycastle::core::traits::{KEM, KEMPublicKey};
-use bouncycastle::mlkem::mlkem::MLKEMTrait;
-use bouncycastle::mlkem::{
-    MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM1024_CT_LEN,
-    MLKEM1024_PK_LEN,
-};
+use bouncycastle::core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPublicKey};
+use bouncycastle::mlkem::mlkem::{MLKEMTrait};
+use bouncycastle::mlkem::{MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM768_CT_LEN, MLKEM768_PK_LEN};
 
 /// This exists so I can use /usr/bin/time to measure the base memory footprint of the cargo bench harness
 fn bench_do_nothing() {

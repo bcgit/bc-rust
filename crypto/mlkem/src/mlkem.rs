@@ -30,7 +30,6 @@
 //! ```rust
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //! use bouncycastle_mlkem::{MLKEM768PublicKeyExpanded, MLKEM768PrivateKeyExpanded};
-//! use bouncycastle_core::traits::KEM;
 //! use bouncycastle_core::errors::KEMError;
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
@@ -60,7 +59,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::traits::KEM;
+//! use bouncycastle_core::traits::KEMEncapsulator;
 //! use bouncycastle_core::errors::KEMError;
 //! use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
 //! use bouncycastle_hex as hex;
@@ -104,7 +103,7 @@
 //!
 //! ```rust
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::traits::{KEM};
+//! use bouncycastle_core::traits::KEMDecapsulator;
 //! use bouncycastle_core::errors::KEMError;
 //! use bouncycastle_core::key_material::KeyMaterialTrait;
 //!
@@ -142,12 +141,13 @@ use crate::mlkem_keys::{MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait};
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, KEM, RNG, SecurityStrength, XOF};
+use bouncycastle_core::traits::{
+    Algorithm, Hash, KEMDecapsulator, KEMEncapsulator, RNG, SecurityStrength, XOF,
+};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
 use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes};
 use core::marker::PhantomData;
-
 /*** Constants ***/
 
 ///
@@ -319,6 +319,15 @@ impl<
     const LAMBDA: i16,
 > MLKEM<PK_LEN, SK_LEN, CT_LEN, SS_LEN, PK, SK, k, eta1, du, dv, LAMBDA>
 {
+    /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
+    ///
+    /// Key generation is intentionally not part of the [KEMEncapsulator] / [KEMDecapsulator] traits;
+    /// it is provided as an inherent associated function directly on the algorithm struct.
+    /// Error condition: basically only on RNG failures.
+    pub fn keygen() -> Result<(PK, SK), KEMError> {
+        Self::keygen_from_os_rng()
+    }
+
     /// Should still be ok in FIPS mode
     pub fn keygen_from_os_rng() -> Result<(PK, SK), KEMError> {
         let mut seed = KeyMaterial::<64>::new();
@@ -527,13 +536,13 @@ impl<
     /// Alternatively, you can use a [MLKEMPublicKeyExpanded] with [MLKEM::encaps_for_expanded_key].
     /// If you specify None, the function will compute A_hat internally and everything will work fine.
     ///
-    /// Unlike the more public function exposed by [KEM::encaps], this returns the shared secret as raw bytes
+    /// Unlike the more public function exposed by [KEMEncapsulator::encaps], this returns the shared secret as raw bytes
     /// instead of wrapped in an appropriately-set [KeyMaterialTrait], so you're on your own for handling it properly.
     ///
     /// Note: this is an internal function that allows the caller to specify the encapsulation
     /// randomness (which is the message `m` to be encrypted by the underlying PKE scheme).
     /// This function should not be used directly unless you really have a
-    /// good reason. [KEM::encaps] should be used in 99.9% of cases.
+    /// good reason. [KEMEncapsulator::encaps] should be used in 99.9% of cases.
     /// The reason this is exposed publicly is: A) for unit testing that requires access
     /// to the deterministically reproducible function, and B) for operational environments
     /// that wish to provide randomness from their own source instead of the built-in RNG in bc-rust.
@@ -843,12 +852,12 @@ pub trait MLKEMTrait<
     /// Returns either `()` or [KEMError::ConsistencyCheckFailed].
     fn keypair_consistency_check(pk: &PK, sk: &SK) -> Result<(), KEMError>;
 
-    /// Same as [KEM::encaps], but acts on an [MLKEMPublicKeyExpanded].
+    /// Same as [KEMEncapsulator::encaps], but acts on an [MLKEMPublicKeyExpanded].
     fn encaps_for_expanded_key(
         pk: &MLKEMPublicKeyExpanded<k, PK, PK_LEN>,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
 
-    /// Same as [KEM::decaps], but acts on an [MLKEMPrivateKeyExpanded].
+    /// Same as [KEMDecapsulator::decaps], but acts on an [MLKEMPrivateKeyExpanded].
     fn decaps_with_expanded_key(
         sk: &MLKEMPrivateKeyExpanded<k, PK, SK, SK_LEN, PK_LEN>,
         ct: &[u8],
@@ -868,14 +877,9 @@ impl<
     const du: i16,
     const dv: i16,
     const LAMBDA: i16,
-> KEM<PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>
+> KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN>
     for MLKEM<PK_LEN, SK_LEN, CT_LEN, SS_LEN, PK, SK, k, eta, du, dv, LAMBDA>
 {
-    /// Generates a fresh key pair.
-    fn keygen() -> Result<(PK, SK), KEMError> {
-        Self::keygen_from_os_rng()
-    }
-
     /// Performs an encapsulation against the given public key, using the library's default internal RNG.
     /// Returns (shared_secret_key, ciphertext)
     /// The derived shared secret key is returned as a KeyMaterial with the SecurityStrength set to
@@ -889,11 +893,29 @@ impl<
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         Self::encaps_for_expanded_key(&MLKEMPublicKeyExpanded::<k, PK, PK_LEN>::from(pk))
     }
+}
 
+impl<
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+    PK: MLKEMPublicKeyTrait<k, PK_LEN> + MLKEMPublicKeyInternalTrait<k, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<k, PK, SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<k, PK, SK_LEN, PK_LEN>,
+    const k: usize,
+    const eta: i16,
+    const du: i16,
+    const dv: i16,
+    const LAMBDA: i16,
+> KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>
+    for MLKEM<PK_LEN, SK_LEN, CT_LEN, SS_LEN, PK, SK, k, eta, du, dv, LAMBDA>
+{
     /// Performs a decapsulation of the given ciphertext.
     /// Returns the shared secret key.
     /// The derived shared secret key is returned as a KeyMaterial with the SecurityStrength set to
     /// the security level of the ML-KEM parameter set.
+    /// As ML-KEM is an implicitly-rejecting KEM, this returns an error only if the ciphertext is invalid (ie the wrong length)..
     fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         Self::decaps_with_expanded_key(
             &MLKEMPrivateKeyExpanded::<k, PK, SK, SK_LEN, PK_LEN>::from(sk),

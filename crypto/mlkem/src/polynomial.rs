@@ -11,12 +11,11 @@ use crate::mlkem::{N, q};
 use bouncycastle_core::traits::Secret;
 
 /// A polynomial over the ML-KEM ring.
-/// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
-/// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
-/// and the real unit tests are in a different crate, so here we are.
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
 #[derive(Clone)]
 pub struct Polynomial {
-    pub(crate) coeffs: [i16; N],
+    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+    pub coeffs: [i16; N],
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -235,7 +234,8 @@ impl Polynomial {
     /// Computes the NTT representation 𝑓_hat of the given polynomial 𝑓 ∈ 𝑅𝑞.
     /// Input: array 𝑓 ∈ ℤ256  ▷ the coefficients of the input polynomial
     /// Output: array 𝑓_hat ∈ ℤ256  ▷ the coefficients of the NTT of the input polynomial
-    pub(crate) fn ntt(&mut self) {
+    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+    pub fn ntt(&mut self) {
         let mut len = 128;
         let mut k = 1;
 
@@ -261,8 +261,9 @@ impl Polynomial {
     /// Computes the polynomial 𝑓 ∈ 𝑅𝑞 that corresponds to the given NTT representation 𝑓 ∈ 𝑇𝑞.
     /// Input: array 𝑓 ∈ ℤ256  ▷ the coefficients of input NTT representation
     /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the inverse NTT of the input
-    pub(crate) fn inv_ntt(&mut self) {
-        // FIPS 203 ALg 10 wants you to copy f_hat into f, and then act of f
+    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+    pub fn inv_ntt(&mut self) {
+        // FIPS 203 Alg 10 wants you to copy f_hat into f, and then act on f
         // but we're going to do this in-place for memory-saving reasons.
 
         let mut len = 2;
@@ -299,7 +300,8 @@ impl Polynomial {
 ///
 /// Borrowed from:
 /// https://github.com/pq-crystals/kyber/blob/main/ref/poly.c#L290
-pub(crate) fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
+/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
+pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     let mut r = Polynomial::new();
 
     for i in 0..(N / 4) {

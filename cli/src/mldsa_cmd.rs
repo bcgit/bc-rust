@@ -2,7 +2,7 @@
 //! by using generics or macros. I just, haven't ... yet.
 
 use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
-use bouncycastle::core::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::traits::{SignatureVerifier, Signer, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle::hex;
 use bouncycastle::mldsa::{
     HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA_SEED_LEN,

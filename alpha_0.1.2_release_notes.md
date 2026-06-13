@@ -21,6 +21,8 @@
   appropriate.
 * Probably it makes sense to leave Hex and Base64 as requiring std; ... or maybe add a no_std version that uses
   fixed-sized blocks?
+* Make this build on the stable compiler. IE Remove the rust-toolchain.toml file that builds with nightly. Will require
+  some refactoring.
 * Create a cargo feature #[cfg(feature='rng')] and put it around things like keygen that takes an rng so that the build
   dependency on bouncycastle_rng is optional.
 * Enhance the default HashDRBG instantiation to take in NIST-compatible CPU jitter entropy? Or not? Maybe this is the
@@ -52,9 +54,13 @@
 
 # 0.1.2 Features / Changelog
 
-* ML-DSA
-* Low-Memory ML-DSA -- runs in about 1/10th of the usual memory (~ 30 kb of stack) with only minor performance impact.
+* New algorithms added to crypto/ :
+    * mldsa (FIPS 204)
+    * mldsa-lowmemory -- runs in about 1/10th of the usual memory (~ 30 kb of stack) with comparable performance impact.
+    * mlkem (FIPS 203)
+    * mlkem-lowmemory -- runs in about 1/4th of the usual memory (~ 12 kb of stack) with comparable performance impact.
 * All public `*_out(.., out: &mut [u8])` functions now begin by zeroizing the entire output buffer with `.fill(0)`,
   preventing exposure of stale data in oversized output buffers or on early error returns.
 * Github issues resolved:
-    * #2, or whatever
+    * #6: https://github.com/bcgit/bc-rust/issues/6, thanks to Q. T. Felix (github: @Quant-TheodoreFelix)
+    * #10: https://github.com/bcgit/bc-rust/issues/10, thanks to Nicola Tuveri (github: @romen)

@@ -1,5 +1,6 @@
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::Signature;
+use std::hint::black_box;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::{
     MLDSA44, MLDSA44_SIG_LEN, MLDSA44PrivateKeyExpanded, MLDSA44PublicKeyExpanded, MLDSA65,
@@ -8,7 +9,6 @@ use bouncycastle_mldsa::{
     MLDSATrait,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
-use std::hint::black_box;
 
 fn bench_mldsa_keygen(c: &mut Criterion) {
     let mut group = c.benchmark_group("KeyGen");
