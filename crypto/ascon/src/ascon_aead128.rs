@@ -1,19 +1,25 @@
-#![allow(dead_code)]
-#![allow(non_snake_case)]
+//! Ascon-AEAD128 authenticated encryption, as specified in NIST SP 800-232 §4.
+//!
+//! Rate = 128 bits, capacity = 192 bits, 128-bit key/nonce/tag. Initialization and finalization use
+//! `Ascon-p[12]`; associated-data and plaintext/ciphertext blocks use `Ascon-p[8]`.
 
-use arrayref::{array_mut_ref, array_ref};
-use bouncycastle_core::traits::{AeadCipher, Algorithm, SecurityStrength};
+use core::fmt::{self, Debug, Display, Formatter};
+
+use bouncycastle_core::errors::AeadError;
+use bouncycastle_core::traits::{AeadCipher, Algorithm, SecurityStrength, Secret};
+
+use crate::util::{load_u64_le, store_u64_le};
 
 const CRYPTO_KEYBYTES: usize = 16;
 const CRYPTO_ABYTES: usize = 16;
 const RATE: usize = 16;
 const BUF_SIZE_DECRYPT: usize = RATE + CRYPTO_ABYTES; // 16 + 16 = 32
 
+/// Ascon-AEAD128 initial value (SP 800-232 Table 14).
 const ASCON_IV: u64 = 0x00001000808C0001;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
-    Uninitialized,
     EncInit,
     EncAad,
     EncData,
@@ -24,14 +30,18 @@ enum State {
     DecFinal,
 }
 
-/// An implementation of the Ascon-AEAD128 algorithm (as updated by NIST).
+/// An implementation of the Ascon-AEAD128 algorithm (NIST SP 800-232).
+///
+/// A single instance performs one operation (encryption or decryption) under one (key, nonce) pair.
+/// See [`AsconAead128::new`] for the streaming workflow and [`AsconAead128::encrypt`] /
+/// [`AsconAead128::decrypt`] for the one-shot APIs.
 pub struct AsconAead128 {
-    // Secret key and nonce (both 128 bits)
+    // Secret key and nonce (both 128 bits).
     k0: u64,
     k1: u64,
     n0: u64,
     n1: u64,
-    // 320-bit internal state (five 64-bit words)
+    // 320-bit internal state (five 64-bit words).
     s0: u64,
     s1: u64,
     s2: u64,
@@ -41,9 +51,9 @@ pub struct AsconAead128 {
     // For decryption the buffer size is RATE + CRYPTO_ABYTES = 32 bytes.
     buf: [u8; BUF_SIZE_DECRYPT],
     buf_pos: usize,
-    // The computed MAC (after encryption finalization).
+    // The computed authentication tag (after encryption finalization).
     mac: Option<[u8; CRYPTO_ABYTES]>,
-    // State machine for processing.
+    // State machine for enforcing the call order.
     state: State,
     // true for encryption mode; false for decryption.
     for_encryption: bool,
@@ -52,17 +62,20 @@ pub struct AsconAead128 {
 
 impl AsconAead128 {
     /// Create a new instance.
-    /// * `key` must be exactly 16 bytes.
-    /// * `nonce` must be exactly 16 bytes.
-    /// * `ad` is an optional associated-data slice (processed immediately).
+    /// * `key` is the 128-bit secret key.
+    /// * `nonce` is the 128-bit nonce. It **must** be unique per encryption under a given key.
+    /// * `ad` is optional associated data (authenticated, not encrypted); processed immediately.
     /// * `for_encryption` is true for encryption, false for decryption.
-    pub fn new(key: &[u8], nonce: &[u8], ad: Option<&[u8]>, for_encryption: bool) -> Self {
-        assert_eq!(key.len(), CRYPTO_KEYBYTES, "Key must be 16 bytes");
-        assert_eq!(nonce.len(), CRYPTO_KEYBYTES, "Nonce must be 16 bytes");
-        let k0 = u64::from_le_bytes(*array_ref![key, 0, 8]);
-        let k1 = u64::from_le_bytes(*array_ref![key, 8, 8]);
-        let n0 = u64::from_le_bytes(*array_ref![nonce, 0, 8]);
-        let n1 = u64::from_le_bytes(*array_ref![nonce, 8, 8]);
+    pub fn new(
+        key: &[u8; CRYPTO_KEYBYTES],
+        nonce: &[u8; CRYPTO_KEYBYTES],
+        ad: Option<&[u8]>,
+        for_encryption: bool,
+    ) -> Self {
+        let k0 = load_u64_le(key, 0);
+        let k1 = load_u64_le(key, 8);
+        let n0 = load_u64_le(nonce, 0);
+        let n1 = load_u64_le(nonce, 8);
         let state = if for_encryption { State::EncInit } else { State::DecInit };
         let mut aead = AsconAead128 {
             k0,
@@ -90,7 +103,39 @@ impl AsconAead128 {
         aead
     }
 
-    // NOTE: No caching since the key and/or nonce should change for every operation
+    /// One-shot authenticated encryption (SP 800-232 Algorithm 3).
+    /// Writes ciphertext followed by the 128-bit tag into `out`, which must be at least
+    /// `plaintext.len() + 16` bytes. Returns the number of bytes written.
+    pub fn encrypt(
+        key: &[u8; CRYPTO_KEYBYTES],
+        nonce: &[u8; CRYPTO_KEYBYTES],
+        ad: Option<&[u8]>,
+        plaintext: &[u8],
+        out: &mut [u8],
+    ) -> usize {
+        let mut cipher = Self::new(key, nonce, ad, true);
+        let n = cipher.encrypt_update(plaintext, out);
+        n + cipher.encrypt_finalize(&mut out[n..])
+    }
+
+    /// One-shot authenticated decryption (SP 800-232 Algorithm 4).
+    /// `ciphertext` is the ciphertext followed by the 128-bit tag. Writes the recovered plaintext
+    /// into `out`, which must be at least `ciphertext.len() - 16` bytes. Returns the number of bytes
+    /// written, or [`AeadError::AuthenticationFailed`] if the tag does not verify.
+    pub fn decrypt(
+        key: &[u8; CRYPTO_KEYBYTES],
+        nonce: &[u8; CRYPTO_KEYBYTES],
+        ad: Option<&[u8]>,
+        ciphertext: &[u8],
+        out: &mut [u8],
+    ) -> Result<usize, AeadError> {
+        let mut cipher = Self::new(key, nonce, ad, false);
+        let n = cipher.decrypt_update(ciphertext, out);
+        Ok(n + cipher.decrypt_finalize(&mut out[n..])?)
+    }
+
+    // Initialization (SP 800-232 §4.1.1 step 1): S = IV || K || N, then Ascon-p[12], then XOR K into
+    // the last 128 bits. No caching, since the key and/or nonce change for every operation.
     fn init_state(&mut self) {
         self.s0 = ASCON_IV;
         self.s1 = self.k0;
@@ -103,6 +148,7 @@ impl AsconAead128 {
     }
 
     fn p12(&mut self) {
+        // Round constants c_i for Ascon-p[12] (SP 800-232 Table 5, indices 4..=15).
         let round_consts: [u64; 12] =
             [0xF0, 0xE1, 0xD2, 0xC3, 0xB4, 0xA5, 0x96, 0x87, 0x78, 0x69, 0x5A, 0x4B];
         for &c in round_consts.iter() {
@@ -111,12 +157,15 @@ impl AsconAead128 {
     }
 
     fn p8(&mut self) {
+        // Round constants c_i for Ascon-p[8] (SP 800-232 Table 5, indices 8..=15).
         let round_consts: [u64; 8] = [0xB4, 0xA5, 0x96, 0x87, 0x78, 0x69, 0x5A, 0x4B];
         for &c in round_consts.iter() {
             self.round(c);
         }
     }
 
+    // One round p = p_L ∘ p_S ∘ p_C (SP 800-232 §3.2–3.4). The S-box (§3.3 Eq. 7) and the per-word
+    // linear diffusion Σ0..Σ4 (§3.4 Eq. 8–12) are fused here in their bitsliced form.
     #[inline(always)]
     fn round(&mut self, c: u64) {
         let sx = self.s2 ^ c;
@@ -132,7 +181,8 @@ impl AsconAead128 {
         self.s4 = t4 ^ t4.rotate_right(7) ^ t4.rotate_right(41);
     }
 
-    /// Returns a 64-bit value with a single "1" at bit position (i*8).
+    /// Returns a 64-bit value with a single "1" at bit position (i*8): the integer form of the
+    /// padding rule for a partial block (SP 800-232 Appendix A.2).
     fn pad(i: usize) -> u64 {
         debug_assert!(i < 8);
         0x01u64 << (i * 8)
@@ -149,32 +199,30 @@ impl AsconAead128 {
     }
 
     fn finish_aad(&mut self, next_state: State) {
-        match self.state {
-            State::DecAad | State::EncAad => {
-                debug_assert!(self.buf_pos < RATE);
+        if matches!(self.state, State::DecAad | State::EncAad) {
+            debug_assert!(self.buf_pos < RATE);
 
-                self.buf[self.buf_pos] = 0x01;
+            self.buf[self.buf_pos] = 0x01;
 
-                let block0 = u64::from_le_bytes(*array_ref![self.buf, 0, 8]);
-                if self.buf_pos >= 8 {
-                    self.s0 ^= block0;
+            let block0 = load_u64_le(&self.buf, 0);
+            if self.buf_pos >= 8 {
+                self.s0 ^= block0;
 
-                    let block1 = u64::from_le_bytes(*array_ref![self.buf, 8, 8]);
-                    self.s1 ^= block1 & (u64::MAX >> (56 - ((self.buf_pos - 8) * 8)));
-                } else {
-                    self.s0 ^= block0 & (u64::MAX >> (56 - (self.buf_pos * 8)));
-                }
-                self.p8();
+                let block1 = load_u64_le(&self.buf, 8);
+                self.s1 ^= block1 & (u64::MAX >> (56 - ((self.buf_pos - 8) * 8)));
+            } else {
+                self.s0 ^= block0 & (u64::MAX >> (56 - (self.buf_pos * 8)));
             }
-            _ => {}
+            self.p8();
         }
-        // Domain separation.
+        // Domain separation (SP 800-232 §4.1.1 step 2: S ← S ⊕ (0^319 || 1)).
         self.s4 ^= 0x8000000000000000;
         self.buf_pos = 0;
         self.state = next_state;
     }
 
     fn finish_data(&mut self, next_state: State) {
+        // Finalization (SP 800-232 §4.1.1 step 4 / §4.1.2 step 4).
         self.s2 ^= self.k0;
         self.s3 ^= self.k1;
         self.p12();
@@ -201,7 +249,8 @@ impl AsconAead128 {
         }
     }
 
-    /// Process associated data (AAD) bytes.
+    /// Process associated data (AAD) bytes. May be called multiple times, but only before any
+    /// plaintext/ciphertext is processed.
     pub fn process_aad_bytes(&mut self, input: &[u8]) {
         if input.is_empty() {
             return;
@@ -222,10 +271,9 @@ impl AsconAead128 {
             self.buf[self.buf_pos..RATE].copy_from_slice(&input[..available]);
             input = &input[available..];
 
-            {
-                let tmp = *array_ref![self.buf, 0, RATE];
-                self.process_buffer_aad(&tmp);
-            }
+            let mut tmp = [0u8; RATE];
+            tmp.copy_from_slice(&self.buf[..RATE]);
+            self.process_buffer_aad(&tmp);
         }
 
         while input.len() >= RATE {
@@ -240,8 +288,8 @@ impl AsconAead128 {
     fn process_buffer_aad(&mut self, block: &[u8]) {
         debug_assert!(block.len() >= RATE);
 
-        self.s0 ^= u64::from_le_bytes(*array_ref![block, 0, 8]);
-        self.s1 ^= u64::from_le_bytes(*array_ref![block, 8, 8]);
+        self.s0 ^= load_u64_le(block, 0);
+        self.s1 ^= load_u64_le(block, 8);
 
         self.p8();
     }
@@ -250,11 +298,11 @@ impl AsconAead128 {
         debug_assert!(block.len() >= RATE);
         debug_assert!(output.len() >= RATE);
 
-        self.s0 ^= u64::from_le_bytes(*array_ref![block, 0, 8]);
-        *array_mut_ref![output, 0, 8] = self.s0.to_le_bytes();
+        self.s0 ^= load_u64_le(block, 0);
+        store_u64_le(output, 0, self.s0);
 
-        self.s1 ^= u64::from_le_bytes(*array_ref![block, 8, 8]);
-        *array_mut_ref![output, 8, 8] = self.s1.to_le_bytes();
+        self.s1 ^= load_u64_le(block, 8);
+        store_u64_le(output, 8, self.s1);
 
         self.p8();
     }
@@ -263,12 +311,12 @@ impl AsconAead128 {
         debug_assert!(block.len() >= RATE);
         debug_assert!(output.len() >= RATE);
 
-        let t0 = u64::from_le_bytes(*array_ref![block, 0, 8]);
-        *array_mut_ref![output, 0, 8] = (self.s0 ^ t0).to_le_bytes();
+        let t0 = load_u64_le(block, 0);
+        store_u64_le(output, 0, self.s0 ^ t0);
         self.s0 = t0;
 
-        let t1 = u64::from_le_bytes(*array_ref![block, 8, 8]);
-        *array_mut_ref![output, 8, 8] = (self.s1 ^ t1).to_le_bytes();
+        let t1 = load_u64_le(block, 8);
+        store_u64_le(output, 8, self.s1 ^ t1);
         self.s1 = t1;
 
         self.p8();
@@ -290,8 +338,8 @@ impl AsconAead128 {
         debug_assert!(input.len() < RATE);
 
         if input.len() >= 8 {
-            self.s0 ^= u64::from_le_bytes(*array_ref![input, 0, 8]);
-            *array_mut_ref![output, 0, 8] = self.s0.to_le_bytes();
+            self.s0 ^= load_u64_le(input, 0);
+            store_u64_le(output, 0, self.s0);
 
             let input = &input[8..];
             if !input.is_empty() {
@@ -326,8 +374,8 @@ impl AsconAead128 {
         debug_assert!(input.len() < RATE);
 
         if input.len() >= 8 {
-            let t0 = u64::from_le_bytes(*array_ref![input, 0, 8]);
-            *array_mut_ref![output, 0, 8] = (self.s0 ^ t0).to_le_bytes();
+            let t0 = load_u64_le(input, 0);
+            store_u64_le(output, 0, self.s0 ^ t0);
             self.s0 = t0;
 
             let input = &input[8..];
@@ -347,7 +395,7 @@ impl AsconAead128 {
     }
 
     /// Process plaintext bytes (encryption update).
-    /// Returns the number of output bytes produced.
+    /// Returns the number of output (ciphertext) bytes produced.
     pub fn encrypt_update(&mut self, plaintext: &[u8], output: &mut [u8]) -> usize {
         if self.finished {
             panic!("Ascon-AEAD128 cannot be reused after finish");
@@ -372,10 +420,9 @@ impl AsconAead128 {
             self.buf[self.buf_pos..RATE].copy_from_slice(&plaintext[..available]);
             in_off += available;
             len -= available;
-            {
-                let tmp = *array_ref![self.buf, 0, RATE];
-                self.process_buffer_encrypt(&tmp, &mut output[out_off..out_off + RATE]);
-            }
+            let mut tmp = [0u8; RATE];
+            tmp.copy_from_slice(&self.buf[..RATE]);
+            self.process_buffer_encrypt(&tmp, &mut output[out_off..out_off + RATE]);
             out_off += RATE;
             self.buf_pos = 0;
         }
@@ -395,8 +442,8 @@ impl AsconAead128 {
         out_off
     }
 
-    /// Finalize encryption and output the last (possibly partial) block followed by the MAC.
-    /// Returns the number of bytes written.
+    /// Finalize encryption and output the last (possibly partial) ciphertext block followed by the
+    /// 128-bit tag. Returns the number of bytes written.
     pub fn encrypt_finalize(&mut self, output: &mut [u8]) -> usize {
         if self.finished {
             panic!("Ascon-AEAD128 cannot be reused after finish");
@@ -408,16 +455,14 @@ impl AsconAead128 {
             self.check_data();
         }
         let in_len = self.buf_pos;
-        {
-            let tmp = *array_ref![self.buf, 0, RATE];
-            self.process_final_encrypt(&tmp[..in_len], output);
-        }
-        let tag = {
-            let mut t = [0u8; CRYPTO_ABYTES];
-            *array_mut_ref![t, 0, 8] = self.s3.to_le_bytes();
-            *array_mut_ref![t, 8, 8] = self.s4.to_le_bytes();
-            t
-        };
+        let mut tmp = [0u8; RATE];
+        tmp.copy_from_slice(&self.buf[..RATE]);
+        self.process_final_encrypt(&tmp[..in_len], output);
+
+        let mut tag = [0u8; CRYPTO_ABYTES];
+        store_u64_le(&mut tag, 0, self.s3);
+        store_u64_le(&mut tag, 8, self.s4);
+
         output[in_len..in_len + CRYPTO_ABYTES].copy_from_slice(&tag);
         self.mac = Some(tag);
         self.finished = true;
@@ -448,10 +493,9 @@ impl AsconAead128 {
 
         debug_assert!(RATE >= CRYPTO_ABYTES);
         if self.buf_pos >= RATE {
-            {
-                let tmp = *array_ref![self.buf, 0, RATE];
-                self.process_buffer_decrypt(&tmp, &mut output[..RATE]);
-            }
+            let mut tmp = [0u8; RATE];
+            tmp.copy_from_slice(&self.buf[..RATE]);
+            self.process_buffer_decrypt(&tmp, &mut output[..RATE]);
             out_off += RATE;
 
             self.buf_pos -= RATE;
@@ -470,10 +514,9 @@ impl AsconAead128 {
         self.buf[self.buf_pos..RATE].copy_from_slice(&ciphertext[..fill]);
         let mut in_off = fill;
         len -= fill;
-        {
-            let tmp = *array_ref![self.buf, 0, RATE];
-            self.process_buffer_decrypt(&tmp, &mut output[out_off..out_off + RATE]);
-        }
+        let mut tmp = [0u8; RATE];
+        tmp.copy_from_slice(&self.buf[..RATE]);
+        self.process_buffer_decrypt(&tmp, &mut output[out_off..out_off + RATE]);
         out_off += RATE;
 
         while len >= BUF_SIZE_DECRYPT {
@@ -491,37 +534,35 @@ impl AsconAead128 {
         out_off
     }
 
-    /// Finalize decryption, checking the MAC.
-    /// Returns the number of plaintext bytes produced or an error if authentication fails.
-    pub fn decrypt_finalize(&mut self, output: &mut [u8]) -> Result<usize, &'static str> {
+    /// Finalize decryption, verifying the tag.
+    /// Returns the number of plaintext bytes produced, or [`AeadError::AuthenticationFailed`] if the
+    /// tag does not verify.
+    pub fn decrypt_finalize(&mut self, output: &mut [u8]) -> Result<usize, AeadError> {
         if self.finished {
-            return Err("Already finalized");
+            return Err(AeadError::InvalidState("Ascon-AEAD128 already finalized"));
         }
         if self.for_encryption {
-            return Err("Not initialized for decryption");
+            return Err(AeadError::InvalidState("Not initialized for decryption"));
         }
         if self.buf_pos < CRYPTO_ABYTES {
-            return Err("Data too short");
+            return Err(AeadError::InvalidLength("Ascon-AEAD128 ciphertext shorter than tag"));
         }
 
         let data_len = self.buf_pos - CRYPTO_ABYTES;
-        {
-            let tmp = *array_ref![self.buf, 0, RATE];
-            self.process_final_decrypt(&tmp[..data_len], output);
-        }
+        let mut tmp = [0u8; RATE];
+        tmp.copy_from_slice(&self.buf[..RATE]);
+        self.process_final_decrypt(&tmp[..data_len], output);
 
-        self.s3 ^= u64::from_le_bytes(*array_ref![self.buf, data_len, 8]);
-        self.s4 ^= u64::from_le_bytes(*array_ref![self.buf, data_len + 8, 8]);
+        // Recompute the tag in the state and compare against the supplied tag. XORing the supplied
+        // tag into the final state words yields zero iff they match; folding both words and testing
+        // against zero is branch-free (constant time w.r.t. the tag value).
+        self.s3 ^= load_u64_le(&self.buf, data_len);
+        self.s4 ^= load_u64_le(&self.buf, data_len + 8);
         if (self.s3 | self.s4) != 0 {
-            return Err("MAC check failed");
+            return Err(AeadError::AuthenticationFailed);
         }
         self.finished = true;
         Ok(data_len)
-    }
-
-    /// Returns the computed MAC (after encryption finalize) if available.
-    pub fn get_tag(&self) -> Option<[u8; CRYPTO_ABYTES]> {
-        self.mac
     }
 }
 
@@ -555,28 +596,22 @@ impl AeadCipher for AsconAead128 {
         }
     }
 
-    fn do_final(mut self, out_bytes: &mut [u8]) {
+    fn do_final(mut self, out_bytes: &mut [u8]) -> Result<usize, AeadError> {
         if self.for_encryption {
-            self.encrypt_finalize(out_bytes);
+            Ok(self.encrypt_finalize(out_bytes))
         } else {
             self.decrypt_finalize(out_bytes)
-                .expect("Ascon-AEAD128: authentication tag verification failed");
         }
     }
 
-    fn get_mac(&self) -> Vec<u8> {
-        match &self.mac {
-            Some(tag) => tag.to_vec(),
-            None => Vec::new(),
-        }
+    fn get_mac(&self) -> [u8; CRYPTO_ABYTES] {
+        self.mac.unwrap_or([0u8; CRYPTO_ABYTES])
     }
 
     fn get_update_output_size(&self, len: usize) -> usize {
         match self.state {
-            State::Uninitialized | State::EncFinal | State::DecFinal => 0,
-            State::EncInit | State::EncAad | State::EncData => {
-                ((self.buf_pos + len) / RATE) * RATE
-            }
+            State::EncFinal | State::DecFinal => 0,
+            State::EncInit | State::EncAad | State::EncData => ((self.buf_pos + len) / RATE) * RATE,
             State::DecInit | State::DecAad | State::DecData => {
                 let total = self.buf_pos + len;
                 if total >= BUF_SIZE_DECRYPT {
@@ -590,13 +625,42 @@ impl AeadCipher for AsconAead128 {
 
     fn get_output_size(&self, len: usize) -> usize {
         match self.state {
-            State::Uninitialized | State::EncFinal | State::DecFinal => 0,
-            State::EncInit | State::EncAad | State::EncData => {
-                self.buf_pos + len + CRYPTO_ABYTES
-            }
+            State::EncFinal | State::DecFinal => 0,
+            State::EncInit | State::EncAad | State::EncData => self.buf_pos + len + CRYPTO_ABYTES,
             State::DecInit | State::DecAad | State::DecData => {
                 (self.buf_pos + len).saturating_sub(CRYPTO_ABYTES)
             }
         }
     }
 }
+
+impl Debug for AsconAead128 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "AsconAead128 (key/state masked)")
+    }
+}
+
+impl Display for AsconAead128 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "AsconAead128 (key/state masked)")
+    }
+}
+
+// Zeroize the key, nonce, working state, and buffer before returning the memory to the OS.
+impl Drop for AsconAead128 {
+    fn drop(&mut self) {
+        self.k0 = 0;
+        self.k1 = 0;
+        self.n0 = 0;
+        self.n1 = 0;
+        self.s0 = 0;
+        self.s1 = 0;
+        self.s2 = 0;
+        self.s3 = 0;
+        self.s4 = 0;
+        self.buf.fill(0);
+        self.mac = None;
+    }
+}
+
+impl Secret for AsconAead128 {}

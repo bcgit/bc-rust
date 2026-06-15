@@ -1,16 +1,17 @@
 [package]
 name = "bouncycastle-ascon"
-version = "0.0.0"
+version = "0.1.2"
 edition.workspace = true
 
 [dependencies]
-arrayref = "0.3"
 bouncycastle-core.workspace = true
-bouncycastle-rng.workspace = true
-bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
+
+[[bench]]
+name = "ascon_benches"
+harness = false
