@@ -1,14 +1,19 @@
-// crates/ascon/src/ascon_hash256.rs
+//! Ascon-Hash256 cryptographic hash (NIST SP 800-232 §5.1), producing a 256-bit digest.
+//!
+//! Sponge mode over `Ascon-p[12]` with rate = 64 bits, capacity = 256 bits.
 
-//! Ascon-Hash256 implementation.
-
-use arrayref::{array_ref};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength};
 
+use crate::util::load_u64_le;
+
+const RATE: usize = 8;
+const DIGEST_BYTES: usize = 32;
+
+/// Ascon-Hash256 hash function (NIST SP 800-232 §5.1), producing a 256-bit digest.
 #[derive(Clone)]
 pub struct AsconHash256 {
-    buf: [u8; 8],
+    buf: [u8; RATE],
     buf_pos: usize,
     s0: u64,
     s1: u64,
@@ -20,35 +25,50 @@ pub struct AsconHash256 {
 impl AsconHash256 {
     /// Creates a new AsconHash256 instance.
     pub fn new() -> Self {
-        let mut hasher = Self { buf: [0u8; 8], buf_pos: 0, s0: 0, s1: 0, s2: 0, s3: 0, s4: 0 };
-        hasher.reset();
-        hasher
+        // Precomputed state after the initialization permutation (SP 800-232 Table 12).
+        Self {
+            buf: [0u8; RATE],
+            buf_pos: 0,
+            s0: 0x9B1E_5494_E934_D681,
+            s1: 0x4BC3_A01E_3337_51D2,
+            s2: 0xAE65_396C_6B34_B81A,
+            s3: 0x3C7F_D4A4_D56A_4DB3,
+            s4: 0x1A5C_4649_06C5_976D,
+        }
     }
 
-    /// Returns the digest size in bytes.
+    /// Returns the digest size in bytes (32).
     pub fn digest_size() -> usize {
-        32
+        DIGEST_BYTES
+    }
+
+    /// One-shot hash of `data`, returning the 32-byte digest.
+    pub fn digest(data: &[u8]) -> [u8; DIGEST_BYTES] {
+        let mut hasher = Self::new();
+        hasher.update_bytes(data);
+        let mut out = [0u8; DIGEST_BYTES];
+        hasher.squeeze_into(&mut out);
+        out
     }
 
     /// Updates the hasher with a single byte.
     pub fn update(&mut self, input: u8) {
         self.buf[self.buf_pos] = input;
         self.buf_pos += 1;
-        if self.buf_pos == 8 {
+        if self.buf_pos == RATE {
             self.s0 ^= u64::from_le_bytes(self.buf);
             self.p12();
             self.buf_pos = 0;
         }
     }
 
-    /// Updates the hasher with the given input data.
+    /// Updates the hasher with the given input data (streaming absorb).
     pub fn update_bytes(&mut self, input: &[u8]) {
         if input.is_empty() {
             return;
         }
 
         let mut in_pos = 0;
-        const RATE: usize = 8;
 
         if self.buf_pos > 0 {
             let available = RATE - self.buf_pos;
@@ -66,7 +86,7 @@ impl AsconHash256 {
         }
 
         while input.len() - in_pos >= RATE {
-            self.s0 ^= u64::from_le_bytes(*array_ref![input, in_pos, 8]);
+            self.s0 ^= load_u64_le(input, in_pos);
             self.p12();
             in_pos += RATE;
         }
@@ -76,32 +96,20 @@ impl AsconHash256 {
         self.buf_pos = remaining;
     }
 
-    /// Finalizes the hasher and writes the output digest.
-    pub fn finalize(&mut self, output: &mut [u8]) {
-        assert!(output.len() >= Self::digest_size(), "output buffer too short");
+    /// Finalizes the hasher, consuming it and writing the 32-byte digest into `output`.
+    pub fn do_final_into(mut self, output: &mut [u8; DIGEST_BYTES]) {
+        self.squeeze_into(output);
+    }
 
+    // Pad, absorb the final block, and squeeze the four 64-bit digest blocks (SP 800-232 Alg. 5).
+    fn squeeze_into(&mut self, output: &mut [u8; DIGEST_BYTES]) {
         self.pad_and_absorb();
 
         output[0..8].copy_from_slice(&self.s0.to_le_bytes());
-
         for i in 1..4 {
             self.p12();
             output[i * 8..(i + 1) * 8].copy_from_slice(&self.s0.to_le_bytes());
         }
-
-        self.reset();
-    }
-
-    /// Resets the hasher to its initial state.
-    pub fn reset(&mut self) {
-        self.s0 = 0x9B1E_5494_E934_D681;
-        self.s1 = 0x4BC3_A01E_3337_51D2;
-        self.s2 = 0xAE65_396C_6B34_B81A;
-        self.s3 = 0x3C7F_D4A4_D56A_4DB3;
-        self.s4 = 0x1A5C_4649_06C5_976D;
-
-        self.buf = [0u8; 8];
-        self.buf_pos = 0;
     }
 
     fn pad_and_absorb(&mut self) {
@@ -130,6 +138,8 @@ impl AsconHash256 {
         self.round(0x4B);
     }
 
+    // One round p = p_L ∘ p_S ∘ p_C (SP 800-232 §3.2–3.4).
+    #[inline(always)]
     fn round(&mut self, c: u64) {
         let sx = self.s2 ^ c;
         let t0 = self.s0 ^ self.s1 ^ sx ^ self.s3 ^ (self.s1 & (self.s0 ^ sx ^ self.s4));
@@ -152,6 +162,18 @@ impl Default for AsconHash256 {
     }
 }
 
+// Zeroize the working state and buffer before returning the memory to the OS.
+impl Drop for AsconHash256 {
+    fn drop(&mut self) {
+        self.buf.fill(0);
+        self.s0 = 0;
+        self.s1 = 0;
+        self.s2 = 0;
+        self.s3 = 0;
+        self.s4 = 0;
+    }
+}
+
 impl Algorithm for AsconHash256 {
     const ALG_NAME: &'static str = "Ascon-Hash256";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
@@ -159,24 +181,27 @@ impl Algorithm for AsconHash256 {
 
 impl Hash for AsconHash256 {
     fn block_bitlen(&self) -> usize {
-        64
+        RATE * 8
     }
 
     fn output_len(&self) -> usize {
-        32
+        DIGEST_BYTES
     }
 
     fn hash(mut self, data: &[u8]) -> Vec<u8> {
         self.update_bytes(data);
-        let mut out = vec![0u8; 32];
-        self.finalize(&mut out);
-        out
+        let mut out = [0u8; DIGEST_BYTES];
+        self.squeeze_into(&mut out);
+        out.to_vec()
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.update_bytes(data);
-        self.finalize(output);
-        32
+        output[..DIGEST_BYTES].fill(0);
+        let mut out = [0u8; DIGEST_BYTES];
+        self.squeeze_into(&mut out);
+        output[..DIGEST_BYTES].copy_from_slice(&out);
+        DIGEST_BYTES
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -184,14 +209,17 @@ impl Hash for AsconHash256 {
     }
 
     fn do_final(mut self) -> Vec<u8> {
-        let mut out = vec![0u8; 32];
-        self.finalize(&mut out);
-        out
+        let mut out = [0u8; DIGEST_BYTES];
+        self.squeeze_into(&mut out);
+        out.to_vec()
     }
 
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
-        self.finalize(output);
-        32
+        output[..DIGEST_BYTES].fill(0);
+        let mut out = [0u8; DIGEST_BYTES];
+        self.squeeze_into(&mut out);
+        output[..DIGEST_BYTES].copy_from_slice(&out);
+        DIGEST_BYTES
     }
 
     fn do_final_partial_bits(

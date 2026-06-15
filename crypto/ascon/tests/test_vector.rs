@@ -1,7 +1,8 @@
-use ascon::ascon_aead128::AsconAead128;
-use ascon::ascon_cxof128::AsconCXof128;
-use ascon::ascon_hash256::AsconHash256;
-use ascon::ascon_xof128::AsconXof128;
+use bouncycastle_ascon::ascon_aead128::AsconAead128;
+use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
+use bouncycastle_ascon::ascon_hash256::AsconHash256;
+use bouncycastle_ascon::ascon_xof128::AsconXof128;
+use bouncycastle_core_test_framework::aead::TestFrameworkAead;
 use bouncycastle_hex as hex;
 
 use std::collections::BTreeMap;
@@ -129,7 +130,7 @@ fn test_hardcoded_ascon_hash256_vector() -> TestResult {
     hasher.update_bytes(&msg);
 
     let mut got = [0u8; 32];
-    hasher.finalize(&mut got);
+    hasher.do_final_into(&mut got);
 
     println!(
         "[hardcoded Ascon-Hash256]\n  Msg:      {msg_hex}\n  Expected: {expected_hex}\n  Got:      {}\n  Result:   {}",
@@ -153,7 +154,7 @@ fn test_hardcoded_ascon_xof128_vector() -> TestResult {
     xof.update(&msg);
 
     let mut got = vec![0u8; expected.len()];
-    xof.output(&mut got);
+    xof.squeeze_into(&mut got);
 
     println!(
         "[hardcoded Ascon-XOF128]\n  Msg:      {msg_hex}\n  Expected: {expected_hex}\n  Got:      {}\n  Result:   {}",
@@ -196,6 +197,36 @@ fn test_hardcoded_ascon_aead128_vector() -> TestResult {
     assert_eq!(got_pt, pt, "hardcoded Ascon-AEAD128 decrypt failed");
 
     Ok(())
+}
+
+/* -------------------------------------------------------------------------- */
+/* AeadCipher trait conformance (via core-test-framework)                      */
+/* -------------------------------------------------------------------------- */
+
+#[test]
+fn test_aead128_trait_framework() {
+    let key: [u8; 16] = *b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f";
+    let nonce: [u8; 16] = *b"\x0f\x0e\x0d\x0c\x0b\x0a\x09\x08\x07\x06\x05\x04\x03\x02\x01\x00";
+    let ad = b"framework-associated-data";
+
+    let fw = TestFrameworkAead::new();
+
+    // Cover empty, sub-block, exact-block, and multi-block plaintexts, with and without AD.
+    for pt_len in [0usize, 1, 15, 16, 17, 31, 32, 33, 64, 100] {
+        let pt: Vec<u8> = (0..pt_len).map(|i| i as u8).collect();
+
+        fw.test_aead(
+            || AsconAead128::new(&key, &nonce, Some(ad), true),
+            || AsconAead128::new(&key, &nonce, Some(ad), false),
+            &pt,
+        );
+
+        fw.test_aead(
+            || AsconAead128::new(&key, &nonce, None, true),
+            || AsconAead128::new(&key, &nonce, None, false),
+            &pt,
+        );
+    }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -302,7 +333,7 @@ fn test_hash256_file(path: &Path) -> TestResult<usize> {
         hasher.update_bytes(&msg);
 
         let mut got = [0u8; 32];
-        hasher.finalize(&mut got);
+        hasher.do_final_into(&mut got);
 
         let pass = got.as_slice() == expected.as_slice();
 
@@ -353,7 +384,7 @@ fn test_xof128_file(path: &Path) -> TestResult<usize> {
         xof.update(&msg);
 
         let mut got = vec![0u8; expected.len()];
-        xof.output(&mut got);
+        xof.squeeze_into(&mut got);
 
         let pass = got == expected;
 
@@ -406,7 +437,7 @@ fn test_cxof128_file(path: &Path) -> TestResult<usize> {
         cxof.update(&msg);
 
         let mut got = vec![0u8; expected.len()];
-        cxof.output(&mut got);
+        cxof.squeeze_into(&mut got);
 
         let pass = got == expected;
 
@@ -512,6 +543,8 @@ fn test_aead128_file(path: &Path) -> TestResult<usize> {
 /* -------------------------------------------------------------------------- */
 
 fn aead_encrypt(key: &[u8], nonce: &[u8], ad: &[u8], pt: &[u8]) -> Vec<u8> {
+    let key: &[u8; 16] = key.try_into().expect("AEAD key must be 16 bytes");
+    let nonce: &[u8; 16] = nonce.try_into().expect("AEAD nonce must be 16 bytes");
     let mut enc = AsconAead128::new(
         key,
         nonce,
@@ -533,6 +566,8 @@ fn aead_decrypt(key: &[u8], nonce: &[u8], ad: &[u8], ct: &[u8]) -> TestResult<Ve
         ct.len()
     );
 
+    let key: &[u8; 16] = key.try_into().expect("AEAD key must be 16 bytes");
+    let nonce: &[u8; 16] = nonce.try_into().expect("AEAD nonce must be 16 bytes");
     let mut dec = AsconAead128::new(
         key,
         nonce,
@@ -546,7 +581,7 @@ fn aead_decrypt(key: &[u8], nonce: &[u8], ad: &[u8], ct: &[u8]) -> TestResult<Ve
     let update_len = dec.decrypt_update(ct, &mut out);
     let final_len = dec
         .decrypt_finalize(&mut out[update_len..])
-        .map_err(|e| format!("AEAD decrypt authentication/finalize failed: {e}"))?;
+        .map_err(|e| format!("AEAD decrypt authentication/finalize failed: {e:?}"))?;
 
     out.truncate(update_len + final_len);
     Ok(out)
