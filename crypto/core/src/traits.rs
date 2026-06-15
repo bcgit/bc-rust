@@ -1,6 +1,10 @@
 //! Provides simplified abstracted APIs over classes of cryptographic primitives, such as Hash, KDF, etc.
 
+<<<<<<< HEAD
 use crate::errors::*;
+=======
+use crate::errors::{AeadError, HashError, KDFError, KEMError, MACError, RNGError, SignatureError};
+>>>>>>> 3d44362 (Added ascon_cmd.rs)
 use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
@@ -22,6 +26,7 @@ pub trait Algorithm {
     const MAX_SECURITY_STRENGTH: SecurityStrength;
 }
 
+<<<<<<< HEAD
 /// Some algorithms have an assigned OID.
 pub trait AlgorithmOID {
     /// The OID in component form -- each u32 is one OID component.
@@ -272,6 +277,75 @@ pub trait StreamCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
 /// * Preimage resistance: from a given output, finding an input that generates it is computationally difficult.
 /// * Second preimage resistance: given an input, finding another input that yields the same output is computationally difficult.
 pub trait Hash: Algorithm + Default {
+=======
+/// An Authenticated Encryption with Associated Data (AEAD) cipher.
+///
+/// An AEAD cipher simultaneously provides confidentiality for plaintext and integrity/authenticity
+/// for both the plaintext and some additional "associated data" (AAD) that is authenticated but not
+/// encrypted. Encryption produces a ciphertext (of equal length to the plaintext) plus an
+/// authentication tag; decryption recovers the plaintext only if the tag verifies.
+///
+/// # Lifecycle
+/// An implementation is constructed for a single operation (either encryption or decryption) and a
+/// single (key, nonce) pair. The expected call order is:
+/// 1. Zero or more calls to [`AeadCipher::process_aad_byte`] / [`AeadCipher::process_aad_bytes`] to
+///    absorb associated data. All AAD must be supplied before any plaintext/ciphertext.
+/// 2. Zero or more calls to [`AeadCipher::process_byte`] / [`AeadCipher::process_bytes`] to encrypt
+///    plaintext or decrypt ciphertext, writing output to the provided buffer.
+/// 3. Exactly one call to [`AeadCipher::do_final`], which consumes the cipher, flushes any buffered
+///    final block, and (for encryption) appends the tag or (for decryption) verifies it.
+///
+/// Because these primitives buffer internally to assemble full blocks, a given `process_*` call may
+/// write fewer (or more) bytes than it was handed. Use [`AeadCipher::get_update_output_size`] and
+/// [`AeadCipher::get_output_size`] to size output buffers conservatively.
+///
+/// # Nonce uniqueness
+/// As with all nonce-based AEAD schemes, a (key, nonce) pair must never be reused for two different
+/// encryptions. Reuse breaks confidentiality. See the implementation's documentation for details.
+pub trait AeadCipher {
+    /// Absorb a single byte of associated data. Must be called before any plaintext/ciphertext.
+    fn process_aad_byte(&mut self, input: u8);
+
+    /// Absorb a slice of associated data. May be called multiple times, but must be called before
+    /// any plaintext/ciphertext is processed.
+    fn process_aad_bytes(&mut self, in_bytes: &[u8]);
+
+    /// Process a single byte of plaintext (encryption) or ciphertext (decryption), writing any
+    /// output that becomes available into `out_bytes`. Returns the number of bytes written.
+    fn process_byte(&mut self, input: u8, out_bytes: &mut [u8]) -> usize;
+
+    /// Process a slice of plaintext (encryption) or ciphertext (decryption), writing any output that
+    /// becomes available into `out_bytes`. Returns the number of bytes written. `out_bytes` must be
+    /// at least [`AeadCipher::get_update_output_size`] bytes long.
+    fn process_bytes(&mut self, in_bytes: &[u8], out_bytes: &mut [u8]) -> usize;
+
+    /// Finalize the operation, consuming the cipher.
+    ///
+    /// For encryption: flushes the final (possibly partial) ciphertext block followed by the
+    /// authentication tag into `out_bytes`.
+    ///
+    /// For decryption: flushes the final plaintext block and verifies the tag.
+    ///
+    /// Returns the number of bytes written to `out_bytes`, or
+    /// [`AeadError::AuthenticationFailed`] if (during decryption) the tag does not verify — in which
+    /// case any bytes already written must be treated as invalid and discarded by the caller.
+    fn do_final(self, out_bytes: &mut [u8]) -> Result<usize, AeadError>;
+
+    /// The 128-bit authentication tag. Returns all-zero bytes if finalization has not yet produced a
+    /// tag (e.g. before [`AeadCipher::do_final`] on the encryption path).
+    fn get_mac(&self) -> [u8; 16];
+
+    /// The maximum number of output bytes a `process_*` call could write given `len` input bytes,
+    /// accounting for currently-buffered data. Does not include the tag.
+    fn get_update_output_size(&self, len: usize) -> usize;
+
+    /// The maximum number of output bytes that processing `len` more input bytes and then finalizing
+    /// could produce, accounting for currently-buffered data and (for encryption) the tag.
+    fn get_output_size(&self, len: usize) -> usize;
+}
+
+pub trait Hash: Default {
+>>>>>>> 3d44362 (Added ascon_cmd.rs)
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
 

@@ -5,6 +5,20 @@
 
 ///
 #[derive(Debug)]
+pub enum AeadError {
+    /// The authentication tag did not verify during decryption finalization.
+    /// The decrypted plaintext (if any) must not be released to the caller.
+    AuthenticationFailed,
+    /// An input or output buffer had an invalid or insufficient length.
+    InvalidLength(&'static str),
+    /// The cipher was used out of order (e.g. reused after finalization, or
+    /// associated data was supplied after plaintext/ciphertext processing began).
+    InvalidState(&'static str),
+    GenericError(&'static str),
+    KeyMaterialError(KeyMaterialError),
+}
+
+#[derive(Debug)]
 pub enum HashError {
     ///
     GenericError(&'static str),
@@ -169,18 +183,26 @@ pub enum SymmetricCipherError {
 }
 
 /*** Promotion functions ***/
+<<<<<<< HEAD
 impl From<KeyMaterialError> for SymmetricCipherError {
     fn from(e: KeyMaterialError) -> SymmetricCipherError {
+=======
+impl From<KeyMaterialError> for AeadError {
+    fn from(e: KeyMaterialError) -> AeadError {
+>>>>>>> 3d44362 (Added ascon_cmd.rs)
         Self::KeyMaterialError(e)
     }
 }
 
+<<<<<<< HEAD
 impl From<RNGError> for SymmetricCipherError {
     fn from(e: RNGError) -> SymmetricCipherError {
         Self::RNGError(e)
     }
 }
 
+=======
+>>>>>>> 3d44362 (Added ascon_cmd.rs)
 impl From<KeyMaterialError> for HashError {
     fn from(e: KeyMaterialError) -> HashError {
         Self::KeyMaterialError(e)
