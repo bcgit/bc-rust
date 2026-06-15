@@ -1,4 +1,18 @@
 #[derive(Debug)]
+pub enum AeadError {
+    /// The authentication tag did not verify during decryption finalization.
+    /// The decrypted plaintext (if any) must not be released to the caller.
+    AuthenticationFailed,
+    /// An input or output buffer had an invalid or insufficient length.
+    InvalidLength(&'static str),
+    /// The cipher was used out of order (e.g. reused after finalization, or
+    /// associated data was supplied after plaintext/ciphertext processing began).
+    InvalidState(&'static str),
+    GenericError(&'static str),
+    KeyMaterialError(KeyMaterialError),
+}
+
+#[derive(Debug)]
 pub enum HashError {
     GenericError(&'static str),
     InvalidLength(&'static str),
@@ -81,6 +95,12 @@ pub enum SignatureError {
 }
 
 /*** Promotion functions ***/
+impl From<KeyMaterialError> for AeadError {
+    fn from(e: KeyMaterialError) -> AeadError {
+        Self::KeyMaterialError(e)
+    }
+}
+
 impl From<KeyMaterialError> for HashError {
     fn from(e: KeyMaterialError) -> HashError {
         Self::KeyMaterialError(e)

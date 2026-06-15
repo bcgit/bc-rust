@@ -35,6 +35,8 @@
 //! ```
 
 use crate::{AlgorithmFactory, FactoryError};
+use bouncycastle_ascon::ASCON_XOF128_NAME;
+use bouncycastle_ascon::ascon_xof128::AsconXof128;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
 use bouncycastle_sha3 as sha3;
@@ -49,6 +51,7 @@ pub const DEFAULT_256BIT_XOF_NAME: &str = SHAKE256_NAME;
 pub enum XOFFactory {
     SHAKE128(sha3::SHAKE128),
     SHAKE256(sha3::SHAKE256),
+    AsconXof128(AsconXof128),
 }
 
 impl Default for XOFFactory {
@@ -70,6 +73,7 @@ impl AlgorithmFactory for XOFFactory {
         match alg_name {
             SHAKE128_NAME => Ok(Self::SHAKE128(sha3::SHAKE128::new())),
             SHAKE256_NAME => Ok(Self::SHAKE256(sha3::SHAKE256::new())),
+            ASCON_XOF128_NAME => Ok(Self::AsconXof128(AsconXof128::new())),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known XOF",
                 alg_name
@@ -82,6 +86,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.hash_xof(data, result_len),
             Self::SHAKE256(h) => h.hash_xof(data, result_len),
+            Self::AsconXof128(h) => h.hash_xof(data, result_len),
         }
     }
 
@@ -91,6 +96,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.hash_xof_out(data, output),
             Self::SHAKE256(h) => h.hash_xof_out(data, output),
+            Self::AsconXof128(h) => h.hash_xof_out(data, output),
         }
     }
 
@@ -98,6 +104,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.absorb(data),
             Self::SHAKE256(h) => h.absorb(data),
+            Self::AsconXof128(h) => h.absorb(data),
         }
     }
 
@@ -109,6 +116,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.absorb_last_partial_byte(partial_byte, num_partial_bits),
             Self::SHAKE256(h) => h.absorb_last_partial_byte(partial_byte, num_partial_bits),
+            Self::AsconXof128(h) => h.absorb_last_partial_byte(partial_byte, num_partial_bits),
         }
     }
 
@@ -116,6 +124,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.squeeze(num_bytes),
             Self::SHAKE256(h) => h.squeeze(num_bytes),
+            Self::AsconXof128(h) => h.squeeze(num_bytes),
         }
     }
 
@@ -125,6 +134,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.squeeze_out(output),
             Self::SHAKE256(h) => h.squeeze_out(output),
+            Self::AsconXof128(h) => h.squeeze_out(output),
         }
     }
 
@@ -132,6 +142,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.squeeze_partial_byte_final(num_bits),
             Self::SHAKE256(h) => h.squeeze_partial_byte_final(num_bits),
+            Self::AsconXof128(h) => h.squeeze_partial_byte_final(num_bits),
         }
     }
 
@@ -145,6 +156,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.squeeze_partial_byte_final_out(num_bits, output),
             Self::SHAKE256(h) => h.squeeze_partial_byte_final_out(num_bits, output),
+            Self::AsconXof128(h) => h.squeeze_partial_byte_final_out(num_bits, output),
         }
     }
 
@@ -152,6 +164,7 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => KDF::max_security_strength(h),
             Self::SHAKE256(h) => XOF::max_security_strength(h),
+            Self::AsconXof128(h) => XOF::max_security_strength(h),
         }
     }
 }
