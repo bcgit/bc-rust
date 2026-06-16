@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo install *)",
+      "Bash(cargo mutants *)",
+      "Bash(cat custom_mutants_output/mutants.out/timeout.txt)",
+      "Bash(python -c \"print\\(f'{801/\\(801+48\\)*100:.1f}% of viable mutants caught \\(801/{801+48}\\)'\\)\")"
+    ]
+  }
+}
