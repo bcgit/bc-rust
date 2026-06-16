@@ -95,10 +95,10 @@ impl AsconAead128 {
             finished: false,
         };
         aead.init_state();
-        if let Some(ad_bytes) = ad {
-            if !ad_bytes.is_empty() {
-                aead.process_aad_bytes(ad_bytes);
-            }
+        if let Some(ad_bytes) = ad
+            && !ad_bytes.is_empty()
+        {
+            aead.process_aad_bytes(ad_bytes);
         }
         aead
     }
