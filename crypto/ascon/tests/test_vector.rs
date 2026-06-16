@@ -31,9 +31,7 @@ impl TestStats {
 }
 
 fn test_data_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("data")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("data")
 }
 
 fn decode_hex(label: &str, value: &str) -> TestResult<Vec<u8>> {
@@ -42,8 +40,7 @@ fn decode_hex(label: &str, value: &str) -> TestResult<Vec<u8>> {
     if clean.is_empty() {
         Ok(Vec::new())
     } else {
-        hex::decode(clean)
-            .map_err(|e| format!("invalid hex for {label}: {clean:?}: {e:?}").into())
+        hex::decode(clean).map_err(|e| format!("invalid hex for {label}: {clean:?}: {e:?}").into())
     }
 }
 
@@ -237,11 +234,7 @@ fn test_aead128_trait_framework() {
 fn test_ascon_test_vectors_from_files() -> TestResult {
     let dir = test_data_dir();
 
-    assert!(
-        dir.is_dir(),
-        "test data directory not found: {}",
-        dir.display()
-    );
+    assert!(dir.is_dir(), "test data directory not found: {}", dir.display());
 
     let mut stats = TestStats::default();
 
@@ -274,11 +267,7 @@ fn test_ascon_test_vectors_from_files() -> TestResult {
         }
     }
 
-    assert!(
-        stats.files_seen > 0,
-        "no .txt files found in test data directory: {}",
-        dir.display()
-    );
+    assert!(stats.files_seen > 0, "no .txt files found in test data directory: {}", dir.display());
 
     assert!(
         stats.files_recognized > 0,
@@ -396,13 +385,7 @@ fn test_xof128_file(path: &Path) -> TestResult<usize> {
             if pass { "PASS" } else { "FAIL" }
         );
 
-        assert_eq!(
-            got,
-            expected,
-            "Ascon-XOF128 failed in {} Count {}",
-            path.display(),
-            count
-        );
+        assert_eq!(got, expected, "Ascon-XOF128 failed in {} Count {}", path.display(), count);
 
         executed += 1;
     }
@@ -450,13 +433,7 @@ fn test_cxof128_file(path: &Path) -> TestResult<usize> {
             if pass { "PASS" } else { "FAIL" }
         );
 
-        assert_eq!(
-            got,
-            expected,
-            "Ascon-CXOF128 failed in {} Count {}",
-            path.display(),
-            count
-        );
+        assert_eq!(got, expected, "Ascon-CXOF128 failed in {} Count {}", path.display(), count);
 
         executed += 1;
     }
@@ -545,12 +522,7 @@ fn test_aead128_file(path: &Path) -> TestResult<usize> {
 fn aead_encrypt(key: &[u8], nonce: &[u8], ad: &[u8], pt: &[u8]) -> Vec<u8> {
     let key: &[u8; 16] = key.try_into().expect("AEAD key must be 16 bytes");
     let nonce: &[u8; 16] = nonce.try_into().expect("AEAD nonce must be 16 bytes");
-    let mut enc = AsconAead128::new(
-        key,
-        nonce,
-        if ad.is_empty() { None } else { Some(ad) },
-        true,
-    );
+    let mut enc = AsconAead128::new(key, nonce, if ad.is_empty() { None } else { Some(ad) }, true);
 
     let mut out = vec![0u8; pt.len() + AEAD_TAG_BYTES];
     let update_len = enc.encrypt_update(pt, &mut out);
@@ -568,12 +540,7 @@ fn aead_decrypt(key: &[u8], nonce: &[u8], ad: &[u8], ct: &[u8]) -> TestResult<Ve
 
     let key: &[u8; 16] = key.try_into().expect("AEAD key must be 16 bytes");
     let nonce: &[u8; 16] = nonce.try_into().expect("AEAD nonce must be 16 bytes");
-    let mut dec = AsconAead128::new(
-        key,
-        nonce,
-        if ad.is_empty() { None } else { Some(ad) },
-        false,
-    );
+    let mut dec = AsconAead128::new(key, nonce, if ad.is_empty() { None } else { Some(ad) }, false);
 
     let plaintext_len = ct.len() - AEAD_TAG_BYTES;
     let mut out = vec![0u8; plaintext_len];

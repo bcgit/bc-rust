@@ -611,15 +611,7 @@ fn main() {
         Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
             ascon_cmd::cxof128_cmd(customization, *length, *x);
         }
-        Some(Subcommands::AsconAEAD128 {
-            key,
-            key_file,
-            nonce,
-            nonce_file,
-            ad,
-            decrypt,
-            x,
-        }) => {
+        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, decrypt, x }) => {
             ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, *decrypt, *x);
         }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {

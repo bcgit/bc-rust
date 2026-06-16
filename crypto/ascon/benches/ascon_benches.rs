@@ -54,12 +54,15 @@ fn bench_xof128(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ascon::AsconXof128");
     group.throughput(Throughput::Bytes((DATA_LEN + out.len()) as u64));
-    group.bench_function(format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::hash_xof_out()"), |b| {
-        b.iter(|| {
-            AsconXof128::new().hash_xof_out(black_box(&data), &mut out);
-            black_box(&out);
-        })
-    });
+    group.bench_function(
+        format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::hash_xof_out()"),
+        |b| {
+            b.iter(|| {
+                AsconXof128::new().hash_xof_out(black_box(&data), &mut out);
+                black_box(&out);
+            })
+        },
+    );
     group.finish();
 }
 
@@ -70,12 +73,16 @@ fn bench_cxof128(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ascon::AsconCXof128");
     group.throughput(Throughput::Bytes((DATA_LEN + out.len()) as u64));
-    group.bench_function(format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::hash_xof_out()"), |b| {
-        b.iter(|| {
-            AsconCXof128::with_customization(customization).hash_xof_out(black_box(&data), &mut out);
-            black_box(&out);
-        })
-    });
+    group.bench_function(
+        format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::hash_xof_out()"),
+        |b| {
+            b.iter(|| {
+                AsconCXof128::with_customization(customization)
+                    .hash_xof_out(black_box(&data), &mut out);
+                black_box(&out);
+            })
+        },
+    );
     group.finish();
 }
 

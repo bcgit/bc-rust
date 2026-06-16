@@ -6,7 +6,7 @@
 use core::fmt::{self, Debug, Display, Formatter};
 
 use bouncycastle_core::errors::AeadError;
-use bouncycastle_core::traits::{AeadCipher, Algorithm, SecurityStrength, Secret};
+use bouncycastle_core::traits::{AeadCipher, Algorithm, Secret, SecurityStrength};
 
 use crate::util::{load_u64_le, store_u64_le};
 
@@ -614,11 +614,7 @@ impl AeadCipher for AsconAead128 {
             State::EncInit | State::EncAad | State::EncData => ((self.buf_pos + len) / RATE) * RATE,
             State::DecInit | State::DecAad | State::DecData => {
                 let total = self.buf_pos + len;
-                if total >= BUF_SIZE_DECRYPT {
-                    ((total - CRYPTO_ABYTES) / RATE) * RATE
-                } else {
-                    0
-                }
+                if total >= BUF_SIZE_DECRYPT { ((total - CRYPTO_ABYTES) / RATE) * RATE } else { 0 }
             }
         }
     }
