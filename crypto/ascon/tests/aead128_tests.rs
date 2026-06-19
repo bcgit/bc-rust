@@ -70,7 +70,12 @@ fn enc_oneshot(key: &[u8; 16], nonce: &[u8; 16], ad: &[u8], pt: &[u8]) -> Vec<u8
     out
 }
 
-fn dec_oneshot(key: &[u8; 16], nonce: &[u8; 16], ad: &[u8], ct: &[u8]) -> Result<Vec<u8>, AeadError> {
+fn dec_oneshot(
+    key: &[u8; 16],
+    nonce: &[u8; 16],
+    ad: &[u8],
+    ct: &[u8],
+) -> Result<Vec<u8>, AeadError> {
     let mut out = vec![0u8; ct.len()];
     let n = AsconAead128::decrypt(key, nonce, ad_opt(ad), ct, &mut out)?;
     out.truncate(n);
