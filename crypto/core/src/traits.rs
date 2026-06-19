@@ -4,6 +4,7 @@ use crate::errors::{HashError, KDFError, KEMError, MACError, RNGError, Signature
 use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
+use zeroize::{DefaultIsZeroes, ZeroizeOnDrop};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -346,7 +347,7 @@ pub trait MAC: Sized {
     fn max_security_strength(&self) -> SecurityStrength;
 }
 
-#[derive(Eq, PartialEq, PartialOrd, Clone, Debug)]
+#[derive(Eq, PartialEq, PartialOrd, Clone, Copy, Debug)]
 pub enum SecurityStrength {
     None,
     _112bit,
@@ -387,6 +388,15 @@ impl SecurityStrength {
     }
 }
 
+impl DefaultIsZeroes for SecurityStrength {}
+
+impl Default for SecurityStrength {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+
 /// An interface for random number generation.
 /// This interface is meant to be simpler and more ergonomic than the interfaces provided by the
 /// `rng` crate, but that one should
@@ -418,10 +428,7 @@ pub trait RNG: Default {
 
 /// A trait that forces an object to implement a zeroizing Drop() as well as Debug and Display that
 /// will not log the sensitive contents, even in error or crash-dump scenarios.
-#[allow(drop_bounds)] // Since rust auto-implements Drop, there's a lint that explicitly bounding on Drop is useless.
-// I disagree because I want to force things that are secrets to manually implement Drop that zeroizes the data.
-// So I'm turning off this lint.
-pub trait Secret: Drop + Debug + Display {}
+pub trait Secret : ZeroizeOnDrop + Debug + Display {}
 
 /// Pre-Hashed Signature is an extension to [Signature] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.
