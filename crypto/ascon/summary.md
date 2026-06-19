@@ -114,41 +114,53 @@ Decisions vs. the originally-proposed signature:
 
 ---
 
-## 5. Test suite expansion
+## 5. Test suite (mirrors `crypto/mldsa/tests` — no in-crate `data/` folder)
 
-### Authoritative correctness — KAT vectors
-`crypto/ascon/tests/test_vector.rs` drives the bundled NIST KAT files in
-`tests/data/` (`LWC_*_KAT_*.txt`): **4228 cases** total
-(1025 Hash256, 1025 XOF128, 1089 CXOF128, 1089 AEAD128) — all pass. Test call
-sites were updated to the renamed methods (`do_final_into`, `squeeze_into`) and
-`&[u8; 16]` key/nonce.
+The crate no longer ships `tests/data/` (the 2.8 MB of `LWC_*.txt` was removed).
+Large vector sweeps are read at test time from the externally-cloned
+`bc-test-data` repo (graceful skip when absent); always-on correctness is held by
+a small embedded vector set in each per-primitive file. The six test files are
+each a self-contained integration-test crate:
 
-### Trait conformance framework — NEW
-`crypto/core-test-framework/src/aead.rs` adds a generic `TestFrameworkAead`
-(exported from `lib.rs`) that drives any `AeadCipher` via factory closures
-through: encrypt→decrypt round-trip, byte-at-a-time vs one-shot equivalence, and
-tamper-the-tag → `Err(AuthenticationFailed)`. Exercised from
-`test_vector.rs::test_aead128_trait_framework` over many PT sizes, with/without AD.
+### Per-primitive files (always-on, no external repo)
+`aead128_tests.rs`, `hash256_tests.rs`, `xof128_tests.rs`, `cxof128_tests.rs`
+— each embeds ~5–8 NIST LWC known-answer vectors (`const` hex arrays copied from
+bc-test-data, spanning empty / sub-block / exact-block / multi-block, plus AD or
+customization variants) and the behavior/contract tests for that primitive:
+- AEAD: embedded KAT, round-trips, streaming chunk-boundary equivalence (enc+dec),
+  chunked AAD (inherent + trait path), auth failures (wrong key/nonce/AD, flipped
+  tag/body, short→`InvalidLength`), determinism + nonce sensitivity, output-size
+  predictors (both directions), `get_mac`, masked `Debug`/`Display`, trait-method
+  AAD, and the `TestFrameworkAead` conformance run.
+- Hash256: embedded KAT, streaming/byte-at-a-time equivalence, trait wrappers,
+  metadata accessors, unsupported-partial-op `Err`.
+- XOF128 / CXOF128: embedded KAT, prefix property, chunked + byte-at-a-time absorb,
+  trait wrappers, unsupported-partial-op `Err`, absorb-after-squeeze panic guard;
+  CXOF128 also covers domain separation.
 
-### Behavior tests — NEW (`crypto/ascon/tests/behavior.rs`, 22 tests)
-Cover the contract paths KATs don't:
-- AEAD round-trips (empty PT/AD, AAD-only, sub/exact/multi-block sizes).
-- AEAD streaming chunk-boundary equivalence (enc + dec, chunk sizes 1/3/7/13/16/17).
-- AEAD auth failures: wrong key, wrong nonce, modified AD, flipped tag byte,
-  flipped ciphertext body byte; short ciphertext → `InvalidLength`.
-- Determinism + nonce sensitivity; `get_output_size`/`get_update_output_size`
-  predictors (both directions, incl. mid-stream buffered state).
-- Chunked AAD via inherent and via the `AeadCipher` trait methods; `get_mac`
-  returns the real tag; masked `Debug`/`Display`.
-- Hash256 streaming equivalence (chunked + byte-at-a-time == one-shot `digest`).
-- XOF128/CXOF128 prefix property (multi-call squeeze == single squeeze), chunked
-  absorb, byte-at-a-time `update_byte`, CXOF domain separation
-  (different/empty customization), trait-wrapper-vs-inherent equivalence.
-- Unsupported partial-bit ops return `Err`; metadata accessors
-  (`digest_size`/`output_len`/`block_bitlen`); absorb-after-squeeze panic guards
-  (`#[should_panic]`).
+40 ASCON tests total, all passing without any external repo.
 
-### Factory tests — NEW
+### `bc_test_data.rs` (full sweep)
+Mirrors mldsa's `Once` + two-path resolution
+(`../../../bc-test-data/crypto/ascon`, fallback `../bc-test-data/crypto/ascon`).
+Reads the per-variant NIST files and runs the **full 4228-case sweep**
+(`asconaead128/` 1089, `asconhash256/` 1025, `asconxof128/` 1025,
+`asconcxof128/` 1089). Prints a warning and skips when bc-test-data is absent.
+
+### `wycheproof.rs` (skeleton; skips legacy)
+Mirrors mldsa's path resolution + `serde_json` AEAD runner. wycheproof only ships
+the **pre-NIST CAESAR** Ascon vectors (`ascon128/128a/80pq`), which are a different
+algorithm from SP 800-232 `Ascon-AEAD128` and are intentionally NOT run. The test
+requests a NIST-named file (`ascon_aead128_test.json`) that does not exist today,
+so it skips with a clear message — and will run automatically if C2SP later
+publishes NIST-compatible vectors under that name.
+
+### Trait conformance framework
+`crypto/core-test-framework/src/aead.rs` provides the generic `TestFrameworkAead`
+(encrypt→decrypt round-trip, byte-at-a-time vs one-shot equivalence,
+tamper-the-tag → `Err(AuthenticationFailed)`), driven from `aead128_tests.rs`.
+
+### Factory tests
 `crypto/factory/tests/hash_factory_tests.rs` and `xof_factory_tests.rs`:
 `Ascon-Hash256`/`Ascon-XOF128` via factory match the direct impl (by literal name
 and by name constant); unknown names → `FactoryError::UnsupportedAlgorithm`.

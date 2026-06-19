@@ -4,7 +4,17 @@
       "Bash(cargo install *)",
       "Bash(cargo mutants *)",
       "Bash(cat custom_mutants_output/mutants.out/timeout.txt)",
-      "Bash(python -c \"print\\(f'{801/\\(801+48\\)*100:.1f}% of viable mutants caught \\(801/{801+48}\\)'\\)\")"
+      "Bash(python -c \"print\\(f'{801/\\(801+48\\)*100:.1f}% of viable mutants caught \\(801/{801+48}\\)'\\)\")",
+      "Read(//c/Users/fmendoza/Work/bc-test-data/crypto/ascon/**)",
+      "Bash(awk '/^Count = \\(1|2|5|33|68|69|153\\)$/{p=1} p&&/^\\(Count|Key|Nonce|PT|AD|CT\\) /{print} /^$/{p=0}' asconaead128/LWC_AEAD_KAT_128_128.txt)",
+      "Bash(awk '/^Count = \\(1|2|9|17|33\\)$/{p=1} p&&/^\\(Count|Msg|MD\\) /{print} /^$/{p=0}' asconhash256/LWC_HASH_KAT_256.txt)",
+      "Bash(awk '/^Count = \\(1|2|9|17|33\\)$/{p=1} p&&/^\\(Count|Msg|MD\\) /{print} /^$/{p=0}' asconxof128/LWC_XOF_KAT_128_512.txt)",
+      "Bash(awk '/^Count = \\(1|2|3\\)$/{p=1} p&&/^\\(Count|Msg|Z|MD\\) /{print} /^$/{p=0}' asconcxof128/LWC_CXOF_KAT_128_512.txt)",
+      "Bash(awk 'BEGIN{RS=\"\";FS=\"\\\\n\"} /Msg = [0-9A-F]/ && /Z = [0-9A-F]/ {print; c++} c>=2{exit}' asconcxof128/LWC_CXOF_KAT_128_512.txt)",
+      "Bash(awk 'BEGIN{RS=\"\";FS=\"\\\\n\"} {pt=\"\"} {for\\(i=1;i<=NF;i++\\) if\\($i ~ /^PT = /\\){pt=substr\\($i,6\\)}} length\\(pt\\)==64 {print; exit}' asconaead128/LWC_AEAD_KAT_128_128.txt)",
+      "Bash(rm -f tests/test_vector.rs tests/behavior.rs)",
+      "Bash(rm -rf tests/data)",
+      "Bash(awk '{p+=$4; f+=$6} END{print \"ascon passed:\",p,\" failed:\",f}')"
     ]
   }
 }
