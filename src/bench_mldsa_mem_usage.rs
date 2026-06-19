@@ -5,15 +5,16 @@
 //!
 //! > ms_print massif.out.835000
 //!
-//! or, shoved all into one line:
+//! alternatively, as a one line command:
 //!
 //! > clear; clear; valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_mldsa_mem_usage > /dev/null; ms_print massif.out.*; rm massif.out.*
 //!
 //! Make sure you build in release mode!
 //!
-//! Note: I'm using print!() to force the compiler not to optimize away the actual code.
-//! I'm printing the important stuff for benchmarking to stderr so that I can pipe the junk to /dev/null
-//! (I'm not doing it the other way because /usr/bin/time prints its useful stuff to stderr as well)
+//! Note: 
+//! The code is using print!() to force the compiler not to optimize away the actual code.
+//! It is printing important outputs for benchmarking to stderr so that the rest can be mapped to /dev/null
+//! (this is because /usr/bin/time prints useful outputs to stderr as well)
 //!
 //! Main is at the bottom, controls which this was actually run.
 
@@ -25,7 +26,7 @@ use bouncycastle_core_interface::traits::{Signature, SignaturePublicKey};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::MLDSA44PublicKey;
 
-/// This exists so I can use /usr/bin/time to measure the base memory footprint of the cargo bench harness
+/// This exists so that /usr/bin/time can be used to measure the base memory footprint of the cargo bench harness
 fn bench_do_nothing() {
     eprintln!("DoNothing");
 
