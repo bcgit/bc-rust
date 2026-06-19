@@ -26,7 +26,7 @@ mod test_key_material {
             _ => panic!("Expected InvalidLength"),
         }
 
-        // But you can slice it down.
+        // This can be sliced down.
         match KeyMaterial512::from_bytes(&DUMMY_KEY_TOO_LONG[..64]) {
             Ok(key) => assert_eq!(key.key_len(), 64),
             _ => panic!("Expected InvalidLength"),
@@ -47,7 +47,7 @@ mod test_key_material {
                 assert_eq!(key.key_type(), KeyType::Zeroized);
                 assert_eq!(key.key_len(), 16);
 
-                // ... but we can force it.
+                // however, it can be forced by allowing hazardous operations.
                 key.allow_hazardous_operations();
                 key.set_key_type(KeyType::BytesLowEntropy).unwrap();
                 key.drop_hazardous_operations();
@@ -59,13 +59,12 @@ mod test_key_material {
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
-        // but it'll allow it if you allow hazardous operations first.
+        // it can be enabled by allowing hazardous operations first.
         let key_bytes = [0u8; 16];
         let mut key = KeyMaterial256::new();
         key.allow_hazardous_operations();
         key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy).unwrap();
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
-
         // nothing else requires setting hazardous operations.
     }
 
@@ -89,7 +88,7 @@ mod test_key_material {
         assert_eq!(key.mut_ref_to_bytes().unwrap()[..16], [1u8; 16]);
         assert_eq!(key.mut_ref_to_bytes().unwrap()[16..], [0u8; 16]);
 
-        // and I can set them
+        // Then they can be set
         key.mut_ref_to_bytes().unwrap().copy_from_slice(&[2u8; 32]);
         key.set_key_len(32).unwrap();
         assert_eq!(key.ref_to_bytes(), &[2u8; 32]);
@@ -247,7 +246,7 @@ mod test_key_material {
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
         assert!(!key.is_full_entropy());
 
-        // Note: can't use the usual assert_eq!() here because that requires PartialEq, but we're in a no_std context here.
+        // Note: the usual assert_eq!() can't be used here because that requires PartialEq, but the current context is no_std.
         match key.key_type() {
             KeyType::BytesLowEntropy => { /* good */ }
             _ => panic!("Expected BytesLowEntropy"),
@@ -343,12 +342,13 @@ mod test_key_material {
         }
 
         let zero_key = KeyMaterial256::from_bytes(&[0u8; 19]).unwrap();
-        // it should have set the key bytes and length, but also set the key type to Zeroized.
+        // key bytes and length should be set accordingly, 
+        // as well as the key type should be set to Zeroized.
         assert_eq!(zero_key.key_type(), KeyType::Zeroized);
         assert_eq!(zero_key.key_len(), 19);
         assert_eq!(zero_key.ref_to_bytes(), &[0u8; 19]);
 
-        // But it's totally fine if you give it non-zero input data.
+        // It also admits non-zero input data.
         let not_zero_key = KeyMaterial256::from_bytes(&[1u8; 19]).unwrap();
         assert_eq!(not_zero_key.key_type(), KeyType::BytesLowEntropy);
 
@@ -364,10 +364,10 @@ mod test_key_material {
                 panic!("should have thrown a KeyMaterialError::ActingOnZeroizedKey error.")
             }
         }
-        // but it should still have set the key bytes; it's just giving you a friendly warning
+        // This should still set the key bytes; only giving a friendly warning that the key is zeroized
         assert_eq!(zero_key.key_type(), KeyType::Zeroized);
 
-        // ... but will allow it if you set .allow_hazardous_operations() first.
+        // The operation is allowed by setting .allow_hazardous_operations() first.
         let mut zero_key = KeyMaterial256::new();
         zero_key.allow_hazardous_operations();
         zero_key.set_bytes_as_type(&[0u8; 19], KeyType::MACKey).unwrap();
@@ -402,7 +402,7 @@ mod test_key_material {
             _ => panic!("Expected HazardousConversion"),
         }
 
-        /* Should work if you allow hazardous conversions. */
+        /* Should work when hazardous conversions are allowed. */
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
@@ -445,7 +445,8 @@ mod test_key_material {
         assert_eq!(key1.key_type(), KeyType::MACKey);
         assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
 
-        // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
+        // success case: same size using default From impl; 
+        // only works if the sizes are the same (i.e. the compiler knows that they are the same type).
         let key2 = KeyMaterial256::from(key1.clone());
         assert_eq!(key1.key_len(), key2.key_len());
         assert_eq!(key1.key_type(), key2.key_type());
@@ -490,7 +491,7 @@ mod test_key_material {
             _ => panic!("Expected HazardousConversion"),
         }
 
-        // should work if you allow hazardous conversions.
+        // should work when hazardous conversions are allowed.
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
     }
@@ -540,7 +541,7 @@ mod test_key_material {
         assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
-        // even if it's long enough, BytesLowEntropy or Zeroized always get ::None
+        // even if it's long enough, BytesLowEntropy or Zeroized always get ::None as security strength
         let key = KeyMaterial512::from_bytes_as_type(DUMMY_KEY, KeyType::BytesLowEntropy).unwrap();
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
         assert_eq!(key.key_len(), 64);
