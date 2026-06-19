@@ -173,7 +173,12 @@ mod test_key_material {
     #[test]
     fn zeroize() {
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.zeroize();
+        assert_eq!(key.key_len(), 32);
+        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+
+        unsafe { core::ptr::drop_in_place(&mut key) };
+
         let key_len = key.key_len();
         assert_eq!(key_len, 0);
         assert_eq!(key.key_type(), KeyType::Zeroized);
