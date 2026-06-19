@@ -1,5 +1,5 @@
-//! Yup, this file is as absolutely atrocious mess of duplicate code that could be much improved
-//! by using generics or macros. I just, haven't ... yet.
+//! Work in progress. 
+//! TODO: Use generic macros to eliminate duplicated code.
 
 use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
 use bouncycastle::core::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};

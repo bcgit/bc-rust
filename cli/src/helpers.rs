@@ -17,7 +17,7 @@ pub(crate) fn read_from_file(filename: &str) -> Vec<u8> {
                 match hex::decode(&buf) {
                     Ok(decoded) => decoded,
                     Err(_) => {
-                        // well, it's not hex, so return it raw
+                        // it's not hex, so return it raw
                         buf
                     }
                 }
@@ -47,7 +47,7 @@ pub(crate) fn read_from_file_or_stdin(filename: &Option<String>) -> Vec<u8> {
     match hex::decode(&buf) {
         Ok(decoded) => decoded,
         Err(_) => {
-            // well, it's not hex, so return it raw
+            // it's not hex, so return it raw
             buf
         }
     }
@@ -98,7 +98,7 @@ pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMater
         }
     };
 
-    // I think I've checked for all the error conditions, so this shouldn't fail.
+    // TODO: Verify that all error conditions have been checked
     let mut seed = KeyMaterial::<SEED_LEN>::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
 
     if seed.key_type() == KeyType::Zeroized || seed.security_strength() < SecurityStrength::_256bit
