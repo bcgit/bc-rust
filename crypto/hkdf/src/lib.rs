@@ -164,7 +164,7 @@ use bouncycastle_core::traits::XOF;
 
 /*** Constants ***/
 // Slightly hacky, but set this to accomodate the underlying hash primitive with the largest output size.
-// Would be better to somehow pull that at compile time from H, but I'm not sure how to do that.
+// It would be better to pull that at compile time from H, but the implementation does not currently do that.
 const HMAC_BLOCK_LEN: usize = 64;
 
 /*** String constants ***/
@@ -180,7 +180,7 @@ pub type HKDF_SHA256 = HKDF<SHA256>;
 pub type HKDF_SHA512 = HKDF<SHA512>;
 
 pub struct HKDF<H: Hash + HashAlgParams + Default> {
-    hmac: Option<HMAC<H>>,  // Optional because we can't construct an HMAC until they give us a key
+    hmac: Option<HMAC<H>>,  // Optional because an HMAC cannot be constructed until a key is provided
                             // to initialize it with.
                             // None should correspond to a state of Uninitialized.
     entropy: HkdfEntropyTracker<H>,
@@ -241,7 +241,7 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     }
 }
 
-// Since I don't want this struct to be public, the tests have to go here.
+// Because this struct is not public, the tests have to go here.
 #[test]
 fn test_entropy_tracker() {
     let mut entropy = HkdfEntropyTracker::<SHA256>::new();
@@ -398,7 +398,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         let out: &mut [u8] = okm.mut_ref_to_bytes()?;
         // Could potentially speed this up by unrolling T(0) and T(1)
 
-        // We're gonna have to kludge the prk key type to MACKey to make HMAC happy, but we'll set it back to the original value afterwards.
+        // The prk key type must be temporarily changed to MACKey to satisfy HMAC, then restored afterwards.
         let prk_as_mac_key = KeyMaterial::<HMAC_BLOCK_LEN>::from_bytes_as_type(prk.ref_to_bytes(), KeyType::MACKey)?;
 
         #[allow(non_snake_case)]
@@ -481,7 +481,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         };
 
         // Often HMAC is initialized with a zero salt,
-        // So we're gonna ignore key strength errors here
+        // Key strength errors are ignored here.
         // This will all be tabulated correctly via entropy.credit_entropy()
         self.hmac = Some(HMAC::<H>::new_allow_weak_key(salt)?);
 
