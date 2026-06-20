@@ -449,7 +449,7 @@ mod test_key_material {
         let key1 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
         assert_eq!(key1.key_type(), KeyType::MACKey);
         assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
-
+        
         // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
         let key2 = KeyMaterial256::from(key1.clone());
         assert_eq!(key1.key_len(), key2.key_len());

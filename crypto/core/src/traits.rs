@@ -196,7 +196,7 @@ pub trait KEM<
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), KEMError>;
-
+    
     /// Performs an encapsulation against the given public key.
     /// Returns the ciphertext and derived shared secret.
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;

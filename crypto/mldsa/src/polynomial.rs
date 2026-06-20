@@ -97,7 +97,6 @@ impl Polynomial {
         //  }
         // but since BOUND is a constant here, we'll just do a debug_assert to make sure the value is what we expect.
         debug_assert!(BOUND <= (q - 1) / 8);
-
         let mut t: i32;
         for x in self.coeffs.iter() {
             t = *x >> 31;
