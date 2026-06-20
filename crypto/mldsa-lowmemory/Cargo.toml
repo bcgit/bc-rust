@@ -9,6 +9,7 @@ bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
+zeroize = { version = "1.9.0", features = ["zeroize_derive"] }
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

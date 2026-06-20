@@ -28,6 +28,8 @@ use bouncycastle_core::traits::{
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
+use zeroize::ZeroizeOnDrop;
+
 // imports just for docs
 #[allow(unused_imports)]
 use crate::mldsa::MLDSATrait;
@@ -294,7 +296,7 @@ pub trait MLDSAPrivateKeyTrait<
 }
 
 /// Internal structure for holding a seed-based private key for ML-DSA.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct MLDSASeedPrivateKey<
     const LAMBDA: i32,
     const GAMMA2: i32,
@@ -312,41 +314,6 @@ pub struct MLDSASeedPrivateKey<
     rho: [u8; 32],
     rho_prime: [u8; 64],
     K: [u8; 32],
-}
-
-impl<
-    const LAMBDA: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-    const FULL_SK_LEN: usize,
-> Drop
-    for MLDSASeedPrivateKey<
-        LAMBDA,
-        GAMMA2,
-        k,
-        l,
-        eta,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-    >
-{
-    fn drop(&mut self) {
-        // seed is a KeyMaterialSized which will zeroize itself
-        self.rho.fill(0u8);
-        self.rho_prime.fill(0u8);
-        self.K.fill(0u8);
-    }
 }
 
 impl<
