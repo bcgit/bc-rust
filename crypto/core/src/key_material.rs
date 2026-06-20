@@ -44,7 +44,7 @@ use bouncycastle_utils::{ct, min};
 use core::cmp::{Ordering, PartialOrd};
 use core::fmt;
 
-/// Sometimes you just need a zero-length dummy key.
+/// When it is necessary to get a zero-length dummy key.
 pub type KeyMaterial0 = KeyMaterial<0>;
 
 pub type KeyMaterial128 = KeyMaterial<16>;
@@ -389,9 +389,11 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.key_len = key_len;
         Ok(())
     }
+
     fn key_type(&self) -> KeyType {
         self.key_type.clone()
     }
+
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError> {
         if !self.allow_hazardous_operations {
             return Err(KeyMaterialError::HazardousOperationNotPermitted);
@@ -399,6 +401,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.key_type = key_type.clone();
         Ok(())
     }
+
     fn security_strength(&self) -> SecurityStrength {
         self.security_strength.clone()
     }
@@ -453,6 +456,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.drop_hazardous_operations();
         Ok(())
     }
+
     /// Sets this instance to be able to perform potentially hazardous operations such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey.
     ///
@@ -463,10 +467,12 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     fn allow_hazardous_operations(&mut self) {
         self.allow_hazardous_operations = true;
     }
+
     /// Resets this instance to not be able to perform potentially hazardous operations.
     fn drop_hazardous_operations(&mut self) {
         self.allow_hazardous_operations = false;
     }
+    
     /// Sets the key_type of this KeyMaterial object.
     /// Does not perform any operations on the actual key material, other than changing the key_type field.
     /// If allow_hazardous_operations is true, this method will allow conversion to any KeyType, otherwise
@@ -529,6 +535,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.drop_hazardous_operations();
         Ok(())
     }
+
     fn is_full_entropy(&self) -> bool {
         match self.key_type {
             KeyType::BytesFullEntropy
