@@ -12,6 +12,8 @@ use bouncycastle_sha3::SHA3_256;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
+use zeroize::ZeroizeOnDrop;
+
 // imports just for docs
 #[allow(unused_imports)]
 use crate::mlkem::MLKEMTrait;
@@ -683,6 +685,9 @@ impl<
     }
 }
 
+impl<const k: usize, PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>, const SK_LEN: usize, const PK_LEN: usize>
+    ZeroizeOnDrop for MLKEMPrivateKey<k, PK, SK_LEN, PK_LEN> {}
+
 /// Zeroizing drop
 impl<
     const k: usize,
@@ -704,7 +709,7 @@ impl<
 /// A fully expanded ML-KEM private key that includes the intermediate values needed for performing
 /// multiple decaps operations with the same private key, which causes the private key struct to
 /// take up more memory, but results in more efficient repeated decaps() operations.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct MLKEMPrivateKeyExpanded<
     const k: usize,
     PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>,
@@ -794,20 +799,6 @@ impl<
     const PK_LEN: usize,
 > Secret for MLKEMPrivateKeyExpanded<k, PK, SK, SK_LEN, PK_LEN>
 {
-}
-
-impl<
-    const k: usize,
-    PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, PK, SK_LEN, PK_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, PK, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Drop for MLKEMPrivateKeyExpanded<k, PK, SK, SK_LEN, PK_LEN>
-{
-    fn drop(&mut self) {
-        // Nothing to do since self.sk already impls zeroizing Drop
-    }
 }
 
 impl<
