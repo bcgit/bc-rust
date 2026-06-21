@@ -115,13 +115,13 @@
 //! | ML-KEM-1024_expanded | 1568           | 10272              | 3168            | 12418 |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
-//! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
+//! Values in parentheses are the usual sizes in the un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
 //! # Security
 //! All functionality exposed by this crate is considered secure to use.
 //! In other words, this crate does not contain any "hazmat" except for the obvious points about
 //! handling your private keys properly: if you post your private key to github, or you generate
-//! production keys from a weak seed, I can't help you, that's on you.
+//! production keys from a weak seed, that use is unsupported
 //! It is worth mentioning, however, that if using a [MLKEM::keygen_from_seed], then it is your
 //! responsibility to ensure that the seed is cryptographically random and unpredictable.
 //! And also that [MLKEM::encaps_internal] requires you to provide the randomness, so the ciphertext
@@ -133,8 +133,8 @@
 //! constructions. That should give this implementation reasonably good resistance to timing and
 //! power analysis key extraction attacks, however: A) this is a "best-effort" and not formally verified,
 //! and B) the Rust compiler does not guarantee constant-time behaviour no matter how clever your code,
-//! so like all Safe Rust code (ie Rust code that does not include inline assembly), we are at the mercy
-//! of the Rust compiler's optimizer for whether our bitshift-and-xor code actually remains
+//! so like all Safe Rust code (ie Rust code that does not include inline assembly), the Rust compiler's optimizer
+//! determines whether the bitshift-and-xor code actually remains
 //! constant-time after compilation.
 
 #![no_std]
@@ -143,13 +143,13 @@
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
 #![feature(generic_const_exprs)]
 #![feature(adt_const_params)]
-// These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',
+// These are because variable names are matched exactly against FIPS 204, for example both 'K' and 'k',
 // or 'A' and 'a' are used and have specific meanings.
 // But need to tell the rust linter to not care.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-// so I can use private traits to hide internal stuff that needs to be generic within the
-// MLKEM implementation, but I don't want accessed from outside, such as FIPS-internal functions.
+// so private traits can hide internal items that need to be generic within the
+// MLKEM implementation, but should not be accessed from outside, such as FIPS-internal functions.
 #![allow(private_bounds)]
 
 // imports needed just for docs
