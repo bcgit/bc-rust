@@ -65,7 +65,7 @@ mod test_key_material {
         key.allow_hazardous_operations();
         key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy).unwrap();
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
-
+        key.drop_hazardous_operations();
         // nothing else requires setting hazardous operations.
     }
 
@@ -94,6 +94,7 @@ mod test_key_material {
         key.set_key_len(32).unwrap();
         assert_eq!(key.ref_to_bytes(), &[2u8; 32]);
         assert_eq!(key.key_len(), 32);
+        key.drop_hazardous_operations();
     }
 
     #[test]
@@ -182,6 +183,7 @@ mod test_key_material {
         let mut buf = vec![0u8; key_len];
         buf.copy_from_slice(key.ref_to_bytes());
         assert!(buf.iter().all(|&b| b == 0));
+        key.drop_hazardous_operations();
     }
 
     #[test]
@@ -263,8 +265,8 @@ mod test_key_material {
         key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
         assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
         assert!(key.is_full_entropy());
-
         key.drop_hazardous_operations();
+
         match key.convert_key_type(KeyType::SymmetricCipherKey) {
             Ok(()) => { /* good */ }
             _ => panic!("Expected Ok(())"),
@@ -277,11 +279,12 @@ mod test_key_material {
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
+        key.drop_hazardous_operations();
         match key.convert_key_type(KeyType::Seed) {
             Ok(()) => { /* good */ }
             _ => panic!("Expected Ok(())"),
         }
-
+        
         // each KeyType can convert to itself
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
@@ -406,18 +409,22 @@ mod test_key_material {
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
+        key.drop_hazardous_operations();
 
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::MACKey).unwrap();
+        key.drop_hazardous_operations();
 
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
+        key.drop_hazardous_operations();
 
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::Seed).unwrap();
+        key.drop_hazardous_operations();
     }
 
     #[test]
@@ -493,6 +500,7 @@ mod test_key_material {
         // should work if you allow hazardous conversions.
         key.allow_hazardous_operations();
         key.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
+        key.drop_hazardous_operations();
     }
 
     #[test]
@@ -570,6 +578,7 @@ mod test_key_material {
         // now it should work
         key.set_security_strength(SecurityStrength::_128bit).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_128bit);
+        key.drop_hazardous_operations();
 
         // BytesLowEntropy keys cannot have a security strength other than None.
         // success
@@ -583,12 +592,14 @@ mod test_key_material {
             Err(KeyMaterialError::SecurityStrength(_)) => { /* good */ }
             _ => panic!("Expected KeyMaterialError::SecurityStrength"),
         }
+        key.drop_hazardous_operations();
 
         // Zeroized keys cannot have a security strength other than None.
         // success
         let mut key = KeyMaterial256::new();
         key.allow_hazardous_operations();
         key.set_key_len(32).unwrap(); // still zeroized
+        key.drop_hazardous_operations();
         assert_eq!(key.key_type(), KeyType::Zeroized);
         // setting to ::None should work .. even without setting .allow_hazardous_operations()
         key.set_security_strength(SecurityStrength::None).unwrap();
@@ -598,6 +609,7 @@ mod test_key_material {
             Err(KeyMaterialError::SecurityStrength(_)) => { /* good */ }
             _ => panic!("Expected KeyMaterialError::SecurityStrength"),
         }
+        key.drop_hazardous_operations();
     }
 
     #[test]
