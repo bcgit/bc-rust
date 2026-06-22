@@ -6,6 +6,11 @@
     * Check the crate release checklist and run claude against the style guide (maybe Francis could cross-check me)
     * Run Crucible testing
     * Add factories for ML-DSA and ML-KEM (if we are keeping factories, see below)
+    * After merging the Signer/Verifier, Encrypter/Decrypter split, check if the keygen_from_rng() is still on the right
+      trait.
+* Split the Signature trait into a Signer and a Verifier so that, for example, we can implement the verifier for MTC in
+  a different struct from the signer; or so that you can get FIPS compliance on old algorithms that are currently only
+  FIPS-allowed for verification of existing signatures but not for creation of new ones.
 * Check out Megan's email May 13 about KeyMaterial: "I was wondering if there might be scope for a closure based
   approach that could guarantee encapsulation of the state change from safe to hazardous back to safe again."
 * Go back to previous algs and apply memory optimization tricks like internal functions. And add a docs section "Memory
