@@ -85,6 +85,9 @@ pub enum SymmetricCipherError {
     GenericError(&'static str),
     AEADTagCheckFailed,
     DecryptionFailed,
+    /// Indicates that the output buffer is not large enough to hold the requested output.
+    /// The usize represents the required buffer length.
+    IncorrectOutputBufferLength(&'static str, usize),
     KeyMaterialError(KeyMaterialError),
     RNGError(RNGError),
     StateError(&'static str),

@@ -19,6 +19,7 @@ pub trait Algorithm {
     const MAX_SECURITY_STRENGTH: SecurityStrength;
 }
 
+// todo -- split all the SymmetricCipher traits into Encryptor and Decryptor
 /// The basic one-shot encrypt and decrypt that all types of symmetric ciphers must implement.
 /// These are meant to be simple, easy to use, secure, and fool-proof APIs, but they may result in
 /// ciphertexts that are incompatible with other implementations as ciphers in more complex modes, such
@@ -31,6 +32,7 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     /// A one-shot API to encrypt some plaintext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
     /// Returns a tuple containing the initialization data and the ciphertext.
+    /// This is not available if building for no_std.
     fn encrypt(
         key: &KeyMaterial<KEY_LEN>,
         plaintext: &[u8],
@@ -49,6 +51,7 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     #[cfg(std)]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
+    /// This is not available if building for no_std.
     fn decrypt(
         key: &KeyMaterial<KEY_LEN>,
         init_data: [u8; INIT_DATA_LEN],
@@ -91,6 +94,17 @@ pub trait BlockCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BL
     ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
     /// Encrypts a single block of plaintext and writes the ciphertext to the provided buffer.
     fn do_encrypt_block_out(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+        ciphertext: &mut [u8; BLOCK_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+    /// Encrypts the final block of plaintext.
+    fn do_encrypt_final(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
+    /// Decrypts the final block of plaintext and writes the ciphertext to the provided buffer.
+    fn do_encrypt_final_out(
         &mut self,
         plaintext: &[u8; BLOCK_LEN],
         ciphertext: &mut [u8; BLOCK_LEN],
@@ -168,14 +182,14 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
-        tag: &[u8; TAG_LEN],
+        tag: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError>;
     /// All AEAD ciphers will also be either a [BlockCipher] or a [StreamCipher], and so will already
     /// have a streaming API.
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
-    fn do_aead_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError>;
+    fn do_aead_decrypt_final(self, tag: &[u8]) -> Result<(), SymmetricCipherError>;
 }
 
 /// The basic functions of a stream cipher, which differ from those of a block cipher only in that
@@ -196,6 +210,17 @@ pub trait StreamCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
     /// Encrypts a single block of plaintext and writes the ciphertext to the provided buffer.
     fn do_stream_encrypt_block_out<const BLOCK_LEN: usize>(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+        ciphertext: &mut [u8; BLOCK_LEN],
+    ) -> Result<(), SymmetricCipherError>;
+    /// Encrypts the final block of plaintext.
+    fn do_stream_encrypt_final<const BLOCK_LEN: usize>(
+        &mut self,
+        plaintext: &[u8; BLOCK_LEN],
+    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
+    /// Encrypts the final block of plaintext and writes the ciphertext to the provided buffer.
+    fn do_stream_encrypt_final_out<const BLOCK_LEN: usize>(
         &mut self,
         plaintext: &[u8; BLOCK_LEN],
         ciphertext: &mut [u8; BLOCK_LEN],
@@ -248,7 +273,7 @@ pub trait Hash: Default {
     /// Consumes self, so this must be the final call to this object.
     ///
     /// If the provided buffer is smaller than the hash's output length, the output will be truncated.
-    /// If the provided buffor is larger than the hash's output length, the output  will be placed in
+    /// If the provided buffer is larger than the hash's output length, the output  will be placed in
     /// the first [Hash::output_len] bytes.
     /// The entire output buffer is zeroized before the hash output is written, so any bytes past
     /// [Hash::output_len] will be 0.
