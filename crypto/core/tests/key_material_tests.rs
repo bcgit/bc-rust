@@ -184,7 +184,7 @@ mod test_key_material {
 
         key.zeroize();
         let key_len = key.key_len();
-        assert_eq!(key_len4, 0);
+        assert_eq!(key_len, 0);
         assert_eq!(key.key_type(), KeyType::Zeroized);
 
         // zeroize() must wipe the entire backing buffer.
@@ -702,22 +702,49 @@ mod test_key_material {
 
     #[test]
     fn eq() {
-        // On instances of the same exact type (size).
-        let key1 = KeyMaterial256::from_bytes(
-            b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F",
-        )
-        .unwrap();
-        let key2 = KeyMaterial256::from_bytes(
-            b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F",
-        )
-        .unwrap();
+        // For context: 
+        // DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
+        //                           \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
+        //                           \x20\x21\x22\x23\x24\x25\x26\x27\x28\x29\x2A\x2B\x2C\x2D\x2E\x2F\
+        //                           \x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x3A\x3B\x3C\x3D\x3E\x3F";
+        
+        // Same bytes, full capacity. Should be equal.
+        let key1 = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
+        let key2 = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         assert_eq!(key1, key2);
 
-        let key3 = KeyMaterial256::from_bytes(
-            b"\x0F\x0E\x0D\x0C\x0B\x0A\x10\x09\x08\x07\x06\x05\x04\x03\x02\x01\x00",
-        )
-        .unwrap();
+        // Same length, different content. Should NOT be equal.
+        let key3 = KeyMaterial256::from_bytes(&[0xFFu8; 32]).unwrap();
         assert_ne!(key1, key3);
+
+        // Different length, overlapping prefix. Should NOT be equal.
+        let key_short = KeyMaterial256::from_bytes(&DUMMY_KEY[..16]).unwrap();
+        assert_ne!(key1, key_short);
+
+        // PartialEq ignores key_type: same bytes, different KeyType. Should be equal.
+        let key_low = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::BytesLowEntropy).unwrap();
+        let key_mac = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        assert_eq!(key_low, key_mac);
+
+        // PartialEq ignores security_strength: same bytes, different strength. Should be equal.
+        let key_strong = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::BytesFullEntropy).unwrap();
+        let mut key_weak = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::BytesFullEntropy).unwrap();
+        key_weak.set_security_strength(SecurityStrength::_128bit).unwrap();
+        assert_ne!(key_strong.security_strength(), key_weak.security_strength()); // strengths differ
+        assert_eq!(key_strong, key_weak); // but keys are still equal
+
+        // Partially-filled buffers with identical content. Should be equal.
+        let key_half1 = KeyMaterial256::from_bytes(&DUMMY_KEY[..16]).unwrap();
+        let key_half2 = KeyMaterial256::from_bytes(&DUMMY_KEY[..16]).unwrap();
+        assert_eq!(key_half1, key_half2);
+
+        // Verify with a second size (KeyMaterial512) to cover the generic impl.
+        let key512_a = KeyMaterial512::from_bytes(&DUMMY_KEY[..64]).unwrap();
+        let key512_b = KeyMaterial512::from_bytes(&DUMMY_KEY[..64]).unwrap();
+        assert_eq!(key512_a, key512_b);
+
+        let key512_c = KeyMaterial512::from_bytes(&[0xFFu8; 64]).unwrap();
+        assert_ne!(key512_a, key512_c);
     }
 
     #[test]
