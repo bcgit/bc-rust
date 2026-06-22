@@ -266,9 +266,9 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         Ok(())
     }
 
-    fn reseed(
+    fn reseed<K: KeyMaterialTrait + ?Sized>(
         &mut self,
-        seed: &impl KeyMaterialTrait,
+        seed: &K,
         additional_input: &[u8],
     ) -> Result<(), RNGError> {
         // Hash_DRBG Reseed Process:
@@ -455,10 +455,10 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         Ok(out.len())
     }
 
-    fn generate_keymaterial_out(
+    fn generate_keymaterial_out<K: KeyMaterialTrait + ?Sized>(
         &mut self,
         additional_input: &[u8],
-        out: &mut impl KeyMaterialTrait,
+        out: &mut K,
     ) -> Result<usize, RNGError> {
         out.allow_hazardous_operations();
         let bytes_written = self.generate_out(additional_input, out.mut_ref_to_bytes().unwrap())?;
@@ -483,9 +483,9 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
 
     fn add_seed_keymaterial(
         &mut self,
-        additional_seed: impl KeyMaterialTrait,
+        additional_seed: &dyn KeyMaterialTrait,
     ) -> Result<(), RNGError> {
-        self.reseed(&additional_seed, "add_seed_keymaterial".as_bytes())
+        self.reseed(additional_seed, "add_seed_keymaterial".as_bytes())
     }
 
     fn next_int(&mut self) -> Result<u32, RNGError> {
@@ -504,7 +504,10 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
         self.generate_out("next_bytes_out".as_bytes(), out)
     }
 
-    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterialTrait) -> Result<usize, RNGError> {
+    fn fill_keymaterial_out(
+        &mut self,
+        out: &mut dyn KeyMaterialTrait,
+    ) -> Result<usize, RNGError> {
         self.generate_keymaterial_out("fill_keymaterial".as_bytes(), out)
     }
 
