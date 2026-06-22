@@ -698,7 +698,11 @@ mod mlkem_tests {
         let mut rng = FixedSeedRNG::new(seed_bytes);
         let (ss, ct) = MLKEM512::encaps_for_expanded_key_rng(&pk_expanded, &mut rng).unwrap();
         assert_eq!(ct, ct_ref, "ML-KEM-512 ciphertext must match encaps_internal");
-        assert_eq!(ss_ref, ss.ref_to_bytes(), "ML-KEM-512 shared secret must match encaps_internal");
+        assert_eq!(
+            ss_ref,
+            ss.ref_to_bytes(),
+            "ML-KEM-512 shared secret must match encaps_internal"
+        );
 
         // ML-KEM-768
         let (pk, _sk) = MLKEM768::keygen().unwrap();
@@ -707,7 +711,11 @@ mod mlkem_tests {
         let mut rng = FixedSeedRNG::new(seed_bytes);
         let (ss, ct) = MLKEM768::encaps_for_expanded_key_rng(&pk_expanded, &mut rng).unwrap();
         assert_eq!(ct, ct_ref, "ML-KEM-768 ciphertext must match encaps_internal");
-        assert_eq!(ss_ref, ss.ref_to_bytes(), "ML-KEM-768 shared secret must match encaps_internal");
+        assert_eq!(
+            ss_ref,
+            ss.ref_to_bytes(),
+            "ML-KEM-768 shared secret must match encaps_internal"
+        );
 
         // ML-KEM-1024
         let (pk, _sk) = MLKEM1024::keygen().unwrap();
@@ -716,7 +724,11 @@ mod mlkem_tests {
         let mut rng = FixedSeedRNG::new(seed_bytes);
         let (ss, ct) = MLKEM1024::encaps_for_expanded_key_rng(&pk_expanded, &mut rng).unwrap();
         assert_eq!(ct, ct_ref, "ML-KEM-1024 ciphertext must match encaps_internal");
-        assert_eq!(ss_ref, ss.ref_to_bytes(), "ML-KEM-1024 shared secret must match encaps_internal");
+        assert_eq!(
+            ss_ref,
+            ss.ref_to_bytes(),
+            "ML-KEM-1024 shared secret must match encaps_internal"
+        );
     }
 }
 

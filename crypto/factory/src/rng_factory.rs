@@ -126,10 +126,7 @@ impl RNG for RNGFactory {
         }
     }
 
-    fn fill_keymaterial_out(
-        &mut self,
-        out: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, RNGError> {
+    fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
         match self {
             Self::HashDRBG_SHA256(rng) => rng.fill_keymaterial_out(out),
             Self::HashDRBG_SHA512(rng) => rng.fill_keymaterial_out(out),
