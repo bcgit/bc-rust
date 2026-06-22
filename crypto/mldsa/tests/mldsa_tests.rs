@@ -1,8 +1,12 @@
+use bouncycastle_core::errors::RNGError;
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::traits::{RNG, SecurityStrength};
+
 /// This performs tests using the public interfaces of the crate.
 #[cfg(test)]
 mod mldsa_tests {
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
-    use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::errors::{RNGError, SignatureError};
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
@@ -196,6 +200,42 @@ mod mldsa_tests {
             Err(SignatureError::KeyGenError(_)) => { /* good */ }
             _ => panic!("sk_from_seed_and_encoded should fail with InvalidSignature"),
         }
+    }
+
+    #[test]
+    fn keygen_from_rng_matches_keygen_from_seed() {
+        use super::FixedSeedRNG;
+
+        // Same arbitrary fixed seed as rfc9881_keygen.
+        let seed_bytes: [u8; 32] =
+            hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+                .unwrap()
+                .try_into()
+                .unwrap();
+
+        // The seed as fed directly to keygen_from_seed.
+        let seed = KeyMaterial256::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
+
+        // ML-DSA-44
+        let (pk_seed, sk_seed) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG { seed: seed_bytes };
+        let (pk_rng, sk_rng) = MLDSA44::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-DSA-44 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-DSA-44 sk from RNG must match sk from seed");
+
+        // ML-DSA-65
+        let (pk_seed, sk_seed) = MLDSA65::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG { seed: seed_bytes };
+        let (pk_rng, sk_rng) = MLDSA65::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-DSA-65 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-DSA-65 sk from RNG must match sk from seed");
+
+        // ML-DSA-87
+        let (pk_seed, sk_seed) = MLDSA87::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG { seed: seed_bytes };
+        let (pk_rng, sk_rng) = MLDSA87::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-DSA-87 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-DSA-87 sk from RNG must match sk from seed");
     }
 
     #[test]
@@ -906,6 +946,53 @@ mod mldsa_tests {
 
         MLDSA44::sign_mu_deterministic_out(&sk, None, &mu, [1u8; 32], &mut sig_buf).unwrap();
         MLDSA44::verify(&pk, msg, None, &sig_buf).unwrap();
+    }
+}
+
+/// A test-only fake [RNG] that always emits the same fixed 32-byte seed.
+///
+/// Only [RNG::fill_keymaterial_out] is implemented (it is the sole method `keygen_from_rng`
+/// drives); the remaining trait methods panic if called so the test fails loudly should the
+/// keygen path ever start relying on them. This lets us prove that
+/// `keygen_from_rng(rng)` produces exactly the same keypair as `keygen_from_seed(seed)`
+/// when the RNG hands back the bytes that `seed` was built from.
+struct FixedSeedRNG {
+    seed: [u8; 32],
+}
+
+impl RNG for FixedSeedRNG {
+    fn add_seed_keymaterial(
+        &mut self,
+        _additional_seed: &dyn KeyMaterialTrait,
+    ) -> Result<(), RNGError> {
+        unimplemented!("FixedSeedRNG only implements fill_keymaterial_out")
+    }
+    fn next_int(&mut self) -> Result<u32, RNGError> {
+        unimplemented!("FixedSeedRNG only implements fill_keymaterial_out")
+    }
+    fn next_bytes(&mut self, _len: usize) -> Result<Vec<u8>, RNGError> {
+        unimplemented!("FixedSeedRNG only implements fill_keymaterial_out")
+    }
+    fn next_bytes_out(&mut self, _out: &mut [u8]) -> Result<usize, RNGError> {
+        unimplemented!("FixedSeedRNG only implements fill_keymaterial_out")
+    }
+
+    /// Fill `out` with the fixed seed, mirroring what a real DRBG's
+    /// `generate_keymaterial_out` sets: full-entropy-equivalent key type, the matching key
+    /// length, and a 256-bit security strength (enough for every ML-DSA parameter set).
+    fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
+        out.allow_hazardous_operations();
+        // mut_ref_to_bytes is infallible here because we just allowed hazardous operations.
+        out.mut_ref_to_bytes().unwrap()[..self.seed.len()].copy_from_slice(&self.seed);
+        out.set_key_len(self.seed.len())?;
+        out.set_key_type(KeyType::Seed)?;
+        out.set_security_strength(SecurityStrength::_256bit)?;
+        out.drop_hazardous_operations();
+        Ok(self.seed.len())
+    }
+
+    fn security_strength(&self) -> SecurityStrength {
+        SecurityStrength::_256bit
     }
 }
 

@@ -728,19 +728,11 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
-    /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
-    ///
-    /// Key generation is intentionally not part of the [Signer] / [SignatureVerifier] traits;
-    /// it is provided as an inherent associated function directly on the algorithm struct.
-    /// Error condition: basically only on RNG failures.
-    pub fn keygen() -> Result<(PK, SK), SignatureError> {
-        Self::keygen_from_os_rng()
-    }
-
-    /// Should still be ok in FIPS mode
-    pub fn keygen_from_os_rng() -> Result<(PK, SK), SignatureError> {
+    /// Run a keygen using the provided RNG implementation.
+    // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
+    pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
         let mut seed = KeyMaterial256::new();
-        HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
+        rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_internal(&seed)
     }
     /// Implements Algorithm 6 of FIPS 204
@@ -1932,6 +1924,15 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
+    /// Runs a key generation using the library's default RNG, seeded from the OS.
+    /// In environments where the default OS based RNG is not available, use instead [MLDSA::keygen_from_rng]
+    /// and explicitly provide a [RNG] implementation, or use [MLDSATrait::keygen_from_seed] and provide the
+    /// private key seed directly.
+    fn keygen() -> Result<(PK, SK), SignatureError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
+    }
+
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;
