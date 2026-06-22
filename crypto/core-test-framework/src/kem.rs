@@ -1,3 +1,4 @@
+use crate::FixedSeedRNG;
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::traits::{KEM, KEMPrivateKey, KEMPublicKey};
 
@@ -35,6 +36,24 @@ impl TestFrameworkKEM {
         let (ss, ct) = KEMAlg::encaps(&pk).unwrap();
         let ss1 = KEMAlg::decaps(&sk, &ct).unwrap();
         assert_eq!(ss, ss1);
+
+        // Test that encaps_rng is deterministic in its RNG input: two encapsulations against the
+        // same public key, each fed an RNG that emits identical bytes, must produce the same
+        // shared secret and ciphertext.
+        {
+            let mut rng_a = FixedSeedRNG::new([0x5A; 64]);
+            let mut rng_b = FixedSeedRNG::new([0x5A; 64]);
+            let (ss_a, ct_a) = KEMAlg::encaps_rng(&pk, &mut rng_a).unwrap();
+            let (ss_b, ct_b) = KEMAlg::encaps_rng(&pk, &mut rng_b).unwrap();
+            assert_eq!(
+                ss_a, ss_b,
+                "encaps_rng shared secret must be deterministic given fixed RNG output"
+            );
+            assert_eq!(
+                ct_a, ct_b,
+                "encaps_rng ciphertext must be deterministic given fixed RNG output"
+            );
+        }
 
         // Test non-determinism
         if !self.alg_is_deterministic {

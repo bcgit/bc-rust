@@ -718,12 +718,6 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
-    /// Should still be ok in FIPS mode
-    pub fn keygen_from_os_rng() -> Result<(PK, SK), SignatureError> {
-        let mut seed = KeyMaterial::<32>::new();
-        HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
-        Self::keygen_internal(&seed)
-    }
     /// Performs the first step of key generation to transform the single provided seed into a set of internal intermediate seeds.
     ///
     /// Unlike other interfaces across the library that take an &impl KeyMaterial, this one
@@ -1326,6 +1320,13 @@ pub trait MLDSATrait<
     const ETA: usize,
 >: Sized
 {
+    /// Run a keygen using the provided RNG implementation.
+    // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
+    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
+        let mut seed = KeyMaterial::<32>::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed(&seed)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError>;
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -1573,8 +1574,13 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
+    /// Runs a key generation using the library's default RNG, seeded from the OS.
+    /// In environments where the default OS based RNG is not available, use instead [MLDSA::keygen_from_rng]
+    /// and explicitly provide a [RNG] implementation, or use [MLDSATrait::keygen_from_seed] and provide the
+    /// private key seed directly.
     fn keygen() -> Result<(PK, SK), SignatureError> {
-        Self::keygen_from_os_rng()
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
     }
 
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {

@@ -4,6 +4,7 @@ mod mlkem_tests {
     use bouncycastle_core::errors::KEMError;
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{KEM, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF};
+    use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem::{MLKEM_RND_LEN, MLKEM512, MLKEM768, MLKEM1024, Polynomial};
     use bouncycastle_mlkem::{
@@ -16,6 +17,42 @@ mod mlkem_tests {
     };
     use bouncycastle_mlkem::{MLKEMPrivateKeyTrait, MLKEMTrait};
     use bouncycastle_sha3::SHAKE256;
+
+    #[test]
+    fn keygen_from_rng_matches_keygen_from_seed() {
+        // An arbitrary fixed 64-byte seed (bytes 0x00..=0x3f).
+        let seed_bytes: [u8; 64] = hex::decode(
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\
+             202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+
+        // The seed as fed directly to keygen_from_seed.
+        let seed = KeyMaterial512::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
+
+        // ML-KEM-512
+        let (pk_seed, sk_seed) = MLKEM512::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (pk_rng, sk_rng) = MLKEM512::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-KEM-512 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-KEM-512 sk from RNG must match sk from seed");
+
+        // ML-KEM-768
+        let (pk_seed, sk_seed) = MLKEM768::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (pk_rng, sk_rng) = MLKEM768::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-KEM-768 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-KEM-768 sk from RNG must match sk from seed");
+
+        // ML-KEM-1024
+        let (pk_seed, sk_seed) = MLKEM1024::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (pk_rng, sk_rng) = MLKEM1024::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-KEM-1024 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-KEM-1024 sk from RNG must match sk from seed");
+    }
 
     // #[test]
     // fn generate_kats_for_low_mem() {
@@ -632,6 +669,54 @@ mod mlkem_tests {
             Ok(ss) => ss,
         };
         assert_eq!(ss, ss1);
+    }
+
+    /// Proves that `encaps_for_expanded_key_rng` is just `encaps_internal` with the message `m`
+    /// sourced from the RNG: when the RNG hands back exactly the bytes that `m` would be, the two
+    /// must produce the same shared secret and ciphertext.
+    #[test]
+    fn encaps_for_expanded_key_rng_matches_encaps_internal() {
+        use bouncycastle_mlkem::{
+            MLKEM512PublicKeyExpanded, MLKEM768PublicKeyExpanded, MLKEM1024PublicKeyExpanded,
+        };
+
+        // An arbitrary fixed 64-byte seed; FixedSeedRNG::next_bytes_out hands back its leading
+        // 32 bytes as the encapsulation message `m`.
+        let seed_bytes: [u8; 64] = hex::decode(
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\
+             202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+        let m: [u8; MLKEM_RND_LEN] = seed_bytes[..MLKEM_RND_LEN].try_into().unwrap();
+
+        // ML-KEM-512
+        let (pk, _sk) = MLKEM512::keygen().unwrap();
+        let (ss_ref, ct_ref) = MLKEM512::encaps_internal(&pk, None, m);
+        let pk_expanded = MLKEM512PublicKeyExpanded::from(&pk);
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (ss, ct) = MLKEM512::encaps_for_expanded_key_rng(&pk_expanded, &mut rng).unwrap();
+        assert_eq!(ct, ct_ref, "ML-KEM-512 ciphertext must match encaps_internal");
+        assert_eq!(ss_ref, ss.ref_to_bytes(), "ML-KEM-512 shared secret must match encaps_internal");
+
+        // ML-KEM-768
+        let (pk, _sk) = MLKEM768::keygen().unwrap();
+        let (ss_ref, ct_ref) = MLKEM768::encaps_internal(&pk, None, m);
+        let pk_expanded = MLKEM768PublicKeyExpanded::from(&pk);
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (ss, ct) = MLKEM768::encaps_for_expanded_key_rng(&pk_expanded, &mut rng).unwrap();
+        assert_eq!(ct, ct_ref, "ML-KEM-768 ciphertext must match encaps_internal");
+        assert_eq!(ss_ref, ss.ref_to_bytes(), "ML-KEM-768 shared secret must match encaps_internal");
+
+        // ML-KEM-1024
+        let (pk, _sk) = MLKEM1024::keygen().unwrap();
+        let (ss_ref, ct_ref) = MLKEM1024::encaps_internal(&pk, None, m);
+        let pk_expanded = MLKEM1024PublicKeyExpanded::from(&pk);
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (ss, ct) = MLKEM1024::encaps_for_expanded_key_rng(&pk_expanded, &mut rng).unwrap();
+        assert_eq!(ct, ct_ref, "ML-KEM-1024 ciphertext must match encaps_internal");
+        assert_eq!(ss_ref, ss.ref_to_bytes(), "ML-KEM-1024 shared secret must match encaps_internal");
     }
 }
 

@@ -319,12 +319,6 @@ impl<
     const LAMBDA: i16,
 > MLKEM<PK_LEN, SK_LEN, CT_LEN, SS_LEN, PK, SK, k, eta1, du, dv, LAMBDA>
 {
-    /// Should still be ok in FIPS mode
-    pub fn keygen_from_os_rng() -> Result<(PK, SK), KEMError> {
-        let mut seed = KeyMaterial::<64>::new();
-        HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
-        Self::keygen_internal(&seed)
-    }
     /// Algorithm 16 ML-KEM.KeyGen_internal(𝑑, 𝑧)
     /// Uses randomness to generate an encapsulation key and a corresponding decapsulation key.
     /// Input: randomness 𝑑 ∈ 𝔹32 .
@@ -760,8 +754,16 @@ impl<
     fn encaps_for_expanded_key(
         pk: &MLKEMPublicKeyExpanded<k, PK, PK_LEN>,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::encaps_for_expanded_key_rng(pk, &mut os_rng)
+    }
+
+    fn encaps_for_expanded_key_rng(
+        pk: &MLKEMPublicKeyExpanded<k, PK, PK_LEN>,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         let mut m = [0u8; 32];
-        HashDRBG_SHA512::new_from_os().next_bytes_out(&mut m)?;
+        rng.next_bytes_out(&mut m)?;
 
         let (ss, ct) = Self::encaps_internal(&pk.ek, Some(&pk.A_hat), m);
 
@@ -821,6 +823,13 @@ pub trait MLKEMTrait<
     const LAMBDA: i16,
 >: Sized
 {
+    /// Run a keygen using the provided RNG implementation.
+    // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
+    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
+        let mut seed = KeyMaterial::<64>::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed(&seed)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError>;
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -848,6 +857,12 @@ pub trait MLKEMTrait<
         pk: &MLKEMPublicKeyExpanded<k, PK, PK_LEN>,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
 
+    /// Same as [KEM::encaps], but acts on an [MLKEMPublicKeyExpanded] and uses a provided RNG.
+    fn encaps_for_expanded_key_rng(
+        pk: &MLKEMPublicKeyExpanded<k, PK, PK_LEN>,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+
     /// Same as [KEM::decaps], but acts on an [MLKEMPrivateKeyExpanded].
     fn decaps_with_expanded_key(
         sk: &MLKEMPrivateKeyExpanded<k, PK, SK, SK_LEN, PK_LEN>,
@@ -873,7 +888,8 @@ impl<
 {
     /// Generates a fresh key pair.
     fn keygen() -> Result<(PK, SK), KEMError> {
-        Self::keygen_from_os_rng()
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
     }
 
     /// Performs an encapsulation against the given public key, using the library's default internal RNG.
@@ -887,7 +903,15 @@ impl<
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
     /// Output: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
-        Self::encaps_for_expanded_key(&MLKEMPublicKeyExpanded::<k, PK, PK_LEN>::from(pk))
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::encaps_rng(pk, &mut os_rng)
+    }
+
+    fn encaps_rng(
+        pk: &PK,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        Self::encaps_for_expanded_key_rng(&MLKEMPublicKeyExpanded::<k, PK, PK_LEN>::from(pk), rng)
     }
 
     /// Performs a decapsulation of the given ciphertext.

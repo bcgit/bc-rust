@@ -8,6 +8,7 @@ mod mldsa_tests {
         RNG, SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED_1024;
+    use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_core_test_framework::signature::*;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa_lowmemory::{
@@ -18,6 +19,41 @@ mod mldsa_tests {
     use bouncycastle_mldsa_lowmemory::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
     use bouncycastle_mldsa_lowmemory::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
     use bouncycastle_mldsa_lowmemory::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait};
+
+    #[test]
+    fn keygen_from_rng_matches_keygen_from_seed() {
+        // Same arbitrary fixed seed as rfc9881_keygen.
+        let seed_bytes: [u8; 32] =
+            hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+                .unwrap()
+                .try_into()
+                .unwrap();
+
+        // The seed as fed directly to keygen_from_seed.
+        let seed = KeyMaterial256::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
+
+        // ML-DSA-44
+        let (pk_seed, sk_seed) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (pk_rng, sk_rng) = MLDSA44::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-DSA-44 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-DSA-44 sk from RNG must match sk from seed");
+
+        // ML-DSA-65
+        let (pk_seed, sk_seed) = MLDSA65::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (pk_rng, sk_rng) = MLDSA65::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-DSA-65 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-DSA-65 sk from RNG must match sk from seed");
+
+        // ML-DSA-87
+        let (pk_seed, sk_seed) = MLDSA87::keygen_from_seed(&seed).unwrap();
+        let mut rng = FixedSeedRNG::new(seed_bytes);
+        let (pk_rng, sk_rng) = MLDSA87::keygen_from_rng(&mut rng).unwrap();
+        assert_eq!(pk_rng, pk_seed, "ML-DSA-87 pk from RNG must match pk from seed");
+        assert_eq!(sk_rng, sk_seed, "ML-DSA-87 sk from RNG must match sk from seed");
+    }
+
     #[test]
     fn test_framework_signature() {
         let tf = TestFrameworkSignature::new(false, true);

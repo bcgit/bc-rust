@@ -728,13 +728,6 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
-    /// Run a keygen using the provided RNG implementation.
-    // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
-    pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
-        let mut seed = KeyMaterial256::new();
-        rng.fill_keymaterial_out(&mut seed)?;
-        Self::keygen_internal(&seed)
-    }
     /// Implements Algorithm 6 of FIPS 204
     /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
     /// may in fact be exposed outside the crypto module.
@@ -1652,6 +1645,13 @@ pub trait MLDSATrait<
     const ETA: usize,
 >: Sized
 {
+    /// Run a keygen using the provided RNG implementation.
+    // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
+    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
+        let mut seed = KeyMaterial256::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed(&seed)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError>;
     /// Imports a secret key from both a seed and an encoded_sk.

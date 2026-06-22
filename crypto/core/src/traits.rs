@@ -416,6 +416,7 @@ pub trait KEM<
     const SS_LEN: usize,
 >: Sized
 {
+    // todo -- if keygen stays in this trait, then we also need a keygen_from_rng
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), KEMError>;
@@ -423,6 +424,14 @@ pub trait KEM<
     /// Performs an encapsulation against the given public key.
     /// Returns the ciphertext and derived shared secret.
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+
+    /// Performs an encapsulation against the given public key.
+    /// Returns the ciphertext and derived shared secret.
+    /// All entropy required for the encapsulation is sourced from the given RNG.
+    fn encaps_rng(
+        pk: &PK,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
 
     /// Performs a decapsulation of the given ciphertext.
     /// Returns the derived shared secret.
@@ -733,6 +742,7 @@ pub trait Signature<
     const SIG_LEN: usize,
 >: Sized
 {
+    // todo -- if keygen stays in this trait, then we also need a keygen_from_rng
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), SignatureError>;
