@@ -174,15 +174,27 @@ mod test_key_material {
     #[test]
     fn zeroize() {
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
+        let capacity = key.capacity();
+
+        // Sanity check: the backing buffer actually holds non-zero key material before it is wiped.
+        // Without this, the post-zeroize assertion below could pass vacuously.
+        key.allow_hazardous_operations();
+        assert!(key.mut_ref_to_bytes().unwrap().iter().any(|&b| b != 0));
+        key.drop_hazardous_operations();
+
         key.zeroize();
         let key_len = key.key_len();
-        assert_eq!(key_len, 0);
+        assert_eq!(key_len4, 0);
         assert_eq!(key.key_type(), KeyType::Zeroized);
 
+        // zeroize() must wipe the entire backing buffer.
+        // Full capacity must be inspected to confirm the previously-set bytes were 
+        // actually overwritten with zeros.
+        // Note: key_len is now 0, so ref_to_bytes() returns an empty slice. 
         key.allow_hazardous_operations();
-        let mut buf = vec![0u8; key_len];
-        buf.copy_from_slice(key.ref_to_bytes());
-        assert!(buf.iter().all(|&b| b == 0));
+        let full_buf = key.mut_ref_to_bytes().unwrap();
+        assert_eq!(full_buf.len(), capacity);
+        assert!(full_buf.iter().all(|&b| b == 0));
         key.drop_hazardous_operations();
     }
 
