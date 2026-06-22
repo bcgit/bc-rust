@@ -92,9 +92,9 @@ pub trait Sp80090ADrbg {
 
     /// Reseeds the DRBG with the provided seed.
     /// TODO: this needs to be thought out to take some sort of EntropySource object that'll work well with DRBGs that require frequent reseeding.
-    fn reseed(
+    fn reseed<K: KeyMaterialTrait + ?Sized>(
         &mut self,
-        seed: &impl KeyMaterialTrait,
+        seed: &K,
         additional_input: &[u8],
     ) -> Result<(), RNGError>;
 
@@ -125,10 +125,10 @@ pub trait Sp80090ADrbg {
     /// The output [KeyMaterialTrait] is filled to capacity.
     /// Throws a [RNGError::InsufficientSeedEntropy] if the capacity of the output KeyMaterial exceeds [SecurityStrength].
     /// Retruns the number of bits output.
-    fn generate_keymaterial_out(
+    fn generate_keymaterial_out<K: KeyMaterialTrait + ?Sized>(
         &mut self,
         additional_input: &[u8],
-        out: &mut impl KeyMaterialTrait,
+        out: &mut K,
     ) -> Result<usize, RNGError>;
 
     // TODO -- implement FIPS health tests
