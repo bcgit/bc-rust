@@ -506,10 +506,7 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
         self.generate_out("next_bytes_out".as_bytes(), out)
     }
 
-    fn fill_keymaterial_out(
-        &mut self,
-        out: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, RNGError> {
+    fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
         self.generate_keymaterial_out("fill_keymaterial".as_bytes(), out)
     }
 
