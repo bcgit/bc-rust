@@ -432,7 +432,7 @@ pub trait RNG: Default {
 
     fn add_seed_keymaterial(
         &mut self,
-        additional_seed: impl KeyMaterialTrait,
+        additional_seed: &dyn KeyMaterialTrait,
     ) -> Result<(), RNGError>;
     fn next_int(&mut self) -> Result<u32, RNGError>;
 
@@ -443,7 +443,7 @@ pub trait RNG: Default {
     /// The entire output buffer is zeroized before the random bytes are written.
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError>;
 
-    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterialTrait) -> Result<usize, RNGError>;
+    fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError>;
 
     /// Returns the Security Strength of this RNG.
     fn security_strength(&self) -> SecurityStrength;
