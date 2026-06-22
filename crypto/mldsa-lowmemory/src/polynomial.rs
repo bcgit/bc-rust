@@ -136,7 +136,7 @@ impl Polynomial {
         // then it's free to optimize all of the computation into CPU registers and skip, in this case,
         // several hundred physical memory writes.
         // So while it looks odd to use a scope variable in a low-memory implementation, it's way faster
-        // and I'm not convinced that it uses any more physical memory.        
+        // and I'm not convinced that it uses any more physical memory.
         let mut r = [0u8; POLY_W1_PACKED_LEN];
 
         match POLY_W1_PACKED_LEN {
@@ -157,7 +157,7 @@ impl Polynomial {
                 unreachable!()
             }
         }
-        
+
         r
     }
 

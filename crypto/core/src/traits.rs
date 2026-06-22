@@ -196,7 +196,7 @@ pub trait KEM<
     /// Generate a keypair.
     /// Error condition: Basically only on RNG failures
     fn keygen() -> Result<(PK, SK), KEMError>;
-    
+
     /// Performs an encapsulation against the given public key.
     /// Returns the ciphertext and derived shared secret.
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
@@ -391,7 +391,6 @@ impl SecurityStrength {
 
 impl DefaultIsZeroes for SecurityStrength {}
 
-
 /// An interface for random number generation.
 /// This interface is meant to be simpler and more ergonomic than the interfaces provided by the
 /// `rng` crate, but that one should
@@ -423,7 +422,7 @@ pub trait RNG: Default {
 
 /// A trait that forces an object to implement a zeroizing Drop() as well as Debug and Display that
 /// will not log the sensitive contents, even in error or crash-dump scenarios.
-pub trait Secret : ZeroizeOnDrop + Debug + Display {}
+pub trait Secret: ZeroizeOnDrop + Debug + Display {}
 
 /// Pre-Hashed Signature is an extension to [Signature] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.

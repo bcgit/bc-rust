@@ -529,7 +529,7 @@ impl<
 
         // This satisfies the "Decapsulation input check #3) in FIPS 203 section 7.3.
         // We're doing it here on key load rather than as part of the decapsulation for performance
-        // because if you're doing multiple decapsulations, you only need to perform this check once. 
+        // because if you're doing multiple decapsulations, you only need to perform this check once.
         if h_pk != ek.compute_hash() {
             return Err(KEMError::ConsistencyCheckFailed(
                 "Corrupted private key: computed hash of ek != h_ek stored in private key",
@@ -685,8 +685,14 @@ impl<
     }
 }
 
-impl<const k: usize, PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>, const SK_LEN: usize, const PK_LEN: usize>
-    ZeroizeOnDrop for MLKEMPrivateKey<k, PK, SK_LEN, PK_LEN> {}
+impl<
+    const k: usize,
+    PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>,
+    const SK_LEN: usize,
+    const PK_LEN: usize,
+> ZeroizeOnDrop for MLKEMPrivateKey<k, PK, SK_LEN, PK_LEN>
+{
+}
 
 /// Zeroizing drop
 impl<
