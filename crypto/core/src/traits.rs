@@ -347,8 +347,9 @@ pub trait MAC: Sized {
     fn max_security_strength(&self) -> SecurityStrength;
 }
 
-#[derive(Eq, PartialEq, PartialOrd, Clone, Copy, Debug)]
+#[derive(Eq, PartialEq, PartialOrd, Clone, Copy, Debug, Default)]
 pub enum SecurityStrength {
+    #[default]
     None,
     _112bit,
     _128bit,
@@ -389,12 +390,6 @@ impl SecurityStrength {
 }
 
 impl DefaultIsZeroes for SecurityStrength {}
-
-impl Default for SecurityStrength {
-    fn default() -> Self {
-        Self::None
-    }
-}
 
 
 /// An interface for random number generation.

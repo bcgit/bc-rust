@@ -182,8 +182,9 @@ pub struct KeyMaterial<const KEY_LEN: usize> {
 
 impl<const KEY_LEN: usize> Secret for KeyMaterial<KEY_LEN> {}
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum KeyType {
+    #[default]
     /// The KeyMaterial is zeroized and MUST NOT be used for any cryptographic operation in this state.
     Zeroized,
 
@@ -204,12 +205,6 @@ pub enum KeyType {
 }
 
 impl DefaultIsZeroes for KeyType {}
-
-impl Default for KeyType {
-    fn default() -> Self {
-        KeyType::Zeroized
-    }
-}
 
 impl<const KEY_LEN: usize> Default for KeyMaterial<KEY_LEN> {
     /// Create a new empty (zeroized) instance.
