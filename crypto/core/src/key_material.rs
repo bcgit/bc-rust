@@ -44,6 +44,8 @@ use bouncycastle_utils::{ct, min};
 use core::cmp::{Ordering, PartialOrd};
 use core::fmt;
 
+use zeroize::{DefaultIsZeroes, Zeroize, ZeroizeOnDrop};
+
 /// Sometimes you just need a zero-length dummy key.
 pub type KeyMaterial0 = KeyMaterial<0>;
 
@@ -173,8 +175,6 @@ pub trait KeyMaterialTrait {
 
     fn is_full_entropy(&self) -> bool;
 
-    fn zeroize(&mut self);
-
     /// Is simply an alias to [KeyMaterialTrait::set_key_len], however, this does not require [KeyMaterialTrait::allow_hazardous_operations]
     /// since truncation is a safe operation.
     /// If truncating below the current security strength, the security strength will be lowered accordingly.
@@ -199,7 +199,7 @@ pub trait KeyMaterialTrait {
 /// A wrapper for holding bytes-like key material (symmetric keys or seeds) which aims to apply a
 /// strict typing system to prevent many kinds of mis-use mistakes.
 /// The capacity of the internal buffer can be set at compile-time via the <KEY_LEN> param.
-#[derive(Clone)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeyMaterial<const KEY_LEN: usize> {
     buf: [u8; KEY_LEN],
     key_len: usize,
@@ -210,8 +210,9 @@ pub struct KeyMaterial<const KEY_LEN: usize> {
 
 impl<const KEY_LEN: usize> Secret for KeyMaterial<KEY_LEN> {}
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum KeyType {
+    #[default]
     /// The KeyMaterial is zeroized and MUST NOT be used for any cryptographic operation in this state.
     Zeroized,
 
@@ -230,6 +231,8 @@ pub enum KeyType {
     /// A key for a symmetric block or stream cipher.
     SymmetricCipherKey,
 }
+
+impl DefaultIsZeroes for KeyType {}
 
 impl<const KEY_LEN: usize> Default for KeyMaterial<KEY_LEN> {
     /// Create a new empty (zeroized) instance.
@@ -515,12 +518,6 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
     }
 
-    fn zeroize(&mut self) {
-        self.buf.fill(0u8);
-        self.key_len = 0;
-        self.key_type = KeyType::Zeroized;
-    }
-
     fn truncate(&mut self, new_len: usize) -> Result<(), KeyMaterialError> {
         if new_len > self.key_len {
             return Err(KeyMaterialError::InvalidLength);
@@ -621,12 +618,5 @@ impl<const KEY_LEN: usize> fmt::Debug for KeyMaterial<KEY_LEN> {
             "KeyMaterial {{ len: {}, key_type: {:?}, security_strength: {:?} }}",
             self.key_len, self.key_type, self.security_strength
         )
-    }
-}
-
-/// Zeroize the key material on drop.
-impl<const KEY_LEN: usize> Drop for KeyMaterial<KEY_LEN> {
-    fn drop(&mut self) {
-        self.zeroize()
     }
 }

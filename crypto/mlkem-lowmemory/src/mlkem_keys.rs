@@ -24,6 +24,8 @@ use bouncycastle_sha3::SHA3_256;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
+use zeroize::ZeroizeOnDrop;
+
 // imports just for docs
 
 /* Pub Types */
@@ -236,7 +238,7 @@ impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> Display
 }
 
 /// An ML-KEM private key.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct MLKEMSeedPrivateKey<
     const k: usize,
     const eta1: i16,
@@ -657,24 +659,5 @@ impl<
         };
         let pk_hash = self.pk().compute_hash();
         write!(f, "MLKEMSeedPrivateKey {{ alg: {}, pub_key_hash: {:x?} }}", alg, &pk_hash,)
-    }
-}
-
-/// Zeroizing drop
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> Drop for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-{
-    fn drop(&mut self) {
-        self.rho.fill(0u8);
-        self.sigma.fill(0u8);
-        self.z.fill(0u8);
-        self.seed_d.fill(0u8);
     }
 }

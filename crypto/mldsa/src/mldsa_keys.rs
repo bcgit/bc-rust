@@ -14,6 +14,7 @@ use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{Secret, SignaturePrivateKey, SignaturePublicKey, XOF};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
+use zeroize::ZeroizeOnDrop;
 
 // imports just for docs
 #[allow(unused_imports)]
@@ -403,7 +404,7 @@ impl<
 }
 
 /// An ML-DSA private key.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct MLDSAPrivateKey<
     const k: usize,
     const l: usize,
@@ -805,20 +806,11 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     }
 }
 
-/// Zeroizing drop
-impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
-    Drop for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
-{
-    fn drop(&mut self) {
-        self.K.fill(0u8);
-        // s1, s2, t0, seed have their own zeroizing drop
-    }
-}
 
 /// A fully expanded ML-DSA private key that includes the intermediate values needed for performing
 /// multiple sign operations with the same private key, which causes the private ey struct to take up
 /// more memory, but results in more efficient repeated sign() operations.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct MLDSAPrivateKeyExpanded<
     const k: usize,
     const l: usize,
@@ -874,22 +866,6 @@ impl<
     const PK_LEN: usize,
 > Secret for MLDSAPrivateKeyExpanded<k, l, eta, PK, SK, SK_LEN, PK_LEN>
 {
-}
-
-impl<
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    PK: MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, eta, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Drop for MLDSAPrivateKeyExpanded<k, l, eta, PK, SK, SK_LEN, PK_LEN>
-{
-    fn drop(&mut self) {
-        // Nothing to do since self.sk already impls zeroizing Drop
-    }
 }
 
 impl<

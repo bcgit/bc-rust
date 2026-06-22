@@ -10,9 +10,11 @@ use crate::aux_functions::{
 use crate::mlkem::{N, q};
 use bouncycastle_core::traits::Secret;
 
+use zeroize::ZeroizeOnDrop;
+
 /// A polynomial over the ML-KEM ring.
 /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Polynomial {
     /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
     pub coeffs: [i16; N],
@@ -329,12 +331,6 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
 }
 
 impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i16);
-    }
-}
 
 impl Debug for Polynomial {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

@@ -27,6 +27,7 @@ bouncycastle-utils = { path = "./crypto/utils", version = "0.1.1" }
 
 # *** External Dependencies ***
 criterion = "0.8.2" # only for benchmarking, not used in lib or cli build
+zeroize = { version = "1.9", features = ["zeroize_derive"] }
 
 [profile.release]
 lto = "thin"

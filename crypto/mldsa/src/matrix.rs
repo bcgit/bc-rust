@@ -6,9 +6,10 @@ use crate::mldsa::H;
 use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::XOF;
 use core::ops::{Index, IndexMut};
+use zeroize::ZeroizeOnDrop;
 
 /// A matrix over the ML-DSA ring.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Matrix<const k: usize, const l: usize>(/*pub(crate)*/ [[Polynomial; l]; k]);
 
 /// Convenience function to avoid ".0" all over the place.
@@ -62,7 +63,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
 // but I'll leave it zeroizing for now and leave this as a potential future optimization.
 
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub(crate) struct Vector<const k: usize> {
     pub(crate) vec: [Polynomial; k],
 }

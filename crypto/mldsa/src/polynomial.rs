@@ -9,11 +9,13 @@ use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
+use zeroize::ZeroizeOnDrop;
+
 /// A polynomial over the ML-DSA ring.
 /// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
 /// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
 /// and the real unit tests are in a different crate, so here we are.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct Polynomial {
     pub(crate) coeffs: [i32; N],
 }
@@ -95,7 +97,6 @@ impl Polynomial {
         //  }
         // but since BOUND is a constant here, we'll just do a debug_assert to make sure the value is what we expect.
         debug_assert!(BOUND <= (q - 1) / 8);
-
         let mut t: i32;
         for x in self.coeffs.iter() {
             t = *x >> 31;
@@ -236,12 +237,6 @@ impl Polynomial {
 }
 
 impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i32);
-    }
-}
 
 impl Debug for Polynomial {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

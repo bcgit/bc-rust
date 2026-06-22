@@ -6,6 +6,7 @@ mod test_key_material {
         KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::traits::SecurityStrength;
+    use zeroize::Zeroize;
 
     const DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
                                    \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
@@ -173,29 +174,37 @@ mod test_key_material {
 
     #[test]
     fn zeroize() {
-        let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        let capacity = key.capacity();
+        let assert_construction = |key: &KeyMaterial<32>| {
+            assert_eq!(key.key_len(), 32);
+            assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+            assert_eq!(key.security_strength(), SecurityStrength::None);
+        };
+
+        let assert_zeroization = |key: &mut KeyMaterial<32>| {
+            let key_len = key.key_len();
+            assert_eq!(key_len, 0);
+            assert_eq!(key.key_type(), KeyType::Zeroized);
+
+            key.allow_hazardous_operations();
+            assert!(!key.mut_ref_to_bytes().unwrap().iter().any(|&b| b != 0));
+            key.drop_hazardous_operations();
+        };
+
+        // starting at i=1 to skip the initial \x00 byte
+        let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[1..33]).unwrap();
 
         // Sanity check: the backing buffer actually holds non-zero key material before it is wiped.
         // Without this, the post-zeroize assertion below could pass vacuously.
-        key.allow_hazardous_operations();
-        assert!(key.mut_ref_to_bytes().unwrap().iter().any(|&b| b != 0));
-        key.drop_hazardous_operations();
+        assert!(!key.ref_to_bytes().iter().any(|&b| b == 0));
 
+        assert_construction(&key);
         key.zeroize();
-        let key_len = key.key_len();
-        assert_eq!(key_len, 0);
-        assert_eq!(key.key_type(), KeyType::Zeroized);
+        assert_zeroization(&mut key);
 
-        // zeroize() must wipe the entire backing buffer.
-        // Full capacity must be inspected to confirm the previously-set bytes were
-        // actually overwritten with zeros.
-        // Note: key_len is now 0, so ref_to_bytes() returns an empty slice.
-        key.allow_hazardous_operations();
-        let full_buf = key.mut_ref_to_bytes().unwrap();
-        assert_eq!(full_buf.len(), capacity);
-        assert!(full_buf.iter().all(|&b| b == 0));
-        key.drop_hazardous_operations();
+        let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
+        assert_construction(&key);
+        unsafe { core::ptr::drop_in_place(&mut key) };
+        assert_zeroization(&mut key);
     }
 
     #[test]

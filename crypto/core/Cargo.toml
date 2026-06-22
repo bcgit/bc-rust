@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-utils.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 bouncycastle-rng.workspace = true

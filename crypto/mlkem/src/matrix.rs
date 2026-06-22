@@ -7,7 +7,9 @@ use crate::mlkem::{N, q};
 use crate::polynomial;
 use crate::polynomial::Polynomial;
 
-#[derive(Clone)]
+use zeroize::ZeroizeOnDrop;
+
+#[derive(Clone, ZeroizeOnDrop)]
 /// A matrix over the ML-KEM ring.
 pub struct Matrix<const k: usize, const l: usize> {
     /*pub(crate)*/ mat: [[Polynomial; l]; k],
@@ -81,7 +83,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
 // but I'll leave it zeroizing for now and leave this as a potential future optimization.
 
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub(crate) struct Vector<const k: usize> {
     pub(crate) vec: [Polynomial; k],
 }
