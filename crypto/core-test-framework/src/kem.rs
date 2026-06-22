@@ -25,8 +25,7 @@ impl TestFrameworkKEM {
     pub fn test_kem<
         PK: KEMPublicKey<PK_LEN>,
         SK: KEMPrivateKey<SK_LEN>,
-        ENCAPSULATOR: KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN>,
-        DECAPSULATOR: KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>,
+        KEMAlg: KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN> + KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
         const CT_LEN: usize,
@@ -38,8 +37,8 @@ impl TestFrameworkKEM {
     ) {
         // Basic test
         let (pk, sk) = keygen().unwrap();
-        let (ss, ct) = ENCAPSULATOR::encaps(&pk).unwrap();
-        let ss1 = DECAPSULATOR::decaps(&sk, &ct).unwrap();
+        let (ss, ct) = KEMAlg::encaps(&pk).unwrap();
+        let ss1 = KEMAlg::decaps(&sk, &ct).unwrap();
         assert_eq!(ss, ss1);
 
         // Test that encaps_rng is deterministic in its RNG input: two encapsulations against the
@@ -62,21 +61,21 @@ impl TestFrameworkKEM {
 
         // Test non-determinism
         if !self.alg_is_deterministic {
-            let (ss1, ct1) = ENCAPSULATOR::encaps(&pk).unwrap();
-            let (ss2, ct2) = ENCAPSULATOR::encaps(&pk).unwrap();
+            let (ss1, ct1) = KEMAlg::encaps(&pk).unwrap();
+            let (ss2, ct2) = KEMAlg::encaps(&pk).unwrap();
             assert_ne!(ss1, ss2);
             assert_ne!(ct1, ct2);
         }
 
         // Test that decaps fails for broken ct value
         let (pk, sk) = keygen().unwrap();
-        let (ss, mut ct) = ENCAPSULATOR::encaps(&pk).unwrap();
+        let (ss, mut ct) = KEMAlg::encaps(&pk).unwrap();
         ct[17] ^= 0xFF;
         if self.is_implicitly_rejecting {
-            let ss2 = DECAPSULATOR::decaps(&sk, &ct).unwrap();
+            let ss2 = KEMAlg::decaps(&sk, &ct).unwrap();
             assert_ne!(ss, ss2);
         } else {
-            match DECAPSULATOR::decaps(&sk, &ct) {
+            match KEMAlg::decaps(&sk, &ct) {
                 Err(KEMError::DecapsulationFailed) =>
                 /* good */
                 {
@@ -95,10 +94,10 @@ impl TestFrameworkKEM {
 
                     // should throw an Err
                     if self.is_implicitly_rejecting {
-                        let ss2 = DECAPSULATOR::decaps(&sk, &ct_copy).unwrap();
+                        let ss2 = KEMAlg::decaps(&sk, &ct_copy).unwrap();
                         assert_ne!(ss, ss2);
                     } else {
-                        match DECAPSULATOR::decaps(&sk, &ct) {
+                        match KEMAlg::decaps(&sk, &ct) {
                             Err(KEMError::DecapsulationFailed) =>
                             /* good */
                             {
@@ -113,9 +112,9 @@ impl TestFrameworkKEM {
 
         // test ct the wrong length
         let (pk, sk) = keygen().unwrap();
-        let (_ss, ct) = ENCAPSULATOR::encaps(&pk).unwrap();
+        let (_ss, ct) = KEMAlg::encaps(&pk).unwrap();
         // too short
-        match DECAPSULATOR::decaps(&sk, &ct[..CT_LEN - 1]) {
+        match KEMAlg::decaps(&sk, &ct[..CT_LEN - 1]) {
             Err(KEMError::LengthError(_)) => { /* good */ }
             _ => panic!("This should have thrown an error but it didn't."),
         };
@@ -123,7 +122,7 @@ impl TestFrameworkKEM {
         // too long
         let mut long_ct = vec![1u8; CT_LEN + 2];
         long_ct.as_mut_slice()[..CT_LEN].copy_from_slice(&ct);
-        match DECAPSULATOR::decaps(&sk, &long_ct) {
+        match KEMAlg::decaps(&sk, &long_ct) {
             Err(KEMError::LengthError(_)) => { /* good */ }
             _ => panic!("This should have thrown an error but it didn't."),
         };

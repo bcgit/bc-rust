@@ -72,7 +72,7 @@ impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
         out.allow_hazardous_operations();
         let len = {
             // mut_ref_to_bytes is infallible here because we just allowed hazardous operations.
-            let buf = out.mut_ref_to_bytes().unwrap();
+            let buf = out.ref_to_bytes_mut().unwrap();
             for slot in buf.iter_mut() {
                 *slot = self.seed[self.counter % SEED_LEN];
                 self.counter += 1;

@@ -823,6 +823,11 @@ pub trait MLKEMTrait<
     const LAMBDA: i16,
 >: Sized
 {
+    /// Generates a fresh key pair.
+    fn keygen() -> Result<(PK, SK), KEMError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
+    }
     /// Run a keygen using the provided RNG implementation.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
@@ -886,12 +891,6 @@ impl<
 > KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN>
     for MLKEM<PK_LEN, SK_LEN, CT_LEN, SS_LEN, PK, SK, k, eta, du, dv, LAMBDA>
 {
-    /// Generates a fresh key pair.
-    fn keygen() -> Result<(PK, SK), KEMError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::keygen_from_rng(&mut os_rng)
-    }
-
     /// Performs an encapsulation against the given public key, using the library's default internal RNG.
     /// Returns (shared_secret_key, ciphertext)
     /// The derived shared secret key is returned as a KeyMaterial with the SecurityStrength set to

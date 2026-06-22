@@ -128,7 +128,7 @@
 //! ## Generating Keys
 //!
 //! ```rust
-//! use bouncycastle_mldsa_lowmemory::MLDSA65;
+//! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //! ```

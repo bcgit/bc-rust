@@ -613,6 +613,11 @@ pub trait MLKEMTrait<
     const T_PACKED_LEN: usize,
 >: Sized
 {
+    /// Generates a fresh key pair.
+    fn keygen() -> Result<(PK, SK), KEMError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
+    }
     /// Run a keygen using the provided RNG implementation.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
@@ -676,12 +681,6 @@ impl<
         T_PACKED_LEN,
     >
 {
-    /// Generates a fresh key pair.
-    fn keygen() -> Result<(PK, SK), KEMError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::keygen_from_rng(&mut os_rng)
-    }
-
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         let mut os_rng = HashDRBG_SHA512::new_from_os();
         Self::encaps_rng(pk, &mut os_rng)

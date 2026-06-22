@@ -206,8 +206,16 @@ pub trait KEMEncapsulator<
 >: Sized
 {
     /// Performs an encapsulation against the given public key.
+    /// Sources randomness from the library's default OS-backed RNG.
     /// Returns the ciphertext and derived shared secret.
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+    /// Performs an encapsulation against the given public key.
+    /// Sources randomness from the provided RNG.
+    /// Returns the ciphertext and derived shared secret.
+    fn encaps_rng(
+        pk: &PK,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
 }
 
 /// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:

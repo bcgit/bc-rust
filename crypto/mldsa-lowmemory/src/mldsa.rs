@@ -1320,6 +1320,14 @@ pub trait MLDSATrait<
     const ETA: usize,
 >: Sized
 {
+    /// Runs a key generation using the library's default RNG, seeded from the OS.
+    /// In environments where the default OS based RNG is not available, use instead [MLDSA::keygen_from_rng]
+    /// and explicitly provide a [RNG] implementation, or use [MLDSATrait::keygen_from_seed] and provide the
+    /// private key seed directly.
+    fn keygen() -> Result<(PK, SK), SignatureError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
+    }
     /// Run a keygen using the provided RNG implementation.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
@@ -1574,15 +1582,6 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
-    /// Runs a key generation using the library's default RNG, seeded from the OS.
-    /// In environments where the default OS based RNG is not available, use instead [MLDSA::keygen_from_rng]
-    /// and explicitly provide a [RNG] implementation, or use [MLDSATrait::keygen_from_seed] and provide the
-    /// private key seed directly.
-    fn keygen() -> Result<(PK, SK), SignatureError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::keygen_from_rng(&mut os_rng)
-    }
-
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
         Self::sign_out(sk, msg, ctx, &mut out)?;

@@ -80,9 +80,9 @@ mod mlkem_tests {
 
         let tf = TestFrameworkKEM::new(false, true);
 
-        tf.test_kem::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>(MLKEM512::keygen, false);
-        tf.test_kem::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM_SS_LEN>(MLKEM768::keygen, false);
-        tf.test_kem::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN>(MLKEM1024::keygen, false);
+        tf.test_kem::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>(MLKEM512::keygen, false);
+        tf.test_kem::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM_SS_LEN>(MLKEM768::keygen, false);
+        tf.test_kem::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN>(MLKEM1024::keygen, false);
     }
 
     /// This runs the full bitflipping tests and takes about 30s..

@@ -45,7 +45,7 @@
 //! ## Generating Keys
 //!
 //! ```rust
-//! use bouncycastle_mlkem::MLKEM768;
+//! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
 //! ```
