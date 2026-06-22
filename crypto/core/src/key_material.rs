@@ -57,13 +57,40 @@ pub trait KeyMaterialTrait {
     /// Loads the provided data into a new KeyMaterial of the specified type.
     /// This is discouraged unless the caller knows the provenance of the data, such as loading it
     /// from a cryptographic private key file.
-    /// It will detect if you give it all-zero source data and set the key type to [KeyType::Zeroized] instead.
+    ///
+    /// This behaves differently on all-zero input key depending on whether [KeyMaterialTrait::allow_hazardous_operations] is set:
+    /// if not set, then it will succeed, setting the key type to [KeyType::Zeroized] and also return a [KeyMaterialError::ActingOnZeroizedKey]
+    /// to indicate that you may want to perform error-handling, which could be manually setting the key type
+    /// if you intend to allow zero keys, or do some other error-handling, like figure out why your RNG is broken.
+    /// Note that even if a [KeyMaterialError::ActingOnZeroizedKey] is returned, the object is still populated and usable.
+    /// For example, you could catch it like this:
+    /// ```
+    /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
+    /// use bouncycastle_core::key_material::KeyMaterial;
+    /// use bouncycastle_core::errors::KeyMaterialError;
+    ///
+    /// let key_bytes = [0u8; 16];
+    /// let mut key = KeyMaterial256::new();
+    /// let res = key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy);
+    /// match res {
+    ///   Err(KeyMaterialError::ActingOnZeroizedKey) => {
+    ///     // Either figure out why your passed an all-zero key,
+    ///     // or set the key type manually, if that's what you intended.
+    ///     key.allow_hazardous_operations();
+    ///     key.set_key_type(KeyType::BytesLowEntropy).unwrap(); // probably you should do something more elegant than .unwrap in your code ;)
+    ///     key.drop_hazardous_operations();
+    ///   },
+    ///   Err(_) => { /* figure out what else went wrong */ },
+    ///   Ok(_) => { /* good */ },
+    /// }
+    /// ```
+    /// On the other hand, if [KeyMaterialTrait::allow_hazardous_operations] is set then it will just do what you asked without complaining.
+    ///
     /// Since this zeroizes and resets the key material, this is considered a dangerous conversion.
     ///
-    /// The only hazardous operation here that requires setting [KeyMaterialTrait::allow_hazardous_operations] is giving it
-    /// an all-zero key, which is checked as a courtesy to catch mistakes of feeding an initialized buffer
-    /// instead of an actual key. See the note on [KeyMaterial::set_bytes_as_type] for suggestions
-    /// for handling this.
+    /// Will set the [SecurityStrength] automatically according to the following rules:
+    /// * If [KeyType] is [KeyType::Zeroized] or [KeyType::BytesLowEntropy] then it will be [SecurityStrength::None].
+    /// * Otherwise it will set it based on the length of the provided source bytes.
     fn set_bytes_as_type(
         &mut self,
         source: &[u8],
@@ -122,18 +149,18 @@ pub trait KeyMaterialTrait {
     fn set_security_strength(&mut self, strength: SecurityStrength)
     -> Result<(), KeyMaterialError>;
 
-    /// Sets this instance to be able to perform potentially hazardous conversions such as
+    /// Sets this instance to be able to perform potentially hazardous operations such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
     /// or manually setting the key bytes via [KeyMaterialTrait::mut_ref_to_bytes], which then requires you to be responsible
     /// for setting the key_len and key_type afterwards.
     ///
-    /// The purpose of the hazardous_conversions guard is not to prevent the user from accessing their data,
+    /// The purpose of the hazardous operations guard is not to prevent the user from accessing their data,
     /// but rather to make the developer think carefully about the operation they are about to perform,
     /// and to give static analysis tools an obvious marker that a given KeyMaterial variable warrants
     /// further inspection.
     fn allow_hazardous_operations(&mut self);
 
-    /// Resets this instance to not be able to perform potentially hazardous conversions.
+    /// Resets this instance to not be able to perform potentially hazardous operations.
     fn drop_hazardous_operations(&mut self);
 
     /// Sets the key_type of this KeyMaterial object.
@@ -286,43 +313,6 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
 }
 
 impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
-    /// Loads the provided data into a new KeyMaterial of the specified type.
-    /// This is discouraged unless the caller knows the provenance of the data, such as loading it
-    /// from a cryptographic private key file.
-    ///
-    /// This behaves differently on all-zero input key depending on whether [KeyMaterialTrait::allow_hazardous_operations] is set:
-    /// if not set, then it will succeed, setting the key type to [KeyType::Zeroized] and also return a [KeyMaterialError::ActingOnZeroizedKey]
-    /// to indicate that you may want to perform error-handling, which could be manually setting the key type
-    /// if you intend to allow zero keys, or do some other error-handling, like figure out why your RNG is broken.
-    /// Note that even if a [KeyMaterialError::ActingOnZeroizedKey] is returned, the object is still populated and usable.
-    /// For example, you could catch it like this:
-    /// ```
-    /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
-    /// use bouncycastle_core::key_material::KeyMaterial;
-    /// use bouncycastle_core::errors::KeyMaterialError;
-    ///
-    /// let key_bytes = [0u8; 16];
-    /// let mut key = KeyMaterial256::new();
-    /// let res = key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy);
-    /// match res {
-    ///   Err(KeyMaterialError::ActingOnZeroizedKey) => {
-    ///     // Either figure out why your passed an all-zero key,
-    ///     // or set the key type manually, if that's what you intended.
-    ///     key.allow_hazardous_operations();
-    ///     key.set_key_type(KeyType::BytesLowEntropy).unwrap(); // probably you should do something more elegant than .unwrap in your code ;)
-    ///     key.drop_hazardous_operations();
-    ///   },
-    ///   Err(_) => { /* figure out what else went wrong */ },
-    ///   Ok(_) => { /* good */ },
-    /// }
-    /// ```
-    /// On the other hand, if [KeyMaterialTrait::allow_hazardous_operations] is set then it will just do what you asked without complaining.
-    ///
-    /// Since this zeroizes and resets the key material, this is considered a dangerous conversion.
-    ///
-    /// Will set the [SecurityStrength] automatically according to the following rules:
-    /// * If [KeyType] is [KeyType::Zeroized] or [KeyType::BytesLowEntropy] then it will be [SecurityStrength::None].
-    /// * Otherwise it will set it based on the length of the provided source bytes.
     fn set_bytes_as_type(
         &mut self,
         source: &[u8],
@@ -453,26 +443,12 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.drop_hazardous_operations();
         Ok(())
     }
-    /// Sets this instance to be able to perform potentially hazardous operations such as
-    /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey.
-    ///
-    /// The purpose of the hazardous operations guard is not to prevent the user from accessing their data,
-    /// but rather to make the developer think carefully about the operation they are about to perform,
-    /// and to give static analysis tools an obvious marker that a given KeyMaterial variable warrants
-    /// further inspection.
     fn allow_hazardous_operations(&mut self) {
         self.allow_hazardous_operations = true;
     }
-    /// Resets this instance to not be able to perform potentially hazardous operations.
     fn drop_hazardous_operations(&mut self) {
         self.allow_hazardous_operations = false;
     }
-    /// Sets the key_type of this KeyMaterial object.
-    /// Does not perform any operations on the actual key material, other than changing the key_type field.
-    /// If allow_hazardous_operations is true, this method will allow conversion to any KeyType, otherwise
-    /// checking is performed to ensure that the conversion is "safe".
-    /// This drops the allow_hazardous_operations flag, so if you need to do multiple hazardous operations
-    /// on the same instance, then you'll need to call .allow_hazardous_operations() each time.
     fn convert_key_type(&mut self, new_key_type: KeyType) -> Result<(), KeyMaterialError> {
         if self.allow_hazardous_operations {
             // just do it
