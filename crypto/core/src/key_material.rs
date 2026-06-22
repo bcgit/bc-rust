@@ -40,10 +40,11 @@
 use crate::errors::KeyMaterialError;
 use crate::traits::{RNG, Secret, SecurityStrength};
 use bouncycastle_utils::{ct, min};
-use zeroize::{DefaultIsZeroes, ZeroizeOnDrop};
 
 use core::cmp::{Ordering, PartialOrd};
 use core::fmt;
+
+use zeroize::{DefaultIsZeroes, Zeroize, ZeroizeOnDrop};
 
 /// Sometimes you just need a zero-length dummy key.
 pub type KeyMaterial0 = KeyMaterial<0>;
@@ -171,7 +172,7 @@ pub trait KeyMaterialTrait {
 /// A wrapper for holding bytes-like key material (symmetric keys or seeds) which aims to apply a
 /// strict typing system to prevent many kinds of mis-use mistakes.
 /// The capacity of the internal buffer can be set at compile-time via the <KEY_LEN> param.
-#[derive(Clone, ZeroizeOnDrop)]
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeyMaterial<const KEY_LEN: usize> {
     buf: [u8; KEY_LEN],
     key_len: usize,

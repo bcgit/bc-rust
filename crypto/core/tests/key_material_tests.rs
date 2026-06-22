@@ -6,6 +6,7 @@ mod test_key_material {
         KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::traits::SecurityStrength;
+    use zeroize::Zeroize;
 
     const DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
                                    \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
@@ -172,21 +173,32 @@ mod test_key_material {
 
     #[test]
     fn zeroize() {
+        let assert_construction = |key: &KeyMaterial<32>| {
+            assert_eq!(key.key_len(), 32);
+            assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+            assert_eq!(key.security_strength(), SecurityStrength::None);
+        };
+
+        let assert_zeroization = |key: &mut KeyMaterial<32>| {
+            let key_len = key.key_len();
+            assert_eq!(key_len, 0);
+            assert_eq!(key.key_type(), KeyType::Zeroized);
+
+            key.allow_hazardous_operations();
+            let mut buf = vec![0u8; key_len];
+            buf.copy_from_slice(key.ref_to_bytes());
+            assert!(buf.iter().all(|&b| b == 0));
+        };
+
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        assert_eq!(key.key_len(), 32);
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
-        assert_eq!(key.security_strength(), SecurityStrength::None);
+        assert_construction(&key);
+        key.zeroize();
+        assert_zeroization(&mut key);
 
+        let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
+        assert_construction(&key);
         unsafe { core::ptr::drop_in_place(&mut key) };
-
-        let key_len = key.key_len();
-        assert_eq!(key_len, 0);
-        assert_eq!(key.key_type(), KeyType::Zeroized);
-
-        key.allow_hazardous_operations();
-        let mut buf = vec![0u8; key_len];
-        buf.copy_from_slice(key.ref_to_bytes());
-        assert!(buf.iter().all(|&b| b == 0));
+        assert_zeroization(&mut key);
     }
 
     #[test]
@@ -449,7 +461,7 @@ mod test_key_material {
         let key1 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
         assert_eq!(key1.key_type(), KeyType::MACKey);
         assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
-        
+
         // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
         let key2 = KeyMaterial256::from(key1.clone());
         assert_eq!(key1.key_len(), key2.key_len());
