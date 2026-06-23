@@ -148,10 +148,6 @@ pub trait KeyMaterialTrait {
     fn set_security_strength(&mut self, strength: SecurityStrength)
     -> Result<(), KeyMaterialError>;
 
-    fn do_hazardous_operations<F>(f: F)
-    where
-        F: FnOnce(&dyn KeyMaterialTrait);
-
     /// Sets this instance to be able to perform potentially hazardous operations such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
     /// or manually setting the key bytes via [KeyMaterialTrait::mut_ref_to_bytes], which then requires you to be responsible
@@ -313,9 +309,49 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
         key.buf[..other.key_len()].copy_from_slice(other.ref_to_bytes());
         Ok(key)
     }
+
+    /// Runs the provided closure within which hazardous operations are allowed.
+    /// All hazardous operations will return a [KeyMaterialError::HazardousOperationNotPermitted]
+    /// if used outside of this closure.
+    ///
+    /// Example usage:
+    ///
+    /// ```rust
+    /// use bouncycastle_core::key_material::{KeyType, KeyMaterial256, KeyMaterialTrait};
+    /// use bouncycastle_core::traits::SecurityStrength;
+    ///
+    /// // Let's create an all-zero key
+    /// let mut key = KeyMaterial256::default();
+    /// assert_eq!(key.key_type(), KeyType::Zeroized);
+    /// assert_eq!(key.security_strength(), SecurityStrength::None);
+    ///
+    /// // Now we want to tell the library that this all-zero key
+    /// // is to be used as a 32-byte [KeyType::Seed] at the 256-bit security strength,
+    /// // which the library will not allow you to do outside of the hazerdous operations closure.
+    /// key.do_hazardous_operations(|key| {
+    ///     key.set_key_len(32)?;
+    ///     key.set_key_type(KeyType::Seed)?;
+    ///     key.set_security_strength(SecurityStrength::_256bit)?;
+    ///     Ok(())
+    /// }).unwrap();
+    ///
+    /// assert_eq!(key.key_type(), KeyType::Seed);
+    /// assert_eq!(key.security_strength(), SecurityStrength::_256bit);
+    /// ```
+    // Dev note: This lives on the concrete type rather than on [KeyMaterialTrait] because a generic method
+    // would make the trait non-dyn-compatible, and the trait is used as `&dyn KeyMaterialTrait`
+    // elsewhere (e.g. [KeyMaterialTrait::concatenate], [KeyMaterialTrait::equals]).
+    pub fn do_hazardous_operations<F>(&mut self, f: F) -> Result<(), KeyMaterialError>
+    where
+        F: FnOnce(&mut Self) -> Result<(), KeyMaterialError>,
+    {
+        self.allow_hazardous_operations = true;
+        f(self)?;
+        self.allow_hazardous_operations = false;
+        Ok(())
+    }
 }
 
-// todo -- you don't need to duplicate all the docstrings
 impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     fn set_bytes_as_type(
         &mut self,
@@ -446,14 +482,6 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.security_strength = strength;
         self.drop_hazardous_operations();
         Ok(())
-    }
-    fn do_hazardous_operations<F>(&mut self, f: F)
-    where
-        F: FnOnce(),
-    {
-        self.allow_hazardous_operations = true;
-        f();
-        self.allow_hazardous_operations = false;
     }
     /// Sets this instance to be able to perform potentially hazardous operations such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey.
