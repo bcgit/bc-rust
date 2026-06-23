@@ -346,9 +346,9 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
         F: FnOnce(&mut Self) -> Result<(), KeyMaterialError>,
     {
         self.allow_hazardous_operations = true;
-        f(self)?;
+        let ret = f(self);
         self.allow_hazardous_operations = false;
-        Ok(())
+        ret
     }
 }
 
