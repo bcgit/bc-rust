@@ -25,7 +25,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{KEM, KEMPublicKey, SecurityStrength};
+use bouncycastle_core::traits::{KEMDecapsulator, KEMPublicKey, SecurityStrength};
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem_lowmemory::{
     MLKEM512, MLKEM512PublicKey, MLKEM768, MLKEM768PublicKey, MLKEM1024, MLKEM1024PublicKey,

@@ -1,5 +1,5 @@
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
-use bouncycastle_core::traits::KEM;
+use bouncycastle_core::traits::KEMDecapsulator;
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem_lowmemory::{
     MLKEM_RND_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM768, MLKEM768_CT_LEN, MLKEM1024,

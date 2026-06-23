@@ -67,6 +67,7 @@ const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
 #[allow(private_bounds)]
 /// Implementation of the Hash_DRBG algorithm as specified in NIST SP 800-90Ar1.
 pub struct HashDRBG80090A<H: HashDRBG80090AParams> {
+    _phantom: core::marker::PhantomData<H>,
     // Rust is stupid. What's the point of having a generic parameter if we can't use constants inside it?
     // state: WorkingState<H::SEED_LEN>,
     state: WorkingState<LARGEST_HASHER_OUTPUT_LEN>,
@@ -123,6 +124,7 @@ impl<H: HashDRBG80090AParams> HashDRBG80090A<H> {
     /// and relies on you to provide a strong seed.**
     pub fn new_unititialized() -> Self {
         Self {
+            _phantom: core::marker::PhantomData,
             state: WorkingState::<LARGEST_HASHER_OUTPUT_LEN> {
                 v: [0u8; LARGEST_HASHER_OUTPUT_LEN],
                 c: [0u8; LARGEST_HASHER_OUTPUT_LEN],

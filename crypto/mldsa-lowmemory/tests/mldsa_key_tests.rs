@@ -5,9 +5,7 @@ mod mldsa_key_tests {
 
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
-    use bouncycastle_core::traits::{
-        SecurityStrength, Signature, SignaturePrivateKey, SignaturePublicKey,
-    };
+    use bouncycastle_core::traits::{SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa_lowmemory::mldsa::{MLDSA_SEED_LEN, MLDSA44_FULL_SK_LEN};
@@ -24,9 +22,15 @@ mod mldsa_key_tests {
     fn core_framework_tests() {
         let tf = TestFrameworkSignatureKeys::new();
 
-        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>();
-        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>();
-        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>();
+        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_PK_LEN, MLDSA44_SK_LEN>(
+            MLDSA44::keygen,
+        );
+        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_PK_LEN, MLDSA65_SK_LEN>(
+            MLDSA65::keygen,
+        );
+        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_PK_LEN, MLDSA87_SK_LEN>(
+            MLDSA87::keygen,
+        );
     }
 
     #[test]

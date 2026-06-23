@@ -21,7 +21,7 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle::core::traits::{Signature, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureVerifier};
 use bouncycastle::hex;
 use bouncycastle::mldsa::MLDSA44_SIG_LEN;
 

@@ -23,7 +23,7 @@
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{SecurityStrength, Signature, SignaturePublicKey};
+use bouncycastle_core::traits::{SecurityStrength, SignaturePublicKey, SignatureVerifier};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa_lowmemory::{
     MLDSA44, MLDSA44PublicKey, MLDSA65, MLDSA65PublicKey, MLDSA87, MLDSA87PublicKey,

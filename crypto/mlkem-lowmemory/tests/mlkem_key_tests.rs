@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod mlkem_key_tests {
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-    use bouncycastle_core::traits::{KEM, KEMPrivateKey, KEMPublicKey, SecurityStrength};
+    use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey, SecurityStrength};
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem_lowmemory::mlkem::MLKEM512_FULL_SK_LEN;
-    use bouncycastle_mlkem_lowmemory::{
-        MLKEM_SS_LEN, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM768_CT_LEN,
-        MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN,
-    };
     use bouncycastle_mlkem_lowmemory::{MLKEM512, MLKEM768, MLKEM1024};
+    use bouncycastle_mlkem_lowmemory::{
+        MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM1024_PK_LEN,
+        MLKEM1024_SK_LEN,
+    };
     use bouncycastle_mlkem_lowmemory::{
         MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768PrivateKey, MLKEM768PublicKey,
         MLKEM1024PrivateKey, MLKEM1024PublicKey,
@@ -20,9 +20,13 @@ mod mlkem_key_tests {
         use bouncycastle_core_test_framework::kem::TestFrameworkKEMKeys;
         let tf = TestFrameworkKEMKeys::new();
 
-        tf.test_keys::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>();
-        tf.test_keys::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM_SS_LEN>();
-        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN>();
+        tf.test_keys::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512_PK_LEN, MLKEM512_SK_LEN>(
+            MLKEM512::keygen,
+        );
+        tf.test_keys::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768_PK_LEN, MLKEM768_SK_LEN>(
+            MLKEM768::keygen,
+        );
+        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN>(MLKEM1024::keygen);
     }
 
     #[test]

@@ -6,7 +6,7 @@ use crate::helpers::{
     write_bytes_or_hex_to_file,
 };
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KEM, KEMPrivateKey, KEMPublicKey};
+use bouncycastle::core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey};
 use bouncycastle::hex;
 use bouncycastle::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,

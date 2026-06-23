@@ -2,7 +2,9 @@
 mod hash_mldsa_tests {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core::traits::{Hash, PHSignature, Signature};
+    use bouncycastle_core::traits::{
+        Hash, PHSignatureVerifier, PHSigner, SignatureVerifier, Signer,
+    };
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{
@@ -21,19 +23,19 @@ mod hash_mldsa_tests {
         let tf = TestFrameworkSignature::new(false, true);
 
         // Test HashML-DSA-SHA512 as a regular signature alg
-        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA512, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(false);
-        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA512, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(false);
-        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(false);
+        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA512, HashMLDSA44_with_SHA512, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(HashMLDSA44_with_SHA512::keygen, false);
+        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA512, HashMLDSA65_with_SHA512, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(HashMLDSA65_with_SHA512::keygen, false);
+        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, HashMLDSA87_with_SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(HashMLDSA87_with_SHA512::keygen, false);
 
         // Test HashML-DSA-SHA256 as a ph signature alg
-        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA256, SHA256, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 32>(false);
-        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA256, SHA256, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 32>(false);
-        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA256, SHA256, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 32>(false);
+        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA256, SHA256, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 32>(HashMLDSA44_with_SHA256::keygen, false);
+        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA256, HashMLDSA65_with_SHA256, SHA256, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 32>(HashMLDSA65_with_SHA256::keygen, false);
+        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA256, HashMLDSA87_with_SHA256, SHA256, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 32>(HashMLDSA87_with_SHA256::keygen, false);
 
         // Test HashML-DSA-SHA512 as a ph signature alg
-        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA512, SHA512, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 64>(false);
-        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA512, SHA512, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 64>(false);
-        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 64>(false);
+        tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA512, HashMLDSA44_with_SHA512, SHA512, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 64>(HashMLDSA44_with_SHA512::keygen, false);
+        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA512, HashMLDSA65_with_SHA512, SHA512, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 64>(HashMLDSA65_with_SHA512::keygen, false);
+        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, HashMLDSA87_with_SHA512, SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 64>(HashMLDSA87_with_SHA512::keygen, false);
     }
 
     #[test]

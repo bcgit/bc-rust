@@ -28,8 +28,6 @@
 //! cryptographic application.
 
 #![forbid(unsafe_code)]
-#![allow(incomplete_features)] // Need this because generic_const_exprs is currently experimental.
-#![feature(generic_const_exprs)]
 
 use crate::hash_drbg80090a::{
     HashDRBG80090A, HashDRBG80090AParams_SHA256, HashDRBG80090AParams_SHA512,
