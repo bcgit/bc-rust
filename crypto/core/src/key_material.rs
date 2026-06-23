@@ -338,6 +338,36 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     /// assert_eq!(key.key_type(), KeyType::Seed);
     /// assert_eq!(key.security_strength(), SecurityStrength::_256bit);
     /// ```
+    ///
+    /// Another common usage of hazardous operations is to get a direct mutable reference to the
+    /// underlying KeyMaterial byte buffer; for example if you want to copy in key bytes from somewhere else.
+    ///
+    /// ```rust
+    /// use bouncycastle_core::key_material::{KeyType, KeyMaterial512, KeyMaterialTrait};
+    /// use bouncycastle_core::traits::SecurityStrength;
+    ///
+    /// // In this example, we initialize a KeyMateriol512 (64 bytes) with only 32 bytes of input.
+    /// let mut key = KeyMaterial512::from_bytes_as_type(
+    ///                                 &[1u8; 32],
+    ///                                 KeyType::BytesFullEntropy
+    ///                         ).unwrap();
+    /// assert_eq!(key.key_len(), 32);
+    ///
+    /// // Now we want to expand the length to 64 bytes and copy in an additional 32 bytes of key data,
+    /// // using [KeyMaterial::mut_ref_to_bytes].
+    /// let additional_bytes = [2u8; 32];
+    /// key.do_hazardous_operations(|key| {
+    ///     key.set_key_len(64)?;
+    ///     key.mut_ref_to_bytes()?[32..].copy_from_slice(&additional_bytes);
+    ///     Ok(())
+    /// }).unwrap();
+    ///
+    /// assert_eq!(key.key_len(), 64);
+    /// // Reading the key bytes via [KeyMateriol::ref_to_bytes] is not a hazardous operation.
+    /// assert_eq!(key.ref_to_bytes()[..32], [1u8; 32]);
+    /// assert_eq!(key.ref_to_bytes()[32..], [2u8; 32]);
+    /// ```
+    ///
     // Dev note: This lives on the concrete type rather than on [KeyMaterialTrait] because a generic method
     // would make the trait non-dyn-compatible, and the trait is used as `&dyn KeyMaterialTrait`
     // elsewhere (e.g. [KeyMaterialTrait::concatenate], [KeyMaterialTrait::equals]).
