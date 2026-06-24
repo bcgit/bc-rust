@@ -129,8 +129,8 @@ pub trait KDF: Default {
     ///
     /// Output length: this function will behave differently depending on the underlying hash primitive;
     /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
-    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterwards
-    /// using [KeyMaterialTrait::truncate].
+    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterward
+    /// using [KeyMaterialTrait::set_key_len].
     fn derive_key_out(
         self,
         key: &impl KeyMaterialTrait,
@@ -169,8 +169,8 @@ pub trait KDF: Default {
     ///
     /// Output length: this function will behave differently depending on the underlying hash primitive;
     /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
-    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterwards
-    /// by using [KeyMaterialTrait::truncate].
+    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterward
+    /// by using [KeyMaterialTrait::set_key_len].
     fn derive_key_from_multiple_out(
         self,
         keys: &[&impl KeyMaterialTrait],
