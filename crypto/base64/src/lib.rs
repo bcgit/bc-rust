@@ -1,7 +1,8 @@
 //! Good old fashioned base64 encoder and decoder.
 //!
-//! It should just work the way you expect: [encode] takes any bytes-like rust type
-//! and returns a String, while [decode] takes a String (which can be in any bytes-like container)
+//! It should just work the way it is normally expected: 
+//! [encode] takes any bytes-like rust type and returns a String, 
+//! while [decode] takes a String (which can be in any bytes-like container)
 //! and returns a `Vec<u8>`.
 //!
 //!```
@@ -31,10 +32,10 @@
 //! Unlike Hex, Base64 does not align cleanly to byte boundaries.
 //! That means that the above one-shot APIs should only be used if you have the entire content to
 //! process at the same time.
-//! In other words, if you arbitrarily break your data into chunks and hand it to the one-shot [encode] and [decode] APIs,
-//! you will get incorrect results.
-//! If you need to process your data in chunks, you need to use the streaming API that allows
-//! repeated calls to `do_update`, producing output as it goes, and correctly holds on to the unprocessed
+//! In other words, if data is arbitrarily broken into chunks and handed to the one-shot [encode] and [decode] APIs,
+//! the results obtained will be incorrect.
+//! Whenever it is necessary to process data in chunks, the streaming API that allows repeated calls to `do_update` 
+//! must be used. This produces output as it goes, and correctly holds on to the unprocessed
 //! partial block until either `do_update` or `do_final` is called.
 //!
 //! ```
@@ -60,15 +61,15 @@
 //!
 //! > [Util::Lookup: Exploiting key decoding in cryptographic libraries (Sieck, 2021)](https://arxiv.org/pdf/2108.04600.pdf),
 //!
-//! As this is a cryptography library, we are assuming that this base64 implementation will be used to encode
+//! As this is a cryptography library, it can be assumed that this base64 implementation will be used to encode
 //! and decode private keys in PEM and JWK formats and so we are only providing a constant-time implementation
 //! in order to remove the temptation to shoot yourself in the foot in the name of a small performance gain.
 //!
-//! In our testing, a naïve lookup table-based implementation of base64::decode was 1.7x faster than
-//! our constant-time implementation, and we are quite sure that optimized base64 implementations exist that
-//! provide still better performance.
-//! So if you find yourself in a position of needing to base64 encode gigabytes of non-sensitive data, then
-//! we recommend you use one of the good, fast, but non-constant-time base64 implementations available from other projects.
+//! During testing, a naïve lookup table-based implementation of base64::decode was 1.7x faster than
+//! a constant-time implementation. 
+//! We are quite sure that optimized base64 implementations exist that provide still better performance.
+//! It is necessary to encode gigabytes of non-sensitive data on base64, it is advised to use
+//! one of the good, fast, but non-constant-time base64 implementations available from other projects.
 //!
 //!
 //! # Alphabets:
@@ -100,7 +101,7 @@ pub enum Base64Error {
     /// pass the same input to do_final(). Note that do_final() is tolerant of incomplete padding blocks,
     /// so even if an additional padding character is contained in the next chunk of input, do_final() will still produce
     /// the correct output -- ie any additional chunks held by the caller can be discarded.
-    PaddingEnconteredDuringDoUpdate,
+    PaddingEncounteredDuringDoUpdate,
 
     /// Input contained a character that was not in the base64 alphabet. The index of the illegal character is included in the output.
     InvalidB64Character(usize),
@@ -288,7 +289,7 @@ impl Base64Decoder {
             i += 1;
             self.vals_in_buf += 1;
 
-            // here we get to assume that the buffer contains no padding.
+            // here, it can be assumed that the buffer contains no padding.
             if self.vals_in_buf == 4 {
                 // decode block
                 out.push(self.buf[0] << 2 | self.buf[1] >> 4);
@@ -302,23 +303,23 @@ impl Base64Decoder {
         Ok(out)
     }
 
-    /// As you would expect, do_final() consumes the object.
+    /// As can be expected, do_final() consumes the object.
     pub fn do_final<T: AsRef<[u8]>>(mut self, input: T) -> Result<Vec<u8>, Base64Error> {
         // process as much as we can the usual way.
         let mut out = match self.decode_internal(input, false) {
             Ok(out) => out,
-            Err(Base64Error::PaddingEnconteredDuringDoUpdate) => {
+            Err(Base64Error::PaddingEncounteredDuringDoUpdate) => {
                 panic!(
-                    "rollback_if_padding = false should not produce a Base64Error::PaddingEnconteredDuringDoUpdate"
+                    "rollback_if_padding = false should not produce a Base64Error::PaddingEncounteredDuringDoUpdate"
                 );
             }
             Err(e) => return Err(e),
         };
 
-        // now we only, maybe, have a single block containing padding to deal with.
+        // now, a single block containing padding remains to be dealt with.
         if self.vals_in_buf != 0 {
             // be tolerant of missing padding
-            // if we're at the end and it's not a complete block, then imagine the missing padding.
+            // if it is not a complete block at the end, the infer the byte count from the number of leftover symbols
             let pad_count: u8 = 3 - (self.vals_in_buf as u8 - 1);
 
             out.push(self.buf[0] << 2 | self.buf[1] >> 4);
