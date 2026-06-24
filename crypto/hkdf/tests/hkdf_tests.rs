@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod hkdf_tests {
     use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
+    use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
         KeyMaterialTrait, KeyType,
@@ -528,20 +529,18 @@ mod hkdf_tests {
         /*** First with the one-shot APIs ::extract() and ::expand_out(). ***/
 
         let mut ikm_key = KeyMaterial::<100>::new();
-        ikm_key.allow_hazardous_operations();
-        let r = ikm_key.set_bytes_as_type(&hex::decode(ikm).unwrap(), KeyType::BytesFullEntropy); // just for testing, ignore the error about zeroized keys
-        if r.is_err() {
-            ikm_key.allow_hazardous_operations();
-            ikm_key.set_key_type(KeyType::MACKey).unwrap();
-        }
+        key_material::do_hazardous_operations(&mut ikm_key, |ikm_key| {
+            // just for testing, ignore the error about zeroized keys
+            ikm_key.set_bytes_as_type(&hex::decode(ikm).unwrap(), KeyType::BytesFullEntropy)
+        })
+        .unwrap();
 
         let mut salt_key = KeyMaterial::<100>::new();
-        salt_key.allow_hazardous_operations();
-        let r = salt_key.set_bytes_as_type(&hex::decode(salt).unwrap(), KeyType::MACKey); // just for testing, ignore the error about zeroized keys
-        if r.is_err() {
-            salt_key.allow_hazardous_operations();
-            ikm_key.set_key_type(KeyType::MACKey).unwrap();
-        }
+        key_material::do_hazardous_operations(&mut salt_key, |salt_key| {
+            // just for testing, ignore the error about zeroized keys
+            salt_key.set_bytes_as_type(&hex::decode(salt).unwrap(), KeyType::MACKey)
+        })
+        .unwrap();
 
         let info = hex::decode(info).unwrap();
         let mut prk_key = HKDF_SHA256::extract(&salt_key, &ikm_key).unwrap();
@@ -550,12 +549,14 @@ mod hkdf_tests {
         // Some of the RFC5896 test vectors have input keys that are too short to meet the entropy seeding rules.
         // So, just for testing, we'll bump this up to full entropy, regardless of what entropy HKDF::extract()
         // thinks it should be based on the inputs.
-        prk_key.allow_hazardous_operations();
-        prk_key.set_key_type(KeyType::MACKey).unwrap();
+        key_material::do_hazardous_operations(&mut prk_key, |prk_key| {
+            prk_key.set_key_type(KeyType::MACKey)
+        })
+        .unwrap();
 
         let mut okm_key = KeyMaterial::<100>::new();
         _ = HKDF_SHA256::expand_out(&prk_key, &info, L, &mut okm_key).unwrap();
-        okm_key.truncate(L).unwrap();
+        okm_key.set_key_len(L).unwrap();
         assert_eq!(okm_key.ref_to_bytes().len(), L);
         assert_eq!(okm_key.ref_to_bytes(), hex::decode(okm).unwrap());
 
@@ -683,8 +684,9 @@ mod hkdf_tests {
 
         // SP800-56Cr2 tcId 1
         let mut salt = KeyMaterial::<128>::new(); // have to do it this way for it to accept a zeroized key
-        salt.allow_hazardous_operations();
-        salt.set_bytes_as_type(&hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), KeyType::MACKey).unwrap();
+        key_material::do_hazardous_operations(&mut salt, |salt|{
+            salt.set_bytes_as_type(&hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), KeyType::MACKey)
+        }).unwrap();
 
         // ikm = z||t
         // let ikm = KeyMaterial_internal::<128>::from_bytes_as_type(&hex::decode("589410408990A227518017C37997BE2F770AF54063E7393B2AA5463196136D18F365733139EB74CDD6B7268F41D33DB6").unwrap(), KeyType::MACKey).unwrap();
@@ -719,7 +721,7 @@ mod hkdf_tests {
         let output_key = hkdf.derive_key(&ikm, &additional_input).unwrap();
         // kdf.derive_key is a one-step that doesn't expand, so need to truncate the expected key to match.
         let mut expected_key_truncated = expected_key.clone();
-        expected_key_truncated.truncate(output_key.key_len()).unwrap();
+        expected_key_truncated.set_key_len(output_key.key_len()).unwrap();
         assert_eq!(output_key.ref_to_bytes(), expected_key_truncated.ref_to_bytes());
 
         testframework

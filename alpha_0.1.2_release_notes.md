@@ -40,6 +40,8 @@
     * mlkem-lowmemory -- runs in about 1/4th of the usual memory (~ 12 kb of stack) with comparable performance impact.
 * All public `*_out(.., out: &mut [u8])` functions now begin by zeroizing the entire output buffer with `.fill(0)`,
   preventing exposure of stale data in oversized output buffers or on early error returns.
+* Reworked the way KeyMaterial hazardous operations work; instead of a stateful .allow_hazardous_operations() /
+  .drop_hazardous_operations(), it now uses a closure-based do_hazardous_operations(). Github issue #39.
 * Github issues resolved:
     * #6: https://github.com/bcgit/bc-rust/issues/6, thanks to Q. T. Felix (github: @Quant-TheodoreFelix)
     * #10: https://github.com/bcgit/bc-rust/issues/10, thanks to Nicola Tuveri (github: @romen)

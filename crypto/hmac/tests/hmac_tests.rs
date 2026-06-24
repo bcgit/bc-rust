@@ -19,7 +19,8 @@ mod hmac_tests {
         let mut zero_length_key = KeyMaterial256::default();
         key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
             zero_length_key.set_key_type(KeyType::MACKey)
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(zero_length_key.key_len(), 0);
         assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -154,9 +155,8 @@ mod hmac_tests {
         HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
 
         // non-zero len key of all-zero bytes
-        key_material::do_hazardous_operations(&mut zero_key, |zero_key| {
-            zero_key.set_key_len(32)
-        }).unwrap();
+        key_material::do_hazardous_operations(&mut zero_key, |zero_key| zero_key.set_key_len(32))
+            .unwrap();
         HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
 
         // but we don't allow zero-len keys that are not Zeroized or MACKey
@@ -275,7 +275,8 @@ mod hmac_tests {
             let mut zero_length_key = KeyMaterial256::default();
             key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
-            }).unwrap();
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -352,7 +353,8 @@ mod hmac_tests {
             let mut zero_length_key = KeyMaterial256::default();
             key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
-            }).unwrap();
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -430,7 +432,8 @@ mod hmac_tests {
             let mut zero_length_key = KeyMaterial256::default();
             key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
-            }).unwrap();
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -506,7 +509,8 @@ mod hmac_tests {
             let mut zero_length_key = KeyMaterial256::default();
             key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
-            }).unwrap();
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
