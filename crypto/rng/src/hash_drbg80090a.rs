@@ -467,12 +467,19 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         additional_input: &[u8],
         out: &mut impl KeyMaterialTrait,
     ) -> Result<usize, RNGError> {
-        let mut bytes_written = 0;
+        let mut ret: Result<usize, RNGError> = Ok(0);
         do_hazardous_operations(out, |out| {
-            bytes_written = self
-                .generate_out(additional_input, out.mut_ref_to_bytes()?)
-                .map_err(|_| KeyMaterialError::GenericError("DRBG generate failed"))?;
+            let out_ref = out.mut_ref_to_bytes()?;
+            ret = self.generate_out(additional_input, out_ref);
+            Ok(())
+        })?;
 
+        let bytes_written = match ret {
+            Err(e) => return Err(e),
+            Ok(bytes_written) => bytes_written,
+        };
+
+        do_hazardous_operations(out, |out| {
             out.set_key_len(bytes_written)?;
             out.set_key_type(KeyType::BytesFullEntropy)?;
             let new_security_strength =

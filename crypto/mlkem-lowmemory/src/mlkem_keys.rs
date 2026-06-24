@@ -18,7 +18,9 @@ use crate::mlkem::{
 use crate::polynomial::Polynomial;
 use crate::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME};
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{
+    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, Secret, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
 use core::fmt;
@@ -385,15 +387,15 @@ impl<
         tmp[..32].copy_from_slice(&self.seed_d);
         tmp[32..].copy_from_slice(&self.z);
         let mut seed = KeyMaterial::<64>::from_bytes_as_type(&tmp, KeyType::Seed).unwrap();
-        seed.allow_hazardous_operations();
-        seed.set_security_strength(match k {
-            2 => SecurityStrength::_128bit,
-            3 => SecurityStrength::_192bit,
-            4 => SecurityStrength::_256bit,
-            _ => unreachable!("Invalid mlkem param set"),
+        do_hazardous_operations(&mut seed, |seed| {
+            seed.set_security_strength(match k {
+                2 => SecurityStrength::_128bit,
+                3 => SecurityStrength::_192bit,
+                4 => SecurityStrength::_256bit,
+                _ => unreachable!("Invalid mlkem param set"),
+            })
         })
         .unwrap();
-        seed.drop_hazardous_operations();
 
         Some(seed)
     }
@@ -564,10 +566,10 @@ impl<
             return Err(KEMError::DecodingError("Invalid seed length"));
         }
         let mut keymat = KeyMaterial::<64>::from_bytes(bytes)?;
-        keymat.allow_hazardous_operations();
-        keymat.set_key_type(KeyType::Seed)?;
-        keymat.set_security_strength(SecurityStrength::_256bit)?;
-        keymat.drop_hazardous_operations();
+        do_hazardous_operations(&mut keymat, |keymat| {
+            keymat.set_key_type(KeyType::Seed)?;
+            keymat.set_security_strength(SecurityStrength::_256bit)
+        })?;
 
         Self::new(&keymat)
     }

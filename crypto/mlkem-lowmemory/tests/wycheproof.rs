@@ -24,7 +24,9 @@
 
 #![allow(dead_code)]
 
-use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{
+    KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle_core::traits::{KEMDecapsulator, KEMPublicKey, SecurityStrength};
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem_lowmemory::{
@@ -567,9 +569,10 @@ impl MLKEMTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::Seed)).unwrap();
+        match do_hazardous_operations(&mut seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_256bit)
+        }) {
             Ok(_) => (),
             Err(e) => {
                 if self.result == "invalid" {
@@ -631,9 +634,10 @@ impl MLKEMTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::Seed)).unwrap();
+        match do_hazardous_operations(&mut seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_256bit)
+        }) {
             Ok(_) => (),
             Err(e) => {
                 if self.result == "invalid" {
@@ -695,9 +699,10 @@ impl MLKEMTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::Seed)).unwrap();
+        match do_hazardous_operations(&mut seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_256bit)
+        }) {
             Ok(_) => (),
             Err(e) => {
                 if self.result == "invalid" {

@@ -2,7 +2,9 @@
 #[cfg(test)]
 mod mlkem_tests {
     use bouncycastle_core::errors::KEMError;
-    use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+    use bouncycastle_core::key_material::{
+        KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
+    };
     use bouncycastle_core::traits::{
         KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF,
     };
@@ -336,8 +338,8 @@ mod mlkem_tests {
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
 
         // success case KeyType: BytesFullEntropy
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::BytesFullEntropy).unwrap();
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::BytesFullEntropy))
+            .unwrap();
         _ = MLKEM512::keygen_from_seed(&seed).unwrap();
 
         // Failure case: key type != Seed || BytesFullEntropy

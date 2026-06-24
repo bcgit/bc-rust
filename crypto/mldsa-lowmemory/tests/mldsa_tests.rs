@@ -3,6 +3,7 @@
 mod mldsa_tests {
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
     use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
@@ -188,8 +189,10 @@ mod mldsa_tests {
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
 
         // success case KeyType: BytesFullEntropy
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::BytesFullEntropy).unwrap();
+        key_material::do_hazardous_operations(&mut seed, |seed| {
+            seed.set_key_type(KeyType::BytesFullEntropy)
+        })
+        .unwrap();
         _ = MLDSA44::keygen_from_seed(&seed).unwrap();
 
         // Failure case: key type != Seed || BytesFullEntropy
@@ -446,9 +449,10 @@ mod mldsa_tests {
             KeyType::Seed,
         )
         .unwrap();
-        low_security_seed.allow_hazardous_operations();
-        low_security_seed.set_security_strength(SecurityStrength::_192bit).unwrap();
-        low_security_seed.drop_hazardous_operations();
+        key_material::do_hazardous_operations(&mut low_security_seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_192bit)
+        })
+        .unwrap();
         // a 128bit secure seed should be rejected by MLDSA87
         MLDSA65::sign_mu_deterministic_from_seed(&low_security_seed, &mu, rnd).unwrap();
 
@@ -459,9 +463,10 @@ mod mldsa_tests {
             KeyType::Seed,
         )
         .unwrap();
-        low_security_seed.allow_hazardous_operations();
-        low_security_seed.set_security_strength(SecurityStrength::_128bit).unwrap();
-        low_security_seed.drop_hazardous_operations();
+        key_material::do_hazardous_operations(&mut low_security_seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_128bit)
+        })
+        .unwrap();
         // a 128bit secure seed should be rejected by MLDSA87
         match MLDSA87::sign_mu_deterministic_from_seed(&low_security_seed, &mu, rnd) {
             Err(SignatureError::KeyGenError(_)) => { /* good */ }

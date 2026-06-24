@@ -140,7 +140,9 @@ use crate::mlkem_keys::{
 use crate::mlkem_keys::{MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait};
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{
+    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle_core::traits::{
     Algorithm, Hash, KEMDecapsulator, KEMEncapsulator, RNG, SecurityStrength, XOF,
 };
@@ -775,9 +777,9 @@ impl<
         let (ss, ct) = Self::encaps_internal(&pk.ek, Some(&pk.A_hat), m);
 
         let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss, KeyType::BytesFullEntropy)?;
-        key.allow_hazardous_operations();
-        key.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))?;
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| {
+            key.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
+        })?;
 
         Ok((key, ct))
     }
@@ -806,9 +808,9 @@ impl<
         let K = Self::decaps_internal(&sk.dk, Some(&sk.A_hat), ct.try_into().unwrap());
 
         let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&K, KeyType::BytesFullEntropy)?;
-        key.allow_hazardous_operations();
-        key.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))?;
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| {
+            key.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
+        })?;
 
         Ok(key)
     }

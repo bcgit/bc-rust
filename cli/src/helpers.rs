@@ -1,4 +1,6 @@
-use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle::core::key_material::{
+    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle::core::traits::SecurityStrength;
 use bouncycastle::hex;
 use std::fs::File;
@@ -106,10 +108,11 @@ pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMater
         eprintln!(
             "Warning: low entropy seed provided. We'll still process it, but it may be insecure."
         );
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-        seed.drop_hazardous_operations();
+        do_hazardous_operations(&mut seed, |seed| {
+            seed.set_key_type(KeyType::Seed)?;
+            seed.set_security_strength(SecurityStrength::_256bit)
+        })
+        .unwrap();
     }
     Ok(seed)
 }
