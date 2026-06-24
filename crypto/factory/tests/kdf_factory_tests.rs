@@ -63,7 +63,7 @@ mod kdf_factory_tests {
     fn hkdf_tests() {
         /* HKDF-SHA256 */
         // Note: this value is not checked against any external reference implementation,
-        // I just hard-coded the value to make sure it stays consistent.
+        // The value is hard-coded to ensure consistency.
         let key_material =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::MACKey).unwrap();
         let derived_key =
@@ -73,7 +73,7 @@ mod kdf_factory_tests {
 
         /* HKDF-SHA512 */
         // Note: this value is not checked against any external reference implementation,
-        // I just hard-coded the value to make sure it stays consistent.
+        // The value is hard-coded to ensure consistency.
         let key_material = KeyMaterial512::from_bytes(&DUMMY_SEED_512[..64]).unwrap();
         let derived_key =
             KDFFactory::new("HKDF-SHA512").unwrap().derive_key(&key_material, &[0u8; 0]).unwrap();

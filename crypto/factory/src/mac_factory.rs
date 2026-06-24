@@ -34,7 +34,7 @@
 //! }
 //! ```
 //!
-//! You can equivalently construct an instance of [MACFactory] by string instead of using the constant:
+//! Equivalently, an instance of [MACFactory] may be constructed by string instead of using the constant:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
@@ -52,7 +52,7 @@
 //! let hmac = MACFactory::new("HMAC-SHA256", &key).unwrap();
 //! ```
 //!
-//! Or if you don't particularly care which algorithm is used, you can use the built-in default:
+//! If the algorithm used is not particularly important, the built-in default may be used:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
@@ -138,12 +138,12 @@ impl MACFactory {
 }
 
 impl MAC for MACFactory {
-    /// This is a dummy function, required by the [MAC] trait. Don't call it, it doesn't do anything.
+    /// This is a dummy function, required by the [MAC] trait. DO NOT call it, it does not do anything.
     fn new(_key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
         unimplemented!()
     }
 
-    /// This is a dummy function, required by the [MAC] trait. Don't call it, it doesn't do anything.
+    /// This is a dummy function, required by the [MAC] trait. DO NOT call it, it does not do anything.
     fn new_allow_weak_key(_key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
         unimplemented!()
     }

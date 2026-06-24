@@ -16,7 +16,7 @@
 //! h.absorb(data);
 //! let output: Vec<u8> = h.squeeze(16);
 //! ```
-//! You can equivalently invoke this by string instead of using the constant:
+//! Equivalently, it may be invoked by passing a string instead of using the constant:
 //!
 //! ```
 //! use bouncycastle_factory::AlgorithmFactory;
@@ -24,8 +24,7 @@
 //!
 //! let mut h = XOFFactory::new("SHAKE128");
 //! ```
-//!
-//! Or, if you don't particularly care which algorithm you get, you can use the configured default:
+//! If the algorithm used is not particularly important, the configured default may be used:
 //!
 //! ```
 //! use bouncycastle_factory::AlgorithmFactory;

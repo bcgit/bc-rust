@@ -14,7 +14,7 @@
 //! let h = bouncycastle_factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
 //! let output: Vec<u8> = h.hash(data);
 //! ```
-//! You can equivalently invoke this by string instead of using the constant:
+//! Equivalently, it may be invoked by passing a string instead of using the constant:
 //!
 //! ```
 //! use bouncycastle_factory::AlgorithmFactory;

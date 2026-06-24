@@ -1,4 +1,4 @@
-//! Provides simplified abstracted APIs over classes of cryptigraphic primitives, such as Hash, KDF, etc.
+//! Provides simplified abstracted APIs over classes of cryptographic primitives, such as Hash, KDF, etc.
 
 use crate::errors::{HashError, KDFError, KEMError, MACError, RNGError, SignatureError};
 use crate::key_material::KeyMaterialTrait;
@@ -108,7 +108,7 @@ pub trait KDF: Default {
     /// [KeyType::BytesLowEntropy] -- for example, seeding SHA3-256 with a [KeyMaterial] containing
     /// only 128 bits of key material.
     ///
-    /// An implement can, and in most cases SHOULD, return a [HashError] if provided
+    /// An implementation can, and in most cases SHOULD, return a [HashError] if provided
     /// with a [KeyMaterial] of type [KeyType::Zeroized].
     ///
     /// # Additional Input
