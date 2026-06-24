@@ -288,7 +288,7 @@ impl MLDSASignSeedTestCase {
         let (pk, sk) = match MLDSA44::keygen_from_seed(&seed) {
             Ok((pk, sk)) => (pk, sk),
             Err(e) => {
-                if self.result == "invalid" { 
+                if self.result == "invalid" {
                     /* good */
                     return;
                 } else {
@@ -387,7 +387,7 @@ impl MLDSASignSeedTestCase {
             Err(e) => {
                 if self.result == "invalid" {
                     /* good, test passed */
-                    return
+                    return;
                 } else {
                     panic!("{:?}", e)
                 }
@@ -484,7 +484,7 @@ impl MLDSASignSeedTestCase {
             Err(e) => {
                 if self.result == "invalid" {
                     /* good, test passed */
-                    return
+                    return;
                 } else {
                     panic!("{:?}", e)
                 }

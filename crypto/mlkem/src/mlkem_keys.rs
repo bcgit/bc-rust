@@ -470,7 +470,7 @@ impl<
             tmp[..32].copy_from_slice(&self.seed_d.unwrap());
             tmp[32..].copy_from_slice(&self.z);
             let mut seed = KeyMaterial::<64>::from_bytes_as_type(&tmp, KeyType::Seed).unwrap();
-            
+
             key_material::do_hazardous_operations(&mut seed, |seed| {
                 seed.set_security_strength(match k {
                     2 => SecurityStrength::_128bit,
@@ -480,7 +480,7 @@ impl<
                 })
             })
             .unwrap();
-            
+
             Some(seed)
         }
     }
