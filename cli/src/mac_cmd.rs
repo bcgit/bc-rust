@@ -35,7 +35,7 @@ pub(crate) fn mac_cmd(
     }
     let mut key = KeyMaterial512::from_bytes(&key_bytes).unwrap();
     key.allow_hazardous_operations();
-    key.convert_key_type(KeyType::MACKey).unwrap();
+    key.set_key_type(KeyType::MACKey).unwrap();
 
     // instantiate the MAC object and call do_mac()
     match hmac_variant {

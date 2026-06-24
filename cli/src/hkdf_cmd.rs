@@ -44,7 +44,7 @@ pub(crate) fn hkdf_cmd(
     let mut salt_key = KeyMaterial::<1024>::from_bytes(&salt_bytes).unwrap();
     // force it just so the CLI behaves properly even with all-zero or zero-length keys
     salt_key.allow_hazardous_operations();
-    salt_key.convert_key_type(KeyType::MACKey).unwrap();
+    salt_key.set_key_type(KeyType::MACKey).unwrap();
 
     ikm_bytes = if ikm.is_some() {
         hex::decode(ikm.as_ref().unwrap()).unwrap()

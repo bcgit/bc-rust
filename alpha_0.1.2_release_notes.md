@@ -28,6 +28,8 @@
 * Close all open github issues and document them in this file.
 * After everything is merged, circle back to crucible, and make sure that the harness still works (and maybe remove the
   nightly build toolchain)
+* Search for all the uses of .unwrap() in non-test code and replace each with either a comment or an expect with a
+  meaningful error string.
 
 # 0.1.2 Features / Changelog
 

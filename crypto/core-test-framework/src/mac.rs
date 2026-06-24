@@ -1,6 +1,8 @@
 use crate::DUMMY_SEED_512;
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
-use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{
+    KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle_core::traits::MAC;
 use bouncycastle_core::traits::SecurityStrength;
 
@@ -88,30 +90,32 @@ impl TestFrameworkMAC {
 
         let mut low_security_key =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::MACKey).unwrap();
-        low_security_key.allow_hazardous_operations();
-        match M::new_allow_weak_key(key).unwrap().max_security_strength() {
-            SecurityStrength::None => {
-                low_security_key.truncate(13).unwrap();
-                low_security_key.set_security_strength(SecurityStrength::None).unwrap();
-            }
-            SecurityStrength::_112bit => {
-                low_security_key.truncate(28).unwrap();
-                low_security_key.set_security_strength(SecurityStrength::None).unwrap();
-            }
-            SecurityStrength::_128bit => {
-                low_security_key.truncate(32).unwrap();
-                low_security_key.set_security_strength(SecurityStrength::_112bit).unwrap();
-            }
-            SecurityStrength::_192bit => {
-                low_security_key.truncate(48).unwrap();
-                low_security_key.set_security_strength(SecurityStrength::_128bit).unwrap();
-            }
-            SecurityStrength::_256bit => {
-                low_security_key.truncate(64).unwrap();
-                low_security_key.set_security_strength(SecurityStrength::_192bit).unwrap();
-            }
-        };
-        low_security_key.drop_hazardous_operations();
+        do_hazardous_operations(&mut low_security_key, |low_security_key| {
+            match M::new_allow_weak_key(key).unwrap().max_security_strength() {
+                SecurityStrength::None => {
+                    low_security_key.set_key_len(13).unwrap(); // truncates should be infallible
+                    low_security_key.set_security_strength(SecurityStrength::None).unwrap();
+                }
+                SecurityStrength::_112bit => {
+                    low_security_key.set_key_len(28).unwrap(); // truncate should be infallible
+                    low_security_key.set_security_strength(SecurityStrength::None).unwrap();
+                }
+                SecurityStrength::_128bit => {
+                    low_security_key.set_key_len(32).unwrap(); // truncate should be infallible
+                    low_security_key.set_security_strength(SecurityStrength::_112bit).unwrap();
+                }
+                SecurityStrength::_192bit => {
+                    low_security_key.set_key_len(48).unwrap(); // truncate should be infallible
+                    low_security_key.set_security_strength(SecurityStrength::_128bit).unwrap();
+                }
+                SecurityStrength::_256bit => {
+                    low_security_key.set_key_len(64).unwrap(); // truncate should be infallible
+                    low_security_key.set_security_strength(SecurityStrength::_192bit).unwrap();
+                }
+            };
+            Ok(())
+        })
+        .unwrap();
 
         // init
         assert!(

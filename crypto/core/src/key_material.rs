@@ -17,7 +17,7 @@
 //! * Keyed KDFs that are given a key of RawFullEntropy or KeyedHashKey a KeyMaterial data of type RawLowEntropy or RawUnknownEntropy will promote it into RawFullEntropy.
 //! * Symmetric ciphers or asymmetric ciphers such as X25519 or ML-KEM that accept private key seeds will expect KeyMaterial of type AsymmetricPrivateKeySeed.
 //!
-//! However, there is a [KeyMaterial::convert_key_type] for cases where the user has more context knowledge than the library.
+//! However, there is a [KeyMaterialTrait::set_key_type] for cases where the user has more context knowledge than the library.
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
 //! run inside of a [do_hazardous_operations] closure, see below.
 //!
@@ -155,11 +155,16 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
 
     fn key_type(&self) -> KeyType;
 
-    // todo -- merge this with convert_key_type()
-    /// Set the [KeyType] of the KeyMateriol.
+    /// Sets (or safely converts) the [KeyType] of this KeyMaterial object.
+    /// Does not perform any operations on the actual key material, other than changing the key_type field.
     ///
     /// # 🚨 Hazardous Operation🚨
-    /// This function needs to be run within a [do_hazardous_operations] closure.
+    /// Inside a [do_hazardous_operations] closure this will set the key to any [KeyType].
+    /// Outside such a closure, only "safe" conversions are permitted: a [KeyType::BytesFullEntropy]
+    /// key may be converted to any type, and any type may be converted to itself (a no-op).
+    /// A hazardous conversion attempted outside a [do_hazardous_operations] closure returns
+    /// [KeyMaterialError::HazardousOperationNotPermitted], and converting a [KeyType::Zeroized] key
+    /// returns [KeyMaterialError::ActingOnZeroizedKey].
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError>;
 
     /// Security Strength, as used here, aligns with NIST SP 800-90A guidance for random number generation,
@@ -186,13 +191,6 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// throw a [KeyMaterialError::InvalidLength] on a request to set the security level higher than the current key length. Inside a [do_hazardous_operations] it will do what you asked without complaining.
     fn set_security_strength(&mut self, strength: SecurityStrength)
     -> Result<(), KeyMaterialError>;
-
-    /// Sets the key_type of this KeyMaterial object.
-    /// Does not perform any operations on the actual key material, other than changing the key_type field.
-    /// If the hazardous-operations guard is set (i.e. this is called inside a
-    /// [do_hazardous_operations] closure), this method will allow conversion to any KeyType;
-    /// otherwise checking is performed to ensure that the conversion is "safe".
-    fn convert_key_type(&mut self, new_key_type: KeyType) -> Result<(), KeyMaterialError>;
 
     /// Whether or not the KeyMaterial is one of the full entropy key types.
     fn is_full_entropy(&self) -> bool;
@@ -427,10 +425,49 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.key_type.clone()
     }
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError> {
-        if !self.allow_hazardous_operations {
-            return Err(KeyMaterialError::HazardousOperationNotPermitted);
+        if self.allow_hazardous_operations {
+            // just do it
+            self.key_type = key_type;
+            return Ok(());
         }
-        self.key_type = key_type.clone();
+
+        match self.key_type {
+            KeyType::Zeroized => {
+                return Err(KeyMaterialError::ActingOnZeroizedKey);
+            }
+            KeyType::BytesFullEntropy => {
+                // raw full entropy can be safely converted to anything.
+                self.key_type = key_type;
+            }
+            KeyType::BytesLowEntropy => match key_type {
+                KeyType::BytesLowEntropy => { /* No change */ }
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+            KeyType::MACKey => match key_type {
+                KeyType::MACKey => { /* No change */ }
+                // Else: Once a KeyMaterial is typed, it should stay that way.
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+            KeyType::SymmetricCipherKey => match key_type {
+                KeyType::SymmetricCipherKey => { /* No change */ }
+                // Else: Once a KeyMaterial is typed, it should stay that way.
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+            KeyType::Seed => match key_type {
+                KeyType::Seed => { /* No change */ }
+                // Else: Once a KeyMaterial is typed, it should stay that way.
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+        }
+
         Ok(())
     }
     fn security_strength(&self) -> SecurityStrength {
@@ -484,60 +521,6 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
 
         self.security_strength = strength;
-        Ok(())
-    }
-    fn convert_key_type(&mut self, new_key_type: KeyType) -> Result<(), KeyMaterialError> {
-        if self.allow_hazardous_operations {
-            // just do it
-            self.key_type = new_key_type;
-            return Ok(());
-        }
-
-        match self.key_type {
-            KeyType::Zeroized => {
-                return Err(KeyMaterialError::ActingOnZeroizedKey);
-            }
-            KeyType::BytesFullEntropy => {
-                // raw full entropy can be safely converted to anything.
-                self.key_type = new_key_type;
-            }
-            KeyType::BytesLowEntropy => {
-                match new_key_type {
-                    KeyType::BytesLowEntropy => { /* No change */ }
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-            KeyType::MACKey => {
-                match new_key_type {
-                    KeyType::MACKey => { /* No change */ }
-                    // Else: Once a KeyMaterial is typed, it should stay that way.
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-            KeyType::SymmetricCipherKey => {
-                match new_key_type {
-                    KeyType::SymmetricCipherKey => { /* No change */ }
-                    // Else: Once a KeyMaterial is typed, it should stay that way.
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-            KeyType::Seed => {
-                match new_key_type {
-                    KeyType::Seed => { /* No change */ }
-                    // Else: Once a KeyMaterial is typed, it should stay that way.
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-        }
-
         Ok(())
     }
     fn is_full_entropy(&self) -> bool {
@@ -780,7 +763,7 @@ impl<const KEY_LEN: usize> KeyMaterialInternalTrait for KeyMaterial<KEY_LEN> {
 #[allow(private_bounds)]
 pub fn do_hazardous_operations<KEY, F>(key: &mut KEY, f: F) -> Result<(), KeyMaterialError>
 where
-    KEY: KeyMaterialTrait,
+    KEY: KeyMaterialTrait + ?Sized,
     F: FnOnce(&mut KEY) -> Result<(), KeyMaterialError>,
 {
     let allows = key.allows_hazardous_operations();

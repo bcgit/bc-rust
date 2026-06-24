@@ -6,7 +6,9 @@
 use crate::Sp80090ADrbg;
 
 use bouncycastle_core::errors::{KeyMaterialError, RNGError};
-use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{
+    KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle_core::traits::{Hash, HashAlgParams, RNG, SecurityStrength};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::min;
@@ -141,20 +143,23 @@ impl<H: HashDRBG80090AParams> HashDRBG80090A<H> {
     /// Creates a new instance using the local OS RNG as a source of seed entropy.
     pub fn new_from_os() -> Self {
         let mut seed = KeyMaterial512::new();
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match H::HASH {
-            SupportedHash::SHA256 => {
-                getrandom::fill(&mut seed.mut_ref_to_bytes().unwrap()[..32]).unwrap();
-                seed.set_key_len(32).unwrap();
-                seed.set_security_strength(SecurityStrength::_128bit).unwrap();
+        do_hazardous_operations(&mut seed, |seed| {
+            seed.set_key_type(KeyType::Seed).unwrap();
+            match H::HASH {
+                SupportedHash::SHA256 => {
+                    getrandom::fill(&mut seed.mut_ref_to_bytes().unwrap()[..32]).unwrap();
+                    seed.set_key_len(32).unwrap();
+                    seed.set_security_strength(SecurityStrength::_128bit).unwrap();
+                }
+                SupportedHash::SHA512 => {
+                    getrandom::fill(&mut seed.mut_ref_to_bytes().unwrap()).unwrap();
+                    seed.set_key_len(64).unwrap();
+                    seed.set_security_strength(SecurityStrength::_256bit).unwrap();
+                }
             }
-            SupportedHash::SHA512 => {
-                getrandom::fill(&mut seed.mut_ref_to_bytes().unwrap()).unwrap();
-                seed.set_key_len(64).unwrap();
-                seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-            }
-        }
+            Ok(())
+        })
+        .unwrap();
 
         let mut rng = Self::new_unititialized();
         let ss = seed.security_strength().clone();
@@ -462,15 +467,20 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         additional_input: &[u8],
         out: &mut impl KeyMaterialTrait,
     ) -> Result<usize, RNGError> {
-        out.allow_hazardous_operations();
-        let bytes_written = self.generate_out(additional_input, out.mut_ref_to_bytes().unwrap())?;
+        let mut bytes_written = 0;
+        do_hazardous_operations(out, |out| {
+            bytes_written = self
+                .generate_out(additional_input, out.mut_ref_to_bytes()?)
+                .map_err(|_| KeyMaterialError::GenericError("DRBG generate failed"))?;
 
-        out.set_key_len(bytes_written)?;
-        out.set_key_type(KeyType::BytesFullEntropy)?;
-        let new_security_strength =
-            min(&self.admin_info.strength, &SecurityStrength::from_bits(bytes_written * 8)).clone();
-        out.set_security_strength(new_security_strength)?;
-        out.drop_hazardous_operations();
+            out.set_key_len(bytes_written)?;
+            out.set_key_type(KeyType::BytesFullEntropy)?;
+            let new_security_strength =
+                min(&self.admin_info.strength, &SecurityStrength::from_bits(bytes_written * 8))
+                    .clone();
+            out.set_security_strength(new_security_strength)?;
+            Ok(())
+        })?;
         Ok(bytes_written)
     }
 }
