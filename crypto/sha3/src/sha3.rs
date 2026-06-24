@@ -82,7 +82,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
         let mut key_type = self.kdf_key_type.clone();
         let output_security_strength = self.kdf_security_strength.clone();
         output_key.allow_hazardous_operations();
-        let bytes_written = self.do_final_out(output_key.mut_ref_to_bytes()?);
+        let bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
         output_key.set_key_len(bytes_written)?;
 
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.

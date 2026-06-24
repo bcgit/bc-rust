@@ -397,7 +397,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         let mut bytes_written: usize = 0;
 
         okm.allow_hazardous_operations();
-        let out: &mut [u8] = okm.mut_ref_to_bytes()?;
+        let out: &mut [u8] = okm.ref_to_bytes_mut()?;
         // Could potentially speed this up by unrolling T(0) and T(1)
 
         // We're gonna have to kludge the prk key type to MACKey to make HMAC happy, but we'll set it back to the original value afterwards.
@@ -568,9 +568,9 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
 
         let output_key_type = self.entropy.get_output_key_type(); // need to do this above self.hmac.do_final_out, which will consume self.
 
-        okm.allow_hazardous_operations(); // doing it here to get mut_ref_to_bytes
+        okm.allow_hazardous_operations(); // doing it here to get ref_to_bytes_mut
         let bytes_written =
-            self.hmac.unwrap().do_final_out(&mut okm.mut_ref_to_bytes().unwrap())?;
+            self.hmac.unwrap().do_final_out(&mut okm.ref_to_bytes_mut().unwrap())?;
         okm.set_key_len(bytes_written)?;
         okm.set_key_type(output_key_type)?;
         if output_key_type <= KeyType::BytesLowEntropy {

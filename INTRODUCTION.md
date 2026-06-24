@@ -123,7 +123,7 @@ While the `KeyMaterial` is fundamentally just a buffer of bytes, it tracks many 
 
 The `KeyMaterial` object is used consistently across the library and any functions that manipulate a key material object will properly update the metadata to track any changes made to the key's entropy or security strength. For example, a `KeyMaterial512{ key_type: MACKey, security_strength: _256bit}` will have its security strength downgraded to 128 bit if you pass it through a SHA256-based KDF, indicating that it is no longer sufficient to generate a full-strength AES256 or ML-DSA-87.  
 
-Of course, there will always be things developers need to do that the library did not provide a utility function for, for example, you may actually need an all-zero MACKey in order to implement certain standardized MAC algorithms. To the end, the library will allow you to, for example, force a key type to any full-entropy key type and security strength, or even get a direct immutable or mutable reference to the underlying buffer via `.ref_to_bytes()` and `mut_ref_to_bytes()`, but only with use of the `allow_hazardous_operations` flag:
+Of course, there will always be things developers need to do that the library did not provide a utility function for, for example, you may actually need an all-zero MACKey in order to implement certain standardized MAC algorithms. To the end, the library will allow you to, for example, force a key type to any full-entropy key type and security strength, or even get a direct immutable or mutable reference to the underlying buffer via `.ref_to_bytes()` and `ref_to_bytes_mut()`, but only with use of the `allow_hazardous_operations` flag:
 
 ```rust
 key.allow_hazardous_operations();

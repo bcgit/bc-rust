@@ -112,7 +112,7 @@ pub trait KeyMaterialTrait {
     /// This requires [KeyMaterialTrait::allow_hazardous_operations] to be set.
     /// When writing directly to the buffer, you are responsible for setting the key_len and key_type afterwards,
     /// and you should [KeyMaterialTrait::drop_hazardous_operations].
-    fn mut_ref_to_bytes(&mut self) -> Result<&mut [u8], KeyMaterialError>;
+    fn ref_to_bytes_mut(&mut self) -> Result<&mut [u8], KeyMaterialError>;
 
     /// The size of the internal buffer; ie the largest key that this instance can hold.
     /// Equivalent to the <KEY_LEN> constant param this object was created with.
@@ -151,7 +151,7 @@ pub trait KeyMaterialTrait {
 
     /// Sets this instance to be able to perform potentially hazardous operations such as
     /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
-    /// or manually setting the key bytes via [KeyMaterialTrait::mut_ref_to_bytes], which then requires you to be responsible
+    /// or manually setting the key bytes via [KeyMaterialTrait::ref_to_bytes_mut], which then requires you to be responsible
     /// for setting the key_len and key_type afterwards.
     ///
     /// The purpose of the hazardous operations guard is not to prevent the user from accessing their data,
@@ -254,7 +254,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
         let mut key = Self::new();
         key.allow_hazardous_operations();
 
-        rng.next_bytes_out(&mut key.mut_ref_to_bytes().unwrap())
+        rng.next_bytes_out(&mut key.ref_to_bytes_mut().unwrap())
             .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
 
         key.key_len = KEY_LEN;
@@ -354,7 +354,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         &self.buf[..self.key_len]
     }
 
-    fn mut_ref_to_bytes(&mut self) -> Result<&mut [u8], KeyMaterialError> {
+    fn ref_to_bytes_mut(&mut self) -> Result<&mut [u8], KeyMaterialError> {
         if !self.allow_hazardous_operations {
             return Err(KeyMaterialError::HazardousOperationNotPermitted);
         }

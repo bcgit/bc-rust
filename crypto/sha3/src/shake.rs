@@ -113,7 +113,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
         output_key.allow_hazardous_operations();
         let bytes_written = self.squeeze_out(
             output_key
-                .mut_ref_to_bytes()
+                .ref_to_bytes_mut()
                 .expect("We just set .allow_hazardous_operations(), so this should be fine."),
         );
         output_key.set_key_len(bytes_written)?;
