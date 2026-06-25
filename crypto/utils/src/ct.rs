@@ -75,7 +75,7 @@ impl Condition<i64> {
         Self::is_negative(x - y)
     }
 
-    // Note: haven't found a clever way to make this const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
+    // Note: this cannot currently be marked as const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
     pub fn is_lte(x: i64, y: i64) -> Self {
         !Self::is_gt(x, y)
     }
@@ -84,7 +84,7 @@ impl Condition<i64> {
         Self::is_lt(y, x)
     }
 
-    // Note: haven't found a clever way to make this const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
+    // Note: this cannot currently be marked as const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
     pub fn is_gte(x: i64, y: i64) -> Self {
         !Self::is_lt(x, y)
     }
@@ -262,7 +262,7 @@ where
 }
 
 /// Rust doesn't guarantee that anything can truly be constant-time under all compilation targets
-/// and optimization levels, but we'll try.
+/// and optimization levels. The following presents the standard constant-time shape.
 pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -275,7 +275,7 @@ pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// Rust doesn't guarantee that anything can truly be constant-time under all compilation targets
-/// and optimization levels, but we'll try.
+/// and optimization levels. The following presents the standard constant-time shape.
 pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
     let mut result = 0u8;
     for i in 0..a.len() {
