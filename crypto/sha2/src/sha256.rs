@@ -154,7 +154,8 @@ pub struct SHA256Internal<PARAMS: SHA2Params> {
     byte_count: u64,
     x_buf: [u8; 64],
     x_buf_off: usize,
-    // TODO: should we add a maximum message size according to FIPS 180-4? (2^64 for SHA256 and 2^128 for SHA512)
+    // TODO: Investigate whether maximum message size (according to FIPS 180-4) should be added 
+    // (2^64 for SHA256 and 2^128 for SHA512)
 }
 
 impl<PARAMS: SHA2Params> Drop for SHA256Internal<PARAMS> {
@@ -279,7 +280,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
 
     /// TODO: This is defined in FIPS 180-4 s. 5.1.2
     /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: Could implement if there is demand.
+    /// TODO: It can be implemented if required
     #[allow(unused)]
     fn do_final_partial_bits(
         self,
@@ -291,7 +292,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
 
     /// TODO: This is defined in FIPS 180-4 s. 5.1.2
     /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: Could implement if there is demand.
+    /// TODO: It can be implemented if required
     #[allow(unused)]
     fn do_final_partial_bits_out(
         self,
