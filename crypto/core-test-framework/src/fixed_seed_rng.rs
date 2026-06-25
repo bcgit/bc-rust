@@ -70,15 +70,7 @@ impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
     /// strength is enough for every ML-KEM / ML-DSA parameter set.
     fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
         out.allow_hazardous_operations();
-        let len = {
-            // mut_ref_to_bytes is infallible here because we just allowed hazardous operations.
-            let buf = out.ref_to_bytes_mut().unwrap();
-            for slot in buf.iter_mut() {
-                *slot = self.seed[self.counter % SEED_LEN];
-                self.counter += 1;
-            }
-            buf.len()
-        };
+        let len = self.next_bytes_out(out.mut_ref_to_bytes()?)?;
         out.set_key_len(len)?;
         out.set_key_type(KeyType::Seed)?;
         out.set_security_strength(SecurityStrength::_256bit)?;
