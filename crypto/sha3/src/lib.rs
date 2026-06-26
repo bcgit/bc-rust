@@ -146,7 +146,7 @@ trait SHA3Params: HashAlgParams {
     const SIZE: KeccakSize;
 }
 
-// TODO: more elegant to macro this?
+// TODO: Consider whether is better to macro this
 impl Algorithm for SHA3_224 {
     const ALG_NAME: &'static str = SHA3_224_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;

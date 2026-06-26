@@ -28,7 +28,7 @@ pub struct SHAKE<PARAMS: SHAKEParams> {
     kdf_entropy: usize,
 }
 
-// Note: don't need a zeroizing Drop here because all the sensitive info is in KeccakDigest, which has one.
+// Note: zeroizing Drop here is not needed because all the sensitive info is in KeccakDigest, which has one.
 
 impl<PARAMS: SHAKEParams> Algorithm for SHAKE<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
@@ -82,8 +82,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
         mut self,
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        // It's unfortunate to return an oversized KeyMaterial most of the time, but I've had enough
-        // of fighting with Rust traits for now ...
+        // At the moment, oversized KeyMaterial is returned for most cases. 
         let mut output_key = KeyMaterial::<64>::new();
         self.derive_key_out_final_internal(additional_input, &mut output_key)?;
 
@@ -99,9 +98,9 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
     ) -> Result<usize, KDFError> {
         // For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
         // it requires full-entropy input that is at least 2x the bit size (ie 256 bits for SHAKE128, and 512 bits for SHAKE256).
-        // TODO: citation needed, which NIST spec did I get this from?
-        // TODO: intuitivitely this makes sense since SHAKE256 and SHA3-256 are both KECCAK[512], and SHAKE128 is KECCAK[256],
-        // TODO: but I would rather find an actual reference for this "fully-seeded" threshold.
+        // TODO: citation needed (NIST)
+        // TODO: The intuition behind this is that SHAKE256 and SHA3-256 are both KECCAK[512], and SHAKE128 is KECCAK[256],
+        // TODO: However, it is necessary to find an actual reference for this "fully-seeded" threshold.
         if self.kdf_entropy < 2 * (PARAMS::SIZE as usize) / 8 {
             self.kdf_key_type = min(&self.kdf_key_type, &KeyType::BytesLowEntropy).clone();
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
@@ -118,7 +117,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
         );
         output_key.set_key_len(bytes_written)?;
 
-        // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
+        // since computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.
         if self.kdf_key_type == KeyType::Zeroized {
             self.kdf_key_type = KeyType::BytesLowEntropy;
         }
@@ -225,7 +224,8 @@ impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
         if !(1..=7).contains(&num_partial_bits) {
             return Err(HashError::InvalidLength("must be in the range [0,7]"));
         }
-        // Mutants note: yep, this is just bit-setting into empty space, so it doesn't matter whether it's OR or XOR.
+        // Mutants note: This is just bit-setting into empty space. 
+        // It works the same regardless of whether it's OR or XOR.
         let mut final_input: u16 =
             ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x0F << num_partial_bits);
         let mut final_bits = num_partial_bits + 4;

@@ -353,7 +353,7 @@ mod sha3_tests {
             Err(_) => { /* good */ }
         }
 
-        // This works because we allow hazardous conversions before doing the conversion.
+        // This works because hazardous conversions are allowed before doing the conversion.
         let input_seed = KeyMaterial256::from_bytes(&DUMMY_SEED_512[..32]).expect("Error happened");
         let mut output_seed = SHA3_256::new()
             .derive_key(&input_seed, b"some addtional input to the KDF")
@@ -364,7 +364,7 @@ mod sha3_tests {
         // will automatically drop allow_hazardous_conversions() after performing one.
         assert_eq!(output_seed.key_type(), KeyType::MACKey);
 
-        // This works because we explicitly tag the input data as BytesFullEntropy.
+        // This works because the input data is tagged explicitly as BytesFullEntropy.
         // This is the preferred and better way to do it.
         let input_seed =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::BytesFullEntropy)

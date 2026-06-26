@@ -179,7 +179,7 @@ impl KeccakState {
     }
 }
 
-// Mutants note: this fails because you can't write unit tests for drop()
+// Mutants note: this fails because unit tests cannot be written for drop()
 impl Drop for KeccakState {
     fn drop(&mut self) {
         // Zeroize the contents before returning the memory to the OS.
@@ -210,7 +210,9 @@ impl KeccakDigest {
     pub(super) fn new(size: KeccakSize) -> Self {
         let rate = 1600 - ((size as usize) << 1);
 
-        // todo I think this check is not needed since the fixed set of allowed sizes can't yield an invalid rate, but I'll leave this here for now.
+        // TODO: Verify whether this check is needed.  
+        // The code currently skips the check since the fixed set of allowed sizes can't yield an 
+        // invalid rate. It is, for now, left as a comment for reference.
         // if rate == 0 || rate >= 1600 || (rate & 63) != 0 {
         //     return Err(HashError::InvalidLength("invalid rate value"));
         // }
@@ -229,8 +231,8 @@ impl KeccakDigest {
             panic!("attempt to absorb with odd length queue");
         }
         if self.squeezing {
-            // Maybe this should be an error rather than a panic?
-            // But, like, don't write your code to absorb after squeezing.
+            // TODO: check whether this should be an error rather than a panic
+            // It should warn the user to not absorb after squeezing.
             panic!("attempt to absorb while squeezing");
         }
 

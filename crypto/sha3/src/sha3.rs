@@ -14,7 +14,7 @@ pub struct SHA3<PARAMS: SHA3Params> {
     kdf_entropy: usize,
 }
 
-// Note: don't need a zeroizing Drop here because all the sensitive info is in KeccakDigest, which has one.
+// Note: zeroizing Drop is not necessary here because all the sensitive info is in KeccakDigest, which has one.
 
 impl<PARAMS: SHA3Params> SHA3<PARAMS> {
     pub fn new() -> Self {
@@ -71,7 +71,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
     ) -> Result<usize, KDFError> {
         // For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
         // it requires full-entropy input that is at least block length.
-        // TODO: citation needed, which NIST spec did I get this from?
+        // TODO: citation needed (NIST)
         if self.kdf_entropy < PARAMS::OUTPUT_LEN {
             self.kdf_key_type = min(&self.kdf_key_type, &KeyType::BytesLowEntropy).clone();
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
@@ -85,7 +85,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
         let bytes_written = self.do_final_out(output_key.mut_ref_to_bytes()?);
         output_key.set_key_len(bytes_written)?;
 
-        // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
+        // since computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.
         if key_type == KeyType::Zeroized {
             key_type = KeyType::BytesLowEntropy;
         }
@@ -141,12 +141,14 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
         output
     }
 
-    // todo -- why doesn't this take a &mut [u8; HASH_LEN] ?
-    //  That's probably more user-friendly than this auto-truncating that I have here.
+    // TODO: investigate why this doesn't take a &mut [u8; HASH_LEN] 
+    // Being able to do so would improve ergonomics
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
         output.fill(0);
 
-        self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed."); // this shouldn't fail because by construction you can only enter this function once, and this is the only way to absorb partial bits.
+        // this shouldn't fail because, by construction, the function is only called once, 
+        // and this is the only way to absorb partial bits.
+        self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed."); 
 
         let bytes_written = if output.len() <= self.output_len() {
             self.keccak.squeeze(output)
@@ -180,7 +182,8 @@ impl<PARAMS: SHA3Params> Hash for SHA3<PARAMS> {
     ) -> Result<usize, HashError> {
         output.fill(0);
 
-        // Mutants note: yep, this is just bit-setting into empty space, so it doesn't matter whether it's OR or XOR.
+        // Mutants note: This is just bit-setting into empty space. 
+        // It works the same regardless of whether it's OR or XOR.
         let mut final_input: u16 =
             ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);
         let mut final_bits = num_partial_bits + 2;

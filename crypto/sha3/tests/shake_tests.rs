@@ -13,8 +13,8 @@ mod shake_tests {
 
     #[test]
     fn test_xof_partial_bit_output() {
-        // we know that the 4th ([3]) byte of the output of SHA128(\x00\x01\x02\x03\x04) is 0xFF
-        // So we'll play with that to test partial byte output.
+        // The 4th ([3]) byte of the output of SHA128(\x00\x01\x02\x03\x04) is known to be 0xFF
+        // That fact is used to test partial byte output.
 
         let output = SHAKE128::new().hash_xof(&[0u8, 1u8, 2u8, 3u8, 4u8], 4);
         assert_eq!(output[3], 0xFF);
