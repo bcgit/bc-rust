@@ -147,12 +147,12 @@ impl<H: HashDRBG80090AParams> HashDRBG80090A<H> {
             seed.set_key_type(KeyType::Seed).unwrap();
             match H::HASH {
                 SupportedHash::SHA256 => {
-                    getrandom::fill(&mut seed.mut_ref_to_bytes().unwrap()[..32]).unwrap();
+                    getrandom::fill(&mut seed.ref_to_bytes_mut().unwrap()[..32]).unwrap();
                     seed.set_key_len(32).unwrap();
                     seed.set_security_strength(SecurityStrength::_128bit).unwrap();
                 }
                 SupportedHash::SHA512 => {
-                    getrandom::fill(&mut seed.mut_ref_to_bytes().unwrap()).unwrap();
+                    getrandom::fill(&mut seed.ref_to_bytes_mut().unwrap()).unwrap();
                     seed.set_key_len(64).unwrap();
                     seed.set_security_strength(SecurityStrength::_256bit).unwrap();
                 }
@@ -469,7 +469,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
     ) -> Result<usize, RNGError> {
         let mut ret: Result<usize, RNGError> = Ok(0);
         do_hazardous_operations(out, |out| {
-            let out_ref = out.mut_ref_to_bytes()?;
+            let out_ref = out.ref_to_bytes_mut()?;
             ret = self.generate_out(additional_input, out_ref);
             Ok(())
         })?;

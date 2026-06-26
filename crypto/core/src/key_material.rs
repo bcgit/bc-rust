@@ -127,7 +127,7 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// This function needs to be run within a [do_hazardous_operations] closure.
     ///
     /// When writing directly to the buffer, you are responsible for setting the key_len and key_type afterward.
-    fn mut_ref_to_bytes(&mut self) -> Result<&mut [u8], KeyMaterialError>;
+    fn ref_to_bytes_mut(&mut self) -> Result<&mut [u8], KeyMaterialError>;
 
     /// The size of the internal buffer; ie the largest key that this instance can hold.
     /// Equivalent to the <KEY_LEN> constant param this object was created with.
@@ -277,7 +277,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
         let mut key = Self::new();
 
         do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(&mut key.mut_ref_to_bytes().unwrap())
+            rng.next_bytes_out(&mut key.ref_to_bytes_mut().unwrap())
                 .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
             Ok(())
         })?;
@@ -379,7 +379,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         &self.buf[..self.key_len]
     }
 
-    fn mut_ref_to_bytes(&mut self) -> Result<&mut [u8], KeyMaterialError> {
+    fn ref_to_bytes_mut(&mut self) -> Result<&mut [u8], KeyMaterialError> {
         if !self.allow_hazardous_operations {
             return Err(KeyMaterialError::HazardousOperationNotPermitted);
         }
@@ -745,7 +745,7 @@ impl<const KEY_LEN: usize> KeyMaterialInternalTrait for KeyMaterial<KEY_LEN> {
 /// let additional_bytes = [2u8; 32];
 /// do_hazardous_operations(&mut key, |key| {
 ///     key.set_key_len(64)?;
-///     key.mut_ref_to_bytes()?[32..].copy_from_slice(&additional_bytes);
+///     key.ref_to_bytes_mut()?[32..].copy_from_slice(&additional_bytes);
 ///     Ok(())
 /// }).unwrap();
 ///

@@ -81,7 +81,7 @@ mod test_key_material {
         assert_eq!(key.capacity(), 32);
         assert_eq!(key.ref_to_bytes(), &[1u8; 16]); // note: this is also testing that even though the internal buffer is larger than 16 bytes, it slices it down to length.
 
-        match key.mut_ref_to_bytes() {
+        match key.ref_to_bytes_mut() {
             Ok(_) => {
                 panic!("getting a mut ref should require setting hazardous operations.")
             }
@@ -94,20 +94,19 @@ mod test_key_material {
         // check that we can read from the mut_ref_to_bytes
         // (which is an odd way to use it, but legal)
         do_hazardous_operations(&mut key, |key| {
-            assert_eq!(key.mut_ref_to_bytes()?.len(), 32);
-            assert_eq!(key.mut_ref_to_bytes()?[..16], [1u8; 16]);
-            assert_eq!(key.mut_ref_to_bytes()?[16..], [0u8; 16]);
+            assert_eq!(key.ref_to_bytes_mut()?.len(), 32);
+            assert_eq!(key.ref_to_bytes_mut()?[..16], [1u8; 16]);
+            assert_eq!(key.ref_to_bytes_mut()?[16..], [0u8; 16]);
             Ok(())
         })
         .unwrap();
 
         // and I can set them
         do_hazardous_operations(&mut key, |key| {
-            key.mut_ref_to_bytes().unwrap().copy_from_slice(&[2u8; 32]);
+            key.ref_to_bytes_mut().unwrap().copy_from_slice(&[2u8; 32]);
             key.set_key_len(32)
         })
         .unwrap();
-
         assert_eq!(key.ref_to_bytes(), &[2u8; 32]);
         assert_eq!(key.key_len(), 32);
     }
@@ -194,7 +193,7 @@ mod test_key_material {
         // Sanity check: the backing buffer actually holds non-zero key material before it is wiped.
         // Without this, the post-zeroize assertion below could pass vacuously.
         do_hazardous_operations(&mut key, |key| {
-            assert!(key.mut_ref_to_bytes().unwrap().iter().any(|&b| b != 0));
+            assert!(key.ref_to_bytes_mut().unwrap().iter().any(|&b| b != 0));
             Ok(())
         })
         .unwrap();
@@ -209,7 +208,7 @@ mod test_key_material {
         // actually overwritten with zeros.
         // Note: key_len is now 0, so ref_to_bytes() returns an empty slice.
         do_hazardous_operations(&mut key, |key| {
-            let full_buf = key.mut_ref_to_bytes().unwrap();
+            let full_buf = key.ref_to_bytes_mut().unwrap();
             assert_eq!(full_buf.len(), capacity);
             assert!(full_buf.iter().all(|&b| b == 0));
             Ok(())

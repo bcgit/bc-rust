@@ -118,7 +118,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
         let mut bytes_written: usize = 0;
         key_material::do_hazardous_operations(output_key, |output_key| {
             bytes_written = self.squeeze_out(
-                output_key.mut_ref_to_bytes().expect("Infallible within do_hazardous_operations"),
+                output_key.ref_to_bytes_mut().expect("Infallible within do_hazardous_operations"),
             );
             output_key.set_key_len(bytes_written)
         })?;

@@ -24,7 +24,7 @@
 //! }
 //! ```
 //!
-//! But you also have access to the pre-hashed functions available from [PHSigner] and [PHVerifier]:
+//! But you also have access to the pre-hashed functions available from [PHSigner] and [PHSignatureVerifier]:
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;

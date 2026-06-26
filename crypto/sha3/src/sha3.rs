@@ -84,7 +84,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
         let output_security_strength = self.kdf_security_strength.clone();
         let mut bytes_written: usize = 0;
         key_material::do_hazardous_operations(output_key, |output_key| {
-            bytes_written = self.do_final_out(output_key.mut_ref_to_bytes()?);
+            bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
             output_key.set_key_len(bytes_written)?;
             Ok(())
         })

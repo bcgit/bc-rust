@@ -408,7 +408,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         let mut i = 1u8;
 
         key_material::do_hazardous_operations(okm, |okm| {
-            let out = okm.mut_ref_to_bytes()?;
+            let out = okm.ref_to_bytes_mut()?;
             while i < N {
                 // todo: might need this to be new_allow_weak_key()
                 let mut hmac = HMAC::<H>::new(&prk_as_mac_key)
@@ -440,7 +440,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         debug_assert_eq!(t_len, remaining); // this will be true for every iteration after T(0) / T(1)
 
         key_material::do_hazardous_operations(okm, |okm| {
-            let out = okm.mut_ref_to_bytes()?;
+            let out = okm.ref_to_bytes_mut()?;
             out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
             Ok(())
         })?;
@@ -585,7 +585,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
             bytes_written = self
                 .hmac
                 .unwrap()
-                .do_final_out(&mut okm.mut_ref_to_bytes()?)
+                .do_final_out(&mut okm.ref_to_bytes_mut()?)
                 .map_err(|_| KeyMaterialError::GenericError("HMAC do_final_out failed"))?;
             okm.set_key_len(bytes_written)?;
             okm.set_key_type(output_key_type)?;
