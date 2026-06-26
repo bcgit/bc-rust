@@ -64,6 +64,11 @@ pub enum RNGError {
     /// Indicates that the RNG cannot produce any more output until it has been reseeded with fresh entropy.
     ReseedRequired,
 
+    /// Thrown my algorithms attempting to use an RNG instance, for example for key generation or
+    /// other randomness required by the algorithm, but the provided RNG is at a lower security strength
+    /// than the algorithm requires.
+    SecurityStrengthInsufficientForAlgorithm,
+
     KeyMaterialError(KeyMaterialError),
 }
 

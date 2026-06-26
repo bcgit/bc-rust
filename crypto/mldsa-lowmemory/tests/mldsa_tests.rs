@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod mldsa_tests {
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
-    use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::errors::{RNGError, SignatureError};
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
@@ -21,7 +21,8 @@ mod mldsa_tests {
     use bouncycastle_mldsa_lowmemory::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait};
 
     #[test]
-    fn keygen_from_rng_matches_keygen_from_seed() {
+    fn keygen_from_rng_tests() {
+        /* keygen from seed must match keygen from rng, for a fixed-seed rng */
         // Same arbitrary fixed seed as rfc9881_keygen.
         let seed_bytes: [u8; 32] =
             hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
@@ -52,6 +53,56 @@ mod mldsa_tests {
         let (pk_rng, sk_rng) = MLDSA87::keygen_from_rng(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-DSA-87 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-DSA-87 sk from RNG must match sk from seed");
+
+        /* Test that keygen rejects a seed from a weak RNG */
+
+        // MLDSA44 -- RNG too weak
+        let mut rng = FixedSeedRNG::new([0u8; 32]);
+        rng.set_security_strength(SecurityStrength::_112bit);
+        match MLDSA44::keygen_from_rng(&mut rng) {
+            Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
+            }
+            _ => {
+                panic!("should have returned RNGError::RNGSecurityStrengthInsufficientForAlgorithm")
+            }
+        }
+
+        // MLDSA44 -- RNG just right
+        let mut rng = FixedSeedRNG::new([0u8; 32]);
+        rng.set_security_strength(SecurityStrength::_128bit);
+        _ = MLDSA44::keygen_from_rng(&mut rng).unwrap();
+
+        // MLDSA65 -- RNG too weak
+        let mut rng = FixedSeedRNG::new([0u8; 32]);
+        rng.set_security_strength(SecurityStrength::_128bit);
+        match MLDSA65::keygen_from_rng(&mut rng) {
+            Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
+            }
+            _ => {
+                panic!("should have returned RNGError::RNGSecurityStrengthInsufficientForAlgorithm")
+            }
+        }
+
+        // MLDSA65 -- RNG just right
+        let mut rng = FixedSeedRNG::new([0u8; 32]);
+        rng.set_security_strength(SecurityStrength::_192bit);
+        _ = MLDSA65::keygen_from_rng(&mut rng).unwrap();
+
+        // MLDSA87 -- RNG too weak
+        let mut rng = FixedSeedRNG::new([0u8; 32]);
+        rng.set_security_strength(SecurityStrength::_192bit);
+        match MLDSA87::keygen_from_rng(&mut rng) {
+            Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
+            }
+            _ => {
+                panic!("should have returned RNGError::RNGSecurityStrengthInsufficientForAlgorithm")
+            }
+        }
+
+        // MLDSA87 -- RNG just right
+        let mut rng = FixedSeedRNG::new([0u8; 32]);
+        rng.set_security_strength(SecurityStrength::_256bit);
+        _ = MLDSA87::keygen_from_rng(&mut rng).unwrap();
     }
 
     #[test]

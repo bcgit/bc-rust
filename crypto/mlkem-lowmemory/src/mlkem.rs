@@ -12,7 +12,7 @@ use crate::mlkem_keys::{
 use crate::mlkem_keys::{MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait};
 use crate::mlkem_keys::{MLKEMPublicKeyInternalTrait, MLKEMPublicKeyTrait};
 use crate::polynomial::Polynomial;
-use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::errors::{KEMError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     Algorithm, Hash, KEMDecapsulator, KEMEncapsulator, RNG, SecurityStrength, XOF,
@@ -621,6 +621,10 @@ pub trait MLKEMTrait<
     /// Run a keygen using the provided RNG implementation.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
+        // Source the seed from the provided RNG
+        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
         let mut seed = KeyMaterial::<64>::new();
         rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_from_seed(&seed)
@@ -690,6 +694,10 @@ impl<
         pk: &PK,
         rng: &mut dyn RNG,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        // Source the random message m from the provided RNG
+        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
         let mut m = [0u8; 32];
         rng.next_bytes_out(&mut m)?;
 

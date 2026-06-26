@@ -410,7 +410,7 @@ use crate::{
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey,
     MLDSA87PublicKey, MLDSAPrivateKeyExpanded, MLDSAPublicKeyExpanded,
 };
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, RNG, SecurityStrength, SignatureVerifier, Signer, XOF};
 use bouncycastle_rng::HashDRBG_SHA512;
@@ -1042,7 +1042,7 @@ impl<
     const GAMMA1_MINUS_BETA: i32,
     const GAMMA2_MINUS_BETA: i32,
     const GAMMA1_MASK_LEN: usize,
-> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, k, l, ETA>
+> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, LAMBDA, k, l, ETA>
     for MLDSA<
         PK_LEN,
         SK_LEN,
@@ -1640,6 +1640,7 @@ pub trait MLDSATrait<
     PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    const LAMBDA: i32,
     const k: usize,
     const l: usize,
     const ETA: usize,
@@ -1656,6 +1657,10 @@ pub trait MLDSATrait<
     /// Run a keygen using the provided RNG implementation.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
+        // Source the seed from the provided RNG
+        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
         let mut seed = KeyMaterial256::new();
         rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_from_seed(&seed)

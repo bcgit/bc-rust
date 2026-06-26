@@ -17,12 +17,13 @@ use bouncycastle_core::traits::{RNG, SecurityStrength};
 pub struct FixedSeedRNG<const SEED_LEN: usize> {
     seed: [u8; SEED_LEN],
     counter: usize,
+    security_strength: SecurityStrength,
 }
 
 impl<const SEED_LEN: usize> FixedSeedRNG<SEED_LEN> {
     /// Create an instance that emits `seed` repeated indefinitely, starting from its first byte.
     pub fn new(seed: [u8; SEED_LEN]) -> Self {
-        Self { seed, counter: 0 }
+        Self { seed, counter: 0, security_strength: SecurityStrength::_256bit }
     }
 
     /// Pull the next byte from the deterministic stream and advance the counter.
@@ -30,6 +31,11 @@ impl<const SEED_LEN: usize> FixedSeedRNG<SEED_LEN> {
         let b = self.seed[self.counter % SEED_LEN];
         self.counter += 1;
         b
+    }
+
+    /// For testing purposes, set the security strength that this RNG will report
+    pub fn set_security_strength(&mut self, security_strength: SecurityStrength) {
+        self.security_strength = security_strength;
     }
 }
 
@@ -79,6 +85,6 @@ impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
     }
 
     fn security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_256bit
+        self.security_strength.clone()
     }
 }

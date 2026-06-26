@@ -1,7 +1,7 @@
 /// This performs tests using the public interfaces of the crate.
 #[cfg(test)]
 mod mlkem_tests {
-    use bouncycastle_core::errors::KEMError;
+    use bouncycastle_core::errors::{KEMError, RNGError};
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF,
@@ -21,7 +21,8 @@ mod mlkem_tests {
     use bouncycastle_sha3::SHAKE256;
 
     #[test]
-    fn keygen_from_rng_matches_keygen_from_seed() {
+    fn keygen_from_rng_tests() {
+        /* keygen from seed must match keygen from rng, for a fixed-seed rng */
         // An arbitrary fixed 64-byte seed (bytes 0x00..=0x3f).
         let seed_bytes: [u8; 64] = hex::decode(
             "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\
@@ -54,6 +55,56 @@ mod mlkem_tests {
         let (pk_rng, sk_rng) = MLKEM1024::keygen_from_rng(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-KEM-1024 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-KEM-1024 sk from RNG must match sk from seed");
+
+        /* Test that keygen rejects a seed from a weak RNG */
+
+        // ML-KEM-512 -- RNG too weak
+        let mut rng = FixedSeedRNG::new([0u8; 64]);
+        rng.set_security_strength(SecurityStrength::_112bit);
+        match MLKEM512::keygen_from_rng(&mut rng) {
+            Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
+            }
+            _ => {
+                panic!("should have returned RNGError::RNGSecurityStrengthInsufficientForAlgorithm")
+            }
+        }
+
+        // ML-KEM-512 -- RNG just right
+        let mut rng = FixedSeedRNG::new([0u8; 64]);
+        rng.set_security_strength(SecurityStrength::_128bit);
+        _ = MLKEM512::keygen_from_rng(&mut rng).unwrap();
+
+        // ML-KEM-768 -- RNG too weak
+        let mut rng = FixedSeedRNG::new([0u8; 64]);
+        rng.set_security_strength(SecurityStrength::_128bit);
+        match MLKEM768::keygen_from_rng(&mut rng) {
+            Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
+            }
+            _ => {
+                panic!("should have returned RNGError::RNGSecurityStrengthInsufficientForAlgorithm")
+            }
+        }
+
+        // ML-KEM-768 -- RNG just right
+        let mut rng = FixedSeedRNG::new([0u8; 64]);
+        rng.set_security_strength(SecurityStrength::_192bit);
+        _ = MLKEM768::keygen_from_rng(&mut rng).unwrap();
+
+        // ML-KEM-1024 -- RNG too weak
+        let mut rng = FixedSeedRNG::new([0u8; 64]);
+        rng.set_security_strength(SecurityStrength::_192bit);
+        match MLKEM1024::keygen_from_rng(&mut rng) {
+            Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
+            }
+            _ => {
+                panic!("should have returned RNGError::RNGSecurityStrengthInsufficientForAlgorithm")
+            }
+        }
+
+        // ML-KEM-1024 -- RNG just right
+        let mut rng = FixedSeedRNG::new([0u8; 64]);
+        rng.set_security_strength(SecurityStrength::_256bit);
+        _ = MLKEM1024::keygen_from_rng(&mut rng).unwrap();
     }
 
     // #[test]

@@ -322,7 +322,7 @@ use crate::{
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey,
     MLDSA87PublicKey,
 };
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{Algorithm, RNG, SecurityStrength, SignatureVerifier, Signer, XOF};
 use bouncycastle_rng::HashDRBG_SHA512;
@@ -1331,6 +1331,10 @@ pub trait MLDSATrait<
     /// Run a keygen using the provided RNG implementation.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
+        // Source the seed from the provided RNG
+        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
         let mut seed = KeyMaterial::<32>::new();
         rng.fill_keymaterial_out(&mut seed)?;
         Self::keygen_from_seed(&seed)
