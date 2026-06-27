@@ -76,11 +76,11 @@ impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
     /// mirroring what a real DRBG's `generate_keymaterial_out` produces. A 256-bit security
     /// strength is enough for every ML-KEM / ML-DSA parameter set.
     fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
-        let mut len= 0;
+        let mut len = 0;
         key_material::do_hazardous_operations(out, |out| {
-            len = self.next_bytes_out(out.ref_to_bytes_mut()?).map_err(|_| {
-                KeyMaterialError::GenericError("RNG failed to acquire next bytes.")
-            })?;
+            len = self
+                .next_bytes_out(out.ref_to_bytes_mut()?)
+                .map_err(|_| KeyMaterialError::GenericError("RNG failed to acquire next bytes."))?;
             out.set_key_len(len)?;
             out.set_key_type(KeyType::Seed)?;
             out.set_security_strength(SecurityStrength::_256bit)
