@@ -92,7 +92,7 @@ mod hmac_tests {
         )
         .unwrap();
         assert_eq!(short_key.security_strength(), SecurityStrength::_112bit);
-        // key is too short, so we expect it to fail
+        // key is too short, so it is expected to fail
         match HMAC::<SHA256>::new(&short_key) {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* good */ }
             _ => panic!(
@@ -100,10 +100,10 @@ mod hmac_tests {
             ),
         }
 
-        // but this'll work fine
+        // It works after allowing weak keys
         HMAC::<SHA256>::new_allow_weak_key(&short_key).unwrap();
 
-        // as will a long enough key
+        // It works with a long enough key
         let key = KeyMaterial256::from_bytes_as_type(
             &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
             KeyType::MACKey,
@@ -143,11 +143,11 @@ mod hmac_tests {
 
     #[test]
     fn security_strength_tests() {
-        // test: provided key has the correct length, but insufficient tagged security strength
+        // Test: provided key has the correct length, but insufficient tagged security strength
         // HMAC should still work, but should return an error
 
         // it works with a zero key (as new_allow_weak_key)
-        // zero-len ey
+        // zero-len key
         let mut zero_key = KeyMaterial256::default();
         HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
 
@@ -156,14 +156,14 @@ mod hmac_tests {
         zero_key.set_key_len(32).unwrap();
         HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
 
-        // but we don't allow zero-len keys that are not Zeroized or MACKey
+        // Note: zero-len keys that are not Zeroized or MACKey are not allowed
 
         // init
         let mut key =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::MACKey).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_256bit);
         key.set_security_strength(SecurityStrength::_128bit).unwrap();
-        // complains at first
+        // The call should fail, as the key's security strength is set below the required threshold
         match HMAC::<SHA512>::new(&key) {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
             _ => {
@@ -172,7 +172,7 @@ mod hmac_tests {
                 )
             }
         }
-        // but fine if you set .allow_weak_keys()
+        // It passes after setting .allow_weak_keys()
         let mut hmac = HMAC::<SHA512>::new_allow_weak_key(&key).unwrap();
         hmac.do_update(b"Hi There");
         hmac.do_final();
@@ -180,7 +180,7 @@ mod hmac_tests {
         // one-shot APIs still work with a weak key
         let out = HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().mac(b"Hi There");
         assert!(HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().verify(b"Hi There", &out));
-        // but fine if you set .allow_weak_keys()
+        // likewise with pre-allocated buffers
         let mut out = [0u8; 64];
         HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().mac_out(b"Hi There", &mut out).unwrap();
         assert!(HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().verify(b"Hi There", &out));
@@ -473,7 +473,7 @@ mod hmac_tests {
             )
             .unwrap();
             let mut out = [0u8; 128 / 8];
-            // Key is shorter than HMAC security strength, so need to use new_allow_weak_keys()
+            // Key is shorter than HMAC security strength, so it needs to use new_allow_weak_keys()
             let hmac = HMAC::<SHA384>::new_allow_weak_key(&key).unwrap();
             hmac.mac_out(b"Test With Truncation", &mut out).unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("3abf34c3503b2a23a46efc619baef897").unwrap());
