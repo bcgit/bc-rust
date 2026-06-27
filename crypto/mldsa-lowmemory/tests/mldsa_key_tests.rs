@@ -4,6 +4,7 @@ mod mldsa_key_tests {
     #![allow(unused_imports)]
 
     use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
@@ -96,19 +97,22 @@ mod mldsa_key_tests {
 
         // it'll reject a keyen with a seed too weak, and preserve the seed otherwise
         let mut seed128 = seed.clone();
-        seed128.allow_hazardous_operations();
-        seed128.set_security_strength(SecurityStrength::_128bit).unwrap();
-        seed128.drop_hazardous_operations();
+        key_material::do_hazardous_operations(&mut seed128, |seed| {
+            seed.set_security_strength(SecurityStrength::_128bit)
+        })
+        .unwrap();
 
         let mut seed192 = seed.clone();
-        seed192.allow_hazardous_operations();
-        seed192.set_security_strength(SecurityStrength::_192bit).unwrap();
-        seed192.drop_hazardous_operations();
+        key_material::do_hazardous_operations(&mut seed192, |seed| {
+            seed.set_security_strength(SecurityStrength::_192bit)
+        })
+        .unwrap();
 
         let mut seed256 = seed.clone();
-        seed256.allow_hazardous_operations();
-        seed256.set_security_strength(SecurityStrength::_256bit).unwrap();
-        seed256.drop_hazardous_operations();
+        key_material::do_hazardous_operations(&mut seed256, |seed| {
+            seed.set_security_strength(SecurityStrength::_256bit)
+        })
+        .unwrap();
 
         // MLDSA44
         let (_pk, sk) = MLDSA44::keygen_from_seed(&seed128).unwrap();

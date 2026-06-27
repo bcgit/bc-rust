@@ -35,11 +35,6 @@ use bouncycastle_sha2::{SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_NAME};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME};
 
-/*** Defaults ***/
-pub const DEFAULT_HASH_NAME: &str = SHA3_256_NAME;
-pub const DEFAULT_128BIT_HASH_NAME: &str = SHA3_256_NAME;
-pub const DEFAULT_256BIT_HASH_NAME: &str = SHA3_512_NAME;
-
 /// All members must impl Hash.
 /// Note: no SHAKE because SHAKE is not NIST approved as a hash function. See FIPS 202 section A.2.
 pub enum HashFactory {
@@ -55,16 +50,16 @@ pub enum HashFactory {
 
 impl Default for HashFactory {
     fn default() -> HashFactory {
-        Self::new(DEFAULT_HASH_NAME).unwrap()
+        Self::SHA3_256(sha3::SHA3_256::new())
     }
 }
 
 impl AlgorithmFactory for HashFactory {
     fn default_128_bit() -> HashFactory {
-        Self::new(DEFAULT_128BIT_HASH_NAME).unwrap()
+        Self::SHA3_256(sha3::SHA3_256::new())
     }
     fn default_256_bit() -> HashFactory {
-        Self::new(DEFAULT_256BIT_HASH_NAME).unwrap()
+        Self::SHA3_512(sha3::SHA3_512::new())
     }
 
     fn new(alg_name: &str) -> Result<Self, FactoryError> {

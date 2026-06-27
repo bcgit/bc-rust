@@ -1,6 +1,7 @@
 use crate::SHA3Params;
 use crate::keccak::KeccakDigest;
 use bouncycastle_core::errors::{HashError, KDFError};
+use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Hash, KDF, SecurityStrength};
 use bouncycastle_utils::{max, min};
@@ -81,20 +82,34 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
 
         let mut key_type = self.kdf_key_type.clone();
         let output_security_strength = self.kdf_security_strength.clone();
-        output_key.allow_hazardous_operations();
-        let bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
-        output_key.set_key_len(bytes_written)?;
+        let mut bytes_written: usize = 0;
+        key_material::do_hazardous_operations(output_key, |output_key| {
+            bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
+            output_key.set_key_len(bytes_written)?;
+            Ok(())
+        })
+        .expect(
+            "both mut_ref_to_bytes() and set_key_len() should be infallible within a hazop block",
+        );
 
-        // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
+        // since we've done some computation, the result will not actually be zeroized,
+        // even if all input key material was zeroized.
         if key_type == KeyType::Zeroized {
             key_type = KeyType::BytesLowEntropy;
         }
-        output_key.set_key_type(key_type)?;
-        output_key.set_security_strength(
-            min(&output_security_strength, &SecurityStrength::from_bits(bytes_written * 8)).clone(),
-        )?;
-        output_key.drop_hazardous_operations();
-        output_key.truncate(min(&output_key.key_len(), &PARAMS::OUTPUT_LEN).clone())?;
+        key_material::do_hazardous_operations(&mut *output_key, |output_key| {
+            output_key.set_key_type(key_type)?;
+            output_key.set_security_strength(
+                min(&output_security_strength, &SecurityStrength::from_bits(bytes_written * 8)).clone(),
+            )
+        })
+        .expect(
+            "both set_key_type() and set_security_strength() should be infallible within a hazop block",
+        );
+
+        output_key
+            .set_key_len(min(&output_key.key_len(), &PARAMS::OUTPUT_LEN).clone())
+            .expect("should be infallible to truncate key length");
         Ok(bytes_written)
     }
 }

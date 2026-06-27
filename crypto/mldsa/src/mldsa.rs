@@ -1521,15 +1521,12 @@ impl<
         sig: &[u8],
     ) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)?;
-
-        if sig.len() != SIG_LEN {
-            return Err(SignatureError::LengthError("Signature value is not the correct length."));
-        }
-        if Self::verify_mu_internal(&pk.pk, &pk.A_hat(), &mu, &sig[..SIG_LEN].try_into().unwrap()) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
+        let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
+            SignatureError::LengthError("Signature value is not the correct length.")
+        })?;
+        Self::verify_mu_internal(&pk.pk, &pk.A_hat(), &mu, sig)
+            .then_some(())
+            .ok_or(SignatureError::SignatureVerificationFailed)
     }
 
     /// Algorithm 8 ML-DSA.Verify_internal(𝑝𝑘, 𝑀′, 𝜎)
@@ -2067,15 +2064,12 @@ impl<
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)?;
-
-        if sig.len() != SIG_LEN {
-            return Err(SignatureError::LengthError("Signature value is not the correct length."));
-        }
-        if Self::verify_mu_internal(pk, &pk.A_hat(), &mu, &sig.try_into().unwrap()) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
+        let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
+            SignatureError::LengthError("Signature value is not the correct length.")
+        })?;
+        Self::verify_mu_internal(pk, &pk.A_hat(), &mu, sig)
+            .then_some(())
+            .ok_or(SignatureError::SignatureVerificationFailed)
     }
 
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
@@ -2096,20 +2090,16 @@ impl<
     fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = self.mu_builder.do_final();
 
-        assert!(
-            self.pk.is_some(),
-            "Somehow you managed to construct a streaming verifier without a public key, impressive!"
-        );
-        let pk: &PK = &self.pk.unwrap();
-
-        if sig.len() != SIG_LEN {
-            return Err(SignatureError::LengthError("Signature value is not the correct length."));
-        }
-        if Self::verify_mu_internal(pk, &pk.A_hat(), &mu, &sig[..SIG_LEN].try_into().unwrap()) {
-            Ok(())
-        } else {
-            Err(SignatureError::SignatureVerificationFailed)
-        }
+        let pk: &PK = self
+            .pk
+            .as_ref()
+            .ok_or(SignatureError::GenericError("No public key set on streaming verifier."))?;
+        let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
+            SignatureError::LengthError("Signature value is not the correct length.")
+        })?;
+        Self::verify_mu_internal(pk, &pk.A_hat(), &mu, sig)
+            .then_some(())
+            .ok_or(SignatureError::SignatureVerificationFailed)
     }
 }
 

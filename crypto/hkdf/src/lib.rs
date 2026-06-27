@@ -147,7 +147,8 @@
 
 #![forbid(unsafe_code)]
 
-use bouncycastle_core::errors::{KDFError, MACError};
+use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
+use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
@@ -156,7 +157,6 @@ use bouncycastle_hmac::HMAC;
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
-
 // Imports needed only for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::XOF;
@@ -396,8 +396,6 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         let N = L.div_ceil(hash_len) as u8;
         let mut bytes_written: usize = 0;
 
-        okm.allow_hazardous_operations();
-        let out: &mut [u8] = okm.ref_to_bytes_mut()?;
         // Could potentially speed this up by unrolling T(0) and T(1)
 
         // We're gonna have to kludge the prk key type to MACKey to make HMAC happy, but we'll set it back to the original value afterwards.
@@ -408,19 +406,27 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         let mut T = [0u8; HMAC_BLOCK_LEN];
         let mut t_len: usize = 0;
         let mut i = 1u8;
-        while i < N {
-            // todo: might need this to be new_allow_weak_key()
-            let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
-            hmac.do_update(&T[..t_len]);
-            hmac.do_update(info);
-            hmac.do_update(&[i]);
 
-            t_len = hmac.do_final_out(&mut T)?;
-            debug_assert_eq!(t_len, hash_len); // this will be true for every iteration after T(0) / T(1)
-            out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
-            bytes_written += t_len;
-            i += 1;
-        }
+        key_material::do_hazardous_operations(okm, |okm| {
+            let out = okm.ref_to_bytes_mut()?;
+            while i < N {
+                // todo: might need this to be new_allow_weak_key()
+                let mut hmac = HMAC::<H>::new(&prk_as_mac_key)
+                    .map_err(|_| KeyMaterialError::GenericError("HMAC initialization failed"))?;
+                hmac.do_update(&T[..t_len]);
+                hmac.do_update(info);
+                hmac.do_update(&[i]);
+
+                t_len = hmac
+                    .do_final_out(&mut T)
+                    .map_err(|_| KeyMaterialError::GenericError("HMAC finalization failed"))?;
+                debug_assert_eq!(t_len, hash_len); // this will be true for every iteration after T(0) / T(1)
+                out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
+                bytes_written += t_len;
+                i += 1;
+            }
+            Ok(())
+        })?;
 
         // On the last iteration, we don't take all of the output.
         let remaining = L - bytes_written;
@@ -432,26 +438,32 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
 
         t_len = hmac.do_final_out(&mut T[..remaining])?;
         debug_assert_eq!(t_len, remaining); // this will be true for every iteration after T(0) / T(1)
-        out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
+
+        key_material::do_hazardous_operations(okm, |okm| {
+            let out = okm.ref_to_bytes_mut()?;
+            out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
+            Ok(())
+        })?;
         bytes_written += t_len;
 
         // set the KeyType of the output
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
-        if prk.key_type() == KeyType::Zeroized {
-            okm.set_key_type(KeyType::BytesLowEntropy)?;
-        } else {
-            okm.set_key_type(prk.key_type().clone())?;
-        }
-        okm.set_key_len(bytes_written)?;
-        if okm.key_type() <= KeyType::BytesLowEntropy {
-            okm.set_security_strength(SecurityStrength::None)?;
-        } else {
-            okm.set_security_strength(
-                min(&SecurityStrength::from_bytes(okm.key_len()), &entropy.security_strength)
-                    .clone(),
-            )?;
-        }
-        okm.drop_hazardous_operations();
+        key_material::do_hazardous_operations(okm, |okm| {
+            if prk.key_type() == KeyType::Zeroized {
+                okm.set_key_type(KeyType::BytesLowEntropy)?;
+            } else {
+                okm.set_key_type(prk.key_type().clone())?;
+            }
+            okm.set_key_len(bytes_written)?;
+            if okm.key_type() <= KeyType::BytesLowEntropy {
+                okm.set_security_strength(SecurityStrength::None)
+            } else {
+                okm.set_security_strength(
+                    min(&SecurityStrength::from_bytes(okm.key_len()), &entropy.security_strength)
+                        .clone(),
+                )
+            }
+        })?;
         Ok(bytes_written)
     }
 
@@ -568,20 +580,27 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
 
         let output_key_type = self.entropy.get_output_key_type(); // need to do this above self.hmac.do_final_out, which will consume self.
 
-        okm.allow_hazardous_operations(); // doing it here to get ref_to_bytes_mut
-        let bytes_written =
-            self.hmac.unwrap().do_final_out(&mut okm.ref_to_bytes_mut().unwrap())?;
-        okm.set_key_len(bytes_written)?;
-        okm.set_key_type(output_key_type)?;
-        if output_key_type <= KeyType::BytesLowEntropy {
-            okm.set_security_strength(SecurityStrength::None)?;
-        } else {
-            okm.set_security_strength(
-                min(&SecurityStrength::from_bytes(okm.key_len()), &self.entropy.security_strength)
+        let mut bytes_written = 0;
+        key_material::do_hazardous_operations(okm, |okm| {
+            bytes_written = self
+                .hmac
+                .unwrap()
+                .do_final_out(&mut okm.ref_to_bytes_mut()?)
+                .map_err(|_| KeyMaterialError::GenericError("HMAC do_final_out failed"))?;
+            okm.set_key_len(bytes_written)?;
+            okm.set_key_type(output_key_type)?;
+            if output_key_type <= KeyType::BytesLowEntropy {
+                okm.set_security_strength(SecurityStrength::None)
+            } else {
+                okm.set_security_strength(
+                    min(
+                        &SecurityStrength::from_bytes(okm.key_len()),
+                        &self.entropy.security_strength,
+                    )
                     .clone(),
-            )?;
-        }
-        okm.drop_hazardous_operations();
+                )
+            }
+        })?;
         Ok(bytes_written)
     }
 }
@@ -605,7 +624,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         let mut output_key = KeyMaterial512::new();
         _ = self.derive_key_out(key, additional_input, &mut output_key)?;
-        output_key.truncate(H::OUTPUT_LEN)?;
+        output_key.set_key_len(H::OUTPUT_LEN)?;
         Ok(Box::new(output_key))
     }
 
@@ -643,7 +662,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         let mut output_key = KeyMaterial512::new();
         _ = self.derive_key_from_multiple_out(keys, additional_input, &mut output_key)?;
-        output_key.truncate(*min(&output_key.key_len(), &H::OUTPUT_LEN))?;
+        output_key.set_key_len(*min(&output_key.key_len(), &H::OUTPUT_LEN))?;
         Ok(Box::new(output_key))
     }
 
@@ -676,13 +695,16 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         let bytes_written =
             HKDF::<H>::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
 
-        output_key.allow_hazardous_operations();
-        output_key.set_key_type(entropy.get_output_key_type())?;
-        output_key.set_security_strength(
-            min(&SecurityStrength::from_bytes(output_key.key_len()), &entropy.security_strength)
+        key_material::do_hazardous_operations(output_key, |output_key| {
+            output_key.set_key_type(entropy.get_output_key_type())?;
+            output_key.set_security_strength(
+                min(
+                    &SecurityStrength::from_bytes(output_key.key_len()),
+                    &entropy.security_strength,
+                )
                 .clone(),
-        )?;
-        output_key.drop_hazardous_operations();
+            )
+        })?;
 
         Ok(bytes_written)
     }

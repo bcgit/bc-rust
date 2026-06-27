@@ -16,6 +16,7 @@ mod bc_test_data {
     #[allow(dead_code)]
     use crate::BustedMuBuilder;
     use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier,
@@ -167,10 +168,10 @@ mod bc_test_data {
             )
             .unwrap();
             // for the purposes of the test cases, accept an all-zero seed
-            seed.allow_hazardous_operations();
-            seed.set_key_type(KeyType::Seed).unwrap();
-            seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-            seed.drop_hazardous_operations();
+            key_material::do_hazardous_operations(&mut seed, |seed| {
+                seed.set_key_type(KeyType::Seed).unwrap();
+                seed.set_security_strength(SecurityStrength::_256bit)
+            });
 
             match self.parameter_set.as_str() {
                 "ML-DSA-44" => {
@@ -700,10 +701,10 @@ mod bc_test_data {
                     )
                     .unwrap();
                     // for the purposes of the test cases, accept an all-zero seed
-                    seed.allow_hazardous_operations();
-                    seed.set_key_type(KeyType::Seed).unwrap();
-                    seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-                    seed.drop_hazardous_operations();
+                    key_material::do_hazardous_operations(&mut seed, |seed| {
+                        seed.set_key_type(KeyType::Seed).unwrap();
+                        seed.set_security_strength(SecurityStrength::_256bit)
+                    });
 
                     let (pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
                     let pk_sized: [u8; MLDSA44_PK_LEN] =
@@ -776,10 +777,10 @@ mod bc_test_data {
                     )
                     .unwrap();
                     // for the purposes of the test cases, accept an all-zero seed
-                    seed.allow_hazardous_operations();
-                    seed.set_key_type(KeyType::Seed).unwrap();
-                    seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-                    seed.drop_hazardous_operations();
+                    key_material::do_hazardous_operations(&mut seed, |seed| {
+                        seed.set_key_type(KeyType::Seed).unwrap();
+                        seed.set_security_strength(SecurityStrength::_256bit)
+                    });
 
                     let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
                     let pk_sized: [u8; MLDSA65_PK_LEN] =
@@ -846,10 +847,10 @@ mod bc_test_data {
                     )
                     .unwrap();
                     // for the purposes of the test cases, accept an all-zero seed
-                    seed.allow_hazardous_operations();
-                    seed.set_key_type(KeyType::Seed).unwrap();
-                    seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-                    seed.drop_hazardous_operations();
+                    key_material::do_hazardous_operations(&mut seed, |seed| {
+                        seed.set_key_type(KeyType::Seed).unwrap();
+                        seed.set_security_strength(SecurityStrength::_256bit)
+                    });
 
                     let (pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
                     let pk_sized: [u8; MLDSA87_PK_LEN] =

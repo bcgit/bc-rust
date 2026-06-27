@@ -2,7 +2,9 @@ use std::io::{Read, Write};
 use std::process::exit;
 use std::{fs, io};
 
-use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle::core::key_material::{
+    KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
 use bouncycastle::hmac::{HMAC_SHA256, HMAC_SHA512};
@@ -34,8 +36,7 @@ pub(crate) fn mac_cmd(
         exit(-1);
     }
     let mut key = KeyMaterial512::from_bytes(&key_bytes).unwrap();
-    key.allow_hazardous_operations();
-    key.convert_key_type(KeyType::MACKey).unwrap();
+    do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
 
     // instantiate the MAC object and call do_mac()
     match hmac_variant {

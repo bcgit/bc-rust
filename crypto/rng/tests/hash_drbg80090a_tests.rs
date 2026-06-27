@@ -286,7 +286,8 @@ mod tests {
         let mut out = KeyMaterial256::new();
         match rng.generate_keymaterial_out(&[], &mut out) {
             Err(RNGError::Uninitialized) => { /*good*/ }
-            _ => panic!("Expected Uninitialized error"),
+            Err(e) => panic!("{:?}", e),
+            Ok(_) => panic!("Expected Uninitialized error"),
         }
 
         // Skipping tests for max lengths of seeds and personalization strings, because they're in the gigabyte range and that'll blow up the test suite.

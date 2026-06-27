@@ -18,7 +18,9 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{
+    KeyMaterial256, KeyMaterialTrait, KeyType, do_hazardous_operations,
+};
 use bouncycastle_core::traits::{
     SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier,
 };
@@ -590,9 +592,10 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::Seed)).unwrap();
+        match do_hazardous_operations(&mut seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_256bit)
+        }) {
             Ok(_) => (),
             Err(e) => {
                 if self.result == "invalid" {
@@ -681,9 +684,10 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::Seed)).unwrap();
+        match do_hazardous_operations(&mut seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_256bit)
+        }) {
             Ok(_) => (),
             Err(e) => {
                 if self.result == "invalid" {
@@ -772,9 +776,10 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::Seed)).unwrap();
+        match do_hazardous_operations(&mut seed, |seed| {
+            seed.set_security_strength(SecurityStrength::_256bit)
+        }) {
             Ok(_) => (),
             Err(e) => {
                 if self.result == "invalid" {

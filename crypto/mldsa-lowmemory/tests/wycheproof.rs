@@ -22,6 +22,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{SecurityStrength, SignaturePublicKey, SignatureVerifier};
 use bouncycastle_hex as hex;
@@ -268,10 +269,24 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
-            Ok(_) => (),
+        key_material::do_hazardous_operations(&mut seed, |seed| {
+            seed.set_key_type(KeyType::Seed)?;
+            match seed.set_security_strength(SecurityStrength::_256bit) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    if self.result == "invalid" {
+                        /* good */
+                        Ok(())
+                    } else {
+                        panic!("{:?}", e)
+                    }
+                }
+            }
+        })
+        .unwrap();
+
+        let (pk, sk) = match MLDSA44::keygen_from_seed(&seed) {
+            Ok((pk, sk)) => (pk, sk),
             Err(e) => {
                 if self.result == "invalid" {
                     /* good */
@@ -279,13 +294,6 @@ impl MLDSASignSeedTestCase {
                 } else {
                     panic!("{:?}", e)
                 }
-            }
-        }
-
-        let (pk, sk) = match MLDSA44::keygen_from_seed(&seed) {
-            Ok((pk, sk)) => (pk, sk),
-            Err(e) => {
-                panic!("{:?}", e)
             }
         };
 
@@ -358,24 +366,31 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
-            Ok(_) => (),
-            Err(e) => {
-                if self.result == "invalid" {
-                    /* good */
-                    return;
-                } else {
-                    panic!("{:?}", e)
+        key_material::do_hazardous_operations(&mut seed, |seed| {
+            seed.set_key_type(KeyType::Seed).unwrap();
+            match seed.set_security_strength(SecurityStrength::_256bit) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    if self.result == "invalid" {
+                        /* good */
+                        Ok(())
+                    } else {
+                        panic!("{:?}", e)
+                    }
                 }
             }
-        }
+        })
+        .unwrap();
 
         let (pk, sk) = match MLDSA65::keygen_from_seed(&seed) {
             Ok((pk, sk)) => (pk, sk),
             Err(e) => {
-                panic!("{:?}", e)
+                if self.result == "invalid" {
+                    /* good, test passed */
+                    return;
+                } else {
+                    panic!("{:?}", e)
+                }
             }
         };
 
@@ -448,24 +463,31 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        seed.allow_hazardous_operations();
-        seed.set_key_type(KeyType::Seed).unwrap();
-        match seed.set_security_strength(SecurityStrength::_256bit) {
-            Ok(_) => (),
-            Err(e) => {
-                if self.result == "invalid" {
-                    /* good */
-                    return;
-                } else {
-                    panic!("{:?}", e)
+        key_material::do_hazardous_operations(&mut seed, |seed| {
+            seed.set_key_type(KeyType::Seed).unwrap();
+            match seed.set_security_strength(SecurityStrength::_256bit) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    if self.result == "invalid" {
+                        /* good */
+                        Ok(())
+                    } else {
+                        panic!("{:?}", e)
+                    }
                 }
             }
-        }
+        })
+        .unwrap();
 
         let (pk, sk) = match MLDSA87::keygen_from_seed(&seed) {
             Ok((pk, sk)) => (pk, sk),
             Err(e) => {
-                panic!("{:?}", e)
+                if self.result == "invalid" {
+                    /* good, test passed */
+                    return;
+                } else {
+                    panic!("{:?}", e)
+                }
             }
         };
 

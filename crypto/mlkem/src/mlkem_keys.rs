@@ -6,6 +6,7 @@ use crate::mlkem::{MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_k};
 use crate::mlkem::{MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_k};
 use crate::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME};
 use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, Secret, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
@@ -469,15 +470,17 @@ impl<
             tmp[..32].copy_from_slice(&self.seed_d.unwrap());
             tmp[32..].copy_from_slice(&self.z);
             let mut seed = KeyMaterial::<64>::from_bytes_as_type(&tmp, KeyType::Seed).unwrap();
-            seed.allow_hazardous_operations();
-            seed.set_security_strength(match k {
-                2 => SecurityStrength::_128bit,
-                3 => SecurityStrength::_192bit,
-                4 => SecurityStrength::_256bit,
-                _ => unreachable!("Invalid mlkem param set"),
+
+            key_material::do_hazardous_operations(&mut seed, |seed| {
+                seed.set_security_strength(match k {
+                    2 => SecurityStrength::_128bit,
+                    3 => SecurityStrength::_192bit,
+                    4 => SecurityStrength::_256bit,
+                    _ => unreachable!("Invalid mlkem param set"),
+                })
             })
             .unwrap();
-            seed.drop_hazardous_operations();
+
             Some(seed)
         }
     }

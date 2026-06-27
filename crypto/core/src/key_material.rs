@@ -2,10 +2,6 @@
 //! The main purpose is to hold metadata about the contained key material such as the key type and
 //! entropy content to prevent accidental misuse security bugs, such as deriving cryptographic keys
 //! from uninitialized data.
-//!
-//! This object allows several types of manual-overrides, which typically require setting the [KeyMaterial::allow_hazardous_operations] flag.
-//! For example, the raw bytes data can be extracted, or the key forced to a certain type,
-//! but well-designed use of the bc-rust.test library should not need to ever set the [KeyMaterial::allow_hazardous_operations] flag.
 //! The core idea of this wrapper is to keep track of the usage of the key material, including
 //! the amount of entropy that it is presumed to contain in order to prevent users from accidentally
 //! using it inappropriately in a way that could lead to security weaknesses.
@@ -21,21 +17,38 @@
 //! * Keyed KDFs that are given a key of RawFullEntropy or KeyedHashKey a KeyMaterial data of type RawLowEntropy or RawUnknownEntropy will promote it into RawFullEntropy.
 //! * Symmetric ciphers or asymmetric ciphers such as X25519 or ML-KEM that accept private key seeds will expect KeyMaterial of type AsymmetricPrivateKeySeed.
 //!
-//! However, there is a [KeyMaterial::convert_key_type] for cases where the user has more context knowledge than the library.
+//! However, there is a [KeyMaterialTrait::set_key_type] for cases where the user has more context knowledge than the library.
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
-//! the user has explicitly allowed them via calling allow_hazardous_operations() prior to the conversion.
+//! run inside of a [do_hazardous_operations] closure, see below.
 //!
-//! Examples of hazardous conversions that require allow_hazardous_operations() to be called first:
-//!
-//! * Converting a KeyMaterial of type RawLowEntropy or RawUnknownEntropy into RawFullEntropy or any other full-entropy key type.
-//! * Converting any algorithm-specific key type into a different algorithm-specific key type, which is considered hazardous since key reuse between different cryptographic algorithms is generally discouraged and can sometimes lead to key leakage.
+//! # Security
 //!
 //! Additional security features:
 //!   * Zeroizes on destruction.
 //!   * Implementing Display and Debug to print metadata but not key material to prevent accidental logging.
 //!
+//! # Hazardous Operations
+//!
+//! This object allows several types of manual-overrides, many of which are considered
+//! "hazardous operations" since by definition they are allowing you to bypass checks meant to detect
+//! conditions that could lead to security vulnerabilities.
+//! Consider, for example, that you are reading a symmetric key from somewhere outside the library,
+//! maybe from disk or from another process, but maybe you handed in the wrong variable and instead
+//! handed in an uninitialized (all-zero) buffer.
+//! Since this is a common bug that has catestrophic security implications, the library will normally
+//! check for all-zero KeyMoterial objects and throw an error.
+//! But there will be cases in which you really do need to use an all-zero key, so you can create
+//! one if you do it in hazardous operations mode.
+//!
+//! Examples of hazardous conversions that are required to be run inside of a do_hazardous_operations() closure:
+//!
+//! * Converting a KeyMaterial of type RawLowEntropy or RawUnknownEntropy into RawFullEntropy or any other full-entropy key type.
+//! * Converting any algorithm-specific key type into a different algorithm-specific key type, which is considered hazardous since key reuse between different cryptographic algorithms is generally discouraged and can sometimes lead to key leakage.
+//!
 //! As with all wrappers of this nature, the intent is to protect the user from making silly mistakes, not to prevent expert users from doing what they need to do.
 //! It as always possible, for example, to extract the bytes from a KeyMaterial object, manipulate them, and then re-wrap them in a new KeyMaterial object.
+//!
+//! See [do_hazardous_operations] for documentation and sample code.
 
 use crate::errors::KeyMaterialError;
 use crate::traits::{RNG, Secret, SecurityStrength};
@@ -53,19 +66,20 @@ pub type KeyMaterial512 = KeyMaterial<64>;
 
 /// A helper class used across the bc-rust.test library to hold bytes-like key material.
 /// See [KeyMaterial] for for details, such as constructors.
-pub trait KeyMaterialTrait {
+#[allow(private_bounds)]
+pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// Loads the provided data into a new KeyMaterial of the specified type.
     /// This is discouraged unless the caller knows the provenance of the data, such as loading it
     /// from a cryptographic private key file.
     ///
-    /// This behaves differently on all-zero input key depending on whether [KeyMaterialTrait::allow_hazardous_operations] is set:
+    /// This behaves differently on all-zero input key depending on whether it is run within a [do_hazardous_operations] closure:
     /// if not set, then it will succeed, setting the key type to [KeyType::Zeroized] and also return a [KeyMaterialError::ActingOnZeroizedKey]
     /// to indicate that you may want to perform error-handling, which could be manually setting the key type
     /// if you intend to allow zero keys, or do some other error-handling, like figure out why your RNG is broken.
     /// Note that even if a [KeyMaterialError::ActingOnZeroizedKey] is returned, the object is still populated and usable.
     /// For example, you could catch it like this:
     /// ```
-    /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
+    /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait, do_hazardous_operations};
     /// use bouncycastle_core::key_material::KeyMaterial;
     /// use bouncycastle_core::errors::KeyMaterialError;
     ///
@@ -76,15 +90,15 @@ pub trait KeyMaterialTrait {
     ///   Err(KeyMaterialError::ActingOnZeroizedKey) => {
     ///     // Either figure out why your passed an all-zero key,
     ///     // or set the key type manually, if that's what you intended.
-    ///     key.allow_hazardous_operations();
-    ///     key.set_key_type(KeyType::BytesLowEntropy).unwrap(); // probably you should do something more elegant than .unwrap in your code ;)
-    ///     key.drop_hazardous_operations();
+    ///     do_hazardous_operations(&mut key, |key| {
+    ///         key.set_key_type(KeyType::BytesLowEntropy)
+    ///     }).unwrap(); // probably you should do something more elegant than .unwrap in your code ;)
     ///   },
     ///   Err(_) => { /* figure out what else went wrong */ },
     ///   Ok(_) => { /* good */ },
     /// }
     /// ```
-    /// On the other hand, if [KeyMaterialTrait::allow_hazardous_operations] is set then it will just do what you asked without complaining.
+    /// On the other hand, if run inside a [do_hazardous_operations] closure then it will just do what you asked without complaining.
     ///
     /// Since this zeroizes and resets the key material, this is considered a dangerous conversion.
     ///
@@ -100,18 +114,19 @@ pub trait KeyMaterialTrait {
     /// Get a reference to the underlying key material bytes.
     ///
     /// By reading the key bytes out of the [KeyMaterialTrait] object, you lose the protections that it offers,
-    /// however, this does not require [KeyMaterialTrait::allow_hazardous_operations] in the name of API ergonomics:
-    /// setting [KeyMaterialTrait::allow_hazardous_operations] requires a mutable reference and reading the bytes
+    /// however, this does not require [do_hazardous_operations] in the name of API ergonomics:
+    /// setting [do_hazardous_operations] requires a mutable reference and reading the bytes
     /// is not an operation that should require mutability.
-    /// TODO -- consider whether this should consume the object
     fn ref_to_bytes(&self) -> &[u8];
 
     /// Get a mutable reference to the underlying key material bytes so that you can read or write
     /// to the underlying bytes without needing to create a temporary buffer, especially useful in
     /// cases where the required size of that buffer may be tricky to figure out at compile-time.
-    /// This requires [KeyMaterialTrait::allow_hazardous_operations] to be set.
-    /// When writing directly to the buffer, you are responsible for setting the key_len and key_type afterwards,
-    /// and you should [KeyMaterialTrait::drop_hazardous_operations].
+    ///
+    /// # 🚨 Hazardous Operation🚨
+    /// This function needs to be run within a [do_hazardous_operations] closure.
+    ///
+    /// When writing directly to the buffer, you are responsible for setting the key_len and key_type afterward.
     fn ref_to_bytes_mut(&mut self) -> Result<&mut [u8], KeyMaterialError>;
 
     /// The size of the internal buffer; ie the largest key that this instance can hold.
@@ -121,12 +136,35 @@ pub trait KeyMaterialTrait {
     /// Length of the key material in bytes.
     fn key_len(&self) -> usize;
 
-    /// Requires [KeyMaterialTrait::allow_hazardous_operations].
+    /// Sets the internal key length without changing the capacity of the KeyMaterial.
+    /// Primarily intended for truncation if you are provided with a key that is larger than you need,
+    /// or to extend the length of an undersized KeyMaterial.
+    ///
+    /// If truncating, it will automatically downgrade the SecurityStrength accordingly.
+    ///
+    /// # 🚨 Hazardous Operation🚨
+    /// Using this function to extend the length of a key is always hazardous and needs to be run
+    /// within a [do_hazardous_operations] closure since this can result
+    /// in a key containing a large number of zeroes, or containing key material from a previous key
+    /// held in the same buffer. When extending the length, you take responsibility for the security
+    /// implications.
+    ///
+    /// Truncation (that is, reducing the length) is always safe and does not require a
+    /// [do_hazardous_operations] closure.
     fn set_key_len(&mut self, key_len: usize) -> Result<(), KeyMaterialError>;
 
     fn key_type(&self) -> KeyType;
 
-    /// Requires [KeyMaterialTrait::allow_hazardous_operations].
+    /// Sets (or safely converts) the [KeyType] of this KeyMaterial object.
+    /// Does not perform any operations on the actual key material, other than changing the key_type field.
+    ///
+    /// # 🚨 Hazardous Operation🚨
+    /// Inside a [do_hazardous_operations] closure this will set the key to any [KeyType].
+    /// Outside such a closure, only "safe" conversions are permitted: a [KeyType::BytesFullEntropy]
+    /// key may be converted to any type, and any type may be converted to itself (a no-op).
+    /// A hazardous conversion attempted outside a [do_hazardous_operations] closure returns
+    /// [KeyMaterialError::HazardousOperationNotPermitted], and converting a [KeyType::Zeroized] key
+    /// returns [KeyMaterialError::ActingOnZeroizedKey].
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError>;
 
     /// Security Strength, as used here, aligns with NIST SP 800-90A guidance for random number generation,
@@ -142,47 +180,32 @@ pub trait KeyMaterialTrait {
     /// tracked independantly from key length and entropy level / key type.
     fn security_strength(&self) -> SecurityStrength;
 
-    /// Requires [KeyMaterialTrait::allow_hazardous_operations] to raise the security strength, but not to lower it.
-    /// Throws [KeyMaterialError::HazardousOperationNotPermitted] on a request to raise the security level without
-    /// [KeyMaterialTrait::allow_hazardous_operations] set.
-    /// Throws [KeyMaterialError::InvalidLength] on a request to set the security level higher than the current key length.
+    /// Set the [SecurityStrength] of the KeyMaterial.
+    ///
+    /// # 🚨 Hazardous Operation🚨
+    /// This function needs to be run within a [do_hazardous_operations] closure to raise the security
+    /// strength, but not to lower it.
+    ///
+    /// Outside of a [do_hazardous_operations] closure it will throw a
+    /// [KeyMaterialError::HazardousOperationNotPermitted] on a request to raise the security level, and
+    /// throw a [KeyMaterialError::InvalidLength] on a request to set the security level higher than the current key length. Inside a [do_hazardous_operations] it will do what you asked without complaining.
     fn set_security_strength(&mut self, strength: SecurityStrength)
     -> Result<(), KeyMaterialError>;
 
-    /// Sets this instance to be able to perform potentially hazardous operations such as
-    /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
-    /// or manually setting the key bytes via [KeyMaterialTrait::ref_to_bytes_mut], which then requires you to be responsible
-    /// for setting the key_len and key_type afterwards.
-    ///
-    /// The purpose of the hazardous operations guard is not to prevent the user from accessing their data,
-    /// but rather to make the developer think carefully about the operation they are about to perform,
-    /// and to give static analysis tools an obvious marker that a given KeyMaterial variable warrants
-    /// further inspection.
-    fn allow_hazardous_operations(&mut self);
-
-    /// Resets this instance to not be able to perform potentially hazardous operations.
-    fn drop_hazardous_operations(&mut self);
-
-    /// Sets the key_type of this KeyMaterial object.
-    /// Does not perform any operations on the actual key material, other than changing the key_type field.
-    /// If allow_hazardous_operations is true, this method will allow conversion to any KeyType, otherwise
-    /// checking is performed to ensure that the conversion is "safe".
-    /// This drops the allow_hazardous_operations flag, so if you need to do multiple hazardous conversions
-    /// on the same instance, then you'll need to call .allow_hazardous_operations() each time.
-    fn convert_key_type(&mut self, new_key_type: KeyType) -> Result<(), KeyMaterialError>;
-
+    /// Whether or not the KeyMaterial is one of the full entropy key types.
     fn is_full_entropy(&self) -> bool;
 
+    /// Securely resets the contents to all zeroes.
+    /// Note that KeyMaterial will automatically zeroize itself when dropped, so it is not necessary
+    /// to call this method simply because the object is going out of scope, but it provided
+    /// in case you want to zeroize it early, or before re-using the same instance of KeyMaterial to
+    /// hold a different key, potentially of a different length.
     fn zeroize(&mut self);
 
-    /// Is simply an alias to [KeyMaterialTrait::set_key_len], however, this does not require [KeyMaterialTrait::allow_hazardous_operations]
-    /// since truncation is a safe operation.
-    /// If truncating below the current security strength, the security strength will be lowered accordingly.
-    fn truncate(&mut self, new_len: usize) -> Result<(), KeyMaterialError>;
-
     /// Adds the other KeyMaterial into this one, assuming there is space.
-    /// Does not require [KeyMaterialTrait::allow_hazardous_operations].
+    ///
     /// Throws [KeyMaterialError::InvalidLength] if this object does not have enough space to add the other one.
+    ///
     /// The resulting [KeyType] and security strength will be the lesser of the two keys.
     /// In other words, concatenating two 128-bit full entropy keys generated at a 128-bit DRBG security level
     /// will result in a 256-bit full entropy key still at the 128-bit DRBG security level.
@@ -252,15 +275,16 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     /// Create a new instance of KeyMaterial containing random bytes from the provided random number generator.
     pub fn from_rng(rng: &mut impl RNG) -> Result<Self, KeyMaterialError> {
         let mut key = Self::new();
-        key.allow_hazardous_operations();
 
-        rng.next_bytes_out(&mut key.ref_to_bytes_mut().unwrap())
-            .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
+        do_hazardous_operations(&mut key, |key| {
+            rng.next_bytes_out(&mut key.ref_to_bytes_mut().unwrap())
+                .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
+            Ok(())
+        })?;
 
         key.key_len = KEY_LEN;
         key.key_type = KeyType::BytesFullEntropy;
         key.security_strength = rng.security_strength();
-        key.drop_hazardous_operations();
         Ok(key)
     }
 
@@ -319,7 +343,6 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         key_type: KeyType,
     ) -> Result<(), KeyMaterialError> {
         let allowed_hazardous_operations = self.allow_hazardous_operations;
-        self.allow_hazardous_operations();
 
         if source.len() > KEY_LEN {
             return Err(KeyMaterialError::InputDataLongerThanKeyCapacity);
@@ -335,12 +358,14 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.key_len = source.len();
         self.key_type = new_key_type;
 
-        if new_key_type <= KeyType::BytesLowEntropy {
-            self.set_security_strength(SecurityStrength::None)?;
-        } else {
-            self.set_security_strength(SecurityStrength::from_bits(source.len() * 8))?;
-        }
-        self.drop_hazardous_operations();
+        do_hazardous_operations(self, |s| {
+            if new_key_type <= KeyType::BytesLowEntropy {
+                s.set_security_strength(SecurityStrength::None)?;
+            } else {
+                s.set_security_strength(SecurityStrength::from_bits(source.len() * 8))?;
+            }
+            Ok(())
+        })?;
 
         // return
         if new_key_type == KeyType::Zeroized {
@@ -370,23 +395,79 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     }
 
     fn set_key_len(&mut self, key_len: usize) -> Result<(), KeyMaterialError> {
-        if !self.allow_hazardous_operations {
-            return Err(KeyMaterialError::HazardousOperationNotPermitted);
-        }
         if key_len > KEY_LEN {
             return Err(KeyMaterialError::InvalidLength);
         }
-        self.key_len = key_len;
-        Ok(())
+
+        // are we extending the key length, or truncating?
+        if key_len <= self.key_len {
+            // truncation is always allowed (not hazardous)
+
+            self.security_strength =
+                min(&self.security_strength, &SecurityStrength::from_bits(key_len * 8)).clone();
+
+            if key_len == 0 {
+                self.key_type = KeyType::Zeroized;
+            }
+
+            self.key_len = key_len;
+
+            Ok(())
+        } else {
+            if !self.allow_hazardous_operations {
+                return Err(KeyMaterialError::HazardousOperationNotPermitted);
+            }
+            self.key_len = key_len;
+            Ok(())
+        }
     }
     fn key_type(&self) -> KeyType {
         self.key_type.clone()
     }
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError> {
-        if !self.allow_hazardous_operations {
-            return Err(KeyMaterialError::HazardousOperationNotPermitted);
+        if self.allow_hazardous_operations {
+            // just do it
+            self.key_type = key_type;
+            return Ok(());
         }
-        self.key_type = key_type.clone();
+
+        match self.key_type {
+            KeyType::Zeroized => {
+                return Err(KeyMaterialError::ActingOnZeroizedKey);
+            }
+            KeyType::BytesFullEntropy => {
+                // raw full entropy can be safely converted to anything.
+                self.key_type = key_type;
+            }
+            KeyType::BytesLowEntropy => match key_type {
+                KeyType::BytesLowEntropy => { /* No change */ }
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+            KeyType::MACKey => match key_type {
+                KeyType::MACKey => { /* No change */ }
+                // Else: Once a KeyMaterial is typed, it should stay that way.
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+            KeyType::SymmetricCipherKey => match key_type {
+                KeyType::SymmetricCipherKey => { /* No change */ }
+                // Else: Once a KeyMaterial is typed, it should stay that way.
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+            KeyType::Seed => match key_type {
+                KeyType::Seed => { /* No change */ }
+                // Else: Once a KeyMaterial is typed, it should stay that way.
+                _ => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+            },
+        }
+
         Ok(())
     }
     fn security_strength(&self) -> SecurityStrength {
@@ -440,69 +521,6 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
 
         self.security_strength = strength;
-        self.drop_hazardous_operations();
-        Ok(())
-    }
-    fn allow_hazardous_operations(&mut self) {
-        self.allow_hazardous_operations = true;
-    }
-    fn drop_hazardous_operations(&mut self) {
-        self.allow_hazardous_operations = false;
-    }
-    fn convert_key_type(&mut self, new_key_type: KeyType) -> Result<(), KeyMaterialError> {
-        if self.allow_hazardous_operations {
-            // just do it
-            self.key_type = new_key_type;
-            return Ok(());
-        }
-
-        match self.key_type {
-            KeyType::Zeroized => {
-                return Err(KeyMaterialError::ActingOnZeroizedKey);
-            }
-            KeyType::BytesFullEntropy => {
-                // raw full entropy can be safely converted to anything.
-                self.key_type = new_key_type;
-            }
-            KeyType::BytesLowEntropy => {
-                match new_key_type {
-                    KeyType::BytesLowEntropy => { /* No change */ }
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-            KeyType::MACKey => {
-                match new_key_type {
-                    KeyType::MACKey => { /* No change */ }
-                    // Else: Once a KeyMaterial is typed, it should stay that way.
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-            KeyType::SymmetricCipherKey => {
-                match new_key_type {
-                    KeyType::SymmetricCipherKey => { /* No change */ }
-                    // Else: Once a KeyMaterial is typed, it should stay that way.
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-            KeyType::Seed => {
-                match new_key_type {
-                    KeyType::Seed => { /* No change */ }
-                    // Else: Once a KeyMaterial is typed, it should stay that way.
-                    _ => {
-                        return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                    }
-                }
-            }
-        }
-
-        // each call to allow_hazardous_operations() is only good for one conversion.
-        self.drop_hazardous_operations();
         Ok(())
     }
     fn is_full_entropy(&self) -> bool {
@@ -519,22 +537,6 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.buf.fill(0u8);
         self.key_len = 0;
         self.key_type = KeyType::Zeroized;
-    }
-
-    fn truncate(&mut self, new_len: usize) -> Result<(), KeyMaterialError> {
-        if new_len > self.key_len {
-            return Err(KeyMaterialError::InvalidLength);
-        }
-
-        self.security_strength =
-            min(&self.security_strength, &SecurityStrength::from_bits(new_len * 8)).clone();
-
-        if new_len == 0 {
-            self.key_type = KeyType::Zeroized;
-        }
-
-        self.key_len = new_len;
-        Ok(())
     }
 
     fn concatenate(&mut self, other: &dyn KeyMaterialTrait) -> Result<usize, KeyMaterialError> {
@@ -629,4 +631,150 @@ impl<const KEY_LEN: usize> Drop for KeyMaterial<KEY_LEN> {
     fn drop(&mut self) {
         self.zeroize()
     }
+}
+
+/* Hazardous Operations Runner */
+
+/// Internal-use trait holding the low-level hazardous-operations guard toggle.
+///
+/// These methods are deliberately split out of [KeyMaterialTrait] into a private trait so that
+/// they are not accessible from outside this module.
+///
+/// This is a supertrait of [KeyMaterialTrait], so anything that implements [KeyMaterialTrait]
+/// also implements this. [KeyMaterialTrait] therefore stays dyn-compatible (both methods here are
+/// object-safe), which matters because `Box<dyn KeyMaterialTrait>` is used widely as a return type.
+trait KeyMaterialInternalTrait {
+    /// Whether this instance is currently allowed to perform potentially hazardous operations.
+    fn allows_hazardous_operations(&self) -> bool;
+    /// Sets this instance to be able to perform potentially hazardous operations such as
+    /// casting a KeyMaterial of type RawUnknownEntropy or RawLowEntropy into RawFullEntropy or SymmetricCipherKey,
+    /// or manually setting the key bytes via [KeyMaterialTrait::mut_ref_to_bytes], which then requires you to be responsible
+    /// for setting the key_len and key_type afterwards.
+    ///
+    /// The purpose of the hazardous operations guard is not to prevent the user from accessing their data,
+    /// but rather to make the developer think carefully about the operation they are about to perform,
+    /// and to give static analysis tools an obvious marker that a given KeyMaterial variable warrants
+    /// further inspection.
+    ///
+    /// Prefer the scoped [KeyMaterial::do_hazardous_operations] wrapper, which calls this and
+    /// [KeyMaterialInternalTrait::drop_hazardous_operations] for you so the guard can't be left set.
+    fn allow_hazardous_operations(&mut self);
+
+    /// Resets this instance to not be able to perform potentially hazardous operations.
+    fn drop_hazardous_operations(&mut self);
+}
+
+impl<const KEY_LEN: usize> KeyMaterialInternalTrait for KeyMaterial<KEY_LEN> {
+    fn allows_hazardous_operations(&self) -> bool {
+        self.allow_hazardous_operations
+    }
+    fn allow_hazardous_operations(&mut self) {
+        self.allow_hazardous_operations = true;
+    }
+    fn drop_hazardous_operations(&mut self) {
+        self.allow_hazardous_operations = false;
+    }
+}
+
+/// Runs the provided closure within which hazardous operations are allowed.
+/// All hazardous operations will return a [KeyMaterialError::HazardousOperationNotPermitted]
+/// if used outside of this closure.
+///
+/// Example usage:
+///
+/// ```rust
+/// use bouncycastle_core::key_material::{KeyType, KeyMaterial256, KeyMaterialTrait, do_hazardous_operations};
+/// use bouncycastle_core::traits::SecurityStrength;
+///
+/// // Let's create an all-zero key
+/// let mut key = KeyMaterial256::default();
+///
+/// // Let's set a key of all zeroes, which the library would normally force to be
+/// // [KeyType::Zeroized], but we want to force it to [KeyType::Seed], which is considered a
+/// // hazardous operation.
+/// do_hazardous_operations(&mut key, |key| {
+///     key.set_bytes_as_type(&[8u8; 32], KeyType::Seed)
+///     // note that the closure is required to return Result<(), KeyMaterialError>,
+///     // so we can chain [KeyMaterial::set_bytes_as_type], otherwise we would need
+///     // to end with Ok(()).
+/// }).unwrap();
+///
+/// assert_eq!(key.key_len(), 32);
+/// assert_eq!(key.key_type(), KeyType::Seed);
+/// ```
+///
+/// ```rust
+/// use bouncycastle_core::key_material::{KeyType, KeyMaterial256, KeyMaterialTrait, do_hazardous_operations};
+/// use bouncycastle_core::traits::SecurityStrength;
+///
+/// // Let's create an all-zero key
+/// let mut key = KeyMaterial256::default();
+/// assert_eq!(key.key_type(), KeyType::Zeroized);
+/// assert_eq!(key.security_strength(), SecurityStrength::None);
+///
+/// // Now we want to tell the library that this all-zero key
+/// // is to be used as a 32-byte [KeyType::Seed] at the 256-bit security strength,
+/// // which the library will not allow you to do outside of the hazerdous operations closure.
+/// do_hazardous_operations(&mut key, |key| {
+///     key.set_key_len(32)?;
+///     key.set_key_type(KeyType::Seed)?;
+///     key.set_security_strength(SecurityStrength::_256bit)?;
+///     Ok(())
+/// }).unwrap();
+///
+/// assert_eq!(key.key_type(), KeyType::Seed);
+/// assert_eq!(key.security_strength(), SecurityStrength::_256bit);
+/// ```
+///
+/// Another common usage of hazardous operations is to get a direct mutable reference to the
+/// underlying KeyMaterial byte buffer; for example if you want to copy in key bytes from somewhere else.
+///
+/// ```rust
+/// use bouncycastle_core::key_material::{KeyType, KeyMaterial512, KeyMaterialTrait, do_hazardous_operations};
+/// use bouncycastle_core::traits::SecurityStrength;
+///
+/// // In this example, we initialize a KeyMateriol512 (64 bytes) with only 32 bytes of input.
+/// let mut key = KeyMaterial512::from_bytes_as_type(
+///                                 &[1u8; 32],
+///                                 KeyType::BytesFullEntropy
+///                         ).unwrap();
+/// assert_eq!(key.key_len(), 32);
+///
+/// // Now we want to expand the length to 64 bytes and copy in an additional 32 bytes of key data,
+/// // using [KeyMaterial::mut_ref_to_bytes].
+/// let additional_bytes = [2u8; 32];
+/// do_hazardous_operations(&mut key, |key| {
+///     key.set_key_len(64)?;
+///     key.ref_to_bytes_mut()?[32..].copy_from_slice(&additional_bytes);
+///     Ok(())
+/// }).unwrap();
+///
+/// assert_eq!(key.key_len(), 64);
+/// // Reading the key bytes via [KeyMateriol::ref_to_bytes] is not a hazardous operation.
+/// assert_eq!(key.ref_to_bytes()[..32], [1u8; 32]);
+/// assert_eq!(key.ref_to_bytes()[32..], [2u8; 32]);
+/// ```
+///
+// Dev note: This is a free function rather than a method on [KeyMaterialTrait] because it is
+// generic over the closure type, which would make the trait non-dyn-compatible; the trait is used
+// as `&dyn KeyMaterialTrait` elsewhere (e.g. [KeyMaterialTrait::concatenate], [KeyMaterialTrait::equals]).
+// The toggle itself lives on the module-private [KeyMaterialInternalTrait], so external crates cannot
+// flip the guard by hand and must go through this scoped wrapper (hence `#[allow(private_bounds)]`).
+#[allow(private_bounds)]
+pub fn do_hazardous_operations<KEY, F>(key: &mut KEY, f: F) -> Result<(), KeyMaterialError>
+where
+    KEY: KeyMaterialTrait + ?Sized,
+    F: FnOnce(&mut KEY) -> Result<(), KeyMaterialError>,
+{
+    let allows = key.allows_hazardous_operations();
+
+    key.allow_hazardous_operations();
+    let ret = f(key);
+
+    // to allow nested closures, if this key instance allowed
+    // before entering, then leave it.
+    if !allows {
+        key.drop_hazardous_operations();
+    }
+    ret
 }

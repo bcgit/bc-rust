@@ -4,6 +4,7 @@
 
 #[cfg(test)]
 mod bc_test_data {
+    use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         KEMDecapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength,
@@ -155,10 +156,11 @@ mod bc_test_data {
             let mut seed = KeyMaterial512::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
 
             // for the purposes of the test cases, accept an all-zero seed
-            seed.allow_hazardous_operations();
-            seed.set_key_type(KeyType::Seed).unwrap();
-            seed.set_security_strength(SecurityStrength::_256bit).unwrap();
-            seed.drop_hazardous_operations();
+            key_material::do_hazardous_operations(&mut seed, |seed| {
+                seed.set_key_type(KeyType::Seed)?;
+                seed.set_security_strength(SecurityStrength::_256bit)
+            })
+            .unwrap();
 
             match self.parameter_set.as_str() {
                 "ML-KEM-512" => {

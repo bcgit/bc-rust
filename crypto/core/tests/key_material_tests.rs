@@ -3,7 +3,7 @@ mod test_key_material {
     use bouncycastle_core::errors::KeyMaterialError;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
-        KeyMaterialTrait, KeyType,
+        KeyMaterialTrait, KeyType, do_hazardous_operations,
     };
     use bouncycastle_core::traits::SecurityStrength;
 
@@ -47,10 +47,12 @@ mod test_key_material {
                 assert_eq!(key.key_type(), KeyType::Zeroized);
                 assert_eq!(key.key_len(), 16);
 
-                // ... but we can force it.
-                key.allow_hazardous_operations();
-                key.set_key_type(KeyType::BytesLowEntropy).unwrap();
-                key.drop_hazardous_operations();
+                // but it'll allow it within tho do_hazardous closure.
+                do_hazardous_operations(&mut key, |key| {
+                    key.set_key_type(KeyType::BytesLowEntropy)?;
+                    Ok(())
+                })
+                .unwrap();
             }
             Err(_) => {
                 panic!("should have thrown a KeyMaterialError::ActingOnZeroizedKey error.")
@@ -59,18 +61,22 @@ mod test_key_material {
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
-        // but it'll allow it if you allow hazardous operations first.
+        // but it'll allow it within tho do_hazardous closure.
         let key_bytes = [0u8; 16];
         let mut key = KeyMaterial256::new();
-        key.allow_hazardous_operations();
-        key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy).unwrap();
+        do_hazardous_operations(&mut key, |key| {
+            key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy)?;
+            Ok(())
+        })
+        .unwrap();
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
-        key.drop_hazardous_operations();
+
         // nothing else requires setting hazardous operations.
     }
 
     #[test]
     fn test_refs() {
+        // by hand — this test exercises guard state-change semantics, so review carefully.
         let mut key = KeyMaterial256::from_bytes(&[1u8; 16]).unwrap();
         assert_eq!(key.capacity(), 32);
         assert_eq!(key.ref_to_bytes(), &[1u8; 16]); // note: this is also testing that even though the internal buffer is larger than 16 bytes, it slices it down to length.
@@ -84,17 +90,25 @@ mod test_key_material {
                 panic!("getting a mut ref should require setting hazardous operations.")
             }
         }
-        key.allow_hazardous_operations();
-        assert_eq!(key.ref_to_bytes_mut().unwrap().len(), 32);
-        assert_eq!(key.ref_to_bytes_mut().unwrap()[..16], [1u8; 16]);
-        assert_eq!(key.ref_to_bytes_mut().unwrap()[16..], [0u8; 16]);
+
+        // check that we can read from the mut_ref_to_bytes
+        // (which is an odd way to use it, but legal)
+        do_hazardous_operations(&mut key, |key| {
+            assert_eq!(key.ref_to_bytes_mut()?.len(), 32);
+            assert_eq!(key.ref_to_bytes_mut()?[..16], [1u8; 16]);
+            assert_eq!(key.ref_to_bytes_mut()?[16..], [0u8; 16]);
+            Ok(())
+        })
+        .unwrap();
 
         // and I can set them
-        key.ref_to_bytes_mut().unwrap().copy_from_slice(&[2u8; 32]);
-        key.set_key_len(32).unwrap();
+        do_hazardous_operations(&mut key, |key| {
+            key.ref_to_bytes_mut().unwrap().copy_from_slice(&[2u8; 32]);
+            key.set_key_len(32)
+        })
+        .unwrap();
         assert_eq!(key.ref_to_bytes(), &[2u8; 32]);
         assert_eq!(key.key_len(), 32);
-        key.drop_hazardous_operations();
     }
 
     #[test]
@@ -178,9 +192,11 @@ mod test_key_material {
 
         // Sanity check: the backing buffer actually holds non-zero key material before it is wiped.
         // Without this, the post-zeroize assertion below could pass vacuously.
-        key.allow_hazardous_operations();
-        assert!(key.ref_to_bytes_mut().unwrap().iter().any(|&b| b != 0));
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| {
+            assert!(key.ref_to_bytes_mut().unwrap().iter().any(|&b| b != 0));
+            Ok(())
+        })
+        .unwrap();
 
         key.zeroize();
         let key_len = key.key_len();
@@ -191,37 +207,33 @@ mod test_key_material {
         // Full capacity must be inspected to confirm the previously-set bytes were
         // actually overwritten with zeros.
         // Note: key_len is now 0, so ref_to_bytes() returns an empty slice.
-        key.allow_hazardous_operations();
-        let full_buf = key.ref_to_bytes_mut().unwrap();
-        assert_eq!(full_buf.len(), capacity);
-        assert!(full_buf.iter().all(|&b| b == 0));
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| {
+            let full_buf = key.ref_to_bytes_mut().unwrap();
+            assert_eq!(full_buf.len(), capacity);
+            assert!(full_buf.iter().all(|&b| b == 0));
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]
-    fn test_truncate() {
+    fn test_truncation() {
         let mut key = KeyMaterial512::from_bytes(&DUMMY_KEY[..64]).unwrap();
         assert_eq!(key.key_len(), 64);
 
         // This should be no change
-        match key.truncate(64) {
+        match key.set_key_len(64) {
             Ok(()) => { /* good */ }
             _ => panic!("Expected Ok(())"),
         }
         assert_eq!(key.key_len(), 64);
 
-        key.truncate(32).unwrap();
+        key.set_key_len(32).unwrap();
         assert_eq!(key.key_len(), 32);
 
-        match key.truncate(64) {
-            Err(KeyMaterialError::InvalidLength) => { /* good */ }
-            _ => panic!("Expected InvalidLength"),
-        }
-
-        key.truncate(16).unwrap();
+        key.set_key_len(16).unwrap();
         assert_eq!(key.key_len(), 16);
 
-        key.allow_hazardous_operations();
         let key_len = key.key_len();
         let mut buf = vec![0u8; key_len];
         buf.copy_from_slice(key.ref_to_bytes());
@@ -231,7 +243,7 @@ mod test_key_material {
 
         // Test truncating a key to zero length
         let mut key_zero = KeyMaterial512::from_bytes(&DUMMY_KEY[..64]).unwrap();
-        key_zero.truncate(0).unwrap();
+        key_zero.set_key_len(0).unwrap();
         assert_eq!(key_zero.key_len(), 0);
         assert_eq!(key_zero.key_type(), KeyType::Zeroized);
 
@@ -239,19 +251,18 @@ mod test_key_material {
         let mut key =
             KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::BytesFullEntropy).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_256bit);
-        key.truncate(16).unwrap();
+        key.set_key_len(16).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_128bit);
-        key.truncate(14).unwrap();
+        key.set_key_len(14).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_112bit);
-        key.truncate(11).unwrap();
+        key.set_key_len(11).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
         // truncate should not raise the security level
         let mut key =
             KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::BytesFullEntropy).unwrap();
         key.set_security_strength(SecurityStrength::_112bit).unwrap();
-        key.drop_hazardous_operations();
-        key.truncate(64).unwrap();
+        key.set_key_len(64).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_112bit);
     }
 
@@ -268,31 +279,32 @@ mod test_key_material {
         }
 
         // This should fail.
-        match key.convert_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::BytesFullEntropy) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
 
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+            .unwrap();
         assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
         assert!(key.is_full_entropy());
-        key.drop_hazardous_operations();
 
-        match key.convert_key_type(KeyType::SymmetricCipherKey) {
+        // Now we can convert BytesFullEntropy -> SymmetricCipherKey outside of a hazop block
+        match key.set_key_type(KeyType::SymmetricCipherKey) {
             Ok(()) => { /* good */ }
             _ => panic!("Expected Ok(())"),
         }
-        match key.convert_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::BytesFullEntropy) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
-        key.drop_hazardous_operations();
-        match key.convert_key_type(KeyType::Seed) {
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+            .unwrap();
+
+        // Now we can convert BytesFullEntropy -> Seed outside of a hazop block
+        match key.set_key_type(KeyType::Seed) {
             Ok(()) => { /* good */ }
             _ => panic!("Expected Ok(())"),
         }
@@ -300,34 +312,27 @@ mod test_key_material {
         // each KeyType can convert to itself
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesLowEntropy))
+            .unwrap();
         key.set_key_type(KeyType::BytesLowEntropy).unwrap();
-        key.drop_hazardous_operations();
-        key.convert_key_type(KeyType::BytesLowEntropy).unwrap();
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+            .unwrap();
         key.set_key_type(KeyType::BytesFullEntropy).unwrap();
-        key.drop_hazardous_operations();
-        key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
         key.set_key_type(KeyType::MACKey).unwrap();
-        key.drop_hazardous_operations();
-        key.convert_key_type(KeyType::MACKey).unwrap();
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::SymmetricCipherKey))
+            .unwrap();
         key.set_key_type(KeyType::SymmetricCipherKey).unwrap();
-        key.drop_hazardous_operations();
-        key.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::Seed)).unwrap();
         key.set_key_type(KeyType::Seed).unwrap();
-        key.drop_hazardous_operations();
-        key.convert_key_type(KeyType::Seed).unwrap();
     }
 
     #[test]
@@ -336,23 +341,23 @@ mod test_key_material {
         assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
 
         /* All conversions should fail. */
-        match zeroized_key.convert_key_type(KeyType::BytesLowEntropy) {
+        match zeroized_key.set_key_type(KeyType::BytesLowEntropy) {
             Err(KeyMaterialError::ActingOnZeroizedKey) => { /* good */ }
             _ => panic!("Expected ActingOnZeroizedKey"),
         }
-        match zeroized_key.convert_key_type(KeyType::BytesFullEntropy) {
+        match zeroized_key.set_key_type(KeyType::BytesFullEntropy) {
             Err(KeyMaterialError::ActingOnZeroizedKey) => { /* good */ }
             _ => panic!("Expected ActingOnZeroizedKey"),
         }
-        match zeroized_key.convert_key_type(KeyType::MACKey) {
+        match zeroized_key.set_key_type(KeyType::MACKey) {
             Err(KeyMaterialError::ActingOnZeroizedKey) => { /* good */ }
             _ => panic!("Expected ActingOnZeroizedKey"),
         }
-        match zeroized_key.convert_key_type(KeyType::Seed) {
+        match zeroized_key.set_key_type(KeyType::Seed) {
             Err(KeyMaterialError::ActingOnZeroizedKey) => { /* good */ }
             _ => panic!("Expected ActingOnZeroizedKey"),
         }
-        match zeroized_key.convert_key_type(KeyType::SymmetricCipherKey) {
+        match zeroized_key.set_key_type(KeyType::SymmetricCipherKey) {
             Err(KeyMaterialError::ActingOnZeroizedKey) => { /* good */ }
             _ => panic!("Expected ActingOnZeroizedKey"),
         }
@@ -382,11 +387,12 @@ mod test_key_material {
         // but it should still have set the key bytes; it's just giving you a friendly warning
         assert_eq!(zero_key.key_type(), KeyType::Zeroized);
 
-        // ... but will allow it if you set .allow_hazardous_operations() first.
+        // ... but will allow it inside a hazop closure
         let mut zero_key = KeyMaterial256::new();
-        zero_key.allow_hazardous_operations();
-        zero_key.set_bytes_as_type(&[0u8; 19], KeyType::MACKey).unwrap();
-        zero_key.drop_hazardous_operations();
+        do_hazardous_operations(&mut zero_key, |key| {
+            key.set_bytes_as_type(&[0u8; 19], KeyType::MACKey)
+        })
+        .unwrap();
         assert_eq!(zero_key.key_type(), KeyType::MACKey);
     }
 
@@ -400,43 +406,37 @@ mod test_key_material {
         // ... none
 
         /* All the hazardous conversions should fail. */
-        match key.convert_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::BytesFullEntropy) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
-        match key.convert_key_type(KeyType::MACKey) {
+        match key.set_key_type(KeyType::MACKey) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
-        match key.convert_key_type(KeyType::SymmetricCipherKey) {
+        match key.set_key_type(KeyType::SymmetricCipherKey) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
-        match key.convert_key_type(KeyType::Seed) {
+        match key.set_key_type(KeyType::Seed) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
 
         /* Should work if you allow hazardous conversions. */
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::BytesFullEntropy).unwrap();
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+            .unwrap();
 
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::MACKey).unwrap();
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
 
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::SymmetricCipherKey))
+            .unwrap();
 
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::Seed).unwrap();
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::Seed)).unwrap();
     }
 
     #[test]
@@ -488,31 +488,28 @@ mod test_key_material {
     /// Not exhaustive, cargo mutants will probably not be satisfied.
     fn test_hazardous_conversions_cast_types() {
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::MACKey).unwrap();
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
 
         // converting to self should work (idempotency)
-        key.convert_key_type(KeyType::MACKey).unwrap();
+        key.set_key_type(KeyType::MACKey).unwrap();
 
         /* All the hazardous conversions should fail. */
-        match key.convert_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::BytesFullEntropy) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
-        match key.convert_key_type(KeyType::SymmetricCipherKey) {
+        match key.set_key_type(KeyType::SymmetricCipherKey) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
-        match key.convert_key_type(KeyType::Seed) {
+        match key.set_key_type(KeyType::Seed) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
 
         // should work if you allow hazardous conversions.
-        key.allow_hazardous_operations();
-        key.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::SymmetricCipherKey))
+            .unwrap();
     }
 
     #[test]
@@ -572,56 +569,83 @@ mod test_key_material {
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
         // test set_security_strength()
-        // Can't increase the security level without setting .allow_hazardous_operations() first.
+        // Can't increase the security level outside of a hazop block first.
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
         match key.set_security_strength(SecurityStrength::_128bit) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected KeyMaterialError::HazardousOperationNotPermitted"),
         }
-        key.allow_hazardous_operations();
-        match key.set_security_strength(SecurityStrength::_128bit) {
-            Err(KeyMaterialError::SecurityStrength(_)) => { /* good */ }
-            _ => panic!("Expected KeyMaterialError::SecurityStrength"),
-        }
+        do_hazardous_operations(&mut key, |key| {
+            match key.set_security_strength(SecurityStrength::_128bit) {
+                Err(KeyMaterialError::SecurityStrength(_)) => {
+                    /* good */
+                    Ok(())
+                }
+                _ => panic!("Expected KeyMaterialError::SecurityStrength"),
+            }
+        })
+        .unwrap();
 
-        // So let's set it to a full-entropy type
-        key.set_key_type(KeyType::BytesFullEntropy).unwrap();
-        // now it should work
-        key.set_security_strength(SecurityStrength::_128bit).unwrap();
+        // Even in a hazops block, you can't set a BytesLowEntropy to any Security Strength other than None
+        do_hazardous_operations(&mut key, |key| {
+            match key.set_security_strength(SecurityStrength::_128bit) {
+                Err(KeyMaterialError::SecurityStrength(_)) => {
+                    /* good */
+                    Ok(())
+                }
+                _ => panic!("Expected KeyMaterialError::SecurityStrength"),
+            }
+        })
+        .unwrap();
+        // But it'll work if you set it to a full entropy type
+        do_hazardous_operations(&mut key, |key| {
+            key.set_key_type(KeyType::BytesFullEntropy).unwrap();
+            key.set_security_strength(SecurityStrength::_128bit)
+        })
+        .unwrap();
+        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
         assert_eq!(key.security_strength(), SecurityStrength::_128bit);
-        key.drop_hazardous_operations();
 
         // BytesLowEntropy keys cannot have a security strength other than None.
         // success
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
-        // setting to ::None should work .. even without setting .allow_hazardous_operations()
+        // setting to ::None should work .. even outside of a hazop block
         key.set_security_strength(SecurityStrength::None).unwrap();
         // but to ::_128bit should fail
-        key.allow_hazardous_operations();
-        match key.set_security_strength(SecurityStrength::_128bit) {
-            Err(KeyMaterialError::SecurityStrength(_)) => { /* good */ }
-            _ => panic!("Expected KeyMaterialError::SecurityStrength"),
-        }
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| {
+            match key.set_security_strength(SecurityStrength::_128bit) {
+                Err(KeyMaterialError::SecurityStrength(_)) => {
+                    /* good */
+                    Ok(())
+                }
+                _ => panic!("Expected KeyMaterialError::SecurityStrength"),
+            }
+        })
+        .unwrap();
 
         // Zeroized keys cannot have a security strength other than None.
         // success
         let mut key = KeyMaterial256::new();
-        key.allow_hazardous_operations();
-        key.set_key_len(32).unwrap(); // still zeroized
-        key.drop_hazardous_operations();
+        do_hazardous_operations(&mut key, |key| {
+            key.set_key_len(32) // still zeroized
+        })
+        .unwrap();
         assert_eq!(key.key_type(), KeyType::Zeroized);
-        // setting to ::None should work .. even without setting .allow_hazardous_operations()
+        // setting to ::None should work, even outside of a hazop block
         key.set_security_strength(SecurityStrength::None).unwrap();
-        // but to ::_128bit should fail
-        key.allow_hazardous_operations();
-        match key.set_security_strength(SecurityStrength::_128bit) {
-            Err(KeyMaterialError::SecurityStrength(_)) => { /* good */ }
-            _ => panic!("Expected KeyMaterialError::SecurityStrength"),
-        }
-        key.drop_hazardous_operations();
+        // but to ::_128bit should fail, even in a hazop block
+        do_hazardous_operations(&mut key, |key| {
+            match key.set_security_strength(SecurityStrength::_128bit) {
+                Err(KeyMaterialError::SecurityStrength(_)) => {
+                    /* good */
+                    Ok(())
+                }
+                _ => panic!("Expected KeyMaterialError::SecurityStrength"),
+            }
+        })
+        .unwrap();
     }
 
     #[test]
@@ -638,9 +662,11 @@ mod test_key_material {
         assert_eq!(key1.ref_to_bytes()[16..], [2u8; 16]);
 
         let mut zeroized_key = KeyMaterial256::default();
-        zeroized_key.allow_hazardous_operations();
-        zeroized_key.set_key_len(8).unwrap();
-        zeroized_key.drop_hazardous_operations();
+        do_hazardous_operations(&mut zeroized_key, |zeroized_key| {
+            zeroized_key.set_key_len(8).unwrap();
+            Ok(())
+        })
+        .unwrap();
         assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
         assert_eq!(zeroized_key.key_len(), 8);
         zeroized_key.concatenate(&key2).unwrap();
@@ -652,9 +678,11 @@ mod test_key_material {
 
         // This should be symmetric, so test it in the other direction too.
         let mut zeroized_key = KeyMaterial256::default();
-        zeroized_key.allow_hazardous_operations();
-        zeroized_key.set_key_len(8).unwrap();
-        zeroized_key.drop_hazardous_operations();
+        do_hazardous_operations(&mut zeroized_key, |zeroized_key| {
+            zeroized_key.set_key_len(8).unwrap();
+            Ok(())
+        })
+        .unwrap();
         assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
         assert_eq!(zeroized_key.key_len(), 8);
         let mut key2 = KeyMaterial256::from_bytes(&[1u8; 16]).unwrap();
@@ -772,8 +800,11 @@ mod test_key_material {
         // success case -- zero keys -- different type and different KeyType
         let key1 = KeyMaterial0::new();
         let mut key2 = KeyMaterial256::new();
-        key2.allow_hazardous_operations();
-        key2.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
+        do_hazardous_operations(&mut key2, |key2| {
+            key2.set_key_type(KeyType::SymmetricCipherKey).unwrap();
+            Ok(())
+        })
+        .unwrap();
         assert!(key1.equals(&key2));
         assert!(key2.equals(&key1));
 
@@ -786,8 +817,11 @@ mod test_key_material {
         // success case -- non-zero keys -- different type and different KeyType
         let key1 = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         let mut key2 = KeyMaterial512::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        key2.allow_hazardous_operations();
-        key2.convert_key_type(KeyType::SymmetricCipherKey).unwrap();
+        do_hazardous_operations(&mut key2, |key2| {
+            key2.set_key_type(KeyType::SymmetricCipherKey).unwrap();
+            Ok(())
+        })
+        .unwrap();
         assert!(key1.equals(&key2));
         assert!(key2.equals(&key1));
 
@@ -839,6 +873,69 @@ mod test_key_material {
                     expected
                 );
             }
+        }
+    }
+
+    #[test]
+    /// Pins the error behaviour of [do_hazardous_operations]:
+    ///  1. an `Err` returned from the closure propagates out verbatim (not swallowed or remapped),
+    ///  2. a real `KeyMaterialError` raised by a guarded op inside the closure propagates via `?`,
+    ///  3. the "flattening" idiom the KDF/RNG crates rely on — collapsing a *foreign* error type
+    ///     into a `KeyMaterialError` with `map_err` inside the closure — surfaces as that
+    ///     `KeyMaterialError`, and
+    ///  4. the guard is still cleared on the error path (an erroring closure does not leave the
+    ///     instance stuck in hazardous mode).
+    fn test_hazardous_ops_error_handling() {
+        let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
+
+        // 1. An explicit Err returned from the closure propagates out unchanged.
+        let result =
+            do_hazardous_operations(&mut key, |_key| Err(KeyMaterialError::GenericError("boom")));
+        match result {
+            Err(KeyMaterialError::GenericError("boom")) => { /* good */ }
+            _ => panic!("the closure's error should propagate out verbatim"),
+        }
+
+        // 2. A real KeyMaterialError raised by a guarded op inside the closure propagates via `?`.
+        //    Raising to _256bit requires >= 32 bytes, but this key is only 16, so it fails.
+        let mut short =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..16], KeyType::BytesFullEntropy)
+                .unwrap();
+        let result = do_hazardous_operations(&mut short, |k| {
+            k.set_security_strength(SecurityStrength::_256bit)?;
+            Ok(())
+        });
+        match result {
+            Err(KeyMaterialError::SecurityStrength(_)) => { /* good */ }
+            _ => panic!("the SecurityStrength error should propagate from inside the closure"),
+        }
+
+        // 3. The "flattening" idiom: a foreign error type is collapsed into a KeyMaterialError via
+        //    map_err inside the closure (exactly how hkdf/rng flatten MACError/RNGError), so it
+        //    surfaces as that KeyMaterialError. Outside the closure, the caller would then convert
+        //    the KeyMaterialError back to its own error type via `?` / `From<KeyMaterialError>`.
+        #[derive(Debug)]
+        struct ForeignError;
+        fn foreign_op() -> Result<(), ForeignError> {
+            Err(ForeignError)
+        }
+
+        let result = do_hazardous_operations(&mut key, |_k| {
+            foreign_op().map_err(|_| KeyMaterialError::GenericError("flattened"))?;
+            Ok(())
+        });
+        match result {
+            Err(KeyMaterialError::GenericError("flattened")) => { /* good */ }
+            _ => panic!("the foreign error should be flattened into a KeyMaterialError"),
+        }
+
+        // 4. The guard is cleared even when the closure returns Err: a guarded op afterwards, outside
+        //    any closure, must still be rejected. `key` is BytesLowEntropy and was never mutated by
+        //    the erroring closures above, so converting it to Seed is a hazardous op that requires
+        //    the guard -- which proves the guard was restored to "off".
+        match key.set_key_type(KeyType::Seed) {
+            Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
+            _ => panic!("the guard should have been cleared after the erroring closures"),
         }
     }
 }

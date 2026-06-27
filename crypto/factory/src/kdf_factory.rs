@@ -58,11 +58,6 @@ use bouncycastle_sha3::{
     SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME, SHAKE128_NAME, SHAKE256_NAME,
 };
 
-/*** Defaults ***/
-pub const DEFAULT_KDF_NAME: &str = HKDF_SHA512_NAME;
-pub const DEFAULT_128BIT_KDF_NAME: &str = HKDF_SHA256_NAME;
-pub const DEFAULT_256BIT_KDF_NAME: &str = HKDF_SHA512_NAME;
-
 // All members must impl KDF.
 pub enum KDFFactory {
     #[allow(non_camel_case_types)]
@@ -79,17 +74,17 @@ pub enum KDFFactory {
 
 impl Default for KDFFactory {
     fn default() -> Self {
-        KDFFactory::new(DEFAULT_KDF_NAME).unwrap()
+        Self::HKDF_SHA512(hkdf::HKDF_SHA512::new())
     }
 }
 
 impl AlgorithmFactory for KDFFactory {
     fn default_128_bit() -> Self {
-        KDFFactory::new(DEFAULT_128BIT_KDF_NAME).unwrap()
+        Self::HKDF_SHA256(hkdf::HKDF_SHA256::new())
     }
 
     fn default_256_bit() -> Self {
-        KDFFactory::new(DEFAULT_256BIT_KDF_NAME).unwrap()
+        Self::HKDF_SHA512(hkdf::HKDF_SHA512::new())
     }
 
     fn new(alg_name: &str) -> Result<Self, FactoryError> {

@@ -30,7 +30,7 @@ impl TestFrameworkKDF {
         // account for the fact that XOF style KDFs will will the provided buffer.
         assert!(bytes_written >= expected_output.key_len());
         assert_eq!(output.key_len(), bytes_written);
-        output.truncate(expected_output.key_len()).unwrap();
+        output.set_key_len(expected_output.key_len()).unwrap(); // truncates should be infallible
         assert_eq!(output.key_len(), expected_output.key_len());
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 
@@ -99,7 +99,7 @@ impl TestFrameworkKDF {
         let output = kdf.derive_key_from_multiple(keys, additional_input).unwrap();
         // This is sortof a hack since the rust language won't easily allow me to make the KeyMaterials the same length
         if output.key_len() < expected_output.key_len() {
-            expected_output.truncate(output.key_len()).unwrap();
+            expected_output.set_key_len(output.key_len()).unwrap(); // truncates should be infallible
         }
         assert_eq!(output.key_len(), expected_output.key_len());
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
@@ -112,7 +112,7 @@ impl TestFrameworkKDF {
         // account for the fact that XOF style KDFs will will the provided buffer.
         assert!(bytes_written >= expected_output.key_len());
         assert_eq!(output.key_len(), bytes_written);
-        output.truncate(expected_output.key_len()).unwrap();
+        output.set_key_len(expected_output.key_len()).unwrap(); // truncates should be infallible
         assert_eq!(output.key_len(), expected_output.key_len());
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 

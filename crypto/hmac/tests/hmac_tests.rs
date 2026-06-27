@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod hmac_tests {
     use bouncycastle_core::errors::{KeyMaterialError, MACError};
+    use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
@@ -16,8 +17,10 @@ mod hmac_tests {
     fn simple_tests() {
         // Simple test with zero-length key
         let mut zero_length_key = KeyMaterial256::default();
-        zero_length_key.allow_hazardous_operations();
-        zero_length_key.convert_key_type(KeyType::MACKey).unwrap();
+        key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
+            zero_length_key.set_key_type(KeyType::MACKey)
+        })
+        .unwrap();
         assert_eq!(zero_length_key.key_len(), 0);
         assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -152,8 +155,8 @@ mod hmac_tests {
         HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
 
         // non-zero len key of all-zero bytes
-        zero_key.allow_hazardous_operations();
-        zero_key.set_key_len(32).unwrap();
+        key_material::do_hazardous_operations(&mut zero_key, |zero_key| zero_key.set_key_len(32))
+            .unwrap();
         HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
 
         // but we don't allow zero-len keys that are not Zeroized or MACKey
@@ -270,8 +273,10 @@ mod hmac_tests {
         fn hmac_sha224() {
             let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
-            zero_length_key.allow_hazardous_operations();
-            zero_length_key.convert_key_type(KeyType::MACKey).unwrap();
+            key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
+                zero_length_key.set_key_type(KeyType::MACKey)
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -346,8 +351,10 @@ mod hmac_tests {
             // test with zero-length key
             let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
-            zero_length_key.allow_hazardous_operations();
-            zero_length_key.convert_key_type(KeyType::MACKey).unwrap();
+            key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
+                zero_length_key.set_key_type(KeyType::MACKey)
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -423,8 +430,10 @@ mod hmac_tests {
             // test with zero-length key
             let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
-            zero_length_key.allow_hazardous_operations();
-            zero_length_key.convert_key_type(KeyType::MACKey).unwrap();
+            key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
+                zero_length_key.set_key_type(KeyType::MACKey)
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
@@ -498,8 +507,10 @@ mod hmac_tests {
             // test with zero-length key
             let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
-            zero_length_key.allow_hazardous_operations();
-            zero_length_key.convert_key_type(KeyType::MACKey).unwrap();
+            key_material::do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
+                zero_length_key.set_key_type(KeyType::MACKey)
+            })
+            .unwrap();
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 

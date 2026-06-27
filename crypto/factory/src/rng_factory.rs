@@ -50,11 +50,6 @@ use bouncycastle_core::traits::{RNG, SecurityStrength};
 use bouncycastle_rng as rng;
 use bouncycastle_rng::{HASH_DRBG_SHA256_NAME, HASH_DRBG_SHA512_NAME};
 
-/*** Defaults ***/
-pub const DEFAULT_DRBG_NAME: &str = HASH_DRBG_SHA512_NAME;
-pub const DEFAULT_128BIT_DRBG_NAME: &str = HASH_DRBG_SHA256_NAME;
-pub const DEFAULT_256BIT_DRBG_NAME: &str = HASH_DRBG_SHA512_NAME;
-
 /// All members must impl RNG.
 pub enum RNGFactory {
     #[allow(non_camel_case_types)]
@@ -65,16 +60,16 @@ pub enum RNGFactory {
 
 impl Default for RNGFactory {
     fn default() -> Self {
-        Self::new(DEFAULT_DRBG_NAME).unwrap()
+        Self::HashDRBG_SHA512(rng::HashDRBG_SHA512::new_from_os())
     }
 }
 
 impl AlgorithmFactory for RNGFactory {
     fn default_128_bit() -> Self {
-        Self::new(DEFAULT_128BIT_DRBG_NAME).unwrap()
+        Self::HashDRBG_SHA256(rng::HashDRBG_SHA256::new_from_os())
     }
     fn default_256_bit() -> Self {
-        Self::new(DEFAULT_256BIT_DRBG_NAME).unwrap()
+        Self::HashDRBG_SHA512(rng::HashDRBG_SHA512::new_from_os())
     }
 
     fn new(alg_name: &str) -> Result<Self, FactoryError> {

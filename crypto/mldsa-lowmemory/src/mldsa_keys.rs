@@ -21,6 +21,7 @@ use crate::mldsa::{
 };
 use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     Secret, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF,
@@ -610,10 +611,10 @@ impl<
             return Err(SignatureError::DecodingError("Invalid seed length"));
         }
         let mut keymat = KeyMaterial::<32>::from_bytes(bytes)?;
-        keymat.allow_hazardous_operations();
-        keymat.set_key_type(KeyType::Seed)?;
-        keymat.set_security_strength(SecurityStrength::_256bit)?;
-        keymat.drop_hazardous_operations();
+        key_material::do_hazardous_operations(&mut keymat, |keymat| {
+            keymat.set_key_type(KeyType::Seed)?;
+            keymat.set_security_strength(SecurityStrength::_256bit)
+        })?;
 
         Self::new(&keymat)
     }

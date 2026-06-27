@@ -1,6 +1,7 @@
 use crate::SHAKEParams;
-use crate::keccak::KeccakDigest;
+use crate::keccak::{KeccakDigest, KeccakSize};
 use bouncycastle_core::errors::{HashError, KDFError};
+use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, KDF, SecurityStrength, XOF};
 use bouncycastle_utils::{max, min};
@@ -87,8 +88,13 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
         let mut output_key = KeyMaterial::<64>::new();
         self.derive_key_out_final_internal(additional_input, &mut output_key)?;
 
+        // truncate
         // 128 => 32, 256 => 64
-        output_key.truncate(2 * (PARAMS::SIZE as usize) / 8)?;
+        match PARAMS::SIZE {
+            KeccakSize::_128 => output_key.set_key_len(32).expect("truncate should be infallible"),
+            KeccakSize::_256 => output_key.set_key_len(64).expect("truncate should be infallible"),
+            _ => unreachable!(),
+        }
         Ok(Box::new(output_key))
     }
 
@@ -109,25 +115,25 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
 
         self.absorb(additional_input);
 
-        // let mut buf = [0u8; 64];
-        output_key.allow_hazardous_operations();
-        let bytes_written = self.squeeze_out(
-            output_key
-                .ref_to_bytes_mut()
-                .expect("We just set .allow_hazardous_operations(), so this should be fine."),
-        );
-        output_key.set_key_len(bytes_written)?;
+        let mut bytes_written: usize = 0;
+        key_material::do_hazardous_operations(output_key, |output_key| {
+            bytes_written = self.squeeze_out(
+                output_key.ref_to_bytes_mut().expect("Infallible within do_hazardous_operations"),
+            );
+            output_key.set_key_len(bytes_written)
+        })?;
 
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
         if self.kdf_key_type == KeyType::Zeroized {
             self.kdf_key_type = KeyType::BytesLowEntropy;
         }
-        output_key.set_key_type(self.kdf_key_type)?;
-        output_key.set_security_strength(
-            min(&self.kdf_security_strength, &SecurityStrength::from_bits(bytes_written * 8))
-                .clone(),
-        )?;
-        output_key.drop_hazardous_operations();
+        key_material::do_hazardous_operations(output_key, |output_key| {
+            output_key.set_key_type(self.kdf_key_type)?;
+            output_key.set_security_strength(
+                min(&self.kdf_security_strength, &SecurityStrength::from_bits(bytes_written * 8))
+                    .clone(),
+            )
+        })?;
         Ok(bytes_written)
     }
 }

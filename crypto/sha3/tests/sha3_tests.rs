@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod sha3_tests {
     use super::sha3_test_helpers::*;
+    use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
@@ -344,7 +345,7 @@ mod sha3_tests {
         let input_seed = KeyMaterial256::from_bytes(&DUMMY_SEED_512[..32]).expect("Error happened");
         let mut output_seed =
             SHA3_256::new().derive_key(&input_seed, b"nytimes.com").expect("Error happened");
-        match output_seed.convert_key_type(KeyType::MACKey) {
+        match output_seed.set_key_type(KeyType::MACKey) {
             Ok(_) => {
                 panic!(
                     "Should have failed to convert key type because the input was BytesLowEntropy"
@@ -358,10 +359,10 @@ mod sha3_tests {
         let mut output_seed = SHA3_256::new()
             .derive_key(&input_seed, b"some addtional input to the KDF")
             .expect("Error happened");
-        output_seed.allow_hazardous_operations();
-        output_seed.convert_key_type(KeyType::MACKey).unwrap();
-        output_seed.drop_hazardous_operations(); // not strictly necessary because KeyMaterial
-        // will automatically drop allow_hazardous_conversions() after performing one.
+        key_material::do_hazardous_operations(&mut *output_seed, |output_seed| {
+            output_seed.set_key_type(KeyType::MACKey)
+        })
+        .unwrap();
         assert_eq!(output_seed.key_type(), KeyType::MACKey);
 
         // This works because we explicitly tag the input data as BytesFullEntropy.
