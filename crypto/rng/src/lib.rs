@@ -3,7 +3,7 @@
 //! This crate provides the implementations of the deterministic random bit generator (DRBG) algorithms
 //! which, together with a strong entropy source, form the basis of cryptographic random number generation.
 //!
-//! Here's the basic way to get some random bytes:
+//! Here is the basic way to get some random bytes:
 //!
 //! ```
 //! use bouncycastle_core::traits::RNG;
@@ -13,7 +13,7 @@
 //! ```
 //! This is secure because `::default()` seeds the RNG from the OS, configured for general use.
 //!
-//! **WARNING: most people should stop reading here and should not be mucking around with the internals of RNGs.
+//! **WARNING: most people should stop reading here and should not attempt to modify the internals of RNGs.
 //! This crate contains dragons and other horrible things. 🐉🐍🐜**
 //!
 //! # 🚨🚨🚨Security Warning 🚨🚨🚨
@@ -60,8 +60,14 @@ pub type DefaultRNG = HashDRBG_SHA512;
 pub type Default128BitRNG = HashDRBG_SHA256;
 pub type Default256BitRNG = HashDRBG_SHA512;
 
-/// Implements the five functions specified in SP 800-90A section 7.4 are instantate, generate, reseed, uninstantiate, and health_test.
-/// Note: this function implements Rust's Drop on the sensitive working state in place of the explicit Uninstantiate function listed in SP 800-90Ar1.
+/// Implements the five functions specified in SP 800-90A section 7.4 are 
+/// - instantate, 
+/// - generate, 
+/// - reseed, 
+/// - uninstantiate, and 
+/// - health_test.
+/// Note: this function implements Rust's Drop on the sensitive working state in place of the explicit 
+/// Uninstantiate function listed in SP 800-90Ar1.
 pub trait Sp80090ADrbg {
     /// The input KeyMaterial must be of type [KeyType::Seed].
     ///
@@ -79,7 +85,8 @@ pub trait Sp80090ADrbg {
     /// required.
     /// """
     ///
-    /// This function takes ownership of the seed KeyMaterial object, to reduce the likelihood of its reuse in a second function call.
+    /// This function takes ownership of the seed KeyMaterial object, 
+    /// to reduce the likelihood of its reuse in a second function call.
     ///
     /// There is no entropy requirement on the nonce, but it is expected as a KeyMaterial so that it
     /// benefits from the secure erasure and logging protections in the KeyMaterial object.
@@ -93,7 +100,8 @@ pub trait Sp80090ADrbg {
     ) -> Result<(), RNGError>;
 
     /// Reseeds the DRBG with the provided seed.
-    /// TODO: this needs to be thought out to take some sort of EntropySource object that'll work well with DRBGs that require frequent reseeding.
+    /// TODO: this needs to be redesigned to take some sort of EntropySource object that will work well 
+    // with DRBGs that require frequent reseeding.
     fn reseed(
         &mut self,
         seed: &impl KeyMaterialTrait,

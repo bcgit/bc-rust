@@ -61,13 +61,14 @@ impl HashDRBG80090AParams for HashDRBG80090AParams_SHA512 {
     const RESEED_INTERVAL: u64 = 1u64 << 48; // 2^48 requests
 }
 
-// TODO: is there a rustacious way to extract this from HASH?
+// TODO: is there a rust way to extract this from HASH?
 const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
 
 #[allow(private_bounds)]
 /// Implementation of the Hash_DRBG algorithm as specified in NIST SP 800-90Ar1.
 pub struct HashDRBG80090A<H: HashDRBG80090AParams> {
-    // Rust is stupid. What's the point of having a generic parameter if we can't use constants inside it?
+    // Ideally `state: WorkingState<H::SEED_LEN>`, but stable Rust can't use an associated const
+    // of a generic type parameter as a const-generic argument 
     // state: WorkingState<H::SEED_LEN>,
     state: WorkingState<LARGEST_HASHER_OUTPUT_LEN>,
     admin_info: AdministrativeInfo,
@@ -194,7 +195,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
             ));
         }
 
-        // todo: take this out once supported
+        // TODO: take this out once supported
         if prediction_resistance {
             todo!("Prediction resistance is not yet supported by Hash_DRBG80090A.")
         }
@@ -219,7 +220,8 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
                 "Provided seed exceeds the maximum seed length.",
             ))?;
         }
-        // On purpose not checking the SecurityStrength field of the seed, because we assume it's pure entropy and hasn't been touched by any actual algoritms yet.
+        // On purpose not checking the SecurityStrength field of the seed, 
+        // because we assume it's pure entropy and hasn't been touched by any actual algoritms yet.
         if security_strength > H::MAX_SECURITY_STRENGTH {
             return Err(KeyMaterialError::SecurityStrength(
                 "Requested security strength exceeds the maximum strength that this DRBG instance can provide.",
@@ -517,7 +519,8 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
 
 /// the hash_df function as defined in SP 800-90Ar1 section 10.3.1.
 /// no_of_bits_to_return is the length of the provided output buffer.
-/// Because array concatenation is not available in a no_std / no_alloc build, this takes many input parameters. To leave a parameter unused, simply provide an empty array &[0u8;0]
+/// Because array concatenation is not available in a no_std / no_alloc build, this takes many input parameters. 
+// To leave a parameter unused, simply provide an empty array &[0u8;0]
 fn hash_df<H: Hash + HashAlgParams + Default>(
     in1: &[u8],
     in2: &[u8],
@@ -527,7 +530,7 @@ fn hash_df<H: Hash + HashAlgParams + Default>(
 ) {
     // Note: all lengths here are in bytes, whereas the spec uses bits.
 
-    // // I'm gonna panic! here because this is private and shouldn't get into weird inputs.
+    // The implementation panic! here because this is private and shouldn't get into weird inputs.
     if out.len() > 255 * H::OUTPUT_LEN {
         panic!("hash_df can't produce that much output!")
     }
@@ -539,8 +542,8 @@ fn hash_df<H: Hash + HashAlgParams + Default>(
     let len = u32::div_ceil(out.len() as u32, H::OUTPUT_LEN as u32);
     let mut counter: u8 = 0x01;
 
-    // note: this could probably be performance optimized a tiny bit by pulling no_of_bits_to_return.to_le_bytes() out of the loop
-    // and by merging i and counter into the same variable.
+    // note: this could probably be performance optimized a tiny bit by pulling no_of_bits_to_return.to_le_bytes() 
+    // out of the loop and by merging i and counter into the same variable.
     for i in 1..len {
         let mut h = H::default();
         h.do_update(&counter.to_le_bytes());
@@ -555,7 +558,8 @@ fn hash_df<H: Hash + HashAlgParams + Default>(
     }
 
     // Handle the last block separately since not all of it will fit in the output buffer.
-    // First, do we even need to do a last block, or was the requested number of bits already a multiple of the output length?
+    // TODO: Check whether it is necessary to do a last block, 
+    // or was the requested number of bits already a multiple of the output length
     let bytes_written = (len - 1) as usize * H::OUTPUT_LEN;
     let remainder = out.len() - bytes_written;
     if remainder != 0 {
@@ -567,7 +571,6 @@ fn hash_df<H: Hash + HashAlgParams + Default>(
         h.do_update(in3);
         h.do_update(in4);
 
-        // I don't understand rust
         // let mut temp = [0u8; H::OUTPUT_LEN];
         let mut temp = [0u8; 64];
         h.do_final_out(&mut temp);
@@ -662,11 +665,11 @@ fn hashgen<H: Hash + HashAlgParams + Default>(v: &[u8], out: &mut [u8]) {
     }
 
     // Handle the last block separately since not all of it will fit in the output buffer.
-    // First, do we even need to do a last block, or was the requested number of bits already a multiple of the output length?
+    // TODO: Check whether it is necessary to do a last block, 
+    // or was the requested number of bits already a multiple of the output length
     let bytes_written = (m - 1) as usize * H::OUTPUT_LEN;
     let remainder = out.len() - bytes_written;
     if remainder != 0 {
-        // I don't understand rust
         // let mut temp = [0u8; H::OUTPUT_LEN];
         let mut temp = [0u8; 64];
         H::default().hash_out(&data, &mut temp);
