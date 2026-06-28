@@ -163,8 +163,8 @@ use bouncycastle_core::traits::XOF;
 // end doc-only imports
 
 /*** Constants ***/
-// Slightly hacky, but set this to accomodate the underlying hash primitive with the largest output size.
-// It would be better to pull that at compile time from H, but the implementation does not currently do that.
+// Set this to accomodate the underlying hash primitive with the largest output size.
+// TODO: pull this value at compile time from H
 const HMAC_BLOCK_LEN: usize = 64;
 
 /*** String constants ***/
@@ -279,7 +279,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         self.entropy.get_entropy()
     }
 
-    /// Has the entropy input so far met the threshold for this object to be considered fully seeded?
+    /// Check whether the entropy input so far met the threshold for this object to be considered fully seeded
     pub fn is_fully_seeded(&self) -> bool {
         self.entropy.is_fully_seeded()
     }
@@ -409,7 +409,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         let mut t_len: usize = 0;
         let mut i = 1u8;
         while i < N {
-            // todo: might need this to be new_allow_weak_key()
+            // TODO: might need this to be new_allow_weak_key()
             let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
             hmac.do_update(&T[..t_len]);
             hmac.do_update(info);
@@ -422,9 +422,9 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
             i += 1;
         }
 
-        // On the last iteration, we don't take all of the output.
+        // Part of the output is not taken on the last iteration
         let remaining = L - bytes_written;
-        // todo: might need this to be new_allow_weak_key()
+        // TODO: might need this to be new_allow_weak_key()
         let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
         hmac.do_update(&T[..t_len]);
         hmac.do_update(info);
@@ -435,8 +435,8 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
         bytes_written += t_len;
 
-        // set the KeyType of the output
-        // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
+        // Set the KeyType of the output
+        // Since some computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.
         if prk.key_type() == KeyType::Zeroized {
             okm.set_key_type(KeyType::BytesLowEntropy)?;
         } else {

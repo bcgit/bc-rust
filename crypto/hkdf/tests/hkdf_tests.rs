@@ -371,7 +371,7 @@ mod hkdf_tests {
         assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
 
         // success case -- insufficient entropy due to key types -- KeyType::BytesLowEntropy
-        // Note: will still return MACKey because that one was first in the inputs.
+        // Note: this will still return MACKey because that one was first in the inputs.
         let salt =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::MACKey).unwrap();
         let ikm =
@@ -381,7 +381,7 @@ mod hkdf_tests {
         _ = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
 
-        // no way to test this on derive_out
+        // derive_key_out can't reproduce the two-input salt+ikm arrangement
 
         let keys = [&salt, &ikm];
         _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
