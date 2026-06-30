@@ -202,18 +202,6 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// hold a different key, potentially of a different length.
     fn zeroize(&mut self);
 
-    /// Adds the other KeyMaterial into this one, assuming there is space.
-    ///
-    /// Throws [KeyMaterialError::InvalidLength] if this object does not have enough space to add the other one.
-    ///
-    /// The resulting [KeyType] and security strength will be the lesser of the two keys.
-    /// In other words, concatenating two 128-bit full entropy keys generated at a 128-bit DRBG security level
-    /// will result in a 256-bit full entropy key still at the 128-bit DRBG security level.
-    /// Concatenating a full entropy key with a low entropy key will result in a low entropy key.
-    ///
-    /// Returns the new key_len.
-    fn concatenate(&mut self, other: &dyn KeyMaterialTrait) -> Result<usize, KeyMaterialError>;
-
     /// Perform a constant-time comparison between the two key material buffers,
     /// ignoring differences in capacity, [KeyType], [SecurityStrength], etc.
     fn equals(&self, other: &dyn KeyMaterialTrait) -> bool;
@@ -544,18 +532,6 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.buf.fill(0u8);
         self.key_len = 0;
         self.key_type = KeyType::Zeroized;
-    }
-
-    fn concatenate(&mut self, other: &dyn KeyMaterialTrait) -> Result<usize, KeyMaterialError> {
-        let new_key_len = self.key_len() + other.key_len();
-        if self.key_len() + other.key_len() > KEY_LEN {
-            return Err(KeyMaterialError::InputDataLongerThanKeyCapacity);
-        }
-        self.buf[self.key_len..new_key_len].copy_from_slice(other.ref_to_bytes());
-        self.key_len += other.key_len();
-        self.key_type = min(&self.key_type, &other.key_type()).clone();
-        self.security_strength = min(&self.security_strength, &other.security_strength()).clone();
-        Ok(self.key_len())
     }
 
     fn equals(&self, other: &dyn KeyMaterialTrait) -> bool {
