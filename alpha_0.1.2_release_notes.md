@@ -42,6 +42,8 @@
   preventing exposure of stale data in oversized output buffers or on early error returns.
 * Reworked the way KeyMaterial hazardous operations work; instead of a stateful .allow_hazardous_operations() /
   .drop_hazardous_operations(), it now uses a closure-based do_hazardous_operations(). Github issue #39.
+* Renamed KeyMaterial::KeyType's and deleted KeyMaterial::concatenate in order to give a better intuition and
+  FIPS-alignment.
 * Github issues resolved:
     * #6: https://github.com/bcgit/bc-rust/issues/6, thanks to Q. T. Felix (github: @Quant-TheodoreFelix)
     * #10: https://github.com/bcgit/bc-rust/issues/10, thanks to Nicola Tuveri (github: @romen)
