@@ -238,7 +238,8 @@ pub enum KeyType {
     /// The KeyMaterial is zeroized and MUST NOT be used for any cryptographic operation in this state.
     Zeroized,
 
-    /// The KeyMaterial contains non-zero data of unknown origin and cryptographic strength.
+    /// The KeyMaterial contains non-zero data of unknown key type.
+    /// A KeyMaterial of key type Unknown will always have a [SecurityStrength] of [SecurityStrength::None].
     ///
     /// This is the default KeyType for data loaded via [KeyMaterial::from_bytes].
     /// Promotion from Unknown to any other key type is considered to be a hazardous operation
