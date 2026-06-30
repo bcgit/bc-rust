@@ -268,7 +268,7 @@ impl<
     /// Create a new MLKEMSeedPrivateKey from a 64-byte KeyMaterial.
     /// Seed SecurityStrength must match algorithm security strength: 128-bit (ML-KEM-512), 192-bit (ML-KEM-768), or 256-bit (ML-KEM-1024).
     pub fn new(seed: &KeyMaterial<64>) -> Result<Self, KEMError> {
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
+        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 64
         {
             return Err(KEMError::KeyGenError(

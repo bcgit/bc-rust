@@ -753,7 +753,7 @@ impl<
     /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
     /// [KeyMaterialTrait::from_key]
     pub(crate) fn keygen_internal(seed: &KeyMaterial256) -> Result<(PK, SK), SignatureError> {
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
+        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 32
         {
             return Err(SignatureError::KeyGenError(
@@ -1249,7 +1249,7 @@ impl<
         // to avoid having all of it in memory at the same time,
         // we're gonna derive what we need as we need it.
 
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
+        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 32
         {
             return Err(SignatureError::KeyGenError(

@@ -324,7 +324,7 @@ mod mlkem_tests {
 
         // success case KeyType: BytesFullEntropy
         key_material::do_hazardous_operations(&mut seed, |seed| {
-            seed.set_key_type(KeyType::BytesFullEntropy)
+            seed.set_key_type(KeyType::CryptographicRandom)
         })
         .unwrap();
 

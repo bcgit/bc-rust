@@ -343,7 +343,7 @@ impl<
     /// Output: encapsulation key ek ∈ 𝔹384𝑘+32 .
     /// Output: decapsulation key dk ∈ 𝔹768𝑘+96 .
     pub(crate) fn keygen_internal(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError> {
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
+        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 64
         {
             return Err(KEMError::KeyGenError(
@@ -776,7 +776,7 @@ impl<
 
         let (ss, ct) = Self::encaps_internal(&pk.ek, Some(&pk.A_hat), m);
 
-        let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss, KeyType::BytesFullEntropy)?;
+        let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut key, |key| {
             key.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
         })?;
@@ -807,7 +807,7 @@ impl<
         /* the actual decaps operation */
         let K = Self::decaps_internal(&sk.dk, Some(&sk.A_hat), ct.try_into().unwrap());
 
-        let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&K, KeyType::BytesFullEntropy)?;
+        let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&K, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut key, |key| {
             key.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
         })?;

@@ -16,7 +16,7 @@ fn test_max_min() {
 
     // Test with KeyMaterial KeyTypes
     assert_eq!(
-        *max(&KeyType::BytesLowEntropy, &KeyType::BytesFullEntropy),
-        KeyType::BytesFullEntropy
+        *max(&KeyType::Unknown, &KeyType::CryptographicRandom),
+        KeyType::CryptographicRandom
     );
 }

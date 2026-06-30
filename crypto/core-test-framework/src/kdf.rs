@@ -59,31 +59,31 @@ impl TestFrameworkKDF {
         assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
         let out_key = H::default().derive_key(&zeroized_key, &[0u8; 10]).unwrap();
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
-        assert_eq!(out_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
         assert_eq!(out_key.security_strength(), SecurityStrength::None);
 
         // BytesLowEntropy -> BytesLowEntropy
         let low_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::BytesLowEntropy).unwrap();
-        assert_eq!(low_entropy_key.key_type(), KeyType::BytesLowEntropy);
+            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::Unknown).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::Unknown);
         let out_key = H::default().derive_key(&low_entropy_key, &[0u8; 10]).unwrap();
-        assert_eq!(out_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
         assert_eq!(out_key.security_strength(), SecurityStrength::None);
 
         // BytesFullEntropy -> BytesLowEntropy if not enough to fill the hash block
         let low_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::BytesFullEntropy).unwrap();
-        assert_eq!(low_entropy_key.key_type(), KeyType::BytesFullEntropy);
+            KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::CryptographicRandom);
         let out_key = H::default().derive_key(&low_entropy_key, &[0u8; 10]).unwrap();
-        assert_eq!(out_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
         assert_eq!(out_key.security_strength(), SecurityStrength::None);
 
         // BytesFullEntropy -> BytesFullEntropy
         let full_entropy_key =
-            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::BytesFullEntropy).unwrap();
-        assert_eq!(full_entropy_key.key_type(), KeyType::BytesFullEntropy);
+            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(full_entropy_key.key_type(), KeyType::CryptographicRandom);
         let out_key = H::default().derive_key(&full_entropy_key, &[0u8; 10]).unwrap();
-        assert_eq!(out_key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
         assert!(out_key.security_strength() > SecurityStrength::None);
     }
 
@@ -141,35 +141,35 @@ impl TestFrameworkKDF {
         assert_eq!(zeroized_key.security_strength(), SecurityStrength::None);
         let keys = [&zeroized_key, &zeroized_key];
         let out_key = H::default().derive_key_from_multiple(&keys, &[0u8; 10]).unwrap();
-        assert_eq!(out_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
         assert_eq!(out_key.security_strength(), SecurityStrength::None);
 
         // BytesLowEntropy -> BytesLowEntropy
         let low_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::BytesLowEntropy).unwrap();
-        assert_eq!(low_entropy_key.key_type(), KeyType::BytesLowEntropy);
+            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::Unknown).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::Unknown);
         let keys = [&zeroized_key, &low_entropy_key];
         let out_key = H::default().derive_key_from_multiple(&keys, &[0u8; 10]).unwrap();
-        assert_eq!(out_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
         assert_eq!(out_key.security_strength(), SecurityStrength::None);
 
         // BytesFullEntropy -> BytesLowEntropy if not enough to fill the hash block
         let low_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::BytesFullEntropy).unwrap();
-        assert_eq!(low_entropy_key.key_type(), KeyType::BytesFullEntropy);
+            KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::CryptographicRandom);
         let keys = [&zeroized_key, &low_entropy_key];
         let out_key = H::default().derive_key_from_multiple(&keys, &[0u8; 10]).unwrap();
-        assert_eq!(out_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
         assert_eq!(out_key.security_strength(), SecurityStrength::None);
 
         // BytesFullEntropy -> BytesFullEntropy
         let zeroized64_key = KeyMaterial512::new();
         let full_entropy_key =
-            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::BytesFullEntropy).unwrap();
-        assert_eq!(full_entropy_key.key_type(), KeyType::BytesFullEntropy);
+            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(full_entropy_key.key_type(), KeyType::CryptographicRandom);
         let keys = [&zeroized64_key, &full_entropy_key];
         let out_key = H::default().derive_key_from_multiple(&keys, &[0u8; 10]).unwrap();
-        assert_eq!(out_key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
         assert!(out_key.security_strength() > SecurityStrength::None);
     }
 }

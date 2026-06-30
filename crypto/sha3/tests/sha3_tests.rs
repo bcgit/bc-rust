@@ -249,38 +249,38 @@ mod sha3_tests {
 
         // Exact entropy
         let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::CryptographicRandom)
                 .unwrap();
         let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
         let expected_key = KeyMaterial256::from_bytes(b"\x05\x0a\x48\x73\x3b\xd5\xc2\x75\x6b\xa9\x5c\x58\x28\xcc\x83\xee\x16\xfa\xbc\xd3\xc0\x86\x88\x5b\x77\x44\xf8\x4a\x0f\x9e\x0d\x94").unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(derived_key.security_strength(), SecurityStrength::_128bit);
         assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
         // more entropy than needed -- single input key
         let key_material =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::BytesFullEntropy)
+            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::CryptographicRandom)
                 .unwrap();
         let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(derived_key.security_strength(), SecurityStrength::_128bit);
 
         // more entropy than needed -- single input key
         // but if you use SHA512 then you get SecurityStrength::_256bit
         let key_material =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::BytesFullEntropy)
+            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::CryptographicRandom)
                 .unwrap();
         let derived_key = SHA3_512::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(derived_key.security_strength(), SecurityStrength::_256bit);
 
         // more entropy than needed -- multiple input keys
         let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::CryptographicRandom)
                 .unwrap();
         let keys = [&key_material, &key_material];
         let derived_key = SHA3_256::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(derived_key.security_strength(), SecurityStrength::_128bit);
 
         // more entropy than needed -- multiple input keys of different full-entropy types;
@@ -300,41 +300,40 @@ mod sha3_tests {
         assert_eq!(key_material.key_type(), KeyType::Zeroized);
         // it should do it, but return a zeroized output key, regardless of the additional_input
         let derived_key = SHA3_256::new().derive_key(&key_material, &[1u8; 100]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::Unknown);
         assert_eq!(derived_key.security_strength(), SecurityStrength::None);
 
         // less entropy than needed -- various permutations, but not exhaustive
         let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::CryptographicRandom)
                 .unwrap();
         let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::Unknown);
         assert_eq!(derived_key.security_strength(), SecurityStrength::None);
 
         let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::CryptographicRandom)
                 .unwrap();
         let keys = [&key_material, &key_material];
         let derived_key = SHA3_512::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::Unknown);
         assert_eq!(derived_key.security_strength(), SecurityStrength::None);
 
         let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..8], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..8], KeyType::CryptographicRandom)
                 .unwrap();
         let derived_key = SHA3_224::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::Unknown);
         assert_eq!(derived_key.security_strength(), SecurityStrength::None);
 
         let key_low_entropy =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::BytesLowEntropy)
-                .unwrap();
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::Unknown).unwrap();
         let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::CryptographicRandom)
                 .unwrap();
         let keys = [&key_material, &key_low_entropy];
         let derived_key = SHA3_256::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(derived_key.key_type(), KeyType::Unknown);
         assert_eq!(derived_key.security_strength(), SecurityStrength::None);
     }
 
@@ -368,11 +367,11 @@ mod sha3_tests {
         // This works because we explicitly tag the input data as BytesFullEntropy.
         // This is the preferred and better way to do it.
         let input_seed =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::CryptographicRandom)
                 .expect("Error happened");
         let output_seed =
             SHA3_256::new().derive_key(&input_seed, b"nytimes.com").expect("Error happened");
-        assert_eq!(output_seed.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(output_seed.key_type(), KeyType::CryptographicRandom);
     }
 
     #[test]

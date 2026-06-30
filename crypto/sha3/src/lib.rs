@@ -98,10 +98,10 @@
 //! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input").unwrap();
 //!```
 //! In the previous example, since [KeyMaterial::from_bytes] cannot know the amount of entropy in the input data,
-//! it automatically tags it as [KeyType::BytesLowEntropy], and thus [SHA3::derive_key] produces an output key
-//! which also has type [KeyType::BytesLowEntropy].
+//! it automatically tags it as [KeyType::Unknown], and thus [SHA3::derive_key] produces an output key
+//! which also has type [KeyType::Unknown].
 //! This would also be the case even if the input had type
-//! [KeyType::BytesFullEntropy] since the input [KeyMaterial] is 16 bytes but [SHA3_256] needs at least 32 bytes of
+//! [KeyType::CryptographicRandom] since the input [KeyMaterial] is 16 bytes but [SHA3_256] needs at least 32 bytes of
 //! full-entropy input key material in order to be able to produce full entropy output key material.
 
 #![forbid(unsafe_code)]

@@ -694,7 +694,7 @@ impl<
         let (ss_bytes, ct) = Self::encaps_internal(pk, m);
 
         let mut ss_keymaterial =
-            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::BytesFullEntropy)?;
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
             ss_keymaterial.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
         })?;
@@ -749,7 +749,7 @@ impl<
         let ss_bytes = Self::decaps_internal(sk, ct.try_into().unwrap());
 
         let mut ss_keymaterial =
-            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::BytesFullEntropy)?;
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
             ss_keymaterial.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
         })?;

@@ -74,7 +74,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
         // it requires full-entropy input that is at least block length.
         // TODO: citation needed, which NIST spec did I get this from?
         if self.kdf_entropy < PARAMS::OUTPUT_LEN {
-            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::BytesLowEntropy).clone();
+            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::Unknown).clone();
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
@@ -95,7 +95,7 @@ impl<PARAMS: SHA3Params> SHA3<PARAMS> {
         // since we've done some computation, the result will not actually be zeroized,
         // even if all input key material was zeroized.
         if key_type == KeyType::Zeroized {
-            key_type = KeyType::BytesLowEntropy;
+            key_type = KeyType::Unknown;
         }
         key_material::do_hazardous_operations(&mut *output_key, |output_key| {
             output_key.set_key_type(key_type)?;

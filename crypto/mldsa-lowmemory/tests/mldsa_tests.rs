@@ -190,7 +190,7 @@ mod mldsa_tests {
 
         // success case KeyType: BytesFullEntropy
         key_material::do_hazardous_operations(&mut seed, |seed| {
-            seed.set_key_type(KeyType::BytesFullEntropy)
+            seed.set_key_type(KeyType::CryptographicRandom)
         })
         .unwrap();
         _ = MLDSA44::keygen_from_seed(&seed).unwrap();

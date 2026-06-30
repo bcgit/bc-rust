@@ -235,7 +235,7 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     /// Either [KeyMaterialTrait::BytesLowEntropy] or [KeyMaterialTrait::BytesFullEntropy] depending on
     /// whether enough input key material was provided for the internal hash function to have a full block.
     fn get_output_key_type(&self) -> KeyType {
-        if self.is_fully_seeded() { KeyType::BytesFullEntropy } else { KeyType::BytesLowEntropy }
+        if self.is_fully_seeded() { KeyType::CryptographicRandom } else { KeyType::Unknown }
     }
 }
 
@@ -245,22 +245,22 @@ fn test_entropy_tracker() {
     let mut entropy = HkdfEntropyTracker::<SHA256>::new();
 
     assert_eq!(entropy.get_entropy(), 0);
-    assert_eq!(entropy.get_output_key_type(), KeyType::BytesLowEntropy);
+    assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
 
     let key = KeyMaterial512::from_bytes_as_type(
         b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-        KeyType::BytesFullEntropy,
+        KeyType::CryptographicRandom,
     )
     .unwrap();
     entropy.credit_entropy(&key);
     assert_eq!(entropy.get_entropy(), 16);
     assert_eq!(entropy.is_fully_seeded(), false);
-    assert_eq!(entropy.get_output_key_type(), KeyType::BytesLowEntropy);
+    assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
 
     entropy.credit_entropy(&key);
     assert_eq!(entropy.get_entropy(), 32);
     assert_eq!(entropy.is_fully_seeded(), true);
-    assert_eq!(entropy.get_output_key_type(), KeyType::BytesFullEntropy);
+    assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);
 }
 
 impl<H: Hash + HashAlgParams + Default> Default for HKDF<H> {
@@ -450,12 +450,12 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
         key_material::do_hazardous_operations(okm, |okm| {
             if prk.key_type() == KeyType::Zeroized {
-                okm.set_key_type(KeyType::BytesLowEntropy)?;
+                okm.set_key_type(KeyType::Unknown)?;
             } else {
                 okm.set_key_type(prk.key_type().clone())?;
             }
             okm.set_key_len(bytes_written)?;
-            if okm.key_type() <= KeyType::BytesLowEntropy {
+            if okm.key_type() <= KeyType::Unknown {
                 okm.set_security_strength(SecurityStrength::None)
             } else {
                 okm.set_security_strength(
@@ -589,7 +589,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
                 .map_err(|_| KeyMaterialError::GenericError("HMAC do_final_out failed"))?;
             okm.set_key_len(bytes_written)?;
             okm.set_key_type(output_key_type)?;
-            if output_key_type <= KeyType::BytesLowEntropy {
+            if output_key_type <= KeyType::Unknown {
                 okm.set_security_strength(SecurityStrength::None)
             } else {
                 okm.set_security_strength(

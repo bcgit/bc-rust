@@ -37,7 +37,7 @@ mod test_key_material {
     fn test_set_bytes_as_type() {
         let key_bytes = [0u8; 16];
         let mut key = KeyMaterial256::new();
-        let res = key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy);
+        let res = key.set_bytes_as_type(&key_bytes, KeyType::Unknown);
         match res {
             Ok(_) => {
                 panic!("should have thrown a KeyMaterialError::ActingOnZeroizedKey error.")
@@ -49,7 +49,7 @@ mod test_key_material {
 
                 // but it'll allow it within tho do_hazardous closure.
                 do_hazardous_operations(&mut key, |key| {
-                    key.set_key_type(KeyType::BytesLowEntropy)?;
+                    key.set_key_type(KeyType::Unknown)?;
                     Ok(())
                 })
                 .unwrap();
@@ -58,18 +58,18 @@ mod test_key_material {
                 panic!("should have thrown a KeyMaterialError::ActingOnZeroizedKey error.")
             }
         }
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
         // but it'll allow it within tho do_hazardous closure.
         let key_bytes = [0u8; 16];
         let mut key = KeyMaterial256::new();
         do_hazardous_operations(&mut key, |key| {
-            key.set_bytes_as_type(&key_bytes, KeyType::BytesLowEntropy)?;
+            key.set_bytes_as_type(&key_bytes, KeyType::Unknown)?;
             Ok(())
         })
         .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
 
         // nothing else requires setting hazardous operations.
     }
@@ -159,16 +159,16 @@ mod test_key_material {
     fn from_bytes() {
         let key = KeyMaterial512::from_bytes(&DUMMY_KEY[..64]).unwrap();
         assert_eq!(key.key_len(), 64);
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
 
         // Basic success case
         let key =
-            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::BytesFullEntropy).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_128bit);
 
         // Success case: KeyType::BytesLowEntropy gets tagged with SecurityStrength::None.
-        let key = KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::BytesLowEntropy);
+        let key = KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::Unknown);
         assert_eq!(key.unwrap().security_strength(), SecurityStrength::None);
     }
 
@@ -178,11 +178,11 @@ mod test_key_material {
 
         let key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
         assert_eq!(key.key_len(), 32);
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
 
         let key = KeyMaterial512::from_rng(&mut rng::DefaultRNG::default()).unwrap();
         assert_eq!(key.key_len(), 64);
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
     }
 
     #[test]
@@ -249,7 +249,7 @@ mod test_key_material {
 
         // test security strength interactions with truncation
         let mut key =
-            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::BytesFullEntropy).unwrap();
+            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_256bit);
         key.set_key_len(16).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_128bit);
@@ -260,7 +260,7 @@ mod test_key_material {
 
         // truncate should not raise the security level
         let mut key =
-            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::BytesFullEntropy).unwrap();
+            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
         key.set_security_strength(SecurityStrength::_112bit).unwrap();
         key.set_key_len(64).unwrap();
         assert_eq!(key.security_strength(), SecurityStrength::_112bit);
@@ -269,24 +269,24 @@ mod test_key_material {
     #[test]
     fn test_conversions() {
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
         assert!(!key.is_full_entropy());
 
         // Note: can't use the usual assert_eq!() here because that requires PartialEq, but we're in a no_std context here.
         match key.key_type() {
-            KeyType::BytesLowEntropy => { /* good */ }
+            KeyType::Unknown => { /* good */ }
             _ => panic!("Expected BytesLowEntropy"),
         }
 
         // This should fail.
-        match key.set_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::CryptographicRandom) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
 
-        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::CryptographicRandom))
             .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert!(key.is_full_entropy());
 
         // Now we can convert BytesFullEntropy -> SymmetricCipherKey outside of a hazop block
@@ -294,13 +294,13 @@ mod test_key_material {
             Ok(()) => { /* good */ }
             _ => panic!("Expected Ok(())"),
         }
-        match key.set_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::CryptographicRandom) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::CryptographicRandom))
             .unwrap();
 
         // Now we can convert BytesFullEntropy -> Seed outside of a hazop block
@@ -312,14 +312,13 @@ mod test_key_material {
         // each KeyType can convert to itself
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesLowEntropy))
-            .unwrap();
-        key.set_key_type(KeyType::BytesLowEntropy).unwrap();
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::Unknown)).unwrap();
+        key.set_key_type(KeyType::Unknown).unwrap();
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::CryptographicRandom))
             .unwrap();
-        key.set_key_type(KeyType::BytesFullEntropy).unwrap();
+        key.set_key_type(KeyType::CryptographicRandom).unwrap();
 
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
         do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
@@ -341,11 +340,11 @@ mod test_key_material {
         assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
 
         /* All conversions should fail. */
-        match zeroized_key.set_key_type(KeyType::BytesLowEntropy) {
+        match zeroized_key.set_key_type(KeyType::Unknown) {
             Err(KeyMaterialError::ActingOnZeroizedKey) => { /* good */ }
             _ => panic!("Expected ActingOnZeroizedKey"),
         }
-        match zeroized_key.set_key_type(KeyType::BytesFullEntropy) {
+        match zeroized_key.set_key_type(KeyType::CryptographicRandom) {
             Err(KeyMaterialError::ActingOnZeroizedKey) => { /* good */ }
             _ => panic!("Expected ActingOnZeroizedKey"),
         }
@@ -370,7 +369,7 @@ mod test_key_material {
 
         // But it's totally fine if you give it non-zero input data.
         let not_zero_key = KeyMaterial256::from_bytes(&[1u8; 19]).unwrap();
-        assert_eq!(not_zero_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(not_zero_key.key_type(), KeyType::Unknown);
 
         // test .set_bytes_as_type()
         // it should detect if you give it all zero input data.
@@ -400,13 +399,13 @@ mod test_key_material {
     /// Tests the conversions that should only be allowed if hazardous_conversions() has been set.
     fn test_hazardous_conversions_from_bytes() {
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
 
         /* All the non-hazardous conversions should work. */
         // ... none
 
         /* All the hazardous conversions should fail. */
-        match key.set_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::CryptographicRandom) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
@@ -425,7 +424,7 @@ mod test_key_material {
 
         /* Should work if you allow hazardous conversions. */
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::BytesFullEntropy))
+        do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::CryptographicRandom))
             .unwrap();
 
         key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
@@ -494,7 +493,7 @@ mod test_key_material {
         key.set_key_type(KeyType::MACKey).unwrap();
 
         /* All the hazardous conversions should fail. */
-        match key.set_key_type(KeyType::BytesFullEntropy) {
+        match key.set_key_type(KeyType::CryptographicRandom) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected HazardousConversion"),
         }
@@ -515,51 +514,59 @@ mod test_key_material {
     #[test]
     fn test_security_strength() {
         let key = KeyMaterial512::from_bytes(DUMMY_KEY).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
-        let key = KeyMaterial512::from_bytes_as_type(DUMMY_KEY, KeyType::BytesFullEntropy).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(DUMMY_KEY, KeyType::CryptographicRandom).unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_256bit);
 
-        let key = KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::BytesFullEntropy)
-            .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::CryptographicRandom)
+                .unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_256bit);
 
-        let key = KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..31], KeyType::BytesFullEntropy)
-            .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..31], KeyType::CryptographicRandom)
+                .unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_192bit);
 
-        let key = KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..24], KeyType::BytesFullEntropy)
-            .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..24], KeyType::CryptographicRandom)
+                .unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_192bit);
 
-        let key = KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..16], KeyType::BytesFullEntropy)
-            .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..16], KeyType::CryptographicRandom)
+                .unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_128bit);
 
-        let key = KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..15], KeyType::BytesFullEntropy)
-            .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..15], KeyType::CryptographicRandom)
+                .unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_112bit);
 
-        let key = KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..14], KeyType::BytesFullEntropy)
-            .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..14], KeyType::CryptographicRandom)
+                .unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_112bit);
 
-        let key = KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..13], KeyType::BytesFullEntropy)
-            .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        let key =
+            KeyMaterial512::from_bytes_as_type(&DUMMY_KEY[..13], KeyType::CryptographicRandom)
+                .unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
         // even if it's long enough, BytesLowEntropy or Zeroized always get ::None
-        let key = KeyMaterial512::from_bytes_as_type(DUMMY_KEY, KeyType::BytesLowEntropy).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        let key = KeyMaterial512::from_bytes_as_type(DUMMY_KEY, KeyType::Unknown).unwrap();
+        assert_eq!(key.key_type(), KeyType::Unknown);
         assert_eq!(key.key_len(), 64);
         assert_eq!(key.security_strength(), SecurityStrength::None);
 
@@ -571,7 +578,7 @@ mod test_key_material {
         // test set_security_strength()
         // Can't increase the security level outside of a hazop block first.
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
         match key.set_security_strength(SecurityStrength::_128bit) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("Expected KeyMaterialError::HazardousOperationNotPermitted"),
@@ -600,17 +607,17 @@ mod test_key_material {
         .unwrap();
         // But it'll work if you set it to a full entropy type
         do_hazardous_operations(&mut key, |key| {
-            key.set_key_type(KeyType::BytesFullEntropy).unwrap();
+            key.set_key_type(KeyType::CryptographicRandom).unwrap();
             key.set_security_strength(SecurityStrength::_128bit)
         })
         .unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
         assert_eq!(key.security_strength(), SecurityStrength::_128bit);
 
         // BytesLowEntropy keys cannot have a security strength other than None.
         // success
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
-        assert_eq!(key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(key.key_type(), KeyType::Unknown);
         // setting to ::None should work .. even outside of a hazop block
         key.set_security_strength(SecurityStrength::None).unwrap();
         // but to ::_128bit should fail
@@ -694,36 +701,36 @@ mod test_key_material {
 
         // now try it with keys of different key types
         let mut low_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::BytesLowEntropy).unwrap();
+            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::Unknown).unwrap();
         let full_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[2u8; 16], KeyType::BytesFullEntropy).unwrap();
+            KeyMaterial256::from_bytes_as_type(&[2u8; 16], KeyType::CryptographicRandom).unwrap();
         low_entropy_key.concatenate(&full_entropy_key).unwrap();
         // Conservative model: concatenating a full-entropy key with a low-entropy key yields a
         // low-entropy key. min(BytesLowEntropy, BytesFullEntropy) == BytesLowEntropy.
-        assert_eq!(low_entropy_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(low_entropy_key.key_type(), KeyType::Unknown);
         // min(None, _128bit) == None (and BytesLowEntropy keys must have strength None anyway).
         assert_eq!(low_entropy_key.security_strength(), SecurityStrength::None);
 
         // and in the other direction too
         let low_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::BytesLowEntropy).unwrap();
+            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::Unknown).unwrap();
         let mut full_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[2u8; 16], KeyType::BytesFullEntropy).unwrap();
+            KeyMaterial256::from_bytes_as_type(&[2u8; 16], KeyType::CryptographicRandom).unwrap();
         full_entropy_key.concatenate(&low_entropy_key).unwrap();
         // min(BytesFullEntropy, BytesLowEntropy) == BytesLowEntropy.
-        assert_eq!(full_entropy_key.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(full_entropy_key.key_type(), KeyType::Unknown);
         // min(_128bit, None) == None.
         assert_eq!(full_entropy_key.security_strength(), SecurityStrength::None);
 
         // now with full entropy keys at different security levels
         let mut full_entropy_key_112 =
-            KeyMaterial512::from_bytes_as_type(&[1u8; 16], KeyType::BytesFullEntropy).unwrap();
+            KeyMaterial512::from_bytes_as_type(&[1u8; 16], KeyType::CryptographicRandom).unwrap();
         // Now we're gonna explictly tag it at the 112bit security level -- does not require allow_hazardous_operations().
         full_entropy_key_112.set_security_strength(SecurityStrength::_112bit).unwrap();
         let full_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&[2u8; 32], KeyType::BytesFullEntropy).unwrap();
+            KeyMaterial256::from_bytes_as_type(&[2u8; 32], KeyType::CryptographicRandom).unwrap();
         full_entropy_key_112.concatenate(&full_entropy_key).unwrap();
-        assert_eq!(full_entropy_key_112.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(full_entropy_key_112.key_type(), KeyType::CryptographicRandom);
         // The combined key keeps the lower of the two security strengths: min(_112bit, _256bit).
         assert_eq!(full_entropy_key_112.security_strength(), SecurityStrength::_112bit);
     }
@@ -751,17 +758,17 @@ mod test_key_material {
 
         // PartialEq ignores key_type: same bytes, different KeyType. Should be equal.
         let key_low =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::BytesLowEntropy).unwrap();
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::Unknown).unwrap();
         let key_mac =
             KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
         assert_eq!(key_low, key_mac);
 
         // PartialEq ignores security_strength: same bytes, different strength. Should be equal.
         let key_strong =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::CryptographicRandom)
                 .unwrap();
         let mut key_weak =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::CryptographicRandom)
                 .unwrap();
         key_weak.set_security_strength(SecurityStrength::_128bit).unwrap();
         assert_ne!(key_strong.security_strength(), key_weak.security_strength()); // strengths differ
@@ -846,14 +853,13 @@ mod test_key_material {
         fn rank(kt: KeyType) -> u8 {
             match kt {
                 Zeroized => 0,
-                BytesLowEntropy => 1,
-                BytesFullEntropy => 2,
+                Unknown => 1,
+                CryptographicRandom => 2,
                 Seed | MACKey | SymmetricCipherKey => 3,
             }
         }
 
-        let all_types =
-            [Zeroized, BytesLowEntropy, BytesFullEntropy, Seed, MACKey, SymmetricCipherKey];
+        let all_types = [Zeroized, Unknown, CryptographicRandom, Seed, MACKey, SymmetricCipherKey];
 
         for &a in &all_types {
             for &b in &all_types {
@@ -899,7 +905,7 @@ mod test_key_material {
         // 2. A real KeyMaterialError raised by a guarded op inside the closure propagates via `?`.
         //    Raising to _256bit requires >= 32 bytes, but this key is only 16, so it fails.
         let mut short =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..16], KeyType::BytesFullEntropy)
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..16], KeyType::CryptographicRandom)
                 .unwrap();
         let result = do_hazardous_operations(&mut short, |k| {
             k.set_security_strength(SecurityStrength::_256bit)?;

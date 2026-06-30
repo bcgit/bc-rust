@@ -98,14 +98,14 @@ pub trait KDF: Default {
     ///
     /// ex.:
     ///
-    ///   * [KeyType::BytesLowEntropy] -> [KeyType::BytesLowEntropy])
-    ///   * [KeyType::BytesFullEntropy] -> [KeyType::BytesFullEntropy])
+    ///   * [KeyType::Unknown] -> [KeyType::Unknown])
+    ///   * [KeyType::CryptographicRandom] -> [KeyType::CryptographicRandom])
     ///   * [KeyType::SymmetricCipherKey] -> [KeyType::SymmetricCipherKey])
     ///
-    /// If provided with an input key, even if it is [KeyType::BytesFullEntropy], but that
+    /// If provided with an input key, even if it is [KeyType::CryptographicRandom], but that
     /// contains less key material than the internal block size of the KDF, then the KDF
     /// will not be considered properly seeded, and the output [KeyMaterial] will be set to
-    /// [KeyType::BytesLowEntropy] -- for example, seeding SHA3-256 with a [KeyMaterial] containing
+    /// [KeyType::Unknown] -- for example, seeding SHA3-256 with a [KeyMaterial] containing
     /// only 128 bits of key material.
     ///
     /// An implement can, and in most cases SHOULD, return a [HashError] if provided
@@ -152,9 +152,9 @@ pub trait KDF: Default {
     ///
     /// Implementations can, and in most cases SHOULD, return a [KeyMaterial] of the same type as the
     /// strongest key, and SHOULD throw a [HashError] if all input keys are zeroized.
-    /// For example output a [KeyType::BytesFullEntropy] key whenever any one of
-    /// the input keys is a [KeyType::BytesFullEntropy] key.
-    /// As another example, combining a [KeyType::BytesLowEntropy] key with a [KeyType::MACKey] key
+    /// For example output a [KeyType::CryptographicRandom] key whenever any one of
+    /// the input keys is a [KeyType::CryptographicRandom] key.
+    /// As another example, combining a [KeyType::Unknown] key with a [KeyType::MACKey] key
     /// should return a [KeyType::MACKey].
     ///
     /// Output length: this function will create a KeyMaterial populated with the default output length

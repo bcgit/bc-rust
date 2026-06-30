@@ -225,7 +225,7 @@ mod mldsa_tests {
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
 
         // success case KeyType: BytesFullEntropy
-        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::BytesFullEntropy))
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::CryptographicRandom))
             .unwrap();
         _ = MLDSA44::keygen_from_seed(&seed).unwrap();
 

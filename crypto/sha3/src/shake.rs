@@ -109,7 +109,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
         // TODO: intuitivitely this makes sense since SHAKE256 and SHA3-256 are both KECCAK[512], and SHAKE128 is KECCAK[256],
         // TODO: but I would rather find an actual reference for this "fully-seeded" threshold.
         if self.kdf_entropy < 2 * (PARAMS::SIZE as usize) / 8 {
-            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::BytesLowEntropy).clone();
+            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::Unknown).clone();
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
@@ -125,7 +125,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
 
         // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
         if self.kdf_key_type == KeyType::Zeroized {
-            self.kdf_key_type = KeyType::BytesLowEntropy;
+            self.kdf_key_type = KeyType::Unknown;
         }
         key_material::do_hazardous_operations(output_key, |output_key| {
             output_key.set_key_type(self.kdf_key_type)?;

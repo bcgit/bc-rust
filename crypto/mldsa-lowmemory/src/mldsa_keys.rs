@@ -486,7 +486,7 @@ impl<
     /// Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87),
     /// otherwise it throws a SignatureError::KeyGenError("SecurityStrength".
     pub fn new(seed: &KeyMaterial<32>) -> Result<Self, SignatureError> {
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
+        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 32
         {
             return Err(SignatureError::KeyGenError(

@@ -481,7 +481,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
 
         do_hazardous_operations(out, |out| {
             out.set_key_len(bytes_written)?;
-            out.set_key_type(KeyType::BytesFullEntropy)?;
+            out.set_key_type(KeyType::CryptographicRandom)?;
             let new_security_strength =
                 min(&self.admin_info.strength, &SecurityStrength::from_bits(bytes_written * 8))
                     .clone();

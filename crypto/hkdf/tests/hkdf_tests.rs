@@ -139,27 +139,27 @@ mod hkdf_tests {
         // not enough
         assert_eq!(key255.security_strength(), SecurityStrength::_192bit);
         let mut okm = HKDF_SHA256::extract(&key255, &zero_key).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
         assert_eq!(okm.security_strength(), SecurityStrength::None);
         _ = HKDF_SHA256::extract_and_expand_out(&key255, &zero_key, &[], 32, &mut okm).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
         assert_eq!(okm.security_strength(), SecurityStrength::None);
 
         // too much
         assert_eq!(key512.security_strength(), SecurityStrength::_256bit);
         let mut okm = HKDF_SHA256::extract(&key512, &zero_key).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
         // should get downgraded to match hash alg
         assert_eq!(okm.security_strength(), SecurityStrength::_128bit);
         _ = HKDF_SHA256::extract_and_expand_out(&key512, &zero_key, &[], 32, &mut okm).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
         assert_eq!(okm.security_strength(), SecurityStrength::_128bit);
 
         // just right
         let mut okm = HKDF_SHA256::extract(&key256, &zero_key).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
         _ = HKDF_SHA256::extract_and_expand_out(&key256, &zero_key, &[], 32, &mut okm).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         // test the thresholds of HMAC-SHA512
         let key511 =
@@ -170,20 +170,19 @@ mod hkdf_tests {
 
         // not enough
         let mut okm = HKDF_SHA512::extract(&key511, &zero_key).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
         _ = HKDF_SHA512::extract_and_expand_out(&key511, &zero_key, &[], 32, &mut okm).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // just right
         let mut okm = HKDF_SHA512::extract(&key512, &zero_key).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
         _ = HKDF_SHA512::extract_and_expand_out(&key512, &zero_key, &[], 32, &mut okm).unwrap();
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         // variable setup
         let low_entropy_key =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::BytesLowEntropy)
-                .unwrap();
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::Unknown).unwrap();
         let mut okm = KeyMaterial256::new();
 
         // failure case: should complain if low entropy bytes are provided
@@ -262,16 +261,16 @@ mod hkdf_tests {
         )
         .unwrap();
         // okm should be tracked as LowEntropy
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         HKDF_SHA256::new().derive_key_out(&KeyMaterial0::new(), &[], &mut okm).unwrap();
         // okm should be tracked as LowEntropy
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         let keys = [&KeyMaterial0::new(), &KeyMaterial0::new()];
         HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm).unwrap();
         // okm should be tracked as LowEntropy
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // zero-length salt is allowed -- low entropy ikm
         _ = HKDF_SHA256::extract_and_expand_out(
@@ -283,25 +282,27 @@ mod hkdf_tests {
         )
         .unwrap();
         // okm should be tracked as LowEntropy
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         HKDF_SHA256::new().derive_key_out(&low_entropy_key, &[], &mut okm).unwrap();
         // okm should be tracked as LowEntropy
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         let keys = [&KeyMaterial256::new(), &low_entropy_key];
         HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm).unwrap();
         // okm should be tracked as LowEntropy
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // salt and ikm are full-entropy, but not enough to seed the HKDF, according to FIPS
         // first, error case; not a MACKey
         let salt =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[..8], KeyType::BytesFullEntropy)
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[..8], KeyType::CryptographicRandom)
                 .unwrap();
-        let ikm =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[8..16], KeyType::BytesFullEntropy)
-                .unwrap();
+        let ikm = KeyMaterial128::from_bytes_as_type(
+            &DUMMY_SEED_512[8..16],
+            KeyType::CryptographicRandom,
+        )
+        .unwrap();
 
         match HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm) {
             Ok(_) => {
@@ -318,7 +319,7 @@ mod hkdf_tests {
         // derive_key has a different behaviour here, since it hard-codes a zero salt as the HMAC key, which is valid,
         // it will produce output of Keytype::BytesLowEntropy
         _ = HKDF_SHA256::new().derive_key_out(&ikm, &[], &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         let keys = [&salt, &ikm];
         match HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm) {
@@ -336,57 +337,60 @@ mod hkdf_tests {
         // success case -- insufficient entropy returns KeyType::BytesLowEntropy
         let salt =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[..8], KeyType::MACKey).unwrap();
-        let ikm =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[8..16], KeyType::BytesFullEntropy)
-                .unwrap();
+        let ikm = KeyMaterial128::from_bytes_as_type(
+            &DUMMY_SEED_512[8..16],
+            KeyType::CryptographicRandom,
+        )
+        .unwrap();
 
         _ = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         _ = HKDF_SHA256::new().derive_key_out(&salt, &[], &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         let keys = [&salt, &ikm];
         _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // success case -- sufficient entropy returns the highest input key type -- KeyType::BytesFullEntropy
         // Note that FIPS requires it to be seeded to a full internal block (which is, for example 512 bits for SHA256)
         // Note: will still return BytesFullEntropy because that one was first in the inputs.
         let salt =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::MACKey).unwrap();
-        let ikm =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[32..64], KeyType::BytesFullEntropy)
-                .unwrap();
+        let ikm = KeyMaterial256::from_bytes_as_type(
+            &DUMMY_SEED_512[32..64],
+            KeyType::CryptographicRandom,
+        )
+        .unwrap();
 
         _ = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         let salt1 =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::MACKey).unwrap();
         _ = HKDF_SHA256::new().derive_key_out(&salt1, &[], &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         let keys = [&salt, &ikm];
         _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesFullEntropy);
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         // success case -- insufficient entropy due to key types -- KeyType::BytesLowEntropy
         // Note: will still return MACKey because that one was first in the inputs.
         let salt =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::MACKey).unwrap();
         let ikm =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[16..32], KeyType::BytesLowEntropy)
-                .unwrap();
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[16..32], KeyType::Unknown).unwrap();
 
         _ = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // no way to test this on derive_out
 
         let keys = [&salt, &ikm];
         _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
-        assert_eq!(okm.key_type(), KeyType::BytesLowEntropy);
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         /* get_entropy */
         // This requires using the stateful streaming API and check the amount of entropy it tracks after each addition.
@@ -395,11 +399,12 @@ mod hkdf_tests {
         let salt64 =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED_512[..64], KeyType::MACKey).unwrap();
         let low_entropy_key16 =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::BytesLowEntropy)
-                .unwrap();
-        let full_entropy_key16 =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[16..32], KeyType::BytesFullEntropy)
-                .unwrap();
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED_512[..16], KeyType::Unknown).unwrap();
+        let full_entropy_key16 = KeyMaterial128::from_bytes_as_type(
+            &DUMMY_SEED_512[16..32],
+            KeyType::CryptographicRandom,
+        )
+        .unwrap();
 
         // can't test with a low entropy salt because the salt has to be full entropy or zero.
         // but can test with a zeroized key
@@ -531,7 +536,7 @@ mod hkdf_tests {
         let mut ikm_key = KeyMaterial::<100>::new();
         key_material::do_hazardous_operations(&mut ikm_key, |ikm_key| {
             // just for testing, ignore the error about zeroized keys
-            ikm_key.set_bytes_as_type(&hex::decode(ikm).unwrap(), KeyType::BytesFullEntropy)
+            ikm_key.set_bytes_as_type(&hex::decode(ikm).unwrap(), KeyType::CryptographicRandom)
         })
         .unwrap();
 
