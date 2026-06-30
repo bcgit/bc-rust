@@ -1,6 +1,8 @@
 use crate::FixedSeedRNG;
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{
+    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG, SecurityStrength,
+};
 
 pub struct TestFrameworkKEM {
     // Put any config options here
@@ -126,6 +128,15 @@ impl TestFrameworkKEM {
             Err(KEMError::LengthError(_)) => { /* good */ }
             _ => panic!("This should have thrown an error but it didn't."),
         };
+
+        // encaps_rng should reject an RNG at a lower security level than the KEM
+        let mut no_security_rng = FixedSeedRNG::new([0x00; 64]);
+        no_security_rng.set_security_strength(SecurityStrength::None);
+        assert_eq!(no_security_rng.security_strength(), SecurityStrength::None);
+        match KEMAlg::encaps_rng(&pk, &mut no_security_rng) {
+            Err(KEMError::RNGError(_)) => { /* good */ }
+            _ => panic!("This should have thrown an error but it didn't."),
+        }
     }
 }
 
