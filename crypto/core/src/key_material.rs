@@ -242,7 +242,9 @@ pub enum KeyType {
     ///
     /// This is the default KeyType for data loaded via [KeyMaterial::from_bytes].
     /// Promotion from Unknown to any other key type is considered to be a hazardous operation
-    /// and must be done within a [key_material::do_hazardous_operations] closure.
+    /// and must be done within a [do_hazardous_operations] closure.
+    /// If you want to import key material directly into a known key type, use [KeyMaterial::from_bytes_as_type],
+    /// which does not require a hazardous operations closure.
     Unknown,
 
     /// The KeyMaterial contains data of full entropy and can be safely converted to any other key type.
