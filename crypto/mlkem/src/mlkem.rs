@@ -71,7 +71,7 @@
 //!     KeyType::Seed,
 //! ).unwrap();
 //!
-//! // for this demo, we do need to run keygen only to get the public key
+//! // for this demo, it is necessary to run keygen only to get the public key
 //! let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 //!
 //! // Create the shared secret and ciphertext using the public key
@@ -388,7 +388,8 @@ impl<
 
         // 2: 𝑁 ← 0
         //  Note: in the definition of PRF_eta on page 18, it's said to be one byte.
-        //  since the number of loops here is static; we can hard-code the N values rather than using a counter
+        //  since the number of loops here is static, it is possible to hard-code the N values 
+        //  rather than using a counter
 
         // 8: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
         //  ▷ generate 𝐬 ∈ (ℤ256)^k
@@ -436,7 +437,7 @@ impl<
 
         // 19: ekPKE ← ByteEncode12(𝐭)‖𝜌 ▷ run ByteEncode12 𝑘 times, then append 𝐀-seed
         // 20: dkPKE ← ByteEncode12(𝐬)̂ ▷ run ByteEncode12 𝑘 times
-        // Note: I'm skipping the encoding at this stage and leaving it expanded for future efficiency when it's used.
+        // Note: The encoding is skipped at this stage and left expanded for future efficiency when it's used.
         // 21: return (ekPKE, dkPKE)
         (PK::new(t_hat, rho), s_hat)
     }
@@ -449,7 +450,8 @@ impl<
     /// Output: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     fn pke_encrypt(ek: &PK, A_hat: &Matrix<k, k>, m: [u8; 32], r: &[u8; 32]) -> [u8; CT_LEN] {
         // 1: 𝑁 ← 0
-        //  since the number of loops here is static; we can hard-code the N values rather than using a counter
+        //  since the number of loops here is static, it is possible to hard-code the N values 
+        //  rather than using a counter
 
         // 2: 𝐭 ← ByteDecode12(ekPKE[0 ∶ 384𝑘])
         // 3: 𝜌 ← ekPKE[384𝑘 ∶ 384𝑘 + 32]
@@ -457,7 +459,7 @@ impl<
 
         // 4: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
         //   ▷ re-generate matrix 𝐀 ∈ (ℤ256_𝑞 )𝑘×𝑘 sampled in Alg. 13
-        // We're doing an optimization where the user can pre-expand A_hat within the
+        // An optimization is done where the user can pre-expand A_hat within the
         // public key object for faster repeated encapsulations against this public key.
 
         // 9: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
@@ -518,8 +520,8 @@ impl<
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
     /// Output: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     ///
-    /// This function also takes an Option for the public matrix A.
-    /// If you don't know what it is, just provide None.
+    /// This function also takes an Option for the public matrix `A`.
+    /// If `A` is not known, `None` may be provided.
     /// This is to enable performance
     /// optimizations when the same public key is used for multiple encapsulations and the intermediate
     /// value called the public matrix A_hat can be re-used for multiple encapsulations.
@@ -534,11 +536,14 @@ impl<
     /// randomness (which is the message `m` to be encrypted by the underlying PKE scheme).
     /// This function should not be used directly unless you really have a
     /// good reason. [KEM::encaps] should be used in 99.9% of cases.
-    /// The reason this is exposed publicly is: A) for unit testing that requires access
-    /// to the deterministically reproducible function, and B) for operational environments
-    /// that wish to provide randomness from their own source instead of the built-in RNG in bc-rust.
-    /// If you think you will be clever and invent some scheme that uses a deterministic KEM,
-    /// then you will almost certainly end up with security problems. Please don't do this.
+    /// The reason this is exposed publicly is: 
+    ///     A) for unit testing that requires access to the deterministically reproducible function, and 
+    ///     B) for operational environments that wish to provide randomness from their own source instead 
+    ///        of the built-in RNG in bc-rust.
+    /// As a reminder, any deterministic KEM (or any encryption mechanism) fails to satisfy any security 
+    /// notion involving indistinguishability (e.g. IND-CPA, IND-CCA2, etc.).
+    /// Failing to use this properly will result in catastrophic vulnerabilities.
+    /// Please don't do it.
     pub fn encaps_internal(
         ek: &PK,
         A_hat: Option<&Matrix<k, k>>,
@@ -564,8 +569,8 @@ impl<
         // 2: 𝑐 ← K-PKE.Encrypt(ek, 𝑚, 𝑟)
         //  ▷ encrypt 𝑚 using K-PKE with randomness 𝑟
         // deviation from FIPS:
-        //  To allow for pre-computing A_hat for multiple encapsulations, we will either take
-        // A_hat passed in, or compute it fresh.
+        //  To allow for pre-computing A_hat for multiple encapsulations, the code either takes
+        // A_hat passed in, or computes it fresh.
         let ct = match A_hat {
             Some(A_hat) => Self::pke_encrypt(ek, A_hat, m, &r),
             None => Self::pke_encrypt(ek, &ek.A_hat(), m, &r),
@@ -621,9 +626,9 @@ impl<
         A_hat: Option<&Matrix<k, k>>,
         c: [u8; CT_LEN],
     ) -> [u8; MLKEM_SS_LEN] {
-        // I have tried to keep this as clean as possible for correspondence with the FIPS,
-        // but I have moved things around so that I can use unnamed scopes to limit how many
-        // stack variables are alive at the same time.
+
+        // Structured to mirror the FIPS as closely as possible, with unnamed scopes
+        // used to limit the number of live stack variables at any given time.
 
         // 1: dkPKE ← dk[0 ∶ 384𝑘] ▷ extract (from KEM decaps key) the PKE decryption key
         // 2: ekPKE ← dk[384𝑘 ∶ 768𝑘 + 32] ▷ extract PKE encryption key
@@ -651,9 +656,9 @@ impl<
 
         // 7: 𝐾_bar ← J(𝑧‖𝑐)
         //   Compute the rejection sampling key.
-        //   Note to future optimizers: this needs to be computed outside of the if at line 9 below
-        //   because if its computation is conditional on the Fujisaki-Okamoto check failing, then
-        //   you'll have a timing difference between success and failure.
+        //   Note to future optimizers: this needs to be computed outside of the conditional at line 9 below.
+        //   This is because if the computation is conditional on the Fujisaki-Okamoto check failing, then
+        //   it will result in a timing difference between success and failure.
 
         let K_bar: [u8; MLKEM_SS_LEN];
         K_bar = {
@@ -670,7 +675,7 @@ impl<
         // 8: 𝑐′ ← K-PKE.Encrypt(ekPKE, 𝑚′, 𝑟′)
         //   ▷ re-encrypt using the derived randomness 𝑟′
         // deviation from FIPS:
-        //  To allow for pre-computing A_hat for multiple encapsulations, we will either take
+        // To allow for pre-computing A_hat for multiple encapsulations, we will either take
         // A_hat passed in, or compute it fresh.
         let c_prime = match A_hat {
             Some(A_hat) => Self::pke_encrypt(dk.pk(), A_hat, m_prime, &r_prime),
@@ -688,7 +693,7 @@ impl<
 
     /// Alternative initialization of the streaming signer where you have your private key
     /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
-    // todo -- should we build a fully-stitched-together decaps-from-seed ... or not?
+    // TODO: Check whether a fully-stitched-together decaps-from-seed implementation is beneficial
     pub fn decaps_from_seed(
         seed: &KeyMaterial<64>,
         ct: &[u8],

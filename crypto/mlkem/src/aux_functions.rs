@@ -97,9 +97,9 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // 3: 𝑗 ← 0
     let mut j = 0usize;
 
-    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
-    // size doesn't really matter, so long as it's a multiple of 3.
-    // 288 seemed to be the sweet spot from playing with benchmarks
+    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, therefore a block is squeezed here.
+    // Size is not an important factor, so long as it's a multiple of 3.
+    // 288 seemed to be the sweet spot according to the benchmarks
     // It's probably around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut C = [0u8; 216];
@@ -297,8 +297,10 @@ pub(crate) fn barrett_reduce(a: i16) -> i16 {
     a - (((t as i32) * q as i32) as i16)
 }
 
-// not currently used, but I'll leave it here because it's useful for debugging if you want to output values
-// that are normalized to [0,q] to compare against intermediate results from other libraries.
+
+// Not currently used. It is left here as a reference since it's useful for debugging if it's 
+// necessary to output values that are normalized to [0,q] to compare against intermediate results 
+// from other libraries.
 // pub(super) fn cond_sub_q(a: i16) -> i16 {
 //     let tmp = a - q;
 //     tmp + ((tmp >> 15) & q)

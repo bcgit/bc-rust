@@ -35,13 +35,13 @@ mod mlkem_key_tests {
         let expected_pk_bytes: [u8; MLKEM512_PK_LEN] = hex::decode("3995815e597d104355cf29aa5333c93251869d5bcdbe487124f602b8b6a66c16c4761648ad765cf5d8006b515e905a7f0ac076b0c62efa328153e7ca5701699f1305f1e6bc6f90b0e49b693512b6ce992a8b8016ddfc1a662c7e3f9619cbd869dd771af30896ccd5918ac6cb77466c5e779996d67ff9aabc97503f2c7b7e2d000d86450fb1807ca4cabda465825a31c789a1b7a491ab3872765d320d0b71920fa213c94093416b83b8124e69f65e62cb5000dcc37aa9a0fff73970c4772f357d24189ca6f5305568c0e2376a3762a68c605e563c5d209572e0fc7532ca294729535567b5fc413c5e8792d2464536cc808f98add74664f141566f9016a90a541829a98a0464ce41a8bb44c2d4fa3c2c209460728ef14a1a7c4c9b98d12203b4cc3529160a9ab2d7838f7ff6b53ae05aa31a7d646b7afa6c45932526a3c3755619be994c211c2a31c05b3447836cb2150be1829dae6b04c5535cff546e392ba797411720f924f490a5ac5495f21356d550b782a64c1688b6b655bcc7842197a434c2f6563b5b7f09a78bcc488232783561d16f4cbab6755400050781570c66604b817ad1252294736e8b01861a4b5a74519b8b6fe51489a5072392e587626c713776575d33806a1c8e2732af97c2680f51666331c4eb8bbc0431c4f96832daf1b3c45528fba153f6c78b1c198702947ccd337727a46fb53ba11de5cb4191346859516cb6ad72400f3cf209b236aef35a580ac87eb3e30fafd66973ca8a7dd2675af41f7a17b61433cd1af80f7708869f665488497980b1ac10a0cdcb636a00ed8681b35e429124ca80350725b85f83a5eac3a4a3cc1600903e65293560b9b336e5af0d529dac1a048119302cb7a9bcc110b94851bf02117f199dc485a852b7473f09b831a6831d5b54c0b790d225cf6bb92d9462a26cdb33dda5123c7aaf0e26a0b83655eea28bf3a8074725018fd6bae4b601cf61baab71a7a3d35197a343e74b4a272c125d540896426d85b7958d3b38a6ba987ec37225c7b44cdb12dde4539b4ab082363683f04bf7a09cc5c41dfe830a1b162e0b324334362f084a14467723344badd000f8d8c537c48f998f05307cebd1ede0b81c3bc59a065a1b6d63b26c").unwrap()
             .try_into().unwrap();
 
-        // Decode and re-encode the sk, make sure you get the same thing
+        // Decode and re-encode the sk, ensure the output is the same
         let sk = MLKEM512PrivateKey::from_bytes(&expected_sk_bytes).unwrap();
         let sk_bytes = sk.encode();
         assert_eq!(sk_bytes.len(), expected_sk_bytes.len());
         assert_eq!(sk_bytes, expected_sk_bytes.as_slice());
 
-        // Decode and re-encode the pk, make sure you get the same thing
+        // Decode and re-encode the pk, ensure the output is the same
         let decoded_pk = MLKEM512PublicKey::from_bytes(&expected_pk_bytes).unwrap();
         let pk_bytes = decoded_pk.encode();
         assert_eq!(pk_bytes.len(), expected_pk_bytes.len());
@@ -54,9 +54,10 @@ mod mlkem_key_tests {
     #[test]
     fn test_ek_hash() {
         // three separate tests here:
-        // 1) does it calculate H(ek) properly from a public key?
-        // 2) does it calculate H(ek) properly from a private key?
-        // 3) does it reject a private key if the H(ek) is wrong?
+        // 1) whether it calculates H(ek) properly from a public key
+        // 2) whether it calculates H(ek) properly from a private key
+        // 3) whether it rejects a private key if the H(ek) is wrong
+
 
         let seed = KeyMaterial512::from_bytes_as_type(
             &hex::decode(
@@ -80,10 +81,12 @@ mod mlkem_key_tests {
                 .try_into()
                 .unwrap();
 
+        // 1) test whether it calculates H(ek) properly from a public key
         assert_eq!(pk.compute_hash(), expected_h_ek);
+        // 2) test whether it calculates H(ek) properly from a private key
         assert_eq!(sk.pk_hash(), &expected_h_ek);
 
-        // 3) does it reject a private key if the H(ek) is wrong?
+        // 3) test whether it rejects a private key if the H(ek) is wrong
         let mut sk_bytes: [u8; MLKEM512_SK_LEN] = sk.encode();
         // h is:
         // dk[768𝑘 + 32 ∶ 768𝑘 + 64]
@@ -204,7 +207,7 @@ mod mlkem_key_tests {
         // FIPS 203 says:
         //      " Indeed, some 12-bit segments could
         //        correspond to an integer greater than 𝑞 − 1 = 3328 but less than 4096."
-        // so let's test these conditions in both private key s_hat and public key t_hat
+        // Test these conditions in both private key s_hat and public key t_hat
 
         match MLKEM512PrivateKey::from_bytes(&[255u8; MLKEM512_SK_LEN]) {
             Err(KEMError::DecodingError(_)) => { /* good */ }

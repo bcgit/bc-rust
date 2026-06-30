@@ -119,10 +119,10 @@ impl<const k: usize, const PK_LEN: usize> MLKEMPublicKeyTrait<k, PK_LEN>
 
                 // FIPS 203 says:
                 //      "Specifically, ByteDecode12 converts each 12-bit
-                //      segment of its input into an integer modulo 212 = 4096 and then reduces the result
+                //      segment of its input into an integer modulo 2^{12} = 4096 and then reduces the result
                 //      modulo 𝑞. This is no longer a one-to-one operation. Indeed, some 12-bit segments could
                 //      correspond to an integer greater than 𝑞 − 1 = 3328 but less than 4096."
-                //  Since we are here in the d=12 case, we can and should check that all coeffs are less than q-1
+                //  Since this concerns to the case d=12, it should be checked that all coeffs are less than q-1
                 for coeff in t_i.coeffs.iter() {
                     if *coeff < 0 || *coeff >= q {
                         return Err(KEMError::DecodingError("Invalid or corrupted key"));
@@ -505,10 +505,10 @@ impl<
 
             // FIPS 203 says:
             //      "Specifically, ByteDecode12 converts each 12-bit
-            //      segment of its input into an integer modulo 212 = 4096 and then reduces the result
+            //      segment of its input into an integer modulo 2^{12} = 4096 and then reduces the result
             //      modulo 𝑞. This is no longer a one-to-one operation. Indeed, some 12-bit segments could
             //      correspond to an integer greater than 𝑞 − 1 = 3328 but less than 4096."
-            //  Since we are here in the d=12 case, we can and should check that all coeffs are less than q
+            //  Since this concerns to the case d=12, it should be checked that all coeffs are less than q-1
             for coeff in s_hat[i].coeffs.iter() {
                 if *coeff < 0 || *coeff >= q {
                     return Err(KEMError::DecodingError("Invalid or corrupted key"));
@@ -526,8 +526,8 @@ impl<
         pos += 32;
 
         // This satisfies the "Decapsulation input check #3) in FIPS 203 section 7.3.
-        // We're doing it here on key load rather than as part of the decapsulation for performance
-        // because if you're doing multiple decapsulations, you only need to perform this check once.
+        // It is done here on key load rather than as part of the decapsulation for performance
+        // because if multiple decapsulations are being performed, this check needs to be done only once.
         if h_pk != ek.compute_hash() {
             return Err(KEMError::ConsistencyCheckFailed(
                 "Corrupted private key: computed hash of ek != h_ek stored in private key",

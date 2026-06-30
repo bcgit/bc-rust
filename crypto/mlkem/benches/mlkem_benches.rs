@@ -12,8 +12,8 @@ use std::hint::black_box;
 fn bench_mlkem_keygen(c: &mut Criterion) {
     let mut group = c.benchmark_group("KeyGen");
 
-    // set up the seeds outside of the timing loop
-    // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
+    // Set up the seeds outside of the timing loop
+    // Doing different seeds so that the CPU does not cache them or do too much branch prediction
     let mut seeds = Vec::<KeyMaterial512>::new();
     for dummy_seed in DUMMY_SEED_1024.chunks(64) {
         seeds.extend(KeyMaterial512::from_bytes_as_type(dummy_seed, KeyType::Seed));
@@ -51,8 +51,8 @@ fn bench_mlkem_keygen(c: &mut Criterion) {
 fn bench_mlkem_keygen_and_expand(c: &mut Criterion) {
     let mut group = c.benchmark_group("KeyGen_and_expand");
 
-    // set up the seeds outside of the timing loop
-    // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
+    // Set up the seeds outside of the timing loop
+    // Doing different seeds so that the CPU does not cache them or do too much branch prediction
     let mut seeds = Vec::<KeyMaterial512>::new();
     for dummy_seed in DUMMY_SEED_1024.chunks(64) {
         seeds.extend(KeyMaterial512::from_bytes_as_type(dummy_seed, KeyType::Seed));
@@ -93,8 +93,8 @@ fn bench_mlkem_keygen_and_expand(c: &mut Criterion) {
 fn bench_mlkem_encaps(c: &mut Criterion) {
     let mut group = c.benchmark_group("Encaps");
 
-    // set up the seeds outside of the timing loop
-    // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
+    // Set up the seeds outside of the timing loop
+    // Doing different seeds so that the CPU does not cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
         &hex::decode(
             "000102030405060708090a0b0c0d0e0f
@@ -107,7 +107,7 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     )
     .unwrap();
 
-    // create a vector of signing nonces so that we're not measuring the time of the RNG
+    // Create a vector of signing nonces so that we're not measuring the time of the RNG
     const NUM_ELEMS: usize = 256;
     let mut nonces = [[0u8; 32]; NUM_ELEMS];
     for i in 0..256 {
@@ -159,8 +159,8 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
 fn bench_mlkem_encaps_for_expanded(c: &mut Criterion) {
     let mut group = c.benchmark_group("Encaps_for_expanded_key");
 
-    // set up the seeds outside of the timing loop
-    // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
+    // Set up the seeds outside of the timing loop
+    // Doing different seeds so that the CPU does not cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
         &hex::decode(
             "000102030405060708090a0b0c0d0e0f
@@ -173,7 +173,7 @@ fn bench_mlkem_encaps_for_expanded(c: &mut Criterion) {
     )
     .unwrap();
 
-    // create a vector of signing nonces so that we're not measuring the time of the RNG
+    // Create a vector of signing nonces so that we're not measuring the time of the RNG
     const NUM_ELEMS: usize = 256;
     let mut nonces = [[0u8; 32]; NUM_ELEMS];
     for i in 0..256 {
@@ -228,8 +228,8 @@ fn bench_mlkem_encaps_for_expanded(c: &mut Criterion) {
 fn bench_mlkem_decaps(c: &mut Criterion) {
     let mut group = c.benchmark_group("Decaps");
 
-    // set up the seeds outside of the timing loop
-    // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
+    // Set up the seeds outside of the timing loop
+    // Doing different seeds so that the CPU does not cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
         &hex::decode(
             "000102030405060708090a0b0c0d0e0f
@@ -247,10 +247,10 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     /*** ML-KEM-512 ***/
     let (pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM512::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -268,10 +268,10 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     /*** ML-KEM-768 ***/
     let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM768::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -289,10 +289,10 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     /*** ML-KEM-1024 ***/
     let (pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM1024::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -313,8 +313,8 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
 fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let mut group = c.benchmark_group("Decaps_with_expanded_key");
 
-    // set up the seeds outside of the timing loop
-    // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
+    // Set up the seeds outside of the timing loop
+    // Doing different seeds so that the CPU does not cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
         &hex::decode(
             "000102030405060708090a0b0c0d0e0f
@@ -333,10 +333,10 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let (pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
     let sk_expanded = MLKEM512PrivateKeyExpanded::from(&sk);
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM512::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -355,10 +355,10 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let (pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
     let sk_expanded = MLKEM768PrivateKeyExpanded::from(&sk);
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM768::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -377,10 +377,10 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     let (pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
     let sk_expanded = MLKEM1024PrivateKeyExpanded::from(&sk);
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM1024::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -401,8 +401,8 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
 fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     let mut group = c.benchmark_group("decaps_from_seed");
 
-    // set up the seeds outside of the timing loop
-    // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
+    // Set up the seeds outside of the timing loop
+    // Doing different seeds so that the CPU does not cache them or do too much branch prediction
     let seed = KeyMaterial512::from_bytes_as_type(
         &hex::decode(
             "000102030405060708090a0b0c0d0e0f
@@ -420,10 +420,10 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     /*** ML-KEM-512 ***/
     let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM512::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -441,10 +441,10 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     /*** ML-KEM-768 ***/
     let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM768::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }
@@ -462,10 +462,10 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     /*** ML-KEM-1024 ***/
     let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
 
-    // create a bunch of ciphertexts to decaps
+    // Create a bunch of ciphertexts to decaps
     let mut cts = [[0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
-        // create each ct with a unique nonce
+        // Create each ct with a unique nonce
         // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
         cts[i].copy_from_slice(&MLKEM1024::encaps_internal(&pk, None, [i as u8; MLKEM_RND_LEN]).1);
     }

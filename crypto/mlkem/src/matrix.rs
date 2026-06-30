@@ -1,4 +1,4 @@
-//! These are somewhat unnecessary wrappers around simple arrays, but they are helpful to me in clearly
+//! These are somewhat unnecessary wrappers around simple arrays, but they are helpful for clearly
 //! keeping the types and sizes obvious.
 
 use core::ops::{Index, IndexMut};
@@ -79,7 +79,8 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 
 // Matrix and Vector do not need to impl Secret because the actual data is in the polynomials, which have their own zeroizing drop.
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
-// but I'll leave it zeroizing for now and leave this as a potential future optimization.
+// but this is left zeroizing for now. 
+// TODO: Investigate potential optimization related to the above.
 
 #[derive(Clone)]
 pub(crate) struct Vector<const k: usize> {
@@ -113,7 +114,7 @@ impl<const k: usize> Vector<k> {
     /// Add another vector to this vector
     pub(crate) fn add_vector_ntt(&mut self, s: &Self) {
         for i in 0..k {
-            // perform montgomery addition of each polynomial in the vector
+            // perform Montgomery addition of each polynomial in the vector
             self[i].add(&s[i]);
         }
     }
@@ -126,9 +127,8 @@ impl<const k: usize> Vector<k> {
             let w1 = polynomial::base_mult_montgomery(&self[i], &v[i]);
             w.add(&w1);
         }
-        // in theory, we need this here, but all unit tests pass without it since
-        // it actually doesn't matter if you go outside the [0, q] range as long as you
-        // reduce down before encoding out.
+        // Note: This function DOES NOT perform modular reduction, as the current 
+        // construction of ML-KEM only reduces modulo q when it's necessary.
         // w.poly_reduce();
 
         w
@@ -169,7 +169,12 @@ impl<const k: usize> Vector<k> {
         // each of the N i16's will take dv bits
         debug_assert_eq!(out.len(), k * (N * (du as usize) / 8));
 
-        // bc-java has a conditional_sub_q() here, but I pass all unit tests without it, so I'm taking it out for performance.
+        // No conditional_sub_q needed (as done in bc-java): callers must reduce() first, 
+        // so coefficients are in [0, q) (barrett_reduce, floor variant). The Compress mask `& (2^du - 1)` folds
+        // mod q, so values in [q, 2q) would also be correct. WARNING: the `as u32` cast
+        // below REQUIRES non-negative coefficients. That is to say DO NOT switch barrett_reduce to a
+        // signed/centered variant (e.g. pq-crystals' rounded form) without restoring a
+        // reduction here, or this will silently produce garbage.
         // let mut s = self.clone();
         // s.conditional_sub_q();
 
