@@ -61,10 +61,11 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
         // 3: F[i] = SUM_j=0..d-1{ 𝑏[𝑖 ⋅ 𝑑 + 𝑗] ⋅ 2𝑗 } mod m
         for j in 0..d {
             // select the next bit, according to bitcount, then shift it up by j
-            F[i] |= (((B[(i * d + j) / 8] >> (i * d + j) % 8) & 1) as i16) << j; // there's supposed to be a `mod m` here, but that shouldn't matter; we'll check it below anyway.
+            // there is supposed to be a `mod m` here, but that shouldn't matter as they are being checked below
+            F[i] |= (((B[(i * d + j) / 8] >> (i * d + j) % 8) & 1) as i16) << j; 
         }
         // assert the mod m
-        // We'll relax these because it's being checked above in MLKEMPublicKey::pk_decode()
+        // These are relaxed because they are being checked above in MLKEMPublicKey::pk_decode()
         debug_assert!(F[i] >= 0);
         // debug_assert!(F[i] <= if d<12 {2<<d} else { q });
     }
@@ -88,10 +89,10 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // 3: 𝑗 ← 0
     let mut j = 0usize;
 
-    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
+    // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so a block is done instead.
     // size doesn't really matter, so long as it's a multiple of 3.
     // 288 seemed to be the sweet spot from playing with benchmarks
-    // It's probably around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
+    // It's likely around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut C = [0u8; 216];
     xof.squeeze_out(&mut C);

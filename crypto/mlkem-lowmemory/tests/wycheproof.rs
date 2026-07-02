@@ -310,9 +310,9 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        // there's some weird stuff in the wycheproof tests that give a 64 byte m, even though
-        // it's only allowed to be 32 bytes.
-        // I guess we treat that as an error that we're meant to catch?
+        // For wycheproof tests that give a 64 byte `m`
+        // Parse `m` into the [u8; 32] the API demands; a length mismatch is a bad/unsupported
+        // test vector, not something encaps_internal validates.
         let m: [u8; 32] = match hex::decode(&self.m).unwrap().try_into() {
             Ok(m) => m,
             Err(e) => {

@@ -68,7 +68,7 @@ impl Polynomial {
     /// (§4.2.1) sets the bit when the coefficient lies nearer `q/2` than `0`, i.e. in
     /// the central interval `[833, 2496]` for `q = 3329`. The decision is computed
     /// branchlessly and the bits are packed LSB-first. 
-    /// Coefficients are expected to already be canonical in `[0, q)`: the unsigned 
+    /// Coefficients are expected to already be canonical in `[0, q]`: the unsigned 
     /// interval test is not periodic mod `q`, so the caller reduces beforehand (`poly_reduce()` 
     /// in `pke_decrypt`) and no reduction is repeated here.
     pub(crate) fn to_msg(self) -> [u8; 32] {
@@ -198,10 +198,10 @@ impl Polynomial {
     /// Decompress_𝑑𝑣( ByteDecode_𝑑𝑣(𝑐2) )
     /// which unpacks a single polynomial according to the packing coefficient dv
     pub(crate) fn decompress_poly<const dv: i16>(compressed_v: &[u8]) -> Polynomial {
-        // make sure we have received a dv
+        // make sure to received a dv
         debug_assert!(dv == 4 || dv == 5);
 
-        // make sure we were given the right size output buffer
+        // make sure the right size output buffer is given
         // each of the N i16's will take dv bits
         debug_assert_eq!(compressed_v.len(), N * (dv as usize) / 8);
 

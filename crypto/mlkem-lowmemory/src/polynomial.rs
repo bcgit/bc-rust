@@ -53,16 +53,26 @@ impl Polynomial {
         w
     }
 
-    /// Convert a Polynomial back into a message m
+    /// Decodes a `Polynomial` into its 32-byte message `m`, implementing the message 
+    /// recovery step of K-PKE.Decrypt `ByteEncode_1(Compress_1(self))`,
+    /// (FIPS 203, Alg. 15). Each coefficient yields one message bit: `Compress_1`
+    /// (§4.2.1) sets the bit when the coefficient lies nearer `q/2` than `0`, i.e. in
+    /// the central interval `[833, 2496]` for `q = 3329`. The decision is computed
+    /// branchlessly and the bits are packed LSB-first. 
+    /// Coefficients are expected to already be canonical in `[0, q]`: the unsigned 
+    /// interval test is not periodic mod `q`, so the caller reduces beforehand (`poly_reduce()` 
+    /// in `pke_decrypt`) and no reduction is repeated here.
     pub(crate) fn to_msg(self) -> [u8; 32] {
         const LOWER: i32 = q as i32 >> 2; // 832
         const UPPER: i32 = q as i32 - LOWER; // 2497
 
         let mut msg = [0u8; 32];
 
-        // you would expect to use a full reduce() here, but since this is data coming from
-        // out matrix math and not from an attacker, we can get away with the lighter cond_sub_q()
-        // Actually; further testing against the bc-test-data set of KATs shows that everything passes even with nothing
+        // Using full reduce() might be expected here.
+        // However, this function is only called by pke_decrypt (see mlkem.rs), which performs a 
+        // reduction on every coefficient of the polynomial immediately prior to the call.
+        // For completeness, testing against the bc-test-data set of KATs shows that everything passes 
+        // without modular reduction.
         // self.cond_sub_q();
 
         // for (i, item) in msg.iter_mut().enumerate().take(N/8) {
@@ -77,8 +87,11 @@ impl Polynomial {
         msg
     }
 
-    // not currently used, but I'll leave it here because it's useful for debugging if you want to output values
-    // that are normalized to [0,q] to compare against intermediate results from other libraries.
+
+
+    // Not currently used. It is left here as a reference since it's useful for debugging if it's 
+    // necessary to output values that are normalized to [0,q] to compare against intermediate results 
+    // from other libraries.
     // pub(crate) fn conditional_add_q(&mut self) {
     //     for x in self.0.iter_mut() {
     //         *x = conditional_add_q(*x);
@@ -143,17 +156,20 @@ impl Polynomial {
     ///   ByteEncode_𝑑𝑣( Compress_𝑑𝑣(𝑣) )
     /// which packs a single polynomial according to the packing coefficient dv
     pub(crate) fn compress_poly<const dv: i16>(&self, out: &mut [u8]) {
-        // make sure we have received a dv
+        // make sure to received a dv
         debug_assert!(dv == 4 || dv == 5);
 
-        // make sure we were given the right size output buffer
+        // make sure the right size output buffer is given
         // each of the N i16's will take dv bits
         debug_assert_eq!(out.len(), N * (dv as usize) / 8);
 
         let mut t = [0u8; 8];
         let mut idx = 0;
 
-        // bc-java has a cond_sub_q() here, but unit tests show that we don't need it.
+        // bc-java has a cond_sub_q() here, however, it is not needed
+        // The reason for this is because a modular reduction is performed immediately
+        // prior to calling pack_ciphertext in mlkem.rs
+        // This can be corroborated by running the corresponding unit tests 
         // let mut s = self.clone();
         // s.cond_sub_q();
 
@@ -246,8 +262,9 @@ impl Polynomial {
         v
     }
 
-    // not currently used, but I'll leave it here because it's useful for debugging if you want to output values
-    // that are normalized to [0,q] to compare against intermediate results from other libraries.
+    // Not currently used. It is left here as a reference since it's useful for debugging if it's 
+    // necessary to output values that are normalized to [0,q] to compare against intermediate results 
+    // from other libraries.
     // pub(crate) fn cond_sub_q(&mut self) {
     //     for i in 0..N {
     //         self[i] = cond_sub_q(self[i]);
@@ -338,8 +355,9 @@ impl Display for Polynomial {
     }
 }
 
-// Not currently used, but I'll leave it here because it's useful for debugging if you want to output values
-// that are normalized to [0,q] to compare against intermediate results from other libraries.
+// Not currently used. It is left here as a reference since it's useful for debugging if it's 
+// necessary to output values that are normalized to [0,q] to compare against intermediate results 
+// from other libraries.
 // /// if a is in \[-q..0], then it shifts it up by q to be in \[0..q]
 // pub(crate) fn conditional_add_q(a: i16) -> i16 {
 //     a + ((a >> 15) & q)

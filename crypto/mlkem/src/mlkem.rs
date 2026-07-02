@@ -93,14 +93,17 @@
 //! Contact us if you need such a thing implemented.
 //! ## Deterministic encapsulation
 //!
-//! This section pertains to [MLKEM::encaps_internal] which allows you to pass in the encapsulation randomness
+//! This section pertains to [MLKEM::encaps_internal] which allows to pass in the encapsulation randomness
 //! and thus obtain a deterministic encapsulation.
 //!
-//! The only good reasons for doing this are: A) testing if you need reproducible results, or
-//! B) if you want to use your own source of randomness, such as a hardware RNG, instead of the library's
-//! default RNG.
-//! If you think you will invent same clever cryptographic scheme by making clever use of this parameter:
-//! don't; you will almost certainly end up with something completely insecure.
+//! The only good reasons for doing this are: 
+//!    A) testing, if reproducible results are needed; or
+//!    B) if the user wants to use their own source of randomness, such as a hardware RNG, instead of the library's
+//!    default RNG.
+//! As a reminder, any deterministic KEM (or any encryption mechanism) fails to satisfy any security 
+//! notion involving indistinguishability (e.g. IND-CPA, IND-CCA2, etc.).
+//! Any custom randomness construction will have serious consequences.
+//! Failing to use this properly, as indicated, will result in catastrophic vulnerabilities.
 //!
 //! ```rust
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
@@ -526,16 +529,17 @@ impl<
     /// optimizations when the same public key is used for multiple encapsulations and the intermediate
     /// value called the public matrix A_hat can be re-used for multiple encapsulations.
     /// A_hat can be obtained from [MLKEMPublicKeyTrait::A_hat].
-    /// Alternatively, you can use a [MLKEMPublicKeyExpanded] with [MLKEM::encaps_for_expanded_key].
-    /// If you specify None, the function will compute A_hat internally and everything will work fine.
+    /// Alternatively, a [MLKEMPublicKeyExpanded] with [MLKEM::encaps_for_expanded_key] can be used.
+    /// If `None` is specified, the function will compute A_hat internally and everything will work fine.
     ///
     /// Unlike the more public function exposed by [KEM::encaps], this returns the shared secret as raw bytes
-    /// instead of wrapped in an appropriately-set [KeyMaterialTrait], so you're on your own for handling it properly.
+    /// instead of wrapped in an appropriately-set [KeyMaterialTrait]. 
+    /// Proper handling is up to the user's own judgement.
     ///
     /// Note: this is an internal function that allows the caller to specify the encapsulation
     /// randomness (which is the message `m` to be encrypted by the underlying PKE scheme).
-    /// This function should not be used directly unless you really have a
-    /// good reason. [KEM::encaps] should be used in 99.9% of cases.
+    /// This function should not be used directly unless there is a good reason to do so. 
+    /// [KEM::encaps] should be used in 99.9% of cases.
     /// The reason this is exposed publicly is: 
     ///     A) for unit testing that requires access to the deterministically reproducible function, and 
     ///     B) for operational environments that wish to provide randomness from their own source instead 

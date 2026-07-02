@@ -12,11 +12,11 @@
 //! ML-KEM-768 is 3 and 3 x 3 = 9 polynomials, and ML-KEM-1024 is 4, and 4 x 4 = 16 polynomials.
 //!
 //! A straightforward implementation of ML-KEM will start by un-compressing all the key material into
-//! memory into the format that you need to perform the computation.
+//! memory into the format needed to perform the computation.
 //! A ready-to-use private key consists of a `Vector<k>`
 //! while the public key is a `Vector<k>` and a `Matrix<k,k>`.
-//! For ML-KEM-768, you expect to use 6 kb of RAM just for holding expanded key material, and then
-//! you expect the `.encaps()` and `.decaps()` operations to require several multiples of that as variables for holding
+//! For ML-KEM-768, it is expected to use 6 kb of RAM just for holding expanded key material, and then
+//! the `.encaps()` and `.decaps()` operations are expected to require several multiples of that as variables for holding
 //! intermediate values as the computation proceeds.
 //! A well-written but not memory-optimized ML-KEM-768 can be expected to consume approximately 40 kb of RAM
 //! at the widest point of the `.decaps()` operation.
@@ -24,9 +24,9 @@
 //! This crate strives to do better!
 //!
 //! The core observation that makes this implementation possible is that by a careful examination of
-//! how the matrix multiplication works, you don't ever need the vectors and matrices to be fully
+//! how the matrix multiplication works, the vectors and matrices don't ever need to be fully
 //! expanded at the same time.
-//! In fact, you can work one polynomial at a time.
+//! In fact, it is possible to work one polynomial at a time.
 //! This is because the ML-KEM keygen algorithm starts with a single 64-byte seed and expands that
 //! into intermediate seeds `rho` (32 byte), and `sigma` (32 byte), from which all
 //! of the vectors and matrices are derived via hash functions.
@@ -78,8 +78,8 @@
 //!
 //! The table below shows peak memory usage of the ML-KEM algorithms and the rough performanc (throughput) impact.
 //!
-//! Measuring peak application memory usage can be a bit tricky, and the numbers you get depend heavily on how you designed your
-//! measurement harness. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
+//! Measuring peak application memory usage can be a bit tricky, and the numbers that are obtained depend heavily on how the
+//! measurement harness is designed. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
 //! over-estimate so that any deployment within an existing application will use incrementally less additional memory
 //! than the amount stated here.
 //!
@@ -179,7 +179,7 @@
 //! ```
 //!
 //! See [MLKEM] and [MLKEM::decaps_from_seed] for an API that uses a merged
-//! keygen-and-decaps function to that allows you to store the private key only as a 64-byte seed.
+//! keygen-and-decaps function to that allows to store the private key only as a 64-byte seed.
 //!
 //! ## Encapsulating and Decapsulating
 //!
@@ -206,21 +206,23 @@
 //! # Security
 //! All functionality exposed by this crate is considered secure to use.
 //! In other words, this crate does not contain any "hazmat" except for the obvious points about
-//! handling your private keys properly: if you post your private key to github, or you generate
-//! production keys from a weak seed, I can't help you, that's on you.
-//! It is worth mentioning, however, that if using a [MLKEM::keygen_from_seed], then it is your
+//! handling private keys properly: if private key are posted to github, or
+//! production keys are generated from a weak seed, this library won't be of any help. 
+//! The responsibility falls on the user
+//! It is worth mentioning, however, that if using a [MLKEM::keygen_from_seed], then it is the user's
 //! responsibility to ensure that the seed is cryptographically random and unpredictable.
-//! And also that [MLKEM::encaps_internal] requires you to provide the randomness, so the ciphertext
-//! will only be as strong as the randomness that you provide.
+//! And also that [MLKEM::encaps_internal] requires the user to provide the randomness, so the ciphertext
+//! will only be as strong as the randomness that the user provides.
 //!
 //! A note about cryptographic side-channel attacks: considerable effort has been expended to attempt
 //! to make this implementation constant-time, which generally means that the core mathematical algorithm
 //! code that handles secret data uses bitshift-and-xor type constructions instead of if-and-loop
 //! constructions. That should give this implementation reasonably good resistance to timing and
-//! power analysis key extraction attacks, however: A) this is a "best-effort" and not formally verified,
-//! and B) the Rust compiler does not guarantee constant-time behaviour no matter how clever your code,
-//! so like all Safe Rust code (ie Rust code that does not include inline assembly), we are at the mercy
-//! of the Rust compiler's optimizer for whether our bitshift-and-xor code actually remains
+//! power analysis key extraction attacks, however: 
+//!     A) this is a "best-effort" and not formally verified, and
+//!     B) the Rust compiler does not guarantee constant-time behaviour no matter how good the design is code,
+//! so like all Safe Rust code (ie Rust code that does not include inline assembly),
+//! it is up to the Rust compiler's optimizer to decide whether our bitshift-and-xor code actually remains
 //! constant-time after compilation.
 
 #![no_std]
@@ -229,13 +231,13 @@
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
 #![feature(generic_const_exprs)]
 #![feature(adt_const_params)]
-// These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',
-// or 'A' and 'a' are used and have specific meanings.
-// But need to tell the rust linter to not care.
+// These are because variable names need to be matched exactly against FIPS 204, 
+// for example both 'K' and 'k', or 'A' and 'a' are used and have specific meanings.
+// linter needs to be instructed to ignore these cases
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-// so I can use private traits to hide internal stuff that needs to be generic within the
-// MLKEM implementation, but I don't want accessed from outside, such as FIPS-internal functions.
+// This is so that private traits can be used to hide internal components that needs to be generic within the
+// MLKEM implementation without providing access from outside, such as FIPS-internal functions.
 #![allow(private_bounds)]
 
 // imports needed just for docs
@@ -271,5 +273,5 @@ pub use mlkem::{MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN};
 pub use mlkem::{MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN};
 pub use mlkem::{MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
 
-// re-export just so it's visible to unit tests
+// re-export just so it is visible to unit tests
 pub use polynomial::Polynomial;

@@ -283,7 +283,7 @@ impl<
 
         let (rho, sigma) = Self::compute_rho_and_sigma(&seed_d);
 
-        // Deviation from the FIPS: I am not going to persist the hash of the public key H(ek) in the
+        // Deviation from the FIPS: The implementation does not persist the hash of the public key H(ek) in the
         // in-memory representation because it can be re-computed as needed.
         Ok(Self { rho, sigma, pk_hash: None, z, seed_d })
     }

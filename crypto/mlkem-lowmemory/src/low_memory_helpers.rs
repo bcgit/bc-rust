@@ -202,7 +202,7 @@ pub(crate) fn unpack_ciphertext_u_row<const du: i16, const CT_LEN: usize>(
 ) -> Polynomial {
     let mut u_i = Polynomial::new();
 
-    // make sure we have received a dv
+    // make sure to received a dv
     assert!(du == 10 || du == 11);
 
     // figure out where in the ct array we're going to write to
