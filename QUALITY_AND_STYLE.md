@@ -28,7 +28,9 @@ Where the behaviour of a function is critical to test but cannot be tested from 
 private function, in-line tests in the source file should be used.
 
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
-behaviours and error conditions that are comment to all implementations of that trait.All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
+behaviours and error conditions that are common to all implementations of that trait.
+
+All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
 
 ## Performance Benchmarks
 

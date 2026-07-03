@@ -14,7 +14,7 @@ impl TestFrameworkSymmetricCipher {
         Self {}
     }
 
-    /// Test all the members of trait Hash against the given input-output pair.
+    /// Test all the members of trait SymmetricCipher against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
     pub fn test<
         const KEY_LEN: usize,
@@ -80,6 +80,14 @@ impl TestFrameworkSymmetricCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
+            // The key must be long enough to be tagged at the requested strength, or
+            // set_security_strength() would reject it (strength cannot exceed key length).
+            if *ss > SecurityStrength::from_bits(KEY_LEN * 8) {
+                continue;
+            }
+            // set_security_strength() drops the allow-hazardous flag after every call and
+            // requires it in order to raise the strength, so it must be re-enabled each iteration.
+            key.allow_hazardous_operations();
             key.set_security_strength(ss.clone()).unwrap();
 
             match C::encrypt_out(&key, msg, &mut ct) {
@@ -181,6 +189,14 @@ impl TestFrameworkBlockCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
+            // The key must be long enough to be tagged at the requested strength, or
+            // set_security_strength() would reject it (strength cannot exceed key length).
+            if *ss > SecurityStrength::from_bits(KEY_LEN * 8) {
+                continue;
+            }
+            // set_security_strength() drops the allow-hazardous flag after every call and
+            // requires it in order to raise the strength, so it must be re-enabled each iteration.
+            key.allow_hazardous_operations();
             key.set_security_strength(ss.clone()).unwrap();
 
             match C::do_encrypt_init(&key) {
@@ -211,7 +227,7 @@ impl TestFrameworkAEADCipher {
         Self {}
     }
 
-    /// Test all the members of trait Hash against the given input-output pair.
+    /// Test all the members of trait AEADCipher against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
     pub fn test<
         const KEY_LEN: usize,
@@ -247,17 +263,16 @@ impl TestFrameworkAEADCipher {
 
         // todo -- add tests for aead_encrypt() / aead_decrypt() wrapped in a #[cfg(std)]
 
-        // messing with the ciphertext does not give back the same plaintext (or failing to decrypt is also ok)
+        // Modifying the ciphertext MUST cause an AEAD failure: unlike an unauthenticated cipher,
+        // a conformant AEAD must never return plaintext for a ciphertext that fails its tag check.
         ct[17] ^= 0xFF;
         match C::aead_decrypt_out(&key, &nonce, aad, &ct[..ct_bytes_written], &tag, &mut pt) {
-            Ok(bytes_written) => {
-                // so it decrypted something, but it had better not match the original plaintext
-                assert_eq!(bytes_written, pt_bytes_written);
-                assert_ne!(&pt[..bytes_written], msg);
-            }
-            Err(SymmetricCipherError::DecryptionFailed) => { /* also ok */ }
-            _ => panic!("Unexpected error"),
+            Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
+            Err(SymmetricCipherError::DecryptionFailed) => { /* also acceptable */ }
+            _ => panic!("Modified ciphertext must fail the AEAD tag check"),
         };
+        // restore the ciphertext so the AAD- and tag-tamper checks below each test one variable
+        ct[17] ^= 0xFF;
 
         // messing with the aad causes the aead_decrypt to fail
         match C::aead_decrypt_out(
@@ -296,7 +311,7 @@ impl TestFrameworkAEADCipher {
         let mac_key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED_512[..KEY_LEN], KeyType::MACKey)
                 .unwrap();
-        match C::encrypt_out(&mac_key, msg, &mut ct) {
+        match C::aead_encrypt_out(&mac_key, aad, msg, &mut ct) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
@@ -317,9 +332,17 @@ impl TestFrameworkAEADCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
+            // The key must be long enough to be tagged at the requested strength, or
+            // set_security_strength() would reject it (strength cannot exceed key length).
+            if *ss > SecurityStrength::from_bits(KEY_LEN * 8) {
+                continue;
+            }
+            // set_security_strength() drops the allow-hazardous flag after every call and
+            // requires it in order to raise the strength, so it must be re-enabled each iteration.
+            key.allow_hazardous_operations();
             key.set_security_strength(ss.clone()).unwrap();
 
-            match C::encrypt_out(&mac_key, msg, &mut ct) {
+            match C::aead_encrypt_out(&key, aad, msg, &mut ct) {
                 Ok(_) => {
                     if ss >= &C::MAX_SECURITY_STRENGTH { /* good */
                     } else {
@@ -347,7 +370,7 @@ impl TestFrameworkStreamCipher {
         Self {}
     }
 
-    /// Test all the members of trait Hash against the given input-output pair.
+    /// Test all the members of trait StreamCipher against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
     pub fn test<
         const KEY_LEN: usize,

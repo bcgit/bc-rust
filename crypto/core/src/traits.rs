@@ -28,7 +28,7 @@ pub trait Algorithm {
 pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     Algorithm + Secret
 {
-    #[cfg(std)]
+    #[cfg(feature = "std")]
     /// A one-shot API to encrypt some plaintext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
     /// Returns a tuple containing the initialization data and the ciphertext.
@@ -48,7 +48,7 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError>;
-    #[cfg(std)]
+    #[cfg(feature = "std")]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
     /// This is not available if building for no_std.
@@ -75,7 +75,7 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
 /// This trait allows for a block cipher to generate initialization data, such as an Initialization Vector (IV) or Counter (CTR)
 /// which is not technically part of the ciphertext, but must be transmitted along with the ciphertext in order for the
 /// recipient to perform successful decryption. The length of the initialization data is specified by the implementing struct
-/// via the `INIT_DATA_SIZE` constant.
+/// via the `INIT_DATA_LEN` constant.
 /// In order for these one-shot APIs to be usable securely in all contexts, the init data will be generated
 /// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
 /// user to provide the init data. If you require this functionality, see the documentation for the underlying implementation.
@@ -103,7 +103,7 @@ pub trait BlockCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BL
         &mut self,
         plaintext: &[u8; BLOCK_LEN],
     ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
-    /// Decrypts the final block of plaintext and writes the ciphertext to the provided buffer.
+    /// Encrypts the final block of plaintext and writes the ciphertext to the provided buffer.
     fn do_encrypt_final_out(
         &mut self,
         plaintext: &[u8; BLOCK_LEN],
@@ -131,7 +131,7 @@ pub trait BlockCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BL
 pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>:
     SymmetricCipher<KEY_LEN, NONCE_LEN> + Sized
 {
-    #[cfg(std)]
+    #[cfg(feature = "std")]
     /// A one-shot API to encrypt some plaintext with the given key.
     /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
     /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
@@ -161,7 +161,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
     fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError>;
-    #[cfg(std)]
+    #[cfg(feature = "std")]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
     fn aead_decrypt(
@@ -176,20 +176,20 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// See the documentation for the underlying implementation for details on providing a plaintext buffer of sufficient size;
     /// typically the ciphertext is the same length as the plaintext, but some ciphers may have an expansion factor or require
     /// extra space for a nonce or tag.
-    /// Returns a tuple containing the initialization data and the number of bytes written to the plaintext buffer.
+    /// Returns the number of bytes written to the plaintext buffer.
     fn aead_decrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
-        tag: &[u8],
+        tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError>;
     /// All AEAD ciphers will also be either a [BlockCipher] or a [StreamCipher], and so will already
     /// have a streaming API.
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
-    fn do_aead_decrypt_final(self, tag: &[u8]) -> Result<(), SymmetricCipherError>;
+    fn do_aead_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError>;
 }
 
 /// The basic functions of a stream cipher, which differ from those of a block cipher only in that
@@ -213,7 +213,7 @@ pub trait StreamCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
         &mut self,
         plaintext: &[u8; BLOCK_LEN],
         ciphertext: &mut [u8; BLOCK_LEN],
-    ) -> Result<(), SymmetricCipherError>;
+    ) -> Result<usize, SymmetricCipherError>;
     /// Encrypts the final block of plaintext.
     fn do_stream_encrypt_final<const BLOCK_LEN: usize>(
         &mut self,
@@ -224,7 +224,7 @@ pub trait StreamCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
         &mut self,
         plaintext: &[u8; BLOCK_LEN],
         ciphertext: &mut [u8; BLOCK_LEN],
-    ) -> Result<(), SymmetricCipherError>;
+    ) -> Result<usize, SymmetricCipherError>;
     /// Constructor that begins a flow of the streaming API for decryption one block at a time.
     fn do_stream_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
@@ -240,7 +240,7 @@ pub trait StreamCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
         &mut self,
         ciphertext: &[u8; BLOCK_LEN],
         plaintext: &mut [u8; BLOCK_LEN],
-    ) -> Result<(), SymmetricCipherError>;
+    ) -> Result<usize, SymmetricCipherError>;
 }
 
 pub trait Hash: Default {
