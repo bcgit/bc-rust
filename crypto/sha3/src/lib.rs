@@ -103,6 +103,19 @@
 //! This would also be the case even if the input had type
 //! [KeyType::CryptographicRandom] since the input [KeyMaterial] is 16 bytes but [SHA3_256] needs at least 32 bytes of
 //! full-entropy input key material in order to be able to produce full entropy output key material.
+//!
+//! # Memory Footprint
+//!
+//! The following table lists the size of the struct in memory when using the stateful API between multiple calls to `.do_update()`.
+//!
+//! | Key Object | Struct size in memory (bytes) |
+//! |------------|-------------------------------|
+//! | SHA3_224   | 440                           |
+//! | SHA3_256   | 440                           |
+//! | SHA3_384   | 440                           |
+//! | SHA3_512   | 440                           |
+//! | SHAKE128   | 440                           |
+//! | SHAKE256   | 440                           |
 
 #![forbid(unsafe_code)]
 #![allow(private_bounds)]

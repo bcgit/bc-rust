@@ -33,6 +33,17 @@
 //!
 //! let output: Vec<u8> = sha2.do_final();
 //! ```
+//!
+//! # Memory Footprint
+//!
+//! The following table lists the size of the struct in memory when using the stateful API between multiple calls to `.do_update()`.
+//!
+//! | Key Object | Struct size in memory (bytes) |
+//! |------------|-------------------------------|
+//! | SHA224     | 112                           |
+//! | SHA256     | 112                           |
+//! | SHA384     | 208                           |
+//! | SHA512     | 208                           |
 
 #![forbid(unsafe_code)]
 #![allow(private_bounds)]

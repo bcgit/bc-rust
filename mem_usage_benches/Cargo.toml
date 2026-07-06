@@ -14,3 +14,15 @@ path = "bench_mldsa_mem_usage.rs"
 [[bin]]
 name = "bench_mlkem_mem_usage"
 path = "bench_mlkem_mem_usage.rs"
+
+[[bin]]
+name = "bench_sha2_mem_usage"
+path = "bench_sha2_mem_usage.rs"
+
+[[bin]]
+name = "bench_sha3_mem_usage"
+path = "bench_sha3_mem_usage.rs"
+
+[[bin]]
+name = "bench_hashdrbg_mem_usage"
+path = "bench_hashdrbg_mem_usage.rs"

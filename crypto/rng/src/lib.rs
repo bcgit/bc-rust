@@ -26,6 +26,15 @@
 //! This crate contains the [Sp80090ADrbg] trait, which is intentionally defined here and not in [bouncycastle_core::traits]
 //! since misuse of [Sp80090ADrbg::instantiate] can completely undermine the security of your entire
 //! cryptographic application.
+//!
+//! # Memory Footprint
+//!
+//! The following table lists the size of the struct in memory when using the stateful API between multiple calls to `.do_update()`.
+//!
+//! | Key Object | Struct size in memory (bytes) |
+//! |------------|-------------------------------|
+//! | HashDRBG_SHA256   | 144                    |
+//! | HashDRBG_SHA512   | 144                    |
 
 #![forbid(unsafe_code)]
 
