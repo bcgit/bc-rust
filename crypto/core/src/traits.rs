@@ -206,8 +206,16 @@ pub trait KEMEncapsulator<
 >: Sized
 {
     /// Performs an encapsulation against the given public key.
+    /// Sources randomness from the library's default OS-backed RNG.
     /// Returns the ciphertext and derived shared secret.
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+    /// Performs an encapsulation against the given public key.
+    /// Sources randomness from the provided RNG.
+    /// Returns the ciphertext and derived shared secret.
+    fn encaps_rng(
+        pk: &PK,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
 }
 
 /// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
@@ -426,13 +434,18 @@ impl SecurityStrength {
 /// be used by applications that intend to submit to FIPS certification as it more closely aligns with the
 /// requirements of SP 800-90A.
 /// Note: this interface produces bytes. If you want a [KeyMaterialTrait], then use [KeyMaterial::from_rng].
-pub trait RNG: Default {
+///
+/// Implementors are expected to also implement [Default] (default-construction should produce a
+/// securely OS-seeded instance), but this is intentionally *not* a supertrait bound: requiring
+/// `Default` would make `RNG` not dyn-compatible, and `&mut dyn RNG` is needed so RNG instances
+/// can be handed around as trait objects.
+pub trait RNG {
     // TODO: add back once we figure out streaming interaction with entropy sources.
     // fn add_seed_bytes(&mut self, additional_seed: &[u8]) -> Result<(), RNGError>;
 
     fn add_seed_keymaterial(
         &mut self,
-        additional_seed: impl KeyMaterialTrait,
+        additional_seed: &dyn KeyMaterialTrait,
     ) -> Result<(), RNGError>;
     fn next_int(&mut self) -> Result<u32, RNGError>;
 
@@ -443,7 +456,7 @@ pub trait RNG: Default {
     /// The entire output buffer is zeroized before the random bytes are written.
     fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError>;
 
-    fn fill_keymaterial_out(&mut self, out: &mut impl KeyMaterialTrait) -> Result<usize, RNGError>;
+    fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError>;
 
     /// Returns the Security Strength of this RNG.
     fn security_strength(&self) -> SecurityStrength;

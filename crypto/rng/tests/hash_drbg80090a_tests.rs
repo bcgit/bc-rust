@@ -302,7 +302,7 @@ mod tests {
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED_512[..32], KeyType::Seed).unwrap();
 
         /* test add_seed_keymaterial */
-        rng.add_seed_keymaterial(seed).unwrap();
+        rng.add_seed_keymaterial(&seed).unwrap();
 
         /* test next_int */
         let out1: u32 = rng.next_int().unwrap();

@@ -12,7 +12,7 @@ use crate::mlkem_keys::{
 use crate::mlkem_keys::{MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait};
 use crate::mlkem_keys::{MLKEMPublicKeyInternalTrait, MLKEMPublicKeyTrait};
 use crate::polynomial::Polynomial;
-use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::errors::{KEMError, RNGError};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -237,22 +237,6 @@ impl<
         T_PACKED_LEN,
     >
 {
-    /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
-    ///
-    /// Key generation is intentionally not part of the [KEMEncapsulator] / [KEMDecapsulator] traits;
-    /// it is provided as an inherent associated function directly on the algorithm struct.
-    /// Error condition: basically only on RNG failures.
-    pub fn keygen() -> Result<(PK, SK), KEMError> {
-        Self::keygen_from_os_rng()
-    }
-
-    /// Should still be ok in FIPS mode
-    pub fn keygen_from_os_rng() -> Result<(PK, SK), KEMError> {
-        let mut seed = KeyMaterial::<64>::new();
-        HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
-        // Self::keygen_internal(&seed)
-        Self::keygen_internal(&seed)
-    }
     /// Performs the first step of key generation to transform the single provided seed into a set of internal intermediate seeds.
     ///
     /// Unlike other interfaces across the library that take an &impl KeyMaterial, this one
@@ -631,6 +615,22 @@ pub trait MLKEMTrait<
     const T_PACKED_LEN: usize,
 >: Sized
 {
+    /// Generates a fresh key pair.
+    fn keygen() -> Result<(PK, SK), KEMError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
+    }
+    /// Run a keygen using the provided RNG implementation.
+    // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
+    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
+        // Source the seed from the provided RNG
+        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
+        let mut seed = KeyMaterial::<64>::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed(&seed)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError>;
     /// Imports a secret key from both a seed and an encoded_sk.
@@ -688,8 +688,20 @@ impl<
     >
 {
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::encaps_rng(pk, &mut os_rng)
+    }
+
+    fn encaps_rng(
+        pk: &PK,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        // Source the random message m from the provided RNG
+        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
         let mut m = [0u8; 32];
-        HashDRBG_SHA512::new_from_os().next_bytes_out(&mut m)?;
+        rng.next_bytes_out(&mut m)?;
 
         let (ss_bytes, ct) = Self::encaps_internal(pk, m);
 

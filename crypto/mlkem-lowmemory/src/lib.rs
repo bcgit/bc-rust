@@ -154,7 +154,7 @@
 //! ## Generating Keys
 //!
 //! ```rust
-//! use bouncycastle_mlkem_lowmemory::MLKEM768;
+//! use bouncycastle_mlkem_lowmemory::{MLKEM768, MLKEMTrait};
 //!
 //! let (pk, sk) = MLKEM768::keygen().unwrap();
 //! ```

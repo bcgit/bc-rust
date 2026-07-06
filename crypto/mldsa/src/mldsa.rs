@@ -410,7 +410,7 @@ use crate::{
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey,
     MLDSA87PublicKey, MLDSAPrivateKeyExpanded, MLDSAPublicKeyExpanded,
 };
-use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, RNG, SecurityStrength, SignatureVerifier, Signer, XOF};
 use bouncycastle_rng::HashDRBG_SHA512;
@@ -728,21 +728,6 @@ impl<
         GAMMA1_MASK_LEN,
     >
 {
-    /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
-    ///
-    /// Key generation is intentionally not part of the [Signer] / [SignatureVerifier] traits;
-    /// it is provided as an inherent associated function directly on the algorithm struct.
-    /// Error condition: basically only on RNG failures.
-    pub fn keygen() -> Result<(PK, SK), SignatureError> {
-        Self::keygen_from_os_rng()
-    }
-
-    /// Should still be ok in FIPS mode
-    pub fn keygen_from_os_rng() -> Result<(PK, SK), SignatureError> {
-        let mut seed = KeyMaterial256::new();
-        HashDRBG_SHA512::new_from_os().fill_keymaterial_out(&mut seed)?;
-        Self::keygen_internal(&seed)
-    }
     /// Implements Algorithm 6 of FIPS 204
     /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
     /// may in fact be exposed outside the crypto module.
@@ -1057,7 +1042,7 @@ impl<
     const GAMMA1_MINUS_BETA: i32,
     const GAMMA2_MINUS_BETA: i32,
     const GAMMA1_MASK_LEN: usize,
-> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, k, l, ETA>
+> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, LAMBDA, k, l, ETA>
     for MLDSA<
         PK_LEN,
         SK_LEN,
@@ -1652,11 +1637,31 @@ pub trait MLDSATrait<
     PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
         + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
+    const LAMBDA: i32,
     const k: usize,
     const l: usize,
     const ETA: usize,
 >: Sized
 {
+    /// Runs a key generation using the library's default RNG, seeded from the OS.
+    /// In environments where the default OS based RNG is not available, use instead [MLDSA::keygen_from_rng]
+    /// and explicitly provide a [RNG] implementation, or use [MLDSATrait::keygen_from_seed] and provide the
+    /// private key seed directly.
+    fn keygen() -> Result<(PK, SK), SignatureError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
+    }
+    /// Run a keygen using the provided RNG implementation.
+    // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
+    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
+        // Source the seed from the provided RNG
+        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
+        let mut seed = KeyMaterial256::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed(&seed)
+    }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError>;
     /// Imports a secret key from both a seed and an encoded_sk.
