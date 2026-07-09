@@ -848,6 +848,7 @@ macro_rules! impl_suspendable_keyed_state_for_hkdf {
                 // Rebuild the salt-keyed HMAC (when present) by re-supplying the salt.
                 let hmac = match state[3] {
                     0 => None,
+                    // infallible: the sub-slice is exactly $serialized_hmac_len bytes by const construction.
                     1 => Some(HMAC::<$hash>::from_suspended(
                         state[4..4 + $serialized_hmac_len].try_into().unwrap(),
                         salt,
@@ -867,6 +868,7 @@ macro_rules! impl_suspendable_keyed_state_for_hkdf {
                     return Err(SuspendableError::InvalidData);
                 }
 
+                // infallible: the sub-slice is exactly 8 bytes by const construction.
                 let entropy = u64::from_le_bytes(
                     state[5 + $serialized_hmac_len..13 + $serialized_hmac_len].try_into().unwrap(),
                 ) as usize;

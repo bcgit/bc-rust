@@ -44,6 +44,14 @@ const fn parse_version_component(s: &str) -> u8 {
 
 /// The current library version -- ie the version of the *bouncycastle-core* crate -- at compile time (via Cargo's
 /// `CARGO_PKG_VERSION_*` env vars).
+///
+/// MAINTAINER NOTE: this single value is the *only* compatibility gate for every serialized state in
+/// the workspace (see [check_lib_ver]), and the policy accepts any future *patch* on the same
+/// major.minor stream. Therefore any change to the on-the-wire layout of *any* suspendable state --
+/// in this crate or in any primitive crate -- MUST bump this crate's **minor** version (never just
+/// the patch), otherwise an older build will silently accept and misread a newer, incompatible state.
+/// Also keep this crate's version reconciled with the workspace release version so the stamp is
+/// meaningful.
 pub const LIB_VERSION: SemVer = SemVer {
     major: parse_version_component(env!("CARGO_PKG_VERSION_MAJOR")),
     minor: parse_version_component(env!("CARGO_PKG_VERSION_MINOR")),

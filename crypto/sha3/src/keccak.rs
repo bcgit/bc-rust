@@ -415,19 +415,27 @@ impl KeccakDigest {
         // data_queue: [u8; 192]
         let data_queue: [u8; 192] = input[200..392].try_into().unwrap();
 
-        // bits_in_queue: usize. It can never legitimately exceed the rate (which is at most 168
-        // bytes, well within data_queue's 192-byte capacity).
-        let bits_in_queue = u64::from_le_bytes(input[392..400].try_into().unwrap()) as usize;
-        if bits_in_queue > rate {
-            return Err(SuspendableError::InvalidData);
-        }
-
         // squeezing: bool
         let squeezing = match input[400] {
             0 => false,
             1 => true,
             _ => return Err(SuspendableError::InvalidData),
         };
+
+        // bits_in_queue: usize. It can never legitimately exceed the rate (which is at most 168
+        // bytes, well within data_queue's 192-byte capacity).
+        //
+        // While absorbing (not yet squeezing) the queue is always a whole number of bytes strictly
+        // below the rate -- it is flushed to 0 the instant it reaches the rate, and absorb_bits()
+        // switches to squeezing the moment a sub-byte quantity is added. So a non-squeezing state
+        // whose bits_in_queue is not byte-aligned, or is == rate, is corrupt: left unchecked it would
+        // later panic in absorb() ("attempt to absorb with odd length queue") or trip the
+        // debug_assert in pad_and_switch_to_squeezing_phase(). Reject it here as InvalidData rather
+        // than deferring to a downstream panic.
+        let bits_in_queue = u64::from_le_bytes(input[392..400].try_into().unwrap()) as usize;
+        if bits_in_queue > rate || (!squeezing && (bits_in_queue % 8 != 0 || bits_in_queue == rate)) {
+            return Err(SuspendableError::InvalidData);
+        }
 
         Ok(Self { state: KeccakState { buf, rate }, data_queue, rate, bits_in_queue, squeezing })
     }
@@ -501,5 +509,52 @@ mod keccak_tests {
 
         d.squeeze(&mut out);
         println!("n2: {:x?}", &out);
+    }
+
+    // Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt
+    // state whose bits_in_queue is not byte-aligned, or equals the rate, must be rejected as
+    // InvalidData rather than deserialized into a value that later panics in absorb() /
+    // pad_and_switch_to_squeezing_phase().
+    #[test]
+    fn from_serialized_state_rejects_corrupt_bits_in_queue() {
+        let rate = 1600 - ((KeccakSize::_256 as usize) << 1);
+
+        // A valid, mid-absorb (not squeezing) serialized state.
+        let mut d = KeccakDigest::new(KeccakSize::_256);
+        d.absorb(b"message");
+        assert!(!d.squeezing);
+        let mut good = [0u8; KECCAK_SERIALIZED_LEN];
+        d.serialize_state(&mut good);
+        assert!(KeccakDigest::from_serialized_state(&good, rate).is_ok());
+
+        // bits_in_queue lives at [392..400) as a little-endian u64 with squeezing at [400].
+        assert_eq!(good[400], 0, "test setup expects a non-squeezing state");
+        let set_biq = |state: &mut [u8; KECCAK_SERIALIZED_LEN], v: u64| {
+            state[392..400].copy_from_slice(&v.to_le_bytes());
+        };
+
+        // > rate -> rejected.
+        let mut corrupt = good;
+        set_biq(&mut corrupt, rate as u64 + 8);
+        assert!(matches!(
+            KeccakDigest::from_serialized_state(&corrupt, rate),
+            Err(SuspendableError::InvalidData)
+        ));
+
+        // == rate while not squeezing -> rejected (would trip the pad_and_switch debug_assert).
+        let mut corrupt = good;
+        set_biq(&mut corrupt, rate as u64);
+        assert!(matches!(
+            KeccakDigest::from_serialized_state(&corrupt, rate),
+            Err(SuspendableError::InvalidData)
+        ));
+
+        // Not byte-aligned while not squeezing -> rejected (would panic in absorb()).
+        let mut corrupt = good;
+        set_biq(&mut corrupt, 9);
+        assert!(matches!(
+            KeccakDigest::from_serialized_state(&corrupt, rate),
+            Err(SuspendableError::InvalidData)
+        ));
     }
 }

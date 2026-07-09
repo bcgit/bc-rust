@@ -51,6 +51,16 @@
   on one or more network round-trips and you wish to suspend to a cache and potentially transfer to a new host while
   waiting for network IO.
 
+## Breaking changes
+
+* The `Hash` trait now requires `Algorithm` as a supertrait (`trait Hash: Algorithm + Default`). Any
+  external implementor of `Hash` must now also implement `Algorithm`.
+* `bouncycastle_sha2::Sha512Internal` was renamed to `SHA512Internal` (the public type and the `SHA384`
+  / `SHA512` type aliases follow the all-caps convention).
+* The `MLDSATrait` verification method `verify_mu_internal(..) -> bool` is now public as
+  `verify_mu(..) -> Result<(), SignatureError>` (it also gained an optional pre-expanded `A_hat`
+  argument in the full `mldsa` crate). This supports external-mu / suspend-resume verification.
+
 ## Minor features / bug fixes
 
 * All public `*_out(.., out: &mut [u8])` functions now begin by zeroizing the entire output buffer with `.fill(0)`,

@@ -319,6 +319,7 @@ impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Inter
         let mut out_to_return = [0u8; SUSPENDED_SHA256_STATE_LEN];
 
         // insert the version tag
+        // infallible: add_lib_ver returns a slice of exactly SUSPENDED_SHA256_STATE_LEN - 3 = 105 bytes.
         let out: &mut [u8; 105] = add_lib_ver(&mut out_to_return).try_into().unwrap();
 
         // state.h: [u32; 8]
@@ -348,6 +349,7 @@ impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Inter
 
         // check the version tag
         // At the moment, we have no not_before version to specify.
+        // infallible: check_lib_ver returns a slice of exactly SUSPENDED_SHA256_STATE_LEN - 3 = 105 bytes.
         let input: &[u8; 105] = check_lib_ver(&serialized_state, None)?.try_into().unwrap();
 
         // state.h: [u32; 8]
