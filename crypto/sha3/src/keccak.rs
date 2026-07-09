@@ -433,7 +433,8 @@ impl KeccakDigest {
         // debug_assert in pad_and_switch_to_squeezing_phase(). Reject it here as InvalidData rather
         // than deferring to a downstream panic.
         let bits_in_queue = u64::from_le_bytes(input[392..400].try_into().unwrap()) as usize;
-        if bits_in_queue > rate || (!squeezing && (bits_in_queue % 8 != 0 || bits_in_queue == rate)) {
+        if bits_in_queue > rate || (!squeezing && (bits_in_queue % 8 != 0 || bits_in_queue == rate))
+        {
             return Err(SuspendableError::InvalidData);
         }
 
