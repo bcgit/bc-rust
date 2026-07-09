@@ -350,7 +350,7 @@ impl KeccakInternal {
 
 /*** State serialization ***/
 //
-// The SHA3 and SHAKE public objects have identical state: a [KeccakDigest] plus three pieces of
+// The SHA3 and SHAKE public objects have identical state: a [KeccakInternal] plus three pieces of
 // KDF metadata. The helpers below serialize that shared state so the `SerializableState` impls in
 // `sha3.rs` and `shake.rs` are just thin wrappers that add/check the library version header.
 

@@ -20,8 +20,16 @@
 //!
 //! The decoder ignores whitespace and "\x".
 
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
+
+// `encode` (returns `String`) and `decode` (returns `Vec<u8>`) live behind the default-on `alloc`
+// feature. `no_std` users should use `encode_out` / `decode_out`, which fill a caller `&mut [u8]`.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec, vec::Vec};
 
 use bouncycastle_utils::ct::Condition;
 
@@ -37,6 +45,9 @@ pub enum HexError {
 }
 
 /// One-shot encode from bytes to a hex-encoded string using a constant-time implementation.
+///
+/// `no_std` alternative: [encode_out], which writes into a caller-provided `&mut [u8]`.
+#[cfg(feature = "alloc")]
 pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
     let mut out = vec![0u8; input.as_ref().len() * 2];
     encode_out(input.as_ref(), &mut out).unwrap();
@@ -81,6 +92,9 @@ pub fn encode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
 
 /// One-shot decode from a hex string to a bytes using a constant-time implementation.
 /// ignores whitespace and \x
+///
+/// `no_std` alternative: [decode_out], which writes into a caller-provided `&mut [u8]`.
+#[cfg(feature = "alloc")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, HexError> {
     let inref = input.as_ref();
     let mut out: Vec<u8> = vec![0u8; inref.len() / 2];

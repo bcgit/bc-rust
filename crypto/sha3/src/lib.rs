@@ -139,9 +139,16 @@
 //! let h: Vec<u8> = sha3_resumed.do_final();
 //! ```
 
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 #![allow(private_bounds)]
+
+// The `Vec`/`Box`-returning convenience APIs (`hash`, `do_final`, `hash_xof`, `squeeze`, `derive_key`,
+// ...) live behind the default-on `alloc` feature. `no_std` users without an allocator should use the
+// `*_out(&mut [u8])` / `*_array::<N>()` APIs instead.
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 use crate::keccak::KeccakSize;
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};

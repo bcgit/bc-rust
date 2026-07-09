@@ -5,30 +5,36 @@ use crate::keccak::{
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::key_material;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+// `KeyMaterial` (the concrete type) is only used by the alloc-gated `derive_key_final_internal`.
+#[cfg(feature = "alloc")]
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, KDF, SecurityStrength, Suspendable};
 use bouncycastle_utils::{max, min};
+
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec, vec::Vec};
 
 /// Internal struct for SHA3.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
 pub struct SHA3Internal<PARAMS: SHA3Params> {
-    _params: std::marker::PhantomData<PARAMS>,
+    _params: core::marker::PhantomData<PARAMS>,
     keccak: KeccakInternal,
     kdf_key_type: KeyType,
     kdf_security_strength: SecurityStrength,
     kdf_entropy: usize,
 }
 
-// Note: don't need a zeroizing Drop here because all the sensitive info is in KeccakDigest, which has one.
+// Note: don't need a zeroizing Drop here because all the sensitive info is in KeccakInternal, which has one.
 
 impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     /// Get a new SHA3 instance, ready for use.
     pub fn new() -> Self {
         Self {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             keccak: KeccakInternal::new(PARAMS::SIZE),
             kdf_key_type: KeyType::Zeroized,
             kdf_security_strength: SecurityStrength::None,
@@ -63,6 +69,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         self.do_update(key.ref_to_bytes())
     }
 
+    #[cfg(feature = "alloc")]
     fn derive_key_final_internal(
         self,
         additional_input: &[u8],
@@ -144,6 +151,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
+    #[cfg(feature = "alloc")]
     fn hash(self, data: &[u8]) -> Vec<u8> {
         let mut output: Vec<u8> = vec![0u8; PARAMS::OUTPUT_LEN];
         _ = self.hash_internal(data, &mut output[..]);
@@ -160,6 +168,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         self.keccak.absorb(data)
     }
 
+    #[cfg(feature = "alloc")]
     fn do_final(self) -> Vec<u8> {
         let dbg_rslt_len = self.output_len();
         let mut output: Vec<u8> = vec![0u8; self.output_len()];
@@ -186,6 +195,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         bytes_written
     }
 
+    #[cfg(feature = "alloc")]
     fn do_final_partial_bits(
         self,
         partial_byte: u8,
@@ -235,6 +245,7 @@ impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
     /// Returns a [KeyMaterial].
     /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
     /// it requires full-entropy input that is at least the bit size (ie 256 bits for SHA3-256, etc).
+    #[cfg(feature = "alloc")]
     fn derive_key(
         mut self,
         key: &impl KeyMaterialTrait,
@@ -255,6 +266,7 @@ impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
         self.derive_key_out_final_internal(additional_input, output_key)
     }
 
+    #[cfg(feature = "alloc")]
     fn derive_key_from_multiple(
         mut self,
         keys: &[&impl KeyMaterialTrait],
@@ -318,7 +330,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
         Ok(SHA3Internal {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             keccak,
             kdf_key_type,
             kdf_security_strength,

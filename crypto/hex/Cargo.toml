@@ -3,6 +3,12 @@ name = "bouncycastle-hex"
 version = "0.1.2"
 edition.workspace = true
 
+[features]
+# `alloc` enables the `String`-returning `encode` and `Vec`-returning `decode`. The allocation-free
+# `encode_out`/`decode_out` (fill a caller `&mut [u8]`) work in `no_std` without it. On by default.
+default = ["alloc"]
+alloc = []
+
 [dependencies]
 bouncycastle-utils.workspace = true
 

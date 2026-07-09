@@ -3,13 +3,18 @@ name = "bouncycastle-factory"
 version = "0.1.2"
 edition.workspace = true
 
+# The factory is a convenience aggregation layer (and includes RNGFactory, which wraps the std-only
+# `rng` crate), so it always requires `alloc`: it enables the `alloc` feature on every internal
+# dependency unconditionally. Users needing `no_std` should depend on the individual primitive crates
+# directly with `default-features = false`. Note the factory types still expose the allocation-free
+# `*_array::<N>()` / `*_out(&mut [u8])` APIs via the core trait default methods.
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-hkdf.workspace = true
-bouncycastle-hmac.workspace = true
-bouncycastle-sha2.workspace = true
-bouncycastle-sha3.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-core = { workspace = true, features = ["alloc"] }
+bouncycastle-hkdf = { workspace = true, features = ["alloc"] }
+bouncycastle-hmac = { workspace = true, features = ["alloc"] }
+bouncycastle-sha2 = { workspace = true, features = ["alloc"] }
+bouncycastle-sha3 = { workspace = true, features = ["alloc"] }
+bouncycastle-rng = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

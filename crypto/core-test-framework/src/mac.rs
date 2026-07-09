@@ -64,6 +64,22 @@ impl TestFrameworkMAC {
         // Test .output_len()
         assert_eq!(output_len, out.len());
 
+        // Test ::mac_array() and ::do_final_array() (no_std alternatives).
+        // N = 64 is >= every supported MAC output length (and >= the FIPS minimum), so the tag lands
+        // in the first output_len bytes with a zero-padded tail.
+        let arr: [u8; 64] = M::new_allow_weak_key(key).unwrap().mac_array(input).unwrap();
+        assert_eq!(&arr[..expected_output.len()], expected_output, "mac_array digest mismatch");
+        assert!(arr[expected_output.len()..].iter().all(|&b| b == 0), "mac_array tail not zero-padded");
+
+        let mut mac = M::new_allow_weak_key(key).unwrap();
+        mac.do_update(input);
+        let arr: [u8; 64] = mac.do_final_array().unwrap();
+        assert_eq!(&arr[..expected_output.len()], expected_output, "do_final_array digest mismatch");
+        assert!(
+            arr[expected_output.len()..].iter().all(|&b| b == 0),
+            "do_final_array tail not zero-padded"
+        );
+
         // Test .init(), .do_update(), .do_mac_final_out()
         let mut mac = M::new_allow_weak_key(key).unwrap();
         mac.do_update(input);

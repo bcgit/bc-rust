@@ -81,17 +81,29 @@
 //     /// "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_="
 //     URLSafe,
 
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+// The entire base64 encoder/decoder API returns `String`/`Vec<u8>`, so it lives behind the
+// default-on `alloc` feature. base64 is inherently an allocating codec (there are currently no
+// streaming `_out` variants), so a `no_std` build without `alloc` exposes only the type definitions.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+#[cfg(feature = "alloc")]
+use alloc::{string::String, vec, vec::Vec};
+
+#[cfg(feature = "alloc")]
 use bouncycastle_utils::ct::Condition;
 
 /// One-shot encode from bytes to a base64-encoded string using a constant-time implementation.
+#[cfg(feature = "alloc")]
 pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
     Base64Encoder::new().do_final(input)
 }
 
 /// One-shot decode from a base64-encoded string to bytes using a constant-time implementation.
+#[cfg(feature = "alloc")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, Base64Error> {
     Base64Decoder::new(true).do_final(input)
 }
@@ -111,11 +123,13 @@ pub enum Base64Error {
 }
 
 /// The stateful base64 encoder that supports streaming.
+#[cfg(feature = "alloc")]
 pub struct Base64Encoder {
     buf: [u8; 3],
     vals_in_buf: usize,
 }
 
+#[cfg(feature = "alloc")]
 impl Base64Encoder {
     /// Create a new instance.
     pub fn new() -> Self {
@@ -188,7 +202,7 @@ impl Base64Encoder {
             if self.vals_in_buf == 1 {
                 out_buf[2] = b'=';
             }
-            out.push_str(std::str::from_utf8(&out_buf).unwrap());
+            out.push_str(core::str::from_utf8(&out_buf).unwrap());
         }
         out
     }
@@ -208,12 +222,14 @@ impl Base64Encoder {
 }
 
 /// The stateful base64 decoder that supports streaming.
+#[cfg(feature = "alloc")]
 pub struct Base64Decoder {
     buf: [u8; 4],
     vals_in_buf: usize,
     skip_whitespace: bool,
 }
 
+#[cfg(feature = "alloc")]
 impl Base64Decoder {
     /// Create a new instance.
     pub fn new(skip_whitespace: bool) -> Self {

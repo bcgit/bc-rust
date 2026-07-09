@@ -121,6 +121,9 @@ pub trait Sp80090ADrbg {
     /// not pass FIPS certification.
     ///
     /// Throws a [RNGError::InsufficientSeedEntropy] if `len` exceeds [SecurityStrength].
+    ///
+    /// `no_std` / no-alloc alternative: [Sp80090ADrbg::generate_out].
+    #[cfg(feature = "alloc")]
     fn generate(&mut self, additional_input: &[u8], len: usize) -> Result<Vec<u8>, RNGError>;
 
     /// As per [Sp80090ADrbg::generate], but writes to the provided output slice.
