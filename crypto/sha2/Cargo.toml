@@ -3,6 +3,12 @@ name = "bouncycastle-sha2"
 version = "0.1.1"
 edition.workspace = true
 
+[features]
+# `alloc` enables the `Vec`-returning convenience APIs (and turns on the same feature in
+# bouncycastle-core). On by default; disable with `default-features = false` for `no_std` use.
+default = ["alloc"]
+alloc = ["bouncycastle-core/alloc"]
+
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true

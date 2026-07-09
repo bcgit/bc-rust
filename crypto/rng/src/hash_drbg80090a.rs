@@ -350,6 +350,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         Ok(())
     }
 
+    #[cfg(feature = "alloc")]
     fn generate(&mut self, additional_input: &[u8], len: usize) -> Result<Vec<u8>, RNGError> {
         let mut out = vec![0u8; len];
         self.generate_out(additional_input, &mut out)?;
@@ -513,6 +514,7 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
         Ok(u32::from_le_bytes(out))
     }
 
+    #[cfg(feature = "alloc")]
     fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
         self.generate("next_bytes".as_bytes(), len)
     }

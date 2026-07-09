@@ -3,6 +3,20 @@ name = "bouncycastle-hmac"
 version = "0.1.1"
 edition.workspace = true
 
+[features]
+# `alloc` enables the `Vec`-returning convenience APIs (`mac`, `do_final`) and turns on the same
+# feature in bouncycastle-core. The allocation-free streaming / `_out` / `_array::<N>()` APIs work
+# without it. On by default; disable with `default-features = false` for `no_std` use.
+default = ["alloc"]
+# Forward `alloc` to every internal dependency so that the `alloc` gates stay consistent across the
+# dependency graph (otherwise a dep's default features could turn on `core/alloc` while hmac's own
+# `alloc` is off, leaving the gated trait method unimplemented).
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-sha2/alloc",
+    "bouncycastle-sha3/alloc",
+]
+
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-sha2.workspace = true

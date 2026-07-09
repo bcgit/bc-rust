@@ -65,8 +65,15 @@
 //! let h: Vec<u8> = sha2_resumed.do_final();
 //! ```
 
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![allow(private_bounds)]
+
+// The `Vec`-returning convenience APIs (`hash`, `do_final`, ...) live behind the default-on `alloc`
+// feature. `no_std` users without an allocator should use the `*_out(&mut [u8])` / `*_array::<N>()`
+// APIs from the [bouncycastle_core::traits::Hash] trait instead.
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 mod sha256;
 mod sha512;

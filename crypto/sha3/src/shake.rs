@@ -1,14 +1,22 @@
 use crate::SHAKEParams;
 use crate::keccak::{
-    KeccakDigest, KeccakSize, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN,
-    deserialize_sha3_family_state, serialize_sha3_family_state,
+    KeccakDigest, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
+    serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::key_material;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+// `KeyMaterial` and `KeccakSize` are only used by the alloc-gated `derive_key_final_internal`.
+#[cfg(feature = "alloc")]
+use crate::keccak::KeccakSize;
+#[cfg(feature = "alloc")]
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, KDF, SecurityStrength, Suspendable, XOF};
 use bouncycastle_utils::{max, min};
+
+#[cfg(feature = "alloc")]
+use alloc::{boxed::Box, vec, vec::Vec};
 
 /// Note: FIPS 202 section 7 states:
 ///
@@ -26,7 +34,7 @@ use bouncycastle_utils::{max, min};
 /// as such if the provided message includes the requested length, SHAKE does not implement the [Hash] trait.
 #[derive(Clone)]
 pub struct SHAKE<PARAMS: SHAKEParams> {
-    _phantomdata: std::marker::PhantomData<PARAMS>,
+    _phantomdata: core::marker::PhantomData<PARAMS>,
     keccak: KeccakDigest,
     kdf_key_type: KeyType,
     kdf_security_strength: SecurityStrength,
@@ -43,7 +51,7 @@ impl<PARAMS: SHAKEParams> Algorithm for SHAKE<PARAMS> {
 impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
     pub fn new() -> Self {
         Self {
-            _phantomdata: std::marker::PhantomData,
+            _phantomdata: core::marker::PhantomData,
             keccak: KeccakDigest::new(PARAMS::SIZE),
             kdf_key_type: KeyType::Zeroized,
             kdf_security_strength: SecurityStrength::None,
@@ -52,6 +60,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
     }
 
     /// Swallows errors and simply returns an empty Vec<u8> if the hashes fails for whatever reason.
+    #[cfg(feature = "alloc")]
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.absorb(data);
         self.squeeze(result_len)
@@ -83,6 +92,7 @@ impl<PARAMS: SHAKEParams> SHAKE<PARAMS> {
         self.absorb(key.ref_to_bytes())
     }
 
+    #[cfg(feature = "alloc")]
     fn derive_key_final_internal(
         mut self,
         additional_input: &[u8],
@@ -176,7 +186,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKE<PARAMS
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
         Ok(SHAKE {
-            _phantomdata: std::marker::PhantomData,
+            _phantomdata: core::marker::PhantomData,
             keccak,
             kdf_key_type,
             kdf_security_strength,
@@ -193,6 +203,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
     /// To produce longer keys, use [KDF::derive_key_out].
     /// To produce shorter keys, either use [KDF::derive_key_out] or truncate this result down with
     /// [KeyMaterial::truncate].
+    #[cfg(feature = "alloc")]
     fn derive_key(
         mut self,
         key: &impl KeyMaterialTrait,
@@ -220,6 +231,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKE<PARAMS> {
     /// Returns a 32 byte key for SHAKE128 and a 64 byte key for SHAKE256.
     /// To produce longer keys, use [KDF::derive_key_out].
     /// To produce shorter keys, either use [KDF::derive_key_out] or truncate this result down with [KeyMaterial::truncate].
+    #[cfg(feature = "alloc")]
     fn derive_key_from_multiple(
         mut self,
         keys: &[&impl KeyMaterialTrait],
@@ -255,6 +267,7 @@ impl<PARAMS: SHAKEParams> Default for SHAKE<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
+    #[cfg(feature = "alloc")]
     fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.hash_internal(data, result_len)
     }
@@ -294,6 +307,7 @@ impl<PARAMS: SHAKEParams> XOF for SHAKE<PARAMS> {
         Ok(())
     }
 
+    #[cfg(feature = "alloc")]
     fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out: Vec<u8> = vec![0u8; num_bytes];
         self.squeeze_out(&mut out);

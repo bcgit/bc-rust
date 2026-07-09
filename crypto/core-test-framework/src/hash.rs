@@ -30,6 +30,20 @@ impl TestFrameworkHash {
         H::default().hash_out(input, &mut output_buf);
         assert_eq!(output_buf, expected_output);
 
+        /*** fn hash_array<const N: usize>(self, data: &[u8]) -> [u8; N]  (no_std alternative) ***/
+        // Use N = 64, the maximum output length across all hashes; hash_array zero-pads the tail
+        // beyond output_len, so the digest lands in the first OUTPUT_LEN bytes.
+        let arr: [u8; 64] = H::default().hash_array(input);
+        assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "hash_array digest mismatch");
+        assert!(arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0), "hash_array tail not zero-padded");
+
+        /*** fn do_final_array<const N: usize>(self) -> [u8; N]  (no_std alternative) ***/
+        let mut message_digest = H::default();
+        message_digest.do_update(input);
+        let arr: [u8; 64] = message_digest.do_final_array();
+        assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "do_final_array digest mismatch");
+        assert!(arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0), "do_final_array tail not zero-padded");
+
         /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
         /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
 

@@ -3,6 +3,17 @@ name = "bouncycastle-hkdf"
 version = "0.1.1"
 edition.workspace = true
 
+[features]
+# `alloc` enables the `Box<dyn KeyMaterialTrait>`-returning `derive_key`/`derive_key_from_multiple`.
+# Forwarded to every internal dependency to keep the `alloc` gates consistent across the graph.
+# On by default; disable with `default-features = false` for `no_std` use.
+default = ["alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-hmac/alloc",
+    "bouncycastle-sha2/alloc",
+]
+
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-hmac.workspace = true

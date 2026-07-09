@@ -4,6 +4,7 @@ version = "0.1.1"
 edition.workspace = true
 
 [dependencies]
-bouncycastle-core.workspace = true
+# The KAT test framework exercises the `Vec`/`Box`-returning trait APIs, so it always needs `alloc`.
+bouncycastle-core = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]

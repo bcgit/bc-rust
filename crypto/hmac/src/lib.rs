@@ -180,9 +180,16 @@
 //! let h: Vec<u8> = hmac_resumed.do_final();
 //! ```
 
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![allow(incomplete_features)] // because at time of writing, generic_const_exprs is not a stable feature
 #![feature(generic_const_exprs)]
+
+// The `Vec`-returning convenience APIs (`mac`, `do_final`) live behind the default-on `alloc`
+// feature. The streaming API and the `mac_out`/`do_final_out`/`mac_array::<N>()` APIs are all
+// allocation-free and work in `no_std` without it.
+#[cfg(feature = "alloc")]
+extern crate alloc;
 
 use bouncycastle_core::errors::{KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
@@ -195,6 +202,9 @@ use bouncycastle_sha2::{
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SUSPENDED_SHA3_STATE_LEN};
 use bouncycastle_utils::ct;
 use core::fmt::{Debug, Display, Formatter};
+
+#[cfg(feature = "alloc")]
+use alloc::{vec, vec::Vec};
 
 /*** String constants ***/
 ///
@@ -281,6 +291,10 @@ impl Algorithm for HMAC_SHA3_512 {
 // largest block length across all supported hashes, so it is always large enough.
 const LARGEST_HASHER_BLOCK_LEN: usize = 144;
 
+// The largest output length across all supported hashes (SHA-512 / SHA3-512 = 64 bytes). Used to
+// size allocation-free stack scratch buffers so that the streaming / `_out` APIs work in `no_std`.
+const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
+
 // HMAC implements RFC 2104.
 #[derive(Clone)]
 pub struct HMAC<HASH: Hash + Default, const KEY_BUF_LEN: usize = LARGEST_HASHER_BLOCK_LEN> {
@@ -300,13 +314,13 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Drop for HMAC<HASH, KEY_BUF
 }
 
 impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Debug for HMAC<HASH, KEY_BUF_LEN> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
     }
 }
 
 impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Display for HMAC<HASH, KEY_BUF_LEN> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
     }
 }
@@ -328,20 +342,24 @@ pub const MIN_FIPS_DIGEST_LEN: usize = 4; // 32 / 8;
 
 impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
     fn pad_key_into_hasher(&mut self, padding: u8) {
-        // TODO: it would be nice to be able to statically extract the length of HASH and not need a Vec or over-sized array here.
-        // TODO: make this no_std-friendly
-        let mut padded = vec![0u8; self.hasher.block_bitlen() / 8];
+        // Allocation-free scratch: the padded key block is exactly `block_len` bytes (`block_len` is
+        // never larger than [LARGEST_HASHER_BLOCK_LEN]), so use an oversized stack buffer sliced down
+        // to `block_len`. This keeps the streaming API `no_std`-friendly (no `Vec`).
+        let block_len = self.hasher.block_bitlen() / 8;
+        let mut padded_buf = [0u8; LARGEST_HASHER_BLOCK_LEN];
+        let padded = &mut padded_buf[..block_len];
 
         padded[..self.key_len].copy_from_slice(&self.key[..self.key_len]);
 
-        // XXX: easier way to xor over Vec?
-        for entry in &mut padded {
+        // Per RFC 2104 Section 2, the key is zero-padded to the block length and then XORed with the
+        // pad byte over the entire block.
+        for entry in padded.iter_mut() {
             *entry ^= padding;
         }
 
         // Per RFC 2104 Section 2, write the padded key into the stream prior
         // to any other data.
-        self.hasher.do_update(&padded)
+        self.hasher.do_update(padded)
     }
 
     /// Per RFC 2104 Section 2, if the application key exceeds the block
@@ -412,16 +430,19 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
         // scratch pad here: if we're truncating the output but not
         // truncating the underlying hashes, we'd lose bytes and compute an
         // invalid outer hashes.
-        // TODO: rework this to be no_std friendly (ie no vec!)
-        let mut ihash = vec![0u8; self.hasher.output_len()];
+        // Allocation-free scratch: the inner digest is exactly `output_len` bytes (never larger than
+        // [LARGEST_HASHER_OUTPUT_LEN]), so use an oversized stack buffer sliced down to `output_len`.
+        let out_len = self.hasher.output_len();
+        let mut ihash_buf = [0u8; LARGEST_HASHER_OUTPUT_LEN];
+        let ihash = &mut ihash_buf[..out_len];
         // `HMAC` implements `Drop` (required by `Secret`), so we cannot move `self.hasher` out
         // directly. Swap in a fresh default and consume the taken-out hasher instead.
-        core::mem::take(&mut self.hasher).do_final_out(&mut ihash);
+        core::mem::take(&mut self.hasher).do_final_out(ihash);
 
         // ohash
         self.hasher = HASH::default();
         self.pad_key_into_hasher(OPAD_BYTE);
-        self.hasher.do_update(&ihash);
+        self.hasher.do_update(ihash);
         Ok(core::mem::take(&mut self.hasher).do_final_out(out))
     }
 }
@@ -448,6 +469,7 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
         self.hasher.output_len()
     }
 
+    #[cfg(feature = "alloc")]
     fn mac(self, data: &[u8]) -> Vec<u8> {
         let mut out = vec![0_u8; self.hasher.output_len()];
         let bytes_written = self.mac_out(data, &mut out).expect("HMAC::mac(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
@@ -470,6 +492,7 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
         self.hasher.do_update(data)
     }
 
+    #[cfg(feature = "alloc")]
     fn do_final(self) -> Vec<u8> {
         let mut out = vec![0_u8; self.hasher.output_len()];
         self.do_final_internal_out(&mut out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
@@ -483,8 +506,10 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
     }
 
     fn do_verify_final(self, mac: &[u8]) -> bool {
-        let mut out = vec![0_u8; HASH::default().output_len()];
-        let output_len = self.do_final_internal_out(&mut out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
+        // Allocation-free scratch buffer (see [LARGEST_HASHER_OUTPUT_LEN]).
+        let mut out_buf = [0_u8; LARGEST_HASHER_OUTPUT_LEN];
+        let out = &mut out_buf[..HASH::default().output_len()];
+        let output_len = self.do_final_internal_out(out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
         if mac.len() != output_len {
             return false;
         }
