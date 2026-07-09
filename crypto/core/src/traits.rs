@@ -5,6 +5,14 @@ use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
 
+// `Vec`/`Box` come from the `alloc` crate under `#![no_std]` and are gated behind the (default-on)
+// `alloc` feature. When the feature is disabled, use the allocation-free alternatives: the
+// `*_out(&mut [u8])` fill methods, or the `*_array::<N>()` methods that return a fixed-size array.
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 // Imports needed for docs
 #[allow(unused_imports)]
 use crate::key_material::KeyMaterial;
@@ -37,7 +45,7 @@ pub trait AlgorithmOID {
 /// as AEADs or stream ciphers may need to stick extra data either at the beginning or end of the ciphertext.
 /// See the documentation of the underlying implementation for more details.
 pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Algorithm {
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     /// A one-shot API to encrypt some plaintext with the given key.
     /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
     /// Returns a tuple containing the initialization data and the ciphertext.
@@ -57,7 +65,7 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Alg
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError>;
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
     /// This is not available if building for no_std.
@@ -153,7 +161,7 @@ pub trait BlockCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BL
 pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>:
     SymmetricCipher<KEY_LEN, NONCE_LEN> + Sized
 {
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     /// A one-shot API to encrypt some plaintext with the given key.
     /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
     /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
@@ -183,7 +191,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
     fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError>;
-    #[cfg(feature = "std")]
+    #[cfg(feature = "alloc")]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
     fn aead_decrypt(
@@ -280,7 +288,22 @@ pub trait Hash: Algorithm + Default {
 
     /// A static one-shot API that hashes the provided data.
     /// `data` can be of any length, including zero bytes.
+    #[cfg(feature = "alloc")]
     fn hash(self, data: &[u8]) -> Vec<u8>;
+
+    /// A static one-shot, `no_std`-friendly API that hashes the provided data and returns the digest
+    /// in a caller-sized array. This is the allocation-free counterpart to [Hash::hash].
+    ///
+    /// `N` should equal [Hash::output_len]; the same truncation / zero-padding rules as
+    /// [Hash::hash_out] apply if `N` differs from the output length.
+    fn hash_array<const N: usize>(self, data: &[u8]) -> [u8; N]
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; N];
+        let _ = self.hash_out(data, &mut output);
+        output
+    }
 
     /// A static one-shot API that hashes the provided data into the provided output slice.
     /// `data` can be of any length, including zero bytes.
@@ -295,7 +318,23 @@ pub trait Hash: Algorithm + Default {
 
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
+    #[cfg(feature = "alloc")]
     fn do_final(self) -> Vec<u8>;
+
+    /// Finish absorbing input and produce the hashes output in a caller-sized array.
+    /// This is the allocation-free, `no_std`-friendly counterpart to [Hash::do_final].
+    /// Consumes self, so this must be the final call to this object.
+    ///
+    /// `N` should equal [Hash::output_len]; the same truncation / zero-padding rules as
+    /// [Hash::do_final_out] apply if `N` differs from the output length.
+    fn do_final_array<const N: usize>(self) -> [u8; N]
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; N];
+        let _ = self.do_final_out(&mut output);
+        output
+    }
 
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
@@ -311,13 +350,32 @@ pub trait Hash: Algorithm + Default {
 
     /// The same as [`Hash::do_final`], but allows for supplying a partial byte as the last input.
     /// Assumes that the input is in the least significant bits (big endian).
+    #[cfg(feature = "alloc")]
     fn do_final_partial_bits(
         self,
         partial_byte: u8,
         num_partial_bits: usize,
     ) -> Result<Vec<u8>, HashError>;
 
-    /// The same as [`Hash::do_final_out`], but allows for supplying a partial byte as the last input.
+    /// The same as [Hash::do_final_partial_bits], but returns the output in a caller-sized array.
+    /// This is the allocation-free, `no_std`-friendly counterpart.
+    ///
+    /// `N` should equal [Hash::output_len]; the same truncation / zero-padding rules as
+    /// [Hash::do_final_partial_bits_out] apply if `N` differs from the output length.
+    fn do_final_partial_bits_array<const N: usize>(
+        self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+    ) -> Result<[u8; N], HashError>
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; N];
+        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
+        Ok(output)
+    }
+
+    /// The same as [Hash::do_final_out], but allows for supplying a partial byte as the last input.
     /// Assumes that the input is in the least significant bits (big endian).
     /// will be placed in the first [`Hash::output_len`] bytes.
     /// The entire output buffer is zeroized before the hash output is written.
@@ -376,6 +434,9 @@ pub trait KDF: Default {
     ///
     /// Output length: this function will create a KeyMaterial populated with the default output length
     /// of the underlying hash primitive.
+    ///
+    /// `no_std` alternative: use [KDF::derive_key_out] to fill a caller-provided [KeyMaterial].
+    #[cfg(feature = "alloc")]
     fn derive_key(
         self,
         key: &impl KeyMaterialTrait,
@@ -416,6 +477,9 @@ pub trait KDF: Default {
     ///
     /// Output length: this function will create a KeyMaterial populated with the default output length
     /// of the underlying hash primitive.
+    ///
+    /// `no_std` alternative: use [KDF::derive_key_from_multiple_out] to fill a caller-provided [KeyMaterial].
+    #[cfg(feature = "alloc")]
     fn derive_key_from_multiple(
         self,
         keys: &[&impl KeyMaterialTrait],
@@ -591,7 +655,22 @@ pub trait MAC: Sized {
     /// ```text
     /// MACError::KeyMaterialError(KeyMaterialError::SecurityStrength("HMAC::init(): provided key has a lower security strength than the instantiated HMAC")
     /// ```
+    #[cfg(feature = "alloc")]
     fn mac(self, data: &[u8]) -> Vec<u8>;
+
+    /// One-shot, `no_std`-friendly API that computes a MAC for the provided data and returns it in a
+    /// caller-sized array. This is the allocation-free counterpart to [MAC::mac].
+    ///
+    /// `N` should equal [MAC::output_len]; the same rules as [MAC::mac_out] apply (including the
+    /// possible [MACError::InvalidLength] for undersized buffers).
+    fn mac_array<const N: usize>(self, data: &[u8]) -> Result<[u8; N], MACError>
+    where
+        Self: Sized,
+    {
+        let mut out = [0u8; N];
+        self.mac_out(data, &mut out)?;
+        Ok(out)
+    }
 
     /// One-shot API that computes a MAC for the provided data and writes it into the provided output slice.
     /// `data` can be of any length, including zero bytes.
@@ -622,7 +701,22 @@ pub trait MAC: Sized {
     fn do_update(&mut self, data: &[u8]);
 
     /// Finish absorbing input and produce the MAC value.
+    #[cfg(feature = "alloc")]
     fn do_final(self) -> Vec<u8>;
+
+    /// The allocation-free, `no_std`-friendly counterpart to [MAC::do_final]: returns the MAC value
+    /// in a caller-sized array. Consumes self, so this must be the final call to this object.
+    ///
+    /// `N` should equal [MAC::output_len]; the same rules as [MAC::do_final_out] apply (including the
+    /// possible [MACError::InvalidLength] for undersized buffers).
+    fn do_final_array<const N: usize>(self) -> Result<[u8; N], MACError>
+    where
+        Self: Sized,
+    {
+        let mut out = [0u8; N];
+        self.do_final_out(&mut out)?;
+        Ok(out)
+    }
 
     /// Depending on the underlying MAC implementation, NIST may require that the library enforce
     /// a minimum length on the mac output value. See documentation for the underlying implementation
@@ -751,7 +845,22 @@ pub trait RNG {
     fn next_int(&mut self) -> Result<u32, RNGError>;
 
     /// Returns the number of requested bytes.
+    #[cfg(feature = "alloc")]
     fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError>;
+
+    /// The allocation-free, `no_std`-friendly counterpart to [RNG::next_bytes]: returns `N` random
+    /// bytes in a fixed-size array.
+    ///
+    /// Bounded `where Self: Sized` so that adding this generic method does not make [RNG]
+    /// dyn-incompatible: `&mut dyn RNG` is used widely (e.g. [KEMEncapsulator::encaps_rng]).
+    fn next_bytes_array<const N: usize>(&mut self) -> Result<[u8; N], RNGError>
+    where
+        Self: Sized,
+    {
+        let mut out = [0u8; N];
+        self.next_bytes_out(&mut out)?;
+        Ok(out)
+    }
 
     /// Returns the number of bytes written.
     /// The entire output buffer is zeroized before the random bytes are written.
@@ -1058,7 +1167,19 @@ pub trait SignatureVerifier<
 /// distinguishing attacks should consider adding a cryptographic salt to diversify the inputs.
 pub trait XOF: Default {
     /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
+    #[cfg(feature = "alloc")]
     fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8>;
+
+    /// The allocation-free, `no_std`-friendly counterpart to [XOF::hash_xof]: digests the input data
+    /// and produces exactly `N` bytes of output in a fixed-size array.
+    fn hash_xof_array<const N: usize>(self, data: &[u8]) -> [u8; N]
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; N];
+        let _ = self.hash_xof_out(data, &mut output);
+        output
+    }
 
     /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
     /// Fills the provided output slice.
@@ -1076,7 +1197,19 @@ pub trait XOF: Default {
     ) -> Result<(), HashError>;
 
     /// Can be called multiple times.
+    #[cfg(feature = "alloc")]
     fn squeeze(&mut self, num_bytes: usize) -> Vec<u8>;
+
+    /// The allocation-free, `no_std`-friendly counterpart to [XOF::squeeze]: squeezes exactly `N`
+    /// bytes into a fixed-size array. Can be called multiple times.
+    fn squeeze_array<const N: usize>(&mut self) -> [u8; N]
+    where
+        Self: Sized,
+    {
+        let mut output = [0u8; N];
+        let _ = self.squeeze_out(&mut output);
+        output
+    }
 
     /// Can be called multiple times.
     /// Fills the provided output slice.

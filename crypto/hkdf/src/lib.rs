@@ -190,14 +190,22 @@
 //! let _prk = hkdf.do_extract_final().unwrap();
 //! ```
 
+#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+// The `Box<dyn KeyMaterialTrait>`-returning `derive_key` / `derive_key_from_multiple` live behind the
+// default-on `alloc` feature. `no_std` users should use the `derive_key_out` / `derive_key_from_multiple_out`
+// APIs that fill a caller-provided `KeyMaterial` instead.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material;
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
-};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
+// Only used by the alloc-gated `derive_key` / `derive_key_from_multiple`.
+#[cfg(feature = "alloc")]
+use bouncycastle_core::key_material::KeyMaterial512;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
     Hash, HashAlgParams, KDF, MAC, SecurityStrength, SuspendableKeyed,
@@ -205,7 +213,10 @@ use bouncycastle_core::traits::{
 use bouncycastle_hmac::{HMAC, SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA512_STATE_LEN};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{max, min};
-use std::marker::PhantomData;
+use core::marker::PhantomData;
+
+#[cfg(feature = "alloc")]
+use alloc::boxed::Box;
 // Imports needed only for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::XOF;
@@ -708,6 +719,7 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
 impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
     /// This provides a fixed-length output, which may be truncated as needed.
+    #[cfg(feature = "alloc")]
     fn derive_key(
         self,
         key: &impl KeyMaterialTrait,
@@ -746,6 +758,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
     /// Therefore, derive_key_from_multiple(&[KeyMaterial0::new(), &key], &info) is equivalent to derive_key(&key, &info).
     ///
     /// This provides a fixed-length output, which may be truncated as needed.
+    #[cfg(feature = "alloc")]
     fn derive_key_from_multiple(
         self,
         keys: &[&impl KeyMaterialTrait],

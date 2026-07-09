@@ -5,6 +5,9 @@ use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
 
+#[cfg(feature = "alloc")]
+use alloc::{vec, vec::Vec};
+
 const SHA256_K: [u32; 64] = [
     0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1, 0x923F82A4, 0xAB1C5ED5,
     0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3, 0x72BE5D74, 0x80DEB1FE, 0x9BDC06A7, 0xC19BF174,
@@ -68,7 +71,7 @@ impl<PARAMS: SHA2Params> Sha256State<PARAMS> {
                     0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C,
                     0x1F83D9AB, 0x5BE0CD19,
                 ]);
-                Self { _params: std::marker::PhantomData, h }
+                Self { _params: core::marker::PhantomData, h }
             }
             _ => panic!("Invalid SHA-2 bit size: {}", PARAMS::OUTPUT_LEN),
         }
@@ -188,6 +191,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
+    #[cfg(feature = "alloc")]
     fn hash(self, data: &[u8]) -> Vec<u8> {
         let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
         self.hash_out(data, &mut output);
@@ -234,6 +238,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
         self.x_buf_off = remaining;
     }
 
+    #[cfg(feature = "alloc")]
     fn do_final(self) -> Vec<u8> {
         let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
         self.do_final_out(&mut output);
@@ -277,6 +282,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
     /// TODO: This is defined in FIPS 180-4 s. 5.1.2
     /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
     /// TODO: It can be implemented if required
+    #[cfg(feature = "alloc")]
     #[allow(unused)]
     fn do_final_partial_bits(
         self,

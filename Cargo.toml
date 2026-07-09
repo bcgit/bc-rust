@@ -9,21 +9,24 @@ version = "0.1.3"
 
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
-bouncycastle-base64 = { path = "./crypto/base64" }
-bouncycastle-core = { path = "crypto/core" }
-bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
+bouncycastle-base64 = { path = "./crypto/base64", default-features = false }
+# `default-features = false` here (rather than on each member) is required so that individual
+# crates can opt out of the `alloc` feature for `no_std` builds; members re-enable it through
+# their own `alloc` feature. Building the whole workspace keeps `alloc` on via feature unification.
+bouncycastle-core = { path = "crypto/core", default-features = false }
+bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", default-features = false }
 bouncycastle-factory = { path = "./crypto/factory" }
-bouncycastle-hex = { path = "./crypto/hex" }
-bouncycastle-hkdf = { path = "./crypto/hkdf" }
-bouncycastle-hmac = { path = "./crypto/hmac" }
-bouncycastle-mlkem = { path = "./crypto/mlkem" }
-bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory" }
-bouncycastle-mldsa = { path = "./crypto/mldsa" }
-bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory" }
-bouncycastle-rng = { path = "./crypto/rng" }
-bouncycastle-sha2 = { path = "./crypto/sha2" }
-bouncycastle-sha3 = { path = "./crypto/sha3" }
-bouncycastle-utils = { path = "./crypto/utils" }
+bouncycastle-hex = { path = "./crypto/hex", default-features = false }
+bouncycastle-hkdf = { path = "./crypto/hkdf", default-features = false }
+bouncycastle-hmac = { path = "./crypto/hmac", default-features = false }
+bouncycastle-mlkem = { path = "./crypto/mlkem", default-features = false }
+bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory", default-features = false }
+bouncycastle-mldsa = { path = "./crypto/mldsa", default-features = false }
+bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory", default-features = false }
+bouncycastle-rng = { path = "./crypto/rng", default-features = false }
+bouncycastle-sha2 = { path = "./crypto/sha2", default-features = false }
+bouncycastle-sha3 = { path = "./crypto/sha3", default-features = false }
+bouncycastle-utils = { path = "./crypto/utils", default-features = false }
 
 
 # *** External Dependencies ***
@@ -40,17 +43,20 @@ name = "bouncycastle"
 version.workspace = true
 edition.workspace = true
 
+# The umbrella crate re-exports the whole library for downstream users who want everything in one
+# dependency, so it enables `alloc` on the primitive crates whose workspace deps default it off.
+# (base64/hex/hkdf/rng/factory already default `alloc` on.)
 [dependencies]
 bouncycastle-base64.workspace = true
-bouncycastle-core.workspace = true
+bouncycastle-core = { workspace = true }#, features = ["alloc"] }
 bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-hkdf.workspace = true
-bouncycastle-hmac.workspace = true
+bouncycastle-hmac = { workspace = true }#, features = ["alloc"] }
 bouncycastle-mldsa.workspace = true
 bouncycastle-mldsa-lowmemory.workspace = true
 bouncycastle-mlkem.workspace = true
 bouncycastle-mlkem-lowmemory.workspace = true
 bouncycastle-rng.workspace = true
-bouncycastle-sha2.workspace = true
-bouncycastle-sha3.workspace = true
+bouncycastle-sha2 = { workspace = true }#, features = ["alloc"] }
+bouncycastle-sha3 = { workspace = true }#, features = ["alloc"] }

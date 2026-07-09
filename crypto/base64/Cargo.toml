@@ -3,6 +3,12 @@ name = "bouncycastle-base64"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# `alloc` enables the (entire) `String`/`Vec`-returning encoder/decoder API. On by default; a
+# `no_std` build without it exposes only the type definitions (there are no streaming `_out` variants).
+default = ["alloc"]
+alloc = []
+
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true

@@ -3,6 +3,14 @@ name = "bouncycastle-rng"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# `alloc` enables the `Vec`-returning `next_bytes` / `generate` APIs. Kept consistent with the
+# (gated) `RNG::next_bytes` trait method. Note this crate is not `no_std` (it needs OS entropy via
+# `getrandom`); the feature only toggles the `Vec`-returning convenience methods. On by default.
+default = ["alloc"]
+# Forward to every internal dep so the `alloc` gates stay consistent across the graph.
+alloc = ["bouncycastle-core/alloc", "bouncycastle-sha2/alloc"]
+
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-sha2.workspace = true
