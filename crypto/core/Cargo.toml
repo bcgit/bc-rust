@@ -1,7 +1,14 @@
 [package]
 name = "bouncycastle-core"
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
+
+[features]
+# `std` gates the ergonomic, allocating (`Vec`-returning) one-shot APIs. It is on by
+# default today; a future `--no-default-features` build is what will let `core` become
+# `#![no_std]` (see the TODO at the top of `src/lib.rs`).
+default = ["std"]
+std = []
 
 [dependencies]
 bouncycastle-utils.workspace = true

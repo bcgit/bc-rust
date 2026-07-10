@@ -873,7 +873,7 @@ pub trait MLKEMTrait<
         pk: &MLKEMPublicKeyExpanded<k, PK, PK_LEN>,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
 
-    /// Same as [KEM::encaps], but acts on an [MLKEMPublicKeyExpanded] and uses a provided RNG.
+    /// Same as [KEMEncapsulator::encaps], but acts on an [MLKEMPublicKeyExpanded] and uses a provided RNG.
     fn encaps_for_expanded_key_rng(
         pk: &MLKEMPublicKeyExpanded<k, PK, PK_LEN>,
         rng: &mut dyn RNG,

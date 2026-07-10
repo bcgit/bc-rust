@@ -32,7 +32,7 @@ Where the behaviour of a function is critical to test but cannot be tested from 
 private function, in-line tests in the source file should be used.
 
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
-behaviours and error conditions that are comment to all implementations of that trait.
+behaviours and error conditions that are common to all implementations of that trait.
 
 All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
 
@@ -60,6 +60,17 @@ certification. Any deviations from the spec should be noted and explained / just
 yourself whether this function would take 6-months-from-now-you more than 10 minutes to understand thoroughly, and are
 there comments you could add that would help future you get back up to speed faster about what this code is doing and
 which parts were done for a very specific reason and should not be changed on a whim.
+
+## Naming Conventions
+
+All normal rust naming convensions from clippy apply. In addition, some library-specific naming conventions:
+
+* In constants, "LEN" is the length of a value in bytes (typically used for sizing arrays), whereas "SIZE" is a value in
+  bits (typically used as a security parameter). For example SHA256 could have constants `HASH_SIZE = 256` and
+  `HASH_LEN = 32`.
+* Functions that are part of a stateful streaming api should be named `do_*()`.
+* We use "pk" for public key and "sk" for secret key / private key. (some other libraries use "pub" and "priv", but "
+  pub" is a keyword in rust, and "pubkey / privkey" is verbose :P )
 
 ## APIs
 

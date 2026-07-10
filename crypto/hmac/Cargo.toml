@@ -1,10 +1,11 @@
 [package]
 name = "bouncycastle-hmac"
-version = "0.1.1"
+version = "0.1.2"
 edition.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
+bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-utils.workspace = true
@@ -13,7 +14,6 @@ bouncycastle-utils.workspace = true
 bouncycastle-core-test-framework.workspace = true
 criterion.workspace = true
 bouncycastle-hex.workspace = true
-bouncycastle-rng.workspace = true
 
 [[bench]]
 name = "hmac_benches"

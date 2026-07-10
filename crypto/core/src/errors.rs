@@ -93,7 +93,32 @@ pub enum SignatureError {
     RNGError(RNGError),
 }
 
+#[derive(Debug)]
+pub enum SymmetricCipherError {
+    GenericError(&'static str),
+    AEADTagCheckFailed,
+    DecryptionFailed,
+    /// Indicates that the output buffer is not large enough to hold the requested output.
+    /// The usize represents the required buffer length.
+    IncorrectOutputBufferLength(&'static str, usize),
+    KeyMaterialError(KeyMaterialError),
+    RNGError(RNGError),
+    StateError(&'static str),
+}
+
 /*** Promotion functions ***/
+impl From<KeyMaterialError> for SymmetricCipherError {
+    fn from(e: KeyMaterialError) -> SymmetricCipherError {
+        Self::KeyMaterialError(e)
+    }
+}
+
+impl From<RNGError> for SymmetricCipherError {
+    fn from(e: RNGError) -> SymmetricCipherError {
+        Self::RNGError(e)
+    }
+}
+
 impl From<KeyMaterialError> for HashError {
     fn from(e: KeyMaterialError) -> HashError {
         Self::KeyMaterialError(e)

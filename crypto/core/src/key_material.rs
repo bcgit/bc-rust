@@ -21,7 +21,7 @@
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
 //! run inside of a [do_hazardous_operations] closure, see below.
 //!
-//! # Security
+//! # 🚨 Security 🚨
 //!
 //! Additional security features:
 //!   * Zeroizes on destruction.
@@ -142,7 +142,7 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     ///
     /// If truncating, it will automatically downgrade the SecurityStrength accordingly.
     ///
-    /// # 🚨 Hazardous Operation🚨
+    /// # 🚨 Hazardous Operation 🚨
     /// Using this function to extend the length of a key is always hazardous and needs to be run
     /// within a [do_hazardous_operations] closure since this can result
     /// in a key containing a large number of zeroes, or containing key material from a previous key
@@ -153,12 +153,13 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// [do_hazardous_operations] closure.
     fn set_key_len(&mut self, key_len: usize) -> Result<(), KeyMaterialError>;
 
+    /// Returns the [KeyType] of this KeyMaterial object.
     fn key_type(&self) -> KeyType;
 
     /// Sets (or safely converts) the [KeyType] of this KeyMaterial object.
     /// Does not perform any operations on the actual key material, other than changing the key_type field.
     ///
-    /// # 🚨 Hazardous Operation🚨
+    /// # 🚨 Hazardous Operation 🚨
     /// Inside a [do_hazardous_operations] closure this will set the key to any [KeyType].
     /// Outside such a closure, only "safe" conversions are permitted: a [KeyType::CryptographicRandom]
     /// key may be converted to any type, and any type may be converted to itself (a no-op).

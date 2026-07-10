@@ -684,4 +684,35 @@ mod hmac_tests {
         // test debug
         assert_eq!(format!("{:?}", &hmac), "HMAC-SHA256 instance");
     }
+
+    /// Exercises the `keygen()` function of each HMAC type alias:
+    ///   * the generated key must not be the all-zero array,
+    ///   * `keygen()` returns a ready-to-use `KeyType::MACKey` key, so that
+    ///   * `HMAC::new(&key)` accepts the freshly generated key, without error.
+    macro_rules! keygen_test {
+        ($test_name:ident, $hmac:ident, $n:literal) => {
+            #[test]
+            fn $test_name() {
+                let key = $hmac::keygen().expect("keygen should succeed");
+
+                assert_eq!(key.key_len(), $n, "key should be the hash's output length");
+                assert_eq!(key.key_type(), KeyType::MACKey, "keygen should return a MAC key");
+                assert!(
+                    key.ref_to_bytes().iter().any(|&b| b != 0),
+                    "keygen produced an all-zero key"
+                );
+
+                $hmac::new(&key).expect("HMAC::new should accept a freshly generated key");
+            }
+        };
+    }
+
+    keygen_test!(keygen_hmac_sha224, HMAC_SHA224, 28);
+    keygen_test!(keygen_hmac_sha256, HMAC_SHA256, 32);
+    keygen_test!(keygen_hmac_sha384, HMAC_SHA384, 48);
+    keygen_test!(keygen_hmac_sha512, HMAC_SHA512, 64);
+    keygen_test!(keygen_hmac_sha3_224, HMAC_SHA3_224, 28);
+    keygen_test!(keygen_hmac_sha3_256, HMAC_SHA3_256, 32);
+    keygen_test!(keygen_hmac_sha3_384, HMAC_SHA3_384, 48);
+    keygen_test!(keygen_hmac_sha3_512, HMAC_SHA3_512, 64);
 }
