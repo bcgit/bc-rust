@@ -110,6 +110,27 @@ Someone on the Bouncy Castle core team will review the pull request when there i
 missing or suggest improvements. If it is a useful and generic feature it will be integrated in Bouncy Castle to be
 available in a later release.
 
+## Intellectual property considerations of a contribution
+
+For substantial, non-trivial contributions, you may be asked to sign a contributor assignment agreement. Optionally, you
+can also have your name and contact information listed
+in [Contributors](https://www.bouncycastle.org/contributors.html).
+
+Please note we are unable to accept contributions which cannot be released under
+the [Bouncy Castle License](https://www.bouncycastle.org/licence.html). Issuing a pull request to make a Contribution on
+our public github mirror is taken as agreement to issuing under the Bouncy Castle License and to the following
+conditions:
+
+- You represent and warrant that: (a) You hold all rights necessary to grant release under the Bouncy Castle License in
+  this in respect of Your Contribution, and Your Contribution, to the best of Your knowledge, will not give rise to any
+  third-party intellectual property infringement claims against the Legion of the Bouncy Castle Inc. or recipients of
+  software distributed by the Legion of the Bouncy Castle Inc.; (b) to the extent any portion of Your Contribution is
+  protected by copyright, You are the author or owner of that portion, or are otherwise duly authorized to grant release
+  under the Bouncy Castle License in respect of it; and (c) where any portion of Your Contribution was generated using
+  generative artificial intelligence tools and is not protected by copyright, You do not represent that portion as owned
+  intellectual property, and You understand that the Legion of the Bouncy Castle Inc. accepts such material on that
+  basis.
+
 ## AI Policy
 
 LLM-based coding assistants are a great tool, but, especially for a cryptography library, they must be used under the
@@ -120,7 +141,8 @@ The two core requirements:
 
 If a non-trivial portion of your submission has been created using an AI tool, you must:
 
-1. declare it in your commit message or pull request description using an `Assisted-by` trailer, and
+1. declare it in your commit message or pull request description using an `Assisted-by` trailer of the form of the form
+   `Assisted-by: {agent}:{model}`, and
 2. by making the submission, you are hereby asserting that the submitted content is not covered by a 3rd party
    copyright.
 
@@ -128,8 +150,7 @@ The intention of this policy is not to prohibit the use of AI tools; on the cont
 AI-assisted contributions and to hold them to the same quality, legal and security standards regardless of how it was
 written.
 
-This policy does not permit submissions where no human has reviewed the content. AI tools may assist, but a human must
-direct the work, review the output, and be accountable for what is submitted. Submissions where it not clear who the
+This policy does not permit submissions where no human has reviewed the content. Submissions where it not clear who the
 human submitter is, or where there is a suspicion of AI use, but no AI-Assisted declaration has been made may be
 rejected for this reason.
 
@@ -138,7 +159,7 @@ Specifics:
 What counts as "non-trivial"?
 A non-trivial portion of a submission has been created with an AI tool when it has generated meaningful code, logic, or
 documentation — not merely assisted with trivial tasks like autocompletion of a single line, reformatting, or
-spell-checking. If in doubt, declare it as a non-trival contribution.
+spell-checking. If in doubt, declare it as a non-trivial contribution.
 
 How to declare it:
 The commit message or body of the pull request must include a line of the form `Assisted-by: {agent}:{model}`; for
@@ -150,17 +171,11 @@ Assisted-by: ChatGPT:gpt-4o
 Assisted-by: GitHub Copilot:gpt-4.1
 ```
 
-You represent and warrant that you hold all rights necessary to contribute the submission under the terms set by
-the [Bouncy Castle License](LICENSE.md) and that your contribution, to the best of your knowledge, will not give rise to
-any third-party intellectual property infringement claims against the Legion of the Bouncy Castle or recipients of
-software distributed by the Legion.
+If any part of Your Contribution was created with the assistance of generative artificial intelligence tools (including
+large language model-based tools), You represent that: (a) You have disclosed such use to the Legion of the Bouncy
+Castle Inc. at the time of submission, in accordance with the Legion of the Bouncy Castle Inc.'s contribution
+guidelines; (b) You have reviewed and understood the AI-generated output incorporated in the Contribution; (c) You have
+complied with the terms of use of any such tools, including any provisions relating to the ownership of outputs; and (d)
+to the best of Your knowledge, the Contribution does not reproduce or derive from any third-party material in a manner
+that would infringe third-party intellectual property rights.
 
-If any part of Your Contribution was created with the assistance of generative artificial
-intelligence tools (including large language model-based tools), You represent that:
-(a) You have disclosed such use to the project at the time of submission;
-(b) You have reviewed and understood the AI-generated output incorporated in the Contribution;
-(c) You have complied with the terms of use of any such tools, including any provisions relating to the ownership of
-outputs; and
-d) to the best of Your knowledge, the Contribution does not reproduce or
-derive from any third-party material in a manner that would infringe third-party
-intellectual property rights.
