@@ -422,16 +422,8 @@ impl KeccakDigest {
             _ => return Err(SuspendableError::InvalidData),
         };
 
-        // bits_in_queue: usize. It can never legitimately exceed the rate (which is at most 168
-        // bytes, well within data_queue's 192-byte capacity).
-        //
-        // While absorbing (not yet squeezing) the queue is always a whole number of bytes strictly
-        // below the rate -- it is flushed to 0 the instant it reaches the rate, and absorb_bits()
-        // switches to squeezing the moment a sub-byte quantity is added. So a non-squeezing state
-        // whose bits_in_queue is not byte-aligned, or is == rate, is corrupt: left unchecked it would
-        // later panic in absorb() ("attempt to absorb with odd length queue") or trip the
-        // debug_assert in pad_and_switch_to_squeezing_phase(). Reject it here as InvalidData rather
-        // than deferring to a downstream panic.
+        // bits_in_queue: usize. It can never legitimately exceed the rate.
+        // Reject it here as InvalidData rather than deferring to a downstream panic.
         let bits_in_queue = u64::from_le_bytes(input[392..400].try_into().unwrap()) as usize;
         if bits_in_queue > rate || (!squeezing && (bits_in_queue % 8 != 0 || bits_in_queue == rate))
         {
@@ -512,10 +504,10 @@ mod keccak_tests {
         println!("n2: {:x?}", &out);
     }
 
-    // Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt
-    // state whose bits_in_queue is not byte-aligned, or equals the rate, must be rejected as
-    // InvalidData rather than deserialized into a value that later panics in absorb() /
-    // pad_and_switch_to_squeezing_phase().
+    /// Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt
+    /// state whose bits_in_queue is not byte-aligned, or equals the rate, must be rejected as
+    /// InvalidData rather than deserialized into a value that later panics in absorb() /
+    /// pad_and_switch_to_squeezing_phase().
     #[test]
     fn from_serialized_state_rejects_corrupt_bits_in_queue() {
         let rate = 1600 - ((KeccakSize::_256 as usize) << 1);

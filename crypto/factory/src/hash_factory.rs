@@ -83,19 +83,13 @@ impl AlgorithmFactory for HashFactory {
     }
 }
 
-// `HashFactory` is a runtime selector over several hash algorithms, so it cannot report a single
-// compile-time `ALG_NAME` / `MAX_SECURITY_STRENGTH` for the concrete algorithm it currently wraps.
-// `Algorithm`'s members are associated *consts*, which can't vary per enum variant. This impl
-// therefore describes the factory *type*, not the wrapped algorithm:
-//   - `ALG_NAME` is the factory's own name.
-//   - `MAX_SECURITY_STRENGTH` is the ceiling the factory can ever produce (SHA-512 / SHA3-512).
-// For the *selected* algorithm's actual properties, use the `Hash` trait methods on the instance
-// (e.g. `max_security_strength()`), which dispatch to the wrapped algorithm.
-// (Longer term: if callers need the wrapped algorithm's name at runtime, `Algorithm` would need a
-// method rather than a const.)
+// TODO -- this is broken.
+//      The designed behaviour here is that the Factory object pass these through to the underlying algorithm
+//      that it's wrapping, but that can't be done with consts, so I think the Algorithm trait needs
+//      a rework to be functions instead of consts.
 impl Algorithm for HashFactory {
-    const ALG_NAME: &'static str = "HashFactory";
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+    const ALG_NAME: &'static str = "TODO";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
 }
 
 impl Hash for HashFactory {
