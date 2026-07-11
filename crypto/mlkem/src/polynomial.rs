@@ -282,8 +282,8 @@ impl Polynomial {
 
     /// Algorithm 10 NTT (𝑓_hat)
     /// Computes the polynomial 𝑓 ∈ 𝑅𝑞 that corresponds to the given NTT representation 𝑓 ∈ 𝑇𝑞.
-    /// Input: array 𝑓 ∈ ℤ256  ▷ the coefficients of input NTT representation
-    /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the inverse NTT of the input
+    /// Input: array 𝑓 ∈ ℤ_{256}  ▷ the coefficients of input NTT representation
+    /// Output: array 𝑓 ∈ ℤ_{256}  ▷ the coefficients of the inverse NTT of the input
     pub(crate) fn inv_ntt(&mut self) {
         // FIPS 203 ALg 10 wants you to copy f_hat into f, and then act of f
         // but here it is performed in-place in order to optimize memory usage.

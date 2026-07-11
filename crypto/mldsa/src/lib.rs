@@ -106,10 +106,11 @@
 //! to make this implementation constant-time, which generally means that the core mathematical algorithm
 //! code that handles secret data uses bitshift-and-xor type constructions instead of if-and-loop
 //! constructions. That should give this implementation reasonably good resistance to timing and
-//! power analysis key extraction attacks, however: A) this is a "best-effort" and not formally verified,
-//! and B) the Rust compiler does not guarantee constant-time behaviour no matter how clever your code,
-//! so like all Safe Rust code (ie Rust code that does not include inline assembly), we are at the mercy
-//! of the Rust compiler's optimizer for whether our bitshift-and-xor code actually remains
+//! power analysis key extraction attacks, however: 
+//!     A) this is a "best-effort" and not formally verified, and
+//!     B) the Rust compiler does not guarantee constant-time behaviour no matter how clever your code,
+//! so like all Safe Rust code (ie Rust code that does not include inline assembly), it is up to
+//! the Rust compiler's optimizer for whether our bitshift-and-xor code actually remains
 //! constant-time after compilation.
 
 #![no_std]

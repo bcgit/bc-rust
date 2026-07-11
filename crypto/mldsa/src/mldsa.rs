@@ -14,8 +14,8 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! // Let's pretend this message was so long that you couldn't possibly
-//! // stream the whole thing over a network, and you need it pre-hashed.
+//! // For this example, assume that this message was so long that it is impractical to
+//! // stream the whole text over a network, and therefore it needs to be pre-hashed.
 //! let msg_chunk1 = b"The quick brown fox ";
 //! let msg_chunk2 = b"jumped over the lazy dog";
 //!
@@ -23,9 +23,9 @@
 //! signer.sign_update(msg_chunk1);
 //! signer.sign_update(msg_chunk2);
 //! let sig = signer.sign_final().unwrap();
-//! // This is the signature value that you can save to a file or whatever you need.
+//! // This is the signature value that can be saved to a file or whatever is needed.
 //!
-//! // This is compatible with a verifies that takes the whole message as one chunk:
+//! // This is compatible with a verifier that takes the whole message as one chunk:
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //! match MLDSA65::verify(&pk, msg, None, &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
@@ -33,7 +33,8 @@
 //!     Err(e) => panic!("Something else went wrong: {:?}", e),
 //! }
 //!
-//! // But of course there's also a streaming API for the verifier!
+//! // There is also a streaming API for the verifier.
+//!
 //! let mut verifier = MLDSA65::verify_init(&pk, None).unwrap();
 //! verifier.verify_update(msg_chunk1);
 //! verifier.verify_update(msg_chunk2);
@@ -56,8 +57,8 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! // Let's pretend this message was so long that you couldn't possibly
-//! // stream the whole thing over a network, and you need it pre-hashed.
+//! // For this example, assume that this message was so long that it is impractical to
+//! // stream the whole text over a network, and therefore it needs to be pre-hashed.
 //! let msg_chunk1 = b"The quick brown fox ";
 //! let msg_chunk2 = b"jumped over the lazy dog";
 //!
@@ -83,14 +84,14 @@
 //! produces signatures that are indistinguishable from "direct" ML-DSA mode.
 //!
 //! The one potential complication with external mu mode -- that [hash_mldsa] does not have --
-//! is that it requires you to know the public key that you are about to sign the message with.
+//! is that it requires the user to know the public key that they are about to sign the message with.
 //! Or, more specifically, the hash of the public key `tr`.
 //! `tr` is a public value (derivable from the public key), so there is no harm in, for example,
 //! sending it down to a client device so that it can pre-hash a large message and only send the
 //! 64-byte `mu` value up to the server to be signed.
 //! But in some contexts, the message has to be pre-hashed for performance reasons but
 //! the public key that will be used for signing cannot be known in advance.
-//! For those use cases, your only choice is to use [hash_mldsa].
+//! For those use cases, the only choice is to use [hash_mldsa].
 //!
 //! This library exposes [MuBuilder] which can be used to pre-hash a large to-be-signed message
 //! along with the public key hash `tr`:
@@ -102,17 +103,17 @@
 //!
 //! let (pk, _) = MLDSA65::keygen().unwrap();
 //!
-//! // Let's pretend this message was so long that you couldn't possibly
-//! // stream the whole thing over a network, and you need it pre-hashed.
+//! // For this example, assume that this message was so long that it is impractical to
+//! // stream the whole text over a network, and therefore it needs to be pre-hashed.
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
 //! let mu: [u8; 64] = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
 //! ```
 //!
-//! Note: if you are going to bind a `ctx` value (explained below), then you need to do in in [MuBuilder::compute_mu].
+//! Note: in order to bind a `ctx` value (explained below), it is necessary to do in [MuBuilder::compute_mu].
 //!
-//! If the message really is so huge that you can't hold it all in memory at once, then you might prefer a streaming API for
-//! computing mu:
+//! If the message really is so huge that it can't be hold it all in memory at once, 
+//! then it might be preferable to use a streaming API for computing mu:
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
@@ -121,8 +122,8 @@
 //!
 //! let (pk, _) = MLDSA65::keygen().unwrap();
 //!
-//! // Let's pretend this message was so long that you couldn't possibly
-//! // stream the whole thing over a network, and you need it pre-hashed.
+//! // For this example, assume that this message was so long that it is impractical to
+//! // stream the whole text over a network, and therefore it needs to be pre-hashed.
 //! let msg_chunk1 = b"The quick brown fox ";
 //! let msg_chunk2 = b"jumped over the lazy dog";
 //!
@@ -132,7 +133,7 @@
 //! let mu = mb.do_final();
 //! ```
 //!
-//! Given a mu value, you can compute a signature that verifies as normal (no mu's required!):
+//! Given a mu value, the user can compute a signature that verifies as normal (no mu's required!):
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
@@ -143,12 +144,12 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! // Assume this was computed somewhere else and sent to you.
-//! // They would have had to know pk!
+//! // Assume this was computed somewhere else, then
+//! // the party that computed it would have had to know pk
 //! let mu: [u8; 64] = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
 //!
 //! let sig = MLDSA65::sign_mu(&sk, None, &mu).unwrap();
-//! // This is the signature value that you can save to a file or whatever you need.
+//! // This is the signature value that can be saved to a file or whatever it is needed.
 //!
 //! match MLDSA65::verify(&pk, msg, None, &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
@@ -159,7 +160,7 @@
 //! ```
 //!
 //! # Ctx and Rnd params
-//! Various functions in this crate let you set the signing context value (`ctx`) and the signing nonce (`rnd`).
+//! Various functions in this crate let the user set the signing context value (`ctx`) and the signing nonce (`rnd`).
 //! Let's talk about them both:
 //!
 //! ## ctx
@@ -174,8 +175,7 @@
 //! attacker to trick a verifier into accepting one in place of the other.
 //! In a network protocol, `ctx` could be used to bind a transaction ID or protocol nonce in order to strongly
 //! protect against replay attacks.
-//! Generally, `ctx` is one of those things that if you don't know what it does, then you're probably
-//! fine to ignore it.
+//! Generally, it is safe to ignore any property about a `ctx` object that is not well understood.
 //!
 //! Example of signing and verifying with a `ctx` value:
 //!
@@ -190,7 +190,7 @@
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
 //! let sig = MLDSA65::sign(&sk, msg, Some(ctx)).unwrap();
-//! // This is the signature value that you can save to a file or whatever you need.
+//! // This is the signature value that can be saved to a file or whatever it is needed.
 //!
 //! match MLDSA65::verify(&pk, msg, Some(ctx), &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
@@ -201,16 +201,16 @@
 //!
 //! ## rnd
 //!
-//! This is the signature nonce, whose purpose is to ensure that you get different signature values
-//! if you sign the same message with the same public key multiple times.
+//! This is the signature nonce, whose purpose is to ensure that every time a signature is computed for the same
+//! message, it results in a different value
 //!
 //! In general, the "deterministic" mode of ML-DSA (which usually uses an all-zero `rnd`) is considered
-//! secure and safe to use but you may lose certain privacy properties, because, for example,
-//! it becomes obvious that multiple identical signatures means that the same message was signed multiple times
+//! secure and safe to use, however, certain privacy properties may be lost. For example,
+//! it becomes evident that multiple identical signatures means that the same message was signed multiple times
 //! by the same private key.
 //!
-//! The default mode of ML-DSA uses a `rnd` generated by the library's OS-backed RNG, but you can set the `rnd`
-//! if you need to; for example if you are running on an embedded device that does not have access to an RNG.
+//! The default mode of ML-DSA uses a `rnd` generated by the library's OS-backed RNG, the `rnd` can be set by the user
+//! if necessary; for example if the function is run on an embedded device that does not have access to an RNG.
 //!
 //! Note that in order to avoid combinatorial explosion of API functions, setting the `rnd` value is only
 //! available in conjunction with external mu or streaming modes. The example of setting `rnd` on the streaming
@@ -227,14 +227,14 @@
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! // Assume this was computed somewhere else and sent to you.
-//! // They would have had to know pk!
+//! // Assume this was computed somewhere else, then
+//! // the party that computed it would have had to know pk
 //! let mu: [u8; 64] = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
 //!
-//! // Typically, "deterministic" mode of ML-DSA will use an all-zero rnd,
-//! // but we've exposed it so you can set any value you need to.
+//! // Typically, "deterministic" mode of ML-DSA will use an all-zero `rnd`,
+//! // but here it is exposed it so it can be set any value, as needed.
 //! let sig = MLDSA65::sign_mu_deterministic(&sk, None, &mu, [0u8; 32]).unwrap();
-//! // This is the signature value that you can save to a file or whatever you need.
+//! // This is the signature value that can saved to a file or whatever it is needed.
 //!
 //! match MLDSA65::verify(&pk, msg, None, &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
@@ -248,7 +248,7 @@
 //! Within the usual ML-DSA public key representation, the public matrix A is stored as a seed rho, which
 //! means that both the ML-DSA.sign() and ML-DSA.verify() operations need to expand it into a full matrix
 //! before performing the matrix multiplication.
-//! We offer a version of the public and private key structs that pre-expand the public matrix for repeated use.
+//! The code contains a version of the public and private key structs that pre-expand the public matrix for repeated use.
 //!
 //! The runtime of ML-DSA.sign() is dominated by the rejection sampling look, making the A-expansion
 //! a negligible part of the function -- accounting for only about 2% of the computation.
@@ -285,19 +285,19 @@
 //!
 //! This mode is intended for users with extreme performance or resource-limitation requirements.
 //!
-//! A very careful analysis of the ML-DSA signing algorithm will show that you don't actually need
-//! the entire ML-DSA private key to be in memory at the same time. In fact, it is possible to merge
-//! the keygen() and sign() functions
+//! A very careful analysis of the ML-DSA signing algorithm will show that
+//! the entire ML-DSA private key does not need to be in memory at the same time. 
+//! In fact, it is possible to merge the keygen() and sign() functions
 //!
-//! We provide [MLDSA::sign_mu_deterministic_from_seed] which implements such an algorithm.
+//! The codebase contains [MLDSA::sign_mu_deterministic_from_seed] which implements such an algorithm.
 //! It has a significantly lower peak-memory-footprint than the regular signing API (although there's
 //! always room for more optimization), and according to our benchmarks it is only around 25% slower
 //! than signing with a fully-expanded private key -- which is still faster than performing a full
 //! keygen followed by a regular sign since there are intermediate values common to keygen and sign
 //! that the merged function is able to only compute once.
 //!
-//! Since this is intended for hard-core embedded systems people, we have not wrapped this in all
-//! the beginner-friendly APIs. If you need this, then we assume you know what you're doing!
+//! Since this is intended for embedded systems specialists, the functions are not wrapped in
+//! the beginner-friendly APIs. If a user needs this, then it is assumed they know what they are doing
 //!
 //! Example usage:
 //!
@@ -315,18 +315,18 @@
 //!     KeyType::Seed,
 //! ).unwrap();
 //!
-//! // At some point, you'll need to compute the public key, both to get `tr`, and so other
-//! // people can verify your signature.
-//! // There's no possible short-cut to efficiently computing the public key or `tr` from the seed;
-//! // you have to run the full keygen to get the full private key, at least momentarily, then
-//! // you can discard it in only keep `tr` and `seed`.
+//! // The public key is computed so that the signature can be verified by anyone.
+//! // It also computes the hash `tr` of the public key to later be used to bind the public key at the time of signing.
+//! // There is no short-cut to efficiently computing the public key or `tr` from the seed;
+//! // The full keygen need to be run in order to get the full private key, at least momentarily, then
+//! // it can be discarded and only keep `tr` and `seed`.
 //! let (pk, _) = MLDSA44::keygen_from_seed(&seed).unwrap();
 //! let tr: [u8; 64] = pk.compute_tr();
 //!
-//! // Assume this was computed somewhere else and sent to you.
-//! // They would have had to know pk!
+//! // Assume this was computed somewhere else, then
+//! // the party that computed it would have had to know pk
 //! let mu: [u8; 64] = MuBuilder::compute_mu(&tr, msg, None).unwrap();
-//! let rnd: [u8; 32] = [0u8; 32]; // with this API, you're responsible for your own nonce
+//! let rnd: [u8; 32] = [0u8; 32]; // with this API, the user is responsible for their own nonce
 //!                                // because in the cases where this level of memory optimization
 //!                                // is needed, our RNG probably won't work anyway.
 //!
@@ -637,8 +637,8 @@ impl Algorithm for MLDSA87 {
 }
 
 /// The core internal implementation of the ML-DSA algorithm.
-/// This needs to be public for the compiler to be able to find it, but you shouldn't ever
-/// need to use this directly. Please use the named public types.
+/// This needs to be public for the compiler to be able to find it, however, there is no
+/// need to be used directly. Please use the named public types.
 pub struct MLDSA<
     const PK_LEN: usize,
     const SK_LEN: usize,
@@ -741,7 +741,7 @@ impl<
     /// Unlike other interfaces across the library that take an &impl KeyMaterial, this one
     /// specifically takes a 32-byte [KeyMaterial256] and checks that it has [KeyType::Seed] and
     /// [SecurityStrength::_256bit].
-    /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it using
+    /// If the seed is in a larger KeyMaterial, it has to be copied using
     /// [KeyMaterialTrait::from_key]
     pub(crate) fn keygen_internal(seed: &KeyMaterial256) -> Result<(PK, SK), SignatureError> {
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::BytesFullEntropy)
@@ -818,7 +818,7 @@ impl<
         // Deviation from the FIPS:
         //   Hold on to s1, s2, t0 in ntt form
         //   Note: the result here is not necessarily in reduced form, but since .reduce() is expensive,
-        //   we'll save that for the encode() operation since that's the only place that it matters
+        //   it is saved for the encode() operation since that is the only place where it matters
         //   to have them in normalized form.
         s2.ntt();
         t0.ntt();
@@ -854,7 +854,7 @@ impl<
         // Already done -- the sk struct is already decoded and in NTT form
 
         // 5: 𝐀_hat ← ExpandA(𝜌)
-        // We're doing an optimization where the user can pre-expand A_hat within the
+        // It does an optimization where the user can pre-expand A_hat within the
         // public key object for faster repeated encapsulations against this public key.
 
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
@@ -890,7 +890,8 @@ impl<
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
-            // mutants note: there is no test for this because we don't know of a KAT that will exceed this limit.
+            // mutants note: there is no test for this because, at this point,  
+            // we don't know of a KAT that will exceed this limit.
             if kappa > 1000 * k as u16 {
                 return Err(SignatureError::GenericError(
                     "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
@@ -937,7 +938,7 @@ impl<
             };
 
             // 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
-            //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
+            //  Note: <<.>> in FIPS 204 means that this value will be used again later, so this should be kept.
             let mut cs1 = sk.s1_hat().scalar_vector_ntt(&c_hat);
             cs1.inv_ntt();
 
@@ -947,8 +948,8 @@ impl<
 
             // 23 (first half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
+            // This is done out-of-order on purpose for performance reasons:
+            // rejection sampling check is done before any extra heavy computation
             if sig_val_z.check_norm::<GAMMA1_MINUS_BETA>() {
                 kappa += l as u16;
                 continue;
@@ -979,8 +980,8 @@ impl<
             ct0.inv_ntt();
 
             // 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
+            // This is done out-of-order on purpose for performance reasons:
+            // rejection sampling check is done before any extra heavy computation
             // mutants note: there is currently no unit test that triggers this branch
             if ct0.check_norm::<GAMMA2>() {
                 kappa += l as u16;
@@ -1220,10 +1221,16 @@ impl<
         Self::sign_mu_deterministic_from_seed_out(seed, mu, rnd, &mut out)?;
         Ok(out)
     }
-    /// This function is a mash-up of keyGen (Algorithm 6) and sign (Algorithm 7)
-    /// Although, while this algorithm is a precursor to the lowmemory implementation, I'm not
-    /// sure that it actually gains you anything over a keygen_from_seed() followed by a sign(),
-    /// and maybe I should change its implementation to that.
+    /// External-μ deterministic signing directly from a 32-byte seed (a mash-up of
+	/// KeyGen Alg 6 and Sign Alg 7). Because μ is supplied by the caller, this never
+	/// derives the public key: it skips pkEncode and tr = H(pk), never materializes
+	/// the PK/SK structs, and keeps peak live memory low via scoped temporaries (see below). 
+	/// This is a middle ground between keygen_from_seed()+sign_mu() and
+	/// the fully streamed low-memory implementation.
+	// TODO: benchmark peak memory + runtime against
+	// keygen_from_seed() + sign_mu_deterministic() to confirm the separate path earns being kept. 
+	// Note: this path intentionally avoids the public key entirely
+	// (no pkEncode / tr = H(pk)) since μ is supplied externally.
     fn sign_mu_deterministic_from_seed_out(
         seed: &KeyMaterial<32>,
         mu: &[u8; 64],
@@ -1302,10 +1309,10 @@ impl<
         // Note on memory optimization:
         // A_hat consumes a large bit of memory and technically could move inside the loop --
         // -- or even more aggressively, could be derived and multiplied by y_hat row-by-row --
-        // But in my unit tests, I see the loop typically execute 1 - 3 times, sometimes as many
+        // But in my unit tests, it can be observed that the loop typically execute 1 - 3 times, sometimes as many
         // as 20 or even 80 times. So moving expandA() inside the loop would be a pretty drastic speed-for-memory tradeoff
-        // that I'm not willing to make in general, so I leave that as an optimization that people
-        // can make on a private fork if you really really need the memory squeeze.
+        // whose generality falls out of the scope of this implementation. 
+        // It is left as an optimization that can be made by users that require further reduction of memory usage
         let A_hat = expandA::<k, l>(&rho);
 
         // Alg 7; 8: 𝜅 ← 0
@@ -1381,7 +1388,8 @@ impl<
                 y = {
                     // scope for cs1
                     // Alg 7; 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
-                    //  Note: <<.>> in FIPS 204 means that this value will be used again later, so you should hang on to it.
+                    // Note: <<.>> in FIPS 204 means that this value will be used again later, 
+                    // so it is better to keep it.
                     let mut cs1 = s1_hat.scalar_vector_ntt(&c_hat);
                     cs1.inv_ntt();
 
@@ -1400,8 +1408,8 @@ impl<
 
             // Alg 7; 23 (first half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
+            // This is done out-of-order on purpose for performance reasons:
+            // rejection sampling check is done before any extra heavy computation
             if sig_val_z.check_norm::<GAMMA1_MINUS_BETA>() {
                 kappa += l as u16;
                 continue;
@@ -1421,7 +1429,7 @@ impl<
                 // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
                 let r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
 
-                // while we have s2_hat in scope, derive t0
+                // while s2_hat is in scope, derive t0
                 let mut t = t_hat;
                 t.inv_ntt();
                 t.add_vector_ntt(&s2);
@@ -1439,7 +1447,7 @@ impl<
             // Alg 7; 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
             if r0.check_norm::<GAMMA2_MINUS_BETA>() {
-                // mutants note: mutants thinks you can replace this with -=, but in practice that makes
+                // mutants note: mutants thinks this can be replaced with -=, but in practice that makes
                 //               the rejection sampling loop go forever, so is a false positive.
                 kappa += l as u16;
                 continue;
@@ -1491,7 +1499,8 @@ impl<
         // zeroize rho_p_p before returning it to the OS
         rho_p_p.fill(0u8);
 
-        // sig_encode does not necessarily write to all bytes of the output, so just to be safe:
+        // sig_encode does not necessarily write to all bytes of the output, 
+        // The following is done for safety
         output.fill(0u8);
 
         // Alg 7; 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
@@ -1575,7 +1584,7 @@ impl<
 
         // 5: 𝐀 ← ExpandA(𝜌)
         //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-        // We're doing an optimization where the user can pre-expand A_hat within the
+        // The code performs an optimization where the user can pre-expand A_hat within the
         // public key object for faster repeated encapsulations against this public key.
 
         // 6: 𝑡𝑟 ← H(𝑝𝑘, 64)
@@ -1787,8 +1796,8 @@ pub trait MLDSATrait<
     /// Security note about deterministic mode:
     /// This mode exposes deterministic signing (called "hedged mode" and allowed by FIPS 204).
     /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
-    /// the responsibility is on you to ensure that your nonce `rnd` is unique per signature.
-    /// If not, you may lose some privacy properties; for example it becomes easy to tell if a signer
+    /// the responsibility is on the user to ensure that the nonce `rnd` is unique for each signature.
+    /// If not, some privacy properties may be lost; for example it becomes easy to tell if a signer
     /// has signed the same message twice or two different messagase, or to tell if the same message
     /// has been signed by the same signer twice or two different signers.
     ///
@@ -1817,8 +1826,8 @@ pub trait MLDSATrait<
     /// Security note about deterministic mode:
     /// This mode exposes deterministic signing (called "hedged mode" and allowed by FIPS 204).
     /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
-    /// the responsibility is on you to ensure that your nonce `rnd` is unique per signature.
-    /// If not, you may lose some privacy properties; for example, it becomes easy to tell if a signer
+    /// the responsibility is on the user to ensure that the nonce `rnd` is unique for each signature.
+    /// If not, some privacy properties may be lost; for example, it becomes easy to tell if a signer
     /// has signed the same message twice or two different messages, or to tell if the same message
     /// has been signed by the same signer twice or two different signers.
     ///
@@ -1850,8 +1859,8 @@ pub trait MLDSATrait<
     /// To be used for deterministic signing in conjunction with the [MLDSA44::sign_init], [MLDSA44::sign_update], and [MLDSA44::sign_final] flow.
     /// Can be set anywhere after [MLDSA44::sign_init] and before [MLDSA44::sign_final].
     fn set_signer_rnd(&mut self, rnd: [u8; 32]);
-    /// Alternative initialization of the streaming signer where you have your private key
-    /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
+    /// Alternative initialization of the streaming signer where the user has their private key
+    /// as a seed and they want to delay its expansion as late as possible for memory-usage reasons.
     fn sign_init_from_seed(
         seed: &KeyMaterial<32>,
         ctx: Option<&[u8]>,
@@ -1974,7 +1983,8 @@ impl<
 
         if self.sk.is_none() && self.seed.is_none() {
             return Err(SignatureError::GenericError(
-                "Somehow you managed to construct a streaming signer without a private key, impressive!",
+                "sign_final_out called on a streaming context with no private key or seed; \
+     			this is a verify-initialized context. Call verify_final instead",
             ));
         }
 
@@ -2061,7 +2071,7 @@ impl<
 ///
 /// Note: this struct is only exposed for "pure" ML-DSA and not for HashML-DSA because HashML-DSA
 /// does not benefit from allowing external construction of the message representative mu.
-/// You can get the same behaviour by computing the pre-hash `ph` with the appropriate hash function
+/// The same behaviour can be obtained by computing the pre-hash `ph` with the appropriate hash function
 /// and providing that to HashMLDSA via [PHSignature::sign_ph].
 pub struct MuBuilder {
     h: H,

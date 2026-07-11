@@ -60,7 +60,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 
 // Matrix and Vector do not need to impl Secret because the actual data is in the polynomials, which have their own zeroizing drop.
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
-// but I'll leave it zeroizing for now and leave this as a potential future optimization.
+// but it is left zeroizing for now, and left also as a potential future optimization.
 
 #[derive(Clone)]
 pub(crate) struct Vector<const k: usize> {
@@ -190,7 +190,7 @@ impl<const LEN: usize> Vector<LEN> {
     /// Optimized from FIPS 204 to feed into the hash one row at a time to reduce overall memory footprint.
     pub(crate) fn w1_encode_and_hash<const POLY_W1_PACKED_LEN: usize>(&self, h: &mut H) {
         // 1: 𝐰̃1 ← ()
-        // don't need to allocate anything since we're feeding it into the hash row-wise
+        // Nothing needs to be allocated since it is being fed into the hash row-wise
 
         // 2: for 𝑖 from 0 to 𝑘 − 1 do
         // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)

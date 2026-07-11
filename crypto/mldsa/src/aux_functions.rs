@@ -536,8 +536,8 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     let mut j = [0u8];
     for i in (N - TAU as usize)..N {
         // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
-        // Note: you would think that this would be faster to pre-squeeze a buffer outside the loop, but in testing it
-        //       doesn't make a difference.
+        // Note: Even though it may appear that pre-squeezing a buffer outside the loop would be faster,
+        //       it doesn't make a noticeable difference after testing it
         h.squeeze_out(&mut j);
 
         // 8: while 𝑗 > 𝑖 do
@@ -576,7 +576,7 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
 /// Algorithm 30 RejNTTPoly(𝜌)
 /// This is supposed to take a rho: [u8; 34], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
-/// we'll split that into a [u8;32] and a [u8;2]
+/// that is split into a [u8;32] and a [u8;2]
 pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     let mut w_hat = Polynomial::new();
     let mut j: usize = 0;
@@ -584,9 +584,9 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     g.absorb(rho);
     g.absorb(nonce);
 
-    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
-    // size doesn't really matter, so long as it's a multiple of 3.
-    // 288 seemed to be the sweet spot from playing with benchmarks
+    // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so instead this implementation does a block.
+    // Size is not a limitation, so long as it's a multiple of 3.
+    // 288 seemed to be the sweet spot after some experimentation and benchmarking
     // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut s = [0u8; 288];
@@ -621,7 +621,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 ///
 /// This is supposed to take a rho: [u8; 66], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
-/// we'll split that into a [u8;64] and a [u8;2]
+/// that is split into a [u8;64] and a [u8;2]
 pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]) -> Polynomial {
     let mut a = Polynomial::new();
     let mut j: usize = 0;
@@ -820,7 +820,7 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     r1 = r - r0 * 2 * GAMMA2;
 
     // mutants note: the choice of (q - 1) is a bit arbitrary in that after doing the bit-shifting,
-    //  this seems to work out mathematically equivalent if you do q/2, or (q+3)/2, but we'll leave it as (q-1)/2
+    //  this seems to work out mathematically equivalent if doing q/2, or (q+3)/2, but here it is left as (q-1)/2
     //  since that's algorithmically correct, and just ignore the mutants results.
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 
@@ -903,7 +903,7 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
     match GAMMA2 {
         MLDSA44_GAMMA2 => {
             // mutants note: this passes unit tests if it's a1 >= 0
-            //      we'll leave it like this because it matches the spec
+            //      it is left like this because it matches the spec
             if a1 > 0 {
                 if a0 == 43 { 0 } else { a0 + 1 }
             } else {
@@ -913,7 +913,7 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
         // ML-DSA65 and 87 have the same GAMMA2
         MLDSA65_GAMMA2 => {
             // mutants note: this passes unit tests if it's a1 >= 0
-            //      we'll leave it like this because it matches the spec
+            //      it is left like this because it matches the spec
             if a1 > 0 { (a0 + 1) & 15 } else { (a0 - 1) & 15 }
         }
         _ => {
@@ -949,7 +949,7 @@ pub(crate) fn use_hint_vecs<const k: usize, const GAMMA2: i32>(
 /// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
 /// Output: 𝑐 ∈ 𝑇𝑞.
 /// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
-/// Also called pointwise montgomery multiplication
+/// Also called pointwise Montgomery multiplication
 pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
     let mut out = Polynomial::new();
     for i in 0..N {

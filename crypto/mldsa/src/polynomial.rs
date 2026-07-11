@@ -10,9 +10,10 @@ use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
-/// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
-/// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
-/// and the real unit tests are in a different crate, so here we are.
+/// Dev note: The following structure does not necessarily need to be declared as public. 
+/// There is no real scenario where this function is called directly. However, in order to test the Debug and Display traits, 
+/// it is necessary to use STD, so those can't be tested from inline tests in this file and the real unit tests are in a different crate.
+/// That's the reason why pub is used.
 #[derive(Clone)]
 pub struct Polynomial {
     pub(crate) coeffs: [i32; N],
@@ -85,15 +86,17 @@ impl Polynomial {
     }
 
     pub(crate) fn check_norm<const BOUND: i32>(&self) -> bool {
-        // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
-        // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing the signature validation.
+        // It is acceptable that this function is not constant-time (returns true early) 
+        // The reason being because it is used in a rejection loop.
+        // That is, the early quit here leads to rejection and continuing to the top of the rejection loop, 
+        // or failing the signature validation.
         // So the i32 that we just checked in a non-constant-time manner is about to get thrown away.
 
         // Note: this formulation of the check_norm function usually requires this bounds check
         //  if bound > (q - 1) / 8 {
         //     return true;
         //  }
-        // but since BOUND is a constant here, we'll just do a debug_assert to make sure the value is what we expect.
+        // but since BOUND is a constant here, a debug_assert is performed to make sure the value is what we expect.
         debug_assert!(BOUND <= (q - 1) / 8);
 
         let mut t: i32;
@@ -114,7 +117,7 @@ impl Polynomial {
         }
     }
 
-    /// Creates the hint vector, and also returns its hamming weight (ie the number of 1's).
+    /// Creates the hint vector, and also returns its hamming weight (i.e. the number of 1's).
     pub(crate) fn make_hint<const GAMMA2: i32>(&self, r: &Self) -> (Self, i32) {
         let mut out = Polynomial::new();
         let mut count = 0i32;
@@ -156,18 +159,18 @@ impl Polynomial {
 
     /// Algorithm 41 NTT(𝑤)
     /// Computes the NTT.
-    /// Input: Polynomial 𝑤(𝑋)
-    /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞.
+    /// Input: Polynomial 𝑤(𝑋) = Σ_{j=0}^{255} 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞.
     /// Output: 𝑤_hat = (𝑤_hat\[0], ..., 𝑤_hat\[255]) ∈ 𝑇𝑞.
     ///
-    /// Note: by convention, variables holding the output of the NTT function should be named "_ntt"
+    /// Note: by convention, variables holding the output of the NTT function should be named "_hat"
     /// to indicate that they are in the NTT domain (sometimes called the frequency domain), not the natural domain.
-    /// I considered using the rust type system to enforce this, but it seemed like overkill, cause that's what
-    /// NIST test vectors are for.
+    /// Usage of the rust type system to enforce this is arguably unnecessary, since that's what the NIST
+    /// test vectors are for.
     ///
-    /// Design choice: don't do the NTT in-place, but copy data to a new array.
-    /// This uses slightly more memory and requires a copy, but makes the code easier to read
-    /// and less likely to contain a bug. But this optimization could be considered in the future.
+    /// Lazy reduction: the butterfly omits an explicit reduction modulo `q` 
+    /// This is safe only because ‖input‖∞ ≤ q-1 (i.e. intermediates stay below ~5q
+    /// (well within i32) and the input of montgomery_reduce input stays below q·2^{31}) and
+    /// the final result is reduced downstream.
     pub(crate) fn ntt(&mut self) {
         let mut m: usize = 0;
         let mut len: usize = 128;
@@ -180,7 +183,9 @@ impl Polynomial {
 
                 for j in start..start + len {
                     let t = montgomery_reduce(z as i64 * self[j + len] as i64);
-                    self[j + len] = self[j] - t; // '% q' not strictly needed cause it gets reduced at some point later. Removing it gave +5% in benchmarking
+                    // '% q' not strictly needed cause it gets reduced at some point later. 
+                    // Removing it gave +5% in benchmarking
+                    self[j + len] = self[j] - t; 
                     self[j] = self[j] + t; // '% q' not strictly needed
                 }
                 start = start + 2 * len;
@@ -189,11 +194,10 @@ impl Polynomial {
         }
     }
 
-    /// Algorithm 42 NTT−1(𝑤)̂
+    /// Algorithm 42 NTT−1(𝑤_hat)
     /// Computes the inverse of the NTT.
-    /// Input: ̂̂ ̂ 𝑤 = (𝑤\[0], … , 𝑤\[255]) ∈ 𝑇𝑞.
-    /// Output: Polynomial 𝑤(𝑋) = ∑255
-    /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
+    /// Input: 𝑤_hat = (𝑤_hat[0], … , 𝑤_hat[255]) ∈ 𝑇𝑞.
+    /// Output: Polynomial 𝑤(𝑋) = Σ_{j=0}^{255} 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
     pub(crate) fn inv_ntt(&mut self) {
         let mut m: usize = N;
         let mut len: usize = 1;
@@ -219,14 +223,20 @@ impl Polynomial {
                     // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
                     self[j + len] = montgomery_reduce(z as i64 * self[j + len] as i64);
                 }
-                start = start + 2 * len; // could be optimized to save the multiply-by-two since j finishes as `start + len`. That said 2* is just << 1, which is basically free.
+                start = start + 2 * len; 
+                // could be optimized to save the multiply-by-two since j finishes as `start + len`. 
+                // That said 2* is just << 1, which is basically free.
             }
             len <<= 1;
         }
 
-        // f = 256^-1 mod q
-        // const f: i64 = 8347681;
-        // bc-java uses this value rather than the one in FIPS 204
+        // Final 1/256 normalization, in Montgomery form to match the montgomery_reduce
+        // bookkeeping used by every butterfly above (each contributes a 2^-32 factor).
+        // Note: f != 256^-1 mod q = 8347681. That value is only correct
+        // applied as a plain multiply (FIPS 204 Alg 42: w_j <- f * w_j mod q).
+        // Here we apply f via montgomery_reduce(f * w_j), so the constant is the
+        // Montgomery-domain form:  f = mont^2 / 256 mod q = 41978,  mont = 2^32 mod q.
+        // Do NOT substitute 8347681, as it is invalid through montgomery_reduce.
         const f: i64 = 41978;
         for j in 0..N {
             // equiv. to the global constant N

@@ -1,6 +1,6 @@
 //! This implements the HashML-DSA algorithm specified in FIPS 204 which is useful for cases
-//! where you need to process the to-be-signed message in chunks, and you cannot use the external mu
-//! mode of [MLDSA]; possibly because you have to digest the message before you know which public key
+//! where the user needs to process the to-be-signed message in chunks, and they use the external mu
+//! mode of [MLDSA]; possibly because the message needs to be digested before knowing which public key
 //! will sign it.
 //!
 //! HashML-DSA is a full signature algorithm implementing the [Signature] trait:
@@ -15,7 +15,7 @@
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
 //! let sig = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
-//! // This is the signature value that you can save to a file or whatever you need.
+//! // This is the signature value that can be saved to a file or whatever it is need.
 //!
 //! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
@@ -24,7 +24,7 @@
 //! }
 //! ```
 //!
-//! But you also have access to the pre-hashed function available from [PHSignature]:
+//! But the user also has access to the pre-hashed function available from [PHSignature]:
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
@@ -34,7 +34,7 @@
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
-//! // Here, and in contrast to External Mu mode of ML-DSA, we can pre-hash the message before
+//! // Here, and in contrast to External Mu mode of ML-DSA, the message can be pre-hashed before
 //! // even generating the signing key.
 //! let ph: [u8; 64] = SHA512::default().hash(msg).as_slice().try_into().unwrap();
 //!
@@ -42,7 +42,7 @@
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
 //!
 //! let sig = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
-//! // This is the signature value that you can save to a file or whatever you need.
+//! // This is the signature value that can be saved to a file or whatever it is need.
 //!
 //! // This verifies either through the usual one-shot API of the [Signature] trait
 //! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
@@ -60,7 +60,7 @@
 //! ```
 //!
 //! Note that the [HashMLDSA] object is just a light wrapper around [MLDSA], and, for example, they share key types,
-//! so if you need the fancy keygen functions, just use them from [MLDSA].
+//! so if more sophisticated keygen functions are needed, just use them from [MLDSA].
 //! But a simple [HashMLDSA::keygen] is provided in order to have conformance to the [Signature] trait.
 
 use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSATrait};
@@ -327,8 +327,8 @@ impl Algorithm for HashMLDSA87_with_SHA512 {
 
 /// An instance of the HashML-DSA algorithm.
 ///
-/// We are exposing the HashMLDSA struct this way so that alternative hash functions can be used
-/// without requiring modification of this source code; you can add your own hash function
+/// The code is exposing the HashMLDSA struct this way so that alternative hash functions can be used
+/// without requiring modification of this source code; the user can add their own hash function
 /// by specifying the hash function to use (in the verifier), and specifying the bytes of the OID to
 /// to use as its domain separator in constructing the message representative M'.
 pub struct HashMLDSA<
@@ -375,7 +375,7 @@ pub struct HashMLDSA<
     hash: HASH,
 
     /// Since HashML-DSA does message buffering in the external pre-hash, not in mu,
-    /// we'll need to save this for later
+    /// this needs to be saved for later
     ctx: [u8; 255],
     ctx_len: usize,
 }
@@ -513,9 +513,9 @@ impl<
     ///
     /// Security note:
     /// This mode exposes deterministic signing (called "hedged mode" and allowed by FIPS 204).
-    /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
-    /// the responsibility is on you to ensure that your nonce `rnd` is unique per signature.
-    /// If not, you may lose some privacy properties; for example it becomes easy to tell if a signer
+    /// The ML-DSA algorithm is considered safe to use in deterministic mode. However, the user must be aware
+    /// that is their responsibility to ensure that their nonce `rnd` is unique per signature.
+    /// If otherwise, some privacy properties may be lost; for example it becomes easy to tell if a signer
     /// has signed the same message twice or two different messages, or to tell if the same message
     /// has been signed by the same signer twice or two different signers.
     ///
@@ -634,8 +634,8 @@ impl<
         }
     }
 
-    /// Alternative initialization of the streaming signer where you have your private key
-    /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
+    /// Alternative initialization of the streaming signer where the user provides their private key
+    /// as a seed and they want to delay its expansion as late as possible to optimize memory-usage.
     pub fn sign_init_from_seed(
         seed: &KeyMaterial<32>,
         ctx: Option<&[u8]>,
@@ -902,7 +902,8 @@ impl<
 
         if self.sk.is_none() && self.seed.is_none() {
             return Err(SignatureError::GenericError(
-                "Somehow you managed to construct a streaming signer without a private key, impressive!",
+                "sign_final_out called on a streaming context with no private key or seed; \
+                this is a verify-initialized context. Call verify_final instead",
             ));
         }
 
@@ -929,8 +930,8 @@ impl<
                 HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
                 rnd
             };
-            // since at this point we need to fully reconstruct SK in order to compute tr for mu anyway
-            // there is no savings to using the fancy MLDSA::sign_from_seed
+            // At this point it is not necessary to fully reconstruct SK in order to compute tr for mu.
+            // Therefore, there is no advantage in using MLDSA::sign_from_seed
             let (_pk, sk) = Self::keygen_from_seed(&self.seed.unwrap())?;
             Self::sign_ph_deterministic_out(
                 &sk,
@@ -1046,9 +1047,9 @@ impl<
     }
 
     /// Note that the PH expected here *is not the same* as the `mu` computed by [MuBuilder].
-    /// To make use of this function, you need to compute a straight hash of the message using
-    /// the same hash function as the indicated in the HashML-DSA variant; for example SHA256 for
-    /// HashMDSA44_with_SHA256, SHA512 for HashMLDSA65_with_SHA512, etc.
+    /// To make use of this function, the user needs to compute a straight hash of the message using
+    /// the same hash function as the indicated in the HashML-DSA variant; 
+    /// for example: SHA256 for HashMDSA44_with_SHA256; SHA512 for HashMLDSA65_with_SHA512; etc.
     fn sign_ph_out(
         sk: &SK,
         ph: &[u8; PH_LEN],

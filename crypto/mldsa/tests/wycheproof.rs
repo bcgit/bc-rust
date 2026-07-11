@@ -325,7 +325,7 @@ impl MLDSASignNoSeedTestCase {
 
         // build mu
         let mu: [u8; 64] = if self.msg.is_none() {
-            // we can't compute it, so just take the one provided
+            // it can't be computed, so just takes the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
             match MuBuilder::compute_mu(
@@ -393,7 +393,7 @@ impl MLDSASignNoSeedTestCase {
 
         // build mu
         let mu: [u8; 64] = if self.msg.is_none() {
-            // we can't compute it, so just take the one provided
+            // it can't be computed, so just takes the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
             match MuBuilder::compute_mu(
@@ -461,7 +461,7 @@ impl MLDSASignNoSeedTestCase {
 
         // build mu
         let mu: [u8; 64] = if self.msg.is_none() {
-            // we can't compute it, so just take the one provided
+            // it can't be computed, so just takes the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
             match MuBuilder::compute_mu(
@@ -621,7 +621,7 @@ impl MLDSASignSeedTestCase {
 
         // build mu
         let mu: [u8; 64] = if self.msg.is_none() {
-            // we can't compute it, so just take the one provided
+            // it can't be computed, so just takes the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
             match MuBuilder::compute_mu(
@@ -712,7 +712,7 @@ impl MLDSASignSeedTestCase {
 
         // build mu
         let mu: [u8; 64] = if self.msg.is_none() {
-            // we can't compute it, so just take the one provided
+            // it can't be computed, so just takes the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
             match MuBuilder::compute_mu(
@@ -803,7 +803,7 @@ impl MLDSASignSeedTestCase {
 
         // build mu
         let mu: [u8; 64] = if self.msg.is_none() {
-            // we can't compute it, so just take the one provided
+            // it can't be computed, so just takes the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
             match MuBuilder::compute_mu(

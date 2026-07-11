@@ -589,7 +589,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         {
             // Deviation from the FIPS:
-            //  Because we're holding s2 in ntt form, we need to reverse that here before adding it to t
+            // Because s2 is in ntt form, it is necessary to reverse that here before adding it to t
             let mut s2 = self.s2_hat.clone();
             s2.reduce();
             s2.inv_ntt();
@@ -650,7 +650,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             }
         }
         // Deviation from the FIPS:
-        //   Convert this to ntt form as part of decode
+        // Convert this to ntt form as part of decode
         s2.ntt();
         off += k * bitlen_eta(eta);
 
@@ -666,7 +666,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             t0_i.coeffs.copy_from_slice(&bit_unpack_t0(sk_chunk).coeffs);
         }
         // Deviation from the FIPS:
-        //   Convert this to ntt form as part of decode
+        // Convert this to ntt form as part of decode
         t0.ntt();
 
         Ok(Self { rho, K, tr, s1_hat: s1, s2_hat: s2, t0_hat: t0, seed: None })
