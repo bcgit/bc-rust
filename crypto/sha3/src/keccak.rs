@@ -1,7 +1,7 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::traits::SecurityStrength;
-use bouncycastle_utils::Secret;
+use bouncycastle_utils::secret::Secret;
 
 const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
     0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,

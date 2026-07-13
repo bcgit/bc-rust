@@ -6,14 +6,18 @@ use crate::aux_functions::{
     ZETAS, ZETAS_INV, barrett_reduce, montgomery_reduce, mul_mont, ntt_base_mult,
 };
 use crate::mlkem::{N, q};
-use bouncycastle_utils::Secret;
 
 /// A polynomial over the ML-KEM ring.
 /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-#[derive(Clone)]
+///
+/// # 🚨 Security 🚨
+/// Polynomials themselves are not inherently secret since sometimes they are part of public keys
+/// and sometimes private keys.
+/// It is the responsibility of the caller to wrap sensitive instances in `Secret<Vector>`.
+#[derive(Clone, Copy)]
 pub struct Polynomial {
     /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-    pub coeffs: Secret<[i16; N]>,
+    pub coeffs: [i16; N],
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -34,7 +38,7 @@ impl IndexMut<usize> for Polynomial {
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
     pub const fn new() -> Self {
-        Self { coeffs: Secret::new() }
+        Self { coeffs: [0i16; N] }
     }
 
     /// Create a Polynomial from the message m

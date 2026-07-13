@@ -26,6 +26,12 @@
   waiting for network IO.
 * dyn RNG: anywhere that consumes randomness (such as keygen and non-deterministic sign / encaps functions) can now be
   handed an instance of an object that impl's `bouncycastle-core::traits::RNG`.
+* Rework of the Secret system for protecting secret data against leakage via returning to the memory pool unzeroized,
+  or being logged in debug messages, stack traces, and crash dumps. Now properly uses `core::mem::write_volatile` to
+  prevent
+  the compiler from eliding writes on drop, and introduced a new type system `Secret<T>` that is used across the library
+  to give more fine-grained control over which objects (and which fields within objects) get this extra protection.
+  Bonus: this is a public type that you can use to protect your application data as well!
 
 ## Minor features / bug fixes
 

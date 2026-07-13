@@ -24,7 +24,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF};
-use bouncycastle_utils::Secret;
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::ops::DerefMut;
@@ -462,13 +462,18 @@ impl<
         (rho, rho_prime, K)
     }
 
-    fn compute_t_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial {
+    fn compute_t_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial {
         debug_assert!(idx < k);
 
         // [Optimization Note]:
         // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
         // let mut s1 = self.compute_s1_row(0);
-        let mut s1_hat_i = s_unpack::<eta>(s1_packed, 0);
+        let mut s1_hat_i = s_unpack::<eta, S1_PACKED_LEN>(s1_packed, 0);
         s1_hat_i.ntt();
 
         let mut t_i = {
@@ -479,7 +484,7 @@ impl<
                 // [Optimization Note]:
                 // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
                 // s1 = self.compute_s1_row(col);
-                let mut s1_hat = s_unpack::<eta>(s1_packed, col);
+                let mut s1_hat = s_unpack::<eta, S1_PACKED_LEN>(s1_packed, col);
                 s1_hat.ntt();
                 let mut A_elem = expandA_elem(&self.rho, idx, col);
                 A_elem.multiply_ntt(&s1_hat);
@@ -493,7 +498,7 @@ impl<
         // [Optimization Note]:
         // This is one of the places that a row of s2 can be re-computed instead of unpacked from the compressed form.
         // let s2 = self.compute_s2_row(idx);
-        let s2 = s_unpack::<eta>(s2_packed, idx);
+        let s2 = s_unpack::<eta, S2_PACKED_LEN>(s2_packed, idx);
         t_i.add_ntt(&s2);
         t_i.conditional_add_q();
 
@@ -611,8 +616,8 @@ impl<
     fn derive_pk(&self) -> MLDSAPublicKey<k, T1_PACKED_LEN, PK_LEN> {
         // The goal here is to get t1, which we will build and compress one row at a time.
 
-        let s1_packed: [u8; S1_PACKED_LEN] = self.compute_s1_packed();
-        let s2_packed: [u8; S2_PACKED_LEN] = self.compute_s2_packed();
+        let s1_packed: Secret<[u8; S1_PACKED_LEN]> = self.compute_s1_packed();
+        let s2_packed: Secret<[u8; S2_PACKED_LEN]> = self.compute_s2_packed();
 
         let mut t1_packed = [0u8; T1_PACKED_LEN];
         debug_assert_eq!(T1_PACKED_LEN, POLY_T1PACKED_LEN * k);
@@ -649,14 +654,14 @@ impl<
         // 3:   𝑠𝑘 ← 𝑠𝑘 || BitPack (𝐬1[𝑖], 𝜂, 𝜂)
         // 4: end for
         let s1_packed = self.compute_s1_packed();
-        out[off..off + S1_PACKED_LEN].copy_from_slice(&s1_packed);
+        out[off..off + S1_PACKED_LEN].copy_from_slice(&*s1_packed);
         off += S1_PACKED_LEN;
 
         // 5: for 𝑖 from 0 to 𝑘 − 1 do
         // 6:   𝑠𝑘 ← 𝑠𝑘 || BitPack (𝐬2[𝑖], 𝜂, 𝜂)
         // 7: end for
         let s2_packed = self.compute_s2_packed();
-        out[off..off + S2_PACKED_LEN].copy_from_slice(&s2_packed);
+        out[off..off + S2_PACKED_LEN].copy_from_slice(&*s2_packed);
         off += S2_PACKED_LEN;
 
         // 8: for 𝑖 from 0 to 𝑘 − 1 do
@@ -693,17 +698,39 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<
     fn rho(&self) -> &[u8; 32];
     fn K(&self) -> &[u8; 32];
 
+    /// A single entry of a privacy key vector.
+    /// These tend to be used very transiently, so we won't bother wrapping it as a Secret.
     fn compute_s1_row(&self, idx: usize) -> Polynomial;
 
-    fn compute_s1_packed(&self) -> [u8; S1_PACKED_LEN];
+    /// Private key component.
+    /// The packed representation sticks around for the whole computation, so
+    /// we'll wrap in as a Secret.
+    fn compute_s1_packed(&self) -> Secret<[u8; S1_PACKED_LEN]>;
 
+    /// A single entry of a privacy key vector.
+    /// These tend to be used very transiently, so we won't bother wrapping it as a Secret.
     fn compute_s2_row(&self, idx: usize) -> Polynomial;
 
-    fn compute_s2_packed(&self) -> [u8; S2_PACKED_LEN];
+    /// Private key component.
+    /// The packed representation sticks around for the whole computation, so
+    /// we'll wrap in as a Secret.
+    fn compute_s2_packed(&self) -> Secret<[u8; S2_PACKED_LEN]>;
 
-    fn compute_t0_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial;
+    /// Public key component.
+    fn compute_t0_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial;
 
-    fn compute_t1_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial;
+    /// Public key component.
+    fn compute_t1_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial;
 }
 
 impl<
@@ -757,8 +784,8 @@ impl<
         rej_bounded_poly::<eta>(&self.rho_prime, &(idx as u16).to_le_bytes())
     }
 
-    fn compute_s1_packed(&self) -> [u8; S1_PACKED_LEN] {
-        let mut s1_packed = [0u8; S1_PACKED_LEN];
+    fn compute_s1_packed(&self) -> Secret<[u8; S1_PACKED_LEN]> {
+        let mut s1_packed: Secret<[u8; S1_PACKED_LEN]> = Secret::new();
         for idx in 0..l {
             let s1_i = self.compute_s1_row(idx);
             bit_pack_eta::<eta>(
@@ -774,8 +801,8 @@ impl<
         rej_bounded_poly::<eta>(&self.rho_prime, &((idx + l) as u16).to_le_bytes())
     }
 
-    fn compute_s2_packed(&self) -> [u8; S2_PACKED_LEN] {
-        let mut s2_packed = [0u8; S2_PACKED_LEN];
+    fn compute_s2_packed(&self) -> Secret<[u8; S2_PACKED_LEN]> {
+        let mut s2_packed: Secret<[u8; S2_PACKED_LEN]> = Secret::new();
         for idx in 0..k {
             let s2_i = self.compute_s2_row(idx);
             bit_pack_eta::<eta>(
@@ -786,7 +813,12 @@ impl<
         s2_packed
     }
 
-    fn compute_t0_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial {
+    fn compute_t0_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial {
         let mut t0 = self.compute_t_row(idx, s1_packed, s2_packed);
         for j in 0..N {
             (_, t0[j]) = power_2_round(t0[j]);
@@ -795,7 +827,12 @@ impl<
         t0
     }
 
-    fn compute_t1_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial {
+    fn compute_t1_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial {
         let mut t1 = self.compute_t_row(idx, s1_packed, s2_packed);
         for j in 0..N {
             (t1[j], _) = power_2_round(t1[j]);

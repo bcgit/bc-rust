@@ -33,7 +33,7 @@ use core::sync::atomic::{Ordering, compiler_fence};
 //           Secret over a type that impls Drop. So we don't actually care about the underlying type
 //           impl'ing Copy; we only care that it doesn't impl Drop, and the `Copy` bound is a
 //           convenient way to catch that if we in the future do impl_zero_init!(T) for a T that has Drop.
-trait ZeroizablePrimitive: Copy {
+pub trait ZeroizablePrimitive: Copy {
     /// The zeroed value of this type.
     const ZEROED: Self;
 }
@@ -86,7 +86,7 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, and char.
 ///
 /// ```
-/// use bouncycastle_utils::Secret;
+/// use bouncycastle_utils::secret::Secret;
 ///
 /// let mut nonce: Secret<u64> = Secret::default();
 /// *nonce = 0xDEAD_BEEF;
@@ -108,7 +108,7 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// so the plaintext is never held in a separate, unprotected variable:
 ///
 /// ```
-/// use bouncycastle_utils::Secret;
+/// use bouncycastle_utils::secret::Secret;
 ///
 /// let mut key: Secret<[u8; 32]> = Secret::new();
 ///
@@ -128,14 +128,45 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// // `key` is volatile-scrubbed to zero when it drops at the end of this scope.
 /// ```
 ///
+/// ## On a custom type
 ///
-/// ## Redacting Debug and Display
+/// Since [ZeroizablePrimitive] is a public trait, you can implement it on your own types and then
+/// trivially be able to wrap them in a `Secret<T>`. The only requirement is that there is a
+/// well-defined "ZEROED" value for the type.
+///
+/// Toy Example:
+///
+/// ```
+/// use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+///
+/// /// Holds a system user
+/// #[derive(Clone, Copy)]
+/// struct User {
+///     userid: i32,
+///     name: [u8; 64],
+/// }
+///
+/// /// Provide the const ZEROED value for the type.
+/// impl ZeroizablePrimitive for User {
+///     const ZEROED: Self = Self{ userid: 0i32, name: [0u8; 64] };
+/// }
+///
+/// /// We will tag the admins as Secret<User> to give them extra protections against
+/// /// having their info leaked.
+/// struct AllUsers {
+///     users: Vec<User>,
+///     admins: Vec<Secret<User>>,
+/// }
+/// ```
+///
+///
+/// # Redacting Debug and Display
 ///
 /// [`Debug`](fmt::Debug) and [`Display`](fmt::Display) are redacting, so a `Secret` can be logged
 /// without leaking its contents:
 ///
 /// ```
-/// use bouncycastle_utils::Secret;
+/// use bouncycastle_utils::secret::Secret;
 ///
 /// let mut secret: Secret<u32> = Secret::new();
 /// *secret = 0x4141_4141; // would render as "AAAA" if leaked
@@ -148,7 +179,7 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// As a direct wrapper of the type `T`, a `Secret<T>` does not add any memory overhead.
 ///
 /// ```
-/// use bouncycastle_utils::Secret;
+/// use bouncycastle_utils::secret::Secret;
 ///
 /// print!("{}\n", size_of::<i32>());          // 4
 /// print!("{}\n", size_of::<Secret<i32>>()); // also 4

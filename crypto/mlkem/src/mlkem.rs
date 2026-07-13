@@ -149,7 +149,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
-use bouncycastle_utils::Secret;
+use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes};
 use core::marker::PhantomData;
 /*** Constants ***/
@@ -382,7 +382,7 @@ impl<
     /// Input: randomness 𝑑 ∈ 𝔹32 .
     /// Output: encryption key ek_PKE ∈ 𝔹384𝑘+32.
     /// Output: decryption key dk_PKE ∈ 𝔹384𝑘.
-    fn pke_keygen(d: &[u8; 32]) -> (PK, Vector<k>) {
+    fn pke_keygen(d: &[u8; 32]) -> (PK, Secret<Vector<k>>) {
         // 1: (𝜌, 𝜎) ← G(𝑑‖𝑘)
         //  ▷ expand 32+1 bytes to two pseudorandom 32-byte seeds1
         // rho: public seed
@@ -408,8 +408,9 @@ impl<
         //   ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
         // 10: 𝑁 ← 𝑁 + 1
         // Note: here n = 0
-        let s_hat = {
-            let mut s = sample_vector_CBD::<k, eta1>(&sigma, 0);
+        let s_hat: Secret<Vector<k>> = {
+            let mut s: Secret<Vector<k>> = Secret::new();
+            *s = sample_vector_CBD::<k, eta1>(&sigma, 0);
 
             // 16: 𝐬_hat ← NTT(𝐬)̂
             s.ntt();

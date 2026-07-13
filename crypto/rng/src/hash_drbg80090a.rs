@@ -11,7 +11,7 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{Hash, HashAlgParams, RNG, SecurityStrength};
 use bouncycastle_sha2::{SHA256, SHA512};
-use bouncycastle_utils::{Secret, min};
+use bouncycastle_utils::{min, secret::Secret};
 
 use std::fmt::{Display, Formatter};
 

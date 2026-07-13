@@ -52,7 +52,7 @@
 
 use crate::errors::{KeyMaterialError, SuspendableError};
 use crate::traits::{RNG, SecurityStrength};
-use bouncycastle_utils::{Secret, ct, min};
+use bouncycastle_utils::{secret::Secret, ct, min};
 
 use core::cmp::{Ordering, PartialOrd};
 use core::fmt;

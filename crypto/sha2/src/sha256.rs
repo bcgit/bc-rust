@@ -2,7 +2,7 @@ use crate::SHA2Params;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
-use bouncycastle_utils::{Secret, min};
+use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
 
 const SHA256_K: [u32; 64] = [

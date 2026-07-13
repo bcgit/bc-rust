@@ -22,7 +22,7 @@
 //!
 //! # Examples
 //!
-//! Instantation of an HMAC object is straightforward:
+//! Instantiation of an HMAC object is straightforward:
 //!
 //! ```
 //! use bouncycastle_hmac::HMAC_SHA256;
@@ -193,7 +193,7 @@ use bouncycastle_sha2::{
     SHA224, SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
 };
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SUSPENDED_SHA3_STATE_LEN};
-use bouncycastle_utils::{Secret, ct};
+use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 
 /*** String constants ***/

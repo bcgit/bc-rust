@@ -22,8 +22,8 @@ use bouncycastle_core::traits::{
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
 use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes};
+use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
-
 /*** Constants ***/
 
 ///
@@ -467,17 +467,19 @@ impl<
 
         // Compute the trial shared secret key
         // 6: (𝐾′, 𝑟′) ← G(𝑚′‖ℎ)̄
-        let K_prime: [u8; MLKEM_SS_LEN];
+        let K_prime: Secret<[u8; MLKEM_SS_LEN]>;
         let r_prime: [u8; 32];
         (K_prime, r_prime) = {
+            let mut buf: Secret<[u8; 64]> = Secret::new();
             let mut g = G::new();
             g.do_update(&m_prime);
             g.do_update(&dk.pk().compute_hash());
-            let mut buf = [0u8; 64];
-            let bytes_written = g.do_final_out(&mut buf);
+            let bytes_written = g.do_final_out(&mut *buf);
             debug_assert_eq!(bytes_written, 64);
 
-            (buf[..32].try_into().unwrap(), buf[32..64].try_into().unwrap())
+            let mut K_prime: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
+            K_prime.copy_from_slice(&buf[..32]);
+            (K_prime, buf[32..64].try_into().unwrap())
         };
 
         // 7: 𝐾_bar ← J(𝑧‖𝑐)
@@ -486,16 +488,16 @@ impl<
         //   because if its computation is conditional on the Fujisaki-Okamoto check failing, then
         //   you'll have a timing difference between success and failure.
 
-        let K_bar: [u8; MLKEM_SS_LEN];
+        let K_bar: Secret<[u8; MLKEM_SS_LEN]>;
         K_bar = {
+            let mut K_bar: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
             let mut j = J::new();
             j.absorb(dk.z()).expect("absorb before squeeze is infallible");
             j.absorb(&c).expect("absorb before squeeze is infallible");
-            let mut buf = [0u8; MLKEM_SS_LEN];
-            let bytes_written = j.squeeze_out(&mut buf);
+            let bytes_written = j.squeeze_out(&mut *K_bar);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
 
-            buf
+            K_bar
         };
 
         // 8: 𝑐′ ← K-PKE.Encrypt(ekPKE, 𝑚′, 𝑟′)

@@ -17,10 +17,7 @@
 #![allow(private_bounds)]
 
 pub mod ct;
-mod secret;
-
-// Just expose the Secret struct and not the whole module
-pub use secret::Secret;
+pub mod secret;
 
 /// Basic max function. If they are equal, you get back the first one.
 pub fn max<'a, T: PartialOrd>(x: &'a T, y: &'a T) -> &'a T {

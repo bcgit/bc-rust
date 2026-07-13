@@ -12,14 +12,13 @@ use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
 // imports just for docs
 #[allow(unused_imports)]
 use crate::mldsa::MLDSATrait;
-#[allow(unused_imports)]
-use bouncycastle_utils::Secret;
 
 /* Pub Types */
 
@@ -163,7 +162,7 @@ impl<const k: usize, const l: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k,
             // 3: 𝐭1[𝑖] ← SimpleBitUnpack(𝑧𝑖, 2bitlen (𝑞−1)−𝑑 − 1)
             //  ▷ This is always in the correct range
             //  Therefore, we don't need to check that the coeeffs are in range
-            t1_i.coeffs.copy_from_slice(&*simple_bit_unpack_t1(pk_chunk).coeffs);
+            t1_i.coeffs.copy_from_slice(&simple_bit_unpack_t1(pk_chunk).coeffs);
         }
 
         Self::new(rho, t1)
@@ -424,8 +423,8 @@ pub struct MLDSAPrivateKey<
     //  So we are going to hold them as s1_hat, s2_hat, and t0_hat.
     //  Note: these are not necessarily in their reduced form; so you'll need to reduce them before
     //  inv_ntt()'ing them or hashing them.
-    s1_hat: Vector<l>,
-    s2_hat: Vector<k>,
+    s1_hat: Secret<Vector<l>>,
+    s2_hat: Secret<Vector<k>>,
     t0_hat: Vector<k>,
     seed: Option<KeyMaterial<32>>,
 }
@@ -544,8 +543,8 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<
         rho: [u8; 32],
         K: Secret<[u8; 32]>,
         tr: [u8; 64],
-        s1_hat: Vector<l>,
-        s2_hat: Vector<k>,
+        s1_hat: Secret<Vector<l>>,
+        s2_hat: Secret<Vector<k>>,
         t0_hat: Vector<k>,
         seed: Option<KeyMaterial<32>>,
     ) -> Self;
@@ -609,23 +608,29 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         MLDSAPublicKey::<k, l, PK_LEN>::new(self.rho.clone(), t1)
     }
     fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
-        let rho = sk[0..32].try_into().unwrap();
-        let mut K = Secret::<[u8; 32]>::new();
-        K.copy_from_slice(&sk[32..64]);
-        let tr = sk[64..128].try_into().unwrap();
-        let mut s1 = Vector::<l>::new();
-        let mut s2 = Vector::<k>::new();
-        let mut t0 = Vector::<k>::new();
+        // Construct the (Secret-protected) key up front and unpack each field directly into it,
+        // rather than decoding into unprotected temporaries and copying them in at the end. This
+        // way the secret material is written straight into its protected home; and if a range
+        // check below fails, `key` is dropped and its `Secret` fields are zeroized on the way out.
+        let mut key = Self {
+            rho: sk[0..32].try_into().unwrap(),
+            K: Secret::new(),
+            tr: sk[64..128].try_into().unwrap(),
+            s1_hat: Secret::new(),
+            s2_hat: Secret::new(),
+            t0_hat: Vector::<k>::new(),
+            seed: None,
+        };
+        key.K.copy_from_slice(&sk[32..64]);
         let mut off = 128;
 
-        // unpack s1
-        // let mut i: usize = 0;
-        let sk_chunks = sk[128..128 + (l * bitlen_eta(eta))].chunks(bitlen_eta(eta));
+        // unpack s1 directly into key.s1_hat so that we don't make additional non-Secret copies.
+        let sk_chunks = sk[off..off + (l * bitlen_eta(eta))].chunks(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), l);
-        for (s1_i, sk_chunk) in s1.vec.iter_mut().zip(sk_chunks) {
+        for (s1_i, sk_chunk) in key.s1_hat.vec.iter_mut().zip(sk_chunks) {
             // 3: 𝐬1[𝑖] ← BitUnpack(𝑦𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
-            s1_i.coeffs.copy_from_slice(&*bit_unpack_eta::<eta>(&sk_chunk).coeffs);
+            s1_i.coeffs.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).coeffs);
 
             // check that the coefficients are within the expected range
             for coeff in s1_i.coeffs.iter() {
@@ -636,16 +641,16 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
         // Deviation from the FIPS:
         //   Convert this to ntt form as part of decode
-        s1.ntt();
+        key.s1_hat.ntt();
         off += l * bitlen_eta(eta);
 
-        // unpack s2
+        // unpack s2 directly into key.s2_hat so that we don't make additional non-Secret copies.
         let sk_chunks = sk[off..off + (k * bitlen_eta(eta))].chunks(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), k);
-        for (s2_i, sk_chunk) in s2.vec.iter_mut().zip(sk_chunks) {
+        for (s2_i, sk_chunk) in key.s2_hat.vec.iter_mut().zip(sk_chunks) {
             // 6: 𝐬2[𝑖] ← BitUnpack(𝑧𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
-            s2_i.coeffs.copy_from_slice(&*bit_unpack_eta::<eta>(&sk_chunk).coeffs);
+            s2_i.coeffs.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).coeffs);
 
             // check that the coefficients are within the expected range
             for coeff in s2_i.coeffs.iter() {
@@ -656,10 +661,10 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
         // Deviation from the FIPS:
         //   Convert this to ntt form as part of decode
-        s2.ntt();
+        key.s2_hat.ntt();
         off += k * bitlen_eta(eta);
 
-        // unpack t0
+        // unpack t0 directly into key.t0_hat
         let (sk_chunks, last_chunk) =
             sk[off..off + (k * POLY_T0PACKED_LEN)].as_chunks::<POLY_T0PACKED_LEN>();
 
@@ -667,14 +672,14 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         debug_assert_eq!(sk_chunks.len(), k);
         debug_assert_eq!(last_chunk.len(), 0);
 
-        for (t0_i, sk_chunk) in t0.vec.iter_mut().zip(sk_chunks) {
-            t0_i.coeffs.copy_from_slice(&*bit_unpack_t0(sk_chunk).coeffs);
+        for (t0_i, sk_chunk) in key.t0_hat.vec.iter_mut().zip(sk_chunks) {
+            t0_i.coeffs.copy_from_slice(&bit_unpack_t0(sk_chunk).coeffs);
         }
         // Deviation from the FIPS:
         //   Convert this to ntt form as part of decode
-        t0.ntt();
+        key.t0_hat.ntt();
 
-        Ok(Self { rho, K, tr, s1_hat: s1, s2_hat: s2, t0_hat: t0, seed: None })
+        Ok(key)
     }
 }
 
@@ -686,8 +691,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         rho: [u8; 32],
         K: Secret<[u8; 32]>,
         tr: [u8; 64],
-        s1_hat: Vector<l>,
-        s2_hat: Vector<k>,
+        s1_hat: Secret<Vector<l>>,
+        s2_hat: Secret<Vector<k>>,
         t0_hat: Vector<k>,
         seed: Option<KeyMaterial<32>>,
     ) -> Self {
