@@ -1,11 +1,10 @@
-
 #[cfg(test)]
 mod test_secret {
     // The crate is `#![no_std]`; the test harness links `std`, but its prelude (and `format!`) is
     // not in scope automatically. Bring it in explicitly for these tests.
     extern crate std;
     use std::format;
-    
+
     use bouncycastle_utils::Secret;
 
     #[test]
@@ -92,5 +91,42 @@ mod test_secret {
         let mut s = Secret::<[u8; 32]>::new();
         *s = [7u8; 32];
         drop(s);
+    }
+
+    #[test]
+    fn eq() {
+        // Scalars: equal and unequal.
+        let mut a = Secret::<u64>::new();
+        *a = 0xDEAD_BEEF;
+        let mut b = Secret::<u64>::new();
+        *b = 0xDEAD_BEEF;
+        let mut c = Secret::<u64>::new();
+        *c = 0xFEED_FACE;
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+
+        // Two freshly-zeroed secrets are equal.
+        assert_eq!(Secret::<u32>::new(), Secret::<u32>::new());
+
+        // Arrays: equal, and differing in a single byte.
+        let mut k1 = Secret::<[u8; 16]>::new();
+        *k1 = [0x42u8; 16];
+        let mut k2 = Secret::<[u8; 16]>::new();
+        *k2 = [0x42u8; 16];
+        assert_eq!(k1, k2);
+
+        k2[15] = 0x43; // flip only the last byte
+        assert_ne!(k1, k2);
+
+        k2[15] = 0x42;
+        k2[0] = 0x43; // flip only the first byte
+        assert_ne!(k1, k2);
+    }
+
+    /// The Secret wrapper does not add any memory overhead.
+    #[test]
+    fn no_size_inflation() {
+        assert_eq!(size_of::<i32>(), size_of::<Secret<i32>>());
+        assert_eq!(size_of::<[u8; 32]>(), size_of::<Secret<[u8; 32]>>());
     }
 }

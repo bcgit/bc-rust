@@ -12,6 +12,7 @@
 //! followed by a [compiler_fence] with [SeqCst](Ordering::SeqCst) ordering so the volatile
 //! writes are not reordered with respect to later memory operations.
 
+use crate::ct;
 use core::any::type_name;
 use core::fmt;
 use core::mem::size_of;
@@ -32,14 +33,14 @@ use core::sync::atomic::{Ordering, compiler_fence};
 //           Secret over a type that impls Drop. So we don't actually care about the underlying type
 //           impl'ing Copy; we only care that it doesn't impl Drop, and the `Copy` bound is a
 //           convenient way to catch that if we in the future do impl_zero_init!(T) for a T that has Drop.
-trait ZeroInit: Copy {
+trait ZeroizablePrimitive: Copy {
     /// The zeroed value of this type.
     const ZEROED: Self;
 }
 
 macro_rules! impl_zero_init {
     ($($t:ty),+ $(,)?) => {$(
-        impl ZeroInit for $t {
+        impl ZeroizablePrimitive for $t {
             const ZEROED: Self = 0 as $t;
         }
     )+};
@@ -47,17 +48,17 @@ macro_rules! impl_zero_init {
 
 impl_zero_init!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
 
-impl ZeroInit for bool {
+impl ZeroizablePrimitive for bool {
     const ZEROED: Self = false;
 }
 
-impl ZeroInit for char {
+impl ZeroizablePrimitive for char {
     const ZEROED: Self = '\0';
 }
 
 /// Blanket impl for fixed-size arrays of any length.
 /// This is an alternative to `[T; N]: Default` which is capped at `N <= 32`.
-impl<T: ZeroInit, const N: usize> ZeroInit for [T; N] {
+impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
     const ZEROED: Self = [T::ZEROED; N];
 }
 
@@ -142,6 +143,20 @@ impl<T: ZeroInit, const N: usize> ZeroInit for [T; N] {
 /// assert_eq!(format!("{secret:?}"), "Secret<u32>(<redacted>)");
 /// ```
 ///
+/// # Memory Usage
+///
+/// As a direct wrapper of the type `T`, a `Secret<T>` does not add any memory overhead.
+///
+/// ```
+/// use bouncycastle_utils::Secret;
+///
+/// print!("{}\n", size_of::<i32>());          // 4
+/// print!("{}\n", size_of::<Secret<i32>>()); // also 4
+///
+/// print!("{}\n", size_of::<[u8; 32]>());          // 32
+/// print!("{}\n", size_of::<Secret<[u8; 32]>>());  // also 32
+/// ```
+///
 /// # 🚨 Security 🚨
 ///
 /// What this does NOT guarantee:
@@ -153,9 +168,9 @@ impl<T: ZeroInit, const N: usize> ZeroInit for [T; N] {
 /// * Create a new [Secret] instance, then get a mut ref to its internal value via [Secret::deref_mut]
 ///   and write to that instead of having a copy in an unprotected variable and then copying it into the Secret.
 /// * Avoid copying out of Secret for the same reason.
-pub struct Secret<T: ZeroInit>(T);
+pub struct Secret<T: ZeroizablePrimitive>(T);
 
-impl<T: ZeroInit> Secret<T> {
+impl<T: ZeroizablePrimitive> Secret<T> {
     /// Create a new `Secret` in a zeroed state.
     ///
     /// Populate it afterwards in place via [`DerefMut`] (e.g. by having an RNG or KDF write into
@@ -166,14 +181,14 @@ impl<T: ZeroInit> Secret<T> {
     }
 }
 
-impl<T: ZeroInit> Default for Secret<T> {
+impl<T: ZeroizablePrimitive> Default for Secret<T> {
     #[inline]
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: ZeroInit> Secret<T> {
+impl<T: ZeroizablePrimitive> Secret<T> {
     /// Securely overwrite the contained value with zeros.
     /// After this returns, every byte of the wrapped value has been volatile-written to `0`.
     ///
@@ -205,14 +220,14 @@ impl<T: ZeroInit> Secret<T> {
     }
 }
 
-impl<T: ZeroInit> Drop for Secret<T> {
+impl<T: ZeroizablePrimitive> Drop for Secret<T> {
     #[inline]
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
-impl<T: ZeroInit> Deref for Secret<T> {
+impl<T: ZeroizablePrimitive> Deref for Secret<T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
@@ -220,7 +235,7 @@ impl<T: ZeroInit> Deref for Secret<T> {
     }
 }
 
-impl<T: ZeroInit> DerefMut for Secret<T> {
+impl<T: ZeroizablePrimitive> DerefMut for Secret<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
         &mut self.0
@@ -229,7 +244,7 @@ impl<T: ZeroInit> DerefMut for Secret<T> {
 
 // Intentionally not `Copy`: a `Copy` type cannot have a `Drop`, and we want move semantics so a
 // secret is never silently duplicated. `Clone` is provided for deliberate copies.
-impl<T: ZeroInit> Clone for Secret<T> {
+impl<T: ZeroizablePrimitive> Clone for Secret<T> {
     #[inline]
     fn clone(&self) -> Self {
         Self(self.0)
@@ -237,15 +252,35 @@ impl<T: ZeroInit> Clone for Secret<T> {
 }
 
 /// Redacting: prints the wrapped type but never its contents.
-impl<T: ZeroInit> fmt::Debug for Secret<T> {
+impl<T: ZeroizablePrimitive> fmt::Debug for Secret<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Secret<{}>(<redacted>)", type_name::<T>())
     }
 }
 
 /// Redacting: never prints the contents.
-impl<T: ZeroInit> fmt::Display for Secret<T> {
+impl<T: ZeroizablePrimitive> fmt::Display for Secret<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("<redacted>")
     }
 }
+
+/// Checks for equality of the secret data by casting to bytes and using a constant-time comparison.
+///
+/// Both operands are the same type `T`, so both views are exactly `size_of::<T>()` bytes and the
+/// comparison never short-circuits: it always inspects every byte, avoiding a timing side channel
+/// that would otherwise leak how many leading bytes of two secrets match.
+impl<T: ZeroizablePrimitive> PartialEq for Secret<T> {
+    fn eq(&self, other: &Self) -> bool {
+        let len = size_of::<T>();
+        // SAFETY: `self.0` / `other.0` are live, initialized `T` values, so the `len` bytes starting
+        // at each address lie within that single object. `u8` has alignment 1, so every byte address
+        // is well aligned, and the slices are read-only and used only within this call. `T: Copy`
+        // (via `ZeroizablePrimitive`) means there is no interior mutability or drop glue to worry
+        // about.
+        let a = unsafe { core::slice::from_raw_parts((&self.0 as *const T).cast::<u8>(), len) };
+        let b = unsafe { core::slice::from_raw_parts((&other.0 as *const T).cast::<u8>(), len) };
+        ct::ct_eq_bytes(a, b)
+    }
+}
+impl<T: ZeroizablePrimitive> Eq for Secret<T> {}
