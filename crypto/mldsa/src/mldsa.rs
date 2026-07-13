@@ -492,6 +492,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
+use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
 // imports needed just for docs
@@ -499,7 +500,7 @@ use core::marker::PhantomData;
 use crate::hash_mldsa;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{PHSignatureVerifier, PHSigner};
-use bouncycastle_utils::Secret;
+
 /*** Constants ***/
 
 ///

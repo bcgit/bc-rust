@@ -23,7 +23,7 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
-use bouncycastle_utils::Secret;
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 // imports just for docs

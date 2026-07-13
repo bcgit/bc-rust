@@ -413,6 +413,7 @@ use crate::hash_mldsa;
 use bouncycastle_core::key_material::KeyMaterial256;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{PHSignatureVerifier, PHSigner};
+use bouncycastle_utils::secret::Secret;
 /*** Constants ***/
 
 ///
@@ -1087,8 +1088,8 @@ impl<
         // We'll uncompress them as-needed, and only one polynomial at a time.
         // You can avoid storing these in memory, but then all the sites where they are used
         // will require calls to sk.compute_s1_row() and sk.compute_s2_row(), which are fairly expensive.
-        let s1_packed: [u8; S1_PACKED_LEN] = sk.compute_s1_packed();
-        let s2_packed: [u8; S2_PACKED_LEN] = sk.compute_s2_packed();
+        let s1_packed: Secret<[u8; S1_PACKED_LEN]> = sk.compute_s1_packed();
+        let s2_packed: Secret<[u8; S2_PACKED_LEN]> = sk.compute_s2_packed();
 
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         // skip: mu has already been provided
@@ -1165,7 +1166,7 @@ impl<
                     // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
                     // maybe because re-computing the intermediates adds more to the widest point of the alg?
                     // &sk.compute_s1_row(col),
-                    &s_unpack::<eta>(&s1_packed, col),
+                    &s_unpack::<eta, S1_PACKED_LEN>(&s1_packed, col),
                     &rho_p_p,
                     &c_hat,
                     kappa,
@@ -1196,7 +1197,7 @@ impl<
                     // [Optimization Note]:
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
                     // &sk.compute_s2_row(row),
-                    &s_unpack::<eta>(&s2_packed, row),
+                    &s_unpack::<eta, S2_PACKED_LEN>(&s2_packed, row),
                     &w,
                     &c_hat,
                 ) {

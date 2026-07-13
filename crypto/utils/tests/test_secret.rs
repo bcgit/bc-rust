@@ -5,7 +5,7 @@ mod test_secret {
     extern crate std;
     use std::format;
 
-    use bouncycastle_utils::Secret;
+    use bouncycastle_utils::secret::Secret;
 
     #[test]
     fn new_and_default_are_zeroed() {

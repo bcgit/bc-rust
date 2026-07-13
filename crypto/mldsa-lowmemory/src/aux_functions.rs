@@ -239,10 +239,8 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 // the hope here is that the compiler will aggressively inline this function,
 // and optimize away the branching.
 #[inline(always)]
-pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
+pub(crate) fn bit_unpack_eta_out<const ETA: usize>(v: &[u8], w: &mut Polynomial) {
     debug_assert_eq!(v.len(), bitlen_eta(ETA));
-
-    let mut w = Polynomial::new();
 
     match ETA {
         // MLDSA44 and MLDSA87
@@ -281,8 +279,6 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
         }
         _ => panic!("Invalid eta value"),
     }
-
-    w
 }
 
 /// A variant of Algorithm 19 BitUnpack specific to a=𝛾1 − 1, b=𝛾1

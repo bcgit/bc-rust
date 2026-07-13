@@ -2,16 +2,21 @@
 
 use crate::aux_functions::{high_bits, low_bits, make_hint, use_hint};
 use crate::mldsa::{MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N, q, q_inv};
-use bouncycastle_utils::Secret;
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
 /// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
 /// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
 /// and the real unit tests are in a different crate, so here we are.
-#[derive(Clone)]
+///
+/// # 🚨 Security 🚨
+/// Polynomials themselves are not inherently secret since sometimes they are part of public keys
+/// and sometimes private keys.
+/// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.
+/// Note: at the moment, nothing in this crate uses `Secret<Polynomial>`, so I have left the `impl ZeroizablePrimitive` commented-out.
+#[derive(Clone, Copy)]
 pub struct Polynomial {
-    pub(crate) coeffs: Secret<[i32; N]>,
+    pub(crate) coeffs: [i32; N],
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -29,10 +34,15 @@ impl IndexMut<usize> for Polynomial {
     }
 }
 
+// Turn this back on if we want to start tagging things as `Secret<Polynomial>`.
+// impl ZeroizablePrimitive for Polynomial {
+//     const ZEROED: Self = Self::new();
+// }
+
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
     pub const fn new() -> Self {
-        Self { coeffs: Secret::new() }
+        Self { coeffs: [0i32; N] }
     }
 
     pub(crate) fn conditional_add_q(&mut self) {

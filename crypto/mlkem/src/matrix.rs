@@ -6,6 +6,7 @@ use core::ops::{Index, IndexMut};
 use crate::mlkem::{N, q};
 use crate::polynomial;
 use crate::polynomial::Polynomial;
+use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 #[derive(Clone)]
 /// A matrix over the ML-KEM ring.
@@ -81,7 +82,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 // Technically all matrices and some vectors are only part of the public key and might not need to be zeroized,
 // but I'll leave it zeroizing for now and leave this as a potential future optimization.
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub(crate) struct Vector<const k: usize> {
     pub(crate) vec: [Polynomial; k],
 }
@@ -101,9 +102,13 @@ impl<const k: usize> IndexMut<usize> for Vector<k> {
     }
 }
 
+impl<const k: usize> ZeroizablePrimitive for Vector<k> {
+    const ZEROED: Self = Self::new();
+}
+
 impl<const k: usize> Vector<k> {
-    pub(crate) fn new() -> Self {
-        Self { vec: [(); k].map(|_| Polynomial::new()) }
+    pub(crate) const fn new() -> Self {
+        Self { vec: [Polynomial::new(); k] }
     }
 
     /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂

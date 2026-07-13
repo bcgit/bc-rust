@@ -10,7 +10,7 @@ use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
-use bouncycastle_utils::Secret;
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 // imports just for docs
@@ -116,7 +116,7 @@ impl<const k: usize, const PK_LEN: usize> MLKEMPublicKeyTrait<k, PK_LEN>
             let mut t_hat = Vector::<k>::new();
 
             for (t_i, pk_chunk) in t_hat.vec.iter_mut().zip(pk_chunks) {
-                t_i.coeffs.copy_from_slice(&*byte_decode::<12, POLY_BYTES>(pk_chunk).coeffs);
+                t_i.coeffs.copy_from_slice(&byte_decode::<12, POLY_BYTES>(pk_chunk).coeffs);
 
                 // FIPS 203 says:
                 //      "Specifically, ByteDecode12 converts each 12-bit
@@ -372,7 +372,7 @@ pub struct MLKEMPrivateKey<
     const SK_LEN: usize,
     const PK_LEN: usize,
 > {
-    s_hat: Vector<k>,
+    s_hat: Secret<Vector<k>>,
     ek: PK,
     pk_hash: [u8; 32],
     z: Secret<[u8; 32]>,
@@ -450,7 +450,7 @@ pub(crate) trait MLKEMPrivateKeyInternalTrait<
     /// Not exposing a constructor publicly because you should have to get an instance either by
     /// running a keygen, or by decoding an existing key.
     fn new(
-        s_hat: Vector<k>,
+        s_hat: Secret<Vector<k>>,
         ek: PK,
         h: [u8; 32],
         z: Secret<[u8; 32]>,
@@ -507,7 +507,7 @@ impl<
         let mut pos = 0usize;
 
         /* dk_pke */
-        let mut s_hat = Vector::<k>::new();
+        let mut s_hat: Secret<Vector<k>> = Secret::new();
         // for (s_i, sk_chunk) in s_hat.0.iter_mut().zip(sk_chunks) {
         for i in 0..k {
             s_hat[i] = byte_decode::<12, POLY_BYTES>(
@@ -562,7 +562,7 @@ impl<
 {
     /// Note to future maintainers: FIPS 203 section 7.3 requires that ek be hashed and compared to pk_hash.
     fn new(
-        s_hat: Vector<k>,
+        s_hat: Secret<Vector<k>>,
         ek: PK,
         pk_hash: [u8; 32],
         z: Secret<[u8; 32]>,
