@@ -199,18 +199,21 @@ impl<T: ZeroizablePrimitive> Secret<T> {
     /// since this will still call `zeroize()` and also move the object, preventing you from accidentally reusing it.
     #[inline]
     pub fn zeroize(&mut self) {
-        let base_ptr = (&mut self.0 as *mut T).cast::<u8>();
-        let len = size_of::<T>();
-        for i in 0..len {
-            // SAFETY: `base` points at a live, initialized `T`, so the `len` bytes `base..base+len`
-            // all lie within that single allocated object; `i` never reaches `len`, so `add(i)` is
-            // in bounds. `u8` has alignment 1, so every byte address is trivially well-aligned, and
-            // `u8` has no drop glue. `write_volatile` (rather than a plain store) is what forbids
-            // the compiler from eliding this scrub as a dead write. All-zero is a valid bit pattern
-            // for the primitive scalar/array types this wrapper is intended to hold.
-            unsafe {
-                ptr::write_volatile(base_ptr.add(i), 0u8);
-            }
+        // SAFETY: `&mut self.0` is a valid, properly aligned, mutable reference to an initialized
+        // `T`, which is exactly the contract `write_volatile` requires.
+        // `T::ZEROED` is defined above for each supported primitive and primitive-array as the
+        // is the all-zero value of `T`, which is a valid and correctly-sized bit pattern
+        // for the primitive scalar/array being zeroized.
+        //`write_volatile` (rather than a plain store) is what forbids the compiler from eliding
+        // this scrub as a dead write as per its contract:
+        // https://doc.rust-lang.org/std/ptr/fn.write_volatile.html
+
+        // Just to make sure -- this should trigger on any unit tests for any instantiation of
+        // Secret<T> that causes this assumption to be violated.
+        debug_assert_eq!(size_of::<T>(), size_of_val(&T::ZEROED));
+
+        unsafe {
+            ptr::write_volatile(&mut self.0, T::ZEROED);
         }
         // Compile-time barrier: keeps the volatile scrub ordered before any later memory ops.
         // (for example, if the user calls .zeroize() outside of a drop and then continues using
