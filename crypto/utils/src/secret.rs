@@ -176,7 +176,7 @@ impl<T: ZeroizablePrimitive> Secret<T> {
     /// Populate it afterwards in place via [`DerefMut`] (e.g. by having an RNG or KDF write into
     /// `&mut *secret`), which avoids ever materializing an unprotected copy of the secret.
     #[inline]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self(T::ZEROED)
     }
 }

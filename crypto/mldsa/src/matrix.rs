@@ -42,7 +42,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
         let mut w = Vector::<k>::new();
         for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
-            w[i].coeffs.copy_from_slice(&multiply_ntt(&self[i][0], &v[0]).coeffs);
+            w[i].coeffs.copy_from_slice(&*multiply_ntt(&self[i][0], &v[0]).coeffs);
 
             let mut w1: Polynomial;
             for j in 1..l {

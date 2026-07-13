@@ -499,7 +499,7 @@ use core::marker::PhantomData;
 use crate::hash_mldsa;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{PHSignatureVerifier, PHSigner};
-
+use bouncycastle_utils::Secret;
 /*** Constants ***/
 
 ///
@@ -850,7 +850,7 @@ impl<
         // Alg 6 line 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
         //   ▷ expand seed
         let mut rho: [u8; 32] = [0u8; 32];
-        let mut K: [u8; 32] = [0u8; 32];
+        let mut K = Secret::<[u8; 32]>::new();
 
         let (s1_hat, mut s2) = {
             // scope for h
@@ -863,7 +863,7 @@ impl<
             let mut rho_prime: [u8; 64] = [0u8; 64];
             let bytes_written = h.squeeze_out(&mut rho_prime);
             debug_assert_eq!(bytes_written, 64);
-            let bytes_written = h.squeeze_out(&mut K);
+            let bytes_written = h.squeeze_out(&mut *K);
             debug_assert_eq!(bytes_written, 32);
 
             // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
@@ -914,10 +914,6 @@ impl<
         // let sk = SK::new(&rho, &K, &tr, &s1_hat, &s2, &t0, Some(seed.clone()));
         let sk = SK::new(rho, K, tr, s1_hat, s2, t0, Some(seed.clone()));
 
-        // Clear the secret data before returning memory to the OS
-        //   (SK::new() copies all values)
-        rho.fill(0u8);
-        K.fill(0u8);
         // tr is public data, does not need to be zeroized
         // s1, s2, t0 are all Vectors of Polynomials, so implement a zeroizing Drop
 
@@ -953,7 +949,7 @@ impl<
             // scope for h
             // 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
             let mut h = H::new();
-            h.absorb(sk.K()).expect("absorb before squeeze is infallible");
+            h.absorb(&**sk.K()).expect("absorb before squeeze is infallible");
             h.absorb(&rnd).expect("absorb before squeeze is infallible");
             h.absorb(mu).expect("absorb before squeeze is infallible");
             let mut rho_p_p = [0u8; 64];

@@ -23,12 +23,11 @@ use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{
-    Secret, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF,
-};
+use bouncycastle_core::traits::{SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_utils::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
-
+use core::ops::DerefMut;
 // imports just for docs
 #[allow(unused_imports)]
 use crate::mldsa::MLDSATrait;
@@ -310,75 +309,11 @@ pub struct MLDSASeedPrivateKey<
     const FULL_SK_LEN: usize,
 > {
     seed: KeyMaterial<32>,
+    // public seed rho does not need to be secret
     rho: [u8; 32],
-    rho_prime: [u8; 64],
-    K: [u8; 32],
+    rho_prime: Secret<[u8; 64]>,
+    K: Secret<[u8; 32]>,
 }
-
-impl<
-    const LAMBDA: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-    const FULL_SK_LEN: usize,
-> Drop
-    for MLDSASeedPrivateKey<
-        LAMBDA,
-        GAMMA2,
-        k,
-        l,
-        eta,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-    >
-{
-    fn drop(&mut self) {
-        // seed is a KeyMaterialSized which will zeroize itself
-        self.rho.fill(0u8);
-        self.rho_prime.fill(0u8);
-        self.K.fill(0u8);
-    }
-}
-
-impl<
-    const LAMBDA: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-> Secret
-    for MLDSASeedPrivateKey<
-        LAMBDA,
-        GAMMA2,
-        k,
-        l,
-        eta,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-    >
-{
-}
-
 impl<
     const LAMBDA: i32,
     const GAMMA2: i32,
@@ -499,16 +434,19 @@ impl<
         }
 
         let (rho, rho_prime, K) = Self::compute_rhos_and_K(&seed);
+
         Ok(Self { seed: seed.clone(), rho, rho_prime, K })
     }
 
-    fn compute_rhos_and_K(seed: &KeyMaterial<32>) -> ([u8; 32], [u8; 64], [u8; 32]) {
+    fn compute_rhos_and_K(
+        seed: &KeyMaterial<32>,
+    ) -> ([u8; 32], Secret<[u8; 64]>, Secret<[u8; 32]>) {
         // derive sk.K
         // Alg 6; 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
         //   ▷ expand seed
-        let mut rho: [u8; 32] = [0u8; 32];
-        let mut rho_prime: [u8; 64] = [0u8; 64];
-        let mut K: [u8; 32] = [0u8; 32];
+        let mut rho = [0u8; 32];
+        let mut rho_prime: Secret<[u8; 64]> = Secret::new();
+        let mut K: Secret<[u8; 32]> = Secret::new();
 
         let mut h = H::default();
         h.absorb(seed.ref_to_bytes()).expect("absorb before squeeze is infallible");
@@ -516,9 +454,9 @@ impl<
         h.absorb(&(l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
         let bytes_written = h.squeeze_out(&mut rho);
         debug_assert_eq!(bytes_written, 32);
-        let bytes_written = h.squeeze_out(&mut rho_prime);
+        let bytes_written = h.squeeze_out(rho_prime.deref_mut());
         debug_assert_eq!(bytes_written, 64);
-        let bytes_written = h.squeeze_out(&mut K);
+        let bytes_written = h.squeeze_out(K.deref_mut());
         debug_assert_eq!(bytes_written, 32);
 
         (rho, rho_prime, K)
@@ -702,7 +640,8 @@ impl<
 
         // 1: 𝑠𝑘 ← 𝜌||𝐾||𝑡𝑟
         out[0..32].copy_from_slice(&self.rho);
-        out[32..64].copy_from_slice(&self.K);
+        // K is protected inside a Secret<[u8]>, but here we really do need to deref and copy it out.
+        out[32..64].copy_from_slice(&*self.K);
         out[64..128].copy_from_slice(&self.tr());
         off += 128;
 

@@ -1,21 +1,19 @@
 //! Represents a polynomial over the ML-DSA ring.
 
-use core::fmt;
-use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
 use crate::aux_functions::{
     ZETAS, ZETAS_INV, barrett_reduce, montgomery_reduce, mul_mont, ntt_base_mult,
 };
 use crate::mlkem::{N, q};
-use bouncycastle_core::traits::Secret;
+use bouncycastle_utils::Secret;
 
 /// A polynomial over the ML-KEM ring.
 /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
 #[derive(Clone)]
 pub struct Polynomial {
     /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-    pub coeffs: [i16; N],
+    pub coeffs: Secret<[i16; N]>,
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -36,7 +34,7 @@ impl IndexMut<usize> for Polynomial {
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
     pub const fn new() -> Self {
-        Self { coeffs: [0i16; N] }
+        Self { coeffs: Secret::new() }
     }
 
     /// Create a Polynomial from the message m
@@ -306,7 +304,7 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
 
     for i in 0..(N / 4) {
         ntt_base_mult(
-            &mut r.coeffs,
+            r.coeffs.as_mut(),
             4 * i,
             a[4 * i],
             a[4 * i + 1],
@@ -315,7 +313,7 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
             ZETAS[64 + i],
         );
         ntt_base_mult(
-            &mut r.coeffs,
+            r.coeffs.as_mut(),
             4 * i + 2,
             a[4 * i + 2],
             a[4 * i + 3],
@@ -326,26 +324,6 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     }
 
     r
-}
-
-impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i16);
-    }
-}
-
-impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
-}
-
-impl Display for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
 }
 
 // Not currently used, but I'll leave it here because it's useful for debugging if you want to output values

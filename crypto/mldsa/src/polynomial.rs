@@ -4,9 +4,7 @@ use crate::aux_functions::{
     ZETAS, conditional_add_q, high_bits, low_bits, make_hint, montgomery_reduce,
 };
 use crate::mldsa::{MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N, q};
-use bouncycastle_core::traits::Secret;
-use core::fmt;
-use core::fmt::{Debug, Display, Formatter};
+use bouncycastle_utils::Secret;
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
@@ -15,7 +13,7 @@ use core::ops::{Index, IndexMut};
 /// and the real unit tests are in a different crate, so here we are.
 #[derive(Clone)]
 pub struct Polynomial {
-    pub(crate) coeffs: [i32; N],
+    pub(crate) coeffs: Secret<[i32; N]>,
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -36,7 +34,7 @@ impl IndexMut<usize> for Polynomial {
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
     pub const fn new() -> Self {
-        Self { coeffs: [0i32; N] }
+        Self { coeffs: Secret::new() }
     }
 
     pub(crate) fn conditional_add_q(&mut self) {
@@ -232,25 +230,5 @@ impl Polynomial {
             // equiv. to the global constant N
             self[j] = montgomery_reduce(f * self[j] as i64);
         }
-    }
-}
-
-impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i32);
-    }
-}
-
-impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
-}
-
-impl Display for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
     }
 }

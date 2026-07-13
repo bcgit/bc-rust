@@ -17,7 +17,7 @@ mod mldsa_tests {
     use bouncycastle_mldsa::{
         MLDSA_TR_LEN, MLDSA44, MLDSA44PrivateKey, MLDSA44PrivateKeyExpanded, MLDSA44PublicKey,
         MLDSA44PublicKeyExpanded, MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87,
-        MLDSA87PrivateKey, MLDSA87PublicKey, MuBuilder, Polynomial,
+        MLDSA87PrivateKey, MLDSA87PublicKey, MuBuilder,
     };
     use bouncycastle_mldsa::{
         MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SIG_LEN,
@@ -863,21 +863,6 @@ mod mldsa_tests {
             Err(SignatureError::SignatureVerificationFailed) => (),
             _ => panic!("Expected verification to fail due to busted signature"),
         }
-    }
-
-    /// Tests that no private data is displayed
-    #[test]
-    fn test_display() {
-        // Polynomials (could) contain private data,
-        // and therefore should be protected against accidental crash dumps:
-
-        // fmt
-        let p = Polynomial::new();
-        assert_eq!(format!("{}", p), "Polynomial (data masked)");
-
-        // debug
-        let p = Polynomial::new();
-        assert_eq!(format!("{:?}", p), "Polynomial (data masked)");
     }
 
     #[test]

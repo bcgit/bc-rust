@@ -36,9 +36,7 @@ pub trait AlgorithmOID {
 /// ciphertexts that are incompatible with other implementations as ciphers in more complex modes, such
 /// as AEADs or stream ciphers may need to stick extra data either at the beginning or end of the ciphertext.
 /// See the documentation of the underlying implementation for more details.
-pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
-    Algorithm + SecretTODELETE
-{
+pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Algorithm {
     #[cfg(feature = "std")]
     /// A one-shot API to encrypt some plaintext with the given key.
     /// This function returns the ciphertext as a Vec<u8>, and therefore is only available when compiling with std.
@@ -522,9 +520,7 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
 }
 
 /// A private key for a KEM algorithm, often denoted "sk" (for "secret key").
-pub trait KEMPrivateKey<const SK_LEN: usize>:
-    PartialEq + Eq + Clone + SecretTODELETE + Sized
-{
+pub trait KEMPrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Sized {
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; SK_LEN];
     /// Write it out to bytes in its standard encoding.
@@ -770,14 +766,6 @@ pub trait RNG {
     fn security_strength(&self) -> SecurityStrength;
 }
 
-/// A trait that forces an object to implement a zeroizing Drop() as well as Debug and Display that
-/// will not log the sensitive contents, even in error or crash-dump scenarios.
-// Since rust auto-implements Drop, there's a lint that explicitly bounding on Drop is useless.
-// I disagree because I want to force things that are secrets to manually implement Drop that zeroizes the data.
-// So I'm turning off this lint.
-#[allow(drop_bounds)]
-pub trait SecretTODELETE: Drop + Debug + Display {}
-
 /// Allows a stateful object to suspend its operation by serializing its state into a byte array
 ///so that it can be resumed later, potentially from a different host.
 ///
@@ -927,9 +915,7 @@ pub trait SignaturePublicKey<const PK_LEN: usize>:
 }
 
 /// A private key for a signature algorithm, often denoted "sk" (for "secret key").
-pub trait SignaturePrivateKey<const SK_LEN: usize>:
-    PartialEq + Eq + Clone + SecretTODELETE + Sized
-{
+pub trait SignaturePrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Sized {
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; SK_LEN];
     /// Write it out to bytes in its standard encoding.

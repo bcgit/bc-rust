@@ -14,7 +14,7 @@ mod mlkem_tests {
         MLKEM512_FULL_SK_LEN, MLKEM768_FULL_SK_LEN, MLKEM1024_FULL_SK_LEN,
     };
     use bouncycastle_mlkem_lowmemory::{
-        MLKEM_RND_LEN, MLKEM_SEED_LEN, MLKEM512, MLKEM768, MLKEM1024, Polynomial,
+        MLKEM_RND_LEN, MLKEM_SEED_LEN, MLKEM512, MLKEM768, MLKEM1024,
     };
     use bouncycastle_mlkem_lowmemory::{
         MLKEM_SS_LEN, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM768_CT_LEN,
@@ -512,21 +512,6 @@ mod mlkem_tests {
             Err(KEMError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
-    }
-
-    /// Tests that no private data is displayed
-    #[test]
-    fn test_display() {
-        // Polynomials (could) contain private data,
-        // and therefore should be protected against accidental crash dumps:
-
-        // fmt
-        let p = Polynomial::new();
-        assert_eq!(format!("{}", p), "Polynomial (data masked)");
-
-        // debug
-        let p = Polynomial::new();
-        assert_eq!(format!("{:?}", p), "Polynomial (data masked)");
     }
 
     #[test]
