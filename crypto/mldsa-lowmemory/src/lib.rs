@@ -178,7 +178,8 @@
 //! And that's the basic usage! There are lots more bells-and-whistles in the form of exposed algorithm
 //! parameters, streaming APIs and other goodies that you can find by poking around this documentation.
 //!
-//! # Security
+//! # 🚨 Security 🚨
+//!
 //! All functionality exposed by this crate is considered secure to use.
 //! In other words, this crate does not contain any "hazmat" except for the obvous points about
 //! handling your private keys properly: if you post your private key to github, or you generate

@@ -267,7 +267,7 @@ pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
     }
     let mut result = 0u8;
     for i in 0..a.len() {
-        result |= std::hint::black_box(a[i] ^ b[i]);
+        result |= core::hint::black_box(a[i] ^ b[i]);
     }
     result == 0
 }
@@ -277,7 +277,7 @@ pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
 pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
     let mut result = 0u8;
     for i in 0..a.len() {
-        result |= std::hint::black_box(a[i]);
+        result |= core::hint::black_box(a[i]);
     }
     result == 0
 }
@@ -305,6 +305,6 @@ pub fn conditional_copy_bytes<const LEN: usize>(
     debug_assert_eq!(mask, if take_a { 0xFF } else { 0x00 });
 
     for i in 0..LEN {
-        out[i] = std::hint::black_box(a[i] & mask) | std::hint::black_box(b[i] & !mask);
+        out[i] = core::hint::black_box(a[i] & mask) | core::hint::black_box(b[i] & !mask);
     }
 }
