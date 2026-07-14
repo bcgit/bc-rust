@@ -308,6 +308,7 @@ pub struct MLDSASeedPrivateKey<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
 > {
+    // note: KeyMaterial is inherently Secret
     seed: KeyMaterial<32>,
     // public seed rho does not need to be secret
     rho: [u8; 32],

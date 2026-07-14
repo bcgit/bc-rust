@@ -426,6 +426,7 @@ pub struct MLDSAPrivateKey<
     s1_hat: Secret<Vector<l>>,
     s2_hat: Secret<Vector<k>>,
     t0_hat: Vector<k>,
+    // note: KeyMaterial is inherently Secret
     seed: Option<KeyMaterial<32>>,
 }
 
