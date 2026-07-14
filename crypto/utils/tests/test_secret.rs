@@ -3,9 +3,12 @@ mod test_secret {
     // The crate is `#![no_std]`; the test harness links `std`, but its prelude (and `format!`) is
     // not in scope automatically. Bring it in explicitly for these tests.
     extern crate std;
+
+    use std::fmt;
+    use std::fmt::Formatter;
     use std::format;
 
-    use bouncycastle_utils::secret::Secret;
+    use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
     #[test]
     fn new_and_default_are_zeroed() {
@@ -84,6 +87,62 @@ mod test_secret {
         // The secret value must not appear in either rendering.
         assert!(!dbg.contains("1094795585")); // 0x41414141
         assert!(!disp.contains("1094795585"));
+
+        // Wrapping something in Secret will mask the type's native Debug / Display
+        #[derive(Copy, Clone)]
+        struct Thing {
+            value: i32,
+        }
+        // Debug and Display that dump the inner value.
+        impl fmt::Debug for Thing {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "Thing {}", self.value)
+            }
+        }
+        impl fmt::Display for Thing {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "Thing {}", self.value)
+            }
+        }
+
+        // So that it's valid for Secret<T: ZeroizablePrimitive>
+        impl ZeroizablePrimitive for Thing {
+            const ZEROED: Self = Self { value: 0 };
+        }
+
+        // Thing can be debugged and displayed with the inner value
+        let non_secret_thing = Thing { value: 42 };
+        assert_eq!(format!("{}", non_secret_thing), "Thing 42");
+        assert_eq!(format!("{:?}", non_secret_thing), "Thing 42");
+
+        // But a Secret<Thing> cannot
+        let mut secret_thing = Secret::<Thing>::new();
+        secret_thing.value = 42;
+
+        assert!(format!("{}", secret_thing).contains("<redacted>"));
+        assert!(!format!("{}", secret_thing).contains("42"));
+
+        assert!(format!("{:?}", secret_thing).contains("<redacted>"));
+        assert!(!format!("{:?}", secret_thing).contains("42"));
+
+        // still behaves properly after zeroization
+        secret_thing.zeroize();
+        assert_eq!(secret_thing.value, 0i32);
+
+        assert!(format!("{}", secret_thing).contains("<redacted>"));
+        assert!(!format!("{}", secret_thing).contains("0"));
+
+        assert!(format!("{:?}", secret_thing).contains("<redacted>"));
+        assert!(!format!("{:?}", secret_thing).contains("0"));
+
+        secret_thing.value = 43;
+        assert_eq!(secret_thing.value, 43i32);
+
+        assert!(format!("{}", secret_thing).contains("<redacted>"));
+        assert!(!format!("{}", secret_thing).contains("43"));
+
+        assert!(format!("{:?}", secret_thing).contains("<redacted>"));
+        assert!(!format!("{:?}", secret_thing).contains("43"));
     }
 
     #[test]
