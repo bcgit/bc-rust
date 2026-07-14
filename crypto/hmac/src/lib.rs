@@ -22,7 +22,7 @@
 //!
 //! # Examples
 //!
-//! Instantation of an HMAC object is straightforward:
+//! Instantiation of an HMAC object is straightforward:
 //!
 //! ```
 //! use bouncycastle_hmac::HMAC_SHA256;
@@ -186,15 +186,14 @@
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, MAC, RNG, Secret, SecurityStrength, Suspendable,
-    SuspendableKeyed,
+    Algorithm, AlgorithmOID, Hash, MAC, RNG, SecurityStrength, Suspendable, SuspendableKeyed,
 };
 use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 use bouncycastle_sha2::{
     SHA224, SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
 };
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SUSPENDED_SHA3_STATE_LEN};
-use bouncycastle_utils::ct;
+use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 
 /*** String constants ***/
@@ -342,18 +341,8 @@ pub struct HMAC<HASH: Hash + Default, const KEY_BUF_LEN: usize = LARGEST_HASHER_
     hasher: HASH,
     // todo: once rust stable merges generic_const_exprs, we can remove this hack and delete the KEY_BUF_LEN param.
     // key: [u8; HASH::OUTPUT_LEN];
-    key: [u8; KEY_BUF_LEN],
-    key_len: usize, // Doing it this way to avoid needing a vec, so that this can be made no_std friendly.
-}
-
-// Because the HMAC struct contains a copy of the long-term key
-impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Secret for HMAC<HASH, KEY_BUF_LEN> {}
-
-impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Drop for HMAC<HASH, KEY_BUF_LEN> {
-    fn drop(&mut self) {
-        self.key.fill(0);
-        self.key_len = 0;
-    }
+    key: Secret<[u8; KEY_BUF_LEN]>,
+    key_len: Secret<usize>, // Doing it this way to avoid needing a vec, so that this can be made no_std friendly.
 }
 
 impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Debug for HMAC<HASH, KEY_BUF_LEN> {
@@ -390,7 +379,7 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
         // TODO: make this no_std-friendly
         let mut padded = vec![0u8; self.hasher.block_bitlen() / 8];
 
-        padded[..self.key_len].copy_from_slice(&self.key[..self.key_len]);
+        padded[..*self.key_len].copy_from_slice(&self.key[..*self.key_len]);
 
         // XXX: easier way to xor over Vec?
         for entry in &mut padded {
@@ -410,15 +399,15 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
         if key_bytes.len() > self.hasher.block_bitlen() / 8 {
             // then we have to pre-hash it -- use a new instance of the hasher rather than the internal one
             HASH::default().hash_out(key_bytes, &mut self.key[..self.hasher.output_len()]);
-            self.key_len = self.hasher.output_len();
+            *self.key_len = self.hasher.output_len();
         } else {
             self.key[..key_bytes.len()].copy_from_slice(key_bytes);
-            self.key_len = key_bytes.len();
+            *self.key_len = key_bytes.len();
         }
 
         // Just as a sanity-check.
         assert!(
-            self.key_len <= KEY_BUF_LEN,
+            *self.key_len <= KEY_BUF_LEN,
             "Fatal error: Key length exceeds HMAC internal buffer length"
         );
     }
@@ -491,13 +480,13 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
 
 impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_LEN> {
     fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        let mut hmac = Self { hasher: HASH::default(), key: [0u8; KEY_BUF_LEN], key_len: 0 };
+        let mut hmac = Self { hasher: HASH::default(), key: Secret::new(), key_len: Secret::new() };
         hmac.init(key, false)?;
         Ok(hmac)
     }
 
     fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        let mut hmac = Self { hasher: HASH::default(), key: [0u8; KEY_BUF_LEN], key_len: 0 };
+        let mut hmac = Self { hasher: HASH::default(), key: Secret::new(), key_len: Secret::new() };
         hmac.init(key, true)?;
         Ok(hmac)
     }
@@ -616,7 +605,7 @@ impl<
         // Re-load the key material exactly as `new()` did (pre-hashing an over-length key), but do
         // NOT re-absorb `K ⊕ ipad` — the deserialized hasher already contains it. The key is only
         // needed for the outer `K ⊕ opad` step at finalization.
-        let mut hmac = HMAC { hasher, key: [0u8; KEY_BUF_LEN], key_len: 0 };
+        let mut hmac = HMAC { hasher, key: Secret::new(), key_len: Secret::new() };
         hmac.load_key_material(key.ref_to_bytes());
 
         Ok(hmac)

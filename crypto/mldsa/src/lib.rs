@@ -88,7 +88,8 @@
 //! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
 //!
-//! # Security
+//! # 🚨 Security 🚨
+//!
 //! All functionality exposed by this crate is considered secure to use.
 //! In other words, this crate does not contain any "hazmat" except for the obvious points about
 //! handling your private keys properly: if you post your private key to github, or you generate

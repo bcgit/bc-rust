@@ -23,12 +23,11 @@ use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{
-    Secret, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF,
-};
+use bouncycastle_core::traits::{SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
-
+use core::ops::DerefMut;
 // imports just for docs
 #[allow(unused_imports)]
 use crate::mldsa::MLDSATrait;
@@ -309,76 +308,13 @@ pub struct MLDSASeedPrivateKey<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
 > {
+    // note: KeyMaterial is inherently Secret
     seed: KeyMaterial<32>,
+    // public seed rho does not need to be secret
     rho: [u8; 32],
-    rho_prime: [u8; 64],
-    K: [u8; 32],
+    rho_prime: Secret<[u8; 64]>,
+    K: Secret<[u8; 32]>,
 }
-
-impl<
-    const LAMBDA: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-    const FULL_SK_LEN: usize,
-> Drop
-    for MLDSASeedPrivateKey<
-        LAMBDA,
-        GAMMA2,
-        k,
-        l,
-        eta,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-    >
-{
-    fn drop(&mut self) {
-        // seed is a KeyMaterialSized which will zeroize itself
-        self.rho.fill(0u8);
-        self.rho_prime.fill(0u8);
-        self.K.fill(0u8);
-    }
-}
-
-impl<
-    const LAMBDA: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-> Secret
-    for MLDSASeedPrivateKey<
-        LAMBDA,
-        GAMMA2,
-        k,
-        l,
-        eta,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-    >
-{
-}
-
 impl<
     const LAMBDA: i32,
     const GAMMA2: i32,
@@ -499,16 +435,19 @@ impl<
         }
 
         let (rho, rho_prime, K) = Self::compute_rhos_and_K(&seed);
+
         Ok(Self { seed: seed.clone(), rho, rho_prime, K })
     }
 
-    fn compute_rhos_and_K(seed: &KeyMaterial<32>) -> ([u8; 32], [u8; 64], [u8; 32]) {
+    fn compute_rhos_and_K(
+        seed: &KeyMaterial<32>,
+    ) -> ([u8; 32], Secret<[u8; 64]>, Secret<[u8; 32]>) {
         // derive sk.K
         // Alg 6; 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
         //   ▷ expand seed
-        let mut rho: [u8; 32] = [0u8; 32];
-        let mut rho_prime: [u8; 64] = [0u8; 64];
-        let mut K: [u8; 32] = [0u8; 32];
+        let mut rho = [0u8; 32];
+        let mut rho_prime: Secret<[u8; 64]> = Secret::new();
+        let mut K: Secret<[u8; 32]> = Secret::new();
 
         let mut h = H::default();
         h.absorb(seed.ref_to_bytes()).expect("absorb before squeeze is infallible");
@@ -516,21 +455,26 @@ impl<
         h.absorb(&(l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
         let bytes_written = h.squeeze_out(&mut rho);
         debug_assert_eq!(bytes_written, 32);
-        let bytes_written = h.squeeze_out(&mut rho_prime);
+        let bytes_written = h.squeeze_out(rho_prime.deref_mut());
         debug_assert_eq!(bytes_written, 64);
-        let bytes_written = h.squeeze_out(&mut K);
+        let bytes_written = h.squeeze_out(K.deref_mut());
         debug_assert_eq!(bytes_written, 32);
 
         (rho, rho_prime, K)
     }
 
-    fn compute_t_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial {
+    fn compute_t_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial {
         debug_assert!(idx < k);
 
         // [Optimization Note]:
         // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
         // let mut s1 = self.compute_s1_row(0);
-        let mut s1_hat_i = s_unpack::<eta>(s1_packed, 0);
+        let mut s1_hat_i = s_unpack::<eta, S1_PACKED_LEN>(s1_packed, 0);
         s1_hat_i.ntt();
 
         let mut t_i = {
@@ -541,7 +485,7 @@ impl<
                 // [Optimization Note]:
                 // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
                 // s1 = self.compute_s1_row(col);
-                let mut s1_hat = s_unpack::<eta>(s1_packed, col);
+                let mut s1_hat = s_unpack::<eta, S1_PACKED_LEN>(s1_packed, col);
                 s1_hat.ntt();
                 let mut A_elem = expandA_elem(&self.rho, idx, col);
                 A_elem.multiply_ntt(&s1_hat);
@@ -555,7 +499,7 @@ impl<
         // [Optimization Note]:
         // This is one of the places that a row of s2 can be re-computed instead of unpacked from the compressed form.
         // let s2 = self.compute_s2_row(idx);
-        let s2 = s_unpack::<eta>(s2_packed, idx);
+        let s2 = s_unpack::<eta, S2_PACKED_LEN>(s2_packed, idx);
         t_i.add_ntt(&s2);
         t_i.conditional_add_q();
 
@@ -673,8 +617,8 @@ impl<
     fn derive_pk(&self) -> MLDSAPublicKey<k, T1_PACKED_LEN, PK_LEN> {
         // The goal here is to get t1, which we will build and compress one row at a time.
 
-        let s1_packed: [u8; S1_PACKED_LEN] = self.compute_s1_packed();
-        let s2_packed: [u8; S2_PACKED_LEN] = self.compute_s2_packed();
+        let s1_packed: Secret<[u8; S1_PACKED_LEN]> = self.compute_s1_packed();
+        let s2_packed: Secret<[u8; S2_PACKED_LEN]> = self.compute_s2_packed();
 
         let mut t1_packed = [0u8; T1_PACKED_LEN];
         debug_assert_eq!(T1_PACKED_LEN, POLY_T1PACKED_LEN * k);
@@ -702,7 +646,8 @@ impl<
 
         // 1: 𝑠𝑘 ← 𝜌||𝐾||𝑡𝑟
         out[0..32].copy_from_slice(&self.rho);
-        out[32..64].copy_from_slice(&self.K);
+        // K is protected inside a Secret<[u8]>, but here we really do need to deref and copy it out.
+        out[32..64].copy_from_slice(&*self.K);
         out[64..128].copy_from_slice(&self.tr());
         off += 128;
 
@@ -710,14 +655,14 @@ impl<
         // 3:   𝑠𝑘 ← 𝑠𝑘 || BitPack (𝐬1[𝑖], 𝜂, 𝜂)
         // 4: end for
         let s1_packed = self.compute_s1_packed();
-        out[off..off + S1_PACKED_LEN].copy_from_slice(&s1_packed);
+        out[off..off + S1_PACKED_LEN].copy_from_slice(&*s1_packed);
         off += S1_PACKED_LEN;
 
         // 5: for 𝑖 from 0 to 𝑘 − 1 do
         // 6:   𝑠𝑘 ← 𝑠𝑘 || BitPack (𝐬2[𝑖], 𝜂, 𝜂)
         // 7: end for
         let s2_packed = self.compute_s2_packed();
-        out[off..off + S2_PACKED_LEN].copy_from_slice(&s2_packed);
+        out[off..off + S2_PACKED_LEN].copy_from_slice(&*s2_packed);
         off += S2_PACKED_LEN;
 
         // 8: for 𝑖 from 0 to 𝑘 − 1 do
@@ -754,17 +699,39 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<
     fn rho(&self) -> &[u8; 32];
     fn K(&self) -> &[u8; 32];
 
+    /// A single entry of a privacy key vector.
+    /// These tend to be used very transiently, so we won't bother wrapping it as a Secret.
     fn compute_s1_row(&self, idx: usize) -> Polynomial;
 
-    fn compute_s1_packed(&self) -> [u8; S1_PACKED_LEN];
+    /// Private key component.
+    /// The packed representation sticks around for the whole computation, so
+    /// we'll wrap in as a Secret.
+    fn compute_s1_packed(&self) -> Secret<[u8; S1_PACKED_LEN]>;
 
+    /// A single entry of a privacy key vector.
+    /// These tend to be used very transiently, so we won't bother wrapping it as a Secret.
     fn compute_s2_row(&self, idx: usize) -> Polynomial;
 
-    fn compute_s2_packed(&self) -> [u8; S2_PACKED_LEN];
+    /// Private key component.
+    /// The packed representation sticks around for the whole computation, so
+    /// we'll wrap in as a Secret.
+    fn compute_s2_packed(&self) -> Secret<[u8; S2_PACKED_LEN]>;
 
-    fn compute_t0_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial;
+    /// Public key component.
+    fn compute_t0_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial;
 
-    fn compute_t1_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial;
+    /// Public key component.
+    fn compute_t1_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial;
 }
 
 impl<
@@ -818,8 +785,8 @@ impl<
         rej_bounded_poly::<eta>(&self.rho_prime, &(idx as u16).to_le_bytes())
     }
 
-    fn compute_s1_packed(&self) -> [u8; S1_PACKED_LEN] {
-        let mut s1_packed = [0u8; S1_PACKED_LEN];
+    fn compute_s1_packed(&self) -> Secret<[u8; S1_PACKED_LEN]> {
+        let mut s1_packed: Secret<[u8; S1_PACKED_LEN]> = Secret::new();
         for idx in 0..l {
             let s1_i = self.compute_s1_row(idx);
             bit_pack_eta::<eta>(
@@ -835,8 +802,8 @@ impl<
         rej_bounded_poly::<eta>(&self.rho_prime, &((idx + l) as u16).to_le_bytes())
     }
 
-    fn compute_s2_packed(&self) -> [u8; S2_PACKED_LEN] {
-        let mut s2_packed = [0u8; S2_PACKED_LEN];
+    fn compute_s2_packed(&self) -> Secret<[u8; S2_PACKED_LEN]> {
+        let mut s2_packed: Secret<[u8; S2_PACKED_LEN]> = Secret::new();
         for idx in 0..k {
             let s2_i = self.compute_s2_row(idx);
             bit_pack_eta::<eta>(
@@ -847,7 +814,12 @@ impl<
         s2_packed
     }
 
-    fn compute_t0_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial {
+    fn compute_t0_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial {
         let mut t0 = self.compute_t_row(idx, s1_packed, s2_packed);
         for j in 0..N {
             (_, t0[j]) = power_2_round(t0[j]);
@@ -856,7 +828,12 @@ impl<
         t0
     }
 
-    fn compute_t1_row(&self, idx: usize, s1_packed: &[u8], s2_packed: &[u8]) -> Polynomial {
+    fn compute_t1_row(
+        &self,
+        idx: usize,
+        s1_packed: &Secret<[u8; S1_PACKED_LEN]>,
+        s2_packed: &Secret<[u8; S2_PACKED_LEN]>,
+    ) -> Polynomial {
         let mut t1 = self.compute_t_row(idx, s1_packed, s2_packed);
         for j in 0..N {
             (t1[j], _) = power_2_round(t1[j]);

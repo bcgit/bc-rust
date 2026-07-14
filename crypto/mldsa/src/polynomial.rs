@@ -4,16 +4,18 @@ use crate::aux_functions::{
     ZETAS, conditional_add_q, high_bits, low_bits, make_hint, montgomery_reduce,
 };
 use crate::mldsa::{MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N, q};
-use bouncycastle_core::traits::Secret;
-use core::fmt;
-use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
 /// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
 /// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
 /// and the real unit tests are in a different crate, so here we are.
-#[derive(Clone)]
+///
+/// # 🚨 Security 🚨
+/// Polynomials themselves are not inherently secret since sometimes they are part of public keys
+/// and sometimes private keys.
+/// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.
+#[derive(Clone, Copy)]
 pub struct Polynomial {
     pub(crate) coeffs: [i32; N],
 }
@@ -232,25 +234,5 @@ impl Polynomial {
             // equiv. to the global constant N
             self[j] = montgomery_reduce(f * self[j] as i64);
         }
-    }
-}
-
-impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i32);
-    }
-}
-
-impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
-}
-
-impl Display for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
     }
 }

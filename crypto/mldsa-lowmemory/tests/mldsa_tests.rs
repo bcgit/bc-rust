@@ -733,22 +733,6 @@ mod mldsa_tests {
         }
     }
 
-    /// Tests that no private data is displayed
-    #[test]
-    fn test_display() {
-        use bouncycastle_mldsa_lowmemory::Polynomial;
-        // Polynomials (could) contain private data,
-        // and therefore should be protected against accidental crash dumps:
-
-        // fmt
-        let p = Polynomial::new();
-        assert_eq!(format!("{}", p), "Polynomial (data masked)");
-
-        // debug
-        let p = Polynomial::new();
-        assert_eq!(format!("{:?}", p), "Polynomial (data masked)");
-    }
-
     #[test]
     fn keypair_consistency_check() {
         // this is common to all parameter sets, so I'll just test MLDSA44

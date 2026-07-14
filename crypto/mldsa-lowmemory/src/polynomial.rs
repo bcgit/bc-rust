@@ -2,16 +2,19 @@
 
 use crate::aux_functions::{high_bits, low_bits, make_hint, use_hint};
 use crate::mldsa::{MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N, q, q_inv};
-use bouncycastle_core::traits::Secret;
-use core::fmt;
-use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
 /// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
 /// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
 /// and the real unit tests are in a different crate, so here we are.
-#[derive(Clone)]
+///
+/// # 🚨 Security 🚨
+/// Polynomials themselves are not inherently secret since sometimes they are part of public keys
+/// and sometimes private keys.
+/// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.
+/// Note: at the moment, nothing in this crate uses `Secret<Polynomial>`, so I have left the `impl ZeroizablePrimitive` commented-out.
+#[derive(Clone, Copy)]
 pub struct Polynomial {
     pub(crate) coeffs: [i32; N],
 }
@@ -30,6 +33,11 @@ impl IndexMut<usize> for Polynomial {
         &mut self.coeffs[index]
     }
 }
+
+// Turn this back on if we want to start tagging things as `Secret<Polynomial>`.
+// impl ZeroizablePrimitive for Polynomial {
+//     const ZEROED: Self = Self::new();
+// }
 
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
@@ -243,26 +251,6 @@ impl Polynomial {
         for i in 0..N {
             self[i] = use_hint::<GAMMA2>(self[i], h[i]);
         }
-    }
-}
-
-impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i32);
-    }
-}
-
-impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
-}
-
-impl Display for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
     }
 }
 

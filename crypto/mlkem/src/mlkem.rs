@@ -150,8 +150,8 @@ use bouncycastle_core::traits::{
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
 use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes};
+use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
-
 /*** Constants ***/
 ///
 pub const ML_KEM_512_NAME: &str = "ML-KEM-512";
@@ -368,16 +368,13 @@ impl<
         // 3: dk ← (dkPKE‖ek‖H(ek)‖𝑧) ▷ KEM decaps key includes PKE decryption key
         // 4: return (ek, dk)
         let pk_hash = pk.compute_hash();
-        Ok((
-            pk.clone(),
-            SK::new(
-                s_hat,
-                pk,
-                pk_hash,
-                seed.ref_to_bytes()[32..].try_into().unwrap(),
-                Some(seed.ref_to_bytes()[..32].try_into().unwrap()),
-            ),
-        ))
+
+        let mut z = Secret::<[u8; 32]>::new();
+        z.copy_from_slice(&seed.ref_to_bytes()[32..]);
+
+        let mut seed_d = Secret::<[u8; 32]>::new();
+        seed_d.copy_from_slice(&seed.ref_to_bytes()[..32]);
+        Ok((pk.clone(), SK::new(s_hat, pk, pk_hash, z, Some(seed_d))))
     }
 
     /// Algorithm 13 K-PKE.KeyGen(𝑑)
@@ -385,7 +382,7 @@ impl<
     /// Input: randomness 𝑑 ∈ 𝔹32 .
     /// Output: encryption key ek_PKE ∈ 𝔹384𝑘+32.
     /// Output: decryption key dk_PKE ∈ 𝔹384𝑘.
-    fn pke_keygen(d: &[u8; 32]) -> (PK, Vector<k>) {
+    fn pke_keygen(d: &[u8; 32]) -> (PK, Secret<Vector<k>>) {
         // 1: (𝜌, 𝜎) ← G(𝑑‖𝑘)
         //  ▷ expand 32+1 bytes to two pseudorandom 32-byte seeds1
         // rho: public seed
@@ -411,8 +408,9 @@ impl<
         //   ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
         // 10: 𝑁 ← 𝑁 + 1
         // Note: here n = 0
-        let s_hat = {
-            let mut s = sample_vector_CBD::<k, eta1>(&sigma, 0);
+        let s_hat: Secret<Vector<k>> = {
+            let mut s: Secret<Vector<k>> = Secret::new();
+            *s = sample_vector_CBD::<k, eta1>(&sigma, 0);
 
             // 16: 𝐬_hat ← NTT(𝐬)̂
             s.ntt();
@@ -673,7 +671,7 @@ impl<
         let K_bar: [u8; MLKEM_SS_LEN];
         K_bar = {
             let mut j = J::new();
-            j.absorb(dk.z()).expect("absorb before squeeze is infallible");
+            j.absorb(dk.z().as_ref()).expect("absorb before squeeze is infallible");
             j.absorb(&c).expect("absorb before squeeze is infallible");
             let mut buf = [0u8; MLKEM_SS_LEN];
             let bytes_written = j.squeeze_out(&mut buf);

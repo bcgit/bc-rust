@@ -51,8 +51,8 @@
 //! See [do_hazardous_operations] for documentation and sample code.
 
 use crate::errors::{KeyMaterialError, SuspendableError};
-use crate::traits::{RNG, Secret, SecurityStrength};
-use bouncycastle_utils::{ct, min};
+use crate::traits::{RNG, SecurityStrength};
+use bouncycastle_utils::{ct, min, secret::Secret};
 
 use core::cmp::{Ordering, PartialOrd};
 use core::fmt;
@@ -215,14 +215,12 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
 /// The capacity of the internal buffer can be set at compile-time via the <KEY_LEN> param.
 #[derive(Clone)]
 pub struct KeyMaterial<const KEY_LEN: usize> {
-    buf: [u8; KEY_LEN],
-    key_len: usize,
+    buf: Secret<[u8; KEY_LEN]>,
+    key_len: Secret<usize>,
     key_type: KeyType,
     security_strength: SecurityStrength,
     allow_hazardous_operations: bool,
 }
-
-impl<const KEY_LEN: usize> Secret for KeyMaterial<KEY_LEN> {}
 
 // The explicit `#[repr(u8)]` discriminants are the stable on-the-wire encoding used by
 // `SerializableState` implementations (see the `TryFrom<u8>` impl below). Pin each value to its
@@ -287,8 +285,8 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     /// If you want a properly populated instance, use [KeyMaterial::from_rng].
     pub fn new() -> Self {
         Self {
-            buf: [0u8; KEY_LEN],
-            key_len: 0,
+            buf: Secret::new(),
+            key_len: Secret::new(),
             key_type: KeyType::Zeroized,
             security_strength: SecurityStrength::None,
             allow_hazardous_operations: false,
@@ -305,7 +303,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
             Ok(())
         })?;
 
-        key.key_len = KEY_LEN;
+        *key.key_len = KEY_LEN;
         key.key_type = KeyType::CryptographicRandom;
         key.security_strength = rng.security_strength();
         Ok(key)
@@ -347,14 +345,11 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
             return Err(KeyMaterialError::InputDataLongerThanKeyCapacity);
         }
 
-        let mut key = Self {
-            buf: [0u8; KEY_LEN],
-            key_len: other.key_len(),
-            key_type: other.key_type(),
-            security_strength: SecurityStrength::None,
-            allow_hazardous_operations: false,
-        };
+        let mut key = Self::new();
         key.buf[..other.key_len()].copy_from_slice(other.ref_to_bytes());
+        *key.key_len = other.key_len();
+        key.key_type = other.key_type();
+        key.security_strength = other.security_strength();
         Ok(key)
     }
 }
@@ -378,7 +373,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         };
 
         self.buf[..source.len()].copy_from_slice(source);
-        self.key_len = source.len();
+        *self.key_len = source.len();
         self.key_type = new_key_type;
 
         do_hazardous_operations(self, |s| {
@@ -399,14 +394,14 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     }
 
     fn ref_to_bytes(&self) -> &[u8] {
-        &self.buf[..self.key_len]
+        &self.buf[..*self.key_len]
     }
 
     fn ref_to_bytes_mut(&mut self) -> Result<&mut [u8], KeyMaterialError> {
         if !self.allow_hazardous_operations {
             return Err(KeyMaterialError::HazardousOperationNotPermitted);
         }
-        Ok(&mut self.buf)
+        Ok(self.buf.as_mut())
     }
 
     fn capacity(&self) -> usize {
@@ -414,7 +409,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     }
 
     fn key_len(&self) -> usize {
-        self.key_len
+        *self.key_len
     }
 
     fn set_key_len(&mut self, key_len: usize) -> Result<(), KeyMaterialError> {
@@ -423,7 +418,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
 
         // are we extending the key length, or truncating?
-        if key_len <= self.key_len {
+        if key_len <= *self.key_len {
             // truncation is always allowed (not hazardous)
 
             self.security_strength =
@@ -433,14 +428,14 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
                 self.key_type = KeyType::Zeroized;
             }
 
-            self.key_len = key_len;
+            *self.key_len = key_len;
 
             Ok(())
         } else {
             if !self.allow_hazardous_operations {
                 return Err(KeyMaterialError::HazardousOperationNotPermitted);
             }
-            self.key_len = key_len;
+            *self.key_len = key_len;
             Ok(())
         }
     }
@@ -557,8 +552,8 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     }
 
     fn zeroize(&mut self) {
-        self.buf.fill(0u8);
-        self.key_len = 0;
+        self.buf.zeroize();
+        self.key_len.zeroize();
         self.key_type = KeyType::Zeroized;
     }
 
@@ -579,7 +574,7 @@ impl<const KEY_LEN: usize> PartialEq for KeyMaterial<KEY_LEN> {
         if self.key_len != other.key_len {
             return false;
         }
-        ct::ct_eq_bytes(&self.buf[..self.key_len], &other.buf[..self.key_len])
+        ct::ct_eq_bytes(&self.buf[..*self.key_len], &other.buf[..*self.key_len])
     }
 }
 impl<const KEY_LEN: usize> Eq for KeyMaterial<KEY_LEN> {}
@@ -618,10 +613,11 @@ impl PartialOrd for KeyType {
 /// Block accidental logging of the internal key material buffer.
 impl<const KEY_LEN: usize> fmt::Display for KeyMaterial<KEY_LEN> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // deref the key_len explicitly so that Secret doesn't render it as "<redacted>"
         write!(
             f,
-            "KeyMaterial {{ len: {}, key_type: {:?}, security_strength: {:?} }}",
-            self.key_len, self.key_type, self.security_strength
+            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?} }}",
+            KEY_LEN, *self.key_len, self.key_type, self.security_strength
         )
     }
 }
@@ -629,18 +625,12 @@ impl<const KEY_LEN: usize> fmt::Display for KeyMaterial<KEY_LEN> {
 /// Block accidental logging of the internal key material buffer.
 impl<const KEY_LEN: usize> fmt::Debug for KeyMaterial<KEY_LEN> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // deref the key_len explicitly so that Secret doesn't render it as "<redacted>"
         write!(
             f,
-            "KeyMaterial {{ len: {}, key_type: {:?}, security_strength: {:?} }}",
-            self.key_len, self.key_type, self.security_strength
+            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?} }}",
+            KEY_LEN, *self.key_len, self.key_type, self.security_strength
         )
-    }
-}
-
-/// Zeroize the key material on drop.
-impl<const KEY_LEN: usize> Drop for KeyMaterial<KEY_LEN> {
-    fn drop(&mut self) {
-        self.zeroize()
     }
 }
 

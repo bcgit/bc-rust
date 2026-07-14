@@ -4,16 +4,19 @@ use crate::aux_functions::{
     ZETAS, ZETAS_INV, barrett_reduce, montgomery_reduce, mul_mont, ntt_base_mult,
 };
 use crate::mlkem::{N, q};
-use bouncycastle_core::traits::Secret;
-use core::fmt;
-use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-KEM ring.
 /// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
 /// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
 /// and the real unit tests are in a different crate, so here we are.
-#[derive(Clone)]
+///
+/// # 🚨 Security 🚨
+/// Polynomials themselves are not inherently secret since sometimes they are part of public keys
+/// and sometimes private keys.
+/// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.
+/// Note: at the moment, nothing in this crate uses `Secret<Polynomial>`, so I have left the `impl ZeroizablePrimitive` commented-out.
+#[derive(Clone, Copy)]
 pub struct Polynomial {
     pub(crate) coeffs: [i16; N],
 }
@@ -32,6 +35,11 @@ impl IndexMut<usize> for Polynomial {
         &mut self.coeffs[index]
     }
 }
+
+// Turn this back on if we want to start tagging things as `Secret<Polynomial>`.
+// impl ZeroizablePrimitive for Polynomial {
+//     const ZEROED: Self = Self::new();
+// }
 
 impl Polynomial {
     /// Create a new polynomial with all coefficients set to zero.
@@ -105,12 +113,20 @@ impl Polynomial {
         for i in 0..(N / 4) {
             let a1: i16 = self[4 * i];
             let a2: i16 = self[4 * i + 1];
-            ntt_base_mult(&mut self.coeffs, 4 * i, a1, a2, b[4 * i], b[4 * i + 1], ZETAS[64 + i]);
+            ntt_base_mult(
+                self.coeffs.as_mut(),
+                4 * i,
+                a1,
+                a2,
+                b[4 * i],
+                b[4 * i + 1],
+                ZETAS[64 + i],
+            );
 
             let a1: i16 = self[4 * i + 2];
             let a2: i16 = self[4 * i + 3];
             ntt_base_mult(
-                &mut self.coeffs,
+                self.coeffs.as_mut(),
                 4 * i + 2,
                 a1,
                 a2,
@@ -315,26 +331,6 @@ impl Polynomial {
         for i in 0..N {
             self[i] = mul_mont(self[i], ZETAS_INV[127]);
         }
-    }
-}
-
-impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i16);
-    }
-}
-
-impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
-}
-
-impl Display for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
     }
 }
 

@@ -8,6 +8,7 @@ use crate::mldsa::{
 };
 use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::XOF;
+use bouncycastle_utils::secret::Secret;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
 /// Output: An integer modulo 𝑞 or ⊥.
@@ -681,12 +682,13 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
 /// Samples vectors 𝐬1 ∈ 𝑅ℓ and 𝐬2 ∈ 𝑅𝑘 , each with polynomial coordinates whose coefficients are
 /// in the interval \[−𝜂, 𝜂].
 /// Input: A seed 𝜌 ∈ 𝔹64 .
-/// Output: Vectors 𝐬1, 𝐬2 of polynomials in 𝑅
+/// Output: Vectors 𝐬1, 𝐬2 of secret polynomials in 𝑅
+/// Note that this returns Secret<Vector<k>> because s1, s2 are always part of a private key.
 pub(crate) fn expandS<const k: usize, const l: usize, const ETA: usize>(
     rho: &[u8; 64],
-) -> (Vector<l>, Vector<k>) {
-    let mut s1 = Vector::<l>::new();
-    let mut s2 = Vector::<k>::new();
+) -> (Secret<Vector<l>>, Secret<Vector<k>>) {
+    let mut s1: Secret<Vector<l>> = Secret::new();
+    let mut s2: Secret<Vector<k>> = Secret::new();
 
     for r in 0..l {
         s1.vec[r] = rej_bounded_poly::<ETA>(rho, &(r as u16).to_le_bytes());

@@ -2,7 +2,7 @@ use crate::SHA2Params;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
-use bouncycastle_utils::min;
+use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
 
 const SHA256_K: [u32; 64] = [
@@ -49,32 +49,27 @@ fn theta1(x: u32) -> u32 {
 #[derive(Clone)]
 pub(crate) struct Sha256State<PARAMS: SHA2Params> {
     _params: core::marker::PhantomData<PARAMS>,
-    h: [u32; 8],
-}
-
-impl<PARAMS: SHA2Params> Drop for Sha256State<PARAMS> {
-    fn drop(&mut self) {
-        self.h.fill(0);
-    }
+    h: Secret<[u32; 8]>,
 }
 
 impl<PARAMS: SHA2Params> Sha256State<PARAMS> {
     pub(crate) fn new() -> Self {
+        let mut h = Secret::<[u32; 8]>::new();
         match PARAMS::OUTPUT_LEN * 8 {
-            224 => Self {
-                _params: core::marker::PhantomData,
-                h: [
+            224 => {
+                h.copy_from_slice(&[
                     0xC1059ED8, 0x367CD507, 0x3070DD17, 0xF70E5939, 0xFFC00B31, 0x68581511,
                     0x64F98FA7, 0xBEFA4FA4,
-                ],
-            },
-            256 => Self {
-                _params: std::marker::PhantomData,
-                h: [
+                ]);
+                Self { _params: core::marker::PhantomData, h }
+            }
+            256 => {
+                h.copy_from_slice(&[
                     0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C,
                     0x1F83D9AB, 0x5BE0CD19,
-                ],
-            },
+                ]);
+                Self { _params: std::marker::PhantomData, h }
+            }
             _ => panic!("Invalid SHA-2 bit size: {}", PARAMS::OUTPUT_LEN),
         }
     }
@@ -82,7 +77,8 @@ impl<PARAMS: SHA2Params> Sha256State<PARAMS> {
     fn compress(&mut self, blocks: &[[u8; 64]]) {
         let mut x = [0u32; 64];
 
-        let s = &mut self.h;
+        // infallible; just unwrapping the [u32; 8] and re-casting to itself.
+        let s = &mut *self.h;
         let &mut [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = s;
 
         for block in blocks {
@@ -152,15 +148,9 @@ pub struct SHA256Internal<PARAMS: SHA2Params> {
     _params: core::marker::PhantomData<PARAMS>,
     state: Sha256State<PARAMS>,
     byte_count: u64,
-    x_buf: [u8; 64],
+    x_buf: Secret<[u8; 64]>,
     x_buf_off: usize,
     // TODO: should we add a maximum message size according to FIPS 180-4? (2^64 for SHA256 and 2^128 for SHA512)
-}
-
-impl<PARAMS: SHA2Params> Drop for SHA256Internal<PARAMS> {
-    fn drop(&mut self) {
-        self.x_buf.fill(0);
-    }
 }
 
 impl<PARAMS: SHA2Params> SHA256Internal<PARAMS> {
@@ -170,7 +160,7 @@ impl<PARAMS: SHA2Params> SHA256Internal<PARAMS> {
             _params: core::marker::PhantomData,
             state: Sha256State::<PARAMS>::new(),
             byte_count: 0,
-            x_buf: [0; 64],
+            x_buf: Secret::new(),
             x_buf_off: 0,
         }
     }
@@ -336,7 +326,7 @@ impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Inter
         out[32..40].copy_from_slice(&self.byte_count.to_le_bytes());
 
         // x_buf: [u8; 64]
-        out[40..104].copy_from_slice(&self.x_buf);
+        out[40..104].copy_from_slice(&*self.x_buf);
 
         // x_buf_off: usize
         // in general, a usize should be serialized into a u64, but in this case, it can't ever be larger than 64
@@ -358,7 +348,7 @@ impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Inter
 
         // state.h: [u32; 8]
         // 4 * 8 = 32
-        let mut h = [0u32; 8];
+        let mut h = Secret::<[u32; 8]>::new();
         for i in 0..8 {
             h[i] = u32::from_le_bytes(input[i * 4..(i * 4) + 4].try_into().unwrap());
         }
@@ -367,7 +357,8 @@ impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Inter
         let byte_count: u64 = u64::from_le_bytes(input[32..40].try_into().unwrap());
 
         // x_buf: [u8; 64]
-        let x_buf: [u8; 64] = input[40..104].try_into().unwrap();
+        let mut x_buf = Secret::<[u8; 64]>::new();
+        x_buf.copy_from_slice(&input[40..104]);
 
         // x_buf_off: usize
         // in general, a usize should be serialized into a u64, but in this case, it can't ever be larger than 64

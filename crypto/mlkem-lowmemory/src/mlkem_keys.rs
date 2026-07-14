@@ -21,11 +21,11 @@ use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, Secret, SecurityStrength};
+use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
-
 // imports just for docs
 
 /* Pub Types */
@@ -249,10 +249,10 @@ pub struct MLKEMSeedPrivateKey<
     const T_PACKED_LEN: usize,
 > {
     rho: [u8; 32],
-    sigma: [u8; 32],
+    sigma: Secret<[u8; 32]>,
     pk_hash: Option<[u8; 32]>,
-    z: [u8; 32],
-    seed_d: [u8; 32],
+    z: Secret<[u8; 32]>,
+    seed_d: Secret<[u8; 32]>,
 }
 
 impl<
@@ -280,8 +280,12 @@ impl<
             return Err(KEMError::KeyGenError("SecurityStrength"));
         }
 
-        let seed_d: [u8; 32] = seed.ref_to_bytes()[..32].try_into().unwrap();
-        let z: [u8; 32] = seed.ref_to_bytes()[32..].try_into().unwrap();
+        // These are Secret-safe because we're using .copy_from_slice directly out of one Secret<[u8]>
+        // into another and the contents are never touching a non-Secret buffer.
+        let mut seed_d = Secret::<[u8; 32]>::new();
+        seed_d.as_mut().copy_from_slice(seed.ref_to_bytes()[..32].try_into().unwrap());
+        let mut z = Secret::<[u8; 32]>::new();
+        z.as_mut().copy_from_slice(seed.ref_to_bytes()[32..].try_into().unwrap());
 
         let (rho, sigma) = Self::compute_rho_and_sigma(&seed_d);
 
@@ -294,15 +298,21 @@ impl<
     ///  ▷ expand 32+1 bytes to two pseudorandom 32-byte seeds1
     /// rho: public seed
     /// sigma: noise seed
-    fn compute_rho_and_sigma(seed_d: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
+    fn compute_rho_and_sigma(seed_d: &[u8; 32]) -> ([u8; 32], Secret<[u8; 32]>) {
+        // Only the second half of the output is secret, but we'll wrap the whole thing
+        // so that the local copy gets zeriozed on drop.
+        let mut buf: Secret<[u8; 64]> = Secret::new();
+
         let mut g = G::new();
         g.do_update(seed_d);
         g.do_update(&[k as u8]);
-        let mut buf = [0u8; 64];
-        let bytes_written = g.do_final_out(&mut buf);
+        let bytes_written = g.do_final_out(buf.as_mut());
         debug_assert_eq!(bytes_written, 64);
 
-        (buf[..32].try_into().unwrap(), buf[32..64].try_into().unwrap())
+        let mut sigma = Secret::<[u8; 32]>::new();
+        sigma.as_mut().copy_from_slice(buf[32..64].try_into().unwrap());
+
+        (buf[..32].try_into().unwrap(), sigma)
     }
 }
 
@@ -383,10 +393,10 @@ impl<
         Self::new(seed)
     }
     fn seed(&self) -> Option<KeyMaterial<64>> {
-        let mut tmp = [0u8; 64];
-        tmp[..32].copy_from_slice(&self.seed_d);
-        tmp[32..].copy_from_slice(&self.z);
-        let mut seed = KeyMaterial::<64>::from_bytes_as_type(&tmp, KeyType::Seed).unwrap();
+        let mut tmp = Secret::<[u8; 64]>::new();
+        tmp[..32].as_mut().copy_from_slice(&*self.seed_d);
+        tmp[32..].as_mut().copy_from_slice(&*self.z);
+        let mut seed = KeyMaterial::<64>::from_bytes_as_type(&*tmp, KeyType::Seed).unwrap();
         do_hazardous_operations(&mut seed, |seed| {
             seed.set_security_strength(match k {
                 2 => SecurityStrength::_128bit,
@@ -453,7 +463,7 @@ impl<
         pos += 32;
 
         /* z */
-        out[pos..pos + 32].copy_from_slice(&self.z);
+        out[pos..pos + 32].copy_from_slice(&*self.z);
 
         FULL_SK_LEN
     }
@@ -555,8 +565,8 @@ impl<
 
         out.fill(0);
 
-        out[..32].copy_from_slice(&self.seed_d);
-        out[32..].copy_from_slice(&self.z);
+        out[..32].copy_from_slice(&*self.seed_d);
+        out[32..].copy_from_slice(&*self.z);
 
         SK_LEN
     }
@@ -604,18 +614,6 @@ impl<
     }
 }
 
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> Secret for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-{
-}
-
 /// Debug impl mainly to prevent the secret key from being printed in logs.
 impl<
     const k: usize,
@@ -659,24 +657,5 @@ impl<
         };
         let pk_hash = self.pk().compute_hash();
         write!(f, "MLKEMSeedPrivateKey {{ alg: {}, pub_key_hash: {:x?} }}", alg, &pk_hash,)
-    }
-}
-
-/// Zeroizing drop
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> Drop for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-{
-    fn drop(&mut self) {
-        self.rho.fill(0u8);
-        self.sigma.fill(0u8);
-        self.z.fill(0u8);
-        self.seed_d.fill(0u8);
     }
 }

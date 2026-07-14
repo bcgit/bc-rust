@@ -11,7 +11,8 @@ use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{Secret, SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
@@ -403,6 +404,8 @@ impl<
 }
 
 /// An ML-DSA private key.
+///
+/// This will automatically inherit the [Secret] protections because [Polynomial] wraps the underlying data with [Secret].
 #[derive(Clone)]
 pub struct MLDSAPrivateKey<
     const k: usize,
@@ -412,7 +415,7 @@ pub struct MLDSAPrivateKey<
     const PK_LEN: usize,
 > {
     rho: [u8; 32],
-    K: [u8; 32],
+    K: Secret<[u8; 32]>,
     tr: [u8; 64],
     // Deviation from the FIPS:
     //  s1, s2, and t0 are only ever used in their ntt form; the only time they need to be in their
@@ -420,9 +423,10 @@ pub struct MLDSAPrivateKey<
     //  So we are going to hold them as s1_hat, s2_hat, and t0_hat.
     //  Note: these are not necessarily in their reduced form; so you'll need to reduce them before
     //  inv_ntt()'ing them or hashing them.
-    s1_hat: Vector<l>,
-    s2_hat: Vector<k>,
+    s1_hat: Secret<Vector<l>>,
+    s2_hat: Secret<Vector<k>>,
     t0_hat: Vector<k>,
+    // note: KeyMaterial is inherently Secret
     seed: Option<KeyMaterial<32>>,
 }
 
@@ -441,7 +445,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         let mut off: usize = 0;
 
         out[0..32].copy_from_slice(&self.rho);
-        out[32..64].copy_from_slice(&self.K);
+        out[32..64].copy_from_slice(&*self.K);
         out[64..128].copy_from_slice(&self.tr);
         off += 128;
 
@@ -538,15 +542,15 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<
     /// running a keygen, or by decoding an existing key.
     fn new(
         rho: [u8; 32],
-        K: [u8; 32],
+        K: Secret<[u8; 32]>,
         tr: [u8; 64],
-        s1_hat: Vector<l>,
-        s2_hat: Vector<k>,
+        s1_hat: Secret<Vector<l>>,
+        s2_hat: Secret<Vector<k>>,
         t0_hat: Vector<k>,
         seed: Option<KeyMaterial<32>>,
     ) -> Self;
     /// Get a ref to K
-    fn K(&self) -> &[u8; 32];
+    fn K(&self) -> &Secret<[u8; 32]>;
     /// Get a ref to s1
     fn s1_hat(&self) -> &Vector<l>;
     /// Get a ref to s2
@@ -605,19 +609,26 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         MLDSAPublicKey::<k, l, PK_LEN>::new(self.rho.clone(), t1)
     }
     fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
-        let rho = sk[0..32].try_into().unwrap();
-        let K = sk[32..64].try_into().unwrap();
-        let tr = sk[64..128].try_into().unwrap();
-        let mut s1 = Vector::<l>::new();
-        let mut s2 = Vector::<k>::new();
-        let mut t0 = Vector::<k>::new();
+        // Construct the (Secret-protected) key up front and unpack each field directly into it,
+        // rather than decoding into unprotected temporaries and copying them in at the end. This
+        // way the secret material is written straight into its protected home; and if a range
+        // check below fails, `key` is dropped and its `Secret` fields are zeroized on the way out.
+        let mut key = Self {
+            rho: sk[0..32].try_into().unwrap(),
+            K: Secret::new(),
+            tr: sk[64..128].try_into().unwrap(),
+            s1_hat: Secret::new(),
+            s2_hat: Secret::new(),
+            t0_hat: Vector::<k>::new(),
+            seed: None,
+        };
+        key.K.copy_from_slice(&sk[32..64]);
         let mut off = 128;
 
-        // unpack s1
-        // let mut i: usize = 0;
-        let sk_chunks = sk[128..128 + (l * bitlen_eta(eta))].chunks(bitlen_eta(eta));
+        // unpack s1 directly into key.s1_hat so that we don't make additional non-Secret copies.
+        let sk_chunks = sk[off..off + (l * bitlen_eta(eta))].chunks(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), l);
-        for (s1_i, sk_chunk) in s1.vec.iter_mut().zip(sk_chunks) {
+        for (s1_i, sk_chunk) in key.s1_hat.vec.iter_mut().zip(sk_chunks) {
             // 3: 𝐬1[𝑖] ← BitUnpack(𝑦𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
             s1_i.coeffs.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).coeffs);
@@ -631,13 +642,13 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
         // Deviation from the FIPS:
         //   Convert this to ntt form as part of decode
-        s1.ntt();
+        key.s1_hat.ntt();
         off += l * bitlen_eta(eta);
 
-        // unpack s2
+        // unpack s2 directly into key.s2_hat so that we don't make additional non-Secret copies.
         let sk_chunks = sk[off..off + (k * bitlen_eta(eta))].chunks(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), k);
-        for (s2_i, sk_chunk) in s2.vec.iter_mut().zip(sk_chunks) {
+        for (s2_i, sk_chunk) in key.s2_hat.vec.iter_mut().zip(sk_chunks) {
             // 6: 𝐬2[𝑖] ← BitUnpack(𝑧𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
             s2_i.coeffs.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).coeffs);
@@ -651,10 +662,10 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
         // Deviation from the FIPS:
         //   Convert this to ntt form as part of decode
-        s2.ntt();
+        key.s2_hat.ntt();
         off += k * bitlen_eta(eta);
 
-        // unpack t0
+        // unpack t0 directly into key.t0_hat
         let (sk_chunks, last_chunk) =
             sk[off..off + (k * POLY_T0PACKED_LEN)].as_chunks::<POLY_T0PACKED_LEN>();
 
@@ -662,14 +673,14 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         debug_assert_eq!(sk_chunks.len(), k);
         debug_assert_eq!(last_chunk.len(), 0);
 
-        for (t0_i, sk_chunk) in t0.vec.iter_mut().zip(sk_chunks) {
+        for (t0_i, sk_chunk) in key.t0_hat.vec.iter_mut().zip(sk_chunks) {
             t0_i.coeffs.copy_from_slice(&bit_unpack_t0(sk_chunk).coeffs);
         }
         // Deviation from the FIPS:
         //   Convert this to ntt form as part of decode
-        t0.ntt();
+        key.t0_hat.ntt();
 
-        Ok(Self { rho, K, tr, s1_hat: s1, s2_hat: s2, t0_hat: t0, seed: None })
+        Ok(key)
     }
 }
 
@@ -679,10 +690,10 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 {
     fn new(
         rho: [u8; 32],
-        K: [u8; 32],
+        K: Secret<[u8; 32]>,
         tr: [u8; 64],
-        s1_hat: Vector<l>,
-        s2_hat: Vector<k>,
+        s1_hat: Secret<Vector<l>>,
+        s2_hat: Secret<Vector<k>>,
         t0_hat: Vector<k>,
         seed: Option<KeyMaterial<32>>,
     ) -> Self {
@@ -697,7 +708,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         }
     }
 
-    fn K(&self) -> &[u8; 32] {
+    fn K(&self) -> &Secret<[u8; 32]> {
         &self.K
     }
 
@@ -758,11 +769,6 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
     }
 }
 
-impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
-    Secret for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
-{
-}
-
 /// Debug impl mainly to prevent the secret key from being printed in logs.
 impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
     fmt::Debug for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
@@ -802,16 +808,6 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             self.tr,
             self.seed.is_some(),
         )
-    }
-}
-
-/// Zeroizing drop
-impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, const PK_LEN: usize>
-    Drop for MLDSAPrivateKey<k, l, eta, SK_LEN, PK_LEN>
-{
-    fn drop(&mut self) {
-        self.K.fill(0u8);
-        // s1, s2, t0, seed have their own zeroizing drop
     }
 }
 
@@ -861,35 +857,6 @@ impl<
     const PK_LEN: usize,
 > Eq for MLDSAPrivateKeyExpanded<k, l, eta, PK, SK, SK_LEN, PK_LEN>
 {
-}
-
-impl<
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    PK: MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, eta, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Secret for MLDSAPrivateKeyExpanded<k, l, eta, PK, SK, SK_LEN, PK_LEN>
-{
-}
-
-impl<
-    const k: usize,
-    const l: usize,
-    const eta: usize,
-    PK: MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, eta, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, eta, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Drop for MLDSAPrivateKeyExpanded<k, l, eta, PK, SK, SK_LEN, PK_LEN>
-{
-    fn drop(&mut self) {
-        // Nothing to do since self.sk already impls zeroizing Drop
-    }
 }
 
 impl<

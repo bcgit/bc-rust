@@ -1,6 +1,7 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_utils::secret::Secret;
 
 const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
     0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
@@ -13,13 +14,13 @@ const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
 
 #[derive(Clone)]
 pub(crate) struct KeccakState {
-    buf: [u64; 25],
+    buf: Secret<[u64; 25]>,
     rate: usize,
 }
 
 impl KeccakState {
     fn new(rate: usize) -> Self {
-        Self { buf: [0u64; 25], rate }
+        Self { buf: Secret::new(), rate }
     }
 
     fn absorb(&mut self, data: &[u8]) {
@@ -60,7 +61,7 @@ impl KeccakState {
             mut a22,
             mut a23,
             mut a24,
-        ] = a.buf;
+        ] = *a.buf;
 
         for round_constant in KECCAK_ROUND_CONSTANTS {
             // theta
@@ -174,18 +175,10 @@ impl KeccakState {
             a00 ^= round_constant;
         }
 
-        a.buf = [
+        *a.buf = [
             a00, a01, a02, a03, a04, a05, a06, a07, a08, a09, a10, a11, a12, a13, a14, a15, a16,
             a17, a18, a19, a20, a21, a22, a23, a24,
         ];
-    }
-}
-
-// Mutants note: this fails because you can't write unit tests for drop()
-impl Drop for KeccakState {
-    fn drop(&mut self) {
-        // Zeroize the contents before returning the memory to the OS.
-        self.buf.fill(0u64);
     }
 }
 
@@ -193,7 +186,7 @@ impl Drop for KeccakState {
 #[derive(Clone)]
 pub(crate) struct KeccakInternal {
     state: KeccakState,
-    pub data_queue: [u8; 192],
+    pub data_queue: Secret<[u8; 192]>,
     rate: usize,
     pub bits_in_queue: usize,
     pub squeezing: bool,
@@ -215,7 +208,7 @@ impl KeccakInternal {
 
         Self {
             state: KeccakState::new(rate),
-            data_queue: [0u8; 192],
+            data_queue: Secret::new(),
             rate,
             bits_in_queue: 0,
             squeezing: false,
@@ -251,7 +244,7 @@ impl KeccakInternal {
             self.bits_in_queue += 8;
 
             if self.bits_in_queue == self.rate {
-                self.state.absorb(&self.data_queue);
+                self.state.absorb(&*self.data_queue);
                 self.bits_in_queue = 0;
             }
         }
@@ -328,7 +321,7 @@ impl KeccakInternal {
 
         self.bits_in_queue += 1;
         if self.bits_in_queue == self.rate {
-            self.state.absorb(&self.data_queue);
+            self.state.absorb(&*self.data_queue);
         } else {
             let full = self.bits_in_queue >> 6;
             let partial = self.bits_in_queue & 63;
@@ -401,7 +394,7 @@ impl KeccakInternal {
         }
 
         // data_queue: [u8; 192]
-        out[200..392].copy_from_slice(&self.data_queue);
+        out[200..392].copy_from_slice(&*self.data_queue);
 
         // bits_in_queue: usize
         out[392..400].copy_from_slice(&(self.bits_in_queue as u64).to_le_bytes());
@@ -421,13 +414,14 @@ impl KeccakInternal {
         rate: usize,
     ) -> Result<Self, SuspendableError> {
         // state.buf: [u64; 25]
-        let mut buf = [0u64; 25];
+        let mut buf = Secret::<[u64; 25]>::new();
         for i in 0..25 {
             buf[i] = u64::from_le_bytes(input[i * 8..(i * 8) + 8].try_into().unwrap());
         }
 
         // data_queue: [u8; 192]
-        let data_queue: [u8; 192] = input[200..392].try_into().unwrap();
+        let mut data_queue = Secret::<[u8; 192]>::new();
+        data_queue.copy_from_slice(&input[200..392]);
 
         // bits_in_queue: usize.
         // In a legitimate state it is always a multiple of 8 AND strictly less

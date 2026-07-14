@@ -3,11 +3,12 @@
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
 use crate::aux_functions::{
-    bit_unpack_eta, bitlen_eta, expand_mask_poly, rej_ntt_poly, unpack_z_row,
+    bit_unpack_eta_out, bitlen_eta, expand_mask_poly, rej_ntt_poly, unpack_z_row,
 };
 use crate::mldsa::d;
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_utils::secret::Secret;
 
 #[inline(always)]
 pub(crate) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
@@ -161,6 +162,15 @@ pub(crate) fn compute_ct0_component<const GAMMA2: i32>(
     if ct0.check_norm::<GAMMA2>() { None } else { Some(ct0) }
 }
 
-pub(crate) fn s_unpack<const eta: usize>(s_packed: &[u8], idx: usize) -> Polynomial {
-    bit_unpack_eta::<eta>(&s_packed[idx * bitlen_eta(eta)..(idx + 1) * bitlen_eta(eta)])
+/// Unpack a single s value from the packed representation.
+pub(crate) fn s_unpack<const eta: usize, const S_PACKED_LEN: usize>(
+    s_packed: &Secret<[u8; S_PACKED_LEN]>,
+    idx: usize,
+) -> Polynomial {
+    let mut s = Polynomial::new();
+    bit_unpack_eta_out::<eta>(
+        &s_packed[idx * bitlen_eta(eta)..(idx + 1) * bitlen_eta(eta)],
+        &mut s,
+    );
+    s
 }

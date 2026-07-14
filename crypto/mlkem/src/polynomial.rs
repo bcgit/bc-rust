@@ -1,18 +1,20 @@
 //! Represents a polynomial over the ML-DSA ring.
 
-use core::fmt;
-use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
 use crate::aux_functions::{
     ZETAS, ZETAS_INV, barrett_reduce, montgomery_reduce, mul_mont, ntt_base_mult,
 };
 use crate::mlkem::{N, q};
-use bouncycastle_core::traits::Secret;
 
 /// A polynomial over the ML-KEM ring.
 /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-#[derive(Clone)]
+///
+/// # 🚨 Security 🚨
+/// Polynomials themselves are not inherently secret since sometimes they are part of public keys
+/// and sometimes private keys.
+/// It is the responsibility of the caller to wrap sensitive instances in `Secret<Vector>`.
+#[derive(Clone, Copy)]
 pub struct Polynomial {
     /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
     pub coeffs: [i16; N],
@@ -306,7 +308,7 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
 
     for i in 0..(N / 4) {
         ntt_base_mult(
-            &mut r.coeffs,
+            r.coeffs.as_mut(),
             4 * i,
             a[4 * i],
             a[4 * i + 1],
@@ -315,7 +317,7 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
             ZETAS[64 + i],
         );
         ntt_base_mult(
-            &mut r.coeffs,
+            r.coeffs.as_mut(),
             4 * i + 2,
             a[4 * i + 2],
             a[4 * i + 3],
@@ -326,26 +328,6 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     }
 
     r
-}
-
-impl Secret for Polynomial {}
-
-impl Drop for Polynomial {
-    fn drop(&mut self) {
-        self.coeffs.fill(0i16);
-    }
-}
-
-impl Debug for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
-}
-
-impl Display for Polynomial {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Polynomial (data masked)")
-    }
 }
 
 // Not currently used, but I'll leave it here because it's useful for debugging if you want to output values

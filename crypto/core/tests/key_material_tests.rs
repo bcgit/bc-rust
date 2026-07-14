@@ -173,6 +173,33 @@ mod test_key_material {
     }
 
     #[test]
+    fn from_keymaterial() {
+        let key1 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        assert_eq!(key1.key_type(), KeyType::MACKey);
+        assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
+
+        // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
+        let key2 = KeyMaterial256::from(key1.clone());
+        assert_eq!(key1.key_len(), key2.key_len());
+        assert_eq!(key1.key_type(), key2.key_type());
+        assert_eq!(key1.security_strength(), key2.security_strength());
+        assert_eq!(key1, key2);
+
+        // success case: same size
+        let key2 = KeyMaterial256::from_key(&key1).unwrap();
+        assert_eq!(key1.key_len(), key2.key_len());
+        assert_eq!(key1.key_type(), key2.key_type());
+        assert_eq!(key1, key2);
+
+        // success case: bigger
+        let key2 = KeyMaterial512::from_key(&key1).unwrap();
+        assert_eq!(key1.key_len(), key2.key_len());
+        assert_eq!(key1.key_type(), key2.key_type());
+        assert_eq!(key1.security_strength(), key2.security_strength());
+        assert_eq!(key1.ref_to_bytes(), &key2.ref_to_bytes()[..key1.key_len()]);
+    }
+
+    #[test]
     fn new_from_rng() {
         use bouncycastle_rng as rng;
 
@@ -441,46 +468,36 @@ mod test_key_material {
     #[test]
     /// impl Display for KeyMaterial to not print the key data.
     fn test_display() {
-        let key = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
-        // println!("{:?}", key);
+        let key256 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        // println!("{:?}", key256);
 
         // test fmt
         assert_eq!(
-            format!("{}", key),
-            "KeyMaterial { len: 32, key_type: MACKey, security_strength: _256bit }"
+            format!("{}", key256),
+            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit }"
         );
 
         // test debug
         assert_eq!(
-            format!("{:?}", key),
-            "KeyMaterial { len: 32, key_type: MACKey, security_strength: _256bit }"
+            format!("{:?}", key256),
+            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit }"
         );
-    }
 
-    #[test]
-    fn from_keym() {
-        let key1 = KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
-        assert_eq!(key1.key_type(), KeyType::MACKey);
-        assert_eq!(key1.security_strength(), SecurityStrength::_256bit);
+        // and an underfull one of a different size.
 
-        // success case: same size using default From impl; only works if the sizes are the same (ie the compiler knows that they are the same type.
-        let key2 = KeyMaterial256::from(key1.clone());
-        assert_eq!(key1.key_len(), key2.key_len());
-        assert_eq!(key1.key_type(), key2.key_type());
-        assert_eq!(key1.security_strength(), key2.security_strength());
-        assert_eq!(key1, key2);
+        let key512 = KeyMaterial512::from_key(&key256).unwrap();
 
-        // success case: same size
-        let key2 = KeyMaterial256::from_key(&key1).unwrap();
-        assert_eq!(key1.key_len(), key2.key_len());
-        assert_eq!(key1.key_type(), key2.key_type());
-        assert_eq!(key1, key2);
+        // test fmt
+        assert_eq!(
+            format!("{}", key512),
+            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit }"
+        );
 
-        // success case: bigger
-        let key2 = KeyMaterial512::from_key(&key1).unwrap();
-        assert_eq!(key1.key_len(), key2.key_len());
-        assert_eq!(key1.key_type(), key2.key_type());
-        assert_eq!(key1.ref_to_bytes(), &key2.ref_to_bytes()[..key1.key_len()]);
+        // test debug
+        assert_eq!(
+            format!("{:?}", key512),
+            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit }"
+        );
     }
 
     #[test]

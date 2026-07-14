@@ -8,11 +8,11 @@ use crate::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME};
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, Secret, SecurityStrength};
+use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
-
 // imports just for docs
 #[allow(unused_imports)]
 use crate::mlkem::MLKEMTrait;
@@ -363,6 +363,8 @@ impl<const k: usize, PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>, const PK_LEN: u
 }
 
 /// An ML-KEM private key.
+///
+/// This will automatically inherit the [Secret] protections because [Polynomial] wraps the underlying data with [Secret].
 #[derive(Clone)]
 pub struct MLKEMPrivateKey<
     const k: usize,
@@ -370,11 +372,11 @@ pub struct MLKEMPrivateKey<
     const SK_LEN: usize,
     const PK_LEN: usize,
 > {
-    s_hat: Vector<k>,
+    s_hat: Secret<Vector<k>>,
     ek: PK,
     pk_hash: [u8; 32],
-    z: [u8; 32],
-    seed_d: Option<[u8; 32]>,
+    z: Secret<[u8; 32]>,
+    seed_d: Option<Secret<[u8; 32]>>,
 }
 
 impl<
@@ -412,7 +414,7 @@ impl<
         pos += 32;
 
         /* z */
-        out[pos..pos + 32].copy_from_slice(&self.z);
+        out[pos..pos + 32].copy_from_slice(&*self.z);
 
         debug_assert_eq!(pos + 32, SK_LEN);
         SK_LEN
@@ -447,12 +449,18 @@ pub(crate) trait MLKEMPrivateKeyInternalTrait<
 {
     /// Not exposing a constructor publicly because you should have to get an instance either by
     /// running a keygen, or by decoding an existing key.
-    fn new(s_hat: Vector<k>, ek: PK, h: [u8; 32], z: [u8; 32], seed_d: Option<[u8; 32]>) -> Self;
+    fn new(
+        s_hat: Secret<Vector<k>>,
+        ek: PK,
+        h: [u8; 32],
+        z: Secret<[u8; 32]>,
+        seed_d: Option<Secret<[u8; 32]>>,
+    ) -> Self;
 
     /// Get a ref to s_hat
     fn s_hat(&self) -> &Vector<k>;
 
-    fn z(&self) -> &[u8; 32];
+    fn z(&self) -> &Secret<[u8; 32]>;
 }
 
 impl<
@@ -466,10 +474,10 @@ impl<
         if self.seed_d.is_none() {
             None
         } else {
-            let mut tmp = [0u8; 64];
-            tmp[..32].copy_from_slice(&self.seed_d.unwrap());
-            tmp[32..].copy_from_slice(&self.z);
-            let mut seed = KeyMaterial::<64>::from_bytes_as_type(&tmp, KeyType::Seed).unwrap();
+            let mut tmp = Secret::<[u8; 64]>::new();
+            tmp[..32].copy_from_slice(&self.seed_d.clone().unwrap().as_ref());
+            tmp[32..].copy_from_slice(&*self.z);
+            let mut seed = KeyMaterial::<64>::from_bytes_as_type(&*tmp, KeyType::Seed).unwrap();
 
             key_material::do_hazardous_operations(&mut seed, |seed| {
                 seed.set_security_strength(match k {
@@ -499,7 +507,7 @@ impl<
         let mut pos = 0usize;
 
         /* dk_pke */
-        let mut s_hat = Vector::<k>::new();
+        let mut s_hat: Secret<Vector<k>> = Secret::new();
         // for (s_i, sk_chunk) in s_hat.0.iter_mut().zip(sk_chunks) {
         for i in 0..k {
             s_hat[i] = byte_decode::<12, POLY_BYTES>(
@@ -538,7 +546,8 @@ impl<
         }
 
         /* z */
-        let z: [u8; 32] = sk[pos..pos + 32].try_into().unwrap();
+        let mut z = Secret::<[u8; 32]>::new();
+        z.copy_from_slice(sk[pos..pos + 32].try_into().unwrap());
 
         Ok(Self::new(s_hat, ek, h_pk, z, None))
     }
@@ -553,11 +562,11 @@ impl<
 {
     /// Note to future maintainers: FIPS 203 section 7.3 requires that ek be hashed and compared to pk_hash.
     fn new(
-        s_hat: Vector<k>,
+        s_hat: Secret<Vector<k>>,
         ek: PK,
         pk_hash: [u8; 32],
-        z: [u8; 32],
-        seed_d: Option<[u8; 32]>,
+        z: Secret<[u8; 32]>,
+        seed_d: Option<Secret<[u8; 32]>>,
     ) -> Self {
         Self { s_hat, ek, pk_hash, z, seed_d: seed_d.clone() }
     }
@@ -566,7 +575,7 @@ impl<
         &self.s_hat
     }
 
-    fn z(&self) -> &[u8; 32] {
+    fn z(&self) -> &Secret<[u8; 32]> {
         &self.z
     }
 }
@@ -627,15 +636,6 @@ impl<
     }
 }
 
-impl<
-    const k: usize,
-    PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Secret for MLKEMPrivateKey<k, PK, SK_LEN, PK_LEN>
-{
-}
-
 /// Debug impl mainly to prevent the secret key from being printed in logs.
 impl<
     const k: usize,
@@ -683,24 +683,6 @@ impl<
             self.pk_hash,
             self.seed_d.is_some(),
         )
-    }
-}
-
-/// Zeroizing drop
-impl<
-    const k: usize,
-    PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Drop for MLKEMPrivateKey<k, PK, SK_LEN, PK_LEN>
-{
-    fn drop(&mut self) {
-        // s_hat, has its own zeroizing drop
-        self.pk_hash.fill(0u8);
-        self.z.fill(0u8);
-        if self.seed_d.is_some() {
-            self.seed_d.as_mut().unwrap().fill(0u8);
-        }
     }
 }
 
@@ -786,31 +768,6 @@ impl<
     const PK_LEN: usize,
 > Eq for MLKEMPrivateKeyExpanded<k, PK, SK, SK_LEN, PK_LEN>
 {
-}
-
-impl<
-    const k: usize,
-    PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, PK, SK_LEN, PK_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, PK, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Secret for MLKEMPrivateKeyExpanded<k, PK, SK, SK_LEN, PK_LEN>
-{
-}
-
-impl<
-    const k: usize,
-    PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, PK, SK_LEN, PK_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, PK, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Drop for MLKEMPrivateKeyExpanded<k, PK, SK, SK_LEN, PK_LEN>
-{
-    fn drop(&mut self) {
-        // Nothing to do since self.sk already impls zeroizing Drop
-    }
 }
 
 impl<
