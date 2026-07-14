@@ -76,10 +76,18 @@ mod test_secret {
         assert_eq!(*b, 43);
     }
 
+    /// Wrapping something in Secret will mask the type's native Debug / Display
     #[test]
     fn debug_and_display_are_redacted() {
-        let mut s = Secret::<u32>::new();
-        *s = 0x4141_4141; // would render as "AAAA" if leaked
+        // Redacts basic types
+        // would render as "AAAA" if leaked
+        let i = 0x4141_4141i32;
+        assert_eq!(format!("{i}"), "1094795585");
+        assert_eq!(format!("{i:?}"), "1094795585");
+
+        let mut s = Secret::<i32>::new();
+        *s = 0x4141_4141;
+        assert_eq!(*s, 0x4141_4141);
         let dbg = format!("{s:?}");
         let disp = format!("{s}");
         assert!(dbg.contains("redacted"));
@@ -88,7 +96,18 @@ mod test_secret {
         assert!(!dbg.contains("1094795585")); // 0x41414141
         assert!(!disp.contains("1094795585"));
 
-        // Wrapping something in Secret will mask the type's native Debug / Display
+        // Same for arrays
+        let a = [0x0, 0x1, 0x2, 0x3];
+        // [u8] does not impl Display, but it does impl Debug
+        assert_eq!(format!("{a:?}"), "[0, 1, 2, 3]");
+
+        let mut sa = Secret::<[u8; 4]>::new();
+        *sa = [0x0, 0x1, 0x2, 0x3];
+        assert_eq!(*sa, [0x0, 0x1, 0x2, 0x3]);
+        assert!(format!("{sa:?}").contains("redacted"));
+        assert!(!format!("{sa:?}").contains("0, 1, 2, 3"));
+
+        // Same for custom types
         #[derive(Copy, Clone)]
         struct Thing {
             value: i32,

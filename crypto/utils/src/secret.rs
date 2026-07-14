@@ -174,6 +174,10 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// assert_eq!(format!("{secret:?}"), "Secret<u32>(<redacted>)");
 /// ```
 ///
+/// This will also work for custom types; let's say the `User` struct from the previous example had
+/// impl'd Display and Debug; mhen you wrap them in `Secret<User>` then `Secret`'s Display and Debug
+/// are invoked instead of `User`'s and you get the "<redacted>" output.
+///
 /// # Memory Usage
 ///
 /// As a direct wrapper of the type `T`, a `Secret<T>` does not add any memory overhead.
