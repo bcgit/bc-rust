@@ -11,6 +11,30 @@
 //! language as observable side effects and therefore may not be elided or coalesced. Each scrub is
 //! followed by a [compiler_fence] with [SeqCst](Ordering::SeqCst) ordering so the volatile
 //! writes are not reordered with respect to later memory operations.
+//!
+//! # Why Sized?
+//!
+//! The [ZeroizablePrimitive] is bounded on [`Sized`](core::marker::Sized), which explicitly forbids
+//! instantiating `Secret<T>` over something like `Vec<T>` whose size is not known at compile time.
+//!
+//! The reason is that an implementation of `.zeroize()` that is guaranteed not be optimized away
+//! by the compiler requires the use of `unsafe{ write_volatile() }` to directly write the `T::ZEROED`
+//! byte pattern over top of the provided memory block. With a `Sized` type, this is a single line of
+//! unsafe code and it is easy to prove that it is writing the number of bytes that it should be.
+//! For a dynamically-sized value such as `Vec<T>`, this is substantially trickier.
+//! Taking `Vec` as an example, it is not a flat piece of memory that can be trivially over-written
+//! with a static value; `Vec` is actually a stack of structs that implement a smart-pointer that
+//! tracks both `length` and `capacity` of the memory referenced by the pointer.
+//! Properly zeroizing this means following the pointer, filling the referenced memory with `0x00` up
+//! to the `capacity`, then setting `length=0` without changing `capacity` or the pointer.
+//! Zeroizing a `Vec` would require a substantial amount of unsafe code that is Vec-specific and
+//! tricky to prove the correctness of.
+//! Doing this for arbitrary heap-allocated objects (which may contain nested heap-allocated objects)
+//! sounds like a whole research project.
+//!
+//! This is not to say that bc-rust will never attempt this challenge, but since bc-rust is a `[no_std]`
+//! library that keeps all of its secrets in stack-allocated variables, this is not a problem that
+//! needs to be solved for internal library use.
 
 use crate::ct;
 use core::any::type_name;
@@ -33,8 +57,11 @@ use core::sync::atomic::{Ordering, compiler_fence};
 //           Secret over a type that impls Drop. So we don't actually care about the underlying type
 //           impl'ing Copy; we only care that it doesn't impl Drop, and the `Copy` bound is a
 //           convenient way to catch that if we in the future do impl_zero_init!(T) for a T that has Drop.
-pub trait ZeroizablePrimitive: Copy {
+pub trait ZeroizablePrimitive: Copy + Sized {
     /// The zeroed value of this type.
+    /// This needs to be a valid static instance of Self that [Secret::zeroize] will internally
+    /// convert into a byte array and use to overwrite the memory location of the given instance of
+    /// the primitive.
     const ZEROED: Self;
 }
 
@@ -159,6 +186,8 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// }
 /// ```
 ///
+/// Note that `Secret<T>` is only defined for statically-sized types -- ie types that satisfy
+/// [`Sized`](core::marker::Sized). For a justification, see the module docs.
 ///
 /// # Redacting Debug and Display
 ///
