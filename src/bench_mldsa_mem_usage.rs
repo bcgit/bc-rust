@@ -257,7 +257,7 @@ fn bench_mldsa44_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
     //     KeyType::Seed,
@@ -289,7 +289,7 @@ fn bench_mldsa44_lowmemory_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
     //     KeyType::Seed,
@@ -321,7 +321,8 @@ fn bench_mldsa65_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
+
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
@@ -354,7 +355,7 @@ fn bench_mldsa65_lowmemory_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
@@ -387,7 +388,7 @@ fn bench_mldsa87_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
@@ -420,7 +421,7 @@ fn bench_mldsa87_lowmemory_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),

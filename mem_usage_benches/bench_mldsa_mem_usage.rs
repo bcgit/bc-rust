@@ -11,9 +11,9 @@
 //!
 //! Make sure you build in release mode!
 //!
-//! Note: I'm using print!() to force the compiler not to optimize away the actual code.
-//! I'm printing the important stuff for benchmarking to stderr so that I can pipe the junk to /dev/null
-//! (I'm not doing it the other way because /usr/bin/time prints its useful stuff to stderr as well)
+//! The code is using print!() to force the compiler not to optimize away the actual code.
+//! It is printing important outputs for benchmarking to stderr so that the rest can be mapped to /dev/null
+//! (this is because /usr/bin/time prints useful outputs to stderr as well)
 //!
 //! Main is at the bottom, controls which this was actually run.
 
@@ -100,7 +100,7 @@ fn print_struct_sizes() {
     );
 }
 
-/// This exists so I can use /usr/bin/time to measure the base memory footprint of the cargo bench harness
+/// This exists that /usr/bin/time can be used to measure the base memory footprint of the cargo bench harness
 fn bench_do_nothing() {
     eprintln!("DoNothing");
 
@@ -226,7 +226,7 @@ fn bench_mldsa44_sign() {
 
     eprintln!("MLDSA44/Sign");
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -422,7 +422,7 @@ fn bench_mldsa44_lowmemory_sign() {
 
     eprintln!("MLDSA44_lowmemory/Sign");
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -450,7 +450,7 @@ fn bench_mldsa65_sign() {
 
     eprintln!("MLDSA65/Sign");
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -745,7 +745,7 @@ fn bench_mldsa65_lowmemory_sign() {
 
     eprintln!("MLDSA65_lowmemory/Sign");
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -773,7 +773,7 @@ fn bench_mldsa87_sign() {
 
     eprintln!("MLDSA87/Sign");
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -1126,7 +1126,7 @@ fn bench_mldsa87_lowmemory_sign() {
 
     eprintln!("MLDSA87_lowmemory/Sign");
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -1157,7 +1157,7 @@ fn bench_mldsa44_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -1440,7 +1440,7 @@ fn bench_mldsa44_lowmemory_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
     //     KeyType::Seed,
@@ -1724,7 +1724,7 @@ fn bench_mldsa65_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
@@ -1892,7 +1892,7 @@ fn bench_mldsa65_lowmemory_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
@@ -1927,7 +1927,7 @@ fn bench_mldsa87_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
@@ -2136,7 +2136,7 @@ fn bench_mldsa87_lowmemory_verify() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    /* One-time setup of the KAT -- commented out so that we're not capturing keygen in the bench */
+    /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
 
     // let seed = KeyMaterial256::from_bytes_as_type(
     //     &[0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0a,0x0b,0x0c,0x0d,0x0e,0x0f,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1a,0x1b,0x1c,0x1d,0x1e,0x1f],
