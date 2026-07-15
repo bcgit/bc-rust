@@ -8,9 +8,9 @@ use core::fmt::{Debug, Display, Formatter};
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
-/// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
-/// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
-/// and the real unit tests are in a different crate, so here we are.
+/// Dev note: this doesn't strictly need to be pub. In other words, there's no good reason for a caller to use this class directly.
+/// However, in order to test the Debug and Display traits, it's necessary to use STD, so those can't be tested from inline tests in this file
+/// and the real unit tests are in a different crate. That's the reason why the struct is declared as public.
 #[derive(Clone)]
 pub struct Polynomial {
     pub(crate) coeffs: [i32; N],
@@ -84,14 +84,15 @@ impl Polynomial {
 
     pub(crate) fn check_norm<const BOUND: i32>(&self) -> bool {
         // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
-        // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing the signature validation.
-        // So the i32 that we just checked in a non-constant-time manner is about to get thrown away.
+        // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing 
+        // the signature validation.
+        // So the i32 that was just checked in a non-constant-time manner is about to get thrown away.
 
         // Note: this formulation of the check_norm function usually requires this bounds check
         //  if bound > (q - 1) / 8 {
         //     return true;
         //  }
-        // but since BOUND is a constant here, we'll just do a debug_assert to make sure the value is what we expect.
+        // but since BOUND is a constant here, a debug_assert is done to ensure the value is what is expected.
         debug_assert!(BOUND <= (q - 1) / 8);
 
         let mut t: i32;
@@ -127,14 +128,14 @@ impl Polynomial {
 
     pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
         // It might seem counter-intuitive for a low-memory implementation to create a tmp buffer
-        // rather than work in the provided buffer, but my benchmarking shows that for whatever
-        // reason, rust is like an order of magnitude faster working in a scope-local array than
+        // rather than work in the provided buffer, but experimentation shows that
+        // rust is roughly an order of magnitude faster working in a scope-local array than
         // in a referenced piece of memory.
-        // My guess is that when you tell the compiler that the intermediate values are scope-local,
-        // then it's free to optimize all of the computation into CPU registers and skip, in this case,
+        // This is possibly because, once the rust compiler understands that the intermediate values are scope-local,
+        // it performs optimizations throughout all of the computation into CPU registers and skips, in this case,
         // several hundred physical memory writes.
         // So while it looks odd to use a scope variable in a low-memory implementation, it's way faster
-        // and I'm not convinced that it uses any more physical memory.
+        // while seemingly maintaining the same physical memory footprint.
         let mut r = [0u8; POLY_W1_PACKED_LEN];
 
         match POLY_W1_PACKED_LEN {
@@ -161,16 +162,15 @@ impl Polynomial {
 
     /// Algorithm 41 NTT(𝑤)
     /// Computes the NTT.
-    /// Input: Polynomial 𝑤(𝑋)
-    /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞.
+    /// Input: Polynomial 𝑤(𝑋) = Σ_{j=0}^{255} 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞.
     /// Output: 𝑤_hat = (𝑤_hat\[0], ..., 𝑤_hat\[255]) ∈ 𝑇𝑞.
     ///
-    /// Note: by convention, variables holding the output of the NTT function should be named "_ntt"
+    /// Note: by convention, variables holding the output of the NTT function should be named "_hat"
     /// to indicate that they are in the NTT domain (sometimes called the frequency domain), not the natural domain.
-    /// I considered using the rust type system to enforce this, but it seemed like overkill, cause that's what
-    /// NIST test vectors are for.
+    /// Usage of the rust type system to enforce this is arguably unnecessary, since that's what the NIST
+    /// test vectors are for.
     ///
-    /// Design choice: don't do the NTT in-place, but copy data to a new array.
+    /// Design choice: the NTT is not done in-place, but copy data to a new array.
     /// This uses slightly more memory and requires a copy, but makes the code easier to read
     /// and less likely to contain a bug. But this optimization could be considered in the future.
     pub(crate) fn ntt(&mut self) {

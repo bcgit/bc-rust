@@ -310,8 +310,8 @@ mod bc_test_data {
                     let sk =
                         MLDSA44PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // Note: The code exposes a sign_mu_deterministic(), but not sign_deterministic()
+                    // so mu needs to be computed manually
                     // let mu = MLDSA44::compute_mu_from_tr(
                     //     &hex::decode(&self.message).unwrap(),
                     //     None,
@@ -336,8 +336,8 @@ mod bc_test_data {
                     let sk =
                         MLDSA65PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // Note: The code exposes a sign_mu_deterministic(), but not sign_deterministic()
+                    // so mu needs to be computed manually
                     // let mu = MLDSA65::compute_mu_from_tr(
                     //     &hex::decode(&self.message).unwrap(),
                     //     None,
@@ -354,8 +354,8 @@ mod bc_test_data {
                     let sk =
                         MLDSA87PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // Note: The code exposes a sign_mu_deterministic(), but not sign_deterministic()
+                    // so mu needs to be computed manually
                     // let mu = MLDSA87::compute_mu_from_tr(
                     //     &hex::decode(&self.message).unwrap(),
                     //     None,
@@ -705,7 +705,7 @@ mod bc_test_data {
                         KeyType::Seed,
                     )
                     .unwrap();
-                    // for the purposes of the test cases, accept an all-zero seed
+                    // For the purposes of the test cases, accept an all-zero seed
                     seed.allow_hazardous_operations();
                     seed.set_key_type(KeyType::Seed).unwrap();
                     seed.set_security_strength(SecurityStrength::_256bit).unwrap();
@@ -720,7 +720,7 @@ mod bc_test_data {
                     assert_eq!(sk.encode(), sk_sized);
 
                     if IS_HASH_MLDSA {
-                        // we're only testing SHA512
+                        // It only tests SHA512
                         let ph: [u8; 64] = SHA512::new()
                             .hash(&hex::decode(&self.msg).unwrap())
                             .as_slice()
@@ -749,8 +749,8 @@ mod bc_test_data {
                             parameter_set, IS_HASH_MLDSA, self.count
                         ));
                     } else {
-                        // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                        // so need to manually compute mu
+                        // note: The code only exposes a sign_mu_deterministic(), but not sign_deterministic()
+                        // so mu needs to be computed manually
                         let mu = MLDSA65::compute_mu_from_tr(
                             sk.tr(),
                             &hex::decode(&self.msg).unwrap(),
@@ -798,7 +798,7 @@ mod bc_test_data {
                     assert_eq!(sk.encode(), sk_sized);
 
                     if IS_HASH_MLDSA {
-                        // we're only testing SHA512
+                        // it only tests SHA512
                         let ph: [u8; 64] = SHA512::new()
                             .hash(&hex::decode(&self.msg).unwrap())
                             .as_slice()
@@ -827,8 +827,8 @@ mod bc_test_data {
                             parameter_set, IS_HASH_MLDSA, self.count
                         ));
                     } else {
-                        // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                        // so need to manually compute mu
+                        // note: The code only exposes a sign_mu_deterministic(), but not sign_deterministic()
+                        // so mu needs to be computed manually
                         let mu = MLDSA65::compute_mu_from_tr(
                             sk.tr(),
                             &hex::decode(&self.msg).unwrap(),
@@ -870,7 +870,7 @@ mod bc_test_data {
                     assert_eq!(sk.encode(), sk_sized);
 
                     if IS_HASH_MLDSA {
-                        // we're only testing SHA512
+                        // it only tests SHA512
                         let ph: [u8; 64] = SHA512::new()
                             .hash(&hex::decode(&self.msg).unwrap())
                             .as_slice()
@@ -896,8 +896,8 @@ mod bc_test_data {
                         )
                         .unwrap();
                     } else {
-                        // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                        // so need to manually compute mu
+                        // Note: The code exposes a sign_mu_deterministic(), but not sign_deterministic()
+                        // so mu needs to be computed manually
                         let mu = MLDSA65::compute_mu_from_tr(
                             sk.tr(),
                             &hex::decode(&self.msg).unwrap(),

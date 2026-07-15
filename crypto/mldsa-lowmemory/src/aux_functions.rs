@@ -14,7 +14,7 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
     // This is the exact alg from FIPS 204:
     // let mut b2_prime = b2;
     // if b2_prime > 127 {
-    //     // set the top bit of b2_prime to 0
+    //     // Set the top bit of b2_prime to 0
     //     b2_prime = b2_prime - 128;
     // }
 
@@ -36,7 +36,7 @@ pub(crate) fn coeff_from_half_byte<const ETA: usize>(b: u8) -> Result<i32, ()> {
     if ETA == 2 && b < 15 {
         // Original code is bad because '%' is not constant-time.
         // Ok(2 - (b % 5) as i32)
-        // I'm still not convinced this is constant-time, but maybe it's closer? And I can't come up with anything better.
+        // TODO: Verify whether this function is constant time and whether it can be further optimized
         let b = match b {
             b if b < 5 => b,
             b if b < 10 => b - 5,
@@ -49,7 +49,7 @@ pub(crate) fn coeff_from_half_byte<const ETA: usize>(b: u8) -> Result<i32, ()> {
 }
 
 /// A specific instantiation of Algorithm 16 SimpleBitPack(𝑤, 𝑏) with the constants set for packing the t1 vector
-///  Encodes a polynomial 𝑤 into a byte string.
+/// Encodes a polynomial 𝑤 into a byte string.
 /// Input: 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in [0, 𝑏].
 /// Output: A byte string of length 32 ⋅ bitlen 𝑏.
 pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
@@ -78,8 +78,8 @@ pub const fn bitlen_eta(eta: usize) -> usize {
 /// Encodes a polynomial 𝑤 into a byte string.
 /// Input: 𝑎, 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in \[−eta, eta].
 /// Output: A byte string of length 32 ⋅ bitlen (𝑎 + 𝑏).
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
+// `match ETA` folds away per monomorphization (ETA is a const generic), so ETA = 2
+// and ETA = 4 each compile to just their own arm, leaving no dispatch at runtime.
 #[inline(always)]
 pub(crate) fn bit_pack_eta<const ETA: usize>(w: &Polynomial, r: &mut [u8]) {
     debug_assert_eq!(r.len(), bitlen_eta(ETA));
@@ -236,8 +236,8 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 ///
 /// Note: caller is responsible for ensuring correct input array size
 
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
+// `match ETA` folds away per monomorphization (ETA is a const generic), so ETA = 2
+// and ETA = 4 each compile to just their own arm, leaving no dispatch at runtime.
 #[inline(always)]
 pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
     debug_assert_eq!(v.len(), bitlen_eta(ETA));
@@ -292,8 +292,8 @@ pub(crate) fn bit_unpack_eta<const ETA: usize>(v: &[u8]) -> Polynomial {
 ///
 /// Note: caller is responsible for ensuring correct input array size
 
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
+// `match ETA` folds away per monomorphization (ETA is a const generic), so ETA = 2
+// and ETA = 4 each compile to just their own arm, leaving no dispatch at runtime.
 #[inline(always)]
 pub(crate) fn bit_unpack_gamma1<const GAMMA1: i32>(v: &[u8]) -> Polynomial {
     let mut w = Polynomial::new();
@@ -359,7 +359,7 @@ pub(crate) fn unpack_z_row<
     idx: usize,
     sig: &[u8; SIG_LEN],
 ) -> Result<Polynomial, ()> {
-    // assert: idx < l, but we don't have easy access to l
+    // assert: idx < l, but here there is no access to l
 
     // skip to the start of the z's
     let pos = LAMBDA_over_4;
@@ -475,8 +475,8 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     let mut j = [0u8];
     for i in (N - TAU as usize)..N {
         // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
-        // Note: you would think that this would be faster to pre-squeeze a buffer outside the loop, but in testing it
-        //       doesn't make a difference.
+        // Note: At first, it might seem to be faster to pre-squeeze a buffer outside the loop. 
+        // However, after experimentation and testing, the difference is not noticeable.
         h.squeeze_out(&mut j);
 
         // 8: while 𝑗 > 𝑖 do
@@ -515,7 +515,7 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
 /// Algorithm 30 RejNTTPoly(𝜌)
 /// This is supposed to take a rho: [u8; 34], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
-/// we'll split that into a [u8;32] and a [u8;2]
+/// here that is split into a [u8;32] and a [u8;2]
 pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     let mut w_hat = Polynomial::new();
     let mut j: usize = 0;
@@ -523,8 +523,8 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     g.absorb(rho);
     g.absorb(nonce);
 
-    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
-    // size doesn't really matter, so long as it's a multiple of 3.
+    // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so the implementation does a block instead.
+    // size is not a limitation, so long as it's a multiple of 3.
     // 288 seemed to be the sweet spot from playing with benchmarks
     // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
@@ -560,7 +560,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 ///
 /// This is supposed to take a rho: [u8; 66], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
 /// but to avoid needing to copy bytes and allocate more memory,
-/// we'll split that into a [u8;64] and a [u8;2]
+/// here that is split into a [u8;64] and a [u8;2]
 pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]) -> Polynomial {
     let mut a = Polynomial::new();
     let mut j: usize = 0;
@@ -568,10 +568,10 @@ pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]
     h.absorb(rho);
     h.absorb(nonce);
 
-    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, so we'll do a block.
-    // size doesn't really matter
-    // 312 seemed to be the sweet spot from playing with benchmarks
-    // maybe something to do with the average rejection rate?
+    // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so the implementation does a block instead.
+    // size is not a limitation as long as it is a multiple of 3.
+    // 312 seems to be the sweet spot after some experimentation
+    // which is possibly also related with the average rejection rate. 
     // Also, 312 is a multiple of 8 (efficient for SHAKE)
     let mut z_arr = [0u8; 312];
     h.squeeze_out(&mut z_arr);
@@ -697,7 +697,7 @@ pub(crate) fn decompose<const GAMMA2: i32>(r: i32) -> (i32, i32) {
     r1 = r - r0 * 2 * GAMMA2;
 
     // mutants note: the choice of (q - 1) is a bit arbitrary in that after doing the bit-shifting,
-    // this seems to work out mathematically equivalent if you do q/2, or (q+3)/2, but we'll leave it as (q-1)/2
+    // this seems to work out mathematically equivalent to doing q/2, or (q+3)/2, but here it is left as (q-1)/2
     // since that's algorithmically correct, and just ignore the mutants results.
     r1 -= (((q - 1) / 2 - r1) >> 31) & q;
 
@@ -761,7 +761,7 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
     match GAMMA2 {
         MLDSA44_GAMMA2 => {
             // mutants note: this passes unit tests if it's a1 >= 0
-            //      we'll leave it like this because it matches the spec
+            //      it is left like this because it matches the spec
             if a1 > 0 {
                 if a0 == 43 { 0 } else { a0 + 1 }
             } else {
@@ -771,7 +771,7 @@ pub(super) fn use_hint<const GAMMA2: i32>(a: i32, hint: i32) -> i32 {
         // ML-DSA65 and 87 have the same GAMMA2
         MLDSA65_GAMMA2 => {
             // mutants note: this passes unit tests if it's a0 >= 0
-            //      we'll leave it like this because it matches the spec
+            //      it is left like this because it matches the spec
             if a1 > 0 { (a0 + 1) & 15 } else { (a0 - 1) & 15 }
         }
         _ => {

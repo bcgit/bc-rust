@@ -116,7 +116,7 @@ pub(crate) trait MLDSAPublicKeyInternalTrait<
     const PK_LEN: usize,
 >
 {
-    /// Not exposing a constructor publicly because you should have to get an instance either by
+    /// Not exposing a constructor publicly because the user should get an instance either by
     /// running a keygen, or by decoding an existing key.
     fn new(rho: [u8; 32], t1_packed: [u8; T1_PACKED_LEN]) -> Self;
 
@@ -265,8 +265,8 @@ pub trait MLDSAPrivateKeyTrait<
 
     /// Get a copy of the key hash `tr`.
     /// This is computationally intensive as it requires fully re-computing the public key (and then discarding it).
-    /// It is highly recommended that if you already have a copy of the public key, get `tr` from that,
-    /// or else compute tr once and store it.
+    /// It is highly recommended that, if the user already has a copy of the public key, they should get `tr` from that,
+    /// or else compute `tr` once and store it.
     fn tr(&self) -> [u8; 64];
     /// Returns the full public key, and has the side-effect of setting the public key hash tr in this MLDSASeedSK object.
     fn derive_pk(&self) -> MLDSAPublicKey<k, T1_PACKED_LEN, PK_LEN>;
@@ -670,7 +670,7 @@ impl<
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<k, T1_PACKED_LEN, PK_LEN> {
-        // The goal here is to get t1, which we will build and compress one row at a time.
+        // The goal here is to get t1, which is built and compressed one row at a time.
 
         let s1_packed: [u8; S1_PACKED_LEN] = self.compute_s1_packed();
         let s2_packed: [u8; S2_PACKED_LEN] = self.compute_s2_packed();

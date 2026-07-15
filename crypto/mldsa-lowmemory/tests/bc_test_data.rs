@@ -316,8 +316,8 @@ mod bc_test_data {
                     let sk =
                         MLDSA44PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // note: a sign_mu_deterministic() is being exposed, but not sign_deterministic()
+                    // so it is necessary to manually compute mu
                     // let mu = MLDSA44::compute_mu_from_tr(
                     //     &hex::decode(&self.message).unwrap(),
                     //     None,
@@ -342,8 +342,8 @@ mod bc_test_data {
                     let sk =
                         MLDSA65PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // note: a sign_mu_deterministic() is being exposed, but not sign_deterministic()
+                    // so it is necessary to manually compute mu
                     // let mu = MLDSA65::compute_mu_from_tr(
                     //     &hex::decode(&self.message).unwrap(),
                     //     None,
@@ -360,8 +360,8 @@ mod bc_test_data {
                     let sk =
                         MLDSA87PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // note: a sign_mu_deterministic() is being exposed, but not sign_deterministic()
+                    // so it is necessary to manually compute mu
                     // let mu = MLDSA87::compute_mu_from_tr(
                     //     &hex::decode(&self.message).unwrap(),
                     //     None,
@@ -379,7 +379,22 @@ mod bc_test_data {
         }
     }
 
-    // this seems buggy and I'm not sure why. Possibly because the bc-test-data was written against Round 3 Dilithium and not ML-DSA.
+    // DISABLED: this is not an implementation bug.
+    //
+    // This procedure contains a bug that hasn't yet been found.
+    // Possibly because the bc-test-data was written against Round 3 Dilithium and not ML-DSA.
+    //
+    // The bc-test-data vectors predate the FIPS 204 M' construction. They were generated with
+    // mu = H(tr || M), omitting the 0x00 || |ctx| || ctx prefix. See BustedMuBuilder below, which
+    // reproduces that legacy construction for the sigGen tests.
+    //
+    // ML_DSA_sigGen works around this by computing the legacy mu itself and injecting it through
+    // the public external-mu signing API (sign_mu_deterministic). Verification has no equivalent:
+    // MLDSA::verify() always applies the M' prefix internally, and verify_mu_internal() is private,
+    // so these vectors can never verify through the public API.
+    //
+    // Re-enable once a public verify_mu() exists (symmetric with sign_mu), or once external-mode
+    // (ctx-aware) vectors are available.
     // todo -- debug
     // #[test]
     #[allow(non_snake_case)]
@@ -552,7 +567,10 @@ mod bc_test_data {
         }
     }
 
-    // not working, not totally sure why
+    // DISABLED: root cause not yet established.
+    // These .rsp vectors are modern FIPS 204 (they carry a `context` tag and include
+    // HashML-DSA/SHA-512 cases), and this test uses the real compute_mu_from_tr with ctx,
+    //
     // #[test]
     #[allow(non_snake_case)]
     fn ML_DSA_rsp() {

@@ -4,7 +4,7 @@
 //!
 //! # Streaming APIs
 //!
-//! Sometimes the message you need to sign or verify is too big to fit in device memory all at once.
+//! Sometimes the message that needs to be signed or verified is too big to fit in device memory all at once.
 //! No worries, we got you covered!
 //!
 //! ```rust
@@ -297,7 +297,8 @@
 //! that the merged function is able to only compute once.
 //!
 //! Since this is intended for embedded systems specialists, the functions are not wrapped in
-//! the beginner-friendly APIs. If a user needs this, then it is assumed they know what they are doing
+//! the beginner-friendly APIs. It is implied that a user that needs this functionality also knows how
+//! to use it and what they are doing
 //!
 //! Example usage:
 //!

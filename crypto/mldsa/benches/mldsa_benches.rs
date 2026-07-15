@@ -107,7 +107,7 @@ fn bench_mldsa_sign(c: &mut Criterion) {
     /*** ML-DSA-44 ***/
     let (_mldsa44_pk, mldsa44_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
 
-    // signing nonce; we'll increment each time
+    // signing nonce; it increments each time
     let mut rnd = [0u8; 32];
 
     group.throughput(criterion::Throughput::Elements(1_u64));
@@ -152,7 +152,7 @@ fn bench_mldsa_sign(c: &mut Criterion) {
 fn bench_mldsa_sign_from_seed(c: &mut Criterion) {
     let mut group = c.benchmark_group("Sign_from_seed");
 
-    // set up the seeds outside of the timing loop
+    // Set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial256::from_bytes_as_type(
         &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
@@ -168,7 +168,7 @@ fn bench_mldsa_sign_from_seed(c: &mut Criterion) {
         sk.tr().clone()
     };
 
-    // signing nonce; we'll increment each time
+    // Signing nonce; it increments each time
     let mut rnd = [0u8; 32];
 
     group.throughput(criterion::Throughput::Elements(1_u64));
@@ -188,7 +188,7 @@ fn bench_mldsa_sign_from_seed(c: &mut Criterion) {
         sk.tr().clone()
     };
 
-    // signing nonce; we'll increment each time
+    // Signing nonce; it increments each time
     let mut rnd = [0u8; 32];
 
     group.throughput(criterion::Throughput::Elements(1_u64));
@@ -209,7 +209,7 @@ fn bench_mldsa_sign_from_seed(c: &mut Criterion) {
         sk.tr().clone()
     };
 
-    // signing nonce; we'll increment each time
+    // Signing nonce; it increments each time
     let mut rnd = [0u8; 32];
 
     group.throughput(criterion::Throughput::Elements(1_u64));
@@ -243,7 +243,7 @@ fn bench_mldsa_sign_with_expanded_key(c: &mut Criterion) {
     let (mldsa44_pk, mldsa44_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
     let a_hat = mldsa44_pk.A_hat();
 
-    // signing nonce; we'll increment each time
+    // Signing nonce; it increments each time
     let mut rnd = [0u8; 32];
 
     group.throughput(criterion::Throughput::Elements(1_u64));
@@ -290,7 +290,7 @@ fn bench_mldsa_sign_with_expanded_key(c: &mut Criterion) {
 fn bench_mldsa_verify(c: &mut Criterion) {
     let mut group = c.benchmark_group("Verify");
 
-    // set up the seeds outside of the timing loop
+    // Set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial256::from_bytes_as_type(
         &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),

@@ -92,15 +92,34 @@
 //! # Security
 //! All functionality exposed by this crate is considered secure to use.
 //! In other words, this crate does not contain any "hazmat" except for the obvious points about
-//! handling your private keys properly: if you post your private key to github, or you generate
-//! production keys from a weak seed, I can't help you, that's on you.
-//! It is worth mentioning, however, that if using a [MLDSA::keygen_from_seed], then it is your
-//! responsibility to ensure that the seed is cryptographically random and unpredictable.
+//! handling the user's private keys properly: 
+//! Incidents arising form the user posting their private key to a public repository, or generating
+//! production keys from a weak seed, it completely the user's responsibility.
+//! That being said, it is also the user's responsibility to ensure that a seed is cryptographically
+//! produced (i.e. it is sufficiently random) while using [MLDSA::keygen_from_seed].
 //!
-//! While the full formulation of the ML-DSA and HashML-DSA algorithms look complex with parameters
-//! like `seed`, `mu`, `ph`, `ctx`, and `rnd`, rest assured that use (or misuse) of these parameters
-//! do not really affect security of the algorithm; they just mean that you might produce a signature
-//! that nobody else can verify.
+//! ML-DSA and HashML-DSA take several parameters: `seed`, `mu`, `ph`, `ctx`, and `rnd`.
+//! They fall into two groups with very different failure modes.
+//!
+//! `mu`, `ph`, and `ctx` are binding values that the verifier must reproduce. This means that getting
+//! them wrong does not compromise security, it just yields a signature the intended
+//! verifier won't accept (a correctness/interoperability failure). 
+//! One caveat: `ctx` is still security-relevant at the protocol level (domain separation, replay and
+//! cross-protocol binding), so choosing it incorrectly can weaken those properties.
+//!
+//! `seed` and `rnd`, however, are secret/entropy inputs and must be handled with care:
+//!
+//! - `seed` *is* the private key, i.e. the entire key is derived from it. It must be generated
+//!   with a strong cryptographically secure PRNG, it must be kept secret, and it must never reused. 
+//!   A low-entropy, predictable, or disclosed seed yields a full key compromise, 
+//!   not merely an unverifiable signature.
+//!
+//! - `rnd` is the signing randomizer. ML-DSA is designed to be nonce-misuse-resistant, i.e. the
+//!   signing mask is derived from a secret key value together with `rnd` and `mu`, so
+//!   reusing `rnd`, or using the all-zero "deterministic" mode, does NOT
+//!   leak the private key (unlike ECDSA). Deterministic signing is FIPS-approved and safe. The randomized
+//!   mode exists to add resistance to fault and side-channel attacks, so `rnd`
+//!   should come from a good RNG when that threat model applies.
 //!
 //! A note about cryptographic side-channel attacks: considerable effort has been expended to attempt
 //! to make this implementation constant-time, which generally means that the core mathematical algorithm
@@ -110,7 +129,7 @@
 //!     A) this is a "best-effort" and not formally verified, and
 //!     B) the Rust compiler does not guarantee constant-time behaviour no matter how clever your code,
 //! so like all Safe Rust code (ie Rust code that does not include inline assembly), it is up to
-//! the Rust compiler's optimizer for whether our bitshift-and-xor code actually remains
+//! the Rust compiler's optimizer for whether the bitshift-and-xor code actually remains
 //! constant-time after compilation.
 
 #![no_std]
@@ -119,13 +138,13 @@
 #![allow(incomplete_features)] // needed because currently generic_const_exprs is experimental
 #![feature(generic_const_exprs)]
 #![feature(adt_const_params)]
-// These are because I'm matching variable names exactly against FIPS 204, for example both 'K' and 'k',
+// These are because the code is matching variable names exactly against FIPS 204, for example both 'K' and 'k',
 // or 'A' and 'a' are used and have specific meanings.
 // But need to tell the rust linter to not care.
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
-// so I can use private traits to hide internal stuff that needs to be generic within the
-// MLDSA implementation, but I don't want accessed from outside, such as FIPS-internal functions.
+// so that private traits can be used to hide internal stuff that needs to be generic within the
+// MLDSA implementation, but should not get accessed from outside, such as FIPS-internal functions.
 #![allow(private_bounds)]
 #![allow(private_interfaces)]
 // Used in HashMLDSA

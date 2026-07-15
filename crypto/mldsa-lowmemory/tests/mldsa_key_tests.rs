@@ -90,7 +90,7 @@ mod mldsa_key_tests {
 
         assert_eq!(sk.seed(), Some(&seed));
 
-        // it'll reject a keyen with a seed too weak, and preserve the seed otherwise
+        // It rejects a keyen with a seed too weak, and preserves the seed otherwise
         let mut seed128 = seed.clone();
         seed128.allow_hazardous_operations();
         seed128.set_security_strength(SecurityStrength::_128bit).unwrap();

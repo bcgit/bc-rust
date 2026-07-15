@@ -10,7 +10,7 @@ use std::hint::black_box;
 fn bench_mldsa_keygen(c: &mut Criterion) {
     let mut group = c.benchmark_group("KeyGen");
 
-    // set up the seeds outside of the timing loop
+    // Set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let mut seeds = Vec::<KeyMaterial256>::new();
     for dummy_seed in DUMMY_SEED_1024.chunks(32) {
@@ -49,7 +49,7 @@ fn bench_mldsa_keygen(c: &mut Criterion) {
 fn bench_mldsa_sign(c: &mut Criterion) {
     let mut group = c.benchmark_group("Sign");
 
-    // set up the seeds outside of the timing loop
+    // Set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial256::from_bytes_as_type(
         &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
@@ -107,7 +107,7 @@ fn bench_mldsa_sign(c: &mut Criterion) {
 fn bench_mldsa_verify(c: &mut Criterion) {
     let mut group = c.benchmark_group("Verify");
 
-    // set up the seeds outside of the timing loop
+    // Set up the seeds outside of the timing loop
     // Doing different seeds so that the CPU doesn't cache them or do too much branch prediction
     let seed = KeyMaterial256::from_bytes_as_type(
         &hex::decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f").unwrap(),
