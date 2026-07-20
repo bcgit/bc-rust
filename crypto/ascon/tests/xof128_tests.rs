@@ -4,6 +4,7 @@
 //! prefix property, streaming/byte-at-a-time equivalence, trait-API, and misuse-guard tests.
 
 use bouncycastle_ascon::ascon_xof128::AsconXof128;
+use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::XOF;
 use bouncycastle_hex as hex;
 
@@ -59,7 +60,7 @@ fn xof128_prefix_property_and_streaming() {
 
     // Squeezing in several calls yields the same stream (prefix property).
     let mut x = AsconXof128::new();
-    x.absorb(&msg);
+    x.absorb(&msg).unwrap();
     let mut piecewise = Vec::new();
     for n in [30usize, 40, 30] {
         let mut part = vec![0u8; n];
@@ -72,7 +73,7 @@ fn xof128_prefix_property_and_streaming() {
     for chunk in [1usize, 8, 9, 64] {
         let mut xc = AsconXof128::new();
         for piece in msg.chunks(chunk) {
-            xc.absorb(piece);
+            xc.absorb(piece).unwrap();
         }
         let mut got = vec![0u8; 100];
         xc.squeeze_into(&mut got);
@@ -99,11 +100,11 @@ fn xof128_trait_wrappers_match_inherent() {
     let xref = AsconXof128::new().hash_xof(&msg, 40);
 
     let mut x = AsconXof128::new();
-    x.absorb(&msg);
+    x.absorb(&msg).unwrap();
     assert_eq!(x.squeeze(40), xref);
 
     let mut x = AsconXof128::new();
-    x.absorb(&msg);
+    x.absorb(&msg).unwrap();
     let mut o = [0u8; 40];
     assert_eq!(x.squeeze_out(&mut o), 40);
     assert_eq!(o.to_vec(), xref);
@@ -123,12 +124,52 @@ fn xof128_unsupported_partial_ops_return_err() {
 }
 
 #[test]
-#[should_panic]
-fn xof128_absorb_after_squeeze_panics() {
+fn xof128_absorb_after_squeeze_errors() {
     let mut x = AsconXof128::new();
-    x.absorb(b"data");
+    x.absorb(b"data").unwrap();
     let mut out = [0u8; 8];
     x.squeeze_into(&mut out);
-    // Absorbing after squeezing has begun is a usage error.
-    x.absorb(b"more");
+    // Absorbing after squeezing has begun is a usage error; the trait API reports it as an error
+    // rather than panicking.
+    assert!(matches!(x.absorb(b"more"), Err(HashError::InvalidState(_))));
+}
+
+#[test]
+fn xof128_suspendable_state() {
+    use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
+    use bouncycastle_core::errors::SuspendableError;
+    use bouncycastle_core::traits::Suspendable;
+    use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
+
+    let data: Vec<u8> = (0..30u8).collect();
+
+    // Reference: uninterrupted absorb + squeeze.
+    let mut r = AsconXof128::new();
+    r.update(&data);
+    let mut expected = [0u8; 40];
+    r.squeeze_into(&mut expected);
+
+    // Suspend mid-absorb, resume, finish, and confirm the squeezed output matches.
+    let mut x = AsconXof128::new();
+    x.update(&data[..5]);
+    TestFrameworkSuspendableState::new().test(&x);
+
+    let serialized = x.clone().suspend();
+    let mut resumed = AsconXof128::from_suspended(serialized).unwrap();
+    resumed.update(&data[5..]);
+    let mut out = [0u8; 40];
+    resumed.squeeze_into(&mut out);
+    assert_eq!(out, expected, "resumed XOF output must match uninterrupted output");
+
+    // A corrupted state tag must be rejected.
+    let mut busted = serialized;
+    busted[3] ^= 0xFF;
+    assert!(matches!(AsconXof128::from_suspended(busted), Err(SuspendableError::InvalidData)));
+
+    // Cross-type guard: an Ascon-CXOF128 state (same serialized length) must be rejected by
+    // Ascon-XOF128 via the state tag.
+    let mut c = AsconCXof128::with_customization(b"z");
+    c.update(&data);
+    let c_state = c.suspend();
+    assert!(matches!(AsconXof128::from_suspended(c_state), Err(SuspendableError::InvalidData)));
 }

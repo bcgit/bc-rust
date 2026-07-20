@@ -111,3 +111,34 @@ fn hash256_unsupported_partial_ops_return_err() {
     let mut o = [0u8; 32];
     assert!(AsconHash256::new().do_final_partial_bits_out(0, 3, &mut o).is_err());
 }
+
+#[test]
+fn hash256_suspendable_state() {
+    use bouncycastle_core::errors::SuspendableError;
+    use bouncycastle_core::traits::Suspendable;
+    use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
+
+    let data: Vec<u8> = (0..37u8).collect();
+    let expected = AsconHash256::digest(&data).to_vec();
+
+    // Suspend mid-absorb, resume, finish, and confirm the digest matches an uninterrupted run.
+    let mut h = AsconHash256::new();
+    h.do_update(&data[..7]);
+    TestFrameworkSuspendableState::new().test(&h);
+
+    let serialized = h.clone().suspend();
+    let mut resumed = AsconHash256::from_suspended(serialized).unwrap();
+    resumed.do_update(&data[7..]);
+    assert_eq!(resumed.do_final(), expected, "resumed digest must match uninterrupted digest");
+
+    // A corrupted state tag must be rejected (the tag is the byte after the 3-byte version prefix).
+    let mut busted = serialized;
+    busted[3] ^= 0xFF;
+    assert!(matches!(AsconHash256::from_suspended(busted), Err(SuspendableError::InvalidData)));
+
+    // An out-of-range buffer position must be rejected (buf_pos is the final byte).
+    let mut bad_pos = serialized;
+    let last = bad_pos.len() - 1;
+    bad_pos[last] = 99; // >= RATE (8)
+    assert!(matches!(AsconHash256::from_suspended(bad_pos), Err(SuspendableError::InvalidData)));
+}

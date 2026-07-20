@@ -77,9 +77,9 @@
 //!   different Ascon-AEAD128 encryptions. Nonce reuse breaks confidentiality.
 //! - **Tag length:** this crate always produces and verifies the full 128-bit tag. Truncated tags
 //!   (SP 800-232 §4.2.1) are not exposed.
-//! - **Key handling:** [`ascon_aead128::AsconAead128`] zeroizes its key, nonce, and working state on
-//!   drop and implements [`bouncycastle_core::traits::Secret`]; the hash/XOF states are likewise
-//!   zeroized on drop.
+//! - **Key handling:** sensitive fields (the key and the working permutation state) are held in
+//!   [`bouncycastle_utils::secret::Secret`] wrappers, so they are scrubbed with volatile writes
+//!   when the value is dropped. The hash/XOF states are likewise `Secret`-wrapped.
 //! - **Decryption release:** never release decrypted plaintext until finalization returns `Ok`; an
 //!   `Err(AuthenticationFailed)` means the ciphertext or tag was tampered with.
 

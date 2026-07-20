@@ -5,20 +5,6 @@
 
 ///
 #[derive(Debug)]
-pub enum AeadError {
-    /// The authentication tag did not verify during decryption finalization.
-    /// The decrypted plaintext (if any) must not be released to the caller.
-    AuthenticationFailed,
-    /// An input or output buffer had an invalid or insufficient length.
-    InvalidLength(&'static str),
-    /// The cipher was used out of order (e.g. reused after finalization, or
-    /// associated data was supplied after plaintext/ciphertext processing began).
-    InvalidState(&'static str),
-    GenericError(&'static str),
-    KeyMaterialError(KeyMaterialError),
-}
-
-#[derive(Debug)]
 pub enum HashError {
     ///
     GenericError(&'static str),
@@ -183,9 +169,15 @@ pub enum SymmetricCipherError {
 }
 
 /*** Promotion functions ***/
-impl From<KeyMaterialError> for AeadError {
-    fn from(e: KeyMaterialError) -> AeadError {
+impl From<KeyMaterialError> for SymmetricCipherError {
+    fn from(e: KeyMaterialError) -> SymmetricCipherError {
         Self::KeyMaterialError(e)
+    }
+}
+
+impl From<RNGError> for SymmetricCipherError {
+    fn from(e: RNGError) -> SymmetricCipherError {
+        Self::RNGError(e)
     }
 }
 

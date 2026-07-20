@@ -3,13 +3,13 @@
 //! - A small embedded set of NIST LWC known-answer vectors (always-on correctness, no external
 //!   repo required). The full sweep lives in `bc_test_data.rs`.
 //! - Behavioral / contract tests (round-trips, streaming chunk-boundary equivalence, authentication
-//!   failures, determinism, output-size predictors), and the shared `AeadCipher` conformance
-//!   framework.
+//!   failures, determinism), driven through the inherent explicit-nonce API.
+//! - The shared `AEADCipher` conformance framework (`core-test-framework`), which exercises the
+//!   generic `SymmetricCipher` / `AEADCipher` trait surface with internally-generated nonces.
 
 use bouncycastle_ascon::ascon_aead128::AsconAead128;
-use bouncycastle_core::errors::AeadError;
-use bouncycastle_core::traits::AeadCipher;
-use bouncycastle_core_test_framework::aead::TestFrameworkAead;
+use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
 
 // All embedded vectors use this fixed key/nonce (the NIST LWC KAT convention).
@@ -75,7 +75,7 @@ fn dec_oneshot(
     nonce: &[u8; 16],
     ad: &[u8],
     ct: &[u8],
-) -> Result<Vec<u8>, AeadError> {
+) -> Result<Vec<u8>, SymmetricCipherError> {
     let mut out = vec![0u8; ct.len()];
     let n = AsconAead128::decrypt(key, nonce, ad_opt(ad), ct, &mut out)?;
     out.truncate(n);
@@ -100,7 +100,7 @@ fn dec_chunked(
     ad: &[u8],
     ct: &[u8],
     chunk: usize,
-) -> Result<Vec<u8>, AeadError> {
+) -> Result<Vec<u8>, SymmetricCipherError> {
     let mut cipher = AsconAead128::new(key, nonce, ad_opt(ad), false);
     let mut out = vec![0u8; ct.len()];
     let mut off = 0;
@@ -206,10 +206,10 @@ fn aead_chunked_aad_matches_one_shot() {
 /* Authentication failures                                                    */
 /* -------------------------------------------------------------------------- */
 
-fn assert_auth_failed(result: Result<Vec<u8>, AeadError>, ctx: &str) {
+fn assert_auth_failed(result: Result<Vec<u8>, SymmetricCipherError>, ctx: &str) {
     match result {
-        Err(AeadError::AuthenticationFailed) => {}
-        other => panic!("{ctx}: expected AuthenticationFailed, got {other:?}"),
+        Err(SymmetricCipherError::AEADTagCheckFailed) => {}
+        other => panic!("{ctx}: expected AEADTagCheckFailed, got {other:?}"),
     }
 }
 
@@ -245,17 +245,17 @@ fn aead_rejects_tampering() {
 }
 
 #[test]
-fn aead_short_ciphertext_is_length_error() {
+fn aead_short_ciphertext_is_error() {
     let short = [0u8; 8]; // shorter than the 16-byte tag
     let mut out = [0u8; 16];
     match AsconAead128::decrypt(&KEY, &NONCE, None, &short, &mut out) {
-        Err(AeadError::InvalidLength(_)) => {}
-        other => panic!("expected InvalidLength, got {other:?}"),
+        Err(SymmetricCipherError::GenericError(_)) => {}
+        other => panic!("expected GenericError for short ciphertext, got {other:?}"),
     }
 }
 
 /* -------------------------------------------------------------------------- */
-/* Determinism / nonce sensitivity / size predictors / get_mac / Debug mask   */
+/* Determinism / nonce sensitivity / Debug mask                               */
 /* -------------------------------------------------------------------------- */
 
 #[test]
@@ -273,110 +273,62 @@ fn aead_is_deterministic_and_nonce_sensitive() {
 }
 
 #[test]
-fn aead_output_size_predictors() {
-    for &pt_len in PT_SIZES.iter() {
-        let enc = AsconAead128::new(&KEY, &NONCE, None, true);
-        assert_eq!(enc.get_output_size(pt_len), pt_len + 16);
-        assert_eq!(enc.get_update_output_size(pt_len), (pt_len / 16) * 16);
-
-        let dec = AsconAead128::new(&KEY, &NONCE, None, false);
-        assert_eq!(dec.get_output_size(pt_len + 16), pt_len);
-    }
-}
-
-#[test]
-fn aead_update_output_size_both_directions() {
-    // Encryption branch: whole 16-byte blocks only, accounting for buffered bytes.
-    let mut e = AsconAead128::new(&KEY, &NONCE, None, true);
-    assert_eq!(e.get_update_output_size(0), 0);
-    assert_eq!(e.get_update_output_size(16), 16);
-    assert_eq!(e.get_update_output_size(17), 16);
-    assert_eq!(e.get_update_output_size(40), 32);
-    // After buffering 5 bytes (no full block emitted yet), buf_pos == 5.
-    let mut out = [0u8; 64];
-    assert_eq!(e.process_bytes(&[0u8; 5], &mut out), 0);
-    assert_eq!(e.get_update_output_size(11), 16); // 5 + 11 = 16 -> one block
-    assert_eq!(e.get_update_output_size(10), 0); //  5 + 10 = 15 -> none
-
-    // Decryption branch: (buffered + len - tag) whole blocks, once the total reaches 32.
-    let d = AsconAead128::new(&KEY, &NONCE, None, false);
-    assert_eq!(d.get_update_output_size(0), 0);
-    assert_eq!(d.get_update_output_size(31), 0); // < 32 -> nothing emitted yet
-    assert_eq!(d.get_update_output_size(32), 16); // (32 - 16)/16 * 16
-    assert_eq!(d.get_update_output_size(48), 32); // (48 - 16)/16 * 16
-}
-
-#[test]
-fn aead_get_mac_returns_tag() {
-    let pt = pattern(20);
-    let mut e = AsconAead128::new(&KEY, &NONCE, None, true);
-    let mut out = vec![0u8; pt.len() + 16];
-    let n = e.encrypt_update(&pt, &mut out);
-    let m = e.encrypt_finalize(&mut out[n..]);
-    let total = n + m;
-    let tag = AeadCipher::get_mac(&e);
-    assert_ne!(tag, [0u8; 16]);
-    assert_eq!(&tag[..], &out[total - 16..total], "get_mac must equal the appended tag");
-}
-
-#[test]
 fn aead_debug_display_are_masked() {
     let e = AsconAead128::new(&KEY, &NONCE, None, true);
     assert!(format!("{e:?}").contains("masked"));
     assert!(format!("{e}").contains("masked"));
 }
 
-#[test]
-fn aead_aad_via_trait_methods() {
-    // Drive AAD through the AeadCipher *trait* methods (the inherent process_aad_bytes otherwise
-    // shadows them), covering the process_aad_byte / process_aad_bytes delegators.
-    let pt = pattern(24);
-    let ad = pattern(20);
-    let ct_ref = enc_oneshot(&KEY, &NONCE, &ad, &pt);
-
-    // Whole AAD via the trait method.
-    let mut e = AsconAead128::new(&KEY, &NONCE, None, true);
-    AeadCipher::process_aad_bytes(&mut e, &ad);
-    let mut out = vec![0u8; pt.len() + 16];
-    let n = AeadCipher::process_bytes(&mut e, &pt, &mut out);
-    let m = AeadCipher::do_final(e, &mut out[n..]).unwrap();
-    out.truncate(n + m);
-    assert_eq!(out, ct_ref, "AAD via trait process_aad_bytes");
-
-    // Byte-at-a-time AAD via the trait method (crosses the 16-byte AAD block boundary).
-    let mut e = AsconAead128::new(&KEY, &NONCE, None, true);
-    for &b in &ad {
-        AeadCipher::process_aad_byte(&mut e, b);
-    }
-    let mut out = vec![0u8; pt.len() + 16];
-    let n = AeadCipher::process_bytes(&mut e, &pt, &mut out);
-    let m = AeadCipher::do_final(e, &mut out[n..]).unwrap();
-    out.truncate(n + m);
-    assert_eq!(out, ct_ref, "AAD via trait process_aad_byte");
-}
-
 /* -------------------------------------------------------------------------- */
-/* AeadCipher trait conformance (shared core-test-framework)                  */
+/* AEADCipher trait conformance (shared core-test-framework)                  */
 /* -------------------------------------------------------------------------- */
 
 #[test]
 fn aead128_trait_framework() {
-    let ad = b"framework-associated-data";
-    let fw = TestFrameworkAead::new();
+    // Exercises the generic SymmetricCipher<16,16> + AEADCipher<16,16,16> surface: internally
+    // generated (random, distinct) nonces, key-type / key-strength enforcement, and the AEAD
+    // tamper-detection contract (modified ciphertext / AAD / tag must fail the tag check).
+    TestFrameworkAEADCipher::new().test::<16, 16, 16, AsconAead128>();
+}
 
-    for &pt_len in PT_SIZES.iter() {
-        let pt: Vec<u8> = (0..pt_len).map(|i| i as u8).collect();
+#[test]
+fn aead128_suspendable_keyed_state() {
+    use bouncycastle_core::errors::SuspendableError;
+    use bouncycastle_core::traits::SuspendableKeyed;
+    use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
 
-        fw.test_aead(
-            || AsconAead128::new(&KEY, &NONCE, Some(ad), true),
-            || AsconAead128::new(&KEY, &NONCE, Some(ad), false),
-            &pt,
-        );
+    let pt = pattern(40);
+    let ad = b"suspend-ad";
+    let ct_ref = enc_oneshot(&KEY, &NONCE, ad, &pt);
 
-        fw.test_aead(
-            || AsconAead128::new(&KEY, &NONCE, None, true),
-            || AsconAead128::new(&KEY, &NONCE, None, false),
-            &pt,
-        );
-    }
+    // Encrypt part of the plaintext, suspend, resume with the re-supplied key, finish, and confirm
+    // the output matches a one-shot encryption. The key is never part of the serialized state.
+    let mut e = AsconAead128::new(&KEY, &NONCE, Some(ad), true);
+    let mut out = vec![0u8; pt.len() + 16];
+    let n = e.encrypt_update(&pt[..18], &mut out);
+
+    TestFrameworkSuspendableKeyedState::new().test(&e, &KEY);
+
+    let serialized = e.clone().suspend();
+    let mut resumed = AsconAead128::from_suspended(serialized, &KEY).unwrap();
+    let n2 = resumed.encrypt_update(&pt[18..], &mut out[n..]);
+    let m = resumed.encrypt_finalize(&mut out[n + n2..]);
+    out.truncate(n + n2 + m);
+    assert_eq!(out, ct_ref, "resumed AEAD ciphertext must match one-shot encryption");
+
+    // A corrupted state tag must be rejected.
+    let mut busted = serialized;
+    busted[3] ^= 0xFF;
+    assert!(matches!(
+        AsconAead128::from_suspended(busted, &KEY),
+        Err(SuspendableError::InvalidData)
+    ));
+
+    // An unknown call-state discriminant must be rejected (state byte is at offset 3 + 107).
+    let mut bad_state = serialized;
+    bad_state[110] = 200;
+    assert!(matches!(
+        AsconAead128::from_suspended(bad_state, &KEY),
+        Err(SuspendableError::InvalidData)
+    ));
 }

@@ -9,7 +9,11 @@
 //!
 //! Should only ever be a dev-dependency.
 
-pub mod aead;
+#![forbid(unsafe_code)]
+// Let's include this for completeness, but since this in an internal test crate, no reason to fully
+// properly document everything.
+#![forbid(missing_docs)]
+
 pub mod hash;
 pub mod kdf;
 pub mod kem;

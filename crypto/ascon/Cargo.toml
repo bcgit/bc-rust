@@ -3,8 +3,17 @@ name = "bouncycastle-ascon"
 version = "0.1.2"
 edition.workspace = true
 
+[features]
+# `std` gates the ergonomic, allocating (`Vec`-returning) one-shot cipher APIs, mirroring the
+# `std` feature of `bouncycastle-core`. On by default; a future `--no-default-features` build is
+# what will let the crate move toward `#![no_std]`.
+default = ["std"]
+std = ["bouncycastle-core/std"]
+
 [dependencies]
 bouncycastle-core.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
