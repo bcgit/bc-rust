@@ -57,6 +57,7 @@ pub enum HashFactory {
     SHA3_384(sha3::SHA3_384),
     ///
     SHA3_512(sha3::SHA3_512),
+    ///
     AsconHash256(ascon::ascon_hash256::AsconHash256),
 }
 

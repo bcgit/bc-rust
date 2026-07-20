@@ -55,6 +55,7 @@ pub enum XOFFactory {
     SHAKE128(sha3::SHAKE128),
     ///
     SHAKE256(sha3::SHAKE256),
+    ///
     AsconXof128(AsconXof128),
 }
 

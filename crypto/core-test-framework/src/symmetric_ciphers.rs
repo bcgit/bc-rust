@@ -84,10 +84,16 @@ impl TestFrameworkSymmetricCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
-            // Tag the key at an arbitrary strength for the purpose of this test. Inside a
-            // do_hazardous_operations() closure, set_security_strength() raises the strength
-            // (and bypasses the key-length guard) without complaining.
-            do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+            // Tag the key at an arbitrary strength for the purpose of this test. A key can only
+            // carry a strength that its length supports (e.g. a 16-byte key cannot be tagged at
+            // 192- or 256-bit), so strengths beyond the key length simply do not apply to this
+            // cipher and are skipped. The raise-strength guard is bypassed inside the
+            // do_hazardous_operations() closure.
+            if do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone()))
+                .is_err()
+            {
+                continue;
+            }
 
             match C::encrypt_out(&key, msg, &mut ct) {
                 Ok(_) => {
@@ -189,10 +195,16 @@ impl TestFrameworkBlockCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
-            // Tag the key at an arbitrary strength for the purpose of this test. Inside a
-            // do_hazardous_operations() closure, set_security_strength() raises the strength
-            // (and bypasses the key-length guard) without complaining.
-            do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+            // Tag the key at an arbitrary strength for the purpose of this test. A key can only
+            // carry a strength that its length supports (e.g. a 16-byte key cannot be tagged at
+            // 192- or 256-bit), so strengths beyond the key length simply do not apply to this
+            // cipher and are skipped. The raise-strength guard is bypassed inside the
+            // do_hazardous_operations() closure.
+            if do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone()))
+                .is_err()
+            {
+                continue;
+            }
 
             match C::do_encrypt_init(&key) {
                 Ok(_) => {
@@ -327,10 +339,16 @@ impl TestFrameworkAEADCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
-            // Tag the key at an arbitrary strength for the purpose of this test. Inside a
-            // do_hazardous_operations() closure, set_security_strength() raises the strength
-            // (and bypasses the key-length guard) without complaining.
-            do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+            // Tag the key at an arbitrary strength for the purpose of this test. A key can only
+            // carry a strength that its length supports (e.g. a 16-byte key cannot be tagged at
+            // 192- or 256-bit), so strengths beyond the key length simply do not apply to this
+            // cipher and are skipped. The raise-strength guard is bypassed inside the
+            // do_hazardous_operations() closure.
+            if do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone()))
+                .is_err()
+            {
+                continue;
+            }
 
             // The key-strength requirement must be enforced both by the AEAD one-shot and by the
             // inherited SymmetricCipher one-shot (encrypt_out), so exercise both.

@@ -72,7 +72,8 @@ pub(crate) fn xof128_cmd(output_len: usize, output_hex: bool) {
     let mut buf = [0u8; 1024];
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     while bytes_read != 0 {
-        x.absorb(&buf[..bytes_read]);
+        // Absorb cannot fail here: we only absorb before any squeeze.
+        x.absorb(&buf[..bytes_read]).expect("absorb before squeeze is infallible");
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
     let out = x.squeeze(output_len);
@@ -92,7 +93,8 @@ pub(crate) fn cxof128_cmd(customization: &Option<String>, output_len: usize, out
     let mut buf = [0u8; 1024];
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     while bytes_read != 0 {
-        x.absorb(&buf[..bytes_read]);
+        // Absorb cannot fail here: we only absorb before any squeeze.
+        x.absorb(&buf[..bytes_read]).expect("absorb before squeeze is infallible");
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
     let out = x.squeeze(output_len);

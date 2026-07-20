@@ -14,7 +14,14 @@
       "Bash(awk 'BEGIN{RS=\"\";FS=\"\\\\n\"} {pt=\"\"} {for\\(i=1;i<=NF;i++\\) if\\($i ~ /^PT = /\\){pt=substr\\($i,6\\)}} length\\(pt\\)==64 {print; exit}' asconaead128/LWC_AEAD_KAT_128_128.txt)",
       "Bash(rm -f tests/test_vector.rs tests/behavior.rs)",
       "Bash(rm -rf tests/data)",
-      "Bash(awk '{p+=$4; f+=$6} END{print \"ascon passed:\",p,\" failed:\",f}')"
+      "Bash(awk '{p+=$4; f+=$6} END{print \"ascon passed:\",p,\" failed:\",f}')",
+      "Bash(sed -i -E 's/^\\(\\\\s*x\\\\.absorb\\\\\\(&msg\\\\\\)\\);/\\\\1.unwrap\\(\\);/; s/^\\(\\\\s*xc\\\\.absorb\\\\\\(piece\\\\\\)\\);/\\\\1.unwrap\\(\\);/' xof128_tests.rs)",
+      "Bash(sed -i -E 's/^\\(\\\\s*x\\\\.absorb\\\\\\(&msg\\\\\\)\\);/\\\\1.unwrap\\(\\);/; s/^\\(\\\\s*xc\\\\.absorb\\\\\\(piece\\\\\\)\\);/\\\\1.unwrap\\(\\);/; s/^\\(\\\\s*c\\\\.absorb\\\\\\(&msg\\\\\\)\\);/\\\\1.unwrap\\(\\);/' cxof128_tests.rs)",
+      "Bash(git checkout *)",
+      "Bash(rm -f crypto/core-test-framework/src/aead.rs)",
+      "Bash(sed -n '/\\\\[dependencies\\\\]/,/\\\\[dev-dependencies\\\\]/p' crypto/mlkem/Cargo.toml)",
+      "Bash(sed -n '/\\\\[dependencies\\\\]/,/\\\\[dev-dependencies\\\\]/p' crypto/mldsa/Cargo.toml)",
+      "Bash(cargo doc *)"
     ]
   }
 }

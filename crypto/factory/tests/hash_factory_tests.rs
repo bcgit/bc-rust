@@ -107,16 +107,16 @@ mod hash_factory_tests {
             use bouncycastle_ascon::ascon_hash256::AsconHash256;
             use bouncycastle_factory::FactoryError;
 
-            let direct = AsconHash256::new().hash(DUMMY_SEED_512);
+            let direct = AsconHash256::new().hash(&DUMMY_SEED[..512]);
 
             // Construct by literal name and by the crate's name constant; both must match the
             // direct implementation.
             let by_name = HashFactory::new("Ascon-Hash256").unwrap();
             assert_eq!(by_name.output_len(), 32);
-            assert_eq!(by_name.hash(DUMMY_SEED_512), direct);
+            assert_eq!(by_name.hash(&DUMMY_SEED[..512]), direct);
 
             let by_const = HashFactory::new(ASCON_HASH256_NAME).unwrap();
-            assert_eq!(by_const.hash(DUMMY_SEED_512), direct);
+            assert_eq!(by_const.hash(&DUMMY_SEED[..512]), direct);
 
             // Unknown algorithm names are still rejected.
             assert!(matches!(
