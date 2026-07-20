@@ -183,26 +183,12 @@ pub enum SymmetricCipherError {
 }
 
 /*** Promotion functions ***/
-<<<<<<< HEAD
-impl From<KeyMaterialError> for SymmetricCipherError {
-    fn from(e: KeyMaterialError) -> SymmetricCipherError {
-=======
 impl From<KeyMaterialError> for AeadError {
     fn from(e: KeyMaterialError) -> AeadError {
->>>>>>> 3d44362 (Added ascon_cmd.rs)
         Self::KeyMaterialError(e)
     }
 }
 
-<<<<<<< HEAD
-impl From<RNGError> for SymmetricCipherError {
-    fn from(e: RNGError) -> SymmetricCipherError {
-        Self::RNGError(e)
-    }
-}
-
-=======
->>>>>>> 3d44362 (Added ascon_cmd.rs)
 impl From<KeyMaterialError> for HashError {
     fn from(e: KeyMaterialError) -> HashError {
         Self::KeyMaterialError(e)

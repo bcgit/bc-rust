@@ -7,16 +7,6 @@ edition = "2024"
 [workspace.dependencies]
 
 # *** Internal Dependencies ***
-<<<<<<< HEAD
-bouncycastle = { path = "./", version = "0.1.2" }
-bouncycastle-base64 = { path = "./crypto/base64", version = "0.1.2" }
-bouncycastle-core = { path = "crypto/core", version = "0.1.2" }
-bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", version = "0.1.2" }
-bouncycastle-factory = { path = "./crypto/factory", version = "0.1.2" }
-bouncycastle-hex = { path = "./crypto/hex", version = "0.1.2" }
-bouncycastle-hkdf = { path = "./crypto/hkdf", version = "0.1.2" }
-bouncycastle-hmac = { path = "./crypto/hmac", version = "0.1.2" }
-=======
 bouncycastle = { path = "./", version = "0.1.1" }
 bouncycastle-ascon = { path = "./crypto/ascon", version = "0.1.2" }
 bouncycastle-base64 = { path = "./crypto/base64", version = "0.1.1" }
@@ -26,7 +16,6 @@ bouncycastle-factory = { path = "./crypto/factory", version = "0.1.1" }
 bouncycastle-hex = { path = "./crypto/hex", version = "0.1.1" }
 bouncycastle-hkdf = { path = "./crypto/hkdf", version = "0.1.1" }
 bouncycastle-hmac = { path = "./crypto/hmac", version = "0.1.1" }
->>>>>>> 3d44362 (Added ascon_cmd.rs)
 bouncycastle-mlkem = { path = "./crypto/mlkem", version = "0.1.2" }
 bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory", version = "0.1.2" }
 bouncycastle-mldsa = { path = "./crypto/mldsa", version = "0.1.2" }
