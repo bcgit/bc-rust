@@ -23,7 +23,9 @@ macro_rules! supported_mask_type {
     };
 }
 
-supported_mask_type!(i64, u64);
+// i32 is registered for width symmetry with the u64/i64 pair (it gets the generic boolean
+// operator impls below); it has no inherent constructors yet — add them when a consumer needs them.
+supported_mask_type!(i64, u64, u32, i32);
 
 /// Helper functions for checking some condition on some data using constant-time operations.
 #[derive(Clone, Copy)]
@@ -159,27 +161,96 @@ impl Condition<i64> {
 //       then and change Hex and Base64 to use this.
 //       (there's probably no noticeable performance difference u8 and u64 bit ops on a 64-bit machine,
 //       but there would be on a 8, 16, or 32-bit machine.)
-impl Condition<u64> {
-    /// TRUE is the bit vector of all 1's
-    pub const TRUE: Self = Self(u64::MAX);
-    /// FALSE is the bit vector of all 0's
-    pub const FALSE: Self = Self(0);
+//
+// The unsigned widths share one macro-generated impl so that code which is generic over its
+// word size (e.g. a u64-or-u32 limb type) can be written once against identical method names.
+// The i64 constructions above do NOT carry over: they rely on signed representation tricks
+// (arithmetic shift for `is_negative`, the sign of `x - y` for `is_lt`) whose overflow
+// reasoning is invalid for full-range unsigned values. The unsigned constructions below use
+// the standard two's-complement mask identities instead, and deliberately omit ordering
+// comparisons: multi-word callers derive `lt` from their subtraction borrow chain and convert
+// it with `from_msb`.
+macro_rules! unsigned_condition_impl {
+    ($($t:ty),+) => {
+        $(
+        impl Condition<$t> {
+            /// TRUE is the bit vector of all 1's
+            pub const TRUE: Self = Self(<$t>::MAX);
+            /// FALSE is the bit vector of all 0's
+            pub const FALSE: Self = Self(0);
 
-    /// this is the core logic for constant-time mask generation for unsigned integers
-    ///   Unlike signed integers where we can rely on Two's Complement via negation `-(v as i64)`,
-    ///   for u64 we must use wrapping subtraction to achieve the all-ones bit pattern (u64::MAX) for true
-    pub const fn from_bool<const VALUE: bool>() -> Self {
-        // If VALUE is true (1) -> 0 - 1 = u64::MAX (All 1s)
-        // If VALUE is false (0) -> 0 - 0 = 0 (All 0s)
-        Self(0u64.wrapping_sub(VALUE as u64))
-    }
-    /// impl the select function manually for u64
-    ///    although a fully generic `impl<T>` would be the ultimate long-term goal
-    pub fn select(self, a: u64, b: u64) -> u64 {
-        let mask = self.0;
-        (a & mask) | (b & !mask)
-    }
-    ///
+            /// Constant-time mask generation from a compile-time boolean.
+            ///
+            /// Unlike signed integers where we can rely on Two's Complement via negation
+            /// `-(v as i64)`, for unsigned types we must use wrapping subtraction to achieve
+            /// the all-ones bit pattern for true:
+            /// true (1) -> `0 - 1` wraps to MAX (all 1s); false (0) -> `0 - 0 = 0` (all 0s).
+            pub const fn from_bool<const VALUE: bool>() -> Self {
+                Self((0 as $t).wrapping_sub(VALUE as $t))
+            }
+            /// Constant-time mask generation from a runtime boolean.
+            pub const fn from_bool_var(value: bool) -> Self {
+                Self((0 as $t).wrapping_sub(value as $t))
+            }
+            /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
+            /// This is the parity test: `from_lsb(x)` is TRUE iff `x` is odd.
+            pub const fn from_lsb(value: $t) -> Self {
+                Self((0 as $t).wrapping_sub(value & 1))
+            }
+            /// Mask from the most-significant bit: TRUE iff the top bit of `value` is set.
+            ///
+            /// This is the borrow/carry adaptor: the borrow word coming out of a wrapping
+            /// wide subtraction chain carries its meaning entirely in the top bit, so
+            /// `from_msb(borrow)` is the `lt` mask of that comparison with no further work.
+            pub const fn from_msb(value: $t) -> Self {
+                Self((0 as $t).wrapping_sub(value >> (<$t>::BITS - 1)))
+            }
+            /// TRUE iff `value != 0`.
+            ///
+            /// For any nonzero `x`, `x | x.wrapping_neg()` has the top bit set (either `x`
+            /// or its two's complement is >= 2^(BITS-1)); for zero both sides are zero.
+            pub const fn is_not_zero(value: $t) -> Self {
+                Self::from_msb(value | value.wrapping_neg())
+            }
+            /// TRUE iff `value == 0`.
+            pub const fn is_zero(value: $t) -> Self {
+                // Complementing the inner value maps TRUE <-> FALSE (all 1s <-> all 0s).
+                Self(!Self::is_not_zero(value).0)
+            }
+            /// TRUE iff `x == y`.
+            pub const fn is_equal(x: $t, y: $t) -> Self {
+                Self::is_zero(x ^ y)
+            }
+            /// Conditional selection: return `true_value` if the condition is true, otherwise
+            /// return `false_value`.
+            pub const fn select(self, true_value: $t, false_value: $t) -> $t {
+                (true_value & self.0) | (false_value & !self.0)
+            }
+            /// Conditionally move the source value to the destination if the condition is
+            /// true, otherwise nothing is moved.
+            pub fn mov(self, src: $t, dst: &mut $t) {
+                *dst = self.select(src, *dst);
+            }
+            /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
+            /// returns (rhs, lhs).
+            pub const fn swap(self, lhs: $t, rhs: $t) -> ($t, $t) {
+                (self.select(rhs, lhs), self.select(lhs, rhs))
+            }
+            /// Convert the mask to a runtime boolean. Only use this at genuine public
+            /// decision points: branching on the result leaks the condition's value.
+            pub const fn to_bool_var(self) -> bool {
+                self.0 != 0
+            }
+        }
+        )+
+    };
+}
+
+unsigned_condition_impl!(u64, u32);
+
+impl Condition<u64> {
+    /// Whether the mask is TRUE. Kept for backward compatibility; prefer
+    /// [`Self::to_bool_var`], which all `Condition` widths share.
     pub fn is_true(&self) -> bool {
         self.0 != 0
     }

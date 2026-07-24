@@ -364,6 +364,134 @@ mod generic_impl_tests {
     }
 }
 
+/// One test module per unsigned width, generated from the same macro so u64 and u32 stay at
+/// exact behavioural parity. Boundary set: 0, 1, MAX, MAX-1, 1 << (BITS-1) — the values where
+/// signed-representation tricks would produce wrong masks if they had leaked into the
+/// unsigned constructions.
+macro_rules! unsigned_condition_tests {
+    ($mod_name:ident, $t:ty, $wide:ty) => {
+        #[cfg(test)]
+        mod $mod_name {
+            use super::*;
+
+            const MSB: $t = 1 << (<$t>::BITS - 1);
+            const BOUNDARY: [$t; 5] = [0, 1, <$t>::MAX, <$t>::MAX - 1, MSB];
+
+            /// A mask must be exactly all-ones or all-zeros; anything else (e.g. a `1` where
+            /// MAX was intended) silently corrupts every select it feeds. `select(MAX, 0)`
+            /// returns the raw mask bits, so this asserts canonicality through the public API.
+            fn assert_canonical(cond: Condition<$t>, expected: bool) {
+                let raw = cond.select(<$t>::MAX, 0);
+                assert_eq!(raw, if expected { <$t>::MAX } else { 0 });
+                assert_eq!(cond.to_bool_var(), expected);
+            }
+
+            #[test]
+            fn consts() {
+                assert_canonical(Condition::<$t>::TRUE, true);
+                assert_canonical(Condition::<$t>::FALSE, false);
+            }
+
+            #[test]
+            fn from_bool() {
+                assert_canonical(Condition::<$t>::from_bool::<true>(), true);
+                assert_canonical(Condition::<$t>::from_bool::<false>(), false);
+                assert_canonical(Condition::<$t>::from_bool_var(true), true);
+                assert_canonical(Condition::<$t>::from_bool_var(false), false);
+            }
+
+            #[test]
+            fn from_lsb() {
+                for v in BOUNDARY {
+                    assert_canonical(Condition::<$t>::from_lsb(v), v & 1 == 1);
+                }
+            }
+
+            #[test]
+            fn from_msb() {
+                for v in BOUNDARY {
+                    assert_canonical(Condition::<$t>::from_msb(v), v >> (<$t>::BITS - 1) == 1);
+                }
+            }
+
+            /// `from_msb` exists to convert the borrow word of a wrapping subtraction chain
+            /// into a mask: `(x - y) >> BITS` of the widening subtraction is all-ones in the
+            /// low word iff x < y.
+            #[test]
+            fn from_msb_as_borrow_adaptor() {
+                for x in BOUNDARY {
+                    for y in BOUNDARY {
+                        let borrow = ((x as $wide).wrapping_sub(y as $wide) >> <$t>::BITS) as $t;
+                        assert_canonical(Condition::<$t>::from_msb(borrow), x < y);
+                    }
+                }
+            }
+
+            #[test]
+            fn is_zero_is_not_zero() {
+                for v in BOUNDARY {
+                    assert_canonical(Condition::<$t>::is_zero(v), v == 0);
+                    assert_canonical(Condition::<$t>::is_not_zero(v), v != 0);
+                }
+            }
+
+            #[test]
+            fn is_equal() {
+                for x in BOUNDARY {
+                    for y in BOUNDARY {
+                        assert_canonical(Condition::<$t>::is_equal(x, y), x == y);
+                    }
+                }
+            }
+
+            #[test]
+            fn select_preserves_all_bits() {
+                // Patterned values (not just MAX/0) so a mask with any wrong bit shows up.
+                let a: $t = (0xDEADBEEFCAFEBABE_u64 & <$t>::MAX as u64) as $t;
+                let b: $t = (0x0123456789ABCDEF_u64 & <$t>::MAX as u64) as $t;
+                assert_eq!(Condition::<$t>::TRUE.select(a, b), a);
+                assert_eq!(Condition::<$t>::FALSE.select(a, b), b);
+            }
+
+            #[test]
+            fn mov() {
+                let src: $t = 1;
+                let mut dst: $t = 2;
+                Condition::<$t>::from_bool::<true>().mov(src, &mut dst);
+                assert_eq!(dst, 1);
+                dst = 2;
+                Condition::<$t>::from_bool::<false>().mov(src, &mut dst);
+                assert_eq!(dst, 2);
+            }
+
+            #[test]
+            fn swap() {
+                let (lhs, rhs) = Condition::<$t>::from_bool::<true>().swap(1, 2);
+                assert_eq!((lhs, rhs), (2, 1));
+                let (lhs, rhs) = Condition::<$t>::from_bool::<false>().swap(1, 2);
+                assert_eq!((lhs, rhs), (1, 2));
+            }
+
+            #[test]
+            fn boolean_operators() {
+                let t = Condition::<$t>::TRUE;
+                let f = Condition::<$t>::FALSE;
+                assert_canonical(!t, false);
+                assert_canonical(!f, true);
+                assert_canonical(t & f, false);
+                assert_canonical(t & t, true);
+                assert_canonical(t | f, true);
+                assert_canonical(f | f, false);
+                assert_canonical(t ^ t, false);
+                assert_canonical(t ^ f, true);
+            }
+        }
+    };
+}
+
+unsigned_condition_tests!(unsigned_u64_tests, u64, u128);
+unsigned_condition_tests!(unsigned_u32_tests, u32, u64);
+
 #[cfg(test)]
 mod ct_bytes_tests {
     #[test]
