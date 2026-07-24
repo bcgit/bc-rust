@@ -3,6 +3,7 @@ members = ["cli", "crypto/*", "mem_usage_benches"]
 
 [workspace.package]
 edition = "2024"
+version = "0.1.2"
 
 [workspace.dependencies]
 
@@ -36,7 +37,7 @@ strip = "debuginfo"
 # libbouncycastle
 [package]
 name = "bouncycastle"
-version = "0.1.2"
+version.workspace = true
 edition.workspace = true
 
 [dependencies]
