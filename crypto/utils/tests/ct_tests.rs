@@ -216,15 +216,15 @@ mod u64_tests {
     #[test]
     fn const_tests() {
         // Ensure TRUE/FALSE are correctly interpreted as boolean.
-        assert_eq!(Condition::<u64>::TRUE.is_true(), true);
-        assert_eq!(Condition::<u64>::FALSE.is_true(), false);
+        assert_eq!(Condition::<u64>::TRUE.to_bool_var(), true);
+        assert_eq!(Condition::<u64>::FALSE.to_bool_var(), false);
     }
 
     #[test]
     fn from_bool() {
         // Compile-time const generics check
-        assert_eq!(Condition::<u64>::from_bool::<true>().is_true(), true);
-        assert_eq!(Condition::<u64>::from_bool::<false>().is_true(), false);
+        assert_eq!(Condition::<u64>::from_bool::<true>().to_bool_var(), true);
+        assert_eq!(Condition::<u64>::from_bool::<false>().to_bool_var(), false);
     }
 
     #[test]
@@ -252,22 +252,22 @@ mod u64_tests {
         let f = Condition::<u64>::FALSE;
 
         // NOT
-        assert_eq!((!t).is_true(), false);
-        assert_eq!((!f).is_true(), true);
+        assert_eq!((!t).to_bool_var(), false);
+        assert_eq!((!f).to_bool_var(), true);
 
         // AND
-        assert_eq!((t & t).is_true(), true);
-        assert_eq!((t & f).is_true(), false);
-        assert_eq!((f & f).is_true(), false);
+        assert_eq!((t & t).to_bool_var(), true);
+        assert_eq!((t & f).to_bool_var(), false);
+        assert_eq!((f & f).to_bool_var(), false);
 
         // OR
-        assert_eq!((t | t).is_true(), true);
-        assert_eq!((t | f).is_true(), true);
-        assert_eq!((f | f).is_true(), false);
+        assert_eq!((t | t).to_bool_var(), true);
+        assert_eq!((t | f).to_bool_var(), true);
+        assert_eq!((f | f).to_bool_var(), false);
 
         // XOR
-        assert_eq!((t ^ t).is_true(), false);
-        assert_eq!((t ^ f).is_true(), true);
+        assert_eq!((t ^ t).to_bool_var(), false);
+        assert_eq!((t ^ f).to_bool_var(), true);
     }
 }
 

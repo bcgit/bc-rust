@@ -262,14 +262,6 @@ macro_rules! unsigned_condition_impl {
 
 unsigned_condition_impl!(u64, u32);
 
-impl Condition<u64> {
-    /// Whether the mask is TRUE. Kept for backward compatibility; prefer
-    /// [`Self::to_bool_var`], which all `Condition` widths share.
-    pub fn is_true(&self) -> bool {
-        self.0 != 0
-    }
-}
-
 impl<T> BitAnd for Condition<T>
 where
     MaskType<T>: SupportedMaskType,
