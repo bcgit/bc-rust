@@ -24,7 +24,7 @@ macro_rules! supported_mask_type {
 }
 
 // i32 is registered for width symmetry with the u64/i64 pair (it gets the generic boolean
-// operator impls below); it has no inherent constructors yet — add them when a consumer needs them.
+// operator impls below); it has no inherent constructors yet: add them when a consumer needs them.
 supported_mask_type!(i64, u64, u32, i32);
 
 /// Helper functions for checking some condition on some data using constant-time operations.
@@ -53,11 +53,15 @@ impl Condition<i64> {
     pub const fn from_bool_var(value: bool) -> Self {
         Self(-(value as i64))
     }
-    ///
+    /// TRUE iff bit `bit` of `value` is set. The bit index must be public data.
+    /// The unsigned widths spell this `is_bit_set(value, bit)` too; their
+    /// `from_lsb(value)` is the `bit = 0` special case.
     pub const fn is_bit_set(value: i64, bit: i64) -> Self {
         Self(-((value >> bit) & 1))
     }
-    ///
+    /// TRUE iff `value < 0`, i.e. the sign (top) bit is set. The unsigned
+    /// counterpart of this mask is `from_msb`, where the top bit carries a
+    /// borrow/carry instead of a sign.
     pub const fn is_negative(value: i64) -> Self {
         Self(value >> 63)
     }
@@ -193,17 +197,27 @@ macro_rules! unsigned_condition_impl {
                 Self((0 as $t).wrapping_sub(value as $t))
             }
             /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
-            /// This is the parity test: `from_lsb(x)` is TRUE iff `x` is odd.
+            /// This is the parity test: `from_lsb(x)` is TRUE iff `x` is odd. It is
+            /// the `bit = 0` special case of [`Self::is_bit_set`].
             pub const fn from_lsb(value: $t) -> Self {
                 Self((0 as $t).wrapping_sub(value & 1))
             }
             /// Mask from the most-significant bit: TRUE iff the top bit of `value` is set.
+            /// The signed counterpart of this mask is `is_negative`, where the top bit
+            /// carries a sign instead of a borrow/carry.
             ///
             /// This is the borrow/carry adaptor: the borrow word coming out of a wrapping
             /// wide subtraction chain carries its meaning entirely in the top bit, so
             /// `from_msb(borrow)` is the `lt` mask of that comparison with no further work.
             pub const fn from_msb(value: $t) -> Self {
                 Self((0 as $t).wrapping_sub(value >> (<$t>::BITS - 1)))
+            }
+            /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
+            /// (the shift amount is timing-visible on some targets). Same shape as the
+            /// signed `is_bit_set`; the index type follows the `u32` shift-count
+            /// convention of `core`.
+            pub const fn is_bit_set(value: $t, bit: u32) -> Self {
+                Self::from_lsb(value >> bit)
             }
             /// TRUE iff `value != 0`.
             ///

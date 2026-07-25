@@ -428,6 +428,31 @@ macro_rules! unsigned_condition_tests {
             }
 
             #[test]
+            fn is_bit_set() {
+                // bit 0 agrees with from_lsb on every boundary value
+                for v in BOUNDARY {
+                    assert_eq!(
+                        Condition::<$t>::is_bit_set(v, 0).to_bool_var(),
+                        Condition::<$t>::from_lsb(v).to_bool_var()
+                    );
+                }
+                // each single-bit value reports exactly its own bit
+                for k in 0..<$t>::BITS {
+                    let v: $t = 1 << k;
+                    for bit in 0..<$t>::BITS {
+                        assert_canonical(Condition::<$t>::is_bit_set(v, bit), bit == k);
+                    }
+                }
+                // the top bit agrees with from_msb
+                for v in BOUNDARY {
+                    assert_eq!(
+                        Condition::<$t>::is_bit_set(v, <$t>::BITS - 1).to_bool_var(),
+                        Condition::<$t>::from_msb(v).to_bool_var()
+                    );
+                }
+            }
+
+            #[test]
             fn is_zero_is_not_zero() {
                 for v in BOUNDARY {
                     assert_canonical(Condition::<$t>::is_zero(v), v == 0);
