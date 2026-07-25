@@ -471,7 +471,7 @@ pub(crate) fn sample_in_ball<const LAMBDA_over_4: usize, const TAU: i32>(
     let mut j = [0u8];
     for i in (N - TAU as usize)..N {
         // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
-        // Note: At first, it might seem to be faster to pre-squeeze a buffer outside the loop. 
+        // Note: At first, it might seem to be faster to pre-squeeze a buffer outside the loop.
         // However, after experimentation and testing, the difference is not noticeable.
         h.squeeze_out(&mut j);
 
@@ -567,7 +567,7 @@ pub(crate) fn rej_bounded_poly<const ETA: usize>(rho: &[u8; 64], nonce: &[u8; 2]
     // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so the implementation does a block instead.
     // size is not a limitation as long as it is a multiple of 3.
     // 312 seems to be the sweet spot after some experimentation
-    // which is possibly also related with the average rejection rate. 
+    // which is possibly also related with the average rejection rate.
     // Also, 312 is a multiple of 8 (efficient for SHAKE)
     let mut z_arr = [0u8; 312];
     h.squeeze_out(&mut z_arr);

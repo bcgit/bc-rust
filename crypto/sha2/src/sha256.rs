@@ -150,7 +150,7 @@ pub struct SHA256Internal<PARAMS: SHA2Params> {
     byte_count: u64,
     x_buf: Secret<[u8; 64]>,
     x_buf_off: usize,
-    // TODO: Investigate whether maximum message size (according to FIPS 180-4) should be added 
+    // TODO: Investigate whether maximum message size (according to FIPS 180-4) should be added
     // (2^64 for SHA256 and 2^128 for SHA512)
 }
 

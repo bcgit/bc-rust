@@ -61,7 +61,6 @@ mod mlkem_key_tests {
         // 2) whether it calculates H(ek) properly from a private key
         // 3) whether it rejects a private key if the H(ek) is wrong
 
-
         let seed = KeyMaterial512::from_bytes_as_type(
             &hex::decode(
                 "000102030405060708090a0b0c0d0e0f

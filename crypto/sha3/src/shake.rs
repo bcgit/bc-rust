@@ -92,7 +92,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         mut self,
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        // At the moment, oversized KeyMaterial is returned for most cases. 
+        // At the moment, oversized KeyMaterial is returned for most cases.
         let mut output_key = KeyMaterial::<64>::new();
         self.derive_key_out_final_internal(additional_input, &mut output_key)?;
 
@@ -307,7 +307,7 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         if !(1..=7).contains(&num_partial_bits) {
             return Err(HashError::InvalidLength("must be in the range [0,7]"));
         }
-        // Mutants note: This is just bit-setting into empty space. 
+        // Mutants note: This is just bit-setting into empty space.
         // It works the same regardless of whether it's OR or XOR.
         let mut final_input: u16 =
             ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x0F << num_partial_bits);
