@@ -125,6 +125,32 @@ mod i64_tests {
     }
 
     #[test]
+    fn masks_are_canonical() {
+        // A mask must be exactly all-ones or all-zeros: select(-1, 0) returns the
+        // raw mask bits, so anything else (e.g. a 1 where -1 was intended) fails
+        // here even though it passes a truthiness check via to_bool_var.
+        fn assert_canonical(c: Condition<i64>, expected: bool) {
+            assert_eq!(c.select(-1, 0), if expected { -1 } else { 0 });
+        }
+        assert_canonical(Condition::<i64>::from_bool_var(true), true);
+        assert_canonical(Condition::<i64>::from_bool_var(false), false);
+        assert_canonical(Condition::<i64>::from_bool::<true>(), true);
+        assert_canonical(Condition::<i64>::from_bool::<false>(), false);
+        assert_canonical(Condition::<i64>::is_bit_set(1, 0), true);
+        assert_canonical(Condition::<i64>::is_bit_set(8, 3), true);
+        assert_canonical(Condition::<i64>::is_bit_set(8, 2), false);
+        assert_canonical(Condition::<i64>::is_negative(-5), true);
+        assert_canonical(Condition::<i64>::is_negative(5), false);
+        assert_canonical(Condition::<i64>::is_zero(0), true);
+        assert_canonical(Condition::<i64>::is_zero(7), false);
+        assert_canonical(Condition::<i64>::is_not_zero(7), true);
+        assert_canonical(Condition::<i64>::is_equal(3, 3), true);
+        assert_canonical(Condition::<i64>::is_equal(3, 4), false);
+        assert_canonical(Condition::<i64>::is_lt(3, 4), true);
+        assert_canonical(Condition::<i64>::is_lt(4, 3), false);
+    }
+
+    #[test]
     fn test_mov() {
         let src = 1;
         let mut dst = 2;
@@ -519,6 +545,28 @@ unsigned_condition_tests!(unsigned_u32_tests, u32, u64);
 
 #[cfg(test)]
 mod ct_bytes_tests {
+    #[test]
+    fn test_ct_eq_zero_bytes() {
+        use bouncycastle_utils::ct::ct_eq_zero_bytes;
+
+        // all-zero inputs, including the empty slice
+        assert!(ct_eq_zero_bytes(&[]));
+        assert!(ct_eq_zero_bytes(&[0]));
+        assert!(ct_eq_zero_bytes(&[0; 32]));
+
+        // a nonzero byte anywhere must be detected: first, last, and high-bit-only
+        assert!(!ct_eq_zero_bytes(&[1]));
+        let mut buf = [0u8; 32];
+        buf[0] = 1;
+        assert!(!ct_eq_zero_bytes(&buf));
+        buf[0] = 0;
+        buf[31] = 1;
+        assert!(!ct_eq_zero_bytes(&buf));
+        buf[31] = 0;
+        buf[15] = 0x80;
+        assert!(!ct_eq_zero_bytes(&buf));
+    }
+
     #[test]
     fn test_conditional_copy_bytes() {
         use bouncycastle_utils::ct::conditional_copy_bytes;
