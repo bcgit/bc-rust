@@ -5,3 +5,5 @@ mutants.out*/
 
 .idea/
 .vscode/
+
+.claude/*
