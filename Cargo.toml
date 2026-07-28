@@ -3,26 +3,27 @@ members = ["cli", "crypto/*", "mem_usage_benches"]
 
 [workspace.package]
 edition = "2024"
+version = "0.1.3"
 
 [workspace.dependencies]
 
 # *** Internal Dependencies ***
-bouncycastle = { path = "./", version = "0.1.2" }
-bouncycastle-base64 = { path = "./crypto/base64", version = "0.1.2" }
-bouncycastle-core = { path = "crypto/core", version = "0.1.2" }
-bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", version = "0.1.2" }
-bouncycastle-factory = { path = "./crypto/factory", version = "0.1.2" }
-bouncycastle-hex = { path = "./crypto/hex", version = "0.1.2" }
-bouncycastle-hkdf = { path = "./crypto/hkdf", version = "0.1.2" }
-bouncycastle-hmac = { path = "./crypto/hmac", version = "0.1.2" }
-bouncycastle-mlkem = { path = "./crypto/mlkem", version = "0.1.2" }
-bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory", version = "0.1.2" }
-bouncycastle-mldsa = { path = "./crypto/mldsa", version = "0.1.2" }
-bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory", version = "0.1.2" }
-bouncycastle-rng = { path = "./crypto/rng", version = "0.1.2" }
-bouncycastle-sha2 = { path = "./crypto/sha2", version = "0.1.2" }
-bouncycastle-sha3 = { path = "./crypto/sha3", version = "0.1.2" }
-bouncycastle-utils = { path = "./crypto/utils", version = "0.1.2" }
+bouncycastle = { path = "./" }
+bouncycastle-base64 = { path = "./crypto/base64" }
+bouncycastle-core = { path = "crypto/core" }
+bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
+bouncycastle-factory = { path = "./crypto/factory" }
+bouncycastle-hex = { path = "./crypto/hex" }
+bouncycastle-hkdf = { path = "./crypto/hkdf" }
+bouncycastle-hmac = { path = "./crypto/hmac" }
+bouncycastle-mlkem = { path = "./crypto/mlkem" }
+bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory" }
+bouncycastle-mldsa = { path = "./crypto/mldsa" }
+bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory" }
+bouncycastle-rng = { path = "./crypto/rng" }
+bouncycastle-sha2 = { path = "./crypto/sha2" }
+bouncycastle-sha3 = { path = "./crypto/sha3" }
+bouncycastle-utils = { path = "./crypto/utils" }
 
 
 # *** External Dependencies ***
@@ -36,7 +37,7 @@ strip = "debuginfo"
 # libbouncycastle
 [package]
 name = "bouncycastle"
-version = "0.1.2"
+version.workspace = true
 edition.workspace = true
 
 [dependencies]

@@ -1,5 +1,7 @@
 //! Helper functions for standardizing serialization and deserialization of stateful objects.
 
+// todo -- should this move to bouncycastle-utils?
+
 use crate::errors::SuspendableError;
 
 /// A semantic library version, ordered by `major`, then `minor`, then `patch`.
@@ -62,6 +64,12 @@ pub const LIB_VERSION: SemVer = SemVer {
     minor: parse_version_component(env!("CARGO_PKG_VERSION_MINOR")),
     patch: parse_version_component(env!("CARGO_PKG_VERSION_PATCH")),
 };
+
+#[test]
+/// Just to check it visually
+fn print_lib_ver() {
+    println!("LIB_VERSION: {:?}, as bytes: {:?}", LIB_VERSION, <[u8; 3]>::from(LIB_VERSION));
+}
 
 #[test]
 fn test_cmp_lib_ver() {

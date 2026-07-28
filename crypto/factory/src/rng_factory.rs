@@ -30,7 +30,7 @@
 //! let output: Vec<u8> = h.hash(data);
 //! ```
 //! Equivalently, it may be invoked by passing a string instead of using the constant:
-//! 
+//!
 //! ```
 //! use bouncycastle_factory::AlgorithmFactory;
 //! use bouncycastle_core::traits::Hash;

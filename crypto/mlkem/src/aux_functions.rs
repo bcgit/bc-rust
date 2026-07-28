@@ -301,9 +301,8 @@ pub(crate) fn barrett_reduce(a: i16) -> i16 {
     a - (((t as i32) * q as i32) as i16)
 }
 
-
-// Not currently used. It is left here as a reference since it's useful for debugging if it's 
-// necessary to output values that are normalized to [0,q] to compare against intermediate results 
+// Not currently used. It is left here as a reference since it's useful for debugging if it's
+// necessary to output values that are normalized to [0,q] to compare against intermediate results
 // from other libraries.
 // pub(super) fn cond_sub_q(a: i16) -> i16 {
 //     let tmp = a - q;
