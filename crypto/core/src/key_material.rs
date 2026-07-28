@@ -547,7 +547,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
 
         self.security_strength = strength;
-        
+
         Ok(())
     }
 

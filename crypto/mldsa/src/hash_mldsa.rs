@@ -1097,7 +1097,7 @@ impl<
 
     /// Note that the PH expected here *is not the same* as the `mu` computed by [`MuBuilder`].
     /// To make use of this function, the user needs to compute a straight hash of the message using
-    /// the same hash function as the indicated in the HashML-DSA variant; 
+    /// the same hash function as the indicated in the HashML-DSA variant;
     /// for example: SHA256 for HashMDSA44_with_SHA256; SHA512 for HashMLDSA65_with_SHA512; etc.
     fn sign_ph_out(
         sk: &SK,
