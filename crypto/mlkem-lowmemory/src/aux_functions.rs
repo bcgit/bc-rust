@@ -62,7 +62,7 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
         for j in 0..d {
             // select the next bit, according to bitcount, then shift it up by j
             // there is supposed to be a `mod m` here, but that shouldn't matter as they are being checked below
-            F[i] |= (((B[(i * d + j) / 8] >> (i * d + j) % 8) & 1) as i16) << j; 
+            F[i] |= (((B[(i * d + j) / 8] >> (i * d + j) % 8) & 1) as i16) << j;
         }
         // assert the mod m
         // These are relaxed because they are being checked above in MLKEMPublicKey::pk_decode()

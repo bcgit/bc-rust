@@ -3,14 +3,14 @@
 //! This one is implemented using constant-time operations in the conversions
 //! from Strings to byte values, so it is safe to use on cryptographic secret values.
 //!
-//! It should just work as expected: 
-//! encode takes any bytes-like rust type and returns a String, 
+//! It should just work as expected:
+//! encode takes any bytes-like rust type and returns a String,
 //! decode takes a String (which can be in any bytes-like container) and returns a `Vec<u8>`.
 //!
 //! Moreover, the API of this crate is intended to mirror that of the public `hex` crate,
 //! so you should generally be able to swap `use hex` for `use bouncycastle_hex` and all the function
 //! calls and behaviours should work as expected.
-//! 
+//!
 //! ```
 //! use bouncycastle_hex as hex;
 //!
@@ -72,7 +72,7 @@ pub fn encode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
         // let in_09 = Condition::<i64>::is_within_range(c as i64, 0, 9);
         let in_af = Condition::<i64>::is_within_range(c as i64, 10, 15);
 
-        // TODO: redo this once we have ct::u8 implemented 
+        // TODO: redo this once we have ct::u8 implemented
         // The i64 is wasteful
 
         let c_09: i64 = '0' as i64 + (c as i64);
@@ -111,7 +111,7 @@ pub fn decode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
     while i < inref.len() {
         let c = inref[i];
 
-        // first check for whitespace and string null terminators, \x and invalid characters, 
+        // first check for whitespace and string null terminators, \x and invalid characters,
         // which unfortunately cannot be done fully constant-time.
         match c {
             b' ' | b'\t' | b'\n' | b'\r' | 0 => {
@@ -157,7 +157,7 @@ pub fn decode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
         #[allow(non_snake_case)]
         let in_AF = Condition::<i64>::is_within_range(b as i64, 65, 70);
 
-        // TODO: redo this once we have ct::u8 implemented 
+        // TODO: redo this once we have ct::u8 implemented
         // The i64 is wasteful
 
         let c_09: i64 = b as i64 - ('0' as i64);

@@ -208,16 +208,16 @@
 //! There are, however, a few exceptions worth mentioning.
 //!
 //! If using a [`MLKEM::keygen_from_seed`], then it is your responsibility to ensure that the seed is
-//! cryptographically random and unpredictable at a security strength that matches the MLKEM parameter set. 
+//! cryptographically random and unpredictable at a security strength that matches the MLKEM parameter set.
 //!
 //! Also, [`MLKEM::encaps_internal`] requires the encapsulation randomness to be provided, so the ciphertext
 //! will only be as strong as the randomness that you provide.
-//! 
+//!
 //! A note about cryptographic side-channel attacks: considerable effort has been expended to attempt
 //! to make this implementation constant-time, which generally means that the core mathematical algorithm
 //! code that handles secret data uses bitshift-and-xor type constructions instead of if-and-loop
 //! constructions. That should give this implementation reasonably good resistance to timing and
-//! power analysis key extraction attacks, however: 
+//! power analysis key extraction attacks, however:
 //!     A) this is a "best-effort" and not formally verified, and
 //!     B) the Rust compiler does not guarantee constant-time behaviour no matter how good the design is code,
 //! so like all Safe Rust code (ie Rust code that does not include inline assembly),
@@ -227,7 +227,7 @@
 #![no_std]
 #![forbid(missing_docs)]
 #![forbid(unsafe_code)]
-// These are because variable names need to be matched exactly against FIPS 204, 
+// These are because variable names need to be matched exactly against FIPS 204,
 // for example both 'K' and 'k', or 'A' and 'a' are used and have specific meanings.
 // linter needs to be instructed to ignore these cases
 #![allow(non_snake_case)]
