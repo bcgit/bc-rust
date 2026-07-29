@@ -1,5 +1,10 @@
 # The Bouncy Castle Crypto Package For Rust
 
+[![Rust Style](https://github.com/bcgit/bc-rust/actions/workflows/rust-style.yml/badge.svg)](https://github.com/bcgit/bc-rust/actions/workflows/rust-style.yml)
+[![Rust Build](https://github.com/bcgit/bc-rust/actions/workflows/rust-build.yml/badge.svg)](https://github.com/bcgit/bc-rust/actions/workflows/rust-build.yml)
+[![Rust Tests](https://github.com/bcgit/bc-rust/actions/workflows/rust-test.yml/badge.svg)](https://github.com/bcgit/bc-rust/actions/workflows/rust-test.yml)
+[![Rust Docs](https://github.com/bcgit/bc-rust/actions/workflows/rust-docs.yml/badge.svg)](https://github.com/bcgit/bc-rust/actions/workflows/rust-docs.yml)
+
 > [!WARNING]
 > This package is currently in ALPHA, meaning that it is not complete or production-ready and will be evolving rapidly over the coming months.
 > We are releasing only a small set of cryptographic algorithms in order to get feedback from the community on the API and build structure.
