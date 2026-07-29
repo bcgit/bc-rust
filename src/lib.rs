@@ -1,3 +1,4 @@
+pub use bouncycastle_aes as aes;
 pub use bouncycastle_base64 as base64;
 pub use bouncycastle_core as core;
 pub use bouncycastle_factory as factory;
