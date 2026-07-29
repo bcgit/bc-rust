@@ -41,6 +41,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+bouncycastle-ascon.workspace = true
 bouncycastle-base64.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-factory.workspace = true
