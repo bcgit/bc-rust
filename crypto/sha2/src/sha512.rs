@@ -161,7 +161,7 @@ pub struct SHA512Internal<PARAMS: SHA2Params> {
     _params: std::marker::PhantomData<PARAMS>,
     state: Sha512State<PARAMS>,
     // NOTE The code currently only supports 2^67 bits, not the full 2^128
-    byte_count: u64, 
+    byte_count: u64,
     x_buf: Secret<[u8; 128]>,
     x_buf_off: usize,
 }

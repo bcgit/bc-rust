@@ -95,7 +95,7 @@ impl Polynomial {
 
     pub(crate) fn check_norm<const BOUND: i32>(&self) -> bool {
         // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
-        // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing 
+        // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing
         // the signature validation.
         // So the i32 that was just checked in a non-constant-time manner is about to get thrown away.
 

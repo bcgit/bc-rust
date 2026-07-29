@@ -169,14 +169,14 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         output
     }
 
-    // TODO: investigate why this doesn't take a &mut [u8; HASH_LEN] 
+    // TODO: investigate why this doesn't take a &mut [u8; HASH_LEN]
     // Being able to do so would improve ergonomics
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
         output.fill(0);
 
-        // this shouldn't fail because, by construction, the function is only called once, 
+        // this shouldn't fail because, by construction, the function is only called once,
         // and this is the only way to absorb partial bits.
-        self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed."); 
+        self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed.");
 
         let bytes_written = if output.len() <= self.output_len() {
             self.keccak.squeeze(output)
@@ -210,7 +210,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
     ) -> Result<usize, HashError> {
         output.fill(0);
 
-        // Mutants note: This is just bit-setting into empty space. 
+        // Mutants note: This is just bit-setting into empty space.
         // It works the same regardless of whether it's OR or XOR.
         let mut final_input: u16 =
             ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);

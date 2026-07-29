@@ -9,7 +9,7 @@ use crate::mlkem::{N, q};
 
 /// A polynomial over the ML-KEM ring.
 ///
-/// Dev note: The following structure does not necessarily need to be declared as public. 
+/// Dev note: The following structure does not necessarily need to be declared as public.
 /// There is no real scenario where this function needs to be called directly.
 /// However, in order to test the Debug and Display traits, it is necessary to use STD, so those
 /// can't be tested from inline tests in this file and the real unit tests are in a different crate.
@@ -46,8 +46,8 @@ impl Polynomial {
         Self { coeffs: [0i16; N] }
     }
 
-    /// Encodes a 32-byte message `m` into a `Polynomial`, implementing the message 
-    /// encoding step of K-PKE.Encrypt `Decompress_1(ByteDecode_1(m))`, 
+    /// Encodes a 32-byte message `m` into a `Polynomial`, implementing the message
+    /// encoding step of K-PKE.Encrypt `Decompress_1(ByteDecode_1(m))`,
     /// (FIPS 203, Alg. 14). Each message bit becomes one coefficient: `Decompress_1`
     /// (§4.2.1) maps bit `1` to `⌈q/2⌉ = (q + 1) / 2 = 1665` (for `q = 3329`) and bit
     /// `0` to `0`, placing a set bit at the point farthest from `0` to maximize the
@@ -67,25 +67,25 @@ impl Polynomial {
         w
     }
 
-    /// Decodes a `Polynomial` into its 32-byte message `m`, implementing the message 
+    /// Decodes a `Polynomial` into its 32-byte message `m`, implementing the message
     /// recovery step of K-PKE.Decrypt `ByteEncode_1(Compress_1(self))`,
     /// (FIPS 203, Alg. 15). Each coefficient yields one message bit: `Compress_1`
     /// (§4.2.1) sets the bit when the coefficient lies nearer `q/2` than `0`, i.e. in
     /// the central interval `[833, 2496]` for `q = 3329`. The decision is computed
-    /// branchlessly and the bits are packed LSB-first. 
-    /// Coefficients are expected to already be canonical in `[0, q]`: the unsigned 
-    /// interval test is not periodic mod `q`, so the caller reduces beforehand (`poly_reduce()` 
+    /// branchlessly and the bits are packed LSB-first.
+    /// Coefficients are expected to already be canonical in `[0, q]`: the unsigned
+    /// interval test is not periodic mod `q`, so the caller reduces beforehand (`poly_reduce()`
     /// in `pke_decrypt`) and no reduction is repeated here.
     pub(crate) fn to_msg(self) -> [u8; 32] {
-        const LOWER: i32 = q as i32 >> 2;     // ⌊q/4⌋     = 832
-        const UPPER: i32 = q as i32 - LOWER;  // q - ⌊q/2⌋ = 2497
+        const LOWER: i32 = q as i32 >> 2; // ⌊q/4⌋     = 832
+        const UPPER: i32 = q as i32 - LOWER; // q - ⌊q/2⌋ = 2497
 
         let mut msg = [0u8; 32];
 
         // Using full reduce() might be expected here.
-        // However, this function is only called by pke_decrypt (see mlkem.rs), which performs a 
+        // However, this function is only called by pke_decrypt (see mlkem.rs), which performs a
         // reduction on every coefficient of the polynomial immediately prior to the call.
-        // For completeness, testing against the bc-test-data set of KATs shows that everything passes 
+        // For completeness, testing against the bc-test-data set of KATs shows that everything passes
         // without modular reduction.
         // self.cond_sub_q();
 
@@ -101,8 +101,8 @@ impl Polynomial {
         msg
     }
 
-    // Not currently used. It is left here as a reference since it's useful for debugging if it's 
-    // necessary to output values that are normalized to [0,q] to compare against intermediate results 
+    // Not currently used. It is left here as a reference since it's useful for debugging if it's
+    // necessary to output values that are normalized to [0,q] to compare against intermediate results
     // from other libraries.
     // pub(crate) fn conditional_add_q(&mut self) {
     //     for x in self.0.iter_mut() {
@@ -157,7 +157,7 @@ impl Polynomial {
         // bc-java has a cond_sub_q() here, however, it is not needed
         // The reason for this is because a modular reduction is performed immediately
         // prior to calling pack_ciphertext in mlkem.rs
-        // This can be corroborated by running the corresponding unit tests 
+        // This can be corroborated by running the corresponding unit tests
         // let mut s = self.clone();
         // s.cond_sub_q();
 
@@ -250,8 +250,8 @@ impl Polynomial {
         v
     }
 
-    // Not currently used. It is left here as a reference since it's useful for debugging if it's 
-    // necessary to output values that are normalized to [0,q] to compare against intermediate results 
+    // Not currently used. It is left here as a reference since it's useful for debugging if it's
+    // necessary to output values that are normalized to [0,q] to compare against intermediate results
     // from other libraries.
     // pub(crate) fn cond_sub_q(&mut self) {
     //     for i in 0..N {
@@ -357,8 +357,8 @@ pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     r
 }
 
-// Not currently used. It is left here as a reference since it's useful for debugging if it's 
-// necessary to output values that are normalized to [0,q] to compare against intermediate results 
+// Not currently used. It is left here as a reference since it's useful for debugging if it's
+// necessary to output values that are normalized to [0,q] to compare against intermediate results
 // from other libraries.
 // /// if a is in \[-q..0], then it shifts it up by q to be in \[0..q]
 // pub(crate) fn conditional_add_q(a: i16) -> i16 {

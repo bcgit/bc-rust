@@ -66,13 +66,13 @@ pub type Default128BitRNG = HashDRBG_SHA256;
 /// The library's default RNG at the 256-bit security level.
 pub type Default256BitRNG = HashDRBG_SHA512;
 
-/// Implements the five functions specified in SP 800-90A section 7.4 are 
-/// - instantate, 
-/// - generate, 
-/// - reseed, 
-/// - uninstantiate, and 
+/// Implements the five functions specified in SP 800-90A section 7.4 are
+/// - instantate,
+/// - generate,
+/// - reseed,
+/// - uninstantiate, and
 /// - health_test.
-/// Note: this function implements Rust's Drop on the sensitive working state in place of the explicit 
+/// Note: this function implements Rust's Drop on the sensitive working state in place of the explicit
 /// Uninstantiate function listed in SP 800-90Ar1.
 pub trait Sp80090ADrbg {
     /// The input KeyMaterial must be of type [`KeyType::Seed`].
@@ -91,7 +91,7 @@ pub trait Sp80090ADrbg {
     /// required.
     /// """
     ///
-    /// This function takes ownership of the seed KeyMaterial object, 
+    /// This function takes ownership of the seed KeyMaterial object,
     /// to reduce the likelihood of its reuse in a second function call.
     ///
     /// There is no entropy requirement on the nonce, but it is expected as a KeyMaterial so that it
@@ -106,7 +106,7 @@ pub trait Sp80090ADrbg {
     ) -> Result<(), RNGError>;
 
     /// Reseeds the DRBG with the provided seed.
-    /// TODO: this needs to be redesigned to take some sort of EntropySource object that will work well 
+    /// TODO: this needs to be redesigned to take some sort of EntropySource object that will work well
     // with DRBGs that require frequent reseeding.
     fn reseed<K: KeyMaterialTrait + ?Sized>(
         &mut self,

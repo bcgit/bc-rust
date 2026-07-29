@@ -116,10 +116,9 @@
 //!
 //! `mu`, `ph`, and `ctx` are binding values that the verifier must reproduce. This means that getting
 //! them wrong does not compromise security, it just yields a signature the intended
-//! verifier won't accept (a correctness/interoperability failure). 
+//! verifier won't accept (a correctness/interoperability failure).
 //! One caveat: `ctx` can still be security-relevant at the protocol level (domain separation, replay and
 //! cross-protocol binding), so choosing it incorrectly can weaken those properties.
-
 
 #![no_std]
 #![forbid(unsafe_code)]
