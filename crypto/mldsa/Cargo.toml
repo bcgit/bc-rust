@@ -3,17 +3,30 @@ name = "bouncycastle-mldsa"
 version.workspace = true
 edition.workspace = true
 
+[features]
+# `alloc` enables the `Vec`/`Box`-returning convenience APIs (and turns on the same feature in
+# bouncycastle-core). On by default; disable with `default-features = false` for `no_std` use.
+default = ["alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-hex/alloc",
+    "bouncycastle-rng/alloc",
+    "bouncycastle-sha2/alloc",
+    "bouncycastle-sha3/alloc",
+    "bouncycastle-core-test-framework/alloc",
+]
+
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-sha2.workspace = true
-bouncycastle-sha3.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-sha2 = { workspace = true, default-features = false }
+bouncycastle-sha3 = { workspace = true, default-features = false }
+bouncycastle-rng = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
-bouncycastle-hex.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
+bouncycastle-hex = { workspace = true, default-features = false }
+bouncycastle-rng = { workspace = true, default-features = false }
 criterion.workspace = true
 serde_json = "1.0"
 

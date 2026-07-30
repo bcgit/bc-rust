@@ -15,19 +15,22 @@ alloc = [
     "bouncycastle-core/alloc",
     "bouncycastle-sha2/alloc",
     "bouncycastle-sha3/alloc",
+    "bouncycastle-rng/alloc",
+    "bouncycastle-hex/alloc",
+    "bouncycastle-core-test-framework/alloc",
 ]
 
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-rng.workspace = true
-bouncycastle-sha2.workspace = true
-bouncycastle-sha3.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-rng = { workspace = true, default-features = false }
+bouncycastle-sha2 = { workspace = true, default-features = false }
+bouncycastle-sha3 = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 criterion.workspace = true
-bouncycastle-hex.workspace = true
+bouncycastle-hex = { workspace = true, default-features = false }
 
 [[bench]]
 name = "hmac_benches"

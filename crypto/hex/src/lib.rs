@@ -98,7 +98,8 @@ pub fn encode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
 /// One-shot decode from a hex string to a bytes using a constant-time implementation.
 /// ignores whitespace and \x
 ///
-/// `no_std` alternative: [decode_out], which writes into a caller-provided `&mut [u8]`.
+/// `no_std` alternatives: [decode_out], which writes into a caller-provided `&mut [u8]`,
+/// or [decode_array], which returns a caller-sized array
 #[cfg(feature = "alloc")]
 pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, HexError> {
     let inref = input.as_ref();
@@ -106,6 +107,14 @@ pub fn decode<T: AsRef<[u8]>>(input: T) -> Result<Vec<u8>, HexError> {
     let bytes_written = decode_out(inref, &mut out)?;
     out.truncate(bytes_written);
     Ok(out)
+}
+
+/// A static one-shot, `no_std`-friendly API that decodes a hex string and returns the result
+/// in a caller-sized array. This is the allocation-free counterpart to [Hex::decode].
+pub fn decode_array<const N: usize>(input: &str) -> [u8; N] {
+    let mut output = [0u8; N];
+    let _ = decode_out(input, &mut output);
+    output
 }
 
 /// expects an output array which is at least input.len() / 2 in size.

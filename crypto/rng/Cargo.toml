@@ -9,18 +9,22 @@ edition.workspace = true
 # `getrandom`); the feature only toggles the `Vec`-returning convenience methods. On by default.
 default = ["alloc"]
 # Forward to every internal dep so the `alloc` gates stay consistent across the graph.
-alloc = ["bouncycastle-core/alloc", "bouncycastle-sha2/alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-sha2/alloc",
+    "bouncycastle-core-test-framework/alloc",
+]
 
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-sha2 = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 # external
 getrandom = "0.4.0-rc.1"
 
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 criterion.workspace = true
 
 [[bench]]

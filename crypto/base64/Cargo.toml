@@ -7,15 +7,18 @@ edition.workspace = true
 # `alloc` enables the (entire) `String`/`Vec`-returning encoder/decoder API. On by default; a
 # `no_std` build without it exposes only the type definitions (there are no streaming `_out` variants).
 default = ["alloc"]
-alloc = []
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-rng/alloc"
+]
 
 [dependencies]
-bouncycastle-core.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-rng = { workspace = true, default-features = false }
 
 [[bench]]
 name = "base64_benches"

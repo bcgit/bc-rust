@@ -12,19 +12,22 @@ alloc = [
     "bouncycastle-core/alloc",
     "bouncycastle-hmac/alloc",
     "bouncycastle-sha2/alloc",
+    "bouncycastle-hex/alloc",
+    "bouncycastle-rng/alloc",
+    "bouncycastle-core-test-framework/alloc",
 ]
 
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-hmac.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-hmac = { workspace = true, default-features = false }
+bouncycastle-sha2 = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 criterion.workspace = true
-bouncycastle-rng.workspace = true
-bouncycastle-hex.workspace = true
+bouncycastle-rng = { workspace = true, default-features = false }
+bouncycastle-hex = { workspace = true, default-features = false }
 
 [[bench]]
 name = "hkdf_benches"

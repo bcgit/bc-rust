@@ -17,6 +17,6 @@ bouncycastle-sha3 = { workspace = true, features = ["alloc"] }
 bouncycastle-rng = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 bouncycastle-hex.workspace = true

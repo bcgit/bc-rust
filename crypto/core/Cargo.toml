@@ -8,10 +8,10 @@ edition.workspace = true
 # regular (std) builds are unaffected. `no_std` users who cannot allocate should build with
 # `default-features = false` and use the `*_out(&mut [u8])` / `*_array::<N>()` APIs instead.
 default = ["alloc"]
-alloc = []
+alloc = ["bouncycastle-rng/alloc"]
 
 [dependencies]
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-rng.workspace = true
+bouncycastle-rng = { workspace = true, default-features = false }

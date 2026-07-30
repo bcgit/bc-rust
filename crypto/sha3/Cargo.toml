@@ -7,16 +7,21 @@ edition.workspace = true
 # `alloc` enables the `Vec`/`Box`-returning convenience APIs (and turns on the same feature in
 # bouncycastle-core). On by default; disable with `default-features = false` for `no_std` use.
 default = ["alloc"]
-alloc = ["bouncycastle-core/alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-rng/alloc",
+    "bouncycastle-hex/alloc",
+    "bouncycastle-core-test-framework/alloc",
+]
 
 [dependencies]
 bouncycastle-core = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-core-test-framework = { workspace = true }#, default-features = false }
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 criterion.workspace = true
-bouncycastle-hex = { workspace = true }#, default-features = false }
+bouncycastle-hex = { workspace = true, default-features = false }
 bouncycastle-rng = { workspace = true, default-features = false }
 
 [[bench]]
