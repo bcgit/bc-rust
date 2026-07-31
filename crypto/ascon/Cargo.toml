@@ -1,6 +1,6 @@
 [package]
 name = "bouncycastle-ascon"
-version = "0.1.2"
+version.workspace = true
 edition.workspace = true
 
 [features]
@@ -20,7 +20,7 @@ bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
-serde_json = "1.0"
+serde_json = "1.0" # todo -- why?
 
 [[bench]]
 name = "ascon_benches"

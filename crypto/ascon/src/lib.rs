@@ -1,6 +1,3 @@
-#![forbid(unsafe_code)]
-#![forbid(missing_docs)]
-
 //! Ascon-based lightweight cryptography (NIST SP 800-232).
 //!
 //! This crate implements the four Ascon functions standardized in NIST SP 800-232 (August 2025):
@@ -11,10 +8,6 @@
 //!   security).
 //! - [`ascon_xof128::AsconXof128`] — Ascon-XOF128 extendable-output function.
 //! - [`ascon_cxof128::AsconCXof128`] — Ascon-CXOF128 customized extendable-output function.
-//!
-//! All four share the same `Ascon-p` permutation. The implementation follows the little-endian
-//! convention of the standard and uses the precomputed initialization states from SP 800-232
-//! Table 12.
 //!
 //! # Usage Examples
 //!
@@ -71,17 +64,24 @@
 //! are no heap allocations in the streaming/`*_out` APIs, and stack usage is small and constant;
 //! consequently this crate has no dedicated `mem_usage_benches` harness.
 //!
+//! TODO -- turn this into tables as with ML-DSA
+//!
 //! # Security Considerations
 //!
 //! - **Nonce uniqueness (SP 800-232 R3):** a (key, nonce) pair must never be reused for two
 //!   different Ascon-AEAD128 encryptions. Nonce reuse breaks confidentiality.
 //! - **Tag length:** this crate always produces and verifies the full 128-bit tag. Truncated tags
 //!   (SP 800-232 §4.2.1) are not exposed.
-//! - **Key handling:** sensitive fields (the key and the working permutation state) are held in
-//!   [`bouncycastle_utils::secret::Secret`] wrappers, so they are scrubbed with volatile writes
-//!   when the value is dropped. The hash/XOF states are likewise `Secret`-wrapped.
-//! - **Decryption release:** never release decrypted plaintext until finalization returns `Ok`; an
-//!   `Err(AuthenticationFailed)` means the ciphertext or tag was tampered with.
+//! - Decryption tag check failure: a ciphertext decryption whose finalization returns an
+//!   Err(AuthenticationFailed) should be considered to be tampered with and the entire plaintext
+//!   should be rejected. For example, if the plaintext being decrypted is large enough that it must
+//!   be processed by the application in a streaming fashion, the application should have a way to
+//!   cancel the operation or transaction with an error if ASCON finalization returns an AuthenticationFailed error.
+
+// todo
+// #![no_std]
+#![forbid(unsafe_code)]
+#![forbid(missing_docs)]
 
 mod util;
 
