@@ -9,7 +9,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCip
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
-    AEADCipher, Algorithm, SecurityStrength, SuspendableKeyed, SymmetricCipher, RNG,
+    AEADCipher, Algorithm, RNG, SecurityStrength, SuspendableKeyed, SymmetricCipher,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
@@ -24,8 +24,9 @@ const BUF_SIZE_DECRYPT: usize = RATE + CRYPTO_ABYTES; // 16 + 16 = 32
 /// Ascon-AEAD128 initial value (SP 800-232 Table 14).
 const ASCON_IV: u64 = 0x00001000808C0001;
 
+/// State machine for enforcing the call order.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum State {
+enum StateMachine {
     EncInit,
     EncAad,
     EncData,
@@ -36,31 +37,31 @@ enum State {
     DecFinal,
 }
 
-impl State {
+impl StateMachine {
     // Stable u8 encoding used when suspending/resuming the AEAD state machine.
     fn to_u8(self) -> u8 {
         match self {
-            State::EncInit => 0,
-            State::EncAad => 1,
-            State::EncData => 2,
-            State::EncFinal => 3,
-            State::DecInit => 4,
-            State::DecAad => 5,
-            State::DecData => 6,
-            State::DecFinal => 7,
+            StateMachine::EncInit => 0,
+            StateMachine::EncAad => 1,
+            StateMachine::EncData => 2,
+            StateMachine::EncFinal => 3,
+            StateMachine::DecInit => 4,
+            StateMachine::DecAad => 5,
+            StateMachine::DecData => 6,
+            StateMachine::DecFinal => 7,
         }
     }
 
     fn from_u8(v: u8) -> Option<Self> {
         Some(match v {
-            0 => State::EncInit,
-            1 => State::EncAad,
-            2 => State::EncData,
-            3 => State::EncFinal,
-            4 => State::DecInit,
-            5 => State::DecAad,
-            6 => State::DecData,
-            7 => State::DecFinal,
+            0 => StateMachine::EncInit,
+            1 => StateMachine::EncAad,
+            2 => StateMachine::EncData,
+            3 => StateMachine::EncFinal,
+            4 => StateMachine::DecInit,
+            5 => StateMachine::DecAad,
+            6 => StateMachine::DecData,
+            7 => StateMachine::DecFinal,
             _ => return None,
         })
     }
@@ -80,15 +81,15 @@ pub struct AsconAead128 {
     nonce: [u64; 2],
     // 320-bit internal state (five 64-bit words). Carries keystream/plaintext-derived material, so
     // it is likewise wrapped in `Secret`.
-    s: Secret<[u64; 5]>,
-    // Buffer used for processing AAD or (de)ciphertext. Transiently holds plaintext/ciphertext, so
+    state: Secret<[u64; 5]>,
+    // Buffer used for processing AAD or ciphertext. Transiently holds plaintext/ciphertext, so
     // it is wrapped in `Secret`. For decryption the buffer size is RATE + CRYPTO_ABYTES = 32 bytes.
     buf: Secret<[u8; BUF_SIZE_DECRYPT]>,
     buf_pos: usize,
     // The computed authentication tag (public output) after encryption finalization.
     mac: Option<[u8; CRYPTO_ABYTES]>,
     // State machine for enforcing the call order.
-    state: State,
+    state_machine: StateMachine,
     // true for encryption mode; false for decryption.
     for_encryption: bool,
     finished: bool,
@@ -110,15 +111,15 @@ impl AsconAead128 {
         key_words[0] = load_u64_le(key, 0);
         key_words[1] = load_u64_le(key, 8);
         let nonce = [load_u64_le(nonce, 0), load_u64_le(nonce, 8)];
-        let state = if for_encryption { State::EncInit } else { State::DecInit };
+        let state = if for_encryption { StateMachine::EncInit } else { StateMachine::DecInit };
         let mut aead = AsconAead128 {
             key: key_words,
             nonce,
-            s: Secret::new(),
+            state: Secret::new(),
             buf: Secret::new(),
             buf_pos: 0,
             mac: None,
-            state,
+            state_machine: state,
             for_encryption,
             finished: false,
         };
@@ -165,14 +166,14 @@ impl AsconAead128 {
     // Initialization (SP 800-232 §4.1.1 step 1): S = IV || K || N, then Ascon-p[12], then XOR K into
     // the last 128 bits. No caching, since the key and/or nonce change for every operation.
     fn init_state(&mut self) {
-        self.s[0] = ASCON_IV;
-        self.s[1] = self.key[0];
-        self.s[2] = self.key[1];
-        self.s[3] = self.nonce[0];
-        self.s[4] = self.nonce[1];
+        self.state[0] = ASCON_IV;
+        self.state[1] = self.key[0];
+        self.state[2] = self.key[1];
+        self.state[3] = self.nonce[0];
+        self.state[4] = self.nonce[1];
         self.p12();
-        self.s[3] ^= self.key[0];
-        self.s[4] ^= self.key[1];
+        self.state[3] ^= self.key[0];
+        self.state[4] ^= self.key[1];
     }
 
     fn p12(&mut self) {
@@ -196,17 +197,31 @@ impl AsconAead128 {
     // linear diffusion Σ0..Σ4 (§3.4 Eq. 8–12) are fused here in their bitsliced form.
     #[inline(always)]
     fn round(&mut self, c: u64) {
-        let sx = self.s[2] ^ c;
-        let t0 = self.s[0] ^ self.s[1] ^ sx ^ self.s[3] ^ (self.s[1] & (self.s[0] ^ sx ^ self.s[4]));
-        let t1 = self.s[0] ^ sx ^ self.s[3] ^ self.s[4] ^ ((self.s[1] ^ sx) & (self.s[1] ^ self.s[3]));
-        let t2 = self.s[1] ^ sx ^ self.s[4] ^ (self.s[3] & self.s[4]);
-        let t3 = self.s[0] ^ self.s[1] ^ sx ^ ((!self.s[0]) & (self.s[3] ^ self.s[4]));
-        let t4 = self.s[1] ^ self.s[3] ^ self.s[4] ^ ((self.s[0] ^ self.s[4]) & self.s[1]);
-        self.s[0] = t0 ^ t0.rotate_right(19) ^ t0.rotate_right(28);
-        self.s[1] = t1 ^ t1.rotate_right(39) ^ t1.rotate_right(61);
-        self.s[2] = !(t2 ^ t2.rotate_right(1) ^ t2.rotate_right(6));
-        self.s[3] = t3 ^ t3.rotate_right(10) ^ t3.rotate_right(17);
-        self.s[4] = t4 ^ t4.rotate_right(7) ^ t4.rotate_right(41);
+        let sx = self.state[2] ^ c;
+        let t0 = self.state[0]
+            ^ self.state[1]
+            ^ sx
+            ^ self.state[3]
+            ^ (self.state[1] & (self.state[0] ^ sx ^ self.state[4]));
+        let t1 = self.state[0]
+            ^ sx
+            ^ self.state[3]
+            ^ self.state[4]
+            ^ ((self.state[1] ^ sx) & (self.state[1] ^ self.state[3]));
+        let t2 = self.state[1] ^ sx ^ self.state[4] ^ (self.state[3] & self.state[4]);
+        let t3 = self.state[0]
+            ^ self.state[1]
+            ^ sx
+            ^ ((!self.state[0]) & (self.state[3] ^ self.state[4]));
+        let t4 = self.state[1]
+            ^ self.state[3]
+            ^ self.state[4]
+            ^ ((self.state[0] ^ self.state[4]) & self.state[1]);
+        self.state[0] = t0 ^ t0.rotate_right(19) ^ t0.rotate_right(28);
+        self.state[1] = t1 ^ t1.rotate_right(39) ^ t1.rotate_right(61);
+        self.state[2] = !(t2 ^ t2.rotate_right(1) ^ t2.rotate_right(6));
+        self.state[3] = t3 ^ t3.rotate_right(10) ^ t3.rotate_right(17);
+        self.state[4] = t4 ^ t4.rotate_right(7) ^ t4.rotate_right(41);
     }
 
     /// Returns a 64-bit value with a single "1" at bit position (i*8): the integer form of the
@@ -217,62 +232,62 @@ impl AsconAead128 {
     }
 
     fn check_aad(&mut self) {
-        match self.state {
-            State::DecInit => self.state = State::DecAad,
-            State::EncInit => self.state = State::EncAad,
-            State::DecAad | State::EncAad => {}
-            State::EncFinal => panic!("Ascon-AEAD128 cannot be reused for encryption"),
+        match self.state_machine {
+            StateMachine::DecInit => self.state_machine = StateMachine::DecAad,
+            StateMachine::EncInit => self.state_machine = StateMachine::EncAad,
+            StateMachine::DecAad | StateMachine::EncAad => {}
+            StateMachine::EncFinal => panic!("Ascon-AEAD128 cannot be reused for encryption"),
             _ => panic!("Ascon-AEAD128 needs to be initialized"),
         }
     }
 
-    fn finish_aad(&mut self, next_state: State) {
-        if matches!(self.state, State::DecAad | State::EncAad) {
+    fn finish_aad(&mut self, next_state: StateMachine) {
+        if matches!(self.state_machine, StateMachine::DecAad | StateMachine::EncAad) {
             debug_assert!(self.buf_pos < RATE);
 
             self.buf[self.buf_pos] = 0x01;
 
             let block0 = load_u64_le(&self.buf[..], 0);
             if self.buf_pos >= 8 {
-                self.s[0] ^= block0;
+                self.state[0] ^= block0;
 
                 let block1 = load_u64_le(&self.buf[..], 8);
-                self.s[1] ^= block1 & (u64::MAX >> (56 - ((self.buf_pos - 8) * 8)));
+                self.state[1] ^= block1 & (u64::MAX >> (56 - ((self.buf_pos - 8) * 8)));
             } else {
-                self.s[0] ^= block0 & (u64::MAX >> (56 - (self.buf_pos * 8)));
+                self.state[0] ^= block0 & (u64::MAX >> (56 - (self.buf_pos * 8)));
             }
             self.p8();
         }
         // Domain separation (SP 800-232 §4.1.1 step 2: S ← S ⊕ (0^319 || 1)).
-        self.s[4] ^= 0x8000000000000000;
+        self.state[4] ^= 0x8000000000000000;
         self.buf_pos = 0;
-        self.state = next_state;
+        self.state_machine = next_state;
     }
 
-    fn finish_data(&mut self, next_state: State) {
+    fn finish_data(&mut self, next_state: StateMachine) {
         // Finalization (SP 800-232 §4.1.1 step 4 / §4.1.2 step 4).
-        self.s[2] ^= self.key[0];
-        self.s[3] ^= self.key[1];
+        self.state[2] ^= self.key[0];
+        self.state[3] ^= self.key[1];
         self.p12();
-        self.s[3] ^= self.key[0];
-        self.s[4] ^= self.key[1];
+        self.state[3] ^= self.key[0];
+        self.state[4] ^= self.key[1];
 
-        self.state = next_state;
+        self.state_machine = next_state;
     }
 
     fn check_data(&mut self) -> bool {
-        match self.state {
-            State::DecInit | State::DecAad => {
-                self.finish_aad(State::DecData);
+        match self.state_machine {
+            StateMachine::DecInit | StateMachine::DecAad => {
+                self.finish_aad(StateMachine::DecData);
                 false
             }
-            State::EncInit | State::EncAad => {
-                self.finish_aad(State::EncData);
+            StateMachine::EncInit | StateMachine::EncAad => {
+                self.finish_aad(StateMachine::EncData);
                 true
             }
-            State::DecData => false,
-            State::EncData => true,
-            State::EncFinal => panic!("Ascon-AEAD128 cannot be reused for encryption"),
+            StateMachine::DecData => false,
+            StateMachine::EncData => true,
+            StateMachine::EncFinal => panic!("Ascon-AEAD128 cannot be reused for encryption"),
             _ => panic!("Ascon-AEAD128 needs to be initialized"),
         }
     }
@@ -316,8 +331,8 @@ impl AsconAead128 {
     fn process_buffer_aad(&mut self, block: &[u8]) {
         debug_assert!(block.len() >= RATE);
 
-        self.s[0] ^= load_u64_le(block, 0);
-        self.s[1] ^= load_u64_le(block, 8);
+        self.state[0] ^= load_u64_le(block, 0);
+        self.state[1] ^= load_u64_le(block, 8);
 
         self.p8();
     }
@@ -326,11 +341,11 @@ impl AsconAead128 {
         debug_assert!(block.len() >= RATE);
         debug_assert!(output.len() >= RATE);
 
-        self.s[0] ^= load_u64_le(block, 0);
-        store_u64_le(output, 0, self.s[0]);
+        self.state[0] ^= load_u64_le(block, 0);
+        store_u64_le(output, 0, self.state[0]);
 
-        self.s[1] ^= load_u64_le(block, 8);
-        store_u64_le(output, 8, self.s[1]);
+        self.state[1] ^= load_u64_le(block, 8);
+        store_u64_le(output, 8, self.state[1]);
 
         self.p8();
     }
@@ -340,12 +355,12 @@ impl AsconAead128 {
         debug_assert!(output.len() >= RATE);
 
         let t0 = load_u64_le(block, 0);
-        store_u64_le(output, 0, self.s[0] ^ t0);
-        self.s[0] = t0;
+        store_u64_le(output, 0, self.state[0] ^ t0);
+        self.state[0] = t0;
 
         let t1 = load_u64_le(block, 8);
-        store_u64_le(output, 8, self.s[1] ^ t1);
-        self.s[1] = t1;
+        store_u64_le(output, 8, self.state[1] ^ t1);
+        self.state[1] = t1;
 
         self.p8();
     }
@@ -366,23 +381,23 @@ impl AsconAead128 {
         debug_assert!(input.len() < RATE);
 
         if input.len() >= 8 {
-            self.s[0] ^= load_u64_le(input, 0);
-            store_u64_le(output, 0, self.s[0]);
+            self.state[0] ^= load_u64_le(input, 0);
+            store_u64_le(output, 0, self.state[0]);
 
             let input = &input[8..];
             if !input.is_empty() {
-                Self::process_final_encrypt_64(input, &mut output[8..], &mut self.s[1]);
+                Self::process_final_encrypt_64(input, &mut output[8..], &mut self.state[1]);
             }
 
-            self.s[1] ^= Self::pad(input.len());
+            self.state[1] ^= Self::pad(input.len());
         } else {
             if !input.is_empty() {
-                Self::process_final_encrypt_64(input, output, &mut self.s[0]);
+                Self::process_final_encrypt_64(input, output, &mut self.state[0]);
             }
 
-            self.s[0] ^= Self::pad(input.len());
+            self.state[0] ^= Self::pad(input.len());
         }
-        self.finish_data(State::EncFinal);
+        self.finish_data(StateMachine::EncFinal);
     }
 
     fn process_final_decrypt_64(input: &[u8], output: &mut [u8], s: &mut u64) {
@@ -403,23 +418,23 @@ impl AsconAead128 {
 
         if input.len() >= 8 {
             let t0 = load_u64_le(input, 0);
-            store_u64_le(output, 0, self.s[0] ^ t0);
-            self.s[0] = t0;
+            store_u64_le(output, 0, self.state[0] ^ t0);
+            self.state[0] = t0;
 
             let input = &input[8..];
             if !input.is_empty() {
-                Self::process_final_decrypt_64(input, &mut output[8..], &mut self.s[1]);
+                Self::process_final_decrypt_64(input, &mut output[8..], &mut self.state[1]);
             }
 
-            self.s[1] ^= Self::pad(input.len());
+            self.state[1] ^= Self::pad(input.len());
         } else {
             if !input.is_empty() {
-                Self::process_final_decrypt_64(input, output, &mut self.s[0]);
+                Self::process_final_decrypt_64(input, output, &mut self.state[0]);
             }
 
-            self.s[0] ^= Self::pad(input.len());
+            self.state[0] ^= Self::pad(input.len());
         }
-        self.finish_data(State::DecFinal);
+        self.finish_data(StateMachine::DecFinal);
     }
 
     /// Process plaintext bytes (encryption update).
@@ -431,7 +446,7 @@ impl AsconAead128 {
         if !self.for_encryption {
             panic!("Not initialized for encryption");
         }
-        if !matches!(self.state, State::EncData) {
+        if !matches!(self.state_machine, StateMachine::EncData) {
             self.check_data();
         }
 
@@ -479,7 +494,7 @@ impl AsconAead128 {
         if !self.for_encryption {
             panic!("Not initialized for encryption");
         }
-        if !matches!(self.state, State::EncData) {
+        if !matches!(self.state_machine, StateMachine::EncData) {
             self.check_data();
         }
         let in_len = self.buf_pos;
@@ -488,8 +503,8 @@ impl AsconAead128 {
         self.process_final_encrypt(&tmp[..in_len], output);
 
         let mut tag = [0u8; CRYPTO_ABYTES];
-        store_u64_le(&mut tag, 0, self.s[3]);
-        store_u64_le(&mut tag, 8, self.s[4]);
+        store_u64_le(&mut tag, 0, self.state[3]);
+        store_u64_le(&mut tag, 8, self.state[4]);
 
         output[in_len..in_len + CRYPTO_ABYTES].copy_from_slice(&tag);
         self.mac = Some(tag);
@@ -506,7 +521,7 @@ impl AsconAead128 {
         if self.for_encryption {
             panic!("Not initialized for decryption");
         }
-        if !matches!(self.state, State::DecData) {
+        if !matches!(self.state_machine, StateMachine::DecData) {
             self.check_data();
         }
 
@@ -586,9 +601,9 @@ impl AsconAead128 {
         // Recompute the tag in the state and compare against the supplied tag. XORing the supplied
         // tag into the final state words yields zero iff they match; folding both words and testing
         // against zero is branch-free (constant time w.r.t. the tag value).
-        self.s[3] ^= load_u64_le(&self.buf[..], data_len);
-        self.s[4] ^= load_u64_le(&self.buf[..], data_len + 8);
-        if (self.s[3] | self.s[4]) != 0 {
+        self.state[3] ^= load_u64_le(&self.buf[..], data_len);
+        self.state[4] ^= load_u64_le(&self.buf[..], data_len + 8);
+        if (self.state[3] | self.state[4]) != 0 {
             return Err(SymmetricCipherError::AEADTagCheckFailed);
         }
         self.finished = true;
@@ -812,7 +827,10 @@ impl AEADCipher<CRYPTO_KEYBYTES, CRYPTO_KEYBYTES, CRYPTO_ABYTES> for AsconAead12
         Ok(n + n2 + m)
     }
 
-    fn do_aead_decrypt_final(mut self, tag: &[u8; CRYPTO_ABYTES]) -> Result<(), SymmetricCipherError> {
+    fn do_aead_decrypt_final(
+        mut self,
+        tag: &[u8; CRYPTO_ABYTES],
+    ) -> Result<(), SymmetricCipherError> {
         let mut scratch = [0u8; BUF_SIZE_DECRYPT];
         let _ = self.decrypt_update(tag, &mut scratch);
         self.decrypt_finalize(&mut scratch)?;
@@ -853,7 +871,7 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
 
         out[0] = AEAD128_STATE_TAG;
         for i in 0..5 {
-            out[1 + i * 8..1 + i * 8 + 8].copy_from_slice(&self.s[i].to_le_bytes());
+            out[1 + i * 8..1 + i * 8 + 8].copy_from_slice(&self.state[i].to_le_bytes());
         }
         out[41..49].copy_from_slice(&self.nonce[0].to_le_bytes());
         out[49..57].copy_from_slice(&self.nonce[1].to_le_bytes());
@@ -867,7 +885,7 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
             }
             None => out[90] = 0,
         }
-        out[107] = self.state.to_u8();
+        out[107] = self.state_machine.to_u8();
         out[108] = self.for_encryption as u8;
         out[109] = self.finished as u8;
 
@@ -907,7 +925,7 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
             }
             _ => return Err(SuspendableError::InvalidData),
         };
-        let state = State::from_u8(input[107]).ok_or(SuspendableError::InvalidData)?;
+        let state = StateMachine::from_u8(input[107]).ok_or(SuspendableError::InvalidData)?;
         let for_encryption = match input[108] {
             0 => false,
             1 => true,
@@ -927,14 +945,13 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
         Ok(AsconAead128 {
             key: key_words,
             nonce,
-            s,
+            state: s,
             buf,
             buf_pos,
             mac,
-            state,
+            state_machine: state,
             for_encryption,
             finished,
         })
     }
 }
-
