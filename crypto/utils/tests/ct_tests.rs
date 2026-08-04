@@ -126,11 +126,16 @@ mod i64_tests {
 
     #[test]
     fn masks_are_canonical() {
-        // A mask must be exactly all-ones or all-zeros: select(-1, 0) returns the
-        // raw mask bits, so anything else (e.g. a 1 where -1 was intended) fails
-        // here even though it passes a truthiness check via to_bool.
+        // A mask must be exactly all-ones or all-zeros. Every correct implementation also
+        // passes a plain truthiness check; this test exists to catch a mutant that a
+        // truthiness check cannot: to_bool() only tests non-zero, so a constructor
+        // returning 1 instead of -1 would pass it and then quietly zero the upper 63 bits
+        // of every select it feeds. The two select operands below differ in every bit, so
+        // select returns PATTERN exactly when the mask is all-ones and !PATTERN exactly
+        // when it is all-zeros: any other mask bit pattern fails the assertion.
+        const PATTERN: i64 = 0x5555_5555_5555_5555;
         fn assert_canonical(c: Condition<i64>, expected: bool) {
-            assert_eq!(c.select(-1, 0), if expected { -1 } else { 0 });
+            assert_eq!(c.select(PATTERN, !PATTERN), if expected { PATTERN } else { !PATTERN });
         }
         assert_canonical(Condition::<i64>::from_bool_var(true), true);
         assert_canonical(Condition::<i64>::from_bool_var(false), false);
@@ -372,12 +377,14 @@ macro_rules! unsigned_condition_tests {
             const MSB: $t = 1 << (<$t>::BITS - 1);
             const BOUNDARY: [$t; 5] = [0, 1, <$t>::MAX, <$t>::MAX - 1, MSB];
 
-            /// A mask must be exactly all-ones or all-zeros; anything else (e.g. a `1` where
-            /// MAX was intended) silently corrupts every select it feeds. `select(MAX, 0)`
-            /// returns the raw mask bits, so this asserts canonicality through the public API.
+            /// A mask must be exactly all-ones or all-zeros: `to_bool` only tests non-zero,
+            /// so a constructor returning `1` instead of all-ones would pass it and then
+            /// quietly corrupt every select it feeds. The two select operands differ in
+            /// every bit, so the assertion holds exactly when the mask is canonical.
             fn assert_canonical(cond: Condition<$t>, expected: bool) {
-                let raw = cond.select(<$t>::MAX, 0);
-                assert_eq!(raw, if expected { <$t>::MAX } else { 0 });
+                const PATTERN: $t = (0x5555_5555_5555_5555_u64 & (<$t>::MAX as u64)) as $t;
+                let selected = cond.select(PATTERN, !PATTERN);
+                assert_eq!(selected, if expected { PATTERN } else { !PATTERN });
                 assert_eq!(cond.to_bool(), expected);
             }
 
@@ -524,12 +531,14 @@ macro_rules! signed_condition_tests {
             const BOUNDARY: [$t; 7] =
                 [0, 1, -1, <$t>::MIN, <$t>::MIN + 1, <$t>::MAX, <$t>::MAX - 1];
 
-            /// A mask must be exactly all-ones or all-zeros; anything else (e.g. a `1` where
-            /// `-1` was intended) silently corrupts every select it feeds. `select(-1, 0)`
-            /// returns the raw mask bits, so this asserts canonicality through the public API.
+            /// A mask must be exactly all-ones or all-zeros: `to_bool` only tests non-zero,
+            /// so a constructor returning `1` instead of `-1` would pass it and then
+            /// quietly corrupt every select it feeds. The two select operands differ in
+            /// every bit, so the assertion holds exactly when the mask is canonical.
             fn assert_canonical(cond: Condition<$t>, expected: bool) {
-                let raw = cond.select(-1, 0);
-                assert_eq!(raw, if expected { -1 } else { 0 });
+                const PATTERN: $t = (0x5555_5555_5555_5555_u64 & (<$t>::MAX as u64)) as $t;
+                let selected = cond.select(PATTERN, !PATTERN);
+                assert_eq!(selected, if expected { PATTERN } else { !PATTERN });
                 assert_eq!(cond.to_bool(), expected);
             }
 
