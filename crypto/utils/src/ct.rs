@@ -191,14 +191,10 @@ signed_condition_impl!(i64, i32);
 //       (there's probably no noticeable performance difference u8 and u64 bit ops on a 64-bit machine,
 //       but there would be on a 8, 16, or 32-bit machine.)
 //
-// The unsigned widths share one macro-generated impl so that code which is generic over its
-// word size (e.g. a u64-or-u32 limb type) can be written once against identical method names.
-// The i64 constructions above do NOT carry over: they rely on signed representation tricks
-// (arithmetic shift for `is_negative`, the sign of `x - y` for `is_lt`) whose overflow
-// reasoning is invalid for full-range unsigned values. The unsigned constructions below use
-// the standard two's-complement mask identities instead, and deliberately omit ordering
-// comparisons: multi-word callers derive `lt` from their subtraction borrow chain and convert
-// it with `from_msb`.
+// The unsigned widths share one macro-generated impl so that width-generic limb code can be
+// written once against identical method names. Ordering comparisons are deliberately omitted:
+// multi-word callers derive `lt` from their subtraction borrow chain and convert it with
+// `from_msb`.
 macro_rules! unsigned_condition_impl {
     ($($t:ty),+) => {
         $(
@@ -238,9 +234,7 @@ macro_rules! unsigned_condition_impl {
                 Self((0 as $t).wrapping_sub(value >> (<$t>::BITS - 1)))
             }
             /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
-            /// (the shift amount is timing-visible on some targets). Same shape as the
-            /// signed `is_bit_set`; the index type follows the `u32` shift-count
-            /// convention of `core`.
+            /// (the shift amount is timing-visible on some targets).
             pub const fn is_bit_set(value: $t, bit: u32) -> Self {
                 Self::from_lsb(value >> bit)
             }

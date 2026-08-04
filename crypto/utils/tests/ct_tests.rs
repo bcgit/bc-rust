@@ -235,9 +235,8 @@ mod u64_tests {
         let val1: u64 = 0xDEADBEEFCAFEBABE;
         let val2: u64 = 0x0000000000000000;
 
-        // This test is CRITICAL.
-        //   If TRUE was defined as '1' (like i64), this would fail because 'select' relies on bitwise mask.
-        //   It requires TRUE to be u64::MAX (all 1s) to preserve the full bits of val1.
+        // select is a bitwise mask, so TRUE must be u64::MAX (all 1s), not 1, to
+        // preserve every bit of val1.
         assert_eq!(t.select(val1, val2), val1);
         assert_eq!(f.select(val1, val2), val2);
 
