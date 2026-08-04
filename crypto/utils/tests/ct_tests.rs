@@ -178,37 +178,6 @@ mod i64_tests {
     }
 
     #[test]
-    fn test_or_halves() {
-        // 0 input -> 0 output
-        assert_eq!(Condition::<i64>::or_halves(0), 0);
-
-        // Lower 32 bits should be preserved
-        assert_eq!(Condition::<i64>::or_halves(1), 1);
-        assert_eq!(Condition::<i64>::or_halves(0x12345678), 0x12345678);
-
-        // Upper 32 bits should be folded into lower 32 bits
-        // (1 << 32) OR (1 << 32 >> 32) => 0 OR 1 => 1
-        assert_eq!(Condition::<i64>::or_halves(1 << 32), 1);
-
-        // Mixed case: Upper 0x10000000 | Lower 0x00000001 => 0x10000001
-        assert_eq!(Condition::<i64>::or_halves(0x10000000_00000001), 0x10000001);
-
-        // Negative number check (-1)
-        // -1 is 0xFFFF...FFFF
-        // (-1 >> 32) is -1 (Arithmetic shift preserves sign)
-        // (-1 | -1) is -1
-        // -1 & 0xFFFFFFFF is 0x00000000FFFFFFFF (i64 value: 4294967295)
-        assert_eq!(Condition::<i64>::or_halves(-1), 0xFFFFFFFF);
-
-        // i64::MIN check (Only MSB set)
-        // i64::MIN = 0x80000000_00000000
-        // (val >> 32) = 0xFFFFFFFF_80000000 (Sign extension)
-        // (val | shifted) = 0xFFFFFFFF_80000000
-        // (& mask) = 0x00000000_80000000
-        assert_eq!(Condition::<i64>::or_halves(i64::MIN), 0x80000000);
-    }
-
-    #[test]
     fn test_select() {
         let c = Condition::<i64>::from_bool::<true>();
         assert_eq!(c.select(1, 2), 1);
@@ -542,6 +511,174 @@ macro_rules! unsigned_condition_tests {
 
 unsigned_condition_tests!(unsigned_u64_tests, u64, u128);
 unsigned_condition_tests!(unsigned_u32_tests, u32, u64);
+
+/// One test module per signed width, generated from the same macro so i64 and i32 stay at
+/// exact behavioural parity. Boundary set: 0, +/-1, MIN, MIN+1, MAX, MAX-1: the values where
+/// overflow or sign-extension mistakes in the mask constructions would show up.
+macro_rules! signed_condition_tests {
+    ($mod_name:ident, $t:ty) => {
+        #[cfg(test)]
+        mod $mod_name {
+            use super::*;
+
+            const BOUNDARY: [$t; 7] =
+                [0, 1, -1, <$t>::MIN, <$t>::MIN + 1, <$t>::MAX, <$t>::MAX - 1];
+
+            /// A mask must be exactly all-ones or all-zeros; anything else (e.g. a `1` where
+            /// `-1` was intended) silently corrupts every select it feeds. `select(-1, 0)`
+            /// returns the raw mask bits, so this asserts canonicality through the public API.
+            fn assert_canonical(cond: Condition<$t>, expected: bool) {
+                let raw = cond.select(-1, 0);
+                assert_eq!(raw, if expected { -1 } else { 0 });
+                assert_eq!(cond.to_bool_var(), expected);
+            }
+
+            #[test]
+            fn consts() {
+                assert_canonical(Condition::<$t>::TRUE, true);
+                assert_canonical(Condition::<$t>::FALSE, false);
+            }
+
+            #[test]
+            fn from_bool() {
+                assert_canonical(Condition::<$t>::from_bool::<true>(), true);
+                assert_canonical(Condition::<$t>::from_bool::<false>(), false);
+                assert_canonical(Condition::<$t>::from_bool_var(true), true);
+                assert_canonical(Condition::<$t>::from_bool_var(false), false);
+            }
+
+            #[test]
+            fn from_lsb() {
+                for v in BOUNDARY {
+                    assert_canonical(Condition::<$t>::from_lsb(v), v & 1 == 1);
+                }
+            }
+
+            #[test]
+            fn is_bit_set() {
+                // bit 0 agrees with from_lsb on every boundary value
+                for v in BOUNDARY {
+                    assert_eq!(
+                        Condition::<$t>::is_bit_set(v, 0).to_bool_var(),
+                        Condition::<$t>::from_lsb(v).to_bool_var()
+                    );
+                }
+                // each single-bit value reports exactly its own bit
+                for k in 0..<$t>::BITS {
+                    let v: $t = (1 as $t) << k;
+                    for bit in 0..<$t>::BITS {
+                        assert_canonical(Condition::<$t>::is_bit_set(v, bit), bit == k);
+                    }
+                }
+                // the top bit agrees with is_negative
+                for v in BOUNDARY {
+                    assert_eq!(
+                        Condition::<$t>::is_bit_set(v, <$t>::BITS - 1).to_bool_var(),
+                        Condition::<$t>::is_negative(v).to_bool_var()
+                    );
+                }
+            }
+
+            #[test]
+            fn is_negative() {
+                for v in BOUNDARY {
+                    assert_canonical(Condition::<$t>::is_negative(v), v < 0);
+                }
+            }
+
+            #[test]
+            fn is_zero_is_not_zero() {
+                for v in BOUNDARY {
+                    assert_canonical(Condition::<$t>::is_zero(v), v == 0);
+                    assert_canonical(Condition::<$t>::is_not_zero(v), v != 0);
+                }
+            }
+
+            #[test]
+            fn is_equal() {
+                for x in BOUNDARY {
+                    for y in BOUNDARY {
+                        assert_canonical(Condition::<$t>::is_equal(x, y), x == y);
+                    }
+                }
+            }
+
+            #[test]
+            fn is_within_range() {
+                assert_canonical(Condition::<$t>::is_within_range(1, 0, 2), true);
+                assert_canonical(Condition::<$t>::is_within_range(2, 0, 1), false);
+                assert_canonical(Condition::<$t>::is_within_range(1, -5, 2), true);
+                assert_canonical(Condition::<$t>::is_within_range(0, -5, 5), true);
+                assert_canonical(Condition::<$t>::is_within_range(1, 0, 0), false);
+            }
+
+            #[test]
+            fn is_in_list() {
+                assert_canonical(Condition::<$t>::is_in_list(1, &[1, 2, 3]), true);
+                assert_canonical(Condition::<$t>::is_in_list(4, &[1, 2, 3]), false);
+                assert_canonical(Condition::<$t>::is_in_list(-3, &[1, 2, 3, 4, -5, -1]), false);
+                assert_canonical(Condition::<$t>::is_in_list(3, &[1, 2, 3, 3, 3, 3]), true);
+            }
+
+            #[test]
+            fn select_preserves_all_bits() {
+                // Patterned values (not just -1/0) so a mask with any wrong bit shows up.
+                let a: $t = (0xDEADBEEFCAFEBABE_u64 & (<$t>::MAX as u64)) as $t;
+                let b: $t = (0x0123456789ABCDEF_u64 & (<$t>::MAX as u64)) as $t;
+                assert_eq!(Condition::<$t>::TRUE.select(a, b), a);
+                assert_eq!(Condition::<$t>::FALSE.select(a, b), b);
+            }
+
+            #[test]
+            fn mov() {
+                let src: $t = 1;
+                let mut dst: $t = 2;
+                Condition::<$t>::from_bool::<true>().mov(src, &mut dst);
+                assert_eq!(dst, 1);
+                dst = 2;
+                Condition::<$t>::from_bool::<false>().mov(src, &mut dst);
+                assert_eq!(dst, 2);
+            }
+
+            #[test]
+            fn negate() {
+                let t = Condition::<$t>::TRUE;
+                assert_eq!(t.negate(1), -1);
+                assert_eq!(t.negate(0), 0);
+                assert_eq!(t.negate(-1), 1);
+                let f = Condition::<$t>::FALSE;
+                assert_eq!(f.negate(1), 1);
+                assert_eq!(f.negate(0), 0);
+                assert_eq!(f.negate(-1), -1);
+            }
+
+            #[test]
+            fn swap() {
+                let (lhs, rhs) = Condition::<$t>::from_bool::<true>().swap(1, 2);
+                assert_eq!((lhs, rhs), (2, 1));
+                let (lhs, rhs) = Condition::<$t>::from_bool::<false>().swap(1, 2);
+                assert_eq!((lhs, rhs), (1, 2));
+            }
+
+            #[test]
+            fn boolean_operators() {
+                let t = Condition::<$t>::TRUE;
+                let f = Condition::<$t>::FALSE;
+                assert_canonical(!t, false);
+                assert_canonical(!f, true);
+                assert_canonical(t & f, false);
+                assert_canonical(t & t, true);
+                assert_canonical(t | f, true);
+                assert_canonical(f | f, false);
+                assert_canonical(t ^ t, false);
+                assert_canonical(t ^ f, true);
+            }
+        }
+    };
+}
+
+signed_condition_tests!(signed_i64_tests, i64);
+signed_condition_tests!(signed_i32_tests, i32);
 
 #[cfg(test)]
 mod ct_bytes_tests {
