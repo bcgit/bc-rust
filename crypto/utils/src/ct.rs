@@ -92,27 +92,32 @@ macro_rules! signed_condition_impl {
             pub const fn is_equal(x: $t, y: $t) -> Self {
                 Self::is_zero(x ^ y)
             }
-            /// TRUE iff `x < y`.
+            /// TRUE iff `x < y`, for the full signed range.
+            ///
+            /// The naive `is_negative(x - y)` is wrong whenever `x - y` overflows
+            /// (e.g. `MIN < 1`): in debug it panics, in release it wraps to the opposite
+            /// answer. This is the standard overflow-free signed-comparison identity: when
+            /// the signs of `x` and `y` differ the answer is the sign of `x`; when they
+            /// agree the difference cannot overflow, so the answer is the sign of `x - y`.
             pub const fn is_lt(x: $t, y: $t) -> Self {
-                Self::is_negative(x - y)
+                Self(((x & !y) | (!(x ^ y) & x.wrapping_sub(y))) >> (<$t>::BITS - 1))
             }
             /// TRUE iff `x <= y`.
-            // Note: this cannot currently be marked as const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
-            pub fn is_lte(x: $t, y: $t) -> Self {
-                !Self::is_gt(x, y)
+            pub const fn is_lte(x: $t, y: $t) -> Self {
+                // Complementing the inner value maps TRUE <-> FALSE (all 1s <-> all 0s).
+                Self(!Self::is_gt(x, y).0)
             }
             /// TRUE iff `x > y`.
             pub const fn is_gt(x: $t, y: $t) -> Self {
                 Self::is_lt(y, x)
             }
             /// TRUE iff `x >= y`.
-            // Note: this cannot currently be marked as const, since it either needs a (non-const) not (!) or a boolean OR is_zero.
-            pub fn is_gte(x: $t, y: $t) -> Self {
-                !Self::is_lt(x, y)
+            pub const fn is_gte(x: $t, y: $t) -> Self {
+                Self(!Self::is_lt(x, y).0)
             }
             /// TRUE iff `min <= value <= max`.
-            pub fn is_within_range(value: $t, min: $t, max: $t) -> Self {
-                Self::is_gte(value, min) & Self::is_lte(value, max)
+            pub const fn is_within_range(value: $t, min: $t, max: $t) -> Self {
+                Self(Self::is_gte(value, min).0 & Self::is_lte(value, max).0)
             }
             /// TRUE iff `value` occurs in `list`. The list contents and length are public.
             pub fn is_in_list(value: $t, list: &[$t]) -> Self {

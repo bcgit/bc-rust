@@ -603,6 +603,32 @@ macro_rules! signed_condition_tests {
                 }
             }
 
+            /// Differential check against the native operators over every boundary pair,
+            /// including the far-apart pairs where a subtract-and-check-sign construction
+            /// would overflow.
+            #[test]
+            fn comparisons_match_native_operators() {
+                for x in BOUNDARY {
+                    for y in BOUNDARY {
+                        assert_canonical(Condition::<$t>::is_lt(x, y), x < y);
+                        assert_canonical(Condition::<$t>::is_lte(x, y), x <= y);
+                        assert_canonical(Condition::<$t>::is_gt(x, y), x > y);
+                        assert_canonical(Condition::<$t>::is_gte(x, y), x >= y);
+                    }
+                }
+            }
+
+            /// Regression for the former `is_negative(x - y)` construction, which
+            /// overflowed for operands more than half the range apart (debug panic,
+            /// opposite answer in release).
+            #[test]
+            fn is_lt_far_apart_operands() {
+                assert_canonical(Condition::<$t>::is_lt(<$t>::MIN, 1), true);
+                assert_canonical(Condition::<$t>::is_lt(1, <$t>::MIN), false);
+                assert_canonical(Condition::<$t>::is_lt(<$t>::MIN, <$t>::MAX), true);
+                assert_canonical(Condition::<$t>::is_lt(<$t>::MAX, <$t>::MIN), false);
+            }
+
             #[test]
             fn is_within_range() {
                 assert_canonical(Condition::<$t>::is_within_range(1, 0, 2), true);
@@ -610,6 +636,16 @@ macro_rules! signed_condition_tests {
                 assert_canonical(Condition::<$t>::is_within_range(1, -5, 2), true);
                 assert_canonical(Condition::<$t>::is_within_range(0, -5, 5), true);
                 assert_canonical(Condition::<$t>::is_within_range(1, 0, 0), false);
+                for v in BOUNDARY {
+                    for lo in BOUNDARY {
+                        for hi in BOUNDARY {
+                            assert_canonical(
+                                Condition::<$t>::is_within_range(v, lo, hi),
+                                lo <= v && v <= hi,
+                            );
+                        }
+                    }
+                }
             }
 
             #[test]
@@ -679,6 +715,26 @@ macro_rules! signed_condition_tests {
 
 signed_condition_tests!(signed_i64_tests, i64);
 signed_condition_tests!(signed_i32_tests, i32);
+
+#[cfg(test)]
+mod signed_comparison_sweep {
+    use super::*;
+
+    /// Dense sweep of the full i32 range: 256 x 256 pairs stepped 1 << 24 apart, checked
+    /// against the native operators. This covers every combination of sign and magnitude
+    /// region, not just the BOUNDARY values.
+    #[test]
+    fn i32_strided_full_range() {
+        for a in (i32::MIN..=i32::MAX).step_by(1 << 24) {
+            for b in (i32::MIN..=i32::MAX).step_by(1 << 24) {
+                assert_eq!(Condition::<i32>::is_lt(a, b).to_bool_var(), a < b, "{a} {b}");
+                assert_eq!(Condition::<i32>::is_lte(a, b).to_bool_var(), a <= b, "{a} {b}");
+                assert_eq!(Condition::<i32>::is_gt(a, b).to_bool_var(), a > b, "{a} {b}");
+                assert_eq!(Condition::<i32>::is_gte(a, b).to_bool_var(), a >= b, "{a} {b}");
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod ct_bytes_tests {
