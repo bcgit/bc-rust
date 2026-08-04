@@ -9,126 +9,126 @@ mod i64_tests {
 
     #[test]
     fn const_tests() {
-        assert_eq!(Condition::<i64>::TRUE.to_bool_var(), true);
-        assert_eq!(Condition::<i64>::FALSE.to_bool_var(), false);
+        assert_eq!(Condition::<i64>::TRUE.to_bool(), true);
+        assert_eq!(Condition::<i64>::FALSE.to_bool(), false);
     }
 
     #[test]
     fn from_bool() {
-        assert_eq!(Condition::<i64>::from_bool::<true>().to_bool_var(), true);
-        assert_eq!(Condition::<i64>::from_bool::<false>().to_bool_var(), false);
+        assert_eq!(Condition::<i64>::from_bool::<true>().to_bool(), true);
+        assert_eq!(Condition::<i64>::from_bool::<false>().to_bool(), false);
 
         let btrue: bool = true;
         let bfalse: bool = false;
-        assert_eq!(Condition::<i64>::from_bool_var(btrue).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::from_bool_var(bfalse).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::from_bool_var(btrue).to_bool(), true);
+        assert_eq!(Condition::<i64>::from_bool_var(bfalse).to_bool(), false);
     }
 
     #[test]
     fn is_bit_set() {
-        assert_eq!(Condition::<i64>::is_bit_set(1, 0).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_bit_set(1, 1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_bit_set(8, 3).to_bool_var(), true);
+        assert_eq!(Condition::<i64>::is_bit_set(1, 0).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_bit_set(1, 1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_bit_set(8, 3).to_bool(), true);
     }
 
     #[test]
     fn is_negative() {
-        assert_eq!(Condition::<i64>::is_negative(-1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_negative(0).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_negative(1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_negative(1 << 12).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_negative(-1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_negative(0).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_negative(1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_negative(1 << 12).to_bool(), false);
     }
 
     #[test]
     fn is_not_zero() {
-        assert_eq!(Condition::<i64>::is_not_zero(1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_not_zero(0).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_not_zero(1 << 12).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_not_zero(-10).to_bool_var(), true);
+        assert_eq!(Condition::<i64>::is_not_zero(1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_not_zero(0).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_not_zero(1 << 12).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_not_zero(-10).to_bool(), true);
     }
 
     #[test]
     fn is_zero() {
-        assert_eq!(Condition::<i64>::is_zero(1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_zero(0).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_zero(1 << 12).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_zero(1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_zero(0).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_zero(1 << 12).to_bool(), false);
     }
 
     #[test]
     fn is_equal() {
-        assert_eq!(Condition::<i64>::is_equal(1, 1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_equal(1, 2).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_equal(1, -1).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_equal(1, 1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_equal(1, 2).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_equal(1, -1).to_bool(), false);
     }
 
     #[test]
     fn is_lt() {
-        assert_eq!(Condition::<i64>::is_lt(1, 2).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lt(2, 1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_lt(2, 2).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_lt(0, 1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lt(-100, -99).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lt(-98, 98).to_bool_var(), true);
+        assert_eq!(Condition::<i64>::is_lt(1, 2).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lt(2, 1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_lt(2, 2).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_lt(0, 1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lt(-100, -99).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lt(-98, 98).to_bool(), true);
 
         let mut i: i64 = 0;
-        assert_eq!(Condition::<i64>::is_lt(i, 1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lt(i, -1).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_lt(i, 1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lt(i, -1).to_bool(), false);
         i = 1;
-        assert_eq!(Condition::<i64>::is_lt(i, 1).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_lt(i, 1).to_bool(), false);
     }
 
     #[test]
     fn is_lte() {
-        assert_eq!(Condition::<i64>::is_lte(1, 2).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lte(2, 1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_lte(2, 2).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lte(0, 1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lte(-100, -99).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_lte(-98, 98).to_bool_var(), true);
+        assert_eq!(Condition::<i64>::is_lte(1, 2).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lte(2, 1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_lte(2, 2).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lte(0, 1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lte(-100, -99).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_lte(-98, 98).to_bool(), true);
     }
 
     #[test]
     fn is_gt() {
-        assert_eq!(Condition::<i64>::is_gt(1, 2).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_gt(2, 1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_gt(2, 2).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_gt(0, 1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_gt(-100, -99).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_gt(-98, 98).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_gt(1, 2).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_gt(2, 1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_gt(2, 2).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_gt(0, 1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_gt(-100, -99).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_gt(-98, 98).to_bool(), false);
     }
 
     #[test]
     fn is_gte() {
-        assert_eq!(Condition::<i64>::is_gte(1, 2).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_gte(2, 1).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_gte(2, 2).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_gte(0, 1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_gte(-100, -99).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_gte(-98, 98).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_gte(1, 2).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_gte(2, 1).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_gte(2, 2).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_gte(0, 1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_gte(-100, -99).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_gte(-98, 98).to_bool(), false);
     }
 
     #[test]
     fn is_in_range() {
-        assert_eq!(Condition::<i64>::is_within_range(1, 0, 2).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_within_range(2, 0, 1).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_within_range(1, -5, 2).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_within_range(0, -5, 5).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_within_range(1, 0, 0).to_bool_var(), false);
+        assert_eq!(Condition::<i64>::is_within_range(1, 0, 2).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_within_range(2, 0, 1).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_within_range(1, -5, 2).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_within_range(0, -5, 5).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_within_range(1, 0, 0).to_bool(), false);
     }
 
     #[test]
     fn is_in_list() {
-        assert_eq!(Condition::<i64>::is_in_list(1, &[1, 2, 3]).to_bool_var(), true);
-        assert_eq!(Condition::<i64>::is_in_list(4, &[1, 2, 3]).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_in_list(-3, &[1, 2, 3, 4, -5, -1]).to_bool_var(), false);
-        assert_eq!(Condition::<i64>::is_in_list(3, &[1, 2, 3, 3, 3, 3]).to_bool_var(), true);
+        assert_eq!(Condition::<i64>::is_in_list(1, &[1, 2, 3]).to_bool(), true);
+        assert_eq!(Condition::<i64>::is_in_list(4, &[1, 2, 3]).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_in_list(-3, &[1, 2, 3, 4, -5, -1]).to_bool(), false);
+        assert_eq!(Condition::<i64>::is_in_list(3, &[1, 2, 3, 3, 3, 3]).to_bool(), true);
     }
 
     #[test]
     fn masks_are_canonical() {
         // A mask must be exactly all-ones or all-zeros: select(-1, 0) returns the
         // raw mask bits, so anything else (e.g. a 1 where -1 was intended) fails
-        // here even though it passes a truthiness check via to_bool_var.
+        // here even though it passes a truthiness check via to_bool.
         fn assert_canonical(c: Condition<i64>, expected: bool) {
             assert_eq!(c.select(-1, 0), if expected { -1 } else { 0 });
         }
@@ -211,15 +211,15 @@ mod u64_tests {
     #[test]
     fn const_tests() {
         // Ensure TRUE/FALSE are correctly interpreted as boolean.
-        assert_eq!(Condition::<u64>::TRUE.to_bool_var(), true);
-        assert_eq!(Condition::<u64>::FALSE.to_bool_var(), false);
+        assert_eq!(Condition::<u64>::TRUE.to_bool(), true);
+        assert_eq!(Condition::<u64>::FALSE.to_bool(), false);
     }
 
     #[test]
     fn from_bool() {
         // Compile-time const generics check
-        assert_eq!(Condition::<u64>::from_bool::<true>().to_bool_var(), true);
-        assert_eq!(Condition::<u64>::from_bool::<false>().to_bool_var(), false);
+        assert_eq!(Condition::<u64>::from_bool::<true>().to_bool(), true);
+        assert_eq!(Condition::<u64>::from_bool::<false>().to_bool(), false);
     }
 
     #[test]
@@ -247,22 +247,22 @@ mod u64_tests {
         let f = Condition::<u64>::FALSE;
 
         // NOT
-        assert_eq!((!t).to_bool_var(), false);
-        assert_eq!((!f).to_bool_var(), true);
+        assert_eq!((!t).to_bool(), false);
+        assert_eq!((!f).to_bool(), true);
 
         // AND
-        assert_eq!((t & t).to_bool_var(), true);
-        assert_eq!((t & f).to_bool_var(), false);
-        assert_eq!((f & f).to_bool_var(), false);
+        assert_eq!((t & t).to_bool(), true);
+        assert_eq!((t & f).to_bool(), false);
+        assert_eq!((f & f).to_bool(), false);
 
         // OR
-        assert_eq!((t | t).to_bool_var(), true);
-        assert_eq!((t | f).to_bool_var(), true);
-        assert_eq!((f | f).to_bool_var(), false);
+        assert_eq!((t | t).to_bool(), true);
+        assert_eq!((t | f).to_bool(), true);
+        assert_eq!((f | f).to_bool(), false);
 
         // XOR
-        assert_eq!((t ^ t).to_bool_var(), false);
-        assert_eq!((t ^ f).to_bool_var(), true);
+        assert_eq!((t ^ t).to_bool(), false);
+        assert_eq!((t ^ f).to_bool(), true);
     }
 }
 
@@ -276,9 +276,9 @@ mod generic_impl_tests {
         let ct2 = Condition::<i64>::from_bool::<true>();
         let cf1 = Condition::<i64>::from_bool::<false>();
         let cf2 = Condition::<i64>::from_bool::<false>();
-        assert_eq!((ct1 & ct2).to_bool_var(), true);
-        assert_eq!((ct1 & cf1).to_bool_var(), false);
-        assert_eq!((cf1 & cf2).to_bool_var(), false);
+        assert_eq!((ct1 & ct2).to_bool(), true);
+        assert_eq!((ct1 & cf1).to_bool(), false);
+        assert_eq!((cf1 & cf2).to_bool(), false);
     }
 
     #[test]
@@ -288,10 +288,10 @@ mod generic_impl_tests {
         let cf = Condition::<i64>::from_bool::<false>();
 
         ct1 &= ct2;
-        assert_eq!(ct1.to_bool_var(), true);
+        assert_eq!(ct1.to_bool(), true);
 
         ct1 &= cf;
-        assert_eq!(ct1.to_bool_var(), false);
+        assert_eq!(ct1.to_bool(), false);
     }
 
     #[test]
@@ -301,9 +301,9 @@ mod generic_impl_tests {
         let cf1 = Condition::<i64>::from_bool::<false>();
         let cf2 = Condition::<i64>::from_bool::<false>();
 
-        assert_eq!((ct1 | ct2).to_bool_var(), true);
-        assert_eq!((ct1 | cf1).to_bool_var(), true);
-        assert_eq!((cf1 | cf2).to_bool_var(), false);
+        assert_eq!((ct1 | ct2).to_bool(), true);
+        assert_eq!((ct1 | cf1).to_bool(), true);
+        assert_eq!((cf1 | cf2).to_bool(), false);
     }
 
     #[test]
@@ -314,13 +314,13 @@ mod generic_impl_tests {
         let cf2 = Condition::<i64>::from_bool::<false>();
 
         ct1 |= ct2;
-        assert_eq!(ct1.to_bool_var(), true);
+        assert_eq!(ct1.to_bool(), true);
 
         ct1 |= cf1;
-        assert_eq!(ct1.to_bool_var(), true);
+        assert_eq!(ct1.to_bool(), true);
 
         cf1 |= cf2;
-        assert_eq!(cf1.to_bool_var(), false);
+        assert_eq!(cf1.to_bool(), false);
     }
 
     #[test]
@@ -330,9 +330,9 @@ mod generic_impl_tests {
         let cf1 = Condition::<i64>::from_bool::<false>();
         let cf2 = Condition::<i64>::from_bool::<false>();
 
-        assert_eq!((ct1 ^ ct2).to_bool_var(), false);
-        assert_eq!((ct1 | cf1).to_bool_var(), true);
-        assert_eq!((cf1 | cf2).to_bool_var(), false);
+        assert_eq!((ct1 ^ ct2).to_bool(), false);
+        assert_eq!((ct1 | cf1).to_bool(), true);
+        assert_eq!((cf1 | cf2).to_bool(), false);
     }
 
     #[test]
@@ -343,19 +343,19 @@ mod generic_impl_tests {
         let cf2 = Condition::<i64>::from_bool::<false>();
 
         ct1 ^= ct2;
-        assert_eq!(ct1.to_bool_var(), false);
+        assert_eq!(ct1.to_bool(), false);
 
         ct2 ^= cf1;
-        assert_eq!(ct2.to_bool_var(), true);
+        assert_eq!(ct2.to_bool(), true);
 
         cf1 ^= cf2;
-        assert_eq!(cf1.to_bool_var(), false);
+        assert_eq!(cf1.to_bool(), false);
     }
 
     #[test]
     fn test_not() {
         let c = Condition::<i64>::from_bool::<true>();
-        assert_eq!((!c).to_bool_var(), false);
+        assert_eq!((!c).to_bool(), false);
     }
 }
 
@@ -378,7 +378,7 @@ macro_rules! unsigned_condition_tests {
             fn assert_canonical(cond: Condition<$t>, expected: bool) {
                 let raw = cond.select(<$t>::MAX, 0);
                 assert_eq!(raw, if expected { <$t>::MAX } else { 0 });
-                assert_eq!(cond.to_bool_var(), expected);
+                assert_eq!(cond.to_bool(), expected);
             }
 
             #[test]
@@ -427,8 +427,8 @@ macro_rules! unsigned_condition_tests {
                 // bit 0 agrees with from_lsb on every boundary value
                 for v in BOUNDARY {
                     assert_eq!(
-                        Condition::<$t>::is_bit_set(v, 0).to_bool_var(),
-                        Condition::<$t>::from_lsb(v).to_bool_var()
+                        Condition::<$t>::is_bit_set(v, 0).to_bool(),
+                        Condition::<$t>::from_lsb(v).to_bool()
                     );
                 }
                 // each single-bit value reports exactly its own bit
@@ -441,8 +441,8 @@ macro_rules! unsigned_condition_tests {
                 // the top bit agrees with from_msb
                 for v in BOUNDARY {
                     assert_eq!(
-                        Condition::<$t>::is_bit_set(v, <$t>::BITS - 1).to_bool_var(),
-                        Condition::<$t>::from_msb(v).to_bool_var()
+                        Condition::<$t>::is_bit_set(v, <$t>::BITS - 1).to_bool(),
+                        Condition::<$t>::from_msb(v).to_bool()
                     );
                 }
             }
@@ -530,7 +530,7 @@ macro_rules! signed_condition_tests {
             fn assert_canonical(cond: Condition<$t>, expected: bool) {
                 let raw = cond.select(-1, 0);
                 assert_eq!(raw, if expected { -1 } else { 0 });
-                assert_eq!(cond.to_bool_var(), expected);
+                assert_eq!(cond.to_bool(), expected);
             }
 
             #[test]
@@ -559,8 +559,8 @@ macro_rules! signed_condition_tests {
                 // bit 0 agrees with from_lsb on every boundary value
                 for v in BOUNDARY {
                     assert_eq!(
-                        Condition::<$t>::is_bit_set(v, 0).to_bool_var(),
-                        Condition::<$t>::from_lsb(v).to_bool_var()
+                        Condition::<$t>::is_bit_set(v, 0).to_bool(),
+                        Condition::<$t>::from_lsb(v).to_bool()
                     );
                 }
                 // each single-bit value reports exactly its own bit
@@ -573,8 +573,8 @@ macro_rules! signed_condition_tests {
                 // the top bit agrees with is_negative
                 for v in BOUNDARY {
                     assert_eq!(
-                        Condition::<$t>::is_bit_set(v, <$t>::BITS - 1).to_bool_var(),
-                        Condition::<$t>::is_negative(v).to_bool_var()
+                        Condition::<$t>::is_bit_set(v, <$t>::BITS - 1).to_bool(),
+                        Condition::<$t>::is_negative(v).to_bool()
                     );
                 }
             }
@@ -727,10 +727,10 @@ mod signed_comparison_sweep {
     fn i32_strided_full_range() {
         for a in (i32::MIN..=i32::MAX).step_by(1 << 24) {
             for b in (i32::MIN..=i32::MAX).step_by(1 << 24) {
-                assert_eq!(Condition::<i32>::is_lt(a, b).to_bool_var(), a < b, "{a} {b}");
-                assert_eq!(Condition::<i32>::is_lte(a, b).to_bool_var(), a <= b, "{a} {b}");
-                assert_eq!(Condition::<i32>::is_gt(a, b).to_bool_var(), a > b, "{a} {b}");
-                assert_eq!(Condition::<i32>::is_gte(a, b).to_bool_var(), a >= b, "{a} {b}");
+                assert_eq!(Condition::<i32>::is_lt(a, b).to_bool(), a < b, "{a} {b}");
+                assert_eq!(Condition::<i32>::is_lte(a, b).to_bool(), a <= b, "{a} {b}");
+                assert_eq!(Condition::<i32>::is_gt(a, b).to_bool(), a > b, "{a} {b}");
+                assert_eq!(Condition::<i32>::is_gte(a, b).to_bool(), a >= b, "{a} {b}");
             }
         }
     }

@@ -176,7 +176,7 @@ macro_rules! signed_condition_impl {
             }
             /// Convert the mask to a runtime boolean. Only use this at genuine public
             /// decision points: branching on the result leaks the condition's value.
-            pub const fn to_bool_var(self) -> bool {
+            pub const fn to_bool(self) -> bool {
                 self.0 != 0
             }
         }
@@ -277,7 +277,7 @@ macro_rules! unsigned_condition_impl {
             }
             /// Convert the mask to a runtime boolean. Only use this at genuine public
             /// decision points: branching on the result leaks the condition's value.
-            pub const fn to_bool_var(self) -> bool {
+            pub const fn to_bool(self) -> bool {
                 self.0 != 0
             }
         }
