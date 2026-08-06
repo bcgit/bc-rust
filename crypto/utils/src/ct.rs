@@ -14,16 +14,14 @@ struct MaskType<T>(core::marker::PhantomData<T>);
 
 trait SupportedMaskType: sealed::Sealed {}
 
-macro_rules! supported_mask_type {
-    ($($t:ty),+) => {
-        $(
-            impl sealed::Sealed for MaskType<$t> {}
-            impl SupportedMaskType for MaskType<$t> {}
-        )+
-    };
-}
-
-supported_mask_type!(i64, u64, u32, i32);
+impl sealed::Sealed for MaskType<i64> {}
+impl SupportedMaskType for MaskType<i64> {}
+impl sealed::Sealed for MaskType<u64> {}
+impl SupportedMaskType for MaskType<u64> {}
+impl sealed::Sealed for MaskType<u32> {}
+impl SupportedMaskType for MaskType<u32> {}
+impl sealed::Sealed for MaskType<i32> {}
+impl SupportedMaskType for MaskType<i32> {}
 
 /// Helper functions for checking some condition on some data using constant-time operations.
 #[derive(Clone, Copy)]
@@ -35,8 +33,10 @@ where
 
 impl<T> Condition<T> where MaskType<T>: SupportedMaskType {}
 
-// The signed widths share one macro-generated impl, mirroring `unsigned_condition_impl!`
-// below, so that `Condition<i64>` and `Condition<i32>` are at exact method parity.
+// Each signed width is written out by hand rather than macro-generated: `cargo mutants`
+// cannot see into macro bodies, and these mask identities are the ones most worth
+// mutating. The signed widths must be edited together: `Condition<i64>` and `Condition<i32>`
+// are copies of each other modulo the width token.
 impl Condition<i64> {
     /// TRUE is the bit vector of all 1's
     pub const TRUE: Self = Self(-1);
@@ -324,10 +324,12 @@ impl Condition<i32> {
 //       (there's probably no noticeable performance difference u8 and u64 bit ops on a 64-bit machine,
 //       but there would be on a 8, 16, or 32-bit machine.)
 //
-// The unsigned widths share one macro-generated impl so that width-generic limb code can be
-// written once against identical method names. Ordering comparisons are deliberately omitted:
-// multi-word callers derive `lt` from their subtraction borrow chain and convert it with
-// `from_msb`.
+// Each unsigned width is written out by hand rather than macro-generated: `cargo mutants`
+// cannot see into macro bodies, and these mask identities are the ones most worth
+// mutating. The unsigned widths must be edited together: `Condition<u64>` and `Condition<u32>`
+// are copies of each other modulo the width token. Ordering comparisons are deliberately
+// omitted: multi-word callers derive `lt` from their subtraction borrow chain and convert it
+// with `from_msb`.
 impl Condition<u64> {
     /// TRUE is the bit vector of all 1's
     pub const TRUE: Self = Self(u64::MAX);
