@@ -328,91 +328,161 @@ impl Condition<i32> {
 // written once against identical method names. Ordering comparisons are deliberately omitted:
 // multi-word callers derive `lt` from their subtraction borrow chain and convert it with
 // `from_msb`.
-macro_rules! unsigned_condition_impl {
-    ($($t:ty),+) => {
-        $(
-        impl Condition<$t> {
-            /// TRUE is the bit vector of all 1's
-            pub const TRUE: Self = Self(<$t>::MAX);
-            /// FALSE is the bit vector of all 0's
-            pub const FALSE: Self = Self(0);
+impl Condition<u64> {
+    /// TRUE is the bit vector of all 1's
+    pub const TRUE: Self = Self(u64::MAX);
+    /// FALSE is the bit vector of all 0's
+    pub const FALSE: Self = Self(0);
 
-            /// Constant-time mask generation from a compile-time boolean.
-            ///
-            /// Unlike signed integers where we can rely on Two's Complement via negation
-            /// `-(v as i64)`, for unsigned types we must use wrapping subtraction to achieve
-            /// the all-ones bit pattern for true:
-            /// true (1) -> `0 - 1` wraps to MAX (all 1s); false (0) -> `0 - 0 = 0` (all 0s).
-            pub const fn from_bool<const VALUE: bool>() -> Self {
-                Self((0 as $t).wrapping_sub(VALUE as $t))
-            }
-            /// Constant-time mask generation from a runtime boolean.
-            pub const fn from_bool_var(value: bool) -> Self {
-                Self((0 as $t).wrapping_sub(value as $t))
-            }
-            /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
-            /// This is the parity test: `from_lsb(x)` is TRUE iff `x` is odd. It is
-            /// the `bit = 0` special case of [`Self::is_bit_set`].
-            pub const fn from_lsb(value: $t) -> Self {
-                Self((0 as $t).wrapping_sub(value & 1))
-            }
-            /// Mask from the most-significant bit: TRUE iff the top bit of `value` is set.
-            /// The signed counterpart of this mask is `is_negative`, where the top bit
-            /// carries a sign instead of a borrow/carry.
-            ///
-            /// This is the borrow/carry adaptor: the borrow word coming out of a wrapping
-            /// wide subtraction chain carries its meaning entirely in the top bit, so
-            /// `from_msb(borrow)` is the `lt` mask of that comparison with no further work.
-            pub const fn from_msb(value: $t) -> Self {
-                Self((0 as $t).wrapping_sub(value >> (<$t>::BITS - 1)))
-            }
-            /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
-            /// (the shift amount is timing-visible on some targets).
-            pub const fn is_bit_set(value: $t, bit: u32) -> Self {
-                Self::from_lsb(value >> bit)
-            }
-            /// TRUE iff `value != 0`.
-            ///
-            /// For any nonzero `x`, `x | x.wrapping_neg()` has the top bit set (either `x`
-            /// or its two's complement is >= 2^(BITS-1)); for zero both sides are zero.
-            pub const fn is_not_zero(value: $t) -> Self {
-                Self::from_msb(value | value.wrapping_neg())
-            }
-            /// TRUE iff `value == 0`.
-            pub const fn is_zero(value: $t) -> Self {
-                // Complementing the inner value maps TRUE <-> FALSE (all 1s <-> all 0s).
-                Self(!Self::is_not_zero(value).0)
-            }
-            /// TRUE iff `x == y`.
-            pub const fn is_equal(x: $t, y: $t) -> Self {
-                Self::is_zero(x ^ y)
-            }
-            /// Conditional selection: return `true_value` if the condition is true, otherwise
-            /// return `false_value`.
-            pub const fn select(self, true_value: $t, false_value: $t) -> $t {
-                (true_value & self.0) | (false_value & !self.0)
-            }
-            /// Conditionally move the source value to the destination if the condition is
-            /// true, otherwise nothing is moved.
-            pub fn mov(self, src: $t, dst: &mut $t) {
-                *dst = self.select(src, *dst);
-            }
-            /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
-            /// returns (rhs, lhs).
-            pub const fn swap(self, lhs: $t, rhs: $t) -> ($t, $t) {
-                (self.select(rhs, lhs), self.select(lhs, rhs))
-            }
-            /// Convert the mask to a runtime boolean. Only use this at genuine public
-            /// decision points: branching on the result leaks the condition's value.
-            pub const fn to_bool(self) -> bool {
-                self.0 != 0
-            }
-        }
-        )+
-    };
+    /// Constant-time mask generation from a compile-time boolean.
+    ///
+    /// Unlike signed integers where we can rely on Two's Complement via negation
+    /// `-(v as i64)`, for unsigned types we must use wrapping subtraction to achieve
+    /// the all-ones bit pattern for true:
+    /// true (1) -> `0 - 1` wraps to MAX (all 1s); false (0) -> `0 - 0 = 0` (all 0s).
+    pub const fn from_bool<const VALUE: bool>() -> Self {
+        Self(0u64.wrapping_sub(VALUE as u64))
+    }
+    /// Constant-time mask generation from a runtime boolean.
+    pub const fn from_bool_var(value: bool) -> Self {
+        Self(0u64.wrapping_sub(value as u64))
+    }
+    /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
+    /// This is the parity test: `from_lsb(x)` is TRUE iff `x` is odd. It is
+    /// the `bit = 0` special case of [`Self::is_bit_set`].
+    pub const fn from_lsb(value: u64) -> Self {
+        Self(0u64.wrapping_sub(value & 1))
+    }
+    /// Mask from the most-significant bit: TRUE iff the top bit of `value` is set.
+    /// The signed counterpart of this mask is `is_negative`, where the top bit
+    /// carries a sign instead of a borrow/carry.
+    ///
+    /// This is the borrow/carry adaptor: the borrow word coming out of a wrapping
+    /// wide subtraction chain carries its meaning entirely in the top bit, so
+    /// `from_msb(borrow)` is the `lt` mask of that comparison with no further work.
+    pub const fn from_msb(value: u64) -> Self {
+        Self(0u64.wrapping_sub(value >> (u64::BITS - 1)))
+    }
+    /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
+    /// (the shift amount is timing-visible on some targets).
+    pub const fn is_bit_set(value: u64, bit: u32) -> Self {
+        Self::from_lsb(value >> bit)
+    }
+    /// TRUE iff `value != 0`.
+    ///
+    /// For any nonzero `x`, `x | x.wrapping_neg()` has the top bit set (either `x`
+    /// or its two's complement is >= 2^(BITS-1)); for zero both sides are zero.
+    pub const fn is_not_zero(value: u64) -> Self {
+        Self::from_msb(value | value.wrapping_neg())
+    }
+    /// TRUE iff `value == 0`.
+    pub const fn is_zero(value: u64) -> Self {
+        // Complementing the inner value maps TRUE <-> FALSE (all 1s <-> all 0s).
+        Self(!Self::is_not_zero(value).0)
+    }
+    /// TRUE iff `x == y`.
+    pub const fn is_equal(x: u64, y: u64) -> Self {
+        Self::is_zero(x ^ y)
+    }
+    /// Conditional selection: return `true_value` if the condition is true, otherwise
+    /// return `false_value`.
+    pub const fn select(self, true_value: u64, false_value: u64) -> u64 {
+        (true_value & self.0) | (false_value & !self.0)
+    }
+    /// Conditionally move the source value to the destination if the condition is
+    /// true, otherwise nothing is moved.
+    pub fn mov(self, src: u64, dst: &mut u64) {
+        *dst = self.select(src, *dst);
+    }
+    /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
+    /// returns (rhs, lhs).
+    pub const fn swap(self, lhs: u64, rhs: u64) -> (u64, u64) {
+        (self.select(rhs, lhs), self.select(lhs, rhs))
+    }
+    /// Convert the mask to a runtime boolean. Only use this at genuine public
+    /// decision points: branching on the result leaks the condition's value.
+    pub const fn to_bool(self) -> bool {
+        self.0 != 0
+    }
 }
 
-unsigned_condition_impl!(u64, u32);
+impl Condition<u32> {
+    /// TRUE is the bit vector of all 1's
+    pub const TRUE: Self = Self(u32::MAX);
+    /// FALSE is the bit vector of all 0's
+    pub const FALSE: Self = Self(0);
+
+    /// Constant-time mask generation from a compile-time boolean.
+    ///
+    /// Unlike signed integers where we can rely on Two's Complement via negation
+    /// `-(v as i64)`, for unsigned types we must use wrapping subtraction to achieve
+    /// the all-ones bit pattern for true:
+    /// true (1) -> `0 - 1` wraps to MAX (all 1s); false (0) -> `0 - 0 = 0` (all 0s).
+    pub const fn from_bool<const VALUE: bool>() -> Self {
+        Self(0u32.wrapping_sub(VALUE as u32))
+    }
+    /// Constant-time mask generation from a runtime boolean.
+    pub const fn from_bool_var(value: bool) -> Self {
+        Self(0u32.wrapping_sub(value as u32))
+    }
+    /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
+    /// This is the parity test: `from_lsb(x)` is TRUE iff `x` is odd. It is
+    /// the `bit = 0` special case of [`Self::is_bit_set`].
+    pub const fn from_lsb(value: u32) -> Self {
+        Self(0u32.wrapping_sub(value & 1))
+    }
+    /// Mask from the most-significant bit: TRUE iff the top bit of `value` is set.
+    /// The signed counterpart of this mask is `is_negative`, where the top bit
+    /// carries a sign instead of a borrow/carry.
+    ///
+    /// This is the borrow/carry adaptor: the borrow word coming out of a wrapping
+    /// wide subtraction chain carries its meaning entirely in the top bit, so
+    /// `from_msb(borrow)` is the `lt` mask of that comparison with no further work.
+    pub const fn from_msb(value: u32) -> Self {
+        Self(0u32.wrapping_sub(value >> (u32::BITS - 1)))
+    }
+    /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
+    /// (the shift amount is timing-visible on some targets).
+    pub const fn is_bit_set(value: u32, bit: u32) -> Self {
+        Self::from_lsb(value >> bit)
+    }
+    /// TRUE iff `value != 0`.
+    ///
+    /// For any nonzero `x`, `x | x.wrapping_neg()` has the top bit set (either `x`
+    /// or its two's complement is >= 2^(BITS-1)); for zero both sides are zero.
+    pub const fn is_not_zero(value: u32) -> Self {
+        Self::from_msb(value | value.wrapping_neg())
+    }
+    /// TRUE iff `value == 0`.
+    pub const fn is_zero(value: u32) -> Self {
+        // Complementing the inner value maps TRUE <-> FALSE (all 1s <-> all 0s).
+        Self(!Self::is_not_zero(value).0)
+    }
+    /// TRUE iff `x == y`.
+    pub const fn is_equal(x: u32, y: u32) -> Self {
+        Self::is_zero(x ^ y)
+    }
+    /// Conditional selection: return `true_value` if the condition is true, otherwise
+    /// return `false_value`.
+    pub const fn select(self, true_value: u32, false_value: u32) -> u32 {
+        (true_value & self.0) | (false_value & !self.0)
+    }
+    /// Conditionally move the source value to the destination if the condition is
+    /// true, otherwise nothing is moved.
+    pub fn mov(self, src: u32, dst: &mut u32) {
+        *dst = self.select(src, *dst);
+    }
+    /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
+    /// returns (rhs, lhs).
+    pub const fn swap(self, lhs: u32, rhs: u32) -> (u32, u32) {
+        (self.select(rhs, lhs), self.select(lhs, rhs))
+    }
+    /// Convert the mask to a runtime boolean. Only use this at genuine public
+    /// decision points: branching on the result leaks the condition's value.
+    pub const fn to_bool(self) -> bool {
+        self.0 != 0
+    }
+}
 
 impl<T> BitAnd for Condition<T>
 where
