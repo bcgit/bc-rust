@@ -12,5 +12,6 @@ alloc = ["bouncycastle-core/alloc"]
 [dependencies]
 # The KAT test framework exercises the `Vec`/`Box`-returning trait APIs, so it always needs `alloc`.
 bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-hex = { workspace = true, default-features = false }
 
 [dev-dependencies]

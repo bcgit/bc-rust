@@ -503,14 +503,17 @@ mod keccak_tests {
     #[test]
     fn test_keccak() {
         let mut d = KeccakInternal::new(KeccakSize::_256);
-        let m_vec = hex::decode("6d657373616765").unwrap();
-        d.absorb(&m_vec);
+        const DATA_LEN: usize = 7;
+        let m_data: [u8; DATA_LEN] = hex::decode_array("6d657373616765");
+        d.absorb(&m_data);
 
         let mut out = [0u8; 32];
         d.squeeze(&mut out);
+        #[cfg(feature = "alloc")]
         println!("n1: {:x?}", &out);
 
         d.squeeze(&mut out);
+        #[cfg(feature = "alloc")]
         println!("n2: {:x?}", &out);
     }
 

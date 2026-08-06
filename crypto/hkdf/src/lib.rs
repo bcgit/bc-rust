@@ -190,7 +190,7 @@
 //! let _prk = hkdf.do_extract_final().unwrap();
 //! ```
 
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(feature = "alloc"), no_std)]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 

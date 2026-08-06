@@ -86,7 +86,7 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(feature = "alloc"), no_std)]
 
 // The entire base64 encoder/decoder API returns `String`/`Vec<u8>`, so it lives behind the
 // default-on `alloc` feature. base64 is inherently an allocating codec (there are currently no

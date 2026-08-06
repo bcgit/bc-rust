@@ -42,11 +42,13 @@ mod sha3_tests {
 
     #[test]
     fn test_static_hash() {
-        // success case -- return vec version
-        assert_eq!(SHA3_224::new().hash(&DUMMY_SEED[..512]), b"\xFE\x51\xC5\xD7\x62\x48\xE1\xE9\xD3\x01\x29\x6A\xE8\xAB\x94\x69\xD2\x86\x34\xB4\xAD\x3E\x9E\x78\xC8\xB0\x9D\x47");
-        assert_eq!(SHA3_256::new().hash(&DUMMY_SEED[..512]), b"\xD4\x72\x8E\xA5\xE9\xF3\x81\x9F\x2B\x47\x60\x15\x1A\x8F\x80\x2D\xBE\x9F\x94\x1F\xD6\xFB\x59\xB3\x71\x58\x92\x43\x65\x55\x77\x2A");
-        assert_eq!(SHA3_384::new().hash(&DUMMY_SEED[..512]), b"\xd5\x3b\x51\x68\x53\xf5\xac\xb4\xaa\xfd\xa5\x9d\x6f\x74\x0f\x69\x99\xc9\xe5\x21\x1c\x51\x03\x9c\x6d\x64\x5b\xf9\x83\xd7\xba\x0b\xdf\x12\x31\xb5\x50\x90\xb5\x5e\x35\x99\xee\x7a\xaa\x62\xd3\xbf");
-        assert_eq!(SHA3_512::new().hash(&DUMMY_SEED[..512]), b"\x58\x4c\xc7\x02\xc2\x22\x9a\x0a\xbc\x78\x9b\xfa\x64\xb4\x27\x1f\xb8\xf0\xbb\x78\x67\x15\x88\xb9\xef\x1d\x09\x3e\xa3\xd4\x72\x58\x4c\x6d\x43\xb5\x68\x33\x59\x47\x2f\x44\x1b\x33\x85\x6f\x68\x28\x59\xf0\xc3\x95\x4b\x56\x80\x8f\xd1\xfb\xa0\xb5\x9c\x9d\x19\x54");
+        #[cfg(feature = "alloc")] {
+            // success case -- return vec version
+            assert_eq!(SHA3_224::new().hash(&DUMMY_SEED[..512]), b"\xFE\x51\xC5\xD7\x62\x48\xE1\xE9\xD3\x01\x29\x6A\xE8\xAB\x94\x69\xD2\x86\x34\xB4\xAD\x3E\x9E\x78\xC8\xB0\x9D\x47");
+            assert_eq!(SHA3_256::new().hash(&DUMMY_SEED[..512]), b"\xD4\x72\x8E\xA5\xE9\xF3\x81\x9F\x2B\x47\x60\x15\x1A\x8F\x80\x2D\xBE\x9F\x94\x1F\xD6\xFB\x59\xB3\x71\x58\x92\x43\x65\x55\x77\x2A");
+            assert_eq!(SHA3_384::new().hash(&DUMMY_SEED[..512]), b"\xd5\x3b\x51\x68\x53\xf5\xac\xb4\xaa\xfd\xa5\x9d\x6f\x74\x0f\x69\x99\xc9\xe5\x21\x1c\x51\x03\x9c\x6d\x64\x5b\xf9\x83\xd7\xba\x0b\xdf\x12\x31\xb5\x50\x90\xb5\x5e\x35\x99\xee\x7a\xaa\x62\xd3\xbf");
+            assert_eq!(SHA3_512::new().hash(&DUMMY_SEED[..512]), b"\x58\x4c\xc7\x02\xc2\x22\x9a\x0a\xbc\x78\x9b\xfa\x64\xb4\x27\x1f\xb8\xf0\xbb\x78\x67\x15\x88\xb9\xef\x1d\x09\x3e\xa3\xd4\x72\x58\x4c\x6d\x43\xb5\x68\x33\x59\x47\x2f\x44\x1b\x33\x85\x6f\x68\x28\x59\xf0\xc3\x95\x4b\x56\x80\x8f\xd1\xfb\xa0\xb5\x9c\x9d\x19\x54");
+        }
 
         // success case -- output slice version
         // We're just gonna hand an output slice that's too big and the result had better get written to the beginning of it.
@@ -77,6 +79,8 @@ mod sha3_tests {
         assert!(out[32..].iter().all(|&b| b == 0));
     }
 
+    // todo: may require no_std equivalent
+    #[cfg(feature = "alloc")]
     #[test]
     fn test_do_update() {
         // success case -- return vec version
@@ -105,25 +109,28 @@ mod sha3_tests {
 
     #[test]
     fn test_partial_input() {
+
         let input_byte = 0xFFu8;
 
-        let output = SHA3_224::new()
-            .do_final_partial_bits(input_byte, 1)
-            .expect("Failed to finalize partial input");
-        assert_eq!(output, b"\x6f\x2f\xc5\x4a\x6b\x11\xa6\xda\x61\x1e\xd7\x34\x50\x5b\x9c\xab\x89\xee\xcc\x1d\xc7\xdd\x2d\xeb\xd2\x7b\xd1\xc9");
+        #[cfg(feature = "alloc")] {
+            let output = SHA3_224::new()
+                .do_final_partial_bits(input_byte, 1)
+                .expect("Failed to finalize partial input");
+            assert_eq!(output, b"\x6f\x2f\xc5\x4a\x6b\x11\xa6\xda\x61\x1e\xd7\x34\x50\x5b\x9c\xab\x89\xee\xcc\x1d\xc7\xdd\x2d\xeb\xd2\x7b\xd1\xc9");
 
-        let output = SHA3_224::new()
-            .do_final_partial_bits(input_byte, 2)
-            .expect("Failed to finalize partial input");
-        assert_eq!(output, b"\xdf\xeb\x54\xcd\x8a\x7a\x54\x90\x89\xae\x37\x09\x30\x79\x23\xb4\x91\x16\xdb\xa1\xad\x3c\xbc\x3f\xe4\x03\xb6\xe8");
+            let output = SHA3_224::new()
+                .do_final_partial_bits(input_byte, 2)
+                .expect("Failed to finalize partial input");
+            assert_eq!(output, b"\xdf\xeb\x54\xcd\x8a\x7a\x54\x90\x89\xae\x37\x09\x30\x79\x23\xb4\x91\x16\xdb\xa1\xad\x3c\xbc\x3f\xe4\x03\xb6\xe8");
 
-        // ..
+            // ..
 
-        let output = SHA3_224::new()
-            .do_final_partial_bits(input_byte, 7)
-            .expect("Failed to finalize partial input");
-        assert_eq!(output, b"\x81\x67\x07\x1f\xfc\x12\xaf\x71\x65\x06\x01\x4e\x99\x49\xe9\xa8\x9d\x11\x26\x04\x93\xf9\x88\x09\x8c\xbb\x7f\x35");
-        // println!("{:2x?}", output);
+            let output = SHA3_224::new()
+                .do_final_partial_bits(input_byte, 7)
+                .expect("Failed to finalize partial input");
+            assert_eq!(output, b"\x81\x67\x07\x1f\xfc\x12\xaf\x71\x65\x06\x01\x4e\x99\x49\xe9\xa8\x9d\x11\x26\x04\x93\xf9\x88\x09\x8c\xbb\x7f\x35");
+            // println!("{:2x?}", output);
+        }
 
         // success case -- output slice version
         let mut output = vec![0u8; SHA3_224::OUTPUT_LEN];
@@ -162,49 +169,52 @@ mod sha3_tests {
 
         let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED[..32]).unwrap();
 
-        // Without additional input
-        let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_len(), 32);
-        let expected_key = KeyMaterial256::from_bytes(b"\x05\x0a\x48\x73\x3b\xd5\xc2\x75\x6b\xa9\x5c\x58\x28\xcc\x83\xee\x16\xfa\xbc\xd3\xc0\x86\x88\x5b\x77\x44\xf8\x4a\x0f\x9e\x0d\x94").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHA3_256>(&key_material, &[0u8; 0], &expected_key);
+        // todo: may require no_std equivalent
+        #[cfg(feature = "alloc")] {
+            // Without additional input
+            let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
+            assert_eq!(derived_key.key_len(), 32);
+            let expected_key = KeyMaterial256::from_bytes(b"\x05\x0a\x48\x73\x3b\xd5\xc2\x75\x6b\xa9\x5c\x58\x28\xcc\x83\xee\x16\xfa\xbc\xd3\xc0\x86\x88\x5b\x77\x44\xf8\x4a\x0f\x9e\x0d\x94").unwrap();
+            assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
+            testframework.test_kdf_single_key::<SHA3_256>(&key_material, &[0u8; 0], &expected_key);
 
-        // With additional input
-        let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 8]).unwrap();
-        let expected_key = KeyMaterial256::from_bytes(b"\xe9\x50\x00\xce\x8a\xbd\x3e\x3f\x21\x01\xcd\xee\x5c\x97\xc0\x69\xa9\x34\x2c\x2e\x2c\x5d\x4b\xd1\x9b\x61\x06\xfc\x52\x43\x33\x4a").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHA3_256>(&key_material, &[0u8; 8], &expected_key);
+            // With additional input
+            let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 8]).unwrap();
+            let expected_key = KeyMaterial256::from_bytes(b"\xe9\x50\x00\xce\x8a\xbd\x3e\x3f\x21\x01\xcd\xee\x5c\x97\xc0\x69\xa9\x34\x2c\x2e\x2c\x5d\x4b\xd1\x9b\x61\x06\xfc\x52\x43\x33\x4a").unwrap();
+            assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
+            testframework.test_kdf_single_key::<SHA3_256>(&key_material, &[0u8; 8], &expected_key);
 
-        // derive_key_from_multiple
-        let keys = [&key_material, &key_material];
-        let derived_key = SHA3_256::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        let mut expected_key = KeyMaterial256::from_bytes(b"\x5d\x22\x75\xda\x43\xad\x31\xf6\xef\x5c\x26\x4f\xb2\x6b\x99\x6a\x49\x2b\x77\x56\x19\xdd\x5a\x23\x27\x06\xb3\x94\xa0\x9f\xe2\xa7").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_multiple_key::<SHA3_256>(&keys, &[0u8; 0], &mut expected_key);
+            // derive_key_from_multiple
+            let keys = [&key_material, &key_material];
+            let derived_key = SHA3_256::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
+            let mut expected_key = KeyMaterial256::from_bytes(b"\x5d\x22\x75\xda\x43\xad\x31\xf6\xef\x5c\x26\x4f\xb2\x6b\x99\x6a\x49\x2b\x77\x56\x19\xdd\x5a\x23\x27\x06\xb3\x94\xa0\x9f\xe2\xa7").unwrap();
+            assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
+            testframework.test_kdf_multiple_key::<SHA3_256>(&keys, &[0u8; 0], &mut expected_key);
 
-        // test SHA3_224
-        let derived_key = SHA3_224::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        let expected_key = KeyMaterial256::from_bytes(b"\xbf\xc9\xc1\xe8\x93\x9a\xee\x95\x3c\xa0\xd4\x25\xa2\xf0\xcb\xdd\x2d\x18\x02\x5d\x5d\x6b\x79\x8f\x1c\x81\x50\xb9").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHA3_224>(&key_material, &[0u8; 0], &expected_key);
+            // test SHA3_224
+            let derived_key = SHA3_224::new().derive_key(&key_material, &[0u8; 0]).unwrap();
+            let expected_key = KeyMaterial256::from_bytes(b"\xbf\xc9\xc1\xe8\x93\x9a\xee\x95\x3c\xa0\xd4\x25\xa2\xf0\xcb\xdd\x2d\x18\x02\x5d\x5d\x6b\x79\x8f\x1c\x81\x50\xb9").unwrap();
+            assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
+            testframework.test_kdf_single_key::<SHA3_224>(&key_material, &[0u8; 0], &expected_key);
 
-        // test SHA3_256
-        let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        let expected_key = KeyMaterial256::from_bytes(b"\x05\x0a\x48\x73\x3b\xd5\xc2\x75\x6b\xa9\x5c\x58\x28\xcc\x83\xee\x16\xfa\xbc\xd3\xc0\x86\x88\x5b\x77\x44\xf8\x4a\x0f\x9e\x0d\x94").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHA3_256>(&key_material, &[0u8; 0], &expected_key);
+            // test SHA3_256
+            let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
+            let expected_key = KeyMaterial256::from_bytes(b"\x05\x0a\x48\x73\x3b\xd5\xc2\x75\x6b\xa9\x5c\x58\x28\xcc\x83\xee\x16\xfa\xbc\xd3\xc0\x86\x88\x5b\x77\x44\xf8\x4a\x0f\x9e\x0d\x94").unwrap();
+            assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
+            testframework.test_kdf_single_key::<SHA3_256>(&key_material, &[0u8; 0], &expected_key);
 
-        // test SHA3_384
-        let derived_key = SHA3_384::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        let expected_key = KeyMaterial512::from_bytes(b"\xe0\x86\xa2\xb6\xa6\x9b\xb6\xfa\xe3\x7c\xaa\x70\x73\x57\x23\xe7\xcc\x8a\xe2\x18\x37\x88\xfb\xb4\xa5\xf1\xcc\xac\xd8\x32\x26\x85\x2c\xa6\xfa\xff\x50\x3e\x12\xff\x95\x42\x3f\x94\xf8\x72\xdd\xa3").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHA3_384>(&key_material, &[0u8; 0], &expected_key);
+            // test SHA3_384
+            let derived_key = SHA3_384::new().derive_key(&key_material, &[0u8; 0]).unwrap();
+            let expected_key = KeyMaterial512::from_bytes(b"\xe0\x86\xa2\xb6\xa6\x9b\xb6\xfa\xe3\x7c\xaa\x70\x73\x57\x23\xe7\xcc\x8a\xe2\x18\x37\x88\xfb\xb4\xa5\xf1\xcc\xac\xd8\x32\x26\x85\x2c\xa6\xfa\xff\x50\x3e\x12\xff\x95\x42\x3f\x94\xf8\x72\xdd\xa3").unwrap();
+            assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
+            testframework.test_kdf_single_key::<SHA3_384>(&key_material, &[0u8; 0], &expected_key);
 
-        // test SHA3_512
-        let derived_key = SHA3_512::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        let expected_key = KeyMaterial512::from_bytes(b"\xcb\xd3\xf6\xee\xba\x67\x6b\x21\xe0\xf2\xc4\x75\x22\x29\x24\x82\xfd\x83\x0f\x33\x0c\x1d\x84\xa7\x94\xbb\x94\x72\x8b\x2d\x93\xfe\xbe\x4c\x18\xea\xe5\xa7\xe0\x17\xe3\x5f\xa0\x90\xde\x24\x26\x2e\x70\x95\x1a\xd1\xd7\xdf\xb3\xa8\xc9\x6d\x11\x34\xfb\x18\x79\xf2").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHA3_512>(&key_material, &[0u8; 0], &expected_key);
+            // test SHA3_512
+            let derived_key = SHA3_512::new().derive_key(&key_material, &[0u8; 0]).unwrap();
+            let expected_key = KeyMaterial512::from_bytes(b"\xcb\xd3\xf6\xee\xba\x67\x6b\x21\xe0\xf2\xc4\x75\x22\x29\x24\x82\xfd\x83\x0f\x33\x0c\x1d\x84\xa7\x94\xbb\x94\x72\x8b\x2d\x93\xfe\xbe\x4c\x18\xea\xe5\xa7\xe0\x17\xe3\x5f\xa0\x90\xde\x24\x26\x2e\x70\x95\x1a\xd1\xd7\xdf\xb3\xa8\xc9\x6d\x11\x34\xfb\x18\x79\xf2").unwrap();
+            assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
+            testframework.test_kdf_single_key::<SHA3_512>(&key_material, &[0u8; 0], &expected_key);
+        }
 
         // success case -- output slice version
         let mut derived_key = KeyMaterial256::new();
@@ -245,6 +255,8 @@ mod sha3_tests {
         assert_eq!(&derived_key.ref_to_bytes()[32..], &[0u8; 0]);
     }
 
+    // todo: may require no_std equivalent
+    #[cfg(feature = "alloc")]
     #[test]
     fn kdf_input_entropy() {
         // This is essentially testing the bounds in FIPS 202 Table 3
@@ -339,6 +351,8 @@ mod sha3_tests {
         assert_eq!(derived_key.security_strength(), SecurityStrength::None);
     }
 
+    // todo: may require no_std equivalent
+    #[cfg(feature = "alloc")]
     #[test]
     fn kdf_key_type_conversions() {
         // This will fail because the input is automatically tagged as BytesLowEntropy,
@@ -391,11 +405,14 @@ mod sha3_tests {
         assert_eq!(KDF::max_security_strength(&SHA3_512::default()), SecurityStrength::_256bit);
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn run_kats() {
         run_test_vectors(read_test_vectors("tests/data/SHA3TestVectors.txt"));
     }
 
+    // todo: may require no_std equivalent
+    #[cfg(feature = "alloc")]
     #[test]
     fn serializable_state() {
         use bouncycastle_core::errors::SuspendableError;
@@ -453,6 +470,8 @@ mod sha3_tests {
         }
     }
 
+    // todo: may require no_std equivalent
+    #[cfg(feature = "alloc")]
     fn run_test_vectors(test_vectors: Vec<TestCase>) {
         for tc in test_vectors {
             match tc.algorithm {
@@ -465,6 +484,8 @@ mod sha3_tests {
         }
     }
 
+    // todo: may require no_std equivalent
+    #[cfg(feature = "alloc")]
     fn run_test_case(tc: TestCase, mut sha3: impl Hash) {
         let partial_bits = tc.bits % 8;
         let output: Vec<u8>;
@@ -484,7 +505,7 @@ mod sha3_tests {
 /** Constant helpers **/
 
 pub(crate) mod sha3_test_helpers {
-    use bouncycastle_hex as hex;
+    use bouncycastle_core_test_framework::no_std_utils as no_std_utils;
     use std::fs;
 
     const SAMPLE_OF: &str = " sample of ";
@@ -549,7 +570,7 @@ pub(crate) mod sha3_test_helpers {
                     block.append(&mut Vec::from(line));
                     i += 1;
                 }
-                let hash = hex::decode(&*String::from_utf8(block).unwrap()).unwrap();
+                let hash = no_std_utils::hex_decode(&*String::from_utf8(block).unwrap()).unwrap();
 
                 let v = TestCase { algorithm, bits, msg, hash };
                 test_vectors.push(v);

@@ -18,6 +18,7 @@ pub mod hash;
 pub mod kdf;
 pub mod kem;
 pub mod mac;
+pub mod no_std_utils;
 pub mod signature;
 pub mod suspendable_state;
 pub mod symmetric_ciphers;
