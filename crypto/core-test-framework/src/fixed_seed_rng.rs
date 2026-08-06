@@ -57,6 +57,7 @@ impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
         Ok(u32::from_le_bytes(buf))
     }
 
+    #[cfg(feature = "alloc")]
     fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
         let mut out = vec![0u8; len];
         for slot in out.iter_mut() {

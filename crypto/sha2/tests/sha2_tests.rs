@@ -90,6 +90,8 @@ mod sha2_tests {
         assert_eq!(SHA512::default().max_security_strength(), SecurityStrength::_256bit);
     }
 
+    // todo: may require no_std equivalent
+    #[cfg(feature = "alloc")]
     #[test]
     fn suspendable_state() {
         use bouncycastle_core::traits::Suspendable;

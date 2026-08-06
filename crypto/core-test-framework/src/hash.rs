@@ -27,9 +27,11 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
-        /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
-        let output_vec = H::default().hash(input);
-        assert_eq!(output_vec, expected_output);
+        #[cfg(feature = "alloc")] {
+            /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
+            let output_vec = H::default().hash(input);
+            assert_eq!(output_vec, expected_output);
+        }
 
         /*** fn hash_out(self, data: &[u8], output: &mut [u8]) -> Result<usize, HashError> ***/
         let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
@@ -50,35 +52,41 @@ impl TestFrameworkHash {
         assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "do_final_array digest mismatch");
         assert!(arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0), "do_final_array tail not zero-padded");
 
-        /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
-        /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
-
-        let mut message_digest = H::default();
-        message_digest.do_update(input);
-        let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
-
-        for length in 1..output_buf.len() {
-            let mut truncated = vec![0_u8; length];
+        // todo: may require no_std equivalent
+        #[cfg(feature = "alloc")] {
+            /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
+            /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
 
             let mut message_digest = H::default();
             message_digest.do_update(input);
-            message_digest.do_final_out(&mut truncated);
+            let output_buf = message_digest.do_final();
+            assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
-            assert_eq!(
-                &expected_output[0..length],
-                &truncated,
-                "Incorrect output for input (update_byte) / truncated: {length}"
-            );
+            for length in 1..output_buf.len() {
+                let mut truncated = vec![0_u8; length];
+
+                let mut message_digest = H::default();
+                message_digest.do_update(input);
+                message_digest.do_final_out(&mut truncated);
+
+                assert_eq!(
+                    &expected_output[0..length],
+                    &truncated,
+                    "Incorrect output for input (update_byte) / truncated: {length}"
+                );
+            }
         }
 
-        /*** Test breaking the message into multiple do_update's ***/
-        let mut message_digest = H::default();
-        for chunk in input.chunks(16) {
-            message_digest.do_update(chunk);
+        // todo: may require no_std equivalent
+        #[cfg(feature = "alloc")] {
+            /*** Test breaking the message into multiple do_update's ***/
+            let mut message_digest = H::default();
+            for chunk in input.chunks(16) {
+                message_digest.do_update(chunk);
+            }
+            let output_buf = message_digest.do_final();
+            assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
         }
-        let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
         /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
         /*** fn do_final_out(self, output: &mut [u8]) -> Result<usize, HashError> ***/

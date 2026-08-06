@@ -268,21 +268,24 @@ impl TestFrameworkSignature {
             _ => panic!("Unexpected error"),
         }
 
-        // sign_ph
-        let (pk, sk) = keygen().unwrap();
-        let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
-        let sig_val = PHSIGNER::sign_ph(&sk, &ph, None).unwrap();
-        PHVERIFIER::verify(&pk, msg, None, &sig_val).unwrap();
-        PHVERIFIER::verify_ph(&pk, &ph, None, &sig_val).unwrap();
+        // todo: may require no_std equivalent
+        #[cfg(feature = "alloc")] {
+            // sign_ph
+            let (pk, sk) = keygen().unwrap();
+            let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
+            let sig_val = PHSIGNER::sign_ph(&sk, &ph, None).unwrap();
+            PHVERIFIER::verify(&pk, msg, None, &sig_val).unwrap();
+            PHVERIFIER::verify_ph(&pk, &ph, None, &sig_val).unwrap();
 
-        // sign_ph_out
-        let (pk, sk) = keygen().unwrap();
-        let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
-        let mut sig_val = [0u8; SIG_LEN];
-        let bytes_written = PHSIGNER::sign_ph_out(&sk, &ph, None, &mut sig_val).unwrap();
-        assert_eq!(bytes_written, SIG_LEN);
-        PHVERIFIER::verify_ph(&pk, &ph, None, &sig_val).unwrap();
-        PHVERIFIER::verify(&pk, msg, None, &sig_val).unwrap();
+            // sign_ph_out
+            let (pk, sk) = keygen().unwrap();
+            let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
+            let mut sig_val = [0u8; SIG_LEN];
+            let bytes_written = PHSIGNER::sign_ph_out(&sk, &ph, None, &mut sig_val).unwrap();
+            assert_eq!(bytes_written, SIG_LEN);
+            PHVERIFIER::verify_ph(&pk, &ph, None, &sig_val).unwrap();
+            PHVERIFIER::verify(&pk, msg, None, &sig_val).unwrap();
+        }
     }
 }
 
