@@ -806,6 +806,32 @@ mod signed_comparison_sweep {
 #[cfg(test)]
 mod ct_bytes_tests {
     #[test]
+    fn test_ct_eq_bytes() {
+        use bouncycastle_utils::ct::ct_eq_bytes;
+
+        // equal inputs, including the empty slice
+        assert!(ct_eq_bytes(&[], &[]));
+        assert!(ct_eq_bytes(&[0x42], &[0x42]));
+        assert!(ct_eq_bytes(&[0xAA; 32], &[0xAA; 32]));
+
+        // a length mismatch is never equal, even when the shorter is a prefix
+        assert!(!ct_eq_bytes(&[], &[0]));
+        assert!(!ct_eq_bytes(&[1, 2, 3], &[1, 2]));
+
+        // a differing byte anywhere must be detected: first, last, and single-bit-only
+        let a = [0xAA; 32];
+        let mut b = [0xAA; 32];
+        b[0] = 0xAB;
+        assert!(!ct_eq_bytes(&a, &b));
+        b[0] = 0xAA;
+        b[31] = 0xAB;
+        assert!(!ct_eq_bytes(&a, &b));
+        b[31] = 0xAA;
+        b[15] ^= 0x80;
+        assert!(!ct_eq_bytes(&a, &b));
+    }
+
+    #[test]
     fn test_ct_eq_zero_bytes() {
         use bouncycastle_utils::ct::ct_eq_zero_bytes;
 
