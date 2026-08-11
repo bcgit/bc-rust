@@ -10,6 +10,7 @@ Give a detailed explanation:
 - What did you do?
 - Why did you choose this approach?
 - What alternatives did you consider?
+- Did you add or update any tests to account for these changes?
 - Is there anything else the reviewer should keep in mind?
 
 ## Scope and Risk
@@ -17,6 +18,9 @@ Give a detailed explanation:
 - What runtime behaviors could be impacted?
 - How likely is it that there could be unexpected regressions?
 - What could go wrong in the worst-possible scenario?
+
+## Validation
+- Please describe which concrete steps a reviewer could perform to validate that your change is working correctly
 
 ## AI Usage Statement
 Did you use AI in creating this pull request:
