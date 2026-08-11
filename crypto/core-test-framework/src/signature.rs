@@ -269,7 +269,8 @@ impl TestFrameworkSignature {
         }
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             // sign_ph
             let (pk, sk) = keygen().unwrap();
             let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();

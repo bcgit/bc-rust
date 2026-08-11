@@ -27,7 +27,8 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
             let output_vec = H::default().hash(input);
             assert_eq!(output_vec, expected_output);
@@ -50,10 +51,14 @@ impl TestFrameworkHash {
         message_digest.do_update(input);
         let arr: [u8; 64] = message_digest.do_final_array();
         assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "do_final_array digest mismatch");
-        assert!(arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0), "do_final_array tail not zero-padded");
+        assert!(
+            arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0),
+            "do_final_array tail not zero-padded"
+        );
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
             /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
 
@@ -78,7 +83,8 @@ impl TestFrameworkHash {
         }
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** Test breaking the message into multiple do_update's ***/
             let mut message_digest = H::default();
             for chunk in input.chunks(16) {

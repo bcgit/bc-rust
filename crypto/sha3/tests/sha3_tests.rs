@@ -42,7 +42,8 @@ mod sha3_tests {
 
     #[test]
     fn test_static_hash() {
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             // success case -- return vec version
             assert_eq!(SHA3_224::new().hash(&DUMMY_SEED[..512]), b"\xFE\x51\xC5\xD7\x62\x48\xE1\xE9\xD3\x01\x29\x6A\xE8\xAB\x94\x69\xD2\x86\x34\xB4\xAD\x3E\x9E\x78\xC8\xB0\x9D\x47");
             assert_eq!(SHA3_256::new().hash(&DUMMY_SEED[..512]), b"\xD4\x72\x8E\xA5\xE9\xF3\x81\x9F\x2B\x47\x60\x15\x1A\x8F\x80\x2D\xBE\x9F\x94\x1F\xD6\xFB\x59\xB3\x71\x58\x92\x43\x65\x55\x77\x2A");
@@ -109,10 +110,10 @@ mod sha3_tests {
 
     #[test]
     fn test_partial_input() {
-
         let input_byte = 0xFFu8;
 
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             let output = SHA3_224::new()
                 .do_final_partial_bits(input_byte, 1)
                 .expect("Failed to finalize partial input");
@@ -170,7 +171,8 @@ mod sha3_tests {
         let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED[..32]).unwrap();
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             // Without additional input
             let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
             assert_eq!(derived_key.key_len(), 32);
@@ -505,7 +507,7 @@ mod sha3_tests {
 /** Constant helpers **/
 
 pub(crate) mod sha3_test_helpers {
-    use bouncycastle_core_test_framework::no_std_utils as no_std_utils;
+    use bouncycastle_core_test_framework::no_std_utils;
     use std::fs;
 
     const SAMPLE_OF: &str = " sample of ";

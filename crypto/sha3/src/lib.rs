@@ -31,7 +31,7 @@
 //! for chunk in data.chunks(16) {
 //!     sha3.do_update(chunk);
 //! }
-//! 
+//!
 //! #[cfg(feature = "alloc")]
 //! let output: Vec<u8> = sha3.do_final();
 //! ```

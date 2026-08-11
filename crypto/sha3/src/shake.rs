@@ -1,7 +1,7 @@
 use crate::SHAKEParams;
 use crate::keccak::{
-    KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN,
-    deserialize_sha3_family_state, serialize_sha3_family_state,
+    KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
+    serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::key_material;

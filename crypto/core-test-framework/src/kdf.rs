@@ -22,7 +22,8 @@ impl TestFrameworkKDF {
         additional_input: &[u8],
         expected_output: &impl KeyMaterialTrait,
     ) {
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** Test derive_key() ***/
             let kdf = H::default();
             let output = kdf.derive_key(key, additional_input).unwrap();
@@ -43,7 +44,8 @@ impl TestFrameworkKDF {
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** Test that additional_input changes the output ***/
             let out_key1 = H::default().derive_key(key, &[0u8; 0]).unwrap();
             let out_key2 = H::default().derive_key(key, b"some additional input").unwrap();
@@ -64,7 +66,8 @@ impl TestFrameworkKDF {
         // so we can't test extendable output generically for all KDFs.
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** Test entropy mapping ***/
 
             // Zeroized -> Zeroized
@@ -85,7 +88,8 @@ impl TestFrameworkKDF {
 
             // BytesFullEntropy -> BytesLowEntropy if not enough to fill the hash block
             let low_entropy_key =
-                KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom).unwrap();
+                KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom)
+                    .unwrap();
             assert_eq!(low_entropy_key.key_type(), KeyType::CryptographicRandom);
             let out_key = H::default().derive_key(&low_entropy_key, &[0u8; 10]).unwrap();
             assert_eq!(out_key.key_type(), KeyType::Unknown);
@@ -93,7 +97,8 @@ impl TestFrameworkKDF {
 
             // BytesFullEntropy -> BytesFullEntropy
             let full_entropy_key =
-                KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
+                KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom)
+                    .unwrap();
             assert_eq!(full_entropy_key.key_type(), KeyType::CryptographicRandom);
             let out_key = H::default().derive_key(&full_entropy_key, &[0u8; 10]).unwrap();
             assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
@@ -107,7 +112,8 @@ impl TestFrameworkKDF {
         additional_input: &[u8],
         expected_output: &mut impl KeyMaterialTrait,
     ) {
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** test derive_key_from_multiple() ***/
             let kdf = H::default();
 
@@ -133,7 +139,8 @@ impl TestFrameworkKDF {
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** Test that additional_input changes the output ***/
             let out_key1 = H::default().derive_key_from_multiple(keys, &[0u8; 0]).unwrap();
             let out_key2 =
@@ -153,7 +160,8 @@ impl TestFrameworkKDF {
         assert_eq!(output.ref_to_bytes(), &expected_output.ref_to_bytes()[..10]);
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             /*** Test entropy mapping ***/
 
             // Zeroized -> Zeroized
@@ -176,7 +184,8 @@ impl TestFrameworkKDF {
 
             // BytesFullEntropy -> BytesLowEntropy if not enough to fill the hash block
             let low_entropy_key =
-                KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom).unwrap();
+                KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom)
+                    .unwrap();
             assert_eq!(low_entropy_key.key_type(), KeyType::CryptographicRandom);
             let keys = [&zeroized_key, &low_entropy_key];
             let out_key = H::default().derive_key_from_multiple(&keys, &[0u8; 10]).unwrap();
@@ -186,7 +195,8 @@ impl TestFrameworkKDF {
             // BytesFullEntropy -> BytesFullEntropy
             let zeroized64_key = KeyMaterial512::new();
             let full_entropy_key =
-                KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
+                KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom)
+                    .unwrap();
             assert_eq!(full_entropy_key.key_type(), KeyType::CryptographicRandom);
             let keys = [&zeroized64_key, &full_entropy_key];
             let out_key = H::default().derive_key_from_multiple(&keys, &[0u8; 10]).unwrap();

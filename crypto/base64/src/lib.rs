@@ -82,10 +82,8 @@
 //     /// "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_="
 //     URLSafe,
 
-
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
-
 #![cfg_attr(not(feature = "alloc"), no_std)]
 
 // The entire base64 encoder/decoder API returns `String`/`Vec<u8>`, so it lives behind the
@@ -97,7 +95,6 @@ extern crate alloc;
 use alloc::{string::String, vec, vec::Vec};
 
 #[cfg(feature = "alloc")]
-
 use bouncycastle_utils::ct::Condition;
 
 /// One-shot encode from bytes to a base64-encoded string using a constant-time implementation.

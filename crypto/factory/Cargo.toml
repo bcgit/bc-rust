@@ -19,4 +19,4 @@ bouncycastle-rng = { workspace = true, features = ["alloc"] }
 [dev-dependencies]
 bouncycastle-core-test-framework = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
-bouncycastle-hex.workspace = true
+bouncycastle-hex = { workspace = true, default-features = false }

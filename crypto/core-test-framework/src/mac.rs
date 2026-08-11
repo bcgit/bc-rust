@@ -27,7 +27,8 @@ impl TestFrameworkMAC {
         input: &[u8],
         expected_output: &[u8],
     ) {
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             // Test ::mac()
             let out = M::new_allow_weak_key(key).unwrap().mac(input);
             assert_eq!(out, expected_output);
@@ -56,7 +57,8 @@ impl TestFrameworkMAC {
         assert!(M::new_allow_weak_key(key).unwrap().verify(input, expected_output));
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             // Test .new(), .do_update(), .do_mac_final()
             // At the same time, test .output_len()
             let mut mac = M::new_allow_weak_key(key).unwrap();
@@ -74,12 +76,19 @@ impl TestFrameworkMAC {
         // in the first output_len bytes with a zero-padded tail.
         let arr: [u8; 64] = M::new_allow_weak_key(key).unwrap().mac_array(input).unwrap();
         assert_eq!(&arr[..expected_output.len()], expected_output, "mac_array digest mismatch");
-        assert!(arr[expected_output.len()..].iter().all(|&b| b == 0), "mac_array tail not zero-padded");
+        assert!(
+            arr[expected_output.len()..].iter().all(|&b| b == 0),
+            "mac_array tail not zero-padded"
+        );
 
         let mut mac = M::new_allow_weak_key(key).unwrap();
         mac.do_update(input);
         let arr: [u8; 64] = mac.do_final_array().unwrap();
-        assert_eq!(&arr[..expected_output.len()], expected_output, "do_final_array digest mismatch");
+        assert_eq!(
+            &arr[..expected_output.len()],
+            expected_output,
+            "do_final_array digest mismatch"
+        );
         assert!(
             arr[expected_output.len()..].iter().all(|&b| b == 0),
             "do_final_array tail not zero-padded"
@@ -143,7 +152,8 @@ impl TestFrameworkMAC {
         .unwrap();
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")] {
+        #[cfg(feature = "alloc")]
+        {
             // init
             assert!(
                 low_security_key.security_strength()
@@ -151,7 +161,8 @@ impl TestFrameworkMAC {
             );
             // complains at first
             match M::new(&low_security_key) {
-                Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
+                Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */
+                }
                 _ => {
                     panic!(
                         "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"
