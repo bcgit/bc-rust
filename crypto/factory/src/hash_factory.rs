@@ -1,7 +1,9 @@
-//! Hash factory for creating instances of algorithms that implement the [`Hash`] trait.
+//! Hash factory for creating instances of algorithms that implement the
+//! [`bouncycastle_core::traits::Hash`] trait.
 //!
 //! As with all Factory objects, this implements constructions from strings and defaults, and
-//! returns a [`HashFactory`] object which itself implements the [`Hash`] trait as a pass-through to the underlying algorithm.
+//! returns a [`HashFactory`] object which itself implements the [`bouncycastle_core::traits::Hash`]
+//! trait as a pass-through to the underlying algorithm.
 //!
 //! Example usage:
 //! ```
@@ -26,70 +28,40 @@
 //! let output: Vec<u8> = h.hash(data);
 //! ```
 
-use crate::{AlgorithmFactory, FactoryError};
-use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
-use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, SecurityStrength};
+use bouncycastle_factory_macros::{AlgorithmFactory, Hash};
 use bouncycastle_sha2 as sha2;
-use bouncycastle_sha2::{SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_NAME};
 use bouncycastle_sha3 as sha3;
-use bouncycastle_sha3::{SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME};
 
-/// Wrapper object for all algorithms that impl [`Hash`].
+/// Wrapper object for all algorithms that impl [`bouncycastle_core::traits::Hash`].
 /// Note: no SHAKE because SHAKE is not NIST approved as a hash function. See FIPS 202 section A.2.
+#[derive(Hash, AlgorithmFactory)]
 #[non_exhaustive]
 pub enum HashFactory {
     ///
+    #[factory(name = sha2::SHA224_NAME)]
     SHA224(sha2::SHA224),
     ///
+    #[factory(name = sha2::SHA256_NAME)]
     SHA256(sha2::SHA256),
     ///
+    #[factory(name = sha2::SHA384_NAME)]
     SHA384(sha2::SHA384),
     ///
+    #[factory(name = sha2::SHA512_NAME)]
     SHA512(sha2::SHA512),
     ///
+    #[factory(name = sha3::SHA3_224_NAME)]
     SHA3_224(sha3::SHA3_224),
     ///
+    #[factory(name = sha3::SHA3_256_NAME, default_128_bit)]
     SHA3_256(sha3::SHA3_256),
     ///
+    #[factory(name = sha3::SHA3_384_NAME)]
     SHA3_384(sha3::SHA3_384),
     ///
+    #[factory(name = sha3::SHA3_512_NAME, default_256_bit)]
     SHA3_512(sha3::SHA3_512),
-}
-
-impl Default for HashFactory {
-    fn default() -> HashFactory {
-        Self::SHA3_256(sha3::SHA3_256::new())
-    }
-}
-
-impl AlgorithmFactory for HashFactory {
-    fn default_128_bit() -> HashFactory {
-        Self::SHA3_256(sha3::SHA3_256::new())
-    }
-    fn default_256_bit() -> HashFactory {
-        Self::SHA3_512(sha3::SHA3_512::new())
-    }
-
-    fn new(alg_name: &str) -> Result<Self, FactoryError> {
-        match alg_name {
-            DEFAULT => Ok(Self::default()),
-            DEFAULT_128_BIT => Ok(Self::default_128_bit()),
-            DEFAULT_256_BIT => Ok(Self::default_256_bit()),
-            SHA224_NAME => Ok(Self::SHA224(sha2::SHA224::new())),
-            SHA256_NAME => Ok(Self::SHA256(sha2::SHA256::new())),
-            SHA384_NAME => Ok(Self::SHA384(sha2::SHA384::new())),
-            SHA512_NAME => Ok(Self::SHA512(sha2::SHA512::new())),
-            SHA3_224_NAME => Ok(Self::SHA3_224(sha3::SHA3_224::new())),
-            SHA3_256_NAME => Ok(Self::SHA3_256(sha3::SHA3_256::new())),
-            SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),
-            SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
-            _ => Err(FactoryError::UnsupportedAlgorithm(format!(
-                "The algorithm: \"{}\" is not a known Hash",
-                alg_name
-            ))),
-        }
-    }
 }
 
 // TODO -- this is broken.
@@ -99,157 +71,4 @@ impl AlgorithmFactory for HashFactory {
 impl Algorithm for HashFactory {
     const ALG_NAME: &'static str = "TODO";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
-}
-
-impl Hash for HashFactory {
-    fn block_bitlen(&self) -> usize {
-        match self {
-            Self::SHA224(h) => h.block_bitlen(),
-            Self::SHA256(h) => h.block_bitlen(),
-            Self::SHA384(h) => h.block_bitlen(),
-            Self::SHA512(h) => h.block_bitlen(),
-            Self::SHA3_224(h) => h.block_bitlen(),
-            Self::SHA3_256(h) => h.block_bitlen(),
-            Self::SHA3_384(h) => h.block_bitlen(),
-            Self::SHA3_512(h) => h.block_bitlen(),
-        }
-    }
-
-    fn output_len(&self) -> usize {
-        match self {
-            Self::SHA224(h) => h.output_len(),
-            Self::SHA256(h) => h.output_len(),
-            Self::SHA384(h) => h.output_len(),
-            Self::SHA512(h) => h.output_len(),
-            Self::SHA3_224(h) => h.output_len(),
-            Self::SHA3_256(h) => h.output_len(),
-            Self::SHA3_384(h) => h.output_len(),
-            Self::SHA3_512(h) => h.output_len(),
-        }
-    }
-
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            Self::SHA224(h) => h.hash(data),
-            Self::SHA256(h) => h.hash(data),
-            Self::SHA384(h) => h.hash(data),
-            Self::SHA512(h) => h.hash(data),
-            Self::SHA3_224(h) => h.hash(data),
-            Self::SHA3_256(h) => h.hash(data),
-            Self::SHA3_384(h) => h.hash(data),
-            Self::SHA3_512(h) => h.hash(data),
-        }
-    }
-
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        match self {
-            Self::SHA224(h) => h.hash_out(data, output),
-            Self::SHA256(h) => h.hash_out(data, output),
-            Self::SHA384(h) => h.hash_out(data, output),
-            Self::SHA512(h) => h.hash_out(data, output),
-            Self::SHA3_224(h) => h.hash_out(data, output),
-            Self::SHA3_256(h) => h.hash_out(data, output),
-            Self::SHA3_384(h) => h.hash_out(data, output),
-            Self::SHA3_512(h) => h.hash_out(data, output),
-        }
-    }
-
-    fn do_update(&mut self, data: &[u8]) {
-        match self {
-            Self::SHA224(h) => h.do_update(data),
-            Self::SHA256(h) => h.do_update(data),
-            Self::SHA384(h) => h.do_update(data),
-            Self::SHA512(h) => h.do_update(data),
-            Self::SHA3_224(h) => h.do_update(data),
-            Self::SHA3_256(h) => h.do_update(data),
-            Self::SHA3_384(h) => h.do_update(data),
-            Self::SHA3_512(h) => h.do_update(data),
-        }
-    }
-
-    fn do_final(self) -> Vec<u8> {
-        match self {
-            Self::SHA224(h) => h.do_final(),
-            Self::SHA256(h) => h.do_final(),
-            Self::SHA384(h) => h.do_final(),
-            Self::SHA512(h) => h.do_final(),
-            Self::SHA3_224(h) => h.do_final(),
-            Self::SHA3_256(h) => h.do_final(),
-            Self::SHA3_384(h) => h.do_final(),
-            Self::SHA3_512(h) => h.do_final(),
-        }
-    }
-
-    fn do_final_out(self, output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        match self {
-            Self::SHA224(h) => h.do_final_out(output),
-            Self::SHA256(h) => h.do_final_out(output),
-            Self::SHA384(h) => h.do_final_out(output),
-            Self::SHA512(h) => h.do_final_out(output),
-            Self::SHA3_224(h) => h.do_final_out(output),
-            Self::SHA3_256(h) => h.do_final_out(output),
-            Self::SHA3_384(h) => h.do_final_out(output),
-            Self::SHA3_512(h) => h.do_final_out(output),
-        }
-    }
-
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError> {
-        match self {
-            Self::SHA224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-            Self::SHA3_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
-        }
-    }
-
-    fn do_final_partial_bits_out(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-        output: &mut [u8],
-    ) -> Result<usize, HashError> {
-        match self {
-            Self::SHA224(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA256(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA384(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA512(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
-            Self::SHA3_224(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-            Self::SHA3_256(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-            Self::SHA3_384(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-            Self::SHA3_512(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
-            }
-        }
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        match self {
-            Self::SHA224(h) => h.max_security_strength(),
-            Self::SHA256(h) => h.max_security_strength(),
-            Self::SHA384(h) => h.max_security_strength(),
-            Self::SHA512(h) => h.max_security_strength(),
-            Self::SHA3_224(h) => h.max_security_strength(),
-            Self::SHA3_256(h) => h.max_security_strength(),
-            Self::SHA3_384(h) => h.max_security_strength(),
-            Self::SHA3_512(h) => h.max_security_strength(),
-        }
-    }
 }
