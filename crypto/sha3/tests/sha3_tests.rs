@@ -1,18 +1,28 @@
 #[cfg(test)]
 mod sha3_tests {
+    #[cfg(feature = "alloc")]
     use super::sha3_test_helpers::*;
+    #[cfg(feature = "alloc")]
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{
-        KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
+        KeyMaterial, KeyMaterial256, KeyMaterialTrait,
+    };
+    #[cfg(feature = "alloc")]
+     use bouncycastle_core::key_material::{
+        KeyMaterial512, KeyType,
     };
     use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, SecurityStrength};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
+    #[cfg(feature = "alloc")]
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_sha3::{
-        SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE256, SUSPENDED_SHA3_STATE_LEN,
+        SHA3_224, SHA3_256, SHA3_384, SHA3_512
     };
-
+    #[cfg(feature = "alloc")]
+    use bouncycastle_sha3::{
+        SHAKE256, SUSPENDED_SHA3_STATE_LEN,
+    };
     #[test]
     fn test_constants() {
         assert_eq!(SHA3_224::OUTPUT_LEN, 28);
@@ -166,13 +176,13 @@ mod sha3_tests {
 
     #[test]
     fn test_kdf() {
-        let testframework = TestFrameworkKDF::new();
-
         let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED[..32]).unwrap();
 
         // todo: may require no_std equivalent
         #[cfg(feature = "alloc")]
         {
+            let testframework = TestFrameworkKDF::new();
+
             // Without additional input
             let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
             assert_eq!(derived_key.key_len(), 32);
@@ -506,6 +516,7 @@ mod sha3_tests {
 
 /** Constant helpers **/
 
+#[cfg(feature = "alloc")]
 pub(crate) mod sha3_test_helpers {
     use bouncycastle_core_test_framework::no_std_utils;
     use std::fs;

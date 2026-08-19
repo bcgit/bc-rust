@@ -2,14 +2,22 @@ extern crate core;
 
 #[cfg(test)]
 mod shake_tests {
+    #[cfg(feature = "alloc")]
     use super::shake_test_helpers::*;
     use bouncycastle_core::key_material::{
-        KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
+        KeyMaterial, KeyMaterial256, KeyMaterialTrait,
+    };
+    #[cfg(feature = "alloc")]
+    use bouncycastle_core::key_material::{
+        KeyMaterial512, KeyType,
     };
     use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
+    #[cfg(feature = "alloc")]
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
-    use bouncycastle_sha3::{SHA3_256, SHAKE128, SHAKE256};
+    use bouncycastle_sha3::{SHAKE128, SHAKE256};
+    #[cfg(feature = "alloc")]
+    use bouncycastle_sha3::SHA3_256;
 
     // todo: may require no_std equivalent
     #[cfg(feature = "alloc")]
@@ -121,14 +129,14 @@ mod shake_tests {
 
     #[test]
     fn test_kdf() {
-        let testframework = TestFrameworkKDF::new();
-
         let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED[..32]).unwrap();
         // println!("{:x?}", &DUMMY_SEED[..32]);
 
         // todo: may require no_std equivalent
         #[cfg(feature = "alloc")]
         {
+            let testframework = TestFrameworkKDF::new();
+
             // Without additional input -- SHAKE128
             let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 0]).unwrap();
             assert_eq!(derived_key.key_len(), 32);
@@ -398,6 +406,7 @@ mod shake_tests {
 
 /** Constant helpers **/
 
+#[cfg(feature = "alloc")]
 pub(crate) mod shake_test_helpers {
     use bouncycastle_core_test_framework::no_std_utils;
     use std::fs;

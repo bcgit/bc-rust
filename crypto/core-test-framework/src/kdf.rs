@@ -1,9 +1,16 @@
 //! Generic behaviour tests for anything that implements [`KDF`].
 
 use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
+    KeyMaterial, KeyMaterial512, KeyMaterialTrait,
 };
-use bouncycastle_core::traits::{KDF, SecurityStrength};
+#[cfg(feature = "alloc")]
+use bouncycastle_core::key_material::{
+    KeyMaterial256, KeyType,
+};
+
+use bouncycastle_core::traits::KDF;
+#[cfg(feature = "alloc")]
+use bouncycastle_core::traits::SecurityStrength;
 
 /// Instance of the test framework.
 pub struct TestFrameworkKDF {

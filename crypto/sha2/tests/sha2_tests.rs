@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod sha2_tests {
+    #[cfg(feature = "alloc")]
     use bouncycastle_core::errors::SuspendableError;
     use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
