@@ -17,6 +17,7 @@ bouncycastle-base64 = { path = "./crypto/base64" }
 bouncycastle-cipher = { path = "./crypto/cipher" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
+bouncycastle-ed = { path = "crypto/ed" }
 bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }
@@ -52,6 +53,7 @@ bouncycastle-ascon.workspace = true
 bouncycastle-base64.workspace = true
 bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
+bouncycastle-edcurves.workspace = true
 bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-hkdf.workspace = true

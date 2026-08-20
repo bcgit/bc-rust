@@ -1084,6 +1084,21 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
 }
 
+/// A Key Agreement algorithm, often called a Diffie-Hellman algorithm.
+/// The core function is `key_agreement(&pk, &sk) -> OutputType` which acts on one public key and one private key.
+/// The return type of `key_agreement` will depend on the specific algorithm -- often it will be a `[u8]`, but it
+/// may be a struct, such as a public key.
+pub trait KeyAgreement<PK: KeyAgreementPublicKey, SK: KeyAgreementPrivateKey, OutputType> {
+    /// Perform a key agreement
+    fn key_agreement(pk: &PK, sk: SK) -> OutputType;
+}
+
+/// A public key for a KeyAgreement (Diffie-Hellman) algorithm, often denoted "pk".
+pub trait KeyAgreementPublicKey {}
+
+/// A private key for a KeyAgreement (Diffie-Hellman) algorithm, often denoted "sk" (for "secret key").
+pub trait KeyAgreementPrivateKey {}
+
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
 /// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that
 /// can be used to verify the integrity of data.

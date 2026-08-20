@@ -1,0 +1,10 @@
+[package]
+name = "bouncycastle-ed"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-hex.workspace = true
