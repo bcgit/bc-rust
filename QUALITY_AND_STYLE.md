@@ -1,5 +1,5 @@
-This document lists general quality and style guidelines used across the library.
-Hint: ask an AI to help review your PR against this style guide.
+This document lists general quality and style guidelines used across the library. Hint: ask an AI to help review your PR
+against this style guide.
 
 # Architecture
 
@@ -77,20 +77,20 @@ All normal rust naming convensions from clippy apply. In addition, some library-
 Where possible, primitives should expose "one-shot APIs" that simply take data and return a result as a static member
 function that does not require object instantiation.
 
-Other version of Bouncy Castle have a design pattern where stateful objects follow a pattern of new() -> init() ->
-do_update() -> do_final(), and then optionally reset() that sets the object back to an unitialized state. Instead,
-bc-rust does not have init() functions (moving this logic into new() or from() as appropriate), and consequently it also
-does not have reset(). Also, we take advantage of the rust borrow checker's syntax so that all do_final() functions are
-actually final, in other words they must take ownership of self `do_final(self, ...)` so that no subsequent calls can be
-made to this object (as opposed to the usual pattern of taking a ref to self as in `do_update(&self, ...)`). These
-tricks go a long way to reducing fallibility since now in general there is no (or very very little) object state to
-track and return errors about.
+Other version of Bouncy Castle have a design pattern where stateful objects follow a pattern of new () -> init () ->
+do_update () -> do_final (), and then optionally reset () that sets the object back to an unitialized state. Instead,
+bc-rust does not have init () functions (moving this logic into new () or from () as appropriate), and consequently it
+also does not have reset (). Also, we take advantage of the rust borrow checker's syntax so that all do_final ()
+functions are actually final, in other words they must take ownership of self `do_final(self, ...)` so that no
+subsequent calls can be made to this object (as opposed to the usual pattern of taking a ref to self as in
+`do_update(&self, ...)`). These tricks go a long way to reducing fallibility since now in general there is no (or very
+very little) object state to track and return errors about.
 
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
 
 ## Fallibility
 
-As much as humanly possible, Result and unwrap() should be used for "Bad input data" type things and not "Programmer
+As much as humanly possible, Result and unwrap () should be used for "Bad input data" type things and not "Programmer
 didn't read the docs" type things.
 
 `.unwrap()` causes system crashes. The use of `.unwrap()` should always be preceeded by testing that we're in a state
@@ -114,6 +114,28 @@ tracks it.
 
 Use `./dev_scripts/quality_stats.sh` to see the fallibility metrics for the crate you're working on and try to get those
 numbers down.
+
+## Macros
+
+Sometimes macros are the right tool, especially for sets of simple functions, structs, or enums that are highly
+repetitive to write out with a high chance of copy&paste errors. That said, macros just for the sake of reducing the
+number of lines of code is often harmful to the codebase as a whole:
+
+* Rust macros are essentially a skill of their own -- rust is generally a straightforward language to code-review, even
+  for someone who is not a rust expert -- until you add macros. For example, macro code often takes even a skilled
+  reviewer longer to understand and convince themselves of the correctness of, compared to the equivalent unrolled code.
+  It also makes the codebase less accessible to third-party auditors, researchers, and potential contributors.
+* IDEs typically do not handle macros very well; for example, compile errors, live debugging, and performance / memory
+  profiling tend to be substantially more challenging when working with complex macros.
+* `cargo mutants` (which is used extensively across the project for assuring test completeness) cannot see into
+  `macro_rules!` bodies, so a macro would hide sites that require correctness tests.
+
+For these reasons, the bc-rust project does not forbid the use of macros, but they should be avoided in complex
+algorithm code. As a rule-of-thumb, if the code you are working on should have thorough unit tests, or you could imagine
+a future maintainer needing to debug through it carefully for either correctness or performance reasons, then macros
+should not be used.
+
+Macros can be used more freely within test code.
 
 # Docs
 

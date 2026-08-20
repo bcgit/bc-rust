@@ -47,11 +47,11 @@ impl Condition<i64> {
     ///
     /// Signed types rely on two's complement negation: `-(true as i64)` is `-1`
     /// (all 1s) and `-(false as i64)` is `0` (all 0s).
-    pub const fn from_bool<const VALUE: bool>() -> Self {
+    pub const fn from_bool_const<const VALUE: bool>() -> Self {
         Self(-(VALUE as i64))
     }
     /// Constant-time mask generation from a runtime boolean.
-    pub const fn from_bool_var(value: bool) -> Self {
+    pub const fn from_bool(value: bool) -> Self {
         Self(-(value as i64))
     }
     /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
@@ -188,11 +188,11 @@ impl Condition<i32> {
     ///
     /// Signed types rely on two's complement negation: `-(true as i32)` is `-1`
     /// (all 1s) and `-(false as i32)` is `0` (all 0s).
-    pub const fn from_bool<const VALUE: bool>() -> Self {
+    pub const fn from_bool_const<const VALUE: bool>() -> Self {
         Self(-(VALUE as i32))
     }
     /// Constant-time mask generation from a runtime boolean.
-    pub const fn from_bool_var(value: bool) -> Self {
+    pub const fn from_bool(value: bool) -> Self {
         Self(-(value as i32))
     }
     /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
@@ -342,11 +342,11 @@ impl Condition<u64> {
     /// `-(v as i64)`, for unsigned types we must use wrapping subtraction to achieve
     /// the all-ones bit pattern for true:
     /// true (1) -> `0 - 1` wraps to MAX (all 1s); false (0) -> `0 - 0 = 0` (all 0s).
-    pub const fn from_bool<const VALUE: bool>() -> Self {
+    pub const fn from_bool_const<const VALUE: bool>() -> Self {
         Self(0u64.wrapping_sub(VALUE as u64))
     }
     /// Constant-time mask generation from a runtime boolean.
-    pub const fn from_bool_var(value: bool) -> Self {
+    pub const fn from_bool(value: bool) -> Self {
         Self(0u64.wrapping_sub(value as u64))
     }
     /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.
@@ -420,11 +420,11 @@ impl Condition<u32> {
     /// `-(v as i64)`, for unsigned types we must use wrapping subtraction to achieve
     /// the all-ones bit pattern for true:
     /// true (1) -> `0 - 1` wraps to MAX (all 1s); false (0) -> `0 - 0 = 0` (all 0s).
-    pub const fn from_bool<const VALUE: bool>() -> Self {
+    pub const fn from_bool_const<const VALUE: bool>() -> Self {
         Self(0u32.wrapping_sub(VALUE as u32))
     }
     /// Constant-time mask generation from a runtime boolean.
-    pub const fn from_bool_var(value: bool) -> Self {
+    pub const fn from_bool(value: bool) -> Self {
         Self(0u32.wrapping_sub(value as u32))
     }
     /// Mask from the least-significant bit: TRUE iff bit 0 of `value` is set.

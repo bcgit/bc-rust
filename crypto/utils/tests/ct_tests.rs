@@ -9,10 +9,10 @@ mod generic_impl_tests {
 
     #[test]
     fn test_bit_and() {
-        let ct1 = Condition::<i64>::from_bool::<true>();
-        let ct2 = Condition::<i64>::from_bool::<true>();
-        let cf1 = Condition::<i64>::from_bool::<false>();
-        let cf2 = Condition::<i64>::from_bool::<false>();
+        let ct1 = Condition::<i64>::from_bool_const::<true>();
+        let ct2 = Condition::<i64>::from_bool_const::<true>();
+        let cf1 = Condition::<i64>::from_bool_const::<false>();
+        let cf2 = Condition::<i64>::from_bool_const::<false>();
         assert_eq!((ct1 & ct2).to_bool(), true);
         assert_eq!((ct1 & cf1).to_bool(), false);
         assert_eq!((cf1 & cf2).to_bool(), false);
@@ -20,9 +20,9 @@ mod generic_impl_tests {
 
     #[test]
     fn test_bit_and_assign() {
-        let mut ct1 = Condition::<i64>::from_bool::<true>();
-        let ct2 = Condition::<i64>::from_bool::<true>();
-        let cf = Condition::<i64>::from_bool::<false>();
+        let mut ct1 = Condition::<i64>::from_bool_const::<true>();
+        let ct2 = Condition::<i64>::from_bool_const::<true>();
+        let cf = Condition::<i64>::from_bool_const::<false>();
 
         ct1 &= ct2;
         assert_eq!(ct1.to_bool(), true);
@@ -33,10 +33,10 @@ mod generic_impl_tests {
 
     #[test]
     fn test_bit_or() {
-        let ct1 = Condition::<i64>::from_bool::<true>();
-        let ct2 = Condition::<i64>::from_bool::<true>();
-        let cf1 = Condition::<i64>::from_bool::<false>();
-        let cf2 = Condition::<i64>::from_bool::<false>();
+        let ct1 = Condition::<i64>::from_bool_const::<true>();
+        let ct2 = Condition::<i64>::from_bool_const::<true>();
+        let cf1 = Condition::<i64>::from_bool_const::<false>();
+        let cf2 = Condition::<i64>::from_bool_const::<false>();
 
         assert_eq!((ct1 | ct2).to_bool(), true);
         assert_eq!((ct1 | cf1).to_bool(), true);
@@ -45,10 +45,10 @@ mod generic_impl_tests {
 
     #[test]
     fn test_bit_or_assign() {
-        let mut ct1 = Condition::<i64>::from_bool::<true>();
-        let ct2 = Condition::<i64>::from_bool::<true>();
-        let mut cf1 = Condition::<i64>::from_bool::<false>();
-        let cf2 = Condition::<i64>::from_bool::<false>();
+        let mut ct1 = Condition::<i64>::from_bool_const::<true>();
+        let ct2 = Condition::<i64>::from_bool_const::<true>();
+        let mut cf1 = Condition::<i64>::from_bool_const::<false>();
+        let cf2 = Condition::<i64>::from_bool_const::<false>();
 
         ct1 |= ct2;
         assert_eq!(ct1.to_bool(), true);
@@ -62,10 +62,10 @@ mod generic_impl_tests {
 
     #[test]
     fn test_bit_xor() {
-        let ct1 = Condition::<i64>::from_bool::<true>();
-        let ct2 = Condition::<i64>::from_bool::<true>();
-        let cf1 = Condition::<i64>::from_bool::<false>();
-        let cf2 = Condition::<i64>::from_bool::<false>();
+        let ct1 = Condition::<i64>::from_bool_const::<true>();
+        let ct2 = Condition::<i64>::from_bool_const::<true>();
+        let cf1 = Condition::<i64>::from_bool_const::<false>();
+        let cf2 = Condition::<i64>::from_bool_const::<false>();
 
         assert_eq!((ct1 ^ ct2).to_bool(), false);
         assert_eq!((ct1 ^ cf1).to_bool(), true);
@@ -74,10 +74,10 @@ mod generic_impl_tests {
 
     #[test]
     fn test_bit_xor_assign() {
-        let mut ct1 = Condition::<i64>::from_bool::<true>();
-        let mut ct2 = Condition::<i64>::from_bool::<true>();
-        let mut cf1 = Condition::<i64>::from_bool::<false>();
-        let cf2 = Condition::<i64>::from_bool::<false>();
+        let mut ct1 = Condition::<i64>::from_bool_const::<true>();
+        let mut ct2 = Condition::<i64>::from_bool_const::<true>();
+        let mut cf1 = Condition::<i64>::from_bool_const::<false>();
+        let cf2 = Condition::<i64>::from_bool_const::<false>();
 
         ct1 ^= ct2;
         assert_eq!(ct1.to_bool(), false);
@@ -91,7 +91,7 @@ mod generic_impl_tests {
 
     #[test]
     fn test_not() {
-        let c = Condition::<i64>::from_bool::<true>();
+        let c = Condition::<i64>::from_bool_const::<true>();
         assert_eq!((!c).to_bool(), false);
     }
 }
@@ -127,10 +127,10 @@ mod unsigned_u64_tests {
 
     #[test]
     fn from_bool() {
-        assert_canonical(Condition::<u64>::from_bool::<true>(), true);
-        assert_canonical(Condition::<u64>::from_bool::<false>(), false);
-        assert_canonical(Condition::<u64>::from_bool_var(true), true);
-        assert_canonical(Condition::<u64>::from_bool_var(false), false);
+        assert_canonical(Condition::<u64>::from_bool_const::<true>(), true);
+        assert_canonical(Condition::<u64>::from_bool_const::<false>(), false);
+        assert_canonical(Condition::<u64>::from_bool(true), true);
+        assert_canonical(Condition::<u64>::from_bool(false), false);
     }
 
     #[test]
@@ -215,18 +215,18 @@ mod unsigned_u64_tests {
     fn mov() {
         let src: u64 = 1;
         let mut dst: u64 = 2;
-        Condition::<u64>::from_bool::<true>().mov(src, &mut dst);
+        Condition::<u64>::from_bool_const::<true>().mov(src, &mut dst);
         assert_eq!(dst, 1);
         dst = 2;
-        Condition::<u64>::from_bool::<false>().mov(src, &mut dst);
+        Condition::<u64>::from_bool_const::<false>().mov(src, &mut dst);
         assert_eq!(dst, 2);
     }
 
     #[test]
     fn swap() {
-        let (lhs, rhs) = Condition::<u64>::from_bool::<true>().swap(1, 2);
+        let (lhs, rhs) = Condition::<u64>::from_bool_const::<true>().swap(1, 2);
         assert_eq!((lhs, rhs), (2, 1));
-        let (lhs, rhs) = Condition::<u64>::from_bool::<false>().swap(1, 2);
+        let (lhs, rhs) = Condition::<u64>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
     }
 
@@ -271,10 +271,10 @@ mod unsigned_u32_tests {
 
     #[test]
     fn from_bool() {
-        assert_canonical(Condition::<u32>::from_bool::<true>(), true);
-        assert_canonical(Condition::<u32>::from_bool::<false>(), false);
-        assert_canonical(Condition::<u32>::from_bool_var(true), true);
-        assert_canonical(Condition::<u32>::from_bool_var(false), false);
+        assert_canonical(Condition::<u32>::from_bool_const::<true>(), true);
+        assert_canonical(Condition::<u32>::from_bool_const::<false>(), false);
+        assert_canonical(Condition::<u32>::from_bool(true), true);
+        assert_canonical(Condition::<u32>::from_bool(false), false);
     }
 
     #[test]
@@ -359,18 +359,18 @@ mod unsigned_u32_tests {
     fn mov() {
         let src: u32 = 1;
         let mut dst: u32 = 2;
-        Condition::<u32>::from_bool::<true>().mov(src, &mut dst);
+        Condition::<u32>::from_bool_const::<true>().mov(src, &mut dst);
         assert_eq!(dst, 1);
         dst = 2;
-        Condition::<u32>::from_bool::<false>().mov(src, &mut dst);
+        Condition::<u32>::from_bool_const::<false>().mov(src, &mut dst);
         assert_eq!(dst, 2);
     }
 
     #[test]
     fn swap() {
-        let (lhs, rhs) = Condition::<u32>::from_bool::<true>().swap(1, 2);
+        let (lhs, rhs) = Condition::<u32>::from_bool_const::<true>().swap(1, 2);
         assert_eq!((lhs, rhs), (2, 1));
-        let (lhs, rhs) = Condition::<u32>::from_bool::<false>().swap(1, 2);
+        let (lhs, rhs) = Condition::<u32>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
     }
 
@@ -418,10 +418,10 @@ mod signed_i64_tests {
 
     #[test]
     fn from_bool() {
-        assert_canonical(Condition::<i64>::from_bool::<true>(), true);
-        assert_canonical(Condition::<i64>::from_bool::<false>(), false);
-        assert_canonical(Condition::<i64>::from_bool_var(true), true);
-        assert_canonical(Condition::<i64>::from_bool_var(false), false);
+        assert_canonical(Condition::<i64>::from_bool_const::<true>(), true);
+        assert_canonical(Condition::<i64>::from_bool_const::<false>(), false);
+        assert_canonical(Condition::<i64>::from_bool(true), true);
+        assert_canonical(Condition::<i64>::from_bool(false), false);
     }
 
     #[test]
@@ -546,10 +546,10 @@ mod signed_i64_tests {
     fn mov() {
         let src: i64 = 1;
         let mut dst: i64 = 2;
-        Condition::<i64>::from_bool::<true>().mov(src, &mut dst);
+        Condition::<i64>::from_bool_const::<true>().mov(src, &mut dst);
         assert_eq!(dst, 1);
         dst = 2;
-        Condition::<i64>::from_bool::<false>().mov(src, &mut dst);
+        Condition::<i64>::from_bool_const::<false>().mov(src, &mut dst);
         assert_eq!(dst, 2);
     }
 
@@ -567,9 +567,9 @@ mod signed_i64_tests {
 
     #[test]
     fn swap() {
-        let (lhs, rhs) = Condition::<i64>::from_bool::<true>().swap(1, 2);
+        let (lhs, rhs) = Condition::<i64>::from_bool_const::<true>().swap(1, 2);
         assert_eq!((lhs, rhs), (2, 1));
-        let (lhs, rhs) = Condition::<i64>::from_bool::<false>().swap(1, 2);
+        let (lhs, rhs) = Condition::<i64>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
     }
 
@@ -613,10 +613,10 @@ mod signed_i32_tests {
 
     #[test]
     fn from_bool() {
-        assert_canonical(Condition::<i32>::from_bool::<true>(), true);
-        assert_canonical(Condition::<i32>::from_bool::<false>(), false);
-        assert_canonical(Condition::<i32>::from_bool_var(true), true);
-        assert_canonical(Condition::<i32>::from_bool_var(false), false);
+        assert_canonical(Condition::<i32>::from_bool_const::<true>(), true);
+        assert_canonical(Condition::<i32>::from_bool_const::<false>(), false);
+        assert_canonical(Condition::<i32>::from_bool(true), true);
+        assert_canonical(Condition::<i32>::from_bool(false), false);
     }
 
     #[test]
@@ -741,10 +741,10 @@ mod signed_i32_tests {
     fn mov() {
         let src: i32 = 1;
         let mut dst: i32 = 2;
-        Condition::<i32>::from_bool::<true>().mov(src, &mut dst);
+        Condition::<i32>::from_bool_const::<true>().mov(src, &mut dst);
         assert_eq!(dst, 1);
         dst = 2;
-        Condition::<i32>::from_bool::<false>().mov(src, &mut dst);
+        Condition::<i32>::from_bool_const::<false>().mov(src, &mut dst);
         assert_eq!(dst, 2);
     }
 
@@ -762,9 +762,9 @@ mod signed_i32_tests {
 
     #[test]
     fn swap() {
-        let (lhs, rhs) = Condition::<i32>::from_bool::<true>().swap(1, 2);
+        let (lhs, rhs) = Condition::<i32>::from_bool_const::<true>().swap(1, 2);
         assert_eq!((lhs, rhs), (2, 1));
-        let (lhs, rhs) = Condition::<i32>::from_bool::<false>().swap(1, 2);
+        let (lhs, rhs) = Condition::<i32>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
     }
 
