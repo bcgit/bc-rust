@@ -117,25 +117,16 @@ numbers down.
 
 ## Macros
 
-Sometimes macros are the right tool, especially for sets of simple functions, structs, or enums that are highly
-repetitive to write out with a high chance of copy&paste errors. That said, macros just for the sake of reducing the
-number of lines of code is often harmful to the codebase as a whole:
+Fundamentally, macros are an optimization that allows future maintainers to easily add existing boilerplate code to a
+new type. That said, macros are typically more complex, harder to code review, and harder to debug than the unrolled
+boilerplate code that they are replacing.
 
-* Rust macros are essentially a skill of their own -- rust is generally a straightforward language to code-review, even
-  for someone who is not a rust expert -- until you add macros. For example, macro code often takes even a skilled
-  reviewer longer to understand and convince themselves of the correctness of, compared to the equivalent unrolled code.
-  It also makes the codebase less accessible to third-party auditors, researchers, and potential contributors.
-* IDEs typically do not handle macros very well; for example, compile errors, live debugging, and performance / memory
-  profiling tend to be substantially more challenging when working with complex macros.
-* `cargo mutants` (which is used extensively across the project for assuring test completeness) cannot see into
-  `macro_rules!` bodies, so a macro would hide sites that require correctness tests.
+Any PR that uses macros will need to justify that the macros are clearly reducing future maintainer complexity compared
+to the equivalent unrolled code. Simply reducing the number of lines of code is not a sufficient justification.
 
-For these reasons, the bc-rust project does not forbid the use of macros, but they should be avoided in complex
-algorithm code. As a rule-of-thumb, if the code you are working on should have thorough unit tests, or you could imagine
-a future maintainer needing to debug through it carefully for either correctness or performance reasons, then macros
-should not be used.
-
-Macros can be used more freely within test code.
+Note that rust macros tend not to play well with a lot of dev tooling for compile errors, debuggers, profilers, and
+`cargo mutants`, which is a good reason not to use macros in code algorithm code. Macros can be used more freely within
+test code.
 
 # Docs
 
