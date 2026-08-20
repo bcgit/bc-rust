@@ -124,9 +124,9 @@ boilerplate code that they are replacing.
 Any PR that uses macros will need to justify that the macros are clearly reducing future maintainer complexity compared
 to the equivalent unrolled code. Simply reducing the number of lines of code is not a sufficient justification.
 
-Note that rust macros tend not to play well with a lot of dev tooling for compile errors, debuggers, profilers, and
-`cargo mutants`, which is a good reason not to use macros in code algorithm code. Macros can be used more freely within
-test code.
+Note that rust macros tend not to play well with a lot of dev tooling for compiler errors, debuggers, profilers, and
+`cargo mutants`, which is a good reason to avoid macros in core algorithm or data processing code. Macros can be used
+more freely within test code.
 
 # Docs
 
