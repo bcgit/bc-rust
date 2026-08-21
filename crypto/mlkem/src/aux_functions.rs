@@ -1,8 +1,8 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
-use crate::matrix::Vector;
+use crate::matrix::{Matrix, Vector};
 use crate::mlkem::{N, q, q_inv};
-use crate::{Matrix, Polynomial};
+use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::XOF;
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
@@ -13,7 +13,7 @@ pub(crate) fn expandA<const k: usize>(rho: &[u8; 32]) -> Matrix<k, k> {
         for j in 0..k {
             // 6: 𝐀[𝑖, 𝑗] ← SampleNTT(𝜌‖𝑗‖𝑖)
             //  ▷ 𝑗 and 𝑖 are bytes 33 and 34 of the input
-            A_hat[i][j] = sample_ntt(rho, &[j as u8, i as u8]);
+            A_hat.elems[i][j] = sample_ntt(rho, &[j as u8, i as u8]);
         }
     }
 

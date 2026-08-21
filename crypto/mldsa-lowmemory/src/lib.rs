@@ -266,6 +266,3 @@ pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
 pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
 
 pub use mldsa::SUSPENDED_MU_BUILDER_STATE_LEN;
-
-// re-export just so it's visible to unit tests
-pub use polynomial::Polynomial;

@@ -407,7 +407,7 @@ pub(crate) fn sig_encode<
 
     for i in 0..l {
         output[pos..pos + POLY_Z_PACKED_LEN]
-            .copy_from_slice(&bitpack_gamma1::<POLY_Z_PACKED_LEN, GAMMA1>(&z.vec[i]));
+            .copy_from_slice(&bitpack_gamma1::<POLY_Z_PACKED_LEN, GAMMA1>(&z.elems[i]));
         pos += POLY_Z_PACKED_LEN;
     }
 
@@ -416,7 +416,7 @@ pub(crate) fn sig_encode<
     let mut m: usize = 0;
     for i in 0..k {
         for j in 0..N {
-            if h.vec[i][j] != 0 {
+            if h.elems[i][j] != 0 {
                 output[pos + m] = j as u8;
                 m += 1;
             }
@@ -453,7 +453,7 @@ pub(crate) fn sig_decode<
     pos += LAMBDA_over_4;
 
     for i in 0..l {
-        z.vec[i] = bit_unpack_gamma1::<GAMMA1>(&sig[pos..pos + POLY_Z_PACKED_LEN]);
+        z.elems[i] = bit_unpack_gamma1::<GAMMA1>(&sig[pos..pos + POLY_Z_PACKED_LEN]);
         pos += POLY_Z_PACKED_LEN;
     }
 
@@ -486,7 +486,7 @@ pub(crate) fn sig_decode<
                 return Err(());
             }
             // 12: 𝐡[𝑖]_𝑦[Index] ← 1
-            h.vec[i][sig[pos + j] as usize] = 1;
+            h.elems[i][sig[pos + j] as usize] = 1;
 
             // 13: Index ← Index + 1
             //  > done by for loop
@@ -672,7 +672,7 @@ pub(crate) fn expandA<const k: usize, const l: usize>(rho: &[u8; 32]) -> Matrix<
 
     for r in 0..k {
         for s in 0..l {
-            A_hat[r][s] = rej_ntt_poly(rho, &[s as u8, r as u8]);
+            A_hat.elems[r][s] = rej_ntt_poly(rho, &[s as u8, r as u8]);
         }
     }
 
@@ -692,11 +692,11 @@ pub(crate) fn expandS<const k: usize, const l: usize, const ETA: usize>(
     let mut s2: Secret<Vector<k>> = Secret::new();
 
     for r in 0..l {
-        s1.vec[r] = rej_bounded_poly::<ETA>(rho, &(r as u16).to_le_bytes());
+        s1.elems[r] = rej_bounded_poly::<ETA>(rho, &(r as u16).to_le_bytes());
     }
 
     for r in 0..k {
-        s2.vec[r] = rej_bounded_poly::<ETA>(rho, &(r as u16 + l as u16).to_le_bytes());
+        s2.elems[r] = rej_bounded_poly::<ETA>(rho, &(r as u16 + l as u16).to_le_bytes());
     }
 
     (s1, s2)
@@ -710,7 +710,7 @@ pub(crate) fn power_2_round_vec<const LEN: usize>(v: &Vector<LEN>) -> (Vector<LE
 
     for i in 0..LEN {
         for j in 0..N {
-            (r1.vec[i][j], r0.vec[i][j]) = power_2_round(v.vec[i][j]);
+            (r1.elems[i][j], r0.elems[i][j]) = power_2_round(v.elems[i][j]);
         }
     }
 
@@ -745,7 +745,7 @@ pub(crate) fn expand_mask<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_L
         };
 
         // 5: 𝐲[𝑟] ← BitUnpack(𝑣, 𝛾1 − 1, 𝛾1)
-        y.vec[r] = bit_unpack_gamma1::<GAMMA1>(&v);
+        y.elems[r] = bit_unpack_gamma1::<GAMMA1>(&v);
     }
 
     y
@@ -881,8 +881,8 @@ pub(crate) fn make_hint_vecs<const k: usize, const GAMMA2: i32>(
     let mut count = 0i32;
 
     for i in 0..k {
-        let (w, c) = r.vec[i].make_hint::<GAMMA2>(&s.vec[i]);
-        out.vec[i] = w;
+        let (w, c) = r.elems[i].make_hint::<GAMMA2>(&s.elems[i]);
+        out.elems[i] = w;
 
         // mutants note: this chains up to hint_hamming_weight > OMEGA and there is no test KAT that triggers this branch
         count += c;
@@ -942,7 +942,7 @@ pub(crate) fn use_hint_vecs<const k: usize, const GAMMA2: i32>(
 ) -> Vector<k> {
     let mut out = Vector::<k>::new();
     for i in 0..k {
-        use_hint_polys::<GAMMA2>(&wp_approx.vec[i], &h.vec[i], &mut out.vec[i]);
+        use_hint_polys::<GAMMA2>(&wp_approx.elems[i], &h.elems[i], &mut out.elems[i]);
     }
 
     out

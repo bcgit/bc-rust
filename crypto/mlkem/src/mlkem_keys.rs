@@ -118,7 +118,7 @@ impl<const k: usize, const PK_LEN: usize> MLKEMPublicKeyTrait<k, PK_LEN>
         let t_hat = {
             let mut t_hat = Vector::<k>::new();
 
-            for (t_i, pk_chunk) in t_hat.vec.iter_mut().zip(pk_chunks) {
+            for (t_i, pk_chunk) in t_hat.elems.iter_mut().zip(pk_chunks) {
                 t_i.coeffs.copy_from_slice(&byte_decode::<12, POLY_BYTES>(pk_chunk).coeffs);
 
                 // FIPS 203 says:
@@ -188,7 +188,7 @@ impl<const k: usize, const PK_LEN: usize> KEMPublicKey<PK_LEN> for MLKEMPublicKe
         debug_assert_eq!(pk_chunks.len(), k);
         debug_assert_eq!(last_chunk.len(), 32);
 
-        for (pk_chunk, t_i) in pk_chunks.into_iter().zip(&self.t_hat.vec) {
+        for (pk_chunk, t_i) in pk_chunks.into_iter().zip(&self.t_hat.elems) {
             pk_chunk.copy_from_slice(&byte_encode::<12, POLY_BYTES>(t_i));
         }
         last_chunk.copy_from_slice(&self.rho);
@@ -367,7 +367,7 @@ impl<const k: usize, PK: MLKEMPublicKeyInternalTrait<k, PK_LEN>, const PK_LEN: u
 
 /// An ML-KEM private key.
 ///
-/// This will automatically inherit the [`Secret`] protections because [`Polynomial`] wraps the underlying data with [`Secret`].
+// Dev note: This will automatically inherit the [`Secret`] protections because [`Polynomial`] wraps the underlying data with [`Secret`].
 #[derive(Clone)]
 pub struct MLKEMPrivateKey<
     const k: usize,

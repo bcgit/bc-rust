@@ -7,9 +7,6 @@ use crate::mlkem::{N, q};
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-KEM ring.
-/// Dev note: this doesn't strictly need to be pub ... ie there's no good reason for a caller to use this class directly,
-/// but in order to test the Debug and Display traits, you need STD, so those can't be tested from inline tests in this file
-/// and the real unit tests are in a different crate, so here we are.
 ///
 /// # 🚨 Security 🚨
 /// Polynomials themselves are not inherently secret since sometimes they are part of public keys
@@ -17,7 +14,7 @@ use core::ops::{Index, IndexMut};
 /// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.
 /// Note: at the moment, nothing in this crate uses `Secret<Polynomial>`, so I have left the `impl ZeroizablePrimitive` commented-out.
 #[derive(Clone, Copy)]
-pub struct Polynomial {
+pub(crate) struct Polynomial {
     pub(crate) coeffs: [i16; N],
 }
 

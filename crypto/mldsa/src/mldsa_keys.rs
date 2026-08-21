@@ -105,7 +105,7 @@ impl<const k: usize, const l: usize, const PK_LEN: usize> MLDSAPublicKey<k, l, P
         debug_assert_eq!(pk_chunks.len(), k);
         debug_assert_eq!(last_chunk.len(), 0);
 
-        for (pk_chunk, t1_i) in pk_chunks.into_iter().zip(&self.t1.vec) {
+        for (pk_chunk, t1_i) in pk_chunks.into_iter().zip(&self.t1.elems) {
             pk_chunk.copy_from_slice(&simple_bit_pack_t1(&t1_i));
         }
 
@@ -160,7 +160,7 @@ impl<const k: usize, const l: usize, const PK_LEN: usize> MLDSAPublicKeyTrait<k,
         debug_assert_eq!(pk_chunks.len(), k);
         debug_assert_eq!(last_chunk.len(), 0);
 
-        for (t1_i, pk_chunk) in t1.vec.iter_mut().zip(pk_chunks) {
+        for (t1_i, pk_chunk) in t1.elems.iter_mut().zip(pk_chunks) {
             // 3: 𝐭1[𝑖] ← SimpleBitUnpack(𝑧𝑖, 2bitlen (𝑞−1)−𝑑 − 1)
             //  ▷ This is always in the correct range
             //  Therefore, we don't need to check that the coeeffs are in range
@@ -407,7 +407,7 @@ impl<
 
 /// An ML-DSA private key.
 ///
-/// This will automatically inherit the [`Secret`] protections because [`Polynomial`] wraps the underlying data with [`Secret`].
+// Dev note: This will automatically inherit the [`Secret`] protections because [`Polynomial`] wraps the underlying data with [`Secret`].
 #[derive(Clone)]
 pub struct MLDSAPrivateKey<
     const k: usize,
@@ -456,7 +456,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         let sk_chunks = out[off..off + l * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), l);
-        for (sk_chunk, s1_hat_i) in sk_chunks.into_iter().zip(&self.s1_hat.vec) {
+        for (sk_chunk, s1_hat_i) in sk_chunks.into_iter().zip(&self.s1_hat.elems) {
             // Deviation from the FIPS:
             //   We are holding these in ntt form, so need to convert back to standard form
             let mut s1_hat_i = s1_hat_i.clone();
@@ -471,7 +471,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         let sk_chunks = out[off..off + k * bitlen_eta(eta)].chunks_mut(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), k);
-        for (sk_chunk, s2_hat_i) in sk_chunks.into_iter().zip(&self.s2_hat.vec) {
+        for (sk_chunk, s2_hat_i) in sk_chunks.into_iter().zip(&self.s2_hat.elems) {
             // Deviation from the FIPS:
             //   We are holding these in ntt form, so need to convert back to standard form
             let mut s2_hat_i = s2_hat_i.clone();
@@ -486,7 +486,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
 
         let sk_chunks = out[off..off + k * POLY_T0PACKED_LEN].chunks_mut(POLY_T0PACKED_LEN);
         debug_assert_eq!(sk_chunks.len(), k);
-        for (sk_chunk, t0_hat_i) in sk_chunks.into_iter().zip(&self.t0_hat.vec) {
+        for (sk_chunk, t0_hat_i) in sk_chunks.into_iter().zip(&self.t0_hat.elems) {
             // Deviation from the FIPS:
             //   We are holding these in ntt form, so need to convert back to standard form
             let mut t0_hat_i = t0_hat_i.clone();
@@ -630,7 +630,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         // unpack s1 directly into key.s1_hat so that we don't make additional non-Secret copies.
         let sk_chunks = sk[off..off + (l * bitlen_eta(eta))].chunks(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), l);
-        for (s1_i, sk_chunk) in key.s1_hat.vec.iter_mut().zip(sk_chunks) {
+        for (s1_i, sk_chunk) in key.s1_hat.elems.iter_mut().zip(sk_chunks) {
             // 3: 𝐬1[𝑖] ← BitUnpack(𝑦𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
             s1_i.coeffs.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).coeffs);
@@ -650,7 +650,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         // unpack s2 directly into key.s2_hat so that we don't make additional non-Secret copies.
         let sk_chunks = sk[off..off + (k * bitlen_eta(eta))].chunks(bitlen_eta(eta));
         debug_assert_eq!(sk_chunks.len(), k);
-        for (s2_i, sk_chunk) in key.s2_hat.vec.iter_mut().zip(sk_chunks) {
+        for (s2_i, sk_chunk) in key.s2_hat.elems.iter_mut().zip(sk_chunks) {
             // 6: 𝐬2[𝑖] ← BitUnpack(𝑧𝑖, 𝜂, 𝜂)
             //  ▷ this may lie outside [−𝜂, 𝜂] if input is malformed
             s2_i.coeffs.copy_from_slice(&bit_unpack_eta::<eta>(&sk_chunk).coeffs);
@@ -675,7 +675,7 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
         debug_assert_eq!(sk_chunks.len(), k);
         debug_assert_eq!(last_chunk.len(), 0);
 
-        for (t0_i, sk_chunk) in key.t0_hat.vec.iter_mut().zip(sk_chunks) {
+        for (t0_i, sk_chunk) in key.t0_hat.elems.iter_mut().zip(sk_chunks) {
             t0_i.coeffs.copy_from_slice(&bit_unpack_t0(sk_chunk).coeffs);
         }
         // Deviation from the FIPS:

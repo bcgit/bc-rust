@@ -9,20 +9,13 @@ use crate::mlkem::{N, q};
 
 /// A polynomial over the ML-KEM ring.
 ///
-/// Dev note: The following structure does not necessarily need to be declared as public.
-/// There is no real scenario where this function needs to be called directly.
-/// However, in order to test the Debug and Display traits, it is necessary to use STD, so those
-/// can't be tested from inline tests in this file and the real unit tests are in a different crate.
-/// That's the reason why pub is used.
-///
 /// # 🚨 Security 🚨
 /// Polynomials themselves are not inherently secret since sometimes they are part of public keys
 /// and sometimes private keys.
 /// It is the responsibility of the caller to wrap sensitive instances in `Secret<Vector>`.
 #[derive(Clone, Copy)]
-pub struct Polynomial {
-    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-    pub coeffs: [i16; N],
+pub(crate) struct Polynomial {
+    pub(crate) coeffs: [i16; N],
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -263,8 +256,7 @@ impl Polynomial {
     /// Computes the NTT representation 𝑓_hat of the given polynomial 𝑓 ∈ 𝑅𝑞.
     /// Input: array 𝑓 ∈ ℤ256  ▷ the coefficients of the input polynomial
     /// Output: array 𝑓_hat ∈ ℤ256  ▷ the coefficients of the NTT of the input polynomial
-    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-    pub fn ntt(&mut self) {
+    pub(crate) fn ntt(&mut self) {
         let mut len = 128;
         let mut k = 1;
 
@@ -290,8 +282,7 @@ impl Polynomial {
     /// Computes the polynomial 𝑓 ∈ 𝑅𝑞 that corresponds to the given NTT representation 𝑓 ∈ 𝑇𝑞.
     /// Input: array 𝑓 ∈ ℤ_{256}  ▷ the coefficients of input NTT representation
     /// Output: array 𝑓 ∈ ℤ_{256}  ▷ the coefficients of the inverse NTT of the input
-    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-    pub fn inv_ntt(&mut self) {
+    pub(crate) fn inv_ntt(&mut self) {
         // FIPS 203 Alg 10 wants you to copy f_hat into f, and then act on f
         // but here it is performed in-place in order to optimize memory usage.
 
@@ -330,7 +321,7 @@ impl Polynomial {
 /// Borrowed from:
 /// <https://github.com/pq-crystals/kyber/blob/main/ref/poly.c#L290>
 /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-pub fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
+pub(crate) fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     let mut r = Polynomial::new();
 
     for i in 0..(N / 4) {

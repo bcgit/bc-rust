@@ -10,26 +10,14 @@ use core::ops::{Index, IndexMut};
 
 /// A matrix over the ML-DSA ring.
 #[derive(Clone)]
-pub struct Matrix<const k: usize, const l: usize>(/*pub(crate)*/ [[Polynomial; l]; k]);
-
-/// Convenience function to avoid ".0" all over the place.
-impl<const k: usize, const l: usize> Index<usize> for Matrix<k, l> {
-    type Output = [Polynomial; l];
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
-/// Convenience function to avoid ".0" all over the place.
-impl<const k: usize, const l: usize> IndexMut<usize> for Matrix<k, l> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
-    }
+pub struct Matrix<const k: usize, const l: usize> {
+    /// Indexed `elems[row][col]`
+    pub(crate) elems: [[Polynomial; l]; k],
 }
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
     pub(crate) fn new() -> Self {
-        Self { 0: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
+        Self { elems: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
     }
 
     /// Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
@@ -39,18 +27,18 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// Performs dot product multiplication of this matrix by a vector
     /// Input: vector of length l
     /// Output: vector of length k
-    pub fn matrix_vector_ntt(&self, v: &Vector<l>) -> Vector<k> {
+    pub(crate) fn matrix_vector_ntt(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
         for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
-            w[i].coeffs.copy_from_slice(&multiply_ntt(&self[i][0], &v[0]).coeffs);
+            w[i].coeffs.copy_from_slice(&multiply_ntt(&self.elems[i][0], &v[0]).coeffs);
 
             let mut w1: Polynomial;
             for j in 1..l {
                 // dot product a vector into a matrix: multiply the input vector
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
-                w1 = multiply_ntt(&self[i][j], &v[j]);
+                w1 = multiply_ntt(&self.elems[i][j], &v[j]);
                 w[i].add_ntt(&w1);
             }
         }
@@ -61,7 +49,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct Vector<const LEN: usize> {
-    pub(crate) vec: [Polynomial; LEN],
+    pub(crate) elems: [Polynomial; LEN],
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -69,13 +57,13 @@ impl<const LEN: usize> Index<usize> for Vector<LEN> {
     type Output = Polynomial;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.vec[index]
+        &self.elems[index]
     }
 }
 /// Convenience function to avoid ".0" all over the place.
 impl<const LEN: usize> IndexMut<usize> for Vector<LEN> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.vec[index]
+        &mut self.elems[index]
     }
 }
 
@@ -85,7 +73,7 @@ impl<const LEN: usize> ZeroizablePrimitive for Vector<LEN> {
 
 impl<const LEN: usize> Vector<LEN> {
     pub(crate) const fn new() -> Self {
-        Self { vec: [Polynomial::new(); LEN] }
+        Self { elems: [Polynomial::new(); LEN] }
     }
 
     /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂
@@ -176,7 +164,7 @@ impl<const LEN: usize> Vector<LEN> {
 
     pub(crate) fn check_norm<const BOUND: i32>(&self) -> bool {
         // Fine that this is not constant-time because it is used in a rejection loop -- the early quit leads to rejection.
-        for x in self.vec.iter() {
+        for x in self.elems.iter() {
             if x.check_norm::<BOUND>() {
                 return true;
             }
@@ -196,7 +184,7 @@ impl<const LEN: usize> Vector<LEN> {
         // 2: for 𝑖 from 0 to 𝑘 − 1 do
         // 3:   𝐰̃1 ← 𝐰̃1 || SimpleBitPack (𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1)
         // 4: end for
-        for w in self.vec.iter() {
+        for w in self.elems.iter() {
             h.absorb(&w.w1_encode::<POLY_W1_PACKED_LEN>())
                 .expect("absorb before squeeze is infallible");
         }

@@ -11,27 +11,13 @@ use bouncycastle_utils::secret::ZeroizablePrimitive;
 #[derive(Clone)]
 /// A matrix over the ML-KEM ring.
 pub struct Matrix<const k: usize, const l: usize> {
-    /*pub(crate)*/ mat: [[Polynomial; l]; k],
-}
-
-/// Convenience function to avoid ".0" all over the place.
-impl<const k: usize, const l: usize> Index<usize> for Matrix<k, l> {
-    type Output = [Polynomial; l];
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.mat[index]
-    }
-}
-/// Convenience function to avoid ".0" all over the place.
-impl<const k: usize, const l: usize> IndexMut<usize> for Matrix<k, l> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.mat[index]
-    }
+    /// Indexed `elems[row][col]`
+    pub(crate) elems: [[Polynomial; l]; k],
 }
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
     pub(crate) fn new() -> Self {
-        Self { mat: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
+        Self { elems: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
     }
 
     /// FIPS 204 Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
@@ -41,15 +27,15 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     /// Input: vector of length l
     /// Output: vector of length k
     ///
-    /// transpose: False will multiply A, where as True will multiply A^T
+    /// `transpose`: False will multiply A, where as True will multiply A^T
     pub(crate) fn matrix_vector_ntt<const transpose: bool>(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
         for i in 0..k {
             // split out the 0 case to skip a no-op add_ntt()
             w[i] = if transpose {
-                polynomial::base_mult_montgomery(&self.mat[0][i], &v[0])
+                polynomial::base_mult_montgomery(&self.elems[0][i], &v[0])
             } else {
-                polynomial::base_mult_montgomery(&self.mat[i][0], &v[0])
+                polynomial::base_mult_montgomery(&self.elems[i][0], &v[0])
             };
 
             let mut w1: Polynomial;
@@ -58,9 +44,9 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
                 // into each row of the matrix, then sum the results to produce a vector of
                 // length k.
                 w1 = if transpose {
-                    polynomial::base_mult_montgomery(&self.mat[j][i], &v[j])
+                    polynomial::base_mult_montgomery(&self.elems[j][i], &v[j])
                 } else {
-                    polynomial::base_mult_montgomery(&self.mat[i][j], &v[j])
+                    polynomial::base_mult_montgomery(&self.elems[i][j], &v[j])
                 };
 
                 w[i].add(&w1);
@@ -80,7 +66,7 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct Vector<const k: usize> {
-    pub(crate) vec: [Polynomial; k],
+    pub(crate) elems: [Polynomial; k],
 }
 
 /// Convenience function to avoid ".0" all over the place.
@@ -88,13 +74,13 @@ impl<const k: usize> Index<usize> for Vector<k> {
     type Output = Polynomial;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.vec[index]
+        &self.elems[index]
     }
 }
 /// Convenience function to avoid ".0" all over the place.
 impl<const k: usize> IndexMut<usize> for Vector<k> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.vec[index]
+        &mut self.elems[index]
     }
 }
 
@@ -104,7 +90,7 @@ impl<const k: usize> ZeroizablePrimitive for Vector<k> {
 
 impl<const k: usize> Vector<k> {
     pub(crate) const fn new() -> Self {
-        Self { vec: [Polynomial::new(); k] }
+        Self { elems: [Polynomial::new(); k] }
     }
 
     /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂

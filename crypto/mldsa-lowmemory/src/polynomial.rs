@@ -6,19 +6,13 @@ use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
 ///
-/// Dev note: The following structure does not necessarily need to be declared as public.
-/// There is no real scenario where this function needs to be called directly.
-/// However, in order to test the Debug and Display traits, it is necessary to use STD, so those
-/// can't be tested from inline tests in this file and the real unit tests are in a different crate.
-/// That's the reason why pub is used.
-///
 /// # 🚨 Security 🚨
 /// Polynomials themselves are not inherently secret since sometimes they are part of public keys
 /// and sometimes private keys.
 /// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.
 /// Note: at the moment, nothing in this crate uses `Secret<Polynomial>`, so I have left the `impl ZeroizablePrimitive` commented-out.
 #[derive(Clone, Copy)]
-pub struct Polynomial {
+pub(crate) struct Polynomial {
     pub(crate) coeffs: [i32; N],
 }
 
