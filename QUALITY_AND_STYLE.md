@@ -1,5 +1,5 @@
-This document lists general quality and style guidelines used across the library.
-Hint: ask an AI to help review your PR against this style guide.
+This document lists general quality and style guidelines used across the library. Hint: ask an AI to help review your PR
+against this style guide.
 
 # Architecture
 
@@ -77,20 +77,20 @@ All normal rust naming convensions from clippy apply. In addition, some library-
 Where possible, primitives should expose "one-shot APIs" that simply take data and return a result as a static member
 function that does not require object instantiation.
 
-Other version of Bouncy Castle have a design pattern where stateful objects follow a pattern of new() -> init() ->
-do_update() -> do_final(), and then optionally reset() that sets the object back to an unitialized state. Instead,
-bc-rust does not have init() functions (moving this logic into new() or from() as appropriate), and consequently it also
-does not have reset(). Also, we take advantage of the rust borrow checker's syntax so that all do_final() functions are
-actually final, in other words they must take ownership of self `do_final(self, ...)` so that no subsequent calls can be
-made to this object (as opposed to the usual pattern of taking a ref to self as in `do_update(&self, ...)`). These
-tricks go a long way to reducing fallibility since now in general there is no (or very very little) object state to
-track and return errors about.
+Other version of Bouncy Castle have a design pattern where stateful objects follow a pattern of new () -> init () ->
+do_update () -> do_final (), and then optionally reset () that sets the object back to an unitialized state. Instead,
+bc-rust does not have init () functions (moving this logic into new () or from () as appropriate), and consequently it
+also does not have reset (). Also, we take advantage of the rust borrow checker's syntax so that all do_final ()
+functions are actually final, in other words they must take ownership of self `do_final(self, ...)` so that no
+subsequent calls can be made to this object (as opposed to the usual pattern of taking a ref to self as in
+`do_update(&self, ...)`). These tricks go a long way to reducing fallibility since now in general there is no (or very
+very little) object state to track and return errors about.
 
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
 
 ## Fallibility
 
-As much as humanly possible, Result and unwrap() should be used for "Bad input data" type things and not "Programmer
+As much as humanly possible, Result and unwrap () should be used for "Bad input data" type things and not "Programmer
 didn't read the docs" type things.
 
 `.unwrap()` causes system crashes. The use of `.unwrap()` should always be preceeded by testing that we're in a state
@@ -114,6 +114,19 @@ tracks it.
 
 Use `./dev_scripts/quality_stats.sh` to see the fallibility metrics for the crate you're working on and try to get those
 numbers down.
+
+## Macros
+
+Fundamentally, macros are an optimization that allows future maintainers to easily add existing boilerplate code to a
+new type. That said, macros are typically more complex, harder to code review, and harder to debug than the unrolled
+boilerplate code that they are replacing.
+
+Any PR that uses macros will need to justify that the macros are clearly reducing future maintainer complexity compared
+to the equivalent unrolled code. Simply reducing the number of lines of code is not a sufficient justification.
+
+Note that rust macros tend not to play well with a lot of dev tooling for compiler errors, debuggers, profilers, and
+`cargo mutants`, which is a good reason to avoid macros in core algorithm or data processing code. Macros can be used
+more freely within test code.
 
 # Docs
 
