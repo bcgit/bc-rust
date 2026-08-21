@@ -21,8 +21,7 @@ use crate::mlkem::{N, q};
 /// It is the responsibility of the caller to wrap sensitive instances in `Secret<Vector>`.
 #[derive(Clone, Copy)]
 pub struct Polynomial {
-    /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-    pub coeffs: [i16; N],
+    pub(crate) coeffs: [i16; N],
 }
 
 /// Convenience function to avoid ".0" all over the place.

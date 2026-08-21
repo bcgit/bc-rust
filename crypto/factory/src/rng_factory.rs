@@ -51,6 +51,7 @@ use bouncycastle_rng as rng;
 use bouncycastle_rng::{HASH_DRBG_SHA256_NAME, HASH_DRBG_SHA512_NAME};
 
 /// Wrapper object for all algorithms that impl [`RNG`].
+#[non_exhaustive]
 pub enum RNGFactory {
     ///
     #[allow(non_camel_case_types)]

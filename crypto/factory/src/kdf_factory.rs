@@ -59,6 +59,7 @@ use bouncycastle_sha3::{
 };
 
 /// Wrapper object for all algorithms that impl [`KDF`].
+#[non_exhaustive]
 pub enum KDFFactory {
     ///
     #[allow(non_camel_case_types)]
