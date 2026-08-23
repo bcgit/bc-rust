@@ -661,6 +661,7 @@ pub trait MAC: Sized {
 // release as a breaking change).
 #[derive(Eq, PartialEq, PartialOrd, Clone, Copy, Debug)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum SecurityStrength {
     ///
     None = 0,

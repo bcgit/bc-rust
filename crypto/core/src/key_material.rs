@@ -231,9 +231,12 @@ pub struct KeyMaterial<const KEY_LEN: usize> {
 // `SerializableState` implementations (see the `TryFrom<u8>` impl below). Pin each value to its
 // variant name: reordering variants is fine, but never reuse or renumber an existing discriminant,
 // or previously-serialized states will be misread.
-///
+/// The set of possible types of a KeyMaterial object.
+/// How different tagging affects the behaviour of the KeyMaterial object will vary by the cryptographic algorithm that is consuming it.
+/// Additional key types may be added in the future to accommodate new types of algorithms or use cases.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
+#[non_exhaustive]
 pub enum KeyType {
     /// The KeyMaterial is zeroized and MUST NOT be used for any cryptographic operation in this state.
     Zeroized = 0,

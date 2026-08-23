@@ -27,6 +27,10 @@
 //!
 //! This crate compiles with STD; ie it is explicitly not tagged as `no_std` and it makes use of `Vec` and other
 //! dynamically-sized nice things.
+//!
+//! All enums exported from this crate are tagged `#[non_exhaustive]` to indicate that they
+//! are highly likely to gain more branches in the future; therefore, the compiler is to treat it as
+//! an error if a caller matches exhaustively against the current set of variants.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
@@ -49,6 +53,7 @@ pub const DEFAULT_256_BIT: &str = "Default256Bit";
 
 /// Top-level error type for Factories.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum FactoryError {
     ///
     MACError(MACError),
@@ -56,6 +61,7 @@ pub enum FactoryError {
     UnsupportedAlgorithm(String),
 }
 
+// todo -- weird that MACError is the only one that we need to promote?
 impl From<MACError> for FactoryError {
     fn from(e: MACError) -> FactoryError {
         Self::MACError(e)

@@ -95,6 +95,7 @@ pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
 /// Wrapper object for all algorithms that impl [`MAC`].
 /// MACFactory deviates from the usual AlgorithmFactory trait because MAC objects do not have a no-arg constructor;
 /// instead they have a constructor that takes a [`KeyMaterialTrait`] and can return an error.
+#[non_exhaustive]
 pub enum MACFactory {
     ///
     HMAC_SHA224(hmac::HMAC<sha2::SHA224>),

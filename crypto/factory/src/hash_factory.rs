@@ -37,6 +37,7 @@ use bouncycastle_sha3::{SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NA
 
 /// Wrapper object for all algorithms that impl [`Hash`].
 /// Note: no SHAKE because SHAKE is not NIST approved as a hash function. See FIPS 202 section A.2.
+#[non_exhaustive]
 pub enum HashFactory {
     ///
     SHA224(sha2::SHA224),

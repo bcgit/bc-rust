@@ -841,6 +841,8 @@ mod test_key_material {
                 Unknown => 1,
                 CryptographicRandom => 2,
                 Seed | MACKey | SymmetricCipherKey => 3,
+                // `KeyType` is `#[non_exhaustive]`, so this arm is required.
+                _ => panic!("unranked KeyType variant -- add it here and to `all_types`"),
             }
         }
 

@@ -116,6 +116,10 @@ impl TestFrameworkMAC {
                     low_security_key.set_key_len(64).unwrap(); // truncate should be infallible
                     low_security_key.set_security_strength(SecurityStrength::_192bit).unwrap();
                 }
+                // `SecurityStrength` is `#[non_exhaustive]`, so this arm is required.
+                _ => panic!(
+                    "unhandled SecurityStrength variant -- add a case for it in the MAC test framework"
+                ),
             };
             Ok(())
         })

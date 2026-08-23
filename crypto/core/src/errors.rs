@@ -2,9 +2,14 @@
 //! Errors defined in this module are typically one-to-one with traits defined in [`crate::traits`].
 //!
 //! Most errors are self-explanatory, but additional description is available on some.
+//!
+//! All error enums exported from this crate are tagged `#[non_exhaustive]` to indicate that they
+//! are highly likely to gain more branches in the future; therefore, the compiler is to treat it as
+//! an error if a caller matches exhaustively against the current set of variants.
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum HashError {
     ///
     GenericError(&'static str),
@@ -20,6 +25,7 @@ pub enum HashError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum KeyMaterialError {
     ///
     ActingOnZeroizedKey,
@@ -39,6 +45,7 @@ pub enum KeyMaterialError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum KDFError {
     ///
     GenericError(&'static str),
@@ -54,6 +61,7 @@ pub enum KDFError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum KEMError {
     ///
     GenericError(&'static str),
@@ -77,6 +85,7 @@ pub enum KEMError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum MACError {
     ///
     GenericError(&'static str),
@@ -92,6 +101,7 @@ pub enum MACError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum RNGError {
     ///
     GenericError(&'static str),
@@ -118,6 +128,7 @@ pub enum RNGError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SuspendableError {
     /// The serialized state was produced by a library version incompatible with this one.
     IncompatibleVersion,
@@ -127,6 +138,7 @@ pub enum SuspendableError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SignatureError {
     ///
     GenericError(&'static str),
@@ -150,6 +162,7 @@ pub enum SignatureError {
 
 ///
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SymmetricCipherError {
     ///
     GenericError(&'static str),
