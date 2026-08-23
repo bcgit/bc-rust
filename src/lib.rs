@@ -1,3 +1,5 @@
+pub mod kem;
+pub mod signature;
 pub use bouncycastle_base64 as base64;
 pub use bouncycastle_core as core;
 pub use bouncycastle_factory as factory;
@@ -11,3 +13,7 @@ pub use bouncycastle_mlkem_lowmemory as mlkem_lowmemory;
 pub use bouncycastle_rng as rng;
 pub use bouncycastle_sha2 as sha2;
 pub use bouncycastle_sha3 as sha3;
+
+pub use signature::SignatureFactory;
+
+pub use kem::KemFactory;
