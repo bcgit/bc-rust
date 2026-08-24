@@ -35,8 +35,10 @@ use bouncycastle_core::errors::MACError;
 
 pub mod hash_factory;
 pub mod kdf_factory;
+pub mod kem_factory;
 pub mod mac_factory;
 pub mod rng_factory;
+pub mod signature_factory;
 pub mod xof_factory;
 
 /*** String constants ***/
