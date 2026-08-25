@@ -16,6 +16,16 @@ const C_A24: u32 = (C_A + 2) / 4;
 
 // TODO -- impl KeyAgreement trait (will need to add to traits.rs), and a KEM trait
 
+// TODO -- RFC7748: "When receiving such an array, implementations of X25519
+//    (but not X448) MUST mask the most significant bit in the final byte."
+//    I think "mask" here means to assign 0 or 1 pseudo-randomly?
+
+// TODO -- RFC7748: "   Implementations MUST accept non-canonical values and process them as
+//    if they had been reduced modulo the field prime.  The non-canonical
+//    values are 2^255 - 19 through 2^255 - 1 for X25519 and 2^448 - 2^224
+//    - 1 through 2^448 - 1 for X448.
+//    The TODO here is to unit test this.
+
 fn are_all_zeros(r: &[u8]) -> bool {
     let mut bits = 0;
     for i in r.iter() {

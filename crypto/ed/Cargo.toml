@@ -4,6 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
+bouncycastle-math.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]

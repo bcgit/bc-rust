@@ -1,12 +1,60 @@
 use bouncycastle_utils::ct::Condition;
-use math::modular;
 
+/// The basic data value for any elliptic curve implementation is a point on the curve.
+/// Holds the u-coordinate, which is an element of GF(p) with p = 2^255 - 19 for curve25519, held
+/// here in a `[u8; 32]` as the representation of a point on a Montgomery curve.
+///
+///
+/// # Mathematical operations implemented:
+/// None.
+/// All mathematical operations on a u-coordinate are implemented on [`Scalar25519`].
+///
+/// # Math Background
+/// The group law on elliptic curve points is point addition where A + B yields a new point C on the
+/// curve.
+/// The special case of adding a point to itself, A + A is called "point doubling" and is often
+/// implemented separately as this can be done more efficiently than the general case.
+/// Finally, repeated addition with itself, A + A + ... + A is represented as k * A for a scalar k and
+/// called "scalar multiplication", again, implemented separately.
+///
+/// Curve points are represented here in Montgomery form by their u-coordinate, which defines a point
+/// on the curve or on the quadratic twist up to sign; ie it names the pair {P, -P}.
+/// This means that point doubling and scalar multiplication are well-defined over u-coordinates since
+/// they commute with negation; ie k*(-A) = -(k*A), but general point addition is not.
+/// Fortunately, XDH defined in RFC7748 only requires scalar multiplication, not general point addition.
+type UCoordinate25519 = [u8; 32];
+
+/// Scalar values are integers used as the k value in scalar multiplication of points.
+///
+/// # Mathematical operations implemented:
+///
+/// * EC scalar multiplication: k * A: via `impl core::ops::Mul<UCoordinate25519> for Scalar25519`, with `Output = UCoordinate25519`
+struct Scalar25519([u8; 32]);
+
+impl core::ops::Mul<UCoordinate25519> for Scalar25519 {
+    type Output = UCoordinate25519;
+
+    /// EC scalar multiplication `k * A`, computed by the Montgomery ladder of Section 5 of
+    /// RFC7748; ie this is the X25519 function itself.
+    ///
+    /// Input: self, the scalar `k`; rhs, the u-coordinate of a point `A`.
+    /// Output: the u-coordinate of `k * A`.
+    // TODO -- unimplemented. `todo!()` rather than a literally empty body because `mul` has to
+    //          produce a `[u8; 32]`.
+    fn mul(self, rhs: UCoordinate25519) -> Self::Output {
+        todo!()
+    }
+}
+
+/// todo ???
 const M51: i64 = (1 << 51) - 1;
 
-pub const P32: [u32; 8] = [
+/// todo ???
+const P32: [u32; 8] = [
     0xFFFFFFED, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x7FFFFFFF,
 ];
-pub const P64: [u64; 4] =
+/// todo ???
+const P64: [u64; 4] =
     [0xFFFFFFFFFFFFFFED, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF];
 
 // TODO Add magnitude, normalized fields to CoordField in debug mode and track validity through all operations
@@ -60,7 +108,7 @@ impl CoordField {
     // TODO Requires normalized inputs
     // TODO -- what uses this?
     pub const fn are_equal_var(lhs: &Self, rhs: &Self) -> bool {
-        Self::are_equal(lhs, rhs).to_bool_var()
+        Self::are_equal(lhs, rhs).to_bool()
     }
 
     // TODO -- needs a docstring
@@ -244,36 +292,36 @@ impl CoordField {
         Self([z0, z1, z2, z3, z4])
     }
 
-    // TODO -- needs a docstring
-    pub fn inv(&self) -> Self {
-        // let (x2, t) = self.pow_p_sub5_div8();
-        // t.sqr_n(3).mul(&x2)
+    // // TODO -- needs a docstring
+    // pub fn inv(&self) -> Self {
+    //     // let (x2, t) = self.pow_p_sub5_div8();
+    //     // t.sqr_n(3).mul(&x2)
+    //
+    //     #[inline(always)]
+    //     fn is_zero(x: &[u64; 4]) -> Condition<u64> {
+    //         // todo -- we'll get this when we merge /pull/63 and then rebase this branch on top
+    //         Condition::<u64>::is_zero(x[0] | x[1] | x[2] | x[3])
+    //     }
+    //
+    //     let u = self.normalize().encode64_255();
+    //     let mut v = [0; 4];
+    //     let success = modular::mod_odd_inverse(&P64, &u, &mut v);
+    //     debug_assert!((success | (is_zero(&u) & is_zero(&v))).to_bool_var());
+    //     Self::decode64_255(&v)
+    // }
 
-        #[inline(always)]
-        fn is_zero(x: &[u64; 4]) -> Condition<u64> {
-            // todo -- we'll get this when we merge /pull/63 and then rebase this branch on top
-            Condition::<u64>::is_zero(x[0] | x[1] | x[2] | x[3])
-        }
+    // // TODO -- needs a docstring
+    // // TODO -- why are we returning the same ref we were passed?
+    // pub fn inv_mut(&mut self) -> &mut Self {
+    //     *self = self.inv();
+    //     self
+    // }
 
-        let u = self.normalize().encode64_255();
-        let mut v = [0; 4];
-        let success = modular::mod_odd_inverse(&P64, &u, &mut v);
-        debug_assert!((success | (is_zero(&u) & is_zero(&v))).to_bool_var());
-        Self::decode64_255(&v)
-    }
-
-    // TODO -- needs a docstring
-    // TODO -- why are we returning the same ref we were passed?
-    pub fn inv_mut(&mut self) -> &mut Self {
-        *self = self.inv();
-        self
-    }
-
-    // TODO -- needs a docstring
-    pub fn inv_var(&self) -> Self {
-        // TODO Use a vartime optimized version of modular::mod_odd_inverse
-        self.inv()
-    }
+    // // TODO -- needs a docstring
+    // pub fn inv_var(&self) -> Self {
+    //     // TODO Use a vartime optimized version of modular::mod_odd_inverse
+    //     self.inv()
+    // }
 
     // TODO -- needs a docstring
     // TODO -- why are we returning the same ref we were passed?
@@ -293,7 +341,7 @@ impl CoordField {
     // TODO -- needs a docstring
     // TODO Requires normalized self
     pub const fn is_one_var(&self) -> bool {
-        self.is_one().to_bool_var()
+        self.is_one().to_bool()
     }
 
     // TODO -- needs a docstring
@@ -306,7 +354,7 @@ impl CoordField {
     // TODO -- needs a docstring
     // TODO Requires normalized self
     pub const fn is_zero_var(&self) -> bool {
-        self.is_zero().to_bool_var()
+        self.is_zero().to_bool()
     }
 
     // TODO -- needs a docstring

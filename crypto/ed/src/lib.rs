@@ -18,5 +18,9 @@
 // TODO -- #![forbid(missing_docs)]
 //          Add back at the end
 
+extern crate alloc;
+extern crate alloc;
+
 mod curve25519;
+mod rfc7748;
 pub mod x25519;
