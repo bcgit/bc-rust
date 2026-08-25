@@ -79,10 +79,36 @@ These are non-obvious house rules — follow them when writing or modifying code
 - **One-shot static APIs are the default.** Every primitive should expose a take-data-return-result static method in addition to any streaming API.
 - **Sensitive types impl `core::Secret` (and its supertraits).** Anything that holds key material needs this — don't reach for raw byte arrays for secrets.
 - **`unwrap()` requires justification.** Either a preceding check that proves success, or an inline comment explaining why it's infallible.
-- **Spec correspondence in comments.** Code that mirrors a FIPS/NIST/RFC spec should be commented line-by-line against the spec. Any deliberate deviation must be called out and justified. The "would 6-months-from-now me need >10 minutes to re-understand this?" check is the bar.
+- **Spec correspondence in comments.** Code that mirrors a FIPS/NIST/RFC spec should be commented line-by-line against the spec, citing section/algorithm/step numbers. Any deliberate deviation must be called out and justified. The "would 6-months-from-now me need >10 minutes to re-understand this?" check is the bar. Never write or check these comments from memory — see "Working from specifications" below.
 - **Every primitive crate must ship: tests (`src/tests` or `tests/`), criterion benches in `benches/`, and a CLI subcommand.** Stack-memory characteristics matter — algorithms with non-trivial stack usage get a `mem_usage_benches/` harness.
 - **CLI commands stream.** The `cli/` binary's design is stdin→stdout with ~1 KB buffers so commands compose in shell pipelines; preserve that when adding subcommands.
 - **Crate docs must include sections:** "Usage Examples", "Memory Usage" (stack-usage table), and usually "Security Considerations".
+
+## Working from specifications
+
+**Never cite, paraphrase, or implement a specification from recall.** Model recall of RFC text, FIPS algorithm steps, NIST parameter tables, and section numbering is unreliable — plausible-looking but wrong step numbers and subtly wrong constants are the failure mode. Before writing or reviewing any code, comment, or doc that references a spec, download a fresh copy and read the relevant part of it.
+
+Where to get them:
+
+```
+# RFCs — plain text is easiest to grep and quote
+curl -sL https://www.rfc-editor.org/rfc/rfc8446.txt -o "$SCRATCH/rfc8446.txt"
+
+# NIST FIPS (e.g. FIPS 203 ML-KEM, FIPS 204 ML-DSA, FIPS 202 SHA-3, FIPS 180-4 SHA-2)
+curl -sL https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.203.pdf -o "$SCRATCH/FIPS-203.pdf"
+
+# NIST SP 800-series (note the revision suffix, e.g. r2)
+curl -sL https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Cr2.pdf -o "$SCRATCH/SP-800-56Cr2.pdf"
+```
+
+Download into the session scratchpad directory, not into the repo — spec PDFs must never be committed. Read PDFs with the `Read` tool's `pages` parameter (max 20 pages per call); if a download fails or the URL 404s, say so and ask rather than falling back on recall.
+
+Rules when working from the downloaded copy:
+
+- **Quote exactly, and locate precisely.** Comments and commit messages should name the document with its revision (e.g. "FIPS 203, Algorithm 13 (ML-KEM.Encaps_internal), step 2", "RFC 5869 §2.2"), and quote the spec verbatim where a quote is clearer than a paraphrase. Verify every section/algorithm/step number against the file you just downloaded — including numbers already present in the code, which may predate a spec revision.
+- **The specification is the source of truth for correct behaviour** — not the C/Java/Go implementation you have seen, not the BC Java or BC C# port, and not another crate. When an existing implementation appears to disagree with the spec, re-read the spec, and if the disagreement is real, follow the spec and note the discrepancy in the PR description rather than silently copying the other implementation.
+- **Optimizations are allowed, provided externally-visible behaviour is identical.** Restructuring loops, fusing steps, precomputing tables, constant-time rewrites, and in-place buffer reuse are all fine — the spec constrains observable outputs (and, for this library, timing behaviour on secret data), not the shape of the code. Any such deviation from the spec's literal steps gets a comment saying which spec steps it implements and why it is equivalent.
+- **Test vectors come from the spec or its official companion files** (NIST CAVP / ACVP vectors, RFC test-vector appendices), downloaded the same way. Never hand-write an "expected" value from recall.
 
 ## Notes on testing
 
