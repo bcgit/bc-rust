@@ -154,15 +154,28 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
 impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
     /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.1, then writes the digest.
     ///
+    /// `num_partial_bits` (0..=7, validated by the caller) trailing message bits are taken from the
+    /// least significant bits of `partial_byte`. FIPS 180-4 s. 3.1 numbers message bits from the most
+    /// significant bit of each byte, so those bits are shifted to the top of the final message byte
+    /// and the mandatory "1" padding bit follows them immediately in the same byte.
+    ///
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
-    fn finalize(mut self, output: &mut [u8]) -> usize {
+    fn finalize(mut self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> usize {
+        debug_assert!(num_partial_bits <= 7);
         output.fill(0);
 
         let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
 
-        // FIPS 180-4 s. 5.1.1: append the "1" bit (as the byte 0x80, since messages are whole bytes).
-        self.x_buf[self.x_buf_off] = 0x80;
+        // FIPS 180-4 s. 5.1.1: final message byte = [partial bits, MSB-first] [1] [0...].
+        // With no partial bits this is the familiar 0x80. Shifts are done in u16 so that the 8-bit
+        // shift for num_partial_bits == 0 cannot overflow; the masked value is < 2^num_partial_bits so
+        // the result always fits back into a u8.
+        let mask: u8 = ((1u16 << num_partial_bits) - 1) as u8;
+        let message_bits = ((partial_byte & mask) as u16) << (8 - num_partial_bits);
+        let pad_byte = (message_bits as u8) | (0x80u8 >> num_partial_bits);
+
+        self.x_buf[self.x_buf_off] = pad_byte;
         self.x_buf_off += 1;
 
         // If the length field no longer fits in this block, zero-fill and compress, then start a fresh block.
@@ -173,9 +186,10 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
         }
 
         self.x_buf[self.x_buf_off..56].fill(0x00);
-        // FIPS 180-4 s. 5.1.1: append the 64-bit big-endian message length in bits. byte_count is a
-        // byte counter, so the length in bits is byte_count << 3.
-        let bit_len: u64 = self.byte_count << 3;
+        // FIPS 180-4 s. 5.1.1: append the 64-bit big-endian message length l in bits. byte_count is a
+        // byte counter, so l = (byte_count << 3) | num_partial_bits (the low three bits of
+        // byte_count << 3 are zero).
+        let bit_len: u64 = (self.byte_count << 3) | (num_partial_bits as u64);
         self.x_buf[56..64].copy_from_slice(&bit_len.to_be_bytes());
         self.state.compress(slice::from_ref(&self.x_buf));
 
@@ -268,7 +282,8 @@ impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.finalize(output)
+        // A whole-byte message is the zero-partial-bits case of the general padding.
+        self.finalize(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -281,23 +296,19 @@ impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
         Ok(output)
     }
 
-    /// Bit-oriented (partial final byte) messages are defined by FIPS 180-4 s. 5.1 but are not
-    /// supported by this implementation, which processes whole bytes only. `num_partial_bits == 0`
-    /// is the whole-byte case and behaves exactly like [`Hash::do_final_out`]; any other value returns
-    /// an error rather than panicking.
+    /// FIPS 180-4 s. 5.1: bit-oriented messages. The `num_partial_bits` least significant bits of
+    /// `partial_byte` are appended to the message before padding. `num_partial_bits == 0` behaves
+    /// exactly like [`Hash::do_final_out`].
     fn do_final_partial_bits_out(
         self,
-        _partial_byte: u8,
+        partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        match num_partial_bits {
-            0 => Ok(self.finalize(output)),
-            1..=7 => Err(HashError::InvalidInput(
-                "bit-oriented (partial final byte) messages are not supported by this SHA-2 implementation",
-            )),
-            _ => Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]")),
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
+        Ok(self.finalize(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

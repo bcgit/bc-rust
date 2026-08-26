@@ -34,9 +34,18 @@
 //! let output: Vec<u8> = sha2.do_final();
 //! ```
 //!
-//! Bit-oriented messages (a final byte with fewer than 8 bits, FIPS 180-4 s. 5.1) are not supported:
-//! [`Hash::do_final_partial_bits`] returns [`HashError::InvalidInput`] for `num_partial_bits` in `1..=7`
-//! (and behaves as [`Hash::do_final`] for `0`).
+//! It is also possible to provide input where the final byte contains fewer than 8 bits of data
+//! (a bit-oriented message, FIPS 180-4 s. 5.1); the partial bits are taken from the least significant
+//! bits of the supplied byte. The following hashes 16 bytes plus 3 bits:
+//! ```
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha2 as sha2;
+//!
+//! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\x05";
+//! let mut sha2 = sha2::SHA256::new();
+//! sha2.do_update(&data[..16]);
+//! let output: Vec<u8> = sha2.do_final_partial_bits(data[16], 3).expect("num_partial_bits is in 0..=7");
+//! ```
 //!
 //! # Memory Usage
 //!
@@ -112,8 +121,6 @@ pub use self::sha512::SHA512Internal;
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
 
 /*** Imports needed for docs ***/
-#[allow(unused_imports)]
-use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{Hash, Suspendable};
 
