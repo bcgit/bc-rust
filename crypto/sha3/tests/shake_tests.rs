@@ -74,7 +74,10 @@ mod shake_tests {
             shake.absorb(msg).unwrap();
             let full = shake.squeeze(skip + 1)[skip];
             // pick a byte that is not all-ones/all-zeros so bit selection is actually tested
-            assert!(full != 0x00 && full != 0xFF, "test vector byte must be non-uniform: {full:#x}");
+            assert!(
+                full != 0x00 && full != 0xFF,
+                "test vector byte must be non-uniform: {full:#x}"
+            );
 
             for n in 1..=7usize {
                 let mut shake = SHAKE256::new();
@@ -97,7 +100,10 @@ mod shake_tests {
             let mut shake = SHAKE128::new();
             shake.absorb(b"abc").unwrap();
             assert!(
-                matches!(shake.absorb_last_partial_byte(0xFF, bad), Err(HashError::InvalidLength(_))),
+                matches!(
+                    shake.absorb_last_partial_byte(0xFF, bad),
+                    Err(HashError::InvalidLength(_))
+                ),
                 "num_partial_bits={bad}"
             );
         }
