@@ -68,7 +68,10 @@ mod sha2_tests {
             for bad in [8usize, 9, 16, 64, usize::MAX] {
                 let mut h = H::default();
                 h.do_update(b"abc");
-                assert!(matches!(h.do_final_partial_bits(0xFF, bad), Err(HashError::InvalidLength(_))));
+                assert!(matches!(
+                    h.do_final_partial_bits(0xFF, bad),
+                    Err(HashError::InvalidLength(_))
+                ));
             }
 
             // only the low num_partial_bits bits of partial_byte may influence the result
@@ -112,28 +115,70 @@ mod sha2_tests {
             for &(prefix_len, fill, partial_byte, bits, expected) in cases {
                 let mut h = H::default();
                 h.do_update(&vec![fill; prefix_len]);
-                assert_eq!(h.do_final_partial_bits(partial_byte, bits).unwrap(), hex(expected), "{prefix_len}/{bits}");
+                assert_eq!(
+                    h.do_final_partial_bits(partial_byte, bits).unwrap(),
+                    hex(expected),
+                    "{prefix_len}/{bits}"
+                );
             }
         }
         check::<SHA256>(&[
             (0, 0, 0x01, 1, "b9debf7d52f36e6468a54817c1fa071166c3a63d384850e1575b42f702dc5aa1"),
             (0, 0, 0x15, 5, "9a6eb6cad1c1017a060c4cc9d1be5c9404397e4d05c8e6c91f6347db8591c1a9"),
             (55, 0x5a, 0x03, 2, "f9f22d1e48f4d6fe0f84db4a04bef65d4be116e4f182845b8a827c897b05723a"),
-            (111, 0x5a, 0x05, 3, "bf63c89e04968fba3fc26ccf8908e0b2d05221834a17f912b48d9816d821be6d"),
+            (
+                111,
+                0x5a,
+                0x05,
+                3,
+                "bf63c89e04968fba3fc26ccf8908e0b2d05221834a17f912b48d9816d821be6d",
+            ),
         ]);
         let mut h = SHA256::new();
         h.do_update(b"abc");
-        assert_eq!(h.do_final_partial_bits(0x7f, 7).unwrap(), hex("9f5893e1b85faf8d646489927b5bc22b7394e2a14bbd47da00bbce3a1b27a5ba"));
+        assert_eq!(
+            h.do_final_partial_bits(0x7f, 7).unwrap(),
+            hex("9f5893e1b85faf8d646489927b5bc22b7394e2a14bbd47da00bbce3a1b27a5ba")
+        );
 
         check::<SHA512>(&[
-            (0, 0, 0x01, 1, "5f72ee8494a425ba13fc8c48ac0a05cbaae7e932e471e948cb524333745aa432c1851c0c43682b0e67d64626f8f45cf165f6b538a94c63be98224e969e75d7ed"),
-            (0, 0, 0x15, 5, "dcaab1be5ce172f510ebe2da22f6488bd2f706c8124d6bb16de5cfb3432f0dd6e7262dd35206d500180b70563c419e142c354b6ac155ca8a3f0f0fdb88d567e9"),
-            (55, 0x5a, 0x03, 2, "4fe3a857ce5d8abc5dcc7ea0d3f97ff7bb0db06001e1f37c2c2c9d48bd4c609af169b0f5d200d1b9033af31819095a4679b62d87b15673a85ac75c8ecbc2bd57"),
-            (111, 0x5a, 0x05, 3, "f0af9c9852d733b024e097ae6aa9e7959c84c05a666b04f3c0df368e2ea93bcccf9136aefa54b0c4db432217742dec7d77365b3f5a6b63fe46c9fc259b8f0101"),
+            (
+                0,
+                0,
+                0x01,
+                1,
+                "5f72ee8494a425ba13fc8c48ac0a05cbaae7e932e471e948cb524333745aa432c1851c0c43682b0e67d64626f8f45cf165f6b538a94c63be98224e969e75d7ed",
+            ),
+            (
+                0,
+                0,
+                0x15,
+                5,
+                "dcaab1be5ce172f510ebe2da22f6488bd2f706c8124d6bb16de5cfb3432f0dd6e7262dd35206d500180b70563c419e142c354b6ac155ca8a3f0f0fdb88d567e9",
+            ),
+            (
+                55,
+                0x5a,
+                0x03,
+                2,
+                "4fe3a857ce5d8abc5dcc7ea0d3f97ff7bb0db06001e1f37c2c2c9d48bd4c609af169b0f5d200d1b9033af31819095a4679b62d87b15673a85ac75c8ecbc2bd57",
+            ),
+            (
+                111,
+                0x5a,
+                0x05,
+                3,
+                "f0af9c9852d733b024e097ae6aa9e7959c84c05a666b04f3c0df368e2ea93bcccf9136aefa54b0c4db432217742dec7d77365b3f5a6b63fe46c9fc259b8f0101",
+            ),
         ]);
         let mut h = SHA512::new();
         h.do_update(b"abc");
-        assert_eq!(h.do_final_partial_bits(0x7f, 7).unwrap(), hex("ec168db3beb4379ddd4dd854461ac533f047f69ebf4770dec59442994a8320a4f240eeb0d808f8b7dc8d23d0428af5f095cc2ded70c516aef86ca68e99f8ffe6"));
+        assert_eq!(
+            h.do_final_partial_bits(0x7f, 7).unwrap(),
+            hex(
+                "ec168db3beb4379ddd4dd854461ac533f047f69ebf4770dec59442994a8320a4f240eeb0d808f8b7dc8d23d0428af5f095cc2ded70c516aef86ca68e99f8ffe6"
+            )
+        );
     }
 
     #[test]

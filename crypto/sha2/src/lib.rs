@@ -193,7 +193,8 @@ impl SHA2Params for SHA224Params {}
 /// FIPS 180-4 s. 5.3 initial hash value for SHA224.
 impl Sha256Family for SHA224Params {
     const H0: [u32; 8] = [
-        0xC1059ED8, 0x367CD507, 0x3070DD17, 0xF70E5939, 0xFFC00B31, 0x68581511, 0x64F98FA7, 0xBEFA4FA4,
+        0xC1059ED8, 0x367CD507, 0x3070DD17, 0xF70E5939, 0xFFC00B31, 0x68581511, 0x64F98FA7,
+        0xBEFA4FA4,
     ];
 }
 
@@ -219,7 +220,8 @@ impl SHA2Params for SHA256Params {}
 /// FIPS 180-4 s. 5.3 initial hash value for SHA256.
 impl Sha256Family for SHA256Params {
     const H0: [u32; 8] = [
-        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
+        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB,
+        0x5BE0CD19,
     ];
 }
 
