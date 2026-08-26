@@ -23,6 +23,7 @@ bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory" }
 bouncycastle-rng = { path = "./crypto/rng" }
 bouncycastle-sha2 = { path = "./crypto/sha2" }
 bouncycastle-sha3 = { path = "./crypto/sha3" }
+bouncycastle-sm3 = { path = "./crypto/sm3" }
 bouncycastle-utils = { path = "./crypto/utils" }
 
 
@@ -54,3 +55,4 @@ bouncycastle-mlkem-lowmemory.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
+bouncycastle-sm3.workspace = true

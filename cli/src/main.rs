@@ -7,6 +7,7 @@ mod mlkem_cmd;
 mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
+mod sm3_cmd;
 
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
@@ -97,6 +98,14 @@ enum Subcommands {
     /// Perform SHA3-256 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     SHA3_512 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SM3 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SM3 {
         #[arg(short)]
         /// Output the hashes in hex format.
         x: bool,
@@ -524,6 +533,9 @@ fn main() {
         }
         Some(Subcommands::SHA3_512 { x }) => {
             sha3_cmd::sha3_cmd(512, *x);
+        }
+        Some(Subcommands::SM3 { x }) => {
+            sm3_cmd::sm3_cmd(*x);
         }
         Some(Subcommands::SHAKE128 { length, x }) => {
             sha3_cmd::shake_cmd(128, *length, *x);

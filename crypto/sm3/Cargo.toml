@@ -1,0 +1,18 @@
+[package]
+name = "bouncycastle-sm3"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+
+[[bench]]
+name = "sm3_benches"
+harness = false

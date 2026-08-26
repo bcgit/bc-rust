@@ -57,6 +57,26 @@ mod hash_factory_tests {
         }
 
         #[test]
+        fn sm3_hash_tests() {
+            use bouncycastle_sm3 as sm3;
+            // Expected values: GB/T 32905-2016 Appendix A ("abc") and openssl dgst -sm3 (DUMMY_SEED[..512]).
+            for name in ["SM3", sm3::SM3_NAME] {
+                let h = HashFactory::new(name).unwrap();
+                assert_eq!(h.output_len(), 32);
+                assert_eq!(h.block_bitlen(), 512);
+                assert_eq!(
+                    h.hash(&DUMMY_SEED[..512]),
+                    b"\xb2\x1f\x83\x0d\xca\x06\xbe\x8b\x67\x8c\xf9\x87\xf2\x6b\x9a\x43\x6e\x1b\x42\x79\x63\xb4\x45\x03\x32\xf0\x12\x70\xbd\x2d\xf7\x5c"
+                );
+                let h = HashFactory::new(name).unwrap();
+                assert_eq!(
+                    h.hash(b"abc"),
+                    b"\x66\xc7\xf0\xf4\x62\xee\xed\xd9\xd1\xf2\xd4\x6b\xdc\x10\xe4\xe2\x41\x67\xc4\x87\x5c\xf2\xf7\xa2\x29\x7d\xa0\x2b\x8f\x4b\xa8\xe0"
+                );
+            }
+        }
+
+        #[test]
         fn sha3_hash_tests() {
             // SHA3-224
             let sha3 = HashFactory::new("SHA3-224").unwrap();
