@@ -65,10 +65,16 @@
 //! let h: Vec<u8> = sha2_resumed.do_final();
 //! ```
 
-#![forbid(unsafe_code)]
+// Crate-wide default: unsafe code needs an explicit, reviewable `#[allow]`.
+// `sha256` and `sha512` upgrade this to `forbid` themselves (unconditionally,
+// regardless of the `asm` feature) since `forbid` can't be overridden even
+// by a local `#[allow]` — that's also why it can't be set here, since `asm`
+// (the audited hardware backends) needs to grant itself an exception.
+#![deny(unsafe_code)]
 #![forbid(missing_docs)]
 #![allow(private_bounds)]
 
+mod asm;
 mod sha256;
 mod sha512;
 

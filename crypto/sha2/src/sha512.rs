@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use crate::SHA2Params;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
