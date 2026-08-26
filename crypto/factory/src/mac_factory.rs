@@ -75,11 +75,11 @@ use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{MAC, SecurityStrength};
 use bouncycastle_hmac as hmac;
+use bouncycastle_hmac::HMAC_SM3_NAME;
 use bouncycastle_hmac::{
     HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME,
 };
 use bouncycastle_hmac::{HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_NAME};
-use bouncycastle_hmac::HMAC_SM3_NAME;
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sm3 as sm3;

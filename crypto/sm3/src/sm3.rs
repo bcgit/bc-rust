@@ -107,7 +107,10 @@ impl SM3 {
                     // SS2 = SS1 ^ (A <<< 12)
                     let ss2 = ss1 ^ a12;
                     // TT1 = FF_j(A,B,C) + D + SS2 + W'_j     where W'_j = W_j ^ W_{j+4}
-                    let tt1 = $ff(a, b, c).wrapping_add(d).wrapping_add(ss2).wrapping_add(w[$j] ^ w[$j + 4]);
+                    let tt1 = $ff(a, b, c)
+                        .wrapping_add(d)
+                        .wrapping_add(ss2)
+                        .wrapping_add(w[$j] ^ w[$j + 4]);
                     // TT2 = GG_j(E,F,G) + H + SS1 + W_j
                     let tt2 = $gg(e, f, g).wrapping_add(h).wrapping_add(ss1).wrapping_add(w[$j]);
                     // D = C; C = B <<< 9; B = A; A = TT1; H = G; G = F <<< 19; F = E; E = P0(TT2)

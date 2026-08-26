@@ -618,31 +618,52 @@ mod hmac_tests {
 
         // RFC4231 Test Case 1 key/message
         test_framework.test_mac::<HMAC_SM3>(
-            &KeyMaterial::<20>::from_bytes_as_type(&hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(), KeyType::MACKey).unwrap(),
+            &KeyMaterial::<20>::from_bytes_as_type(
+                &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
+                KeyType::MACKey,
+            )
+            .unwrap(),
             b"Hi There",
-            &hex::decode("51b00d1fb49832bfb01c3ce27848e59f871d9ba938dc563b338ca964755cce70").unwrap(),
+            &hex::decode("51b00d1fb49832bfb01c3ce27848e59f871d9ba938dc563b338ca964755cce70")
+                .unwrap(),
         );
         // RFC4231 Test Case 2 key/message
         test_framework.test_mac::<HMAC_SM3>(
             &KeyMaterial::<4>::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
             b"what do ya want for nothing?",
-            &hex::decode("2e87f1d16862e6d964b50a5200bf2b10b764faa9680a296a2405f24bec39f882").unwrap(),
+            &hex::decode("2e87f1d16862e6d964b50a5200bf2b10b764faa9680a296a2405f24bec39f882")
+                .unwrap(),
         );
         // RFC4231 Test Case 6 key/message: key larger than the 64-byte block, so it is hashed first
         test_framework.test_mac::<HMAC_SM3>(
             &KeyMaterial::<131>::from_bytes_as_type(&[0xaa; 131], KeyType::MACKey).unwrap(),
             b"Test Using Larger Than Block-Size Key - Hash Key First",
-            &hex::decode("b4fd844e13342002f0b2e0690ea7741f1497d993a70494cea601e657bedf67a0").unwrap(),
+            &hex::decode("b4fd844e13342002f0b2e0690ea7741f1497d993a70494cea601e657bedf67a0")
+                .unwrap(),
         );
 
         // zero-length key (weak; needs new_allow_weak_key)
         let mut zero_length_key = KeyMaterial256::default();
-        key_material::do_hazardous_operations(&mut zero_length_key, |k| k.set_key_type(KeyType::MACKey)).unwrap();
+        key_material::do_hazardous_operations(&mut zero_length_key, |k| {
+            k.set_key_type(KeyType::MACKey)
+        })
+        .unwrap();
         let mut mac = HMAC_SM3::new_allow_weak_key(&zero_length_key).unwrap();
         mac.do_update(b"abc");
-        assert_eq!(mac.do_final(), hex::decode("36525058ca466791502435c910517f1a7e86613d5f35ac1f18a94def0eaac81f").unwrap());
+        assert_eq!(
+            mac.do_final(),
+            hex::decode("36525058ca466791502435c910517f1a7e86613d5f35ac1f18a94def0eaac81f")
+                .unwrap()
+        );
 
-        assert_eq!(HMAC_SM3::new(&KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap()).unwrap().output_len(), 32);
+        assert_eq!(
+            HMAC_SM3::new(
+                &KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap()
+            )
+            .unwrap()
+            .output_len(),
+            32
+        );
     }
 
     #[test]

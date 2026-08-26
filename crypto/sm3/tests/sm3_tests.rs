@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod sm3_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
-    use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams, SecurityStrength};
+    use bouncycastle_core::traits::{
+        Algorithm, AlgorithmOID, Hash, HashAlgParams, SecurityStrength,
+    };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_hex as hex;
@@ -19,19 +21,34 @@ mod sm3_tests {
     fn core_test_framework_hash() {
         let test_framework = TestFrameworkHash::new();
 
-        test_framework.test_hash::<SM3>(b"abc", &h("66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"));
+        test_framework.test_hash::<SM3>(
+            b"abc",
+            &h("66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0"),
+        );
         test_framework.test_hash::<SM3>(
             b"abcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcdabcd",
             &h("debe9ff92275b8a138604889c18e5a4d6fdb70e5387e5765293dcba39c0c5732"),
         );
-        test_framework.test_hash::<SM3>(b"", &h("1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b"));
-        test_framework.test_hash::<SM3>(b"a", &h("623476ac18f65a2909e43c7fec61b49c7e764a91a18ccb82f1917a29c86c5e88"));
+        test_framework.test_hash::<SM3>(
+            b"",
+            &h("1ab21d8355cfa17f8e61194831e81a8f22bec8c728fefb747ed035eb5082aa2b"),
+        );
+        test_framework.test_hash::<SM3>(
+            b"a",
+            &h("623476ac18f65a2909e43c7fec61b49c7e764a91a18ccb82f1917a29c86c5e88"),
+        );
         test_framework.test_hash::<SM3>(
             b"abcdefghijklmnopqrstuvwxyz",
             &h("b80fe97a4da24afc277564f66a359ef440462ad28dcc6d63adb24d5c20a61595"),
         );
-        test_framework.test_hash::<SM3>(&DUMMY_SEED[..512], &h("b21f830dca06be8b678cf987f26b9a436e1b427963b4450332f01270bd2df75c"));
-        test_framework.test_hash::<SM3>(DUMMY_SEED, &h("1f00bad6a72e851e0f6e94fd317f97b74d5fbc4c090aefb91e7554e3f9c8c7fb"));
+        test_framework.test_hash::<SM3>(
+            &DUMMY_SEED[..512],
+            &h("b21f830dca06be8b678cf987f26b9a436e1b427963b4450332f01270bd2df75c"),
+        );
+        test_framework.test_hash::<SM3>(
+            DUMMY_SEED,
+            &h("1f00bad6a72e851e0f6e94fd317f97b74d5fbc4c090aefb91e7554e3f9c8c7fb"),
+        );
     }
 
     /// bc-java SM3DigestTest "Additional vectors for GMSSL": the SM2 Z_A value from GM/T 0003.5 (also
@@ -48,7 +65,10 @@ mod sm3_tests {
             "0AE4C7798AA0F119471BEE11825BE46202BB79E2A5844495E97C04FF4DF2548A",
             "7C0240F88F1CD4E16352A73C17B7F16F07353E53A176D684A9FE0C6BB798E857",
         ));
-        assert_eq!(SM3::new().hash(&msg), h("f4a38489e32b45b6f876e3ac2168ca392362dc8f23459c1d1146fc3dbfb7bc9a"));
+        assert_eq!(
+            SM3::new().hash(&msg),
+            h("f4a38489e32b45b6f876e3ac2168ca392362dc8f23459c1d1146fc3dbfb7bc9a")
+        );
     }
 
     /// Padding boundaries (GB/T 32905-2016 s. 5.2): message lengths around the 56- and 64-byte
@@ -111,7 +131,10 @@ mod sm3_tests {
         for bad in [8usize, 9, 16, 64, usize::MAX] {
             let mut sm3 = SM3::new();
             sm3.do_update(b"abc");
-            assert!(matches!(sm3.do_final_partial_bits(0xFF, bad), Err(HashError::InvalidLength(_))), "n={bad}");
+            assert!(
+                matches!(sm3.do_final_partial_bits(0xFF, bad), Err(HashError::InvalidLength(_))),
+                "n={bad}"
+            );
             let mut out = [0u8; 32];
             assert!(matches!(
                 SM3::new().do_final_partial_bits_out(0xFF, bad, &mut out),
@@ -148,14 +171,34 @@ mod sm3_tests {
             (b"", 0x01, 1, "985ffe9568be96328729b1c16631e9328d356432413d7556a646b9eefe479b9e"),
             (b"", 0x15, 5, "469dd7b688a7b98d6362a8e2488a148cb4231bc196b796eee9652cb9044f3dcd"),
             (b"abc", 0x7f, 7, "5ad9f5745671e4a49f6704fdadff8cc2ff8a9683d1c7c0810a5dd7db367e9d74"),
-            (&[0x5a; 55], 0x03, 2, "65985be43230ee70a939d38e34a88198e0d63bb307081459d8d75541d54a382e"),
-            (&[0x5a; 111], 0x05, 3, "8dfb4b90e5f899286782c9b192b67c5ebfbbab5a10d827d2518509307b7877c3"),
-            (&DUMMY_SEED[..64], 0x0f, 4, "30e64a364406c1ac354ad17845b4df681de5bad9a1b41e996921a6f5effbf85b"),
+            (
+                &[0x5a; 55],
+                0x03,
+                2,
+                "65985be43230ee70a939d38e34a88198e0d63bb307081459d8d75541d54a382e",
+            ),
+            (
+                &[0x5a; 111],
+                0x05,
+                3,
+                "8dfb4b90e5f899286782c9b192b67c5ebfbbab5a10d827d2518509307b7877c3",
+            ),
+            (
+                &DUMMY_SEED[..64],
+                0x0f,
+                4,
+                "30e64a364406c1ac354ad17845b4df681de5bad9a1b41e996921a6f5effbf85b",
+            ),
         ];
         for (prefix, partial_byte, bits, expected) in cases {
             let mut sm3 = SM3::new();
             sm3.do_update(prefix);
-            assert_eq!(sm3.do_final_partial_bits(partial_byte, bits).unwrap(), h(expected), "{}/{bits}", prefix.len());
+            assert_eq!(
+                sm3.do_final_partial_bits(partial_byte, bits).unwrap(),
+                h(expected),
+                "{}/{bits}",
+                prefix.len()
+            );
         }
     }
 
