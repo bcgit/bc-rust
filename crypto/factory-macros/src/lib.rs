@@ -12,6 +12,8 @@
 //!
 //! - [`macro@Hash`] generates the `bouncycastle_core::traits::Hash` trait impl, forwarding every
 //!   method to whichever variant the enum currently holds.
+//! - [`macro@KDF`] generates the `bouncycastle_core::traits::KDF` trait impl, forwarding every
+//!   method to whichever variant the enum currently holds.
 //! - [`macro@AlgorithmFactory`] generates `Default` and `crate::AlgorithmFactory` trait impls
 //!   (`new`/`default_128_bit`/`default_256_bit`), reading each variant's algorithm-name constant
 //!   and default-security-level markers from a `#[factory(...)]` helper attribute.
@@ -41,6 +43,7 @@
 
 mod factory;
 mod hash;
+mod kdf;
 
 use proc_macro::TokenStream;
 use syn::{Data, DataEnum, DeriveInput, Fields, Type, parse_macro_input};
@@ -53,6 +56,16 @@ use syn::{Data, DataEnum, DeriveInput, Fields, Type, parse_macro_input};
 pub fn derive_hash(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     hash::expand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
+}
+
+/// Derives `bouncycastle_core::traits::KDF` for an enum whose variants are each a single-field
+/// tuple wrapping a type that itself implements that trait. Every method is forwarded to the
+/// wrapped variant, so adding a new algorithm only requires adding an enum variant -- no match
+/// arms to update by hand.
+#[proc_macro_derive(KDF, attributes(factory))]
+pub fn derive_kdf(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    kdf::expand(&input).unwrap_or_else(syn::Error::into_compile_error).into()
 }
 
 /// Derives `Default` and `AlgorithmFactory` (`new`/`default_128_bit`/`default_256_bit`) for an
