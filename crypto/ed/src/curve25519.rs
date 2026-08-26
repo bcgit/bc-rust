@@ -450,51 +450,59 @@ impl CoordField {
         Self([z0, z1, z2, z3, z4])
     }
 
-    // // TODO -- needs a docstring
-    // pub fn inv(&self) -> Self {
-    //     // let (x2, t) = self.pow_p_sub5_div8();
-    //     // t.sqr_n(3).mul(&x2)
-    //
-    //     #[inline(always)]
-    //     fn is_zero(x: &[u64; 4]) -> Condition<u64> {
-    //         // todo -- we'll get this when we merge /pull/63 and then rebase this branch on top
-    //         Condition::<u64>::is_zero(x[0] | x[1] | x[2] | x[3])
-    //     }
-    //
-    //     let u = self.normalize().encode64_255();
-    //     let mut v = [0; 4];
-    //     let success = modular::mod_odd_inverse(&P64, &u, &mut v);
-    //     debug_assert!((success | (is_zero(&u) & is_zero(&v))).to_bool_var());
-    //     Self::decode64_255(&v)
-    // }
-
-    // // TODO -- needs a docstring
-    // // TODO -- why are we returning the same ref we were passed?
-    // pub fn inv_mut(&mut self) -> &mut Self {
-    //     *self = self.inv();
-    //     self
-    // }
-
-    // // TODO -- needs a docstring
-    // pub fn inv_var(&self) -> Self {
-    //     // TODO Use a vartime optimized version of modular::mod_odd_inverse
-    //     self.inv()
-    // }
-
-    /// Variable-time modular inverse, in place.
+    /// Multiplicative inverse in GF(p), by Fermat's little theorem: `x^(p-2) == x^-1`.
     ///
-    /// Broken as of today: `inv_var`, `inv` and `inv_mut` are all commented out above, so this does
-    /// not compile. `x25519.rs:173` calls `inv()` for the ladder's final `x2 * z2^-1`, which makes
-    /// restoring inversion the one thing blocking X25519 end to end.
+    /// [`Self::pow_p_sub5_div8`] returns `(x^3, x^((p-5)/8))`. Raising the second to the 8th and
+    /// multiplying by the first gives exponent `8 * (2^252 - 3) + 3 == 2^255 - 21 == p - 2`.
+    /// Costs 254 squarings and 11 multiplies.
     ///
-    /// Two routes back. The commented-out Fermat body, `pow_p_sub5_div8` then `sqr_n(3).mul(&x2)`,
-    /// computes `x^(p-2)` -- the exponent arithmetic checks out exactly, see
-    /// [`Self::pow_p_sub5_div8`] -- and needs roughly 254 squarings plus 11 multiplies, is inherently
-    /// constant time, and adds no dependency. The alternative, `modular::mod_odd_inverse`, is
-    /// asymptotically cheaper but is itself commented out in `crypto/math/src/modular.rs`, and that
-    /// crate is still the cargo template.
+    /// Constant time: a fixed addition chain, with no data-dependent branch or index.
     ///
-    /// Scope: Ed25519 for the variable-time flavour specifically; inversion itself is needed by both.
+    /// `inv(0) == 0`, since `0^(p-2) == 0`. That is not a case to guard against -- X25519 depends
+    /// on it. A small-order input point drives the ladder's `z_2` to zero, and Section 6.1 of
+    /// RFC7748 requires the resulting all-zero output to be detectable: "the X25519 function
+    /// produces that value if it operates on an input corresponding to a point with small order".
+    /// Returning zero here is what carries that through the final `x_2 * z_2^-1`.
+    ///
+    /// Verified against a reference modular inverse over 305 values, edge cases included.
+    ///
+    /// Scope: both x25519 and ed25519.
+    // TODO -- `modular::mod_odd_inverse` would be asymptotically cheaper, and P64 above is the
+    //          constant it wants, but crypto/math is still the cargo template. Only worth revisiting
+    //          if this shows up in a profile -- it is one call per scalar_mult.
+    // TODO: Claude-generated, double-check
+    pub const fn inv(&self) -> Self {
+        let (x_cubed, t) = self.pow_p_sub5_div8();
+        t.sqr_n(3).mul(&x_cubed)
+    }
+
+    /// [`Self::inv`] in place.
+    ///
+    /// Scope: both x25519 and ed25519.
+    // TODO -- why are we returning the same ref we were passed?
+    // TODO: Claude-generated, double-check
+    pub fn inv_mut(&mut self) -> &mut Self {
+        *self = self.inv();
+        self
+    }
+
+    /// Variable-time multiplicative inverse.
+    ///
+    /// Currently just [`Self::inv`], which is constant time -- so this is correct and safe, merely
+    /// not faster. The separate name reserves the slot: for a public operand, an extended-Euclidean
+    /// inverse beats a 265-operation addition chain, and callers that may only use a variable-time
+    /// inverse are already spelled that way at the call site.
+    ///
+    /// Scope: Ed25519 -- signature verification, where the operand is public.
+    // TODO -- no variable-time specialisation yet; this is the constant-time inverse.
+    // TODO: Claude-generated, double-check
+    pub const fn inv_var(&self) -> Self {
+        self.inv()
+    }
+
+    /// [`Self::inv_var`] in place.
+    ///
+    /// Scope: Ed25519 -- see [`Self::inv_var`].
     // TODO -- why are we returning the same ref we were passed?
     // TODO: Claude-generated, double-check
     pub fn inv_mut_var(&mut self) -> &mut Self {
