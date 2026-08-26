@@ -500,18 +500,36 @@ mod keccak_tests {
     use super::*;
     use bouncycastle_hex as hex;
 
+    /// Basic sponge sanity: absorbing in one chunk or many gives the same output, successive
+    /// squeezes continue the stream (do not repeat), and different capacities give different output.
     #[test]
     fn test_keccak() {
-        let mut d = KeccakInternal::new(KeccakSize::_256);
         let m_vec = hex::decode("6d657373616765").unwrap();
+
+        let mut d = KeccakInternal::new(KeccakSize::_256);
         d.absorb(&m_vec);
+        let mut out1 = [0u8; 32];
+        d.squeeze(&mut out1);
+        let mut out2 = [0u8; 32];
+        d.squeeze(&mut out2);
+        assert_ne!(out1, [0u8; 32]);
+        assert_ne!(out1, out2, "successive squeezes must continue the output stream");
 
-        let mut out = [0u8; 32];
-        d.squeeze(&mut out);
-        println!("n1: {:x?}", &out);
+        // chunked absorb + single 64-byte squeeze must reproduce out1 || out2
+        let mut d = KeccakInternal::new(KeccakSize::_256);
+        for b in &m_vec {
+            d.absorb(core::slice::from_ref(b));
+        }
+        let mut out64 = [0u8; 64];
+        d.squeeze(&mut out64);
+        assert_eq!(&out64[..32], &out1);
+        assert_eq!(&out64[32..], &out2);
 
-        d.squeeze(&mut out);
-        println!("n2: {:x?}", &out);
+        let mut d = KeccakInternal::new(KeccakSize::_512);
+        d.absorb(&m_vec);
+        let mut out_c512 = [0u8; 32];
+        d.squeeze(&mut out_c512);
+        assert_ne!(out_c512, out1);
     }
 
     /// Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt
