@@ -14,7 +14,7 @@
 //! let output: Vec<u8> = sha2::SHA256::new().hash(data);
 //! ```
 //!
-//! More advanced usage will require creating a SHA3 or SHAKE object to hold state between successive calls,
+//! More advanced usage will require creating a SHA2 object to hold state between successive calls,
 //! for example if input is received in chunks and not all available at the same time:
 //!
 //! ```
@@ -33,6 +33,41 @@
 //!
 //! let output: Vec<u8> = sha2.do_final();
 //! ```
+//!
+//! Bit-oriented messages (a final byte with fewer than 8 bits, FIPS 180-4 s. 5.1) are not supported:
+//! [`Hash::do_final_partial_bits`] returns [`HashError::InvalidInput`] for `num_partial_bits` in `1..=7`
+//! (and behaves as [`Hash::do_final`] for `0`).
+//!
+//! # Memory Usage
+//!
+//! No heap memory is used by the algorithms themselves; the `Vec<u8>`-returning convenience methods
+//! allocate only the output buffer, and the `*_out` variants allocate nothing.
+//!
+//! | Object                              | Size (bytes) |
+//! |-------------------------------------|--------------|
+//! | `SHA224`, `SHA256`                  | 112          |
+//! | `SHA384`, `SHA512`                  | 208          |
+//! | Suspended `SHA224`/`SHA256` state   | 108          |
+//! | Suspended `SHA384`/`SHA512` state   | 204          |
+//!
+//! The object holds the 8-word chaining value plus one block of buffered input. The compression
+//! function additionally uses a 64-word (SHA-256 family, 256 bytes) or 80-word (SHA-512 family,
+//! 640 bytes) message schedule on the stack for the duration of a call.
+//!
+//! # Security Considerations
+//!
+//! * SHA-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively.
+//! * SHA-2 is a Merkle–Damgård construction and is therefore subject to length-extension:
+//!   `H(k || m)` is not a secure MAC. Use HMAC (`bouncycastle-hmac`) for keyed hashing.
+//! * SHA-384 and SHA-224 are truncations of SHA-512 and SHA-256 with distinct initial values, and
+//!   are not vulnerable to length extension in the same direct way, but should still not be used as
+//!   `H(k || m)` MACs.
+//! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
+//!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
+//!   locals during compression are not zeroized.
+//! * The implementation contains no data-dependent branches or table lookups.
+//! * Messages up to 2^64 bytes are supported (FIPS 180-4 permits 2^64 bits for SHA-224/256 and
+//!   2^128 bits for SHA-384/512; the SHA-512 family limit here is 2^67 bits).
 //!
 //! # Suspending and resuming execution
 //!
@@ -78,16 +113,18 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, Security
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
-use bouncycastle_core::traits::Suspendable;
+use bouncycastle_core::errors::HashError;
+#[allow(unused_imports)]
+use bouncycastle_core::traits::{Hash, Suspendable};
 
 /*** String constants ***/
-///
+/// Algorithm name string for SHA224, as used by the factories and CLI.
 pub const SHA224_NAME: &str = "SHA224";
-///
+/// Algorithm name string for SHA256, as used by the factories and CLI.
 pub const SHA256_NAME: &str = "SHA256";
-///
+/// Algorithm name string for SHA384, as used by the factories and CLI.
 pub const SHA384_NAME: &str = "SHA384";
-///
+/// Algorithm name string for SHA512, as used by the factories and CLI.
 pub const SHA512_NAME: &str = "SHA512";
 
 /*** pub types ***/
@@ -104,11 +141,30 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// Private trait on purpose so that only the NIST-approved params can be used.
 trait SHA2Params: HashAlgParams {}
 
-/*** SHA224 ***/
-impl HashAlgParams for SHA224 {
-    const OUTPUT_LEN: usize = 28;
-    const BLOCK_LEN: usize = 64;
+/// Parameters for the SHA-256 family (SHA-224, SHA-256): 32-bit words, 512-bit blocks.
+/// `H0` is the initial hash value from FIPS 180-4 s. 5.3.2 / 5.3.3.
+trait Sha256Family: SHA2Params {
+    const H0: [u32; 8];
 }
+
+/// Parameters for the SHA-512 family (SHA-384, SHA-512): 64-bit words, 1024-bit blocks.
+/// `H0` is the initial hash value from FIPS 180-4 s. 5.3.4 / 5.3.5.
+trait Sha512Family: SHA2Params {
+    const H0: [u64; 8];
+}
+
+/// The public hash types expose the same parameters as their `*Params` marker, so the constants
+/// are defined exactly once (on the params struct) and forwarded here.
+impl<PARAMS: Sha256Family> HashAlgParams for SHA256Internal<PARAMS> {
+    const OUTPUT_LEN: usize = PARAMS::OUTPUT_LEN;
+    const BLOCK_LEN: usize = PARAMS::BLOCK_LEN;
+}
+impl<PARAMS: Sha512Family> HashAlgParams for SHA512Internal<PARAMS> {
+    const OUTPUT_LEN: usize = PARAMS::OUTPUT_LEN;
+    const BLOCK_LEN: usize = PARAMS::BLOCK_LEN;
+}
+
+/*** SHA224 ***/
 /// The parameters for SHA224.
 #[derive(Clone)]
 pub struct SHA224Params;
@@ -127,12 +183,14 @@ impl AlgorithmOID for SHA224 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x04];
 }
 impl SHA2Params for SHA224Params {}
+/// FIPS 180-4 s. 5.3 initial hash value for SHA224.
+impl Sha256Family for SHA224Params {
+    const H0: [u32; 8] = [
+        0xC1059ED8, 0x367CD507, 0x3070DD17, 0xF70E5939, 0xFFC00B31, 0x68581511, 0x64F98FA7, 0xBEFA4FA4,
+    ];
+}
 
 /*** SHA256 ***/
-impl HashAlgParams for SHA256 {
-    const OUTPUT_LEN: usize = 32;
-    const BLOCK_LEN: usize = 64;
-}
 /// The parameters for SHA256.
 #[derive(Clone)]
 pub struct SHA256Params;
@@ -151,12 +209,14 @@ impl HashAlgParams for SHA256Params {
     const BLOCK_LEN: usize = 64;
 }
 impl SHA2Params for SHA256Params {}
+/// FIPS 180-4 s. 5.3 initial hash value for SHA256.
+impl Sha256Family for SHA256Params {
+    const H0: [u32; 8] = [
+        0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
+    ];
+}
 
 /*** SHA384 ***/
-impl HashAlgParams for SHA384 {
-    const OUTPUT_LEN: usize = 48;
-    const BLOCK_LEN: usize = 128;
-}
 /// The parameters for SHA384.
 #[derive(Clone)]
 pub struct SHA384Params;
@@ -175,15 +235,18 @@ impl HashAlgParams for SHA384Params {
     const BLOCK_LEN: usize = 128;
 }
 impl SHA2Params for SHA384Params {}
+/// FIPS 180-4 s. 5.3 initial hash value for SHA384.
+impl Sha512Family for SHA384Params {
+    const H0: [u64; 8] = [
+        0xCBBB9D5DC1059ED8, 0x629A292A367CD507, 0x9159015A3070DD17, 0x152FECD8F70E5939,
+        0x67332667FFC00B31, 0x8EB44A8768581511, 0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
+    ];
+}
 
 /*** SHA512 ***/
 /// The parameters for SHA512.
 #[derive(Clone)]
 pub struct SHA512Params;
-impl HashAlgParams for SHA512 {
-    const OUTPUT_LEN: usize = 64;
-    const BLOCK_LEN: usize = 128;
-}
 impl Algorithm for SHA512Params {
     const ALG_NAME: &'static str = SHA512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
@@ -199,6 +262,13 @@ impl AlgorithmOID for SHA512 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03];
 }
 impl SHA2Params for SHA512Params {}
+/// FIPS 180-4 s. 5.3 initial hash value for SHA512.
+impl Sha512Family for SHA512Params {
+    const H0: [u64; 8] = [
+        0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B, 0xA54FF53A5F1D36F1,
+        0x510E527FADE682D1, 0x9B05688C2B3E6C1F, 0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
+    ];
+}
 
 pub use sha256::SUSPENDED_SHA256_STATE_LEN;
 pub use sha512::SUSPENDED_SHA512_STATE_LEN;

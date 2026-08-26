@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod sha2_tests {
-    use bouncycastle_core::errors::SuspendableError;
+    use bouncycastle_core::errors::{HashError, SuspendableError};
     use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_sha2::*;
@@ -54,6 +54,37 @@ mod sha2_tests {
             test_framework.test_hash::<SHA512>(b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu", b"\x8e\x95\x9b\x75\xda\xe3\x13\xda\x8c\xf4\xf7\x28\x14\xfc\x14\x3f\x8f\x77\x79\xc6\xeb\x9f\x7f\xa1\x72\x99\xae\xad\xb6\x88\x90\x18\x50\x1d\x28\x9e\x49\x00\xf7\xe4\x33\x1b\x99\xde\xc4\xb5\x43\x3a\xc7\xd3\x29\xee\xb6\xdd\x26\x54\x5e\x96\xe5\x5b\x87\x4b\xe9\x09");
             test_framework.test_hash::<SHA512>(&DUMMY_SEED[..512], b"\xed\xb9\xbe\xd7\x21\xaa\x6a\x5f\x6f\xbc\x66\x19\xd3\xa3\xc2\xbe\x3d\x04\x30\x43\xf0\x5a\x9a\xeb\xc7\xb1\x19\x7a\x2a\xa9\xc4\x9a\x57\xd5\xdd\xd4\x67\x4c\x17\x85\x78\x50\x88\xd9\xf1\xff\x42\xc7\x97\xa0\x2a\xdc\x9b\x81\x7a\x13\x9a\x50\x97\x0d\xa6\xc9\x95\x24");
         }
+    }
+
+    /// Bit-oriented messages are not supported by the SHA-2 implementation: 0 partial bits must equal
+    /// do_final(); 1..=7 returns InvalidInput; more than 7 returns InvalidLength. None of them panic.
+    #[test]
+    fn partial_bits_are_rejected() {
+        fn check<H: Hash + Default>() {
+            let mut a = H::default();
+            a.do_update(b"abc");
+            assert_eq!(a.do_final_partial_bits(0xFF, 0).unwrap(), H::default().hash(b"abc"));
+
+            for n in 1..=7usize {
+                let mut h = H::default();
+                h.do_update(b"abc");
+                assert!(matches!(h.do_final_partial_bits(0xFF, n), Err(HashError::InvalidInput(_))), "n={n}");
+                let mut out = [0u8; 64];
+                assert!(matches!(
+                    H::default().do_final_partial_bits_out(0xFF, n, &mut out),
+                    Err(HashError::InvalidInput(_))
+                ));
+            }
+            for bad in [8usize, 9, 16, 64, usize::MAX] {
+                let mut h = H::default();
+                h.do_update(b"abc");
+                assert!(matches!(h.do_final_partial_bits(0xFF, bad), Err(HashError::InvalidLength(_))), "n={bad}");
+            }
+        }
+        check::<SHA224>();
+        check::<SHA256>();
+        check::<SHA384>();
+        check::<SHA512>();
     }
 
     #[test]
@@ -118,7 +149,7 @@ mod sha2_tests {
         assert_eq!(output, output2);
 
         // also, give it a busted x_buf_off, just to satisfy mutants that that's been tested
-        let mut busted_state = serialized_state.clone();
+        let mut busted_state = serialized_state;
         busted_state[3 + 104] = 65;
         match SHA256::from_suspended(busted_state) {
             Err(SuspendableError::InvalidData) => { /* good */ }
@@ -146,7 +177,7 @@ mod sha2_tests {
         assert_eq!(output, output2);
 
         // also, give it a busted x_buf_off, just to satisfy mutants that that's been tested
-        let mut busted_state = serialized_state.clone();
+        let mut busted_state = serialized_state;
         busted_state[3 + 200] = 129;
         match SHA512::from_suspended(busted_state) {
             Err(SuspendableError::InvalidData) => { /* good */ }

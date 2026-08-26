@@ -1,4 +1,4 @@
-use crate::SHA2Params;
+use crate::Sha512Family;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
@@ -58,34 +58,18 @@ fn theta1(x: u64) -> u64 {
     x.rotate_right(19) ^ x.rotate_right(61) ^ (x >> 6)
 }
 
-// todo -- cleanup
-// #[derive(Clone, Copy)]
 #[derive(Clone)]
-pub(crate) struct Sha512State<PARAMS: SHA2Params> {
-    _params: std::marker::PhantomData<PARAMS>,
+pub(crate) struct Sha512State<PARAMS: Sha512Family> {
+    _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u64; 8]>,
 }
 
-impl<PARAMS: SHA2Params> Sha512State<PARAMS> {
+impl<PARAMS: Sha512Family> Sha512State<PARAMS> {
     pub(crate) fn new() -> Self {
+        // FIPS 180-4 s. 5.3: initial hash value H(0), supplied per-variant by the params type.
         let mut h = Secret::<[u64; 8]>::new();
-        match PARAMS::OUTPUT_LEN * 8 {
-            384 => {
-                h.copy_from_slice(&[
-                    0xCBBB9D5DC1059ED8, 0x629A292A367CD507, 0x9159015A3070DD17, 0x152FECD8F70E5939,
-                    0x67332667FFC00B31, 0x8EB44A8768581511, 0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
-                ]);
-                Self { _params: std::marker::PhantomData, h }
-            }
-            512 => {
-                h.copy_from_slice(&[
-                    0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B, 0xA54FF53A5F1D36F1,
-                    0x510E527FADE682D1, 0x9B05688C2B3E6C1F, 0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
-                ]);
-                Self { _params: std::marker::PhantomData, h }
-            }
-            _ => panic!("Invalid SHA-2 bit size"),
-        }
+        h.copy_from_slice(&PARAMS::H0);
+        Self { _params: core::marker::PhantomData, h }
     }
 
     fn compress(&mut self, blocks: &[[u8; 128]]) {
@@ -157,20 +141,20 @@ impl<PARAMS: SHA2Params> Sha512State<PARAMS> {
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
-pub struct SHA512Internal<PARAMS: SHA2Params> {
-    _params: std::marker::PhantomData<PARAMS>,
+pub struct SHA512Internal<PARAMS: Sha512Family> {
+    _params: core::marker::PhantomData<PARAMS>,
     state: Sha512State<PARAMS>,
-    // NOTE The code currently only supports 2^67 bits, not the full 2^128
+    // NOTE: FIPS 180-4 allows messages up to 2^128 bits; this counter supports 2^67 bits (2^64 bytes).
     byte_count: u64,
     x_buf: Secret<[u8; 128]>,
     x_buf_off: usize,
 }
 
-impl<PARAMS: SHA2Params> SHA512Internal<PARAMS> {
+impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
     /// Creates a new SHA512 instance, ready for use.
     pub fn new() -> Self {
         Self {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             state: Sha512State::<PARAMS>::new(),
             byte_count: 0,
             x_buf: Secret::new(),
@@ -179,18 +163,63 @@ impl<PARAMS: SHA2Params> SHA512Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHA2Params> Default for SHA512Internal<PARAMS> {
+impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
+    /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.2, then writes the digest.
+    ///
+    /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
+    /// truncates the digest, a longer one is zero-filled past the digest.
+    fn finalize(mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
+        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
+
+        // FIPS 180-4 s. 5.1.2: append the "1" bit (as the byte 0x80, since messages are whole bytes).
+        self.x_buf[self.x_buf_off] = 0x80;
+        self.x_buf_off += 1;
+
+        // If the length field no longer fits in this block, zero-fill and compress, then start a fresh block.
+        if self.x_buf_off > 112 {
+            self.x_buf[self.x_buf_off..].fill(0x00);
+            self.state.compress(slice::from_ref(&self.x_buf));
+            self.x_buf_off = 0;
+        }
+
+        self.x_buf[self.x_buf_off..112].fill(0x00);
+        // FIPS 180-4 s. 5.1.2: append the 128-bit big-endian message length in bits. byte_count is a
+        // byte counter so the high 64 bits are byte_count >> 61 and the low 64 bits are byte_count << 3.
+        let bit_len_hi: u64 = self.byte_count >> 61;
+        let bit_len_lo: u64 = self.byte_count << 3;
+        self.x_buf[112..120].copy_from_slice(&bit_len_hi.to_be_bytes());
+        self.x_buf[120..128].copy_from_slice(&bit_len_lo.to_be_bytes());
+        self.state.compress(slice::from_ref(&self.x_buf));
+
+        // FIPS 180-4 s. 6.x.2: the digest is H0 || H1 || ... (big-endian words), truncated to OUTPUT_LEN
+        // (and further to the caller's buffer if that is shorter).
+        let h = &self.state.h;
+        for i in 0..(n / 8) {
+            output[i * 8..i * 8 + 8].copy_from_slice(&h[i].to_be_bytes());
+        }
+        if !n.is_multiple_of(8) {
+            output[((n / 8) * 8)..((n / 8) * 8) + (n % 8)]
+                .copy_from_slice(&h[n / 8].to_be_bytes()[0..(n % 8)]);
+        }
+
+        n
+    }
+}
+
+impl<PARAMS: Sha512Family> Default for SHA512Internal<PARAMS> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<PARAMS: SHA2Params> Algorithm for SHA512Internal<PARAMS> {
+impl<PARAMS: Sha512Family> Algorithm for SHA512Internal<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
-impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
+impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
         1024
@@ -216,8 +245,8 @@ impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // TODO: Check there is enough space left in 'byte_count' to allow this operation,
-        // TODO: although overflowing a u64 is unlikely to happen in practice, and rust will throw an error anyway.
+        // byte_count is a u64 byte counter, so this supports messages up to 2^64 bytes (2^67 bits).
+        // Exceeding it is infeasible in practice; in debug builds the add panics, in release it wraps.
         self.byte_count += len as u64;
 
         let available = 128 - self.x_buf_off;
@@ -251,64 +280,37 @@ impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
         output
     }
 
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
-
-        let bit_len_hi: u64 = self.byte_count >> 61;
-        let bit_len_lo: u64 = self.byte_count << 3;
-
-        self.x_buf[self.x_buf_off] = 0x80;
-        self.x_buf_off += 1;
-
-        if self.x_buf_off > 112 {
-            self.x_buf[self.x_buf_off..].fill(0x00);
-            self.state.compress(slice::from_ref(&self.x_buf));
-            self.x_buf_off = 0;
-        }
-
-        self.x_buf[self.x_buf_off..112].fill(0x00);
-        self.x_buf[112..120].copy_from_slice(&bit_len_hi.to_be_bytes());
-        self.x_buf[120..128].copy_from_slice(&bit_len_lo.to_be_bytes());
-        self.state.compress(slice::from_ref(&self.x_buf));
-
-        let h = &self.state.h;
-
-        for i in 0..(n / 8) {
-            output[i * 8..i * 8 + 8].copy_from_slice(&h[i].to_be_bytes());
-        }
-        if !n.is_multiple_of(8) {
-            output[((n / 8) * 8)..((n / 8) * 8) + (n % 8)]
-                .copy_from_slice(&h[n / 8].to_be_bytes()[0..(n % 8)]);
-        }
-
-        n
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        self.finalize(output)
     }
 
-    /// TODO: This is defined in FIPS 180-4 s. 5.1.2
-    /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: It can be implemented if required
-    #[allow(unused)]
     fn do_final_partial_bits(
         self,
         partial_byte: u8,
         num_partial_bits: usize,
     ) -> Result<Vec<u8>, HashError> {
-        unimplemented!()
+        let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
+        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
+        Ok(output)
     }
 
-    /// TODO: This is defined in FIPS 180-4 s. 5.1.2
-    /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: It can be implemented if required
-    #[allow(unused)]
+    /// Bit-oriented (partial final byte) messages are defined by FIPS 180-4 s. 5.1 but are not
+    /// supported by this implementation, which processes whole bytes only. `num_partial_bits == 0`
+    /// is the whole-byte case and behaves exactly like [`Hash::do_final_out`]; any other value returns
+    /// an error rather than panicking.
     fn do_final_partial_bits_out(
         self,
-        partial_byte: u8,
+        _partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        unimplemented!()
+        match num_partial_bits {
+            0 => Ok(self.finalize(output)),
+            1..=7 => Err(HashError::InvalidInput(
+                "bit-oriented (partial final byte) messages are not supported by this SHA-2 implementation",
+            )),
+            _ => Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]")),
+        }
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -319,7 +321,7 @@ impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
 /// Length in bytes of the serialized state of SHA384 and SHA512.
 pub const SUSPENDED_SHA512_STATE_LEN: usize = 204;
 
-impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
+impl<PARAMS: Sha512Family> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_SHA512_STATE_LEN] {
         debug_assert_eq!(SUSPENDED_SHA512_STATE_LEN, 204);
 
