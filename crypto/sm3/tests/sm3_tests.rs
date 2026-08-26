@@ -13,7 +13,8 @@ mod sm3_tests {
 
     /// Runs the shared Hash-trait conformance suite against known answers.
     /// The first two are the standard vectors from GB/T 32905-2016 Appendix A; the rest are the
-    /// bc-java SM3DigestTest vectors and openssl-generated digests of DUMMY_SEED.
+    /// bc-java SM3DigestTest vectors and digests of DUMMY_SEED generated with openssl and confirmed
+    /// with bc-java's `SM3Digest`.
     #[test]
     fn core_test_framework_hash() {
         let mut test_framework = TestFrameworkHash::new();
@@ -53,7 +54,8 @@ mod sm3_tests {
 
     /// Padding boundaries (GB/T 32905-2016 s. 5.2): message lengths around the 56- and 64-byte
     /// points where the length field does / does not fit in the current block. Expected values
-    /// generated with openssl `dgst -sm3` over prefixes of DUMMY_SEED.
+    /// generated with openssl `dgst -sm3` over prefixes of DUMMY_SEED and confirmed with bc-java's
+    /// `SM3Digest`.
     #[test]
     fn padding_boundaries() {
         for (len, expected) in [

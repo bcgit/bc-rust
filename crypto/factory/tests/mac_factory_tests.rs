@@ -27,7 +27,8 @@ mod hash_factory_tests {
 
         #[test]
         fn hmac_sm3_tests() {
-            // RFC4231 Test Case 1 key/message; expected value from `openssl dgst -sm3 -mac HMAC`.
+            // RFC4231 Test Case 1 key/message; expected value from `openssl dgst -sm3 -mac HMAC`,
+            // confirmed with bc-java's HMac(new SM3Digest()).
             let key = KeyMaterial::<32>::from_bytes_as_type(
                 &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
                 KeyType::MACKey,
