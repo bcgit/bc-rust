@@ -4,8 +4,9 @@ edition.workspace = true
 version.workspace = true
 
 [dependencies]
-bouncycastle-math.workspace = true
+bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
