@@ -3,6 +3,11 @@ name = "bouncycastle-sha2"
 version = "0.1.2"
 edition.workspace = true
 
+[features]
+# Opt-in hardware SHA-256 compression via core::arch. Currently it uses runtime
+# SHA-2 detection
+asm = []
+
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
