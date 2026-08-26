@@ -1084,8 +1084,11 @@ pub trait XOF: Default {
     /// The entire output buffer is zeroized before the output is written.
     fn squeeze_out(&mut self, output: &mut [u8]) -> usize;
 
-    /// Squeezes a partial byte from the XOF.
-    /// Output will be in the top `num_bits` bits of the returned u8 (ie Big Endian).
+    /// Squeezes a partial byte (`num_bits` in `1..=7`) from the XOF.
+    /// The bits are returned in the least significant `num_bits` bits of the returned u8, with the
+    /// remaining high bits zero. This follows the FIPS 202 Appendix B.1 bit-string convention
+    /// (the first bit of a byte is its least significant bit) and matches the input convention of
+    /// [`XOF::absorb_last_partial_byte`].
     /// This is a final call and consumes self.
     fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError>;
 
