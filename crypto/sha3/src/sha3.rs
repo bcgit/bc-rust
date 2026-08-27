@@ -15,7 +15,7 @@ use bouncycastle_utils::{max, min};
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
 pub struct SHA3Internal<PARAMS: SHA3Params> {
-    _params: std::marker::PhantomData<PARAMS>,
+    _params: core::marker::PhantomData<PARAMS>,
     keccak: KeccakInternal,
     kdf_key_type: KeyType,
     kdf_security_strength: SecurityStrength,
@@ -28,7 +28,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     /// Get a new SHA3 instance, ready for use.
     pub fn new() -> Self {
         Self {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             keccak: KeccakInternal::new(PARAMS::SIZE),
             kdf_key_type: KeyType::Zeroized,
             kdf_security_strength: SecurityStrength::None,
@@ -52,12 +52,11 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         if key.is_full_entropy() {
             self.kdf_entropy += key.key_len();
             self.kdf_security_strength =
-                max(&self.kdf_security_strength, &key.security_strength()).clone();
-            self.kdf_security_strength = min(
+                *max(&self.kdf_security_strength, &key.security_strength());
+            self.kdf_security_strength = *min(
                 &self.kdf_security_strength,
                 &SecurityStrength::from_bits(PARAMS::OUTPUT_LEN * 8 / 2),
-            )
-            .clone();
+            );
         }
 
         self.do_update(key.ref_to_bytes())
@@ -82,14 +81,14 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         // it requires full-entropy input that is at least block length.
         // TODO: citation needed (NIST)
         if self.kdf_entropy < PARAMS::OUTPUT_LEN {
-            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::Unknown).clone();
+            self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
         self.do_update(additional_input);
 
-        let mut key_type = self.kdf_key_type.clone();
-        let output_security_strength = self.kdf_security_strength.clone();
+        let mut key_type = self.kdf_key_type;
+        let output_security_strength = self.kdf_security_strength;
         let mut bytes_written: usize = 0;
         key_material::do_hazardous_operations(output_key, |output_key| {
             bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
@@ -107,16 +106,17 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         }
         key_material::do_hazardous_operations(&mut *output_key, |output_key| {
             output_key.set_key_type(key_type)?;
-            output_key.set_security_strength(
-                min(&output_security_strength, &SecurityStrength::from_bits(bytes_written * 8)).clone(),
-            )
+            output_key.set_security_strength(*min(
+                &output_security_strength,
+                &SecurityStrength::from_bits(bytes_written * 8),
+            ))
         })
         .expect(
             "both set_key_type() and set_security_strength() should be infallible within a hazop block",
         );
 
         output_key
-            .set_key_len(min(&output_key.key_len(), &PARAMS::OUTPUT_LEN).clone())
+            .set_key_len(*min(&output_key.key_len(), &PARAMS::OUTPUT_LEN))
             .expect("should be infallible to truncate key length");
         Ok(bytes_written)
     }
@@ -150,10 +150,8 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         output
     }
 
-    fn hash_out(self, data: &[u8], mut output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        self.hash_internal(data, &mut output)
+    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        self.hash_internal(data, output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -321,7 +319,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
         Ok(SHA3Internal {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             keccak,
             kdf_key_type,
             kdf_security_strength,

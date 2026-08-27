@@ -13,7 +13,7 @@ use bouncycastle_core::traits::{Hash, HashAlgParams, RNG, SecurityStrength};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{min, secret::Secret};
 
-use std::fmt::{Display, Formatter};
+use core::fmt::{Display, Formatter};
 
 enum SupportedHash {
     SHA256,
