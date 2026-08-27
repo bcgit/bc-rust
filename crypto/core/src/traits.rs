@@ -310,7 +310,13 @@ pub trait Hash: Algorithm + Default {
     fn do_final_out(self, output: &mut [u8]) -> usize;
 
     /// The same as [`Hash::do_final`], but allows for supplying a partial byte as the last input.
-    /// Assumes that the input is in the least significant bits (big endian).
+    /// The `num_partial_bits` message bits are taken from the least significant bits of
+    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
+    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library,
+    /// including SHA-2, for which FIPS 180-4 defines no bit-to-byte packing. Note that the NIST CAVP
+    /// SHAVS (SHA-2) test vector files pack trailing bits MSB-first (left-justified) and must be
+    /// shifted right by `8 - num_partial_bits` before being passed here; the SHA3VS files already use
+    /// the LSB convention.
     /// `num_partial_bits` must be in `0..=7`; 0 is valid and means the message ends on a byte
     /// boundary (equivalent to [`Hash::do_final`]). Larger values return [`HashError::InvalidLength`].
     fn do_final_partial_bits(
@@ -320,7 +326,13 @@ pub trait Hash: Algorithm + Default {
     ) -> Result<Vec<u8>, HashError>;
 
     /// The same as [`Hash::do_final_out`], but allows for supplying a partial byte as the last input.
-    /// Assumes that the input is in the least significant bits (big endian).
+    /// The `num_partial_bits` message bits are taken from the least significant bits of
+    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
+    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library,
+    /// including SHA-2, for which FIPS 180-4 defines no bit-to-byte packing. Note that the NIST CAVP
+    /// SHAVS (SHA-2) test vector files pack trailing bits MSB-first (left-justified) and must be
+    /// shifted right by `8 - num_partial_bits` before being passed here; the SHA3VS files already use
+    /// the LSB convention.
     /// `num_partial_bits` must be in `0..=7`; 0 is valid and means the message ends on a byte
     /// boundary (equivalent to [`Hash::do_final_out`]). Larger values return [`HashError::InvalidLength`].
     /// will be placed in the first [`Hash::output_len`] bytes.
