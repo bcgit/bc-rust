@@ -557,6 +557,27 @@ mod keccak_tests {
         }
     }
 
+    /// absorb_bits(): 0..=7 bits are accepted and always switch the sponge to squeezing (0 bits
+    /// included — see the doc comment); 8+ bits are rejected; a second call is rejected as squeezing.
+    #[test]
+    fn absorb_bits_range_and_phase() {
+        for bits in 0..=7usize {
+            let mut d = KeccakInternal::new(KeccakSize::_256);
+            d.absorb(b"abc");
+            d.absorb_bits(0xFF, bits).unwrap();
+            assert!(d.squeezing, "bits={bits}: must switch to squeezing");
+            assert!(matches!(d.absorb_bits(0, 1), Err(HashError::InvalidState(_))));
+        }
+        for bits in [8usize, 9, 16, usize::MAX] {
+            let mut d = KeccakInternal::new(KeccakSize::_256);
+            assert!(
+                matches!(d.absorb_bits(0, bits), Err(HashError::InvalidLength(_))),
+                "bits={bits}"
+            );
+            assert!(!d.squeezing, "rejected call must not change phase");
+        }
+    }
+
     /// Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt
     /// state whose bits_in_queue is not byte-aligned, or equals/exceeds the rate, must be rejected as
     /// InvalidData rather than deserialized into a value that later trips the debug_assert in absorb()
