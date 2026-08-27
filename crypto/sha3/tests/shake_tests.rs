@@ -158,7 +158,7 @@ mod shake_tests {
 
     #[test]
     fn test_update_bytes() {
-        for tc in read_test_vectors("tests/data/SHAKETestVectors.txt") {
+        for tc in read_test_vectors("SHAKETestVectors.txt") {
             //println!("SHAKE-{} {}-bits", &tc.algorithm, &tc.bits);
             //println!("msg {}", hex::encode_upper(&tc.msg));
             //println!("hashes {}", hex::encode_upper(&tc.output));
@@ -329,7 +329,7 @@ mod shake_tests {
 
     #[test]
     fn run_kats() {
-        run_test_vectors(read_test_vectors("tests/data/SHAKETestVectors.txt"));
+        run_test_vectors(read_test_vectors("SHAKETestVectors.txt"));
     }
 
     #[test]
@@ -439,6 +439,34 @@ mod shake_tests {
 pub(crate) mod shake_test_helpers {
     use bouncycastle_hex as hex;
     use std::fs;
+    use std::path::Path;
+    use std::sync::Once;
+
+    // Test vectors are read from the bc-test-data repo (https://github.com/bcgit/bc-test-data),
+    // which must be cloned alongside this repo at "../bc-test-data" (same convention as the mldsa
+    // and mlkem crates). If it is not present the vector tests print a warning and pass vacuously.
+    const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto";
+    const TEST_DATA_PATH: &str = "../bc-test-data/crypto";
+
+    static TEST_DATA_CHECK: Once = Once::new();
+
+    /// Returns the contents of `filename` from bc-test-data, or `None` (after a one-time warning)
+    /// if the repo is not checked out.
+    fn get_test_data(filename: &str) -> Option<String> {
+        let dir =
+            [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH].into_iter().find(|d| Path::new(d).exists());
+        TEST_DATA_CHECK.call_once(|| match dir {
+            Some(d) => println!("bc-test-data found at: {d:?}"),
+            None => {
+                println!("WARNING: bc-test-data directory not found; vector tests will be skipped")
+            }
+        });
+        let dir = dir?;
+        Some(
+            fs::read_to_string(format!("{dir}/{filename}"))
+                .expect("failed to read test vector file"),
+        )
+    }
 
     const SAMPLE_OF: &str = " sample of ";
     const MSG_HEADER: &str = "Msg as bit string";
@@ -451,10 +479,14 @@ pub(crate) mod shake_test_helpers {
         pub(crate) output: Vec<u8>,
     }
 
-    pub(crate) fn read_test_vectors(path: &str) -> Vec<TestCase> {
+    /// Parses the named NIST FIPS 202 example-vector file from bc-test-data. Returns an empty list
+    /// (skipping the test) if bc-test-data is not available.
+    pub(crate) fn read_test_vectors(filename: &str) -> Vec<TestCase> {
         let mut test_vectors: Vec<TestCase> = vec![];
-        let string_content: Vec<String> =
-            fs::read_to_string(path).unwrap().lines().map(String::from).collect();
+        let Some(content) = get_test_data(filename) else {
+            return test_vectors;
+        };
+        let string_content: Vec<String> = content.lines().map(String::from).collect();
 
         let mut i = 0;
         while i < string_content.len() {
