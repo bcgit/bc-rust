@@ -119,25 +119,15 @@
 //! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256` | 440          |
 //! | Suspended state ([`Suspendable`])       | 415          |
 //!
-//! The object size is dominated by the 200-byte sponge state and a 192-byte input/output queue.
-//! The Keccak permutation itself runs on 25 `u64` locals plus a handful of temporaries, so transient
-//! stack usage per call is on the order of a few hundred bytes beyond the object.
-//!
 //! # Security Considerations
 //!
 //! * SHA3-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively; SHAKE128
 //!   and SHAKE256 offer 128 and 256 bits of security for output lengths at least twice that size
 //!   (FIPS 202 Appendix A.1).
 //! * SHAKE is an XOF, not a hash: `SHAKE128(m, 32)` is a prefix of `SHAKE128(m, 64)`. If the output
-//!   length must be bound to the digest, include it in the message (FIPS 202 Appendix A.2). For this
-//!   reason SHAKE does not implement [`Hash`].
-//! * Once squeezing begins, no further input can be absorbed; [`XOF::absorb`] returns
-//!   [`HashError::InvalidState`] rather than silently producing an unapproved construction.
+//!   length must be bound to the digest, include it in the message (FIPS 202 Appendix A.2).
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
-//!   drop. Transient copies in registers/stack locals during the permutation are not zeroized.
-//! * The implementation contains no data-dependent branches or table lookups.
-//! * The [`KDF`] entropy tracking is a developer aid, not a security proof: it can only reason about
-//!   the metadata attached to [`KeyMaterial`] inputs.
+//!   drop.
 //!
 //! # Suspending and resuming execution
 //!

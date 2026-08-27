@@ -111,6 +111,13 @@ mod shake_tests {
         a.absorb(b"abc").unwrap();
         a.absorb_last_partial_byte(0xFF, 0).unwrap();
         assert_eq!(a.squeeze(32), SHAKE128::new().hash_xof(b"abc", 32));
+
+        // Upper boundary: 7 bits is the largest valid partial byte and must be accepted, and must
+        // actually change the output relative to the byte-aligned message.
+        let mut b = SHAKE128::new();
+        b.absorb(b"abc").unwrap();
+        b.absorb_last_partial_byte(0x7F, 7).unwrap();
+        assert_ne!(b.squeeze(32), SHAKE128::new().hash_xof(b"abc", 32));
     }
 
     /// Once squeezing has begun, a SHAKE cannot return to absorbing (FIPS 202 defines SHAKE as a

@@ -302,8 +302,7 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         if self.keccak.squeezing {
             return Err(HashError::InvalidState("cannot absorb after squeezing has begun"));
         }
-        // Validate before shifting: `1 << num_partial_bits` on a u16 would overflow for values >= 16,
-        // and 8..=15 would silently absorb garbage. 0 is allowed and simply finalizes with no partial byte.
+        // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
@@ -360,14 +359,10 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
 
         *output = 0;
 
-        // Route through squeeze_out() rather than keccak.squeeze() directly, so that if this is the
-        // first squeeze the SHAKE "1111" domain-separation suffix (FIPS 202 s. 6.2) is applied.
-        // Calling keccak.squeeze() here would produce raw Keccak output instead of SHAKE output.
+        // Via squeeze_out() so the SHAKE "1111" suffix (FIPS 202 s. 6.2) is applied on a first squeeze.
         let mut buf = [0u8; 1];
         self.squeeze_out(&mut buf);
 
-        // FIPS 202 Appendix B.1 (h2b): the first `num_bits` bits of an output byte are its least
-        // significant bits. This matches the input-side convention used by absorb_last_partial_byte().
         *output = buf[0] & ((1u8 << num_bits) - 1);
         Ok(())
     }

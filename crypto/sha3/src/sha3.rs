@@ -46,6 +46,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
 
     /// Appends the SHA3 domain-separation suffix and pads as per FIPS 202 s. 6.1, then squeezes the digest.
     ///
+    /// Private, infallible body shared by [`Hash::do_final_out`] and [`Hash::do_final_partial_bits_out`].
     /// `num_partial_bits` (0..=7, validated by the caller) trailing message bits are taken from the
     /// least significant bits of `partial_byte` (FIPS 202 Appendix B.1 bit ordering). FIPS 202 s. 6.1
     /// defines SHA3-d(M) = KECCAK[c](M || 01, d), so the two suffix bits are appended directly above
@@ -53,7 +54,12 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     ///
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
-    fn finalize(mut self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> usize {
+    fn do_final_bits_out(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
         debug_assert!(num_partial_bits <= 7);
         output.fill(0);
 
@@ -71,7 +77,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         }
 
         // Infallible: the queue is byte-aligned here, final_bits is in 0..=7 by construction, and a
-        // Hash object cannot have started squeezing (finalize consumes self and is the only squeeze path).
+        // Hash object cannot have started squeezing (do_final_bits_out consumes self and is the only squeeze path).
         self.keccak
             .absorb_bits(final_input as u8, final_bits)
             .expect("absorb_bits is infallible on a byte-aligned, not-yet-squeezing Hash");
@@ -188,7 +194,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
     }
 
     fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        // hash_internal zeroizes `output` before writing.
         self.hash_internal(data, output)
     }
 
@@ -209,7 +214,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
     // Being able to do so would improve ergonomics
     fn do_final_out(self, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general finalization.
-        self.finalize(0, 0, output)
+        self.do_final_bits_out(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -228,12 +233,11 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        // Validate before shifting: `1 << num_partial_bits` on a u16 would overflow for values >= 16,
-        // and 8..=15 would silently absorb garbage. 0 is allowed and is equivalent to do_final_out().
+        // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
-        Ok(self.finalize(partial_byte, num_partial_bits, output))
+        Ok(self.do_final_bits_out(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
