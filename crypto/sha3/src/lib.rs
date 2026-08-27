@@ -119,6 +119,10 @@
 //! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256` | 440          |
 //! | Suspended state ([`Suspendable`])       | 415          |
 //!
+//! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
+//! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
+//! massif entry points for measuring peak stack usage of the hash, XOF and suspend/resume paths.
+//!
 //! # Security Considerations
 //!
 //! * SHA3-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively; SHAKE128
