@@ -304,8 +304,9 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         if self.keccak.squeezing {
             return Err(HashError::InvalidState("cannot absorb after squeezing has begun"));
         }
-        if !(1..=7).contains(&num_partial_bits) {
-            return Err(HashError::InvalidLength("must be in the range [0,7]"));
+        // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
         // Mutants note: This is just bit-setting into empty space.
         // It works the same regardless of whether it's OR or XOR.
@@ -355,14 +356,16 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         output: &mut u8,
     ) -> Result<(), HashError> {
         if !(1..=7).contains(&num_bits) {
-            return Err(HashError::InvalidLength("must be in the range [0,7]"));
+            return Err(HashError::InvalidLength("num_bits must be in the range [1,7]"));
         }
 
         *output = 0;
 
+        // Via squeeze_out() so the SHAKE "1111" suffix (FIPS 202 s. 6.2) is applied on a first squeeze.
         let mut buf = [0u8; 1];
-        self.keccak.squeeze(&mut buf);
-        *output = buf[0] >> 8 - num_bits;
+        self.squeeze_out(&mut buf);
+
+        *output = buf[0] & ((1u8 << num_bits) - 1);
         Ok(())
     }
 
