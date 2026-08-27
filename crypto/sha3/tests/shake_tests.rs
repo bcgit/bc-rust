@@ -92,6 +92,20 @@ mod shake_tests {
         }
     }
 
+    /// Regression: when the 4 trailing message bits plus the SHAKE "1111" suffix exactly fill a byte,
+    /// the sponge must still switch to squeezing, otherwise the first squeeze appended a second suffix.
+    /// Vector: NIST CAVP SHA3VS SHAKE128ShortMsg (bit-oriented), Len = 4, Msg = 08.
+    #[test]
+    fn absorb_last_partial_byte_four_bits() {
+        let mut shake = SHAKE128::new();
+        shake.absorb_last_partial_byte(0x08, 4).unwrap();
+        assert_eq!(
+            shake.squeeze(16),
+            bouncycastle_hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
+            "SHAKE128 of the 4-bit message 0001"
+        );
+    }
+
     /// absorb_last_partial_byte() must validate num_partial_bits before shifting: 0 is allowed
     /// (finalize with no partial byte), 8+ is rejected with InvalidLength rather than panicking.
     #[test]
