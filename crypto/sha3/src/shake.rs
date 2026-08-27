@@ -76,12 +76,11 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         if key.is_full_entropy() {
             self.kdf_entropy += key.key_len();
             self.kdf_security_strength =
-                max(&self.kdf_security_strength, &key.security_strength()).clone();
-            self.kdf_security_strength = min(
+                *max(&self.kdf_security_strength, &key.security_strength());
+            self.kdf_security_strength = *min(
                 &self.kdf_security_strength,
                 &SecurityStrength::from_bits(PARAMS::SIZE as usize),
-            )
-            .clone();
+            );
         }
 
         // Infallible: mix_key_internal is only called during the absorb phase, before any squeeze.
@@ -117,7 +116,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         // TODO: The intuition behind this is that SHAKE256 and SHA3-256 are both KECCAK[512], and SHAKE128 is KECCAK[256],
         // TODO: However, it is necessary to find an actual reference for this "fully-seeded" threshold.
         if self.kdf_entropy < 2 * (PARAMS::SIZE as usize) / 8 {
-            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::Unknown).clone();
+            self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
@@ -139,10 +138,10 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         }
         key_material::do_hazardous_operations(output_key, |output_key| {
             output_key.set_key_type(self.kdf_key_type)?;
-            output_key.set_security_strength(
-                min(&self.kdf_security_strength, &SecurityStrength::from_bits(bytes_written * 8))
-                    .clone(),
-            )
+            output_key.set_security_strength(*min(
+                &self.kdf_security_strength,
+                &SecurityStrength::from_bits(bytes_written * 8),
+            ))
         })?;
         Ok(bytes_written)
     }
@@ -270,8 +269,7 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
     }
 
     fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
+        // hash_internal_out zeroizes `output` before writing.
         self.hash_internal_out(data, output)
     }
 
