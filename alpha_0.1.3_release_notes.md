@@ -25,3 +25,11 @@ SHA-3 / SHAKE bug fixes:
   `[0,7]`.
 * Interleaving absorb -> squeeze -> absorb remains rejected with `HashError::InvalidState`; the `XOF` trait docs now
   explain why (it is the duplex construction, not SHAKE).
+
+SHA-3 internals:
+
+* SHA-3 finalization is now a single private `do_final_bits_out()` shared by `do_final_out()` and
+  `do_final_partial_bits_out()`, so the domain-separation suffix, padding and output truncation are applied in exactly
+  one place.
+* `HashAlgParams` for the SHA-3 types is now forwarded from the `*Params` structs, so `OUTPUT_LEN` / `BLOCK_LEN` are
+  defined once. Removed misleading leftover SHA-2 block-size comments.

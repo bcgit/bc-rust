@@ -44,6 +44,49 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         self.do_final_out(output)
     }
 
+    /// Appends the SHA3 domain-separation suffix and pads as per FIPS 202 s. 6.1, then squeezes the digest.
+    ///
+    /// Private, infallible body shared by [`Hash::do_final_out`] and [`Hash::do_final_partial_bits_out`].
+    /// `num_partial_bits` (0..=7, validated by the caller) trailing message bits are taken from the
+    /// least significant bits of `partial_byte` (FIPS 202 Appendix B.1 bit ordering). FIPS 202 s. 6.1
+    /// defines SHA3-d(M) = KECCAK[c](M || 01, d), so the two suffix bits are appended directly above
+    /// the message bits; pad10*1 is then applied by the sponge when it switches to squeezing.
+    ///
+    /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
+    /// truncates the digest, a longer one is zero-filled past the digest.
+    fn do_final_bits_out(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
+        debug_assert!(num_partial_bits <= 7);
+        output.fill(0);
+
+        // Mutants note: This is just bit-setting into empty space.
+        // It works the same regardless of whether it's OR or XOR.
+        let mut final_input: u16 =
+            ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);
+        let mut final_bits = num_partial_bits + 2;
+
+        // If message bits + suffix fill a whole byte, absorb it as a normal byte first.
+        if final_bits >= 8 {
+            self.keccak.absorb(&[final_input as u8]);
+            final_bits -= 8;
+            final_input >>= 8;
+        }
+
+        // Infallible: the queue is byte-aligned here, final_bits is in 0..=7 by construction, and a
+        // Hash object cannot have started squeezing (do_final_bits_out consumes self and is the only squeeze path).
+        self.keccak
+            .absorb_bits(final_input as u8, final_bits)
+            .expect("absorb_bits is infallible on a byte-aligned, not-yet-squeezing Hash");
+
+        // Truncate to OUTPUT_LEN if the caller supplied a larger buffer (see the Hash trait docs).
+        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
+        self.keccak.squeeze(&mut output[..n])
+    }
+
     fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
@@ -171,21 +214,9 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
 
     // TODO: investigate why this doesn't take a &mut [u8; HASH_LEN]
     // Being able to do so would improve ergonomics
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        // this shouldn't fail because, by construction, the function is only called once,
-        // and this is the only way to absorb partial bits.
-        self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed.");
-
-        let bytes_written = if output.len() <= self.output_len() {
-            self.keccak.squeeze(output)
-        } else {
-            let min =
-                if output.len() >= self.output_len() { self.output_len() } else { output.len() };
-            self.keccak.squeeze(&mut output[..min])
-        };
-        bytes_written
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        // A whole-byte message is the zero-partial-bits case of the general finalization.
+        self.do_final_bits_out(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -193,17 +224,13 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         partial_byte: u8,
         num_partial_bits: usize,
     ) -> Result<Vec<u8>, HashError> {
-        let dbg_rslt_len = self.output_len();
-        let mut output: Vec<u8> = vec![0u8; self.output_len()];
-        let bytes_written =
-            self.do_final_partial_bits_out(partial_byte, num_partial_bits, output.as_mut_slice())?;
-        debug_assert_eq!(bytes_written, dbg_rslt_len);
-
+        let mut output: Vec<u8> = vec![0u8; PARAMS::OUTPUT_LEN];
+        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
         Ok(output)
     }
 
     fn do_final_partial_bits_out(
-        mut self,
+        self,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
@@ -212,24 +239,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
-        output.fill(0);
-
-        // Mutants note: This is just bit-setting into empty space.
-        // It works the same regardless of whether it's OR or XOR.
-        let mut final_input: u16 =
-            ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);
-        let mut final_bits = num_partial_bits + 2;
-
-        if final_bits >= 8 {
-            self.keccak.absorb(&[final_input as u8]);
-            final_bits -= 8;
-            final_input >>= 8;
-        }
-
-        self.keccak.absorb_bits(final_input as u8, final_bits)?;
-
-        let min = if output.len() >= self.output_len() { self.output_len() } else { output.len() };
-        Ok(self.keccak.squeeze(&mut output[..min]))
+        Ok(self.do_final_bits_out(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

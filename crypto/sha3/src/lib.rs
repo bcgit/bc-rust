@@ -89,7 +89,7 @@
 //! [`KDF`] acts on [`KeyMaterial`] objects as both the input and output values.
 //! In the case of SHA3, the [`KDF`] interfaces are simple wrapper functions around the underlying SHA3 or SHAKE
 //! primitive that correctly maintains the length and entropy metadata of the key material that it is acting on.
-//! This is intended to act as a developer ait to prevent  some classes of developer mistakes, such as
+//! This is intended to act as a developer aid to prevent some classes of developer mistakes, such as
 //! deriving a cryptographic key from uninitialized (aka zeroized) input key material, or using low-entropy
 //! input key material to derive a MAC, symmetric, or asymmetric key.
 //!
@@ -160,17 +160,17 @@ mod sha3;
 mod shake;
 
 /*** String constants ***/
-///
+/// Algorithm name string for SHA3-224, as used by the factories and CLI.
 pub const SHA3_224_NAME: &str = "SHA3-224";
-///
+/// Algorithm name string for SHA3-256, as used by the factories and CLI.
 pub const SHA3_256_NAME: &str = "SHA3-256";
-///
+/// Algorithm name string for SHA3-384, as used by the factories and CLI.
 pub const SHA3_384_NAME: &str = "SHA3-384";
-///
+/// Algorithm name string for SHA3-512, as used by the factories and CLI.
 pub const SHA3_512_NAME: &str = "SHA3-512";
-///
+/// Algorithm name string for SHAKE128, as used by the factories and CLI.
 pub const SHAKE128_NAME: &str = "SHAKE128";
-///
+/// Algorithm name string for SHAKE256, as used by the factories and CLI.
 pub const SHAKE256_NAME: &str = "SHAKE256";
 
 /*** pub types ***/
@@ -205,11 +205,13 @@ trait SHA3Params: HashAlgParams {
 
 // TODO: it would probably be more elegant to macro these.
 
-impl HashAlgParams for SHA3_224 {
-    const OUTPUT_LEN: usize = 28;
-    // const BLOCK_LEN: usize = 64;
-    const BLOCK_LEN: usize = 144; // FIPS 202 Table 3
+/// The public hash types expose the same parameters as their `*Params` marker, so the constants
+/// are defined exactly once (on the params struct) and forwarded here.
+impl<PARAMS: SHA3Params> HashAlgParams for SHA3Internal<PARAMS> {
+    const OUTPUT_LEN: usize = PARAMS::OUTPUT_LEN;
+    const BLOCK_LEN: usize = PARAMS::BLOCK_LEN;
 }
+
 /// The parameters for SHA3_224.
 #[derive(Clone)]
 pub struct SHA3_224Params;
@@ -219,7 +221,6 @@ impl Algorithm for SHA3_224Params {
 }
 impl HashAlgParams for SHA3_224Params {
     const OUTPUT_LEN: usize = 28;
-    // const BLOCK_LEN: usize = 64;
     const BLOCK_LEN: usize = 144; // FIPS 202 Table 3
 }
 impl SHA3Params for SHA3_224Params {
@@ -233,11 +234,6 @@ impl AlgorithmOID for SHA3_224 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x07];
 }
 
-impl HashAlgParams for SHA3_256 {
-    const OUTPUT_LEN: usize = 32;
-    // const BLOCK_LEN: usize = 64;
-    const BLOCK_LEN: usize = 136; // FIPS 202 Table 3
-}
 /// The parameters for SHA3_256.
 #[derive(Clone)]
 pub struct SHA3_256Params;
@@ -247,7 +243,6 @@ impl Algorithm for SHA3_256Params {
 }
 impl HashAlgParams for SHA3_256Params {
     const OUTPUT_LEN: usize = 32;
-    // const BLOCK_LEN: usize = 64;
     const BLOCK_LEN: usize = 136; // FIPS 202 Table 3
 }
 impl SHA3Params for SHA3_256Params {
@@ -263,18 +258,12 @@ impl AlgorithmOID for SHA3_256 {
 /// The parameters for SHA3_384.
 #[derive(Clone)]
 pub struct SHA3_384Params;
-impl HashAlgParams for SHA3_384 {
-    const OUTPUT_LEN: usize = 48;
-    // const BLOCK_LEN: usize = 128;
-    const BLOCK_LEN: usize = 104; // FIPS 202 Table 3
-}
 impl Algorithm for SHA3_384Params {
     const ALG_NAME: &'static str = SHA3_384_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 impl HashAlgParams for SHA3_384Params {
     const OUTPUT_LEN: usize = 48;
-    // const BLOCK_LEN: usize = 128;
     const BLOCK_LEN: usize = 104; // FIPS 202 Table 3
 }
 impl SHA3Params for SHA3_384Params {
@@ -290,18 +279,12 @@ impl AlgorithmOID for SHA3_384 {
 /// The parameters for SHA3_512.
 #[derive(Clone)]
 pub struct SHA3_512Params;
-impl HashAlgParams for SHA3_512 {
-    const OUTPUT_LEN: usize = 64;
-    // const BLOCK_LEN: usize = 128;
-    const BLOCK_LEN: usize = 72; // FIPS 202 Table 3
-}
 impl Algorithm for SHA3_512Params {
     const ALG_NAME: &'static str = SHA3_512_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 impl HashAlgParams for SHA3_512Params {
     const OUTPUT_LEN: usize = 64;
-    // const BLOCK_LEN: usize = 128;
     const BLOCK_LEN: usize = 72; // FIPS 202 Table 3
 }
 impl SHA3Params for SHA3_512Params {
