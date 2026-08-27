@@ -310,7 +310,15 @@ pub trait Hash: Algorithm + Default {
     fn do_final_out(self, output: &mut [u8]) -> usize;
 
     /// The same as [`Hash::do_final`], but allows for supplying a partial byte as the last input.
-    /// Assumes that the input is in the least significant bits (big endian).
+    /// The `num_partial_bits` message bits are taken from the least significant bits of
+    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
+    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library,
+    /// including SHA-2, for which FIPS 180-4 defines no bit-to-byte packing. Note that the NIST CAVP
+    /// SHAVS (SHA-2) test vector files pack trailing bits MSB-first (left-justified) and must be
+    /// shifted right by `8 - num_partial_bits` before being passed here; the SHA3VS files already use
+    /// the LSB convention.
+    /// `num_partial_bits` must be in `0..=7`; 0 is valid and means the message ends on a byte
+    /// boundary (equivalent to [`Hash::do_final`]). Larger values return [`HashError::InvalidLength`].
     fn do_final_partial_bits(
         self,
         partial_byte: u8,
@@ -318,7 +326,15 @@ pub trait Hash: Algorithm + Default {
     ) -> Result<Vec<u8>, HashError>;
 
     /// The same as [`Hash::do_final_out`], but allows for supplying a partial byte as the last input.
-    /// Assumes that the input is in the least significant bits (big endian).
+    /// The `num_partial_bits` message bits are taken from the least significant bits of
+    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
+    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library,
+    /// including SHA-2, for which FIPS 180-4 defines no bit-to-byte packing. Note that the NIST CAVP
+    /// SHAVS (SHA-2) test vector files pack trailing bits MSB-first (left-justified) and must be
+    /// shifted right by `8 - num_partial_bits` before being passed here; the SHA3VS files already use
+    /// the LSB convention.
+    /// `num_partial_bits` must be in `0..=7`; 0 is valid and means the message ends on a byte
+    /// boundary (equivalent to [`Hash::do_final_out`]). Larger values return [`HashError::InvalidLength`].
     /// will be placed in the first [`Hash::output_len`] bytes.
     /// The entire output buffer is zeroized before the hash output is written.
     /// The return value is the number of bytes written.
@@ -1057,6 +1073,14 @@ pub trait SignatureVerifier<
 /// to break anonymity-preserving technology.
 /// Applications that require the arbitrary-length output of an XOF, but also care about these
 /// distinguishing attacks should consider adding a cryptographic salt to diversify the inputs.
+///
+/// # Absorbing after squeezing
+/// Once squeezing has begun, further calls to [`XOF::absorb`] / [`XOF::absorb_last_partial_byte`]
+/// return [`HashError::InvalidState`] and leave the object usable for further squeezing. FIPS 202
+/// defines SHAKE as a function of a single, complete message; the sponge's absorb/squeeze phases are
+/// internal to computing it. Interleaving absorb → squeeze → absorb → squeeze is the *duplex*
+/// construction, which is a different (unapproved) primitive whose output is not the SHAKE of any
+/// message and is not reproducible by other SHAKE implementations, so it is deliberately rejected.
 pub trait XOF: Default {
     /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
     fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8>;
@@ -1069,7 +1093,9 @@ pub trait XOF: Default {
     /// Absorb some amount of input.
     fn absorb(&mut self, data: &[u8]) -> Result<(), HashError>;
 
-    /// Switches to squeezing.
+    /// Absorbs the final `num_partial_bits` (`0..=7`, least significant bits of `partial_byte`) of the
+    /// message and switches to squeezing. 0 is valid and means the message ends on a byte boundary.
+    /// Values above 7 return [`HashError::InvalidLength`].
     fn absorb_last_partial_byte(
         &mut self,
         partial_byte: u8,
@@ -1084,8 +1110,11 @@ pub trait XOF: Default {
     /// The entire output buffer is zeroized before the output is written.
     fn squeeze_out(&mut self, output: &mut [u8]) -> usize;
 
-    /// Squeezes a partial byte from the XOF.
-    /// Output will be in the top `num_bits` bits of the returned u8 (ie Big Endian).
+    /// Squeezes a partial byte (`num_bits` in `1..=7`) from the XOF.
+    /// The bits are returned in the least significant `num_bits` bits of the returned u8, with the
+    /// remaining high bits zero. This follows the FIPS 202 Appendix B.1 bit-string convention
+    /// (the first bit of a byte is its least significant bit) and matches the input convention of
+    /// [`XOF::absorb_last_partial_byte`].
     /// This is a final call and consumes self.
     fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError>;
 

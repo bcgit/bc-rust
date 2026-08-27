@@ -208,6 +208,10 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
+        }
         output.fill(0);
 
         // Mutants note: This is just bit-setting into empty space.
