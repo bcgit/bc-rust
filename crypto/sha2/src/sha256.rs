@@ -1,4 +1,4 @@
-use crate::SHA2Params;
+use crate::Sha256Family;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
@@ -47,31 +47,17 @@ fn theta1(x: u32) -> u32 {
 }
 
 #[derive(Clone)]
-pub(crate) struct Sha256State<PARAMS: SHA2Params> {
+pub(crate) struct Sha256State<PARAMS: Sha256Family> {
     _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u32; 8]>,
 }
 
-impl<PARAMS: SHA2Params> Sha256State<PARAMS> {
+impl<PARAMS: Sha256Family> Sha256State<PARAMS> {
     pub(crate) fn new() -> Self {
+        // FIPS 180-4 s. 5.3: initial hash value H(0), supplied per-variant by the params type.
         let mut h = Secret::<[u32; 8]>::new();
-        match PARAMS::OUTPUT_LEN * 8 {
-            224 => {
-                h.copy_from_slice(&[
-                    0xC1059ED8, 0x367CD507, 0x3070DD17, 0xF70E5939, 0xFFC00B31, 0x68581511,
-                    0x64F98FA7, 0xBEFA4FA4,
-                ]);
-                Self { _params: core::marker::PhantomData, h }
-            }
-            256 => {
-                h.copy_from_slice(&[
-                    0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C,
-                    0x1F83D9AB, 0x5BE0CD19,
-                ]);
-                Self { _params: std::marker::PhantomData, h }
-            }
-            _ => panic!("Invalid SHA-2 bit size: {}", PARAMS::OUTPUT_LEN),
-        }
+        h.copy_from_slice(&PARAMS::H0);
+        Self { _params: core::marker::PhantomData, h }
     }
 
     fn compress(&mut self, blocks: &[[u8; 64]]) {
@@ -144,17 +130,15 @@ impl<PARAMS: SHA2Params> Sha256State<PARAMS> {
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
-pub struct SHA256Internal<PARAMS: SHA2Params> {
+pub struct SHA256Internal<PARAMS: Sha256Family> {
     _params: core::marker::PhantomData<PARAMS>,
     state: Sha256State<PARAMS>,
     byte_count: u64,
     x_buf: Secret<[u8; 64]>,
     x_buf_off: usize,
-    // TODO: Investigate whether maximum message size (according to FIPS 180-4) should be added
-    // (2^64 for SHA256 and 2^128 for SHA512)
 }
 
-impl<PARAMS: SHA2Params> SHA256Internal<PARAMS> {
+impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
     /// Creates a new SHA256 instance, ready for use.
     pub fn new() -> Self {
         Self {
@@ -167,18 +151,75 @@ impl<PARAMS: SHA2Params> SHA256Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHA2Params> Default for SHA256Internal<PARAMS> {
+impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
+    /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.1, then writes the digest.
+    ///
+    /// `num_partial_bits` (0..=7, validated by the caller) trailing message bits are taken from the
+    /// least significant bits of `partial_byte`. FIPS 180-4 s. 3.1 numbers message bits from the most
+    /// significant bit of each byte, so those bits are shifted to the top of the final message byte
+    /// and the mandatory "1" padding bit follows them immediately in the same byte.
+    ///
+    /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
+    /// truncates the digest, a longer one is zero-filled past the digest.
+    fn finalize(mut self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> usize {
+        debug_assert!(num_partial_bits <= 7);
+        output.fill(0);
+
+        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
+
+        // FIPS 180-4 s. 5.1.1: final message byte = [partial bits, MSB-first] [1] [0...].
+        // With no partial bits this is the familiar 0x80. Shifts are done in u16 so that the 8-bit
+        // shift for num_partial_bits == 0 cannot overflow; the masked value is < 2^num_partial_bits so
+        // the result always fits back into a u8.
+        let mask: u8 = ((1u16 << num_partial_bits) - 1) as u8;
+        let message_bits = ((partial_byte & mask) as u16) << (8 - num_partial_bits);
+        let pad_byte = (message_bits as u8) | (0x80u8 >> num_partial_bits);
+
+        self.x_buf[self.x_buf_off] = pad_byte;
+        self.x_buf_off += 1;
+
+        // If the length field no longer fits in this block, zero-fill and compress, then start a fresh block.
+        if self.x_buf_off > 56 {
+            self.x_buf[self.x_buf_off..].fill(0x00);
+            self.state.compress(slice::from_ref(&self.x_buf));
+            self.x_buf_off = 0;
+        }
+
+        self.x_buf[self.x_buf_off..56].fill(0x00);
+        // FIPS 180-4 s. 5.1.1: append the 64-bit big-endian message length l in bits. byte_count is a
+        // byte counter, so l = (byte_count << 3) | num_partial_bits (the low three bits of
+        // byte_count << 3 are zero).
+        let bit_len: u64 = (self.byte_count << 3) | (num_partial_bits as u64);
+        self.x_buf[56..64].copy_from_slice(&bit_len.to_be_bytes());
+        self.state.compress(slice::from_ref(&self.x_buf));
+
+        // FIPS 180-4 s. 6.x.2: the digest is H0 || H1 || ... (big-endian words), truncated to OUTPUT_LEN
+        // (and further to the caller's buffer if that is shorter).
+        let h = &self.state.h;
+        for i in 0..(n / 4) {
+            output[i * 4..i * 4 + 4].copy_from_slice(&h[i].to_be_bytes());
+        }
+        if !n.is_multiple_of(4) {
+            output[((n / 4) * 4)..((n / 4) * 4) + (n % 4)]
+                .copy_from_slice(&h[n / 4].to_be_bytes()[0..(n % 4)]);
+        }
+
+        n
+    }
+}
+
+impl<PARAMS: Sha256Family> Default for SHA256Internal<PARAMS> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<PARAMS: SHA2Params> Algorithm for SHA256Internal<PARAMS> {
+impl<PARAMS: Sha256Family> Algorithm for SHA256Internal<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
-impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
+impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
         512
@@ -204,8 +245,8 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // TODO: Check there is enough space left in 'byte_count' to allow this operation,
-        // TODO: although overflowing a u64 is unlikely to happen in practice, and rust will throw an error anyway.
+        // byte_count is a u64 byte counter, so this supports messages up to 2^64 bytes (2^67 bits).
+        // Exceeding it is infeasible in practice; in debug builds the add panics, in release it wraps.
         self.byte_count += len as u64;
 
         let available = 64 - self.x_buf_off;
@@ -240,63 +281,34 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
         output
     }
 
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
-
-        let bit_len: u64 = self.byte_count << 3;
-
-        self.x_buf[self.x_buf_off] = 0x80;
-        self.x_buf_off += 1;
-
-        if self.x_buf_off > 56 {
-            self.x_buf[self.x_buf_off..].fill(0x00);
-            self.state.compress(slice::from_ref(&self.x_buf));
-            self.x_buf_off = 0;
-        }
-
-        self.x_buf[self.x_buf_off..56].fill(0x00);
-        self.x_buf[56..64].copy_from_slice(&bit_len.to_be_bytes());
-        self.state.compress(slice::from_ref(&self.x_buf));
-
-        let h = &self.state.h;
-
-        // let n = output.len();
-        for i in 0..(n / 4) {
-            output[i * 4..i * 4 + 4].copy_from_slice(&h[i].to_be_bytes());
-        }
-        if !n.is_multiple_of(4) {
-            output[((n / 4) * 4)..((n / 4) * 4) + (n % 4)]
-                .copy_from_slice(&h[n / 4].to_be_bytes()[0..(n % 4)]);
-        }
-
-        n
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        // A whole-byte message is the zero-partial-bits case of the general padding.
+        self.finalize(0, 0, output)
     }
 
-    /// TODO: This is defined in FIPS 180-4 s. 5.1.2
-    /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: It can be implemented if required
-    #[allow(unused)]
     fn do_final_partial_bits(
         self,
         partial_byte: u8,
         num_partial_bits: usize,
     ) -> Result<Vec<u8>, HashError> {
-        unimplemented!()
+        let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
+        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
+        Ok(output)
     }
 
-    /// TODO: This is defined in FIPS 180-4 s. 5.1.2
-    /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: It can be implemented if required
-    #[allow(unused)]
+    /// FIPS 180-4 s. 5.1: bit-oriented messages. The `num_partial_bits` least significant bits of
+    /// `partial_byte` are appended to the message before padding. `num_partial_bits == 0` behaves
+    /// exactly like [`Hash::do_final_out`].
     fn do_final_partial_bits_out(
         self,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        unimplemented!()
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
+        }
+        Ok(self.finalize(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -307,7 +319,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
 /// Length in bytes of the serialized state of SHA224 and SHA256.
 pub const SUSPENDED_SHA256_STATE_LEN: usize = 108;
 
-impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Internal<PARAMS> {
+impl<PARAMS: Sha256Family> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Internal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_SHA256_STATE_LEN] {
         debug_assert_eq!(SUSPENDED_SHA256_STATE_LEN, 108);
 
