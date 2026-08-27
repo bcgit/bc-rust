@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod sha3_tests {
     use super::sha3_test_helpers::*;
+    use bouncycastle_core::errors::HashError;
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
@@ -140,6 +141,28 @@ mod sha3_tests {
         let mut output = vec![0u8; SHA3_224::OUTPUT_LEN - 1];
         SHA3_224::new().do_final_partial_bits_out(input_byte, 7, &mut *output).unwrap();
         assert_eq!(output, expected_output[..SHA3_224::OUTPUT_LEN - 1]);
+    }
+
+    /// do_final_partial_bits() must validate num_partial_bits before shifting: 0 is equivalent to
+    /// do_final(), 8+ is rejected with InvalidLength rather than panicking (16+ used to overflow a shift).
+    #[test]
+    fn partial_bits_range_is_validated() {
+        for bad in [8usize, 9, 15, 16, 64, usize::MAX] {
+            let mut h = SHA3_256::new();
+            h.do_update(b"abc");
+            assert!(
+                matches!(h.do_final_partial_bits(0xFF, bad), Err(HashError::InvalidLength(_))),
+                "num_partial_bits={bad}"
+            );
+            let mut out = [0u8; 32];
+            assert!(matches!(
+                SHA3_256::new().do_final_partial_bits_out(0xFF, bad, &mut out),
+                Err(HashError::InvalidLength(_))
+            ));
+        }
+        let mut h = SHA3_256::new();
+        h.do_update(b"abc");
+        assert_eq!(h.do_final_partial_bits(0xFF, 0).unwrap(), SHA3_256::new().hash(b"abc"));
     }
 
     #[test]
@@ -393,7 +416,7 @@ mod sha3_tests {
 
     #[test]
     fn run_kats() {
-        run_test_vectors(read_test_vectors("tests/data/SHA3TestVectors.txt"));
+        run_test_vectors(read_test_vectors("SHA3TestVectors.txt"));
     }
 
     #[test]
@@ -486,6 +509,34 @@ mod sha3_tests {
 pub(crate) mod sha3_test_helpers {
     use bouncycastle_hex as hex;
     use std::fs;
+    use std::path::Path;
+    use std::sync::Once;
+
+    // Test vectors are read from the bc-test-data repo (https://github.com/bcgit/bc-test-data),
+    // which must be cloned alongside this repo at "../bc-test-data" (same convention as the mldsa
+    // and mlkem crates). If it is not present the vector tests print a warning and pass vacuously.
+    const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto";
+    const TEST_DATA_PATH: &str = "../bc-test-data/crypto";
+
+    static TEST_DATA_CHECK: Once = Once::new();
+
+    /// Returns the contents of `filename` from bc-test-data, or `None` (after a one-time warning)
+    /// if the repo is not checked out.
+    fn get_test_data(filename: &str) -> Option<String> {
+        let dir =
+            [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH].into_iter().find(|d| Path::new(d).exists());
+        TEST_DATA_CHECK.call_once(|| match dir {
+            Some(d) => println!("bc-test-data found at: {d:?}"),
+            None => {
+                println!("WARNING: bc-test-data directory not found; vector tests will be skipped")
+            }
+        });
+        let dir = dir?;
+        Some(
+            fs::read_to_string(format!("{dir}/{filename}"))
+                .expect("failed to read test vector file"),
+        )
+    }
 
     const SAMPLE_OF: &str = " sample of ";
     const MSG_HEADER: &str = "Msg as bit string";
@@ -498,10 +549,14 @@ pub(crate) mod sha3_test_helpers {
         pub(crate) hash: Vec<u8>,
     }
 
-    pub(crate) fn read_test_vectors(path: &str) -> Vec<TestCase> {
+    /// Parses the named NIST FIPS 202 example-vector file from bc-test-data. Returns an empty list
+    /// (skipping the test) if bc-test-data is not available.
+    pub(crate) fn read_test_vectors(filename: &str) -> Vec<TestCase> {
         let mut test_vectors: Vec<TestCase> = vec![];
-        let string_content: Vec<String> =
-            fs::read_to_string(path).unwrap().lines().map(String::from).collect();
+        let Some(content) = get_test_data(filename) else {
+            return test_vectors;
+        };
+        let string_content: Vec<String> = content.lines().map(String::from).collect();
 
         let mut i = 0;
         while i < string_content.len() {

@@ -250,12 +250,14 @@ impl KeccakInternal {
         }
     }
 
+    /// Absorbs the final `bits` (0..=7, in the least significant bits of `data`) of the message and
+    /// switches the sponge to the squeezing phase. `bits == 0` means "no further bits": the sponge is
+    /// padded and switched to squeezing without absorbing anything. Callers that have already applied a
+    /// domain-separation suffix rely on this — if the switch did not happen here, a later squeeze would
+    /// see `squeezing == false` and apply the suffix a second time.
     pub(super) fn absorb_bits(&mut self, data: u8, bits: usize) -> Result<(), HashError> {
-        if bits == 0 {
-            return Ok(());
-        }
-        if !(1..=7).contains(&bits) {
-            return Err(HashError::InvalidLength("bits must be in the range 1 to 7"));
+        if bits > 7 {
+            return Err(HashError::InvalidLength("bits must be in the range 0 to 7"));
         }
         if (self.bits_in_queue & 7) != 0 {
             return Err(HashError::InvalidState("attempt to absorb with odd length queue"));
@@ -264,11 +266,13 @@ impl KeccakInternal {
             return Err(HashError::InvalidState("attempt to absorb while squeezing"));
         }
 
-        let mask = (1 << bits) - 1;
-        self.data_queue[self.bits_in_queue >> 3] = data & mask;
+        if bits != 0 {
+            let mask = (1 << bits) - 1;
+            self.data_queue[self.bits_in_queue >> 3] = data & mask;
 
-        // NOTE: After this, bits_in_queue is no longer a multiple of 8, so no more absorbs will work
-        self.bits_in_queue += bits;
+            // NOTE: After this, bits_in_queue is no longer a multiple of 8, so no more absorbs will work
+            self.bits_in_queue += bits;
+        }
         self.pad_and_switch_to_squeezing_phase();
         Ok(())
     }
@@ -500,18 +504,57 @@ mod keccak_tests {
     use super::*;
     use bouncycastle_hex as hex;
 
+    /// Basic sponge sanity: absorbing in one chunk or many gives the same output, successive
+    /// squeezes continue the stream (do not repeat), and different capacities give different output.
     #[test]
     fn test_keccak() {
-        let mut d = KeccakInternal::new(KeccakSize::_256);
         let m_vec = hex::decode("6d657373616765").unwrap();
+
+        let mut d = KeccakInternal::new(KeccakSize::_256);
         d.absorb(&m_vec);
+        let mut out1 = [0u8; 32];
+        d.squeeze(&mut out1);
+        let mut out2 = [0u8; 32];
+        d.squeeze(&mut out2);
+        assert_ne!(out1, [0u8; 32]);
+        assert_ne!(out1, out2, "successive squeezes must continue the output stream");
 
-        let mut out = [0u8; 32];
-        d.squeeze(&mut out);
-        println!("n1: {:x?}", &out);
+        // chunked absorb + single 64-byte squeeze must reproduce out1 || out2
+        let mut d = KeccakInternal::new(KeccakSize::_256);
+        for b in &m_vec {
+            d.absorb(core::slice::from_ref(b));
+        }
+        let mut out64 = [0u8; 64];
+        d.squeeze(&mut out64);
+        assert_eq!(&out64[..32], &out1);
+        assert_eq!(&out64[32..], &out2);
 
-        d.squeeze(&mut out);
-        println!("n2: {:x?}", &out);
+        let mut d = KeccakInternal::new(KeccakSize::_512);
+        d.absorb(&m_vec);
+        let mut out_c512 = [0u8; 32];
+        d.squeeze(&mut out_c512);
+        assert_ne!(out_c512, out1);
+    }
+
+    /// absorb_bits(): 0..=7 bits are accepted and always switch the sponge to squeezing (0 bits
+    /// included — see the doc comment); 8+ bits are rejected; a second call is rejected as squeezing.
+    #[test]
+    fn absorb_bits_range_and_phase() {
+        for bits in 0..=7usize {
+            let mut d = KeccakInternal::new(KeccakSize::_256);
+            d.absorb(b"abc");
+            d.absorb_bits(0xFF, bits).unwrap();
+            assert!(d.squeezing, "bits={bits}: must switch to squeezing");
+            assert!(matches!(d.absorb_bits(0, 1), Err(HashError::InvalidState(_))));
+        }
+        for bits in [8usize, 9, 16, usize::MAX] {
+            let mut d = KeccakInternal::new(KeccakSize::_256);
+            assert!(
+                matches!(d.absorb_bits(0, bits), Err(HashError::InvalidLength(_))),
+                "bits={bits}"
+            );
+            assert!(!d.squeezing, "rejected call must not change phase");
+        }
     }
 
     /// Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt
