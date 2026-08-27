@@ -25,3 +25,11 @@ SHA-3 / SHAKE bug fixes:
   `[0,7]`.
 * Interleaving absorb -> squeeze -> absorb remains rejected with `HashError::InvalidState`; the `XOF` trait docs now
   explain why (it is the duplex construction, not SHAKE).
+
+Testing:
+
+* SHA-3 / SHAKE now run the NIST CAVP SHA3VS vector sets from bc-test-data (`crypto/sha3`: ShortMsg, LongMsg, Monte
+  Carlo and SHAKE VariableOut; bit- and byte-oriented, ~13k cases) using the same `../bc-test-data` lookup convention as
+  the mldsa/mlkem crates; the tests skip with a warning if the repo is not checked out. The vendored FIPS 202 example
+  vectors in `crypto/sha3/tests/data` were removed in favour of the bc-test-data copies. Note that `cargo mutants` runs
+  in a copied tree where `../bc-test-data` does not resolve, so these tests do not contribute to mutation coverage.
