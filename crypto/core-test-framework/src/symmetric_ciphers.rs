@@ -195,6 +195,21 @@ impl TestFrameworkBlockCipher {
             assert_eq!(msg_pair, &pt);
         }
 
+        // one-shot API: must agree with the streaming API for the same key, and round-trip
+        let two_blocks: &[[u8; BLOCK_LEN]; 2] =
+            &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0[0];
+        let (iv, ct) = E::encrypt_blocks(&key, two_blocks).unwrap();
+        assert_eq!(D::decrypt_blocks(&key, &iv, &ct).unwrap(), *two_blocks);
+        let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
+        assert_eq!(streamed.do_decrypt_blocks(&ct).unwrap(), *two_blocks);
+
+        let mut ct = [[0u8; BLOCK_LEN]; 2];
+        let mut pt = [[0u8; BLOCK_LEN]; 2];
+        let (iv, n) = E::encrypt_blocks_out(&key, two_blocks, &mut ct).unwrap();
+        assert_eq!(n, 2 * BLOCK_LEN);
+        assert_eq!(D::decrypt_blocks_out(&key, &iv, &ct, &mut pt).unwrap(), 2 * BLOCK_LEN);
+        assert_eq!(pt, *two_blocks);
+
         // test that the iv is random (ie not the same on two runs)
         let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();
         let (_encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
