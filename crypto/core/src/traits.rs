@@ -130,6 +130,44 @@ pub trait BlockCipherEncryptor<
         plaintext: &[[u8; BLOCK_LEN]; N],
         ciphertext: &mut [[u8; BLOCK_LEN]; N],
     ) -> Result<usize, SymmetricCipherError>;
+
+    /// One-shot: encrypts `N` blocks under a fresh init. Returns the generated init data and the ciphertext.
+    fn encrypt_blocks<const N: usize>(
+        key: &KeyMaterial<KEY_LEN>,
+        plaintext: &[[u8; BLOCK_LEN]; N],
+    ) -> Result<([u8; INIT_DATA_LEN], [[u8; BLOCK_LEN]; N]), SymmetricCipherError> {
+        let (mut enc, init_data) = Self::do_encrypt_init(key)?;
+        Ok((init_data, enc.do_encrypt_blocks(plaintext)?))
+    }
+    /// As [`BlockCipherEncryptor::encrypt_blocks`], but sources randomness from the provided RNG.
+    fn encrypt_blocks_rng<const N: usize>(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        plaintext: &[[u8; BLOCK_LEN]; N],
+    ) -> Result<([u8; INIT_DATA_LEN], [[u8; BLOCK_LEN]; N]), SymmetricCipherError> {
+        let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
+        Ok((init_data, enc.do_encrypt_blocks(plaintext)?))
+    }
+    /// One-shot: encrypts `N` blocks under a fresh init into the provided buffer.
+    /// Returns the generated init data and `N * BLOCK_LEN`.
+    fn encrypt_blocks_out<const N: usize>(
+        key: &KeyMaterial<KEY_LEN>,
+        plaintext: &[[u8; BLOCK_LEN]; N],
+        ciphertext: &mut [[u8; BLOCK_LEN]; N],
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
+        let (mut enc, init_data) = Self::do_encrypt_init(key)?;
+        Ok((init_data, enc.do_encrypt_blocks_out(plaintext, ciphertext)?))
+    }
+    /// As [`BlockCipherEncryptor::encrypt_blocks_out`], but sources randomness from the provided RNG.
+    fn encrypt_blocks_out_rng<const N: usize>(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        plaintext: &[[u8; BLOCK_LEN]; N],
+        ciphertext: &mut [[u8; BLOCK_LEN]; N],
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
+        let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
+        Ok((init_data, enc.do_encrypt_blocks_out(plaintext, ciphertext)?))
+    }
 }
 
 /// The decryption half of a block cipher's streaming API; see [`BlockCipherEncryptor`].
@@ -156,6 +194,24 @@ pub trait BlockCipherDecryptor<
         ciphertext: &[[u8; BLOCK_LEN]; N],
         plaintext: &mut [[u8; BLOCK_LEN]; N],
     ) -> Result<usize, SymmetricCipherError>;
+
+    /// One-shot: decrypts `N` blocks from the given init data.
+    fn decrypt_blocks<const N: usize>(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+        ciphertext: &[[u8; BLOCK_LEN]; N],
+    ) -> Result<[[u8; BLOCK_LEN]; N], SymmetricCipherError> {
+        Self::do_decrypt_init(key, init_data)?.do_decrypt_blocks(ciphertext)
+    }
+    /// One-shot: decrypts `N` blocks from the given init data into the provided buffer. Returns `N * BLOCK_LEN`.
+    fn decrypt_blocks_out<const N: usize>(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+        ciphertext: &[[u8; BLOCK_LEN]; N],
+        plaintext: &mut [[u8; BLOCK_LEN]; N],
+    ) -> Result<usize, SymmetricCipherError> {
+        Self::do_decrypt_init(key, init_data)?.do_decrypt_blocks_out(ciphertext, plaintext)
+    }
 }
 
 /// The basic functions of an Authenticated Encryption with Addititional Data cipher.
