@@ -6,7 +6,8 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::traits::{
-    AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength, StreamCipher, SymmetricCipher,
+    AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength, StreamCipher,
+    SymmetricCipher,
 };
 
 /// Instance of the test framework.
@@ -154,9 +155,7 @@ impl TestFrameworkBlockCipher {
         let mut ct = [[0u8; BLOCK_LEN]; 1];
         let mut pt = [[0u8; BLOCK_LEN]; 1];
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let ct_bytes_written = encryptor
-                .do_encrypt_blocks_out(&[*msg_chunk], &mut ct)
-                .unwrap();
+            let ct_bytes_written = encryptor.do_encrypt_blocks_out(&[*msg_chunk], &mut ct).unwrap();
             assert_eq!(ct_bytes_written, BLOCK_LEN);
 
             let pt_bytes_written = decryptor.do_decrypt_blocks_out(&ct, &mut pt).unwrap();

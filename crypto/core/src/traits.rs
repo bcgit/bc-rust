@@ -102,8 +102,11 @@ pub trait BlockCipher {
 /// In order for these APIs to be usable securely in all contexts, the init data will be generated
 /// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
 /// user to provide the init data. If you require this functionality, see the documentation for the underlying implementation.
-pub trait BlockCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
-    BlockCipher + Sized
+pub trait BlockCipherEncryptor<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>: BlockCipher + Sized
 {
     /// Begins a streaming encryption flow, returning the generated init data (e.g. IV).
     /// Sources randomness from the library's default OS-backed RNG.
@@ -130,8 +133,11 @@ pub trait BlockCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize,
 }
 
 /// The decryption half of a block cipher's streaming API; see [`BlockCipherEncryptor`].
-pub trait BlockCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
-    BlockCipher + Sized
+pub trait BlockCipherDecryptor<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>: BlockCipher + Sized
 {
     /// Begins a streaming decryption flow from the init data returned by [`BlockCipherEncryptor::do_encrypt_init`].
     fn do_decrypt_init(
