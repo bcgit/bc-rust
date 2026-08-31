@@ -5,3 +5,13 @@ mutants.out*/
 
 .idea/
 .vscode/
+
+# Claude Code: ignore personal/local state, but share team tooling
+# (skills, slash commands, subagents, and project settings.json).
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/commands/
+!.claude/agents/
+.claude/settings.local.json
+.claude 2/
