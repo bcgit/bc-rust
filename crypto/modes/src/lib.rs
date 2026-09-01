@@ -158,7 +158,20 @@
 //!   this workspace yet, so arbitrary-length CBC is not available. When that layer lands, CBC gets
 //!   it for free by being wrapped -- no padding logic belongs in this crate.
 //! * **CFB** (SP 800-38A Sec 6.3), and the other three modes of the recommendation (ECB, OFB, CTR).
-//! * **A CLI subcommand.** `cli/` has no `aes128-cbc-*` command yet.
+//!
+//! # Command line
+//!
+//! The `bc-rust` CLI exposes CBC as `aes128-cbc`, `aes192-cbc` and `aes256-cbc`, each taking
+//! `encrypt` or `decrypt` and streaming stdin to stdout. Because there is no API for a
+//! caller-supplied IV, `encrypt` writes the generated IV as the first block of its output and
+//! `decrypt` reads it back from the first block of its input, so the two compose:
+//!
+//! ```text
+//! bc-rust aes256-cbc encrypt --key-file k.bin < plain.bin > cipher.bin
+//! bc-rust aes256-cbc decrypt --key-file k.bin < cipher.bin | cmp - plain.bin
+//! ```
+//!
+//! Input must be block-aligned there too, for the reason given above.
 
 #![no_std]
 #![forbid(unsafe_code)]
