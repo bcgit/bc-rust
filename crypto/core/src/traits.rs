@@ -87,6 +87,65 @@ pub trait BlockCipher {
     const MAX_SECURITY_STRENGTH: SecurityStrength;
 }
 
+/// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
+///
+/// This is the raw primitive a mode of operation is built on, not something to encrypt data with.
+/// It transforms exactly one block, so applying it directly to data is ECB, which is not
+/// confidential. [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
+/// they carry initialization data and chaining state; this one carries only a key schedule.
+///
+/// Implementors are expected to hold that key schedule in a zeroize-on-drop wrapper
+/// (`bouncycastle_utils::secret::Secret`), so it is scrubbed when the value is dropped.
+///
+/// # Why the block methods are infallible
+///
+/// Every length here is fixed by a type, and a constructed value is always ready to use, so there
+/// is nothing a caller can get wrong once [`BlockPermutation::new`] has returned. Only `new` can
+/// fail, and only because of the key.
+pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
+    BlockCipher + Sized
+{
+    /// Expands the key.
+    ///
+    /// # Errors
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`BlockCipher::MAX_SECURITY_STRENGTH`], both as a
+    /// [`SymmetricCipherError::KeyMaterialError`].
+    fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError>;
+
+    /// The forward cipher function, in place.
+    fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]);
+
+    /// The inverse cipher function, in place.
+    fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]);
+
+    /// The forward cipher function on two *independent* blocks, in place.
+    ///
+    /// Provided as two [`BlockPermutation::encrypt_block`] calls. Bit-sliced implementations
+    /// override it, because a pair of blocks is their natural unit of work and costs barely more
+    /// than one; see `bouncycastle-aes-lowmemory`.
+    ///
+    /// Overrides must be indistinguishable from the default, including the order of the two
+    /// results. `TestFrameworkBlockPermutation` pins that.
+    ///
+    /// Modes whose structure is parallel -- CBC decryption, CFB decryption, CTR -- should prefer
+    /// this. CBC and CFB *encryption* cannot use it: each input block depends on the previous
+    /// output.
+    fn encrypt_blocks2(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
+        let [a, b] = blocks;
+        self.encrypt_block(a);
+        self.encrypt_block(b);
+    }
+
+    /// The inverse cipher function on two *independent* blocks, in place.
+    /// See [`BlockPermutation::encrypt_blocks2`].
+    fn decrypt_blocks2(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
+        let [a, b] = blocks;
+        self.decrypt_block(a);
+        self.decrypt_block(b);
+    }
+}
+
 /// The encryption half of a block cipher's streaming API. Strictly block-aligned: whole blocks in, whole
 /// blocks out, no finalization step. Padding of non-block-aligned data is handled by a separate layer
 /// (`PaddedEncryptor` / `PaddedDecryptor`) built on top of this trait.

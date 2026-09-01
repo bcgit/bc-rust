@@ -27,6 +27,55 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   only offer ECB, and those are mode-of-operation concerns. `Algorithm` is implemented (name and security
   strength); per-mode OIDs and the `BlockCipherEncryptor` / `BlockCipherDecryptor` impls belong to the mode crates.
 
+New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of operation
+(NIST SP 800-38A), currently **CBC** (Sec 6.2). Re-exported from the umbrella crate.
+
+* `Cbc<P, Dir, KEY_LEN, BLOCK_LEN>` over any `BlockPermutation`, so the crate depends on no
+  concrete cipher. The direction is a type parameter: `BlockCipherEncryptor` is implemented only
+  for `Cbc<_, Encrypting, _, _>` and `BlockCipherDecryptor` only for `Cbc<_, Decrypting, _, _>`,
+  making a wrong-direction call a compile error rather than a runtime check.
+* **The IV is generated, never accepted.** SP 800-38A Sec 5.3 requires the CBC IV to be
+  *unpredictable*, not merely unique, so `do_encrypt_init` draws one from the library's default
+  OS-backed DRBG (Appendix C's second recommended method) and returns it; there is no API for
+  supplying your own. Known-answer tests drive `do_encrypt_init_rng` with a fixed-output test RNG.
+* **Parallel decryption.** Sec 6.2 notes CBC decryption's inverse cipher calls can run in
+  parallel, so `do_decrypt_blocks[_out]` walks the ciphertext in pairs through
+  `BlockPermutation::decrypt_blocks2`, with a one-block remainder for odd `N`. Measured against an
+  otherwise identical permutation that does not override the pair methods, this is **1.83x** the
+  decryption throughput (67.9 vs 37.1 MiB/s, AES-128, 16 KiB, N=8). CBC encryption is serial by
+  construction and does not use it.
+* Strictly block-aligned, as Sec 5.2 requires of CBC. Arbitrary-length data needs a padding layer,
+  which does not exist in this workspace yet; when it lands, CBC gets it by being wrapped.
+* Verified against all six SP 800-38A Appendix F.2 vectors (CBC-AES128/192/256, Encrypt and
+  Decrypt), each checked in one call, one block at a time, in a `3 + 1` grouping that exercises the
+  pair remainder, and through the `_out` variant. Appendix D error propagation is tested
+  exhaustively for the IV (every one of the 128 bit positions flips exactly its own bit of P1) and
+  for a ciphertext bit error (affects exactly two blocks).
+* Ships no CLI subcommand yet, and no CFB -- see the crate docs' "Not yet implemented".
+
+`core`: new `BlockPermutation<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
+keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
+`new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_blocks2` / `decrypt_blocks2` that
+default to two single-block calls and which bit-sliced implementations override. The block methods
+are infallible; only `new` can fail, and only on the key. `bouncycastle-aes-lowmemory` implements
+it for all three key lengths (and `BlockCipher`, which is metadata only and is
+`BlockPermutation`'s supertrait; the data-encryption traits are still deliberately not
+implemented there).
+
+Testing:
+
+* `core-test-framework` gains `TestFrameworkBlockPermutation`, which pins the trait contract:
+  both directions are inverses either way round, the permutation is injective, and the pair
+  methods are indistinguishable from two single-block calls **including their order** -- the check
+  that makes an override safe.
+* Fixed a latent bug in `TestFrameworkBlockCipher`: it unwrapped `set_security_strength` at all
+  five strengths, which a key shorter than 32 bytes cannot carry, so the framework panicked for
+  any 16- or 24-byte key. It now skips the strengths the key length cannot hold. The bug was
+  invisible until now because nothing in the workspace implemented the block cipher traits. The
+  identical loop in `TestFrameworkSymmetricCipher` and `TestFrameworkAEADCipher` is still unfixed;
+  both still have no implementors, so it stays latent. (`TestFrameworkStreamCipher` has no
+  security-strength handling at all and is unaffected.)
+
 ## Minor features / bug fixes
 
 * bug fixes to the way SHA3/SHAKE handled absorbing and squeezing a partial final byte.
