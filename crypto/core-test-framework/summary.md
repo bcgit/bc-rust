@@ -1,6 +1,6 @@
 # `crypto/core-test-framework` — changes for `BlockPermutation` and CBC
 
-Changes made on branch `feature/officialfrancismendoza/98-AES-lowmemory` (2026-08-31) while adding
+Changes made on branch `feature/officialfrancismendoza/100-AES-lightengine-CBC-mode` while adding
 `crypto/aes-lowmemory` and `crypto/modes`. Two things: a **new** per-trait suite for
 `core::traits::BlockPermutation`, and a **bug fix** to the existing `TestFrameworkBlockCipher`.
 
@@ -162,7 +162,7 @@ This is the pattern to reuse for CFB, OFB and CTR when they land.
 
 ```sh
 cargo build -p bouncycastle-core-test-framework
-cargo test --workspace          # 500 tests, 0 failures
+cargo test --workspace          # 517 tests, 0 failures
 cargo fmt --all -- --check
 ```
 

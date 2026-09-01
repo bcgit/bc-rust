@@ -51,6 +51,13 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   pair remainder, and through the `_out` variant. Appendix D error propagation is tested
   exhaustively for the IV (every one of the 128 bit positions flips exactly its own bit of P1) and
   for a ciphertext bit error (affects exactly two blocks).
+* Also verified against the **2150 NIST ACVP `ACVP-AES-CBC` AFT cases** from `bc-test-data` (all
+  three key lengths, both directions, 60 of them spanning 2-10 blocks). Each case is run twice --
+  block by block, and in pairs with a one-block remainder -- so the `decrypt_blocks2` path is
+  exercised against real vectors, not only against the toy permutation. Unlike the ECB response
+  file, the CBC one carries only the answer against a `tcId`, so the request and response files are
+  joined; the 6 MCT groups are skipped and the count reported. These vectors were already in
+  `bc-test-data` and previously unused.
 * No CFB yet -- see the crate docs' "Not yet implemented".
 
 `cli`: three new subcommands, `aes128-cbc`, `aes192-cbc` and `aes256-cbc`, each taking `encrypt` or
@@ -69,6 +76,10 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
 * Verified against SP 800-38A F.2: prepending the spec's IV to the spec's ciphertext and running
   `decrypt` reproduces the spec's plaintext for all three key lengths. The `encrypt` direction was
   cross-checked against an independent CBC implementation under the IV the CLI generated.
+* `cli/tests/aes_cbc_cli_tests.rs` (16 tests) drives the built binary as a subprocess via
+  `CARGO_BIN_EXE_bc-rust`, so all of the above is asserted by `cargo test` rather than by hand:
+  the F.2 vectors, round trips across the chunk boundary, a fresh IV per invocation, hex/binary
+  agreement, `--key-file` in both hex and binary, and every error path with its message.
 
 `core`: new `BlockPermutation<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
