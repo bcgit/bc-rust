@@ -51,7 +51,24 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   pair remainder, and through the `_out` variant. Appendix D error propagation is tested
   exhaustively for the IV (every one of the 128 bit positions flips exactly its own bit of P1) and
   for a ciphertext bit error (affects exactly two blocks).
-* Ships no CLI subcommand yet, and no CFB -- see the crate docs' "Not yet implemented".
+* No CFB yet -- see the crate docs' "Not yet implemented".
+
+`cli`: three new subcommands, `aes128-cbc`, `aes192-cbc` and `aes256-cbc`, each taking `encrypt` or
+`decrypt` and streaming stdin to stdout in 1 KiB chunks.
+
+* Key from `--key` (hex) or `--key-file` (binary or hex), with the usual note that secrets on the
+  command line end up in shell history. The key length must match the variant exactly.
+* **The IV travels in the ciphertext**: since there is no API for supplying one, `encrypt` writes
+  the generated IV as the first 16 bytes of its output and `decrypt` reads it back from the first
+  16 bytes of its input, so `encrypt | decrypt` composes with no `--iv` flag anywhere. The IV need
+  not be secret (SP 800-38A Sec 5.3), so this is sound.
+* Input must be a whole number of 16-byte blocks. Unaligned input is rejected with a message
+  pointing at the missing padding layer rather than being silently padded.
+* Reads do not respect block boundaries, so a block split across two reads is carried over;
+  verified by round-tripping 64 KiB through `dd bs=3`.
+* Verified against SP 800-38A F.2: prepending the spec's IV to the spec's ciphertext and running
+  `decrypt` reproduces the spec's plaintext for all three key lengths. The `encrypt` direction was
+  cross-checked against an independent CBC implementation under the IV the CLI generated.
 
 `core`: new `BlockPermutation<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
