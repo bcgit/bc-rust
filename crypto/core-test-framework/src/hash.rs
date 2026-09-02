@@ -1,18 +1,19 @@
 //! Generic behaviour tests for anything that implements [`Hash`].
 
+use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, HashAlgParams};
 
 /// Instance of the test framework.
 pub struct TestFrameworkHash {
     // Put any config options here
     /// Can be disabled for hash functions that don't implement [`Hash::do_final_partial_bits`].
-    pub enable_partial_final_input_tests: bool,
+    pub enable_partial_byte_tests: bool,
 }
 
 impl TestFrameworkHash {
     ///
     pub fn new() -> Self {
-        Self { enable_partial_final_input_tests: true }
+        Self { enable_partial_byte_tests: true }
     }
 
     /// Test all the members of trait Hash against the given input-output pair.
@@ -92,22 +93,112 @@ impl TestFrameworkHash {
             );
         }
 
-        if self.enable_partial_final_input_tests {
-            /*** fn do_final_partial_bits(self, partial_byte: u8, num_partial_bits: usize)-> Result<Vec<u8>, HashError>; ***/
-            /*** fn do_final_partial_bits_out(self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> Result<usize, HashError>; ***/
-            // There's not a lot we can test here because this will require a different expected output from the rest of this test, but we can do something.
+        if self.enable_partial_byte_tests {
+            /*** Testing: ***/
+            /*** fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)-> Result<Vec<u8>, HashError>; ***/
+            /*** fn do_final_partial_bits_out(self, partial_byte: u8, num_bits: usize, output: &mut [u8]) -> Result<usize, HashError>; ***/
+            // A known-answer test for these needs a different expected output from the rest of this
 
-            //output slice too small -- should just truncate
-            let mut first_output = vec![0u8; H::default().output_len()];
-            H::default()
-                .do_final_partial_bits_out(0xFF, 7, &mut *first_output)
-                .expect("Failed to finalize partial input");
-            let len_to_truncate_to = H::default().output_len() - 1;
-            let mut output = vec![0u8; len_to_truncate_to];
-            let bytes_written =
-                H::default().do_final_partial_bits_out(0xFF, 7, &mut *output).unwrap();
-            assert_eq!(bytes_written, len_to_truncate_to);
-            assert_eq!(first_output[..len_to_truncate_to], output);
+            // Helper: the digest of `input` finished with the low `num_bits` bits of `partial_byte`.
+            let partial_digest = |partial_byte: u8, num_bits: usize| -> Vec<u8> {
+                let mut message_digest = H::default();
+                message_digest.do_update(input);
+                message_digest
+                    .do_final_partial_bits(partial_byte, num_bits)
+                    .expect("do_final_partial_bits() must succeed for num_bits in 0..=7")
+            };
+
+            // "0 is a valid value and means the message ends on a byte boundary (equivalent to
+            //     Hash::do_final())".
+            // So, test against the `expected_output` result from above
+            for partial_byte in [0x00u8, 0x01, 0x80, 0xA5, 0xFF] {
+                assert_eq!(
+                    partial_digest(partial_byte, 0),
+                    expected_output,
+                    "num_bits = 0 must be equivalent to do_final() / partial_byte: {partial_byte:#04X}"
+                );
+            }
+
+            // "The num_bits message bits are taken from the least significant bits of
+            //     partial_byte": the unused high bits are not part of the message, and so must not
+            //     change the output.
+            for num_bits in 0..=7 {
+                // no overflow: 1u8 << 7 == 0x80
+                let mask = (1u8 << num_bits) - 1;
+                for partial_byte in [0x00u8, 0x5A, 0xA5, 0xFF] {
+                    assert_eq!(
+                        partial_digest(partial_byte, num_bits),
+                        partial_digest(partial_byte & mask, num_bits),
+                        "bits above num_bits = {num_bits} must be ignored / partial_byte: {partial_byte:#04X}"
+                    );
+                }
+            }
+
+            // "num_bits must be in 0..=7; larger values return HashError::InvalidLength."
+            //    The range has to be validated before any shift by num_bits, so check well past
+            //     the width of the shifted type as well as the 8 / 9 boundary.
+            for num_bits in [8usize, 9, 15, 16, 64, usize::MAX] {
+                let mut message_digest = H::default();
+                message_digest.do_update(input);
+                assert!(
+                    matches!(
+                        message_digest.do_final_partial_bits(0xFF, num_bits),
+                        Err(HashError::InvalidLength(_))
+                    ),
+                    "num_bits = {num_bits} must be rejected with InvalidLength"
+                );
+
+                let mut output = vec![0u8; H::OUTPUT_LEN];
+                let mut message_digest = H::default();
+                message_digest.do_update(input);
+                assert!(
+                    matches!(
+                        message_digest.do_final_partial_bits_out(0xFF, num_bits, &mut *output),
+                        Err(HashError::InvalidLength(_))
+                    ),
+                    "num_bits = {num_bits} must be rejected with InvalidLength (_out variant)"
+                );
+            }
+
+            // "The same as Hash::do_final_partial_bits, but takes the output buffer as an
+            //     argument": the two variants must agree, and the Vec variant must return
+            //     output_len() bytes.
+            for num_bits in 0..=7 {
+                for partial_byte in [0x00u8, 0x5A, 0xA5, 0xFF] {
+                    let expected_partial_output = partial_digest(partial_byte, num_bits);
+                    assert_eq!(expected_partial_output.len(), H::OUTPUT_LEN);
+
+                    let mut output = vec![0u8; H::OUTPUT_LEN];
+                    let mut message_digest = H::default();
+                    message_digest.do_update(input);
+                    let bytes_written = message_digest
+                        .do_final_partial_bits_out(partial_byte, num_bits, &mut *output)
+                        .expect("Failed to finalize partial input");
+                    assert_eq!(bytes_written, H::OUTPUT_LEN);
+                    assert_eq!(
+                        output, expected_partial_output,
+                        "do_final_partial_bits_out() must agree with do_final_partial_bits() / num_bits: {num_bits}, partial_byte: {partial_byte:#04X}"
+                    );
+                }
+            }
+
+            // Each (num_bits, partial_byte) pair is a distinct message, and so must produce a
+            //     distinct digest. This is what catches an implementation that silently drops the
+            //     partial bits, or absorbs the wrong number of them.
+            let mut partial_outputs: Vec<Vec<u8>> = Vec::new();
+            for num_bits in 0..=7 {
+                for partial_byte in 0..(1u16 << num_bits) {
+                    partial_outputs.push(partial_digest(partial_byte as u8, num_bits));
+                }
+            }
+            let num_partial_outputs = partial_outputs.len();
+            partial_outputs.sort_unstable();
+            partial_outputs.dedup();
+            assert_eq!(
+                partial_outputs.len(),
+                num_partial_outputs,
+                "each (num_bits, partial_byte) pair is a distinct message and must hash to a distinct output"
+            );
         }
 
         // check that if you feed it an output slice that's bigger than it needs, that it doesn't touch the extra bytes.
