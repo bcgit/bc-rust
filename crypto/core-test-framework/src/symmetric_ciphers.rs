@@ -6,7 +6,8 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::traits::{
-    AEADCipher, BlockCipher, SecurityStrength, StreamCipher, SymmetricCipher,
+    AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength, StreamCipher,
+    SymmetricCipher,
 };
 
 /// Instance of the test framework.
@@ -124,7 +125,8 @@ impl TestFrameworkBlockCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const BLOCK_LEN: usize,
-        C: BlockCipher<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     >(
         &self,
     ) {
@@ -135,42 +137,89 @@ impl TestFrameworkBlockCipher {
         .unwrap();
 
         // to test blocks, we'll chunk our dummy seed
-        let (mut encryptor, iv) = C::do_encrypt_init(&key).unwrap();
-        let mut decryptor = C::do_decrypt_init(&key, &iv).unwrap();
+        let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
+        let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
 
+        // one block at a time (N = 1)
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let ct = encryptor.do_encrypt_block(msg_chunk).unwrap();
-            let pt = decryptor.do_decrypt_block(&ct).unwrap();
+            let ct = encryptor.do_encrypt_blocks(&[*msg_chunk]).unwrap();
+            let [pt] = decryptor.do_decrypt_blocks(&ct).unwrap();
             assert_eq!(msg_chunk, &pt);
         }
 
         // do it again using the _out versions
 
-        let (mut encryptor, iv) = C::do_encrypt_init(&key).unwrap();
-        let mut decryptor = C::do_decrypt_init(&key, &iv).unwrap();
+        let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
+        let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
 
-        let mut ct = [0u8; BLOCK_LEN];
-        let mut pt = [0u8; BLOCK_LEN];
+        let mut ct = [[0u8; BLOCK_LEN]; 1];
+        let mut pt = [[0u8; BLOCK_LEN]; 1];
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let ct_bytes_written = encryptor.do_encrypt_block_out(msg_chunk, &mut ct).unwrap();
+            let ct_bytes_written = encryptor.do_encrypt_blocks_out(&[*msg_chunk], &mut ct).unwrap();
             assert_eq!(ct_bytes_written, BLOCK_LEN);
 
-            let pt_bytes_written = decryptor.do_decrypt_block_out(&ct, &mut pt).unwrap();
+            let pt_bytes_written = decryptor.do_decrypt_blocks_out(&ct, &mut pt).unwrap();
             assert_eq!(pt_bytes_written, BLOCK_LEN);
 
-            assert_eq!(msg_chunk, &pt);
+            assert_eq!(msg_chunk, &pt[0]);
         }
 
+        // multi-block (N = 2): blocks encrypted together must decrypt both together and one at a time,
+        // and blocks encrypted one at a time must decrypt together.
+        let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
+        let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
+
+        let mut ct = [[0u8; BLOCK_LEN]; 2];
+        let mut pt = [[0u8; BLOCK_LEN]; 2];
+        for msg_pair in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0.iter() {
+            // encrypt together, decrypt together (by value)
+            let ct_by_value = encryptor.do_encrypt_blocks(msg_pair).unwrap();
+            let pt_by_value = decryptor.do_decrypt_blocks(&ct_by_value).unwrap();
+            assert_eq!(msg_pair, &pt_by_value);
+
+            // encrypt together (_out), decrypt one at a time
+            let ct_bytes_written = encryptor.do_encrypt_blocks_out(msg_pair, &mut ct).unwrap();
+            assert_eq!(ct_bytes_written, 2 * BLOCK_LEN);
+            for (msg_chunk, ct_chunk) in msg_pair.iter().zip(ct.iter()) {
+                let [pt] = decryptor.do_decrypt_blocks(&[*ct_chunk]).unwrap();
+                assert_eq!(msg_chunk, &pt);
+            }
+
+            // encrypt one at a time, decrypt together (_out)
+            for (msg_chunk, ct_chunk) in msg_pair.iter().zip(ct.iter_mut()) {
+                let [c] = encryptor.do_encrypt_blocks(&[*msg_chunk]).unwrap();
+                *ct_chunk = c;
+            }
+            let pt_bytes_written = decryptor.do_decrypt_blocks_out(&ct, &mut pt).unwrap();
+            assert_eq!(pt_bytes_written, 2 * BLOCK_LEN);
+            assert_eq!(msg_pair, &pt);
+        }
+
+        // one-shot API: must agree with the streaming API for the same key, and round-trip
+        let two_blocks: &[[u8; BLOCK_LEN]; 2] =
+            &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0[0];
+        let (iv, ct) = E::encrypt_blocks(&key, two_blocks).unwrap();
+        assert_eq!(D::decrypt_blocks(&key, &iv, &ct).unwrap(), *two_blocks);
+        let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
+        assert_eq!(streamed.do_decrypt_blocks(&ct).unwrap(), *two_blocks);
+
+        let mut ct = [[0u8; BLOCK_LEN]; 2];
+        let mut pt = [[0u8; BLOCK_LEN]; 2];
+        let (iv, n) = E::encrypt_blocks_out(&key, two_blocks, &mut ct).unwrap();
+        assert_eq!(n, 2 * BLOCK_LEN);
+        assert_eq!(D::decrypt_blocks_out(&key, &iv, &ct, &mut pt).unwrap(), 2 * BLOCK_LEN);
+        assert_eq!(pt, *two_blocks);
+
         // test that the iv is random (ie not the same on two runs)
-        let (_encryptor, iv1) = C::do_encrypt_init(&key).unwrap();
-        let (_encryptor, iv2) = C::do_encrypt_init(&key).unwrap();
+        let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();
+        let (_encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
         assert_ne!(iv1, iv2);
 
         // error case: KeyMaterial of wrong type
         let mac_key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
                 .unwrap();
-        match C::do_encrypt_init(&mac_key) {
+        match E::do_encrypt_init(&mac_key) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
@@ -194,15 +243,15 @@ impl TestFrameworkBlockCipher {
             // (and bypasses the key-length guard) without complaining.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
 
-            match C::do_encrypt_init(&key) {
+            match E::do_encrypt_init(&key) {
                 Ok(_) => {
-                    if ss >= &C::MAX_SECURITY_STRENGTH { /* good */
+                    if ss >= &E::MAX_SECURITY_STRENGTH { /* good */
                     } else {
                         panic!("Should have been a strong enough key");
                     }
                 }
                 Err(SymmetricCipherError::KeyMaterialError(_)) => {
-                    if ss < &C::MAX_SECURITY_STRENGTH { /* good */
+                    if ss < &E::MAX_SECURITY_STRENGTH { /* good */
                     } else {
                         panic!("Should not have accepted a key weaker than algorithm");
                     }
