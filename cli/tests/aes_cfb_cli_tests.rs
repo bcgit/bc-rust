@@ -13,7 +13,7 @@
 //! `CARGO_BIN_EXE_bc-rust` is set by cargo for integration tests and points at the binary for the
 //! current profile, so there is nothing to build or locate by hand.
 
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
 
 /// The path to the binary under test, resolved by cargo.
@@ -74,12 +74,16 @@ fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
         .spawn()
         .expect("failed to spawn bc-rust");
 
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin piped")
-        .write_all(stdin_bytes)
-        .expect("failed to write to stdin");
+    // `BrokenPipe` here is an expected outcome, not a harness failure. The error-path tests hand a
+    // rejected key or a misaligned length to a command that `exit`s before it reads stdin, so the
+    // write races the child's exit and loses on a slow or loaded runner. What those tests assert is
+    // the exit status and stderr, both of which `wait_with_output` still returns. Any *other* write
+    // error is a real problem and still panics.
+    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+        Err(e) => panic!("failed to write to stdin: {e}"),
+    }
 
     child.wait_with_output().expect("failed to wait for bc-rust")
 }
