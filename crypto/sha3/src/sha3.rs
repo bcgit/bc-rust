@@ -237,19 +237,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
-        output.fill(0);
-
-        // Mutants note: This is just bit-setting into empty space.
-        // It works the same regardless of whether it's OR or XOR.
-        let mut final_input: u16 =
-            ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);
-        let mut final_bits = num_partial_bits + 2;
-
-        if final_bits >= 8 {
-            self.keccak.absorb(&[final_input as u8]);
-            final_bits -= 8;
-            final_input >>= 8;
-        }
+        // do_final_bits_out appends the SHA-3 `01` suffix, pads, and squeezes.
         Ok(self.do_final_bits_out(partial_byte, num_partial_bits, output))
     }
 
