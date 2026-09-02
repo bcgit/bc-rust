@@ -1,3 +1,4 @@
+mod aes_cbc_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -8,6 +9,7 @@ mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 
+use crate::aes_cbc_cmd::AESCBCAction;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use clap::{Parser, Subcommand};
@@ -265,6 +267,83 @@ enum Subcommands {
         /// Number of bytes to generate. If omitted, it will stream continuously until the process is terminated.
         #[arg(short, long)]
         len: Option<u32>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
+    ///
+    /// Input must be a whole number of 16-byte blocks: CBC is defined only on whole blocks and
+    /// this build has no padding layer, so unaligned input is rejected rather than padded.
+    ///
+    /// WARNING: CBC provides confidentiality only. It does not detect tampering, and neither the
+    /// ciphertext nor the IV is authenticated. Do not decrypt data you have not authenticated
+    /// separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CBC {
+        action: AESCBCAction,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    AES192_CBC {
+        action: AESCBCAction,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    AES256_CBC {
+        action: AESCBCAction,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -564,6 +643,15 @@ fn main() {
             *len, *x,
         ),
         Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
+        Some(Subcommands::AES128_CBC { action, key, key_file, x }) => {
+            aes_cbc_cmd::aes128_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES192_CBC { action, key, key_file, x }) => {
+            aes_cbc_cmd::aes192_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES256_CBC { action, key, key_file, x }) => {
+            aes_cbc_cmd::aes256_cbc_cmd(action, key, key_file, *x);
+        }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
         }

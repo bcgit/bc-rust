@@ -11,6 +11,7 @@ version = "0.1.3"
 bouncycastle = { path = "./" }
 bouncycastle-aes-lowmemory = { path = "./crypto/aes-lowmemory" }
 bouncycastle-base64 = { path = "./crypto/base64" }
+bouncycastle-modes = { path = "./crypto/modes" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
 bouncycastle-factory = { path = "./crypto/factory" }
@@ -53,6 +54,7 @@ bouncycastle-mldsa.workspace = true
 bouncycastle-mldsa-lowmemory.workspace = true
 bouncycastle-mlkem.workspace = true
 bouncycastle-mlkem-lowmemory.workspace = true
+bouncycastle-modes.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
