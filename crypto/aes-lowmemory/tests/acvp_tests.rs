@@ -20,7 +20,8 @@
 //! | `ACVP-AES-ECB` | this file |
 //! | `ACVP-AES-CBC` | `crypto/modes/tests/acvp_tests.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
-//! | `ACVP-AES-CFB8` / `-CFB128` | nothing yet (CFB is unimplemented) |
+//! | `ACVP-AES-CFB128` | `crypto/modes/tests/acvp_tests.rs` |
+//! | `ACVP-AES-CFB8` | nothing yet (only the `s = b` CFB segment size is implemented) |
 //! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
 //! | `ACVP-AES-CTR` | nothing yet (CTR is unimplemented) |
 //! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |

@@ -52,13 +52,16 @@ the reason this suite is worth having rather than leaving each implementor to te
 
 The mirror image of this check lives in `crypto/modes/tests/common/mod.rs` as `SwappedPairToy`, a
 permutation whose pair methods deliberately swap their results, used to prove the *mode* really
-takes the pair path.
+takes the pair path. That file also holds `ForwardOnlyToy`, whose `decrypt_block` panics; it
+deliberately violates the trait contract and must never be given to this suite, but it is what lets
+`cfb_tests.rs` assert that CFB reaches for the inverse cipher in neither direction — a property no
+equality check could establish.
 
 ### Current implementors
 
 * `crypto/aes-lowmemory/tests/block_permutation_tests.rs` — AES-128, AES-192, AES-256.
 * `crypto/modes/tests/cbc_tests.rs` — the toy permutation, checked before anything is concluded
-  from it.
+  from it. `cfb_tests.rs` relies on that same check rather than repeating it.
 
 ---
 
@@ -162,7 +165,7 @@ This is the pattern to reuse for CFB, OFB and CTR when they land.
 
 ```sh
 cargo build -p bouncycastle-core-test-framework
-cargo test --workspace          # 517 tests, 0 failures
+cargo test --workspace          # 547 tests, 0 failures
 cargo fmt --all -- --check
 ```
 

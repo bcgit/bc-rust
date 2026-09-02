@@ -28,7 +28,8 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   strength); per-mode OIDs and the `BlockCipherEncryptor` / `BlockCipherDecryptor` impls belong to the mode crates.
 
 New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of operation
-(NIST SP 800-38A), currently **CBC** (Sec 6.2). Re-exported from the umbrella crate.
+(NIST SP 800-38A), providing **CBC** (Sec 6.2) and **CFB** (Sec 6.3, full-block segment).
+Re-exported from the umbrella crate.
 
 * `Cbc<P, Dir, KEY_LEN, BLOCK_LEN>` over any `BlockPermutation`, so the crate depends on no
   concrete cipher. The direction is a type parameter: `BlockCipherEncryptor` is implemented only
@@ -58,10 +59,47 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   file, the CBC one carries only the answer against a `tcId`, so the request and response files are
   joined; the 6 MCT groups are skipped and the count reported. These vectors were already in
   `bc-test-data` and previously unused.
-* No CFB yet -- see the crate docs' "Not yet implemented".
+`Cfb<P, Dir, KEY_LEN, BLOCK_LEN>` implements SP 800-38A Sec 6.3 for the **full-block segment size
+only**, `s = b` -- "CFB128" for AES. It has the same shape, the same API and the same IV handling as
+`Cbc`, so swapping one for the other is a one-word change.
 
-`cli`: three new subcommands, `aes128-cbc`, `aes192-cbc` and `aes256-cbc`, each taking `encrypt` or
-`decrypt` and streaming stdin to stdout in 1 KiB chunks.
+* **Only `s = b`.** Sec 6.3 allows any `1 <= s <= b`, but only `s = b` is block-aligned, and
+  `BlockCipherEncryptor` / `BlockCipherDecryptor` are block-aligned by contract. At `s = b` the
+  spec's equations collapse exactly: `LSB_{b-s}(Ij-1)` is the empty string so `Ij = Cj-1`, and
+  `MSB_s(Oj)` is the whole block so `MSB_b(Oj) = Oj`. Both substitutions are spelled out in the
+  module docs. CFB1 and CFB8 are deferred to a future `StreamCipher` design.
+* **Both directions use the forward cipher function.** Sec 6.3 defines CFB decryption with
+  `CIPH_K`, not `CIPH^-1_K`, so `Cfb<_, Decrypting, _, _>` never calls
+  `BlockPermutation::decrypt_block` or `decrypt_blocks2`. That is asserted rather than assumed: a
+  test drives CFB in both directions over a permutation whose `decrypt_block` panics. A consequence
+  is that CFB needs only half of a block cipher.
+* **Parallel decryption**, as for CBC, but through `encrypt_blocks2` -- the input blocks are
+  `Ij = Cj-1`, all ciphertext, so a pair can be transformed in one call. Sec 6.3 attaches the
+  condition that the input blocks be "first constructed (in series)", which is what building
+  `[chain, Cj]` before the call does. CFB encryption is serial (`Ij+1 = Cj` needs `Oj`) and does not
+  pair.
+* Verified against SP 800-38A **Appendix F.3.13 - F.3.18** (CFB128-AES128/192/256, Encrypt and
+  Decrypt) in the same four groupings as CBC. The F.3 tables also publish the per-segment "Input
+  Block" and "Output Block" columns, and those are checked too -- the keystream `Oj = CIPH_K(Ij)` is
+  recovered as `Cj XOR Pj` and compared against the published value, which pins `Ij = Cj-1` rather
+  than only the final ciphertext.
+* Also verified against the **2138 NIST ACVP `ACVP-AES-CFB128` AFT cases** (54 of them multi-block),
+  each run twice as for CBC. These vectors were already in `bc-test-data` and previously unused.
+* Appendix D error propagation is tested for all 128 bit positions in both roles, and the results
+  are deliberately contrasted with CBC's, because Table D.2 swaps the two rows: a ciphertext bit
+  error gives **specific** bit errors in CFB's *own* block (CBC randomises it) and randomises the
+  next (CBC gives specific bit errors there). An IV bit error randomises `P1` for CFB where CBC
+  flips exactly the matching bit.
+* Two hazards CFB has and CBC does not, both documented in "Security Considerations" and both
+  pinned by tests: flipping a bit of the **final** ciphertext block changes the plaintext precisely
+  with no structural trace at all (Appendix D notes the detection argument covers "every ciphertext
+  segment except the last one"), and an **IV repeat** gives a two-time pad rather than merely
+  leaking a shared prefix.
+
+`cli`: six new subcommands -- `aes128-cbc`, `aes192-cbc`, `aes256-cbc`, `aes128-cfb`, `aes192-cfb`,
+`aes256-cfb` -- each taking `encrypt` or `decrypt` and streaming stdin to stdout in 1 KiB chunks.
+All six live in `cli/src/aes_modes_cmd.rs` and share one key loader and one streaming loop, which is
+generic over the encryptor / decryptor type rather than over the cipher.
 
 * Key from `--key` (hex) or `--key-file` (binary or hex), with the usual note that secrets on the
   command line end up in shell history. The key length must match the variant exactly.
@@ -76,10 +114,16 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
 * Verified against SP 800-38A F.2: prepending the spec's IV to the spec's ciphertext and running
   `decrypt` reproduces the spec's plaintext for all three key lengths. The `encrypt` direction was
   cross-checked against an independent CBC implementation under the IV the CLI generated.
-* `cli/tests/aes_cbc_cli_tests.rs` (16 tests) drives the built binary as a subprocess via
+* The CFB subcommands are the `s = b` segment size, and their help says so -- "CFB" alone is
+  ambiguous, and CFB8 is a real and different mode. Their help also carries the malleability
+  warning, which differs from CBC's.
+* `cli/tests/aes_modes_cli_tests.rs` (19 tests) drives the built binary as a subprocess via
   `CARGO_BIN_EXE_bc-rust`, so all of the above is asserted by `cargo test` rather than by hand:
-  the F.2 vectors, round trips across the chunk boundary, a fresh IV per invocation, hex/binary
-  agreement, `--key-file` in both hex and binary, and every error path with its message.
+  the Appendix F vectors for all six subcommands, round trips across the chunk boundary, a fresh IV
+  per invocation, hex/binary agreement, `--key-file` in both hex and binary, and every error path
+  with its message. Two tests are CFB-specific: one shows the targeted single-bit malleability at
+  the command line and contrasts it with CBC's, and one confirms the CFB subcommands are not
+  secretly wired to the CBC types by feeding each mode's ciphertext to the other.
 
 `core`: new `BlockPermutation<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.

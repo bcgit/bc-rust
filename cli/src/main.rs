@@ -1,4 +1,4 @@
-mod aes_cbc_cmd;
+mod aes_modes_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -9,7 +9,7 @@ mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 
-use crate::aes_cbc_cmd::AESCBCAction;
+use crate::aes_modes_cmd::AESModeAction;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use clap::{Parser, Subcommand};
@@ -289,7 +289,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CBC {
-        action: AESCBCAction,
+        action: AESModeAction,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -311,7 +311,7 @@ enum Subcommands {
     /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
     /// key length differs.
     AES192_CBC {
-        action: AESCBCAction,
+        action: AESModeAction,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -333,7 +333,88 @@ enum Subcommands {
     /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
     /// key length differs.
     AES256_CBC {
-        action: AESCBCAction,
+        action: AESModeAction,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CFB mode with a full-block segment (NIST SP 800-38A Sec 6.3), i.e. CFB128,
+    /// streaming stdin to stdout.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
+    ///
+    /// Input must be a whole number of 16-byte blocks. This is the s = 128 segment size; CFB1 and
+    /// CFB8 are not provided.
+    ///
+    /// WARNING: CFB provides confidentiality only, and its malleability is more directly
+    /// exploitable than CBC's: flipping a ciphertext bit flips exactly that bit of the same
+    /// block's plaintext, and for the final block that change leaves no trace at all. Do not
+    /// decrypt data you have not authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CFB {
+        action: AESModeAction,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CFB mode with a full-block segment (NIST SP 800-38A Sec 6.3), i.e. CFB128,
+    /// streaming stdin to stdout.
+    ///
+    /// See `aes128-cfb` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    AES192_CFB {
+        action: AESModeAction,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CFB mode with a full-block segment (NIST SP 800-38A Sec 6.3), i.e. CFB128,
+    /// streaming stdin to stdout.
+    ///
+    /// See `aes128-cfb` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    AES256_CFB {
+        action: AESModeAction,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -644,13 +725,22 @@ fn main() {
         ),
         Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
         Some(Subcommands::AES128_CBC { action, key, key_file, x }) => {
-            aes_cbc_cmd::aes128_cbc_cmd(action, key, key_file, *x);
+            aes_modes_cmd::aes128_cbc_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::AES192_CBC { action, key, key_file, x }) => {
-            aes_cbc_cmd::aes192_cbc_cmd(action, key, key_file, *x);
+            aes_modes_cmd::aes192_cbc_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::AES256_CBC { action, key, key_file, x }) => {
-            aes_cbc_cmd::aes256_cbc_cmd(action, key, key_file, *x);
+            aes_modes_cmd::aes256_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES128_CFB { action, key, key_file, x }) => {
+            aes_modes_cmd::aes128_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES192_CFB { action, key, key_file, x }) => {
+            aes_modes_cmd::aes192_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES256_CFB { action, key, key_file, x }) => {
+            aes_modes_cmd::aes256_cfb_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);

@@ -10,6 +10,12 @@
 //!
 //! `N = 1` is included to show the effect vanishing: with one block there is no pair to form, so
 //! decryption falls back to the single-block path and the ratio should be about 1.
+//!
+//! CFB has the same asymmetry for the same reason (Sec 6.3 says its encryption is serial "like CBC
+//! encryption", and that its decryption can be parallelised once the input blocks are built), but
+//! it reaches the pair path through `encrypt_blocks2` rather than `decrypt_blocks2`, because both
+//! directions of CFB use the forward cipher function. Comparing the CFB and CBC groups also shows
+//! what the forward-only property is worth on a cipher whose two directions differ in cost.
 
 use bouncycastle_aes_lowmemory::{Aes128, Aes256};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -17,7 +23,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipher, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
 };
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_modes::{Cbc, Cfb, Decrypting, Encrypting};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -28,6 +34,7 @@ const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
 type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, BLOCK_LEN>;
 type Aes256Cbc<Dir> = Cbc<Aes256, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, BLOCK_LEN>;
 
 /// AES-128 with the pair methods **not** overridden, so they fall back to the trait defaults of
 /// two single-block calls.
@@ -59,6 +66,7 @@ impl BlockPermutation<16, BLOCK_LEN> for UnpairedAes128 {
 }
 
 type UnpairedAes128Cbc<Dir> = Cbc<UnpairedAes128, Dir, 16, BLOCK_LEN>;
+type UnpairedAes128Cfb<Dir> = Cfb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -215,6 +223,112 @@ fn bench_aes256(c: &mut Criterion) {
     group.finish();
 }
 
+/// CFB, AES-128. Mirrors the CBC group so the two are directly comparable.
+///
+/// The pair path here is `encrypt_blocks2`, not `decrypt_blocks2`: SP 800-38A Sec 6.3 defines both
+/// directions of CFB with the forward cipher function. So the `N=8, no pair path` comparison
+/// measures the same thing the CBC one does, through the other pair method.
+fn bench_cfb_aes128(c: &mut Criterion) {
+    let k = key::<16>();
+    let blocks = data();
+
+    let mut group = c.benchmark_group("modes::cfb::Aes128");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    // ---- encryption: serial, Ij+1 = Cj is not known until Oj has been computed ----
+    group.bench_function("16KiB encrypt -- N=1", |b| {
+        b.iter(|| {
+            let (mut enc, _) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+            for block in blocks.iter() {
+                black_box(enc.do_encrypt_blocks(&[*block]).unwrap());
+            }
+        })
+    });
+
+    group.bench_function("16KiB encrypt -- N=8", |b| {
+        b.iter(|| {
+            let (mut enc, _) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+            for chunk in blocks.chunks_exact(8) {
+                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
+                black_box(enc.do_encrypt_blocks(arr).unwrap());
+            }
+        })
+    });
+
+    // ---- decryption: parallel, all input blocks are ciphertext ----
+    let (mut enc, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let ciphertext: Vec<[u8; BLOCK_LEN]> = blocks
+        .chunks_exact(8)
+        .flat_map(|chunk| {
+            let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
+            enc.do_encrypt_blocks(arr).unwrap()
+        })
+        .collect();
+
+    group.bench_function("16KiB decrypt -- N=1 (no pairing)", |b| {
+        b.iter(|| {
+            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+            for block in ciphertext.iter() {
+                black_box(dec.do_decrypt_blocks(&[*block]).unwrap());
+            }
+        })
+    });
+
+    group.bench_function("16KiB decrypt -- N=2 (all pairs)", |b| {
+        b.iter(|| {
+            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+            for chunk in ciphertext.chunks_exact(2) {
+                let arr: &[[u8; BLOCK_LEN]; 2] = chunk.try_into().unwrap();
+                black_box(dec.do_decrypt_blocks(arr).unwrap());
+            }
+        })
+    });
+
+    group.bench_function("16KiB decrypt -- N=8 (all pairs)", |b| {
+        b.iter(|| {
+            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+            for chunk in ciphertext.chunks_exact(8) {
+                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
+                black_box(dec.do_decrypt_blocks(arr).unwrap());
+            }
+        })
+    });
+
+    group.bench_function("16KiB decrypt -- N=9 (pairs + remainder)", |b| {
+        b.iter(|| {
+            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+            for chunk in ciphertext.chunks_exact(9) {
+                let arr: &[[u8; BLOCK_LEN]; 9] = chunk.try_into().unwrap();
+                black_box(dec.do_decrypt_blocks(arr).unwrap());
+            }
+        })
+    });
+
+    // The controlled comparison, as for CBC: identical N, identical cipher, `encrypt_blocks2`
+    // overridden vs left as the trait default.
+    group.bench_function("16KiB decrypt -- N=8, pair path (blocks2 overridden)", |b| {
+        b.iter(|| {
+            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+            for chunk in ciphertext.chunks_exact(8) {
+                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
+                black_box(dec.do_decrypt_blocks(arr).unwrap());
+            }
+        })
+    });
+
+    group.bench_function("16KiB decrypt -- N=8, no pair path (trait default)", |b| {
+        b.iter(|| {
+            let mut dec = UnpairedAes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+            for chunk in ciphertext.chunks_exact(8) {
+                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
+                black_box(dec.do_decrypt_blocks(arr).unwrap());
+            }
+        })
+    });
+
+    group.finish();
+}
+
 /// `do_*_init` includes a key expansion, and for encryption also an IV draw from the OS-backed
 /// DRBG. Worth its own measurement, because for short messages it dominates.
 fn bench_init(c: &mut Criterion) {
@@ -241,5 +355,5 @@ fn bench_init(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_aes128, bench_aes256, bench_init);
+criterion_group!(benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_init);
 criterion_main!(benches);

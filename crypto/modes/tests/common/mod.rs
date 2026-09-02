@@ -113,6 +113,45 @@ impl BlockPermutation<TOY_LEN, TOY_LEN> for SwappedPairToy {
     }
 }
 
+/// A toy with **no inverse at all**: its `decrypt_block` panics.
+///
+/// This deliberately violates the [`BlockPermutation`] contract, and is not a permutation in any
+/// useful sense. It exists to assert a property of CFB that no equality check can: SP 800-38A Sec
+/// 6.3 defines *both* directions of CFB in terms of the forward cipher function `CIPH_K`, so a
+/// correct `Cfb` never calls the inverse. Running CFB over this type turns any such call into a
+/// test failure, in either direction, rather than a silently wrong answer.
+///
+/// It must never be handed to `TestFrameworkBlockPermutation`, which would rightly reject it, and
+/// it must never be used with [`crate::common::Toy`]'s sibling modes -- CBC decryption genuinely
+/// needs the inverse and would panic.
+///
+/// `decrypt_blocks2` is deliberately **not** overridden: the trait default calls `decrypt_block`
+/// twice, so the pair path panics too, and both paths are covered by the one type.
+pub struct ForwardOnlyToy {
+    inner: Toy,
+}
+
+impl BlockCipher for ForwardOnlyToy {
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl BlockPermutation<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
+    fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
+        Ok(Self { inner: Toy::new(key)? })
+    }
+
+    fn encrypt_block(&self, block: &mut [u8; TOY_LEN]) {
+        self.inner.encrypt_block(block);
+    }
+
+    fn decrypt_block(&self, _block: &mut [u8; TOY_LEN]) {
+        panic!(
+            "the inverse cipher function was called, but SP 800-38A Sec 6.3 defines both \
+             directions of CFB using the forward cipher function CIPH_K"
+        );
+    }
+}
+
 /// Builds a `KeyMaterial` for the toys from a fixed non-zero pattern.
 pub fn toy_key() -> KeyMaterial<TOY_LEN> {
     let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

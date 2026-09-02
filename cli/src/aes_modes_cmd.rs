@@ -1,26 +1,38 @@
-//! AES-CBC encryption and decryption, streaming stdin to stdout.
+//! AES encryption and decryption in CBC and CFB mode, streaming stdin to stdout.
+//!
+//! Six subcommands -- `aes128-cbc`, `aes192-cbc`, `aes256-cbc`, `aes128-cfb`, `aes192-cfb`,
+//! `aes256-cfb` -- share every line of this module below the entry points, because the two modes
+//! present an identical API. The streaming helpers are generic over the encryptor / decryptor type
+//! rather than over the cipher, which is what lets them.
+//!
+//! The CFB subcommands are the full-block segment variant, `s = b`, i.e. **CFB128** (NIST SP
+//! 800-38A Sec 6.3). There is no CFB1 or CFB8 here; `bouncycastle-modes` does not implement them.
 //!
 //! # The IV travels in the ciphertext
 //!
 //! There is no `--iv` flag, and that is deliberate: `bouncycastle-modes` has no API for a
-//! caller-supplied IV, because NIST SP 800-38A Sec 5.3 requires the CBC IV to be *unpredictable*
-//! rather than merely unique. `encrypt` therefore generates one from the OS-backed DRBG and writes
-//! it as the **first block of the output**; `decrypt` reads it back from the **first block of the
-//! input**. So the two compose directly:
+//! caller-supplied IV, because NIST SP 800-38A Sec 5.3 requires the CBC *and CFB* IV to be
+//! *unpredictable* rather than merely unique. `encrypt` therefore generates one from the OS-backed
+//! DRBG and writes it as the **first block of the output**; `decrypt` reads it back from the
+//! **first block of the input**. So the two compose directly:
 //!
 //! ```text
 //! bc-rust aes128-cbc encrypt --key-file k.bin < plain.bin > cipher.bin
 //! bc-rust aes128-cbc decrypt --key-file k.bin < cipher.bin > plain.bin
+//!
+//! bc-rust aes256-cfb encrypt --key-file k.bin < plain.bin > cipher.bin
+//! bc-rust aes256-cfb decrypt --key-file k.bin < cipher.bin > plain.bin
 //! ```
 //!
 //! The IV is not secret (Sec 5.3), so shipping it in the clear is correct. Its *integrity* is not
-//! protected, and neither is the ciphertext's -- see the warning below.
+//! protected, and neither is the ciphertext's -- see the warnings below.
 //!
 //! # Input must be block-aligned
 //!
-//! CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and this workspace has no padding
-//! layer yet, so input that is not a multiple of 16 bytes is rejected rather than silently padded.
-//! Padding is the caller's business until `PaddedEncryptor`/`PaddedDecryptor` land.
+//! CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and CFB on whole segments -- which at
+//! `s = b` is the same thing. This workspace has no padding layer yet, so input that is not a
+//! multiple of 16 bytes is rejected rather than silently padded. Padding is the caller's business
+//! until `PaddedEncryptor` / `PaddedDecryptor` land.
 //!
 //! # Binary in, binary out
 //!
@@ -36,11 +48,9 @@ use bouncycastle::aes_lowmemory::{Aes128, Aes192, Aes256};
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
-};
+use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength};
 use bouncycastle::hex;
-use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle::modes::{Cbc, Cfb, Decrypting, Encrypting};
 use clap::ValueEnum;
 use std::io::{Read, Write};
 use std::process::exit;
@@ -52,60 +62,127 @@ const BLOCK_LEN: usize = 16;
 /// Blocks processed per call: 64 blocks = 1 KiB, matching the other streaming commands.
 ///
 /// A whole chunk goes through `do_*_blocks[_out]::<CHUNK_BLOCKS>` in one call, which for decryption
-/// means 32 pairs down the `decrypt_blocks2` path. The at-most-63-block tail at end of input is
-/// flushed one block at a time; it is bounded, so its cost does not scale with the input.
+/// means 32 pairs down the permutation's two-block path. The at-most-63-block tail at end of input
+/// is flushed one block at a time; it is bounded, so its cost does not scale with the input.
 const CHUNK_BLOCKS: usize = 64;
 
 #[derive(ValueEnum, Clone, Debug)]
-pub(crate) enum AESCBCAction {
-    /// Encrypt stdin to stdout under CBC mode.
+pub(crate) enum AESModeAction {
+    /// Encrypt stdin to stdout.
     /// A freshly generated IV is written as the first 16 bytes of the output, so that `decrypt`
     /// can read it back. Input length must be a multiple of 16 bytes.
     Encrypt,
-    /// Decrypt stdin to stdout under CBC mode.
+    /// Decrypt stdin to stdout.
     /// The first 16 bytes of input are taken as the IV, as written by `encrypt`. The remaining
     /// length must be a multiple of 16 bytes.
     Decrypt,
 }
 
+// ---- entry points ------------------------------------------------------------------------
+
 pub(crate) fn aes128_cbc_cmd(
-    action: &AESCBCAction,
+    action: &AESModeAction,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key::<16>(key, key_file, "AES-128");
     match action {
-        AESCBCAction::Encrypt => encrypt_stream::<Aes128, 16>(&key, output_hex),
-        AESCBCAction::Decrypt => decrypt_stream::<Aes128, 16>(&key, output_hex),
+        AESModeAction::Encrypt => {
+            encrypt_stream::<Cbc<Aes128, Encrypting, 16, BLOCK_LEN>, 16>(&key, output_hex)
+        }
+        AESModeAction::Decrypt => {
+            decrypt_stream::<Cbc<Aes128, Decrypting, 16, BLOCK_LEN>, 16>(&key, output_hex)
+        }
     }
 }
 
 pub(crate) fn aes192_cbc_cmd(
-    action: &AESCBCAction,
+    action: &AESModeAction,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key::<24>(key, key_file, "AES-192");
     match action {
-        AESCBCAction::Encrypt => encrypt_stream::<Aes192, 24>(&key, output_hex),
-        AESCBCAction::Decrypt => decrypt_stream::<Aes192, 24>(&key, output_hex),
+        AESModeAction::Encrypt => {
+            encrypt_stream::<Cbc<Aes192, Encrypting, 24, BLOCK_LEN>, 24>(&key, output_hex)
+        }
+        AESModeAction::Decrypt => {
+            decrypt_stream::<Cbc<Aes192, Decrypting, 24, BLOCK_LEN>, 24>(&key, output_hex)
+        }
     }
 }
 
 pub(crate) fn aes256_cbc_cmd(
-    action: &AESCBCAction,
+    action: &AESModeAction,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key::<32>(key, key_file, "AES-256");
     match action {
-        AESCBCAction::Encrypt => encrypt_stream::<Aes256, 32>(&key, output_hex),
-        AESCBCAction::Decrypt => decrypt_stream::<Aes256, 32>(&key, output_hex),
+        AESModeAction::Encrypt => {
+            encrypt_stream::<Cbc<Aes256, Encrypting, 32, BLOCK_LEN>, 32>(&key, output_hex)
+        }
+        AESModeAction::Decrypt => {
+            decrypt_stream::<Cbc<Aes256, Decrypting, 32, BLOCK_LEN>, 32>(&key, output_hex)
+        }
     }
 }
+
+pub(crate) fn aes128_cfb_cmd(
+    action: &AESModeAction,
+    key: &Option<String>,
+    key_file: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_key::<16>(key, key_file, "AES-128");
+    match action {
+        AESModeAction::Encrypt => {
+            encrypt_stream::<Cfb<Aes128, Encrypting, 16, BLOCK_LEN>, 16>(&key, output_hex)
+        }
+        AESModeAction::Decrypt => {
+            decrypt_stream::<Cfb<Aes128, Decrypting, 16, BLOCK_LEN>, 16>(&key, output_hex)
+        }
+    }
+}
+
+pub(crate) fn aes192_cfb_cmd(
+    action: &AESModeAction,
+    key: &Option<String>,
+    key_file: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_key::<24>(key, key_file, "AES-192");
+    match action {
+        AESModeAction::Encrypt => {
+            encrypt_stream::<Cfb<Aes192, Encrypting, 24, BLOCK_LEN>, 24>(&key, output_hex)
+        }
+        AESModeAction::Decrypt => {
+            decrypt_stream::<Cfb<Aes192, Decrypting, 24, BLOCK_LEN>, 24>(&key, output_hex)
+        }
+    }
+}
+
+pub(crate) fn aes256_cfb_cmd(
+    action: &AESModeAction,
+    key: &Option<String>,
+    key_file: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_key::<32>(key, key_file, "AES-256");
+    match action {
+        AESModeAction::Encrypt => {
+            encrypt_stream::<Cfb<Aes256, Encrypting, 32, BLOCK_LEN>, 32>(&key, output_hex)
+        }
+        AESModeAction::Decrypt => {
+            decrypt_stream::<Cfb<Aes256, Decrypting, 32, BLOCK_LEN>, 32>(&key, output_hex)
+        }
+    }
+}
+
+// ---- key loading -------------------------------------------------------------------------
 
 /// Loads the key from `--key` (hex) or `--key-file` (binary or hex), and checks its length.
 ///
@@ -169,16 +246,19 @@ fn load_key<const KEY_LEN: usize>(
     key
 }
 
+// ---- streaming ---------------------------------------------------------------------------
+
 /// Encrypts stdin to stdout, writing the generated IV first.
-fn encrypt_stream<P, const KEY_LEN: usize>(key: &KeyMaterial<KEY_LEN>, output_hex: bool)
+///
+/// Generic over the encryptor, so one body serves CBC and CFB.
+fn encrypt_stream<E, const KEY_LEN: usize>(key: &KeyMaterial<KEY_LEN>, output_hex: bool)
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
-    let (mut enc, iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init(key)
-        .unwrap_or_else(|e| {
-            eprintln!("Error: couldn't start encryption: {e:?}");
-            exit(-1);
-        });
+    let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't start encryption: {e:?}");
+        exit(-1);
+    });
 
     // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up.
     write_bytes_or_hex(&iv, output_hex);
@@ -204,9 +284,11 @@ where
 }
 
 /// Decrypts stdin to stdout, taking the IV from the first block of input.
-fn decrypt_stream<P, const KEY_LEN: usize>(key: &KeyMaterial<KEY_LEN>, output_hex: bool)
+///
+/// Generic over the decryptor, so one body serves CBC and CFB.
+fn decrypt_stream<D, const KEY_LEN: usize>(key: &KeyMaterial<KEY_LEN>, output_hex: bool)
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
     // The leading block is the IV, not ciphertext.
     let mut iv = [0u8; BLOCK_LEN];
@@ -218,17 +300,16 @@ where
         exit(-1);
     }
 
-    let mut dec = Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(key, &iv)
-        .unwrap_or_else(|e| {
-            eprintln!("Error: couldn't start decryption: {e:?}");
-            exit(-1);
-        });
+    let mut dec = D::do_decrypt_init(key, &iv).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't start decryption: {e:?}");
+        exit(-1);
+    });
 
     let mut out = [[0u8; BLOCK_LEN]; CHUNK_BLOCKS];
 
     stream_blocks(|blocks| match <&[[u8; BLOCK_LEN]; CHUNK_BLOCKS]>::try_from(blocks) {
         Ok(full_chunk) => {
-            // A full chunk is 32 pairs, so this is the `decrypt_blocks2` path.
+            // A full chunk is 32 pairs, so this takes the permutation's two-block path.
             dec.do_decrypt_blocks_out(full_chunk, &mut out).unwrap();
             write_blocks(&out, output_hex);
         }
@@ -252,8 +333,8 @@ where
 ///
 /// Reads do not respect block boundaries, so a block can arrive split across two reads; the
 /// partial block is carried over rather than assumed complete. Input whose total length is not a
-/// multiple of `BLOCK_LEN` is an error, because CBC is not defined on a partial block and there is
-/// no padding layer to appeal to.
+/// multiple of `BLOCK_LEN` is an error, because these modes are not defined on a partial block and
+/// there is no padding layer to appeal to.
 fn stream_blocks(mut process: impl FnMut(&[[u8; BLOCK_LEN]])) {
     let mut staged = [[0u8; BLOCK_LEN]; CHUNK_BLOCKS];
     let mut read_buf = [0u8; BLOCK_LEN * CHUNK_BLOCKS];
@@ -293,8 +374,8 @@ fn stream_blocks(mut process: impl FnMut(&[[u8; BLOCK_LEN]])) {
     if partial_len != 0 {
         eprintln!(
             "Error: input is not a whole number of {BLOCK_LEN}-byte blocks ({partial_len} \
-             trailing byte(s)). CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and \
-             this build has no padding layer, so the input must be padded by the caller."
+             trailing byte(s)). CBC and CFB are defined only on whole blocks (SP 800-38A Sec \
+             5.2), and this build has no padding layer, so the input must be padded by the caller."
         );
         exit(-1);
     }

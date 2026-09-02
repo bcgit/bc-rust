@@ -263,11 +263,12 @@ Two details worth knowing:
 
 `bc-test-data` ships thirteen ACVP AES vector sets, one per mode. This crate consumes only
 `ACVP-AES-ECB`, because that is the set that tests the permutation rather than a mode.
-`ACVP-AES-CBC` is consumed by [`crypto/modes/tests/acvp_tests.rs`](../modes/tests/acvp_tests.rs)
-(2150 AFT cases). The remaining eleven — `CBC-CS1/2/3`, `CFB8`, `CFB128`, `OFB`, `CTR`, `KW`,
-`KWP`, `FF1`, `FF3-1` — are unused because those modes are unimplemented, not because they are
-untested. The table in the ACVP test module's docs records which file goes where, so adding a mode
-includes wiring up its file.
+`ACVP-AES-CBC` (2150 AFT cases) and `ACVP-AES-CFB128` (2138) are consumed by
+[`crypto/modes/tests/acvp_tests.rs`](../modes/tests/acvp_tests.rs). The remaining ten —
+`CBC-CS1/2/3`, `CFB8`, `OFB`, `CTR`, `KW`, `KWP`, `FF1`, `FF3-1` — are unused because those modes
+are unimplemented, not because they are untested. `CFB8` is a segment size rather than a separate
+mode, and stays unused because `crypto/modes` provides only `s = b`. The table in the ACVP test
+module's docs records which file goes where, so adding a mode includes wiring up its file.
 
 ### Constant-time hygiene audit
 

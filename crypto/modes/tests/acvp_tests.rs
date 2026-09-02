@@ -1,44 +1,52 @@
-//! Known-answer tests against the NIST ACVP `ACVP-AES-CBC` vectors from the `bc-test-data` repo.
+//! Known-answer tests against the NIST ACVP `ACVP-AES-CBC` and `ACVP-AES-CFB128` vectors from the
+//! `bc-test-data` repo.
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
-//! relative to the root of this git project. If it is absent the test prints a warning and passes,
+//! relative to the root of this git project. If it is absent the tests print a warning and pass,
 //! matching the convention used by the ML-KEM, ML-DSA and `aes-lowmemory` suites -- `cargo test`
 //! must stay green for someone who has only cloned this repository.
 //!
 //! These are the counterpart to `crypto/aes-lowmemory/tests/acvp_tests.rs`, which consumes the
-//! `ACVP-AES-ECB` file to test the raw permutation. CBC is a mode, so its vectors belong here.
+//! `ACVP-AES-ECB` file to test the raw permutation. CBC and CFB are modes, so their vectors belong
+//! here. `ACVP-AES-CFB128` is the `s = b` segment size, which is the variant `Cfb` implements; the
+//! separate `ACVP-AES-CFB8` file is for a segment size this crate does not provide, and stays
+//! unused.
 //!
 //! # Joining the request and response files
 //!
-//! Unlike the ECB response file, which echoes `key`, `pt` and `ct` for every case, the CBC response
-//! file carries **only the answer** (`ct` for an encrypt group, `pt` for a decrypt group) against a
+//! Unlike the ECB response file, which echoes `key`, `pt` and `ct` for every case, these response
+//! files carry **only the answer** (`ct` for an encrypt group, `pt` for a decrypt group) against a
 //! `tcId`. The key, IV and input live in the request file, and the group metadata that says which
 //! direction a case is -- `direction` and `keyLen` -- lives only there too. So both files are read
 //! and joined on `tcId`; there is no way to drive this from the response file alone.
 //!
 //! # Coverage
 //!
-//! 2150 AFT (Algorithm Functional Test) cases across all three key lengths and both directions,
-//! including 60 whose payload spans 2 to 10 blocks. Every case is run **twice**: once block by
-//! block, and once in pairs with a one-block remainder for odd lengths. The second pass is what
-//! puts the multi-block cases through `BlockPermutation::decrypt_blocks2`, so the pair path is
-//! exercised against real vectors and not only against the toy in `cbc_tests.rs`.
+//! | Vector set | AFT cases | Multi-block | MCT (skipped) |
+//! |---|---|---|---|
+//! | `ACVP-AES-CBC` | 2150 | 60 | 6 |
+//! | `ACVP-AES-CFB128` | 2138 | 54 | 6 |
 //!
-//! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
+//! Both across all three key lengths and both directions, with the multi-block cases spanning 2 to
+//! 10 blocks. Every case is run **twice**: once block by block, and once in pairs with a one-block
+//! remainder for odd lengths. The second pass is what puts the multi-block cases through the
+//! permutation's two-block path -- `decrypt_blocks2` for CBC, `encrypt_blocks2` for CFB, since CFB
+//! decryption uses the forward cipher -- so the pair path is exercised against real vectors and not
+//! only against the toys in `cbc_tests.rs` and `cfb_tests.rs`.
+//!
+//! The MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
-//! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
-//! how many it skipped so the gap stays visible.
+//! than in SP 800-38A, and implementing it from anything else would be guesswork. The tests report
+//! how many they skipped so the gap stays visible.
 
 use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
-};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_modes::{Cbc, Cfb, Decrypting, Encrypting};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
@@ -52,19 +60,47 @@ const TEST_DATA_PATHS: [&str; 2] = [
     "../bc-test-data/crypto/aes_tdes_vectors/AES",
 ];
 
-const REQUEST_FILE: &str = "ACVP-AES-CBC.4014528.req.json";
-const RESPONSE_FILE: &str = "ACVP-AES-CBC.4014528.rsp.json";
+/// Which mode a vector set is for. Selects both the files and the types under test.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Mode {
+    Cbc,
+    Cfb128,
+}
 
-fn test_data_dir() -> Option<PathBuf> {
+impl Mode {
+    fn request_file(self) -> &'static str {
+        match self {
+            Mode::Cbc => "ACVP-AES-CBC.4014528.req.json",
+            Mode::Cfb128 => "ACVP-AES-CFB128.4014530.req.json",
+        }
+    }
+
+    fn response_file(self) -> &'static str {
+        match self {
+            Mode::Cbc => "ACVP-AES-CBC.4014528.rsp.json",
+            Mode::Cfb128 => "ACVP-AES-CFB128.4014530.rsp.json",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Mode::Cbc => "AES-CBC",
+            Mode::Cfb128 => "AES-CFB128",
+        }
+    }
+}
+
+fn test_data_dir(mode: Mode) -> Option<PathBuf> {
     for candidate in TEST_DATA_PATHS {
         let path = Path::new(candidate);
-        if path.join(REQUEST_FILE).exists() && path.join(RESPONSE_FILE).exists() {
+        if path.join(mode.request_file()).exists() && path.join(mode.response_file()).exists() {
             return Some(path.to_path_buf());
         }
     }
     println!(
         "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); \
-         ACVP AES-CBC tests will be skipped"
+         ACVP {} tests will be skipped",
+        mode.label()
     );
     None
 }
@@ -98,12 +134,13 @@ enum Grouping {
     Pairs,
 }
 
-/// Runs one CBC case in one direction, for a given permutation, under the given grouping.
+/// Runs one case in one direction, for a given encryptor/decryptor pair, under the given grouping.
 ///
-/// Encryption is driven through `do_encrypt_init_rng` with a `FixedSeedRNG` emitting the vector's
-/// IV, and the returned init data is checked against that IV before any ciphertext is compared --
-/// so a change that ignored the RNG could not pass silently.
-fn run_case<P, const KEY_LEN: usize>(
+/// Generic over the mode types rather than over the permutation, so the same body drives CBC and
+/// CFB. Encryption is driven through `do_encrypt_init_rng` with a `FixedSeedRNG` emitting the
+/// vector's IV, and the returned init data is checked against that IV before any ciphertext is
+/// compared -- so a change that ignored the RNG could not pass silently.
+fn run_case<E, D, const KEY_LEN: usize>(
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
     input: &[[u8; BLOCK_LEN]],
@@ -111,17 +148,16 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<[u8; BLOCK_LEN]>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
     let key = cipher_key::<KEY_LEN>(key_bytes);
     let mut out: Vec<[u8; BLOCK_LEN]> = Vec::with_capacity(input.len());
 
     if encrypt {
-        let (mut enc, got_iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-        )
-        .expect("encrypt init");
+        let (mut enc, got_iv) =
+            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv))
+                .expect("encrypt init");
         assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
 
         match grouping {
@@ -143,8 +179,7 @@ where
             }
         }
     } else {
-        let mut dec =
-            Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).expect("dec init");
+        let mut dec = D::do_decrypt_init(&key, &iv).expect("dec init");
 
         match grouping {
             Grouping::Single => {
@@ -169,24 +204,54 @@ where
     out
 }
 
-/// Dispatches on key length, which is what selects the AES parameter set.
-fn run_case_for_key_len(
+/// Dispatches on the mode and the key length, which together select the concrete types.
+fn run_case_for(
+    mode: Mode,
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
     input: &[[u8; BLOCK_LEN]],
     encrypt: bool,
     grouping: Grouping,
 ) -> Vec<[u8; BLOCK_LEN]> {
-    match key_bytes.len() {
-        16 => run_case::<Aes128, 16>(key_bytes, iv, input, encrypt, grouping),
-        24 => run_case::<Aes192, 24>(key_bytes, iv, input, encrypt, grouping),
-        32 => run_case::<Aes256, 32>(key_bytes, iv, input, encrypt, grouping),
-        other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
+    match (mode, key_bytes.len()) {
+        (Mode::Cbc, 16) => run_case::<
+            Cbc<Aes128, Encrypting, 16, BLOCK_LEN>,
+            Cbc<Aes128, Decrypting, 16, BLOCK_LEN>,
+            16,
+        >(key_bytes, iv, input, encrypt, grouping),
+        (Mode::Cbc, 24) => run_case::<
+            Cbc<Aes192, Encrypting, 24, BLOCK_LEN>,
+            Cbc<Aes192, Decrypting, 24, BLOCK_LEN>,
+            24,
+        >(key_bytes, iv, input, encrypt, grouping),
+        (Mode::Cbc, 32) => run_case::<
+            Cbc<Aes256, Encrypting, 32, BLOCK_LEN>,
+            Cbc<Aes256, Decrypting, 32, BLOCK_LEN>,
+            32,
+        >(key_bytes, iv, input, encrypt, grouping),
+        (Mode::Cfb128, 16) => run_case::<
+            Cfb<Aes128, Encrypting, 16, BLOCK_LEN>,
+            Cfb<Aes128, Decrypting, 16, BLOCK_LEN>,
+            16,
+        >(key_bytes, iv, input, encrypt, grouping),
+        (Mode::Cfb128, 24) => run_case::<
+            Cfb<Aes192, Encrypting, 24, BLOCK_LEN>,
+            Cfb<Aes192, Decrypting, 24, BLOCK_LEN>,
+            24,
+        >(key_bytes, iv, input, encrypt, grouping),
+        (Mode::Cfb128, 32) => run_case::<
+            Cfb<Aes256, Encrypting, 32, BLOCK_LEN>,
+            Cfb<Aes256, Decrypting, 32, BLOCK_LEN>,
+            32,
+        >(key_bytes, iv, input, encrypt, grouping),
+        (_, other) => {
+            panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}")
+        }
     }
 }
 
 fn to_blocks(bytes: &[u8]) -> Vec<[u8; BLOCK_LEN]> {
-    assert_eq!(bytes.len() % BLOCK_LEN, 0, "ACVP CBC payloads are block-aligned");
+    assert_eq!(bytes.len() % BLOCK_LEN, 0, "ACVP payloads here are block-aligned");
     bytes.chunks(BLOCK_LEN).map(|c| c.try_into().unwrap()).collect()
 }
 
@@ -198,16 +263,19 @@ fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
     hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
 }
 
-#[test]
-fn acvp_aes_cbc_known_answer_tests() {
-    let Some(dir) = test_data_dir() else { return };
+/// Drives one whole vector set. Asserts everything; returns nothing.
+///
+/// `min_cases` and `min_multi_block` guard against a silently-empty or partial run, which is the
+/// failure mode a data-driven test is most prone to.
+fn run_vector_set(mode: Mode, min_cases: usize, min_multi_block: usize) {
+    let Some(dir) = test_data_dir(mode) else { return };
 
     let req: Value = serde_json::from_str(
-        &fs::read_to_string(dir.join(REQUEST_FILE)).expect("readable request file"),
+        &fs::read_to_string(dir.join(mode.request_file())).expect("readable request file"),
     )
     .expect("valid ACVP request JSON");
     let rsp: Value = serde_json::from_str(
-        &fs::read_to_string(dir.join(RESPONSE_FILE)).expect("readable response file"),
+        &fs::read_to_string(dir.join(mode.response_file())).expect("readable response file"),
     )
     .expect("valid ACVP response JSON");
 
@@ -273,11 +341,12 @@ fn acvp_aes_cbc_known_answer_tests() {
             }
 
             for grouping in [Grouping::Single, Grouping::Pairs] {
-                let got = run_case_for_key_len(&key_bytes, iv, &input, encrypt, grouping);
+                let got = run_case_for(mode, &key_bytes, iv, &input, encrypt, grouping);
                 assert_eq!(
                     got,
                     expected,
-                    "tcId {tc_id}: AES-{} CBC {direction}, {} blocks, {grouping:?} grouping",
+                    "tcId {tc_id}: {} AES-{} {direction}, {} blocks, {grouping:?} grouping",
+                    mode.label(),
                     key_bytes.len() * 8,
                     input.len()
                 );
@@ -289,15 +358,33 @@ fn acvp_aes_cbc_known_answer_tests() {
     }
 
     for (kind, n) in &per_kind {
-        println!("ACVP AES-CBC {kind}: {n} cases");
+        println!("ACVP {} {kind}: {n} cases", mode.label());
     }
     println!(
-        "ACVP AES-CBC: {checked} AFT cases checked in two groupings each \
-         ({multi_block} of them multi-block); {skipped_mct} MCT cases skipped"
+        "ACVP {}: {checked} AFT cases checked in two groupings each \
+         ({multi_block} of them multi-block); {skipped_mct} MCT cases skipped",
+        mode.label()
     );
 
-    // Guard against a silently-empty or partial run.
-    assert!(checked > 2000, "expected the full ACVP AFT set, only checked {checked}");
-    assert!(multi_block >= 60, "expected the multi-block cases, found {multi_block}");
+    assert!(
+        checked >= min_cases,
+        "expected at least {min_cases} AFT cases for {}, only checked {checked}",
+        mode.label()
+    );
+    assert!(
+        multi_block >= min_multi_block,
+        "expected at least {min_multi_block} multi-block cases for {}, found {multi_block}",
+        mode.label()
+    );
     assert_eq!(per_kind.len(), 6, "expected all three key lengths in both directions");
+}
+
+#[test]
+fn acvp_aes_cbc_known_answer_tests() {
+    run_vector_set(Mode::Cbc, 2150, 60);
+}
+
+#[test]
+fn acvp_aes_cfb128_known_answer_tests() {
+    run_vector_set(Mode::Cfb128, 2138, 54);
 }
