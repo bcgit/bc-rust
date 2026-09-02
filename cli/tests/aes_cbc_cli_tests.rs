@@ -9,6 +9,7 @@
 
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
+use std::thread;
 
 /// The path to the binary under test, resolved by cargo.
 const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
@@ -51,6 +52,27 @@ const CT_256: &str = concat!(
 );
 
 /// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and returns the completed output.
+///
+/// # Why stdin is written from a thread
+///
+/// stdin, stdout and stderr are all pipes with a bounded buffer (typically 64 KiB). Writing all of
+/// stdin from *this* thread before reading any output deadlocks as soon as the payload is large
+/// enough: the child fills its stdout buffer and blocks, so it stops draining stdin, so our write
+/// blocks too, and neither side can move. That is a hang rather than a failure, so it would surface
+/// as a CI timeout. Writing on a separate thread leaves this one free to drain stdout and stderr
+/// via `wait_with_output`, which breaks the cycle. `a_payload_larger_than_the_pipe_buffer_round_trips`
+/// pins it.
+///
+/// Dropping the pipe when the write finishes is what signals EOF to the child, so the writer thread
+/// owns the handle (`take`, not `as_mut`) and must run to completion.
+///
+/// # Why `BrokenPipe` is ignored
+///
+/// The error-path tests hand a rejected key or a misaligned length to a command that `exit`s before
+/// it reads stdin, so the write races the child's exit and loses. That is an expected outcome, not a
+/// harness failure: those tests assert the exit status and stderr, both of which `wait_with_output`
+/// still returns. Any *other* write error is a real problem and still panics.
+/// `a_large_payload_on_an_error_path_does_not_break_the_harness` pins it.
 fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
     let mut child = Command::new(BC_RUST)
         .args(args)
@@ -60,18 +82,22 @@ fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
         .spawn()
         .expect("failed to spawn bc-rust");
 
-    // `BrokenPipe` here is an expected outcome, not a harness failure. The error-path tests hand a
-    // rejected key or a misaligned length to a command that `exit`s before it reads stdin, so the
-    // write races the child's exit and loses on a slow or loaded runner. What those tests assert is
-    // the exit status and stderr, both of which `wait_with_output` still returns. Any *other* write
-    // error is a real problem and still panics.
-    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("failed to write to stdin: {e}"),
-    }
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    let payload = stdin_bytes.to_vec();
+    let writer = thread::spawn(move || {
+        match stdin.write_all(&payload) {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+            Err(e) => panic!("failed to write to stdin: {e}"),
+        }
+        // `stdin` drops here, closing the pipe so the child sees EOF and can exit.
+    });
 
-    child.wait_with_output().expect("failed to wait for bc-rust")
+    // Drain stdout and stderr first: the writer may still be blocked on a full stdin buffer, and it
+    // cannot finish until the child consumes more, which it cannot do while its output is backed up.
+    let output = child.wait_with_output().expect("failed to wait for bc-rust");
+    writer.join().expect("the stdin writer thread panicked");
+    output
 }
 
 /// Runs a command that is expected to succeed, returning stdout.
@@ -120,6 +146,45 @@ fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
             (state >> 24) as u8
         })
         .collect()
+}
+
+// ---- the harness itself ------------------------------------------------------------------
+//
+// These two pin `run`'s pipe handling. Both bugs they cover are timing-dependent: they pass on a
+// fast machine with a small payload and fail on a slow or loaded runner, which is exactly how the
+// first one reached CI. Forcing the condition with an oversized payload makes them deterministic
+// instead of waiting for a bad day. The same pair exists in `aes_cfb_cli_tests.rs`, because each
+// file has its own copy of `run`.
+
+/// Far beyond any pipe buffer, so a write cannot complete before the child has drained it.
+const OVERSIZED: usize = 4 * 1024 * 1024;
+
+/// An error path must not take the harness down with it.
+///
+/// `encrypt` with no `--key` prints its complaint and exits without reading stdin, so the write
+/// loses the race and the pipe breaks. Before `run` tolerated `ErrorKind::BrokenPipe` this panicked
+/// with "failed to write to stdin" (os error 109 on Windows, EPIPE elsewhere) instead of reporting
+/// the CLI's actual error, which is what the other error-path tests assert on.
+#[test]
+fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
+    let stderr = run_err(&["aes128-cbc", "encrypt"], &vec![0u8; OVERSIZED]);
+    assert!(stderr.contains("--key"), "the CLI's own error must still be reported: {stderr}");
+}
+
+/// A payload larger than the pipe buffer must round-trip rather than deadlock.
+///
+/// This is the reason `run` writes stdin from a separate thread. Writing it inline wedges once both
+/// pipes fill: the child blocks writing stdout, so it stops reading stdin, so the harness blocks
+/// writing stdin. Nothing times out on its own -- the test just hangs until CI kills the job -- so
+/// this is the check that would have caught it.
+#[test]
+fn a_payload_larger_than_the_pipe_buffer_round_trips() {
+    let plaintext = pseudo_random(OVERSIZED, 0xC0FFEE);
+    let ciphertext = run_ok(&["aes128-cbc", "encrypt", "--key", KEY_128], &plaintext);
+    assert_eq!(ciphertext.len(), plaintext.len() + 16, "IV plus the ciphertext");
+
+    let recovered = run_ok(&["aes128-cbc", "decrypt", "--key", KEY_128], &ciphertext);
+    assert_eq!(recovered, plaintext, "{OVERSIZED} bytes should round trip");
 }
 
 // ---- the SP 800-38A F.2 vectors, through the CLI -----------------------------------------
