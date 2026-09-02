@@ -18,3 +18,7 @@ path = "bench_mlkem_mem_usage.rs"
 [[bin]]
 name = "bench_sha3_mem_usage"
 path = "bench_sha3_mem_usage.rs"
+
+[[bin]]
+name = "bench_aes_mem_usage"
+path = "bench_aes_mem_usage.rs"
