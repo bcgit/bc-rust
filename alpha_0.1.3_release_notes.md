@@ -139,10 +139,14 @@ Block cipher traits (PR #96):
   pattern.
 * The `do_{en,de}crypt_final[_out]` methods are removed: the traits are now strictly block-aligned, and padding of
   arbitrary-length data belongs to a separate `PaddedEncryptor` / `PaddedDecryptor` layer built on top.
-* One-shot static APIs are provided (default) methods implemented once in the traits -- `encrypt_blocks`,
-  `encrypt_blocks_rng`, `encrypt_blocks_out`, `encrypt_blocks_out_rng` on `BlockCipherEncryptor` and `decrypt_blocks`,
-  `decrypt_blocks_out` on `BlockCipherDecryptor` -- so every block-aligned mode gets the house-standard
-  take-data-return-result API at no cost to implementors.
+* One-shot static APIs are provided (default) methods implemented once in the traits -- `encrypt`, `encrypt_rng`,
+  `encrypt_out`, `encrypt_out_rng` on `BlockCipherEncryptor` and `decrypt`, `decrypt_out` on `BlockCipherDecryptor` --
+  so every block-aligned mode gets the house-standard take-data-return-result API at no cost to implementors. They
+  take a flat `[u8; LEN]`; `LEN` must be a whole number of blocks, and this is enforced at **compile time** by an
+  inline `const` assertion at the instantiating call site, so there is no runtime length check and no error variant
+  for it. (An earlier form of these one-shots took `[[u8; BLOCK_LEN]; N]`; it was replaced before release.)
+* The by-value streaming methods `do_{en,de}crypt_blocks` are provided in terms of their `_out` forms, so an
+  implementor writes only `do_{en,de}crypt_init[_rng]` and `do_{en,de}crypt_blocks_out`.
 
 Testing:
 

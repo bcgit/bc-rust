@@ -195,20 +195,23 @@ impl TestFrameworkBlockCipher {
             assert_eq!(msg_pair, &pt);
         }
 
-        // one-shot API: must agree with the streaming API for the same key, and round-trip
-        let two_blocks: &[[u8; BLOCK_LEN]; 2] =
-            &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0[0];
-        let (iv, ct) = E::encrypt_blocks(&key, two_blocks).unwrap();
-        assert_eq!(D::decrypt_blocks(&key, &iv, &ct).unwrap(), *two_blocks);
+        // one-shot API: a block-aligned byte array. It must round-trip and agree with the streaming
+        // API for the same key and init data. Only LEN = BLOCK_LEN can be formed generically here
+        // (`2 * BLOCK_LEN` needs generic_const_exprs); multi-block one-shots are covered by the modes
+        // crate's tests with a concrete BLOCK_LEN.
+        let one_block: &[u8; BLOCK_LEN] = &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0[0];
+        let (iv, ct) = E::encrypt(&key, one_block).unwrap();
+        assert_eq!(D::decrypt(&key, &iv, &ct).unwrap(), *one_block);
+        // ...and it must agree with the block-shaped API under the same init data.
         let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
-        assert_eq!(streamed.do_decrypt_blocks(&ct).unwrap(), *two_blocks);
+        assert_eq!(streamed.do_decrypt_blocks(&[ct]).unwrap(), [*one_block]);
 
-        let mut ct = [[0u8; BLOCK_LEN]; 2];
-        let mut pt = [[0u8; BLOCK_LEN]; 2];
-        let (iv, n) = E::encrypt_blocks_out(&key, two_blocks, &mut ct).unwrap();
-        assert_eq!(n, 2 * BLOCK_LEN);
-        assert_eq!(D::decrypt_blocks_out(&key, &iv, &ct, &mut pt).unwrap(), 2 * BLOCK_LEN);
-        assert_eq!(pt, *two_blocks);
+        let mut ct = [0u8; BLOCK_LEN];
+        let mut pt = [0u8; BLOCK_LEN];
+        let (iv, n) = E::encrypt_out(&key, one_block, &mut ct).unwrap();
+        assert_eq!(n, BLOCK_LEN);
+        assert_eq!(D::decrypt_out(&key, &iv, &ct, &mut pt).unwrap(), BLOCK_LEN);
+        assert_eq!(pt, *one_block);
 
         // test that the iv is random (ie not the same on two runs)
         let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();

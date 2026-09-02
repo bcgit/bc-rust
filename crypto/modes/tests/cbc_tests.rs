@@ -253,15 +253,19 @@ fn each_encryption_gets_a_fresh_iv() {
 #[test]
 fn identical_plaintext_gives_different_ciphertext() {
     let key = toy_key();
-    let plaintext = [[0x77u8; TOY_LEN], [0x77u8; TOY_LEN]];
+    let plaintext = [0x77u8; 2 * TOY_LEN];
 
-    let (_, first) = ToyCbc::<Encrypting>::encrypt_blocks(&key, &plaintext).unwrap();
-    let (_, second) = ToyCbc::<Encrypting>::encrypt_blocks(&key, &plaintext).unwrap();
+    let (_, first) = ToyCbc::<Encrypting>::encrypt(&key, &plaintext).unwrap();
+    let (_, second) = ToyCbc::<Encrypting>::encrypt(&key, &plaintext).unwrap();
     assert_ne!(first, second);
 
     // ...and, within one message, two identical plaintext blocks must not give identical
     // ciphertext blocks either, because the chaining value differs.
-    assert_ne!(first[0], first[1], "chaining should break the ECB pattern within a message");
+    assert_ne!(
+        first[..TOY_LEN],
+        first[TOY_LEN..],
+        "chaining should break the ECB pattern within a message"
+    );
 }
 
 // ---- key handling ------------------------------------------------------------------------
@@ -295,4 +299,57 @@ fn sizes_match_the_documented_memory_table() {
 
     // ...and the general rule the docs state.
     assert_eq!(size_of::<Cbc<Aes256, Encrypting, 32, 16>>(), size_of::<Aes256>() + 16);
+}
+
+/// The one-shots (`encrypt` / `decrypt` on a `[u8; LEN]`) must produce exactly what the streaming
+/// API produces over the same blocks, for an odd block count (pairs plus a one-block tail) and an
+/// even one (pairs only), in both directions and through the `_out` variants.
+#[test]
+fn one_shots_agree_with_the_streaming_api() {
+    let key = toy_key();
+    let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0x0F ^ (i as u8));
+    let pinned_rng = || bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(iv);
+
+    // 3 blocks = 48 bytes: one pair and a tail.
+    let flat3: [u8; 3 * TOY_LEN] = core::array::from_fn(|i| (i * 7) as u8);
+    let blocks3: [[u8; TOY_LEN]; 3] =
+        core::array::from_fn(|b| flat3[b * TOY_LEN..][..TOY_LEN].try_into().unwrap());
+    let (iv_a, ct_blocks) = {
+        let (mut enc, iv) =
+            ToyCbc::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng()).unwrap();
+        (iv, enc.do_encrypt_blocks(&blocks3).unwrap())
+    };
+    let (iv_b, ct_flat) =
+        ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &flat3).unwrap();
+    assert_eq!(iv_a, iv_b);
+    assert_eq!(ct_flat, *ct_blocks.as_flattened(), "3 blocks: one-shot must equal streaming");
+    assert_eq!(ToyCbc::<Decrypting>::decrypt(&key, &iv, &ct_flat).unwrap(), flat3);
+    let mut ct_out = [0u8; 3 * TOY_LEN];
+    let (_, n) =
+        ToyCbc::<Encrypting>::encrypt_out_rng(&key, &mut pinned_rng(), &flat3, &mut ct_out)
+            .unwrap();
+    assert_eq!((n, ct_out), (3 * TOY_LEN, ct_flat));
+    let mut pt_out = [0u8; 3 * TOY_LEN];
+    assert_eq!(
+        ToyCbc::<Decrypting>::decrypt_out(&key, &iv, &ct_out, &mut pt_out).unwrap(),
+        3 * TOY_LEN
+    );
+    assert_eq!(pt_out, flat3);
+
+    // 4 blocks = 64 bytes: pairs only, no tail.
+    let flat4: [u8; 4 * TOY_LEN] = core::array::from_fn(|i| (i * 13 + 1) as u8);
+    let blocks4: [[u8; TOY_LEN]; 4] =
+        core::array::from_fn(|b| flat4[b * TOY_LEN..][..TOY_LEN].try_into().unwrap());
+    let (_, ct_blocks) = {
+        let (mut enc, iv) =
+            ToyCbc::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng()).unwrap();
+        (iv, enc.do_encrypt_blocks(&blocks4).unwrap())
+    };
+    let (_, ct_flat) = ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &flat4).unwrap();
+    assert_eq!(ct_flat, *ct_blocks.as_flattened(), "4 blocks: one-shot must equal streaming");
+    assert_eq!(ToyCbc::<Decrypting>::decrypt(&key, &iv, &ct_flat).unwrap(), flat4);
+
+    // The OS-RNG variant round-trips too.
+    let (iv_fresh, ct) = ToyCbc::<Encrypting>::encrypt(&key, &flat3).unwrap();
+    assert_eq!(ToyCbc::<Decrypting>::decrypt(&key, &iv_fresh, &ct).unwrap(), flat3);
 }

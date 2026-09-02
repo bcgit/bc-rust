@@ -197,34 +197,38 @@ fn f_2_6_cbc_aes256_decrypt() {
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
+/// The one-shots take flat arrays, so the four blocks are presented as 64 contiguous bytes.
 #[test]
 fn the_one_shot_api_matches_the_vectors() {
+    fn flat(hex_strs: &[&str; 4]) -> [u8; 4 * BLOCK_LEN] {
+        blocks(hex_strs).as_flattened().try_into().expect("4 blocks = 64 bytes")
+    }
     let iv = block(IV);
-    let pt = blocks(&PLAINTEXTS);
+    let pt = flat(&PLAINTEXTS);
 
     assert_eq!(
-        Cbc::<Aes128, Decrypting, 16, 16>::decrypt_blocks(
+        Cbc::<Aes128, Decrypting, 16, 16>::decrypt(
             &key_material::<16>(KEY_128),
             &iv,
-            &blocks(&CIPHERTEXTS_128)
+            &flat(&CIPHERTEXTS_128)
         )
         .unwrap(),
         pt
     );
     assert_eq!(
-        Cbc::<Aes192, Decrypting, 24, 16>::decrypt_blocks(
+        Cbc::<Aes192, Decrypting, 24, 16>::decrypt(
             &key_material::<24>(KEY_192),
             &iv,
-            &blocks(&CIPHERTEXTS_192)
+            &flat(&CIPHERTEXTS_192)
         )
         .unwrap(),
         pt
     );
     assert_eq!(
-        Cbc::<Aes256, Decrypting, 32, 16>::decrypt_blocks(
+        Cbc::<Aes256, Decrypting, 32, 16>::decrypt(
             &key_material::<32>(KEY_256),
             &iv,
-            &blocks(&CIPHERTEXTS_256)
+            &flat(&CIPHERTEXTS_256)
         )
         .unwrap(),
         pt

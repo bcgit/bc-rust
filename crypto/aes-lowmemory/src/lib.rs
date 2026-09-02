@@ -70,11 +70,12 @@
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let plaintext = [[0u8; 16], [1u8; 16], [2u8; 16]];
+//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
+//! let plaintext = [0x5Au8; 48];
 //!
 //! // The IV is generated for you and returned; there is no API for supplying one.
-//! let (iv, ciphertext) = AES_CBC_256::<Encrypting>::encrypt_blocks(&key, &plaintext).unwrap();
-//! let recovered = AES_CBC_256::<Decrypting>::decrypt_blocks(&key, &iv, &ciphertext).unwrap();
+//! let (iv, ciphertext) = AES_CBC_256::<Encrypting>::encrypt(&key, &plaintext).unwrap();
+//! let recovered = AES_CBC_256::<Decrypting>::decrypt(&key, &iv, &ciphertext).unwrap();
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!

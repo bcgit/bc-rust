@@ -34,14 +34,13 @@
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
 //!
-//! let plaintext = [[0u8; 16], [1u8; 16], [2u8; 16]];
+//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
+//! let plaintext: [u8; 48] = *b"The quick brown fox jumps over the lazy dog. OK!";
 //!
 //! // One shot: encrypts under a freshly generated IV, which is returned alongside the ciphertext.
-//! let (iv, ciphertext) =
-//!     Aes128Cbc::<Encrypting>::encrypt_blocks(&key, &plaintext).expect("encryption");
+//! let (iv, ciphertext) = Aes128Cbc::<Encrypting>::encrypt(&key, &plaintext).expect("encryption");
 //!
-//! let recovered =
-//!     Aes128Cbc::<Decrypting>::decrypt_blocks(&key, &iv, &ciphertext).expect("decryption");
+//! let recovered = Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &ciphertext).expect("decryption");
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!

@@ -21,11 +21,31 @@ use bouncycastle_modes::Cbc;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .expect("a 16-byte symmetric cipher key");
-/// let plaintext = [[0u8; 16]; 3];
+/// // 48 bytes: three whole blocks. The length is checked at compile time.
+/// let message = [0u8; 48];
+/// let (iv, ciphertext) = AES_CBC_128::<Encrypting>::encrypt(&key, &message).unwrap();
+/// assert_eq!(AES_CBC_128::<Decrypting>::decrypt(&key, &iv, &ciphertext).unwrap(), message);
 ///
-/// let (iv, ciphertext) = AES_CBC_128::<Encrypting>::encrypt_blocks(&key, &plaintext).unwrap();
-/// let recovered = AES_CBC_128::<Decrypting>::decrypt_blocks(&key, &iv, &ciphertext).unwrap();
-/// assert_eq!(recovered, plaintext);
+/// // Streaming, a few blocks at a time:
+/// let (mut enc, iv) = AES_CBC_128::<Encrypting>::do_encrypt_init(&key).unwrap();
+/// let first = enc.do_encrypt_blocks(&[[0u8; 16]]).unwrap();
+/// let rest = enc.do_encrypt_blocks(&[[1u8; 16], [2u8; 16]]).unwrap();
+/// let mut dec = AES_CBC_128::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+/// assert_eq!(dec.do_decrypt_blocks(&first).unwrap(), [[0u8; 16]]);
+/// assert_eq!(dec.do_decrypt_blocks(&rest).unwrap(), [[1u8; 16], [2u8; 16]]);
+/// ```
+///
+/// A length that is not a whole number of blocks is a **compile** error, not a runtime one:
+///
+/// ```compile_fail
+/// use bouncycastle_aes_lowmemory::AES_CBC_128;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::BlockCipherEncryptor;
+/// use bouncycastle_modes::Encrypting;
+///
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+/// // 47 bytes is not a multiple of 16: the inline const assertion in `encrypt` fails to compile.
+/// let _ = AES_CBC_128::<Encrypting>::encrypt(&key, &[0u8; 47]);
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_128<Dir> = Cbc<Aes128, Dir, 16, BLOCK_LEN>;
@@ -39,8 +59,8 @@ pub type AES_CBC_128<Dir> = Cbc<Aes128, Dir, 16, BLOCK_LEN>;
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey).unwrap();
-/// let (iv, ct) = AES_CBC_192::<Encrypting>::encrypt_blocks(&key, &[[0u8; 16]; 2]).unwrap();
-/// assert_eq!(AES_CBC_192::<Decrypting>::decrypt_blocks(&key, &iv, &ct).unwrap(), [[0u8; 16]; 2]);
+/// let (iv, ct) = AES_CBC_192::<Encrypting>::encrypt(&key, &[0u8; 32]).unwrap();
+/// assert_eq!(AES_CBC_192::<Decrypting>::decrypt(&key, &iv, &ct).unwrap(), [0u8; 32]);
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_192<Dir> = Cbc<Aes192, Dir, 24, BLOCK_LEN>;
@@ -54,8 +74,8 @@ pub type AES_CBC_192<Dir> = Cbc<Aes192, Dir, 24, BLOCK_LEN>;
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
-/// let (iv, ct) = AES_CBC_256::<Encrypting>::encrypt_blocks(&key, &[[0u8; 16]; 2]).unwrap();
-/// assert_eq!(AES_CBC_256::<Decrypting>::decrypt_blocks(&key, &iv, &ct).unwrap(), [[0u8; 16]; 2]);
+/// let (iv, ct) = AES_CBC_256::<Encrypting>::encrypt(&key, &[0u8; 32]).unwrap();
+/// assert_eq!(AES_CBC_256::<Decrypting>::decrypt(&key, &iv, &ct).unwrap(), [0u8; 32]);
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_256<Dir> = Cbc<Aes256, Dir, 32, BLOCK_LEN>;
