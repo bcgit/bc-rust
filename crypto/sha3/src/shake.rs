@@ -366,8 +366,10 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         num_bits: usize,
         output: &mut u8,
     ) -> Result<(), HashError> {
-        if !(1..=7).contains(&num_bits) {
-            return Err(HashError::InvalidLength("num_bits must be in the range [1,7]"));
+        // A partial byte has at most 7 bits; 0 means no bits are requested. Checked before the shift
+        // below, which would overflow for num_bits >= 8.
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
         }
 
         *output = 0;
