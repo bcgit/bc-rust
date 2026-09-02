@@ -140,10 +140,10 @@ impl TestFrameworkBlockCipher {
         let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
         let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
 
-        // one block at a time (N = 1)
+        // one block at a time, through the flat streaming methods (LEN = BLOCK_LEN)
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let ct = encryptor.do_encrypt_blocks(&[*msg_chunk]).unwrap();
-            let [pt] = decryptor.do_decrypt_blocks(&ct).unwrap();
+            let ct = encryptor.do_encrypt(msg_chunk).unwrap();
+            let pt = decryptor.do_decrypt(&ct).unwrap();
             assert_eq!(msg_chunk, &pt);
         }
 
@@ -152,43 +152,45 @@ impl TestFrameworkBlockCipher {
         let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
         let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
 
-        let mut ct = [[0u8; BLOCK_LEN]; 1];
-        let mut pt = [[0u8; BLOCK_LEN]; 1];
+        let mut ct = [0u8; BLOCK_LEN];
+        let mut pt = [0u8; BLOCK_LEN];
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let ct_bytes_written = encryptor.do_encrypt_blocks_out(&[*msg_chunk], &mut ct).unwrap();
+            let ct_bytes_written = encryptor.do_encrypt_out(msg_chunk, &mut ct).unwrap();
             assert_eq!(ct_bytes_written, BLOCK_LEN);
 
-            let pt_bytes_written = decryptor.do_decrypt_blocks_out(&ct, &mut pt).unwrap();
+            let pt_bytes_written = decryptor.do_decrypt_out(&ct, &mut pt).unwrap();
             assert_eq!(pt_bytes_written, BLOCK_LEN);
 
-            assert_eq!(msg_chunk, &pt[0]);
+            assert_eq!(msg_chunk, &pt);
         }
 
-        // multi-block (N = 2): blocks encrypted together must decrypt both together and one at a time,
-        // and blocks encrypted one at a time must decrypt together.
+        // multi-block (N = 2) through the implementor hook `do_*_blocks_out`: blocks encrypted together
+        // must decrypt both together and one at a time, and blocks encrypted one at a time must
+        // decrypt together.
         let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
         let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
 
         let mut ct = [[0u8; BLOCK_LEN]; 2];
         let mut pt = [[0u8; BLOCK_LEN]; 2];
         for msg_pair in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0.iter() {
-            // encrypt together, decrypt together (by value)
-            let ct_by_value = encryptor.do_encrypt_blocks(msg_pair).unwrap();
-            let pt_by_value = decryptor.do_decrypt_blocks(&ct_by_value).unwrap();
-            assert_eq!(msg_pair, &pt_by_value);
+            // encrypt together, decrypt together
+            let mut ct_pair = [[0u8; BLOCK_LEN]; 2];
+            encryptor.do_encrypt_blocks_out(msg_pair, &mut ct_pair).unwrap();
+            let mut pt_pair = [[0u8; BLOCK_LEN]; 2];
+            decryptor.do_decrypt_blocks_out(&ct_pair, &mut pt_pair).unwrap();
+            assert_eq!(msg_pair, &pt_pair);
 
             // encrypt together (_out), decrypt one at a time
             let ct_bytes_written = encryptor.do_encrypt_blocks_out(msg_pair, &mut ct).unwrap();
             assert_eq!(ct_bytes_written, 2 * BLOCK_LEN);
             for (msg_chunk, ct_chunk) in msg_pair.iter().zip(ct.iter()) {
-                let [pt] = decryptor.do_decrypt_blocks(&[*ct_chunk]).unwrap();
+                let pt = decryptor.do_decrypt(ct_chunk).unwrap();
                 assert_eq!(msg_chunk, &pt);
             }
 
             // encrypt one at a time, decrypt together (_out)
             for (msg_chunk, ct_chunk) in msg_pair.iter().zip(ct.iter_mut()) {
-                let [c] = encryptor.do_encrypt_blocks(&[*msg_chunk]).unwrap();
-                *ct_chunk = c;
+                *ct_chunk = encryptor.do_encrypt(msg_chunk).unwrap();
             }
             let pt_bytes_written = decryptor.do_decrypt_blocks_out(&ct, &mut pt).unwrap();
             assert_eq!(pt_bytes_written, 2 * BLOCK_LEN);
@@ -204,7 +206,7 @@ impl TestFrameworkBlockCipher {
         assert_eq!(D::decrypt(&key, &iv, &ct).unwrap(), *one_block);
         // ...and it must agree with the block-shaped API under the same init data.
         let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
-        assert_eq!(streamed.do_decrypt_blocks(&[ct]).unwrap(), [*one_block]);
+        assert_eq!(streamed.do_decrypt(&ct).unwrap(), *one_block);
 
         let mut ct = [0u8; BLOCK_LEN];
         let mut pt = [0u8; BLOCK_LEN];

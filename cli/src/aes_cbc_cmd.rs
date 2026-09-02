@@ -49,12 +49,12 @@ use std::{fs, io};
 /// The AES block length in bytes.
 const BLOCK_LEN: usize = 16;
 
-/// Blocks processed per call: 64 blocks = 1 KiB, matching the other streaming commands.
+/// Bytes processed per call: 1 KiB = 64 blocks, matching the other streaming commands.
 ///
-/// A whole chunk goes through `do_*_blocks[_out]::<CHUNK_BLOCKS>` in one call, which for decryption
-/// means 32 pairs down the `decrypt_blocks2` path. The at-most-63-block tail at end of input is
-/// flushed one block at a time; it is bounded, so its cost does not scale with the input.
-const CHUNK_BLOCKS: usize = 64;
+/// A full chunk goes through `do_*_out::<CHUNK_LEN>` in one call, which for decryption means 32
+/// pairs down the `decrypt_blocks2` path. The at-most-63-block tail at end of input goes one block
+/// at a time; it is bounded, so its cost does not scale with the input.
+const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum AESCBCAction {
@@ -183,19 +183,18 @@ where
     // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up.
     write_bytes_or_hex(&iv, output_hex);
 
-    let mut out = [[0u8; BLOCK_LEN]; CHUNK_BLOCKS];
+    let mut out = [0u8; CHUNK_LEN];
 
-    stream_blocks(|blocks| match <&[[u8; BLOCK_LEN]; CHUNK_BLOCKS]>::try_from(blocks) {
-        Ok(full_chunk) => {
+    stream_aligned(|data| match <&[u8; CHUNK_LEN]>::try_from(data) {
+        Ok(chunk) => {
             // Cannot fail: the mode's block methods are infallible for a constructed value.
-            enc.do_encrypt_blocks_out(full_chunk, &mut out).unwrap();
-            write_blocks(&out, output_hex);
+            enc.do_encrypt_out(chunk, &mut out).unwrap();
+            write_bytes_or_hex(&out, output_hex);
         }
         Err(_) => {
-            // The bounded tail at end of input.
-            for block in blocks.iter() {
-                let [c] = enc.do_encrypt_blocks(&[*block]).unwrap();
-                write_bytes_or_hex(&c, output_hex);
+            // The bounded tail at end of input: whole blocks, fewer than a chunk.
+            for block in data.as_chunks::<BLOCK_LEN>().0 {
+                write_bytes_or_hex(&enc.do_encrypt(block).unwrap(), output_hex);
             }
         }
     });
@@ -224,18 +223,17 @@ where
             exit(-1);
         });
 
-    let mut out = [[0u8; BLOCK_LEN]; CHUNK_BLOCKS];
+    let mut out = [0u8; CHUNK_LEN];
 
-    stream_blocks(|blocks| match <&[[u8; BLOCK_LEN]; CHUNK_BLOCKS]>::try_from(blocks) {
-        Ok(full_chunk) => {
+    stream_aligned(|data| match <&[u8; CHUNK_LEN]>::try_from(data) {
+        Ok(chunk) => {
             // A full chunk is 32 pairs, so this is the `decrypt_blocks2` path.
-            dec.do_decrypt_blocks_out(full_chunk, &mut out).unwrap();
-            write_blocks(&out, output_hex);
+            dec.do_decrypt_out(chunk, &mut out).unwrap();
+            write_bytes_or_hex(&out, output_hex);
         }
         Err(_) => {
-            for block in blocks.iter() {
-                let [p] = dec.do_decrypt_blocks(&[*block]).unwrap();
-                write_bytes_or_hex(&p, output_hex);
+            for block in data.as_chunks::<BLOCK_LEN>().0 {
+                write_bytes_or_hex(&dec.do_decrypt(block).unwrap(), output_hex);
             }
         }
     });
@@ -243,71 +241,43 @@ where
     finish(output_hex);
 }
 
-/// Reads stdin a block at a time, calling `process` with a full `CHUNK_BLOCKS` slice whenever one
-/// is available and once more at end of input with whatever whole blocks remain.
+/// Reads stdin and hands it to `process` in block-aligned pieces: a full `CHUNK_LEN` bytes each time
+/// one has accumulated, then once more at end of input with whatever whole blocks remain (fewer
+/// than a chunk). Reads need not respect block or chunk boundaries -- bytes simply accumulate in the
+/// buffer until it is full -- so a block split across two reads needs no special handling.
 ///
-/// `process` therefore sees a slice of exactly `CHUNK_BLOCKS` for every call but the last, which is
-/// how the callers can hand a fixed-size array to `do_*_blocks_out::<CHUNK_BLOCKS>` and fall back
-/// to single blocks only for the bounded tail.
-///
-/// Reads do not respect block boundaries, so a block can arrive split across two reads; the
-/// partial block is carried over rather than assumed complete. Input whose total length is not a
-/// multiple of `BLOCK_LEN` is an error, because CBC is not defined on a partial block and there is
-/// no padding layer to appeal to.
-fn stream_blocks(mut process: impl FnMut(&[[u8; BLOCK_LEN]])) {
-    let mut staged = [[0u8; BLOCK_LEN]; CHUNK_BLOCKS];
-    let mut read_buf = [0u8; BLOCK_LEN * CHUNK_BLOCKS];
-    let mut partial = [0u8; BLOCK_LEN];
-    let mut partial_len = 0usize;
-    let mut blocks = 0usize;
+/// Input whose total length is not a multiple of `BLOCK_LEN` is an error, because CBC is not
+/// defined on a partial block and there is no padding layer to appeal to.
+fn stream_aligned(mut process: impl FnMut(&[u8])) {
+    let mut buf = [0u8; CHUNK_LEN];
+    let mut filled = 0usize;
 
     loop {
-        let n = io::stdin().read(&mut read_buf).unwrap_or_else(|e| {
+        let n = io::stdin().read(&mut buf[filled..]).unwrap_or_else(|e| {
             eprintln!("Error: failed to read from stdin: {e}");
             exit(-1);
         });
         if n == 0 {
             break;
         }
-
-        let mut src = &read_buf[..n];
-        while !src.is_empty() {
-            let take = core::cmp::min(BLOCK_LEN - partial_len, src.len());
-            partial[partial_len..partial_len + take].copy_from_slice(&src[..take]);
-            partial_len += take;
-            src = &src[take..];
-
-            if partial_len == BLOCK_LEN {
-                staged[blocks] = partial;
-                blocks += 1;
-                partial_len = 0;
-
-                if blocks == CHUNK_BLOCKS {
-                    process(&staged);
-                    blocks = 0;
-                }
-            }
+        filled += n;
+        if filled == CHUNK_LEN {
+            process(&buf);
+            filled = 0;
         }
     }
 
-    if partial_len != 0 {
+    if filled % BLOCK_LEN != 0 {
         eprintln!(
-            "Error: input is not a whole number of {BLOCK_LEN}-byte blocks ({partial_len} \
-             trailing byte(s)). CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and \
-             this build has no padding layer, so the input must be padded by the caller."
+            "Error: input is not a whole number of {BLOCK_LEN}-byte blocks ({} trailing byte(s)). \
+             CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and this build has no \
+             padding layer, so the input must be padded by the caller.",
+            filled % BLOCK_LEN
         );
         exit(-1);
     }
-
-    if blocks != 0 {
-        process(&staged[..blocks]);
-    }
-}
-
-/// Writes a run of whole blocks.
-fn write_blocks(blocks: &[[u8; BLOCK_LEN]], output_hex: bool) {
-    for block in blocks.iter() {
-        write_bytes_or_hex(block, output_hex);
+    if filled != 0 {
+        process(&buf[..filled]);
     }
 }
 

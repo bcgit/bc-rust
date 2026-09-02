@@ -60,12 +60,12 @@
 //!
 //! let (mut encryptor, iv) =
 //!     Aes256Cbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
-//! let first = encryptor.do_encrypt_blocks(&[[0xAAu8; 16]]).expect("block 1");
-//! let rest = encryptor.do_encrypt_blocks(&[[0xBBu8; 16], [0xCCu8; 16]]).expect("blocks 2-3");
+//! let first = encryptor.do_encrypt(&[0xAAu8; 16]).expect("block 1");
+//! let rest = encryptor.do_encrypt(&[0xBBu8; 32]).expect("blocks 2-3");
 //!
 //! let mut decryptor = Aes256Cbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
-//! assert_eq!(decryptor.do_decrypt_blocks(&first).unwrap(), [[0xAAu8; 16]]);
-//! assert_eq!(decryptor.do_decrypt_blocks(&rest).unwrap(), [[0xBBu8; 16], [0xCCu8; 16]]);
+//! assert_eq!(decryptor.do_decrypt(&first).unwrap(), [0xAAu8; 16]);
+//! assert_eq!(decryptor.do_decrypt(&rest).unwrap(), [0xBBu8; 32]);
 //! ```
 //!
 //! Using the wrong direction does not compile:

@@ -157,16 +157,7 @@ where
         Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
     }
 
-    fn do_encrypt_blocks<const N: usize>(
-        &mut self,
-        plaintext: &[[u8; BLOCK_LEN]; N],
-    ) -> Result<[[u8; BLOCK_LEN]; N], SymmetricCipherError> {
-        let mut ciphertext = [[0u8; BLOCK_LEN]; N];
-        self.do_encrypt_blocks_out(plaintext, &mut ciphertext)?;
-        Ok(ciphertext)
-    }
-
-    /// The real implementation; the by-value variant above is a wrapper over it.
+    /// The implementor hook (the flat `do_encrypt[_out]` are provided over it).
     ///
     /// Strictly serial: `Cj` is the input to block `j + 1`, so there is no pair path here. See the
     /// module docs.
@@ -197,16 +188,7 @@ where
         Ok(Self { perm, chain: *init_data, _dir: PhantomData })
     }
 
-    fn do_decrypt_blocks<const N: usize>(
-        &mut self,
-        ciphertext: &[[u8; BLOCK_LEN]; N],
-    ) -> Result<[[u8; BLOCK_LEN]; N], SymmetricCipherError> {
-        let mut plaintext = [[0u8; BLOCK_LEN]; N];
-        self.do_decrypt_blocks_out(ciphertext, &mut plaintext)?;
-        Ok(plaintext)
-    }
-
-    /// The real implementation; the by-value variant above is a wrapper over it.
+    /// The implementor hook (the flat `do_decrypt[_out]` are provided over it).
     ///
     /// Walks the input in pairs so the permutation's two-block path is used, with an at-most-one
     /// block remainder for odd `N`. `as_chunks` splits into exactly that shape with no runtime

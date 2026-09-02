@@ -54,14 +54,6 @@ impl BlockCipherEncryptor<B, B, B> for ToyCbc {
         rng.next_bytes_out(&mut iv)?;
         Ok((Self { key, chain: iv }, iv))
     }
-    fn do_encrypt_blocks<const N: usize>(
-        &mut self,
-        plaintext: &[[u8; B]; N],
-    ) -> Result<[[u8; B]; N], SymmetricCipherError> {
-        let mut ct = [[0u8; B]; N];
-        self.do_encrypt_blocks_out(plaintext, &mut ct)?;
-        Ok(ct)
-    }
     fn do_encrypt_blocks_out<const N: usize>(
         &mut self,
         plaintext: &[[u8; B]; N],
@@ -80,14 +72,6 @@ impl BlockCipherEncryptor<B, B, B> for ToyCbc {
 impl BlockCipherDecryptor<B, B, B> for ToyCbc {
     fn do_decrypt_init(key: &KeyMaterial<B>, iv: &[u8; B]) -> Result<Self, SymmetricCipherError> {
         Ok(Self { key: Self::check_key(key)?, chain: *iv })
-    }
-    fn do_decrypt_blocks<const N: usize>(
-        &mut self,
-        ciphertext: &[[u8; B]; N],
-    ) -> Result<[[u8; B]; N], SymmetricCipherError> {
-        let mut pt = [[0u8; B]; N];
-        self.do_decrypt_blocks_out(ciphertext, &mut pt)?;
-        Ok(pt)
     }
     fn do_decrypt_blocks_out<const N: usize>(
         &mut self,

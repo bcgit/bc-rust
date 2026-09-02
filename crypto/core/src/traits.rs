@@ -177,25 +177,58 @@ pub trait BlockCipherEncryptor<
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
-    /// Encrypts `N` consecutive blocks of plaintext. A sequence of calls is equivalent to one call over
-    /// the concatenation.
+    /// The implementor hook: encrypts `N` consecutive whole blocks into the provided buffer and
+    /// returns `N * BLOCK_LEN`. A sequence of calls is equivalent to one call over the concatenation.
     ///
-    /// Provided in terms of [`BlockCipherEncryptor::do_encrypt_blocks_out`]; implementors need only
-    /// write the `_out` form.
-    fn do_encrypt_blocks<const N: usize>(
-        &mut self,
-        plaintext: &[[u8; BLOCK_LEN]; N],
-    ) -> Result<[[u8; BLOCK_LEN]; N], SymmetricCipherError> {
-        let mut ciphertext = [[0u8; BLOCK_LEN]; N];
-        self.do_encrypt_blocks_out(plaintext, &mut ciphertext)?;
-        Ok(ciphertext)
-    }
-    /// Encrypts `N` consecutive blocks of plaintext into the provided buffer. Returns `N * BLOCK_LEN`.
+    /// This is the only method an implementor writes besides the two `_init` constructors; the
+    /// block shape is what guarantees it never sees a partial block and that input and output
+    /// lengths agree at compile time. Callers should normally use the flat
+    /// [`BlockCipherEncryptor::do_encrypt`] / [`BlockCipherEncryptor::do_encrypt_out`] instead.
     fn do_encrypt_blocks_out<const N: usize>(
         &mut self,
         plaintext: &[[u8; BLOCK_LEN]; N],
         ciphertext: &mut [[u8; BLOCK_LEN]; N],
     ) -> Result<usize, SymmetricCipherError>;
+
+    /// Streaming: encrypts `LEN` bytes, a whole number of blocks. A sequence of calls is
+    /// equivalent to one call over the concatenation.
+    ///
+    /// `LEN % BLOCK_LEN == 0` is checked **at compile time**: instantiating this with a misaligned
+    /// `LEN` is a compile error at the call site (an inline `const` assertion), not a runtime `Err`.
+    /// Non-block-aligned data belongs to the padding layer.
+    fn do_encrypt<const LEN: usize>(
+        &mut self,
+        plaintext: &[u8; LEN],
+    ) -> Result<[u8; LEN], SymmetricCipherError> {
+        let mut ciphertext = [0u8; LEN];
+        self.do_encrypt_out(plaintext, &mut ciphertext)?;
+        Ok(ciphertext)
+    }
+    /// As [`BlockCipherEncryptor::do_encrypt`], into the provided buffer. Returns `LEN`.
+    ///
+    /// Blocks are fed to [`BlockCipherEncryptor::do_encrypt_blocks_out`] in pairs first, so a mode
+    /// that overrides its two-block path gets to use it, then the at-most-one block left over. This
+    /// is equivalent to a single `do_encrypt_blocks_out::<{LEN / BLOCK_LEN}>` call, which cannot be
+    /// written without `generic_const_exprs`.
+    fn do_encrypt_out<const LEN: usize>(
+        &mut self,
+        plaintext: &[u8; LEN],
+        ciphertext: &mut [u8; LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        const { assert!(LEN % BLOCK_LEN == 0, "length must be a whole number of BLOCK_LEN-byte blocks") };
+        // The remainders are provably empty (asserted above) and ignored.
+        let (pt_blocks, _) = plaintext.as_chunks::<BLOCK_LEN>();
+        let (ct_blocks, _) = ciphertext.as_chunks_mut::<BLOCK_LEN>();
+        let (pt_pairs, pt_tail) = pt_blocks.as_chunks::<2>();
+        let (ct_pairs, ct_tail) = ct_blocks.as_chunks_mut::<2>();
+        for (p, c) in pt_pairs.iter().zip(ct_pairs.iter_mut()) {
+            self.do_encrypt_blocks_out(p, c)?;
+        }
+        for (p, c) in pt_tail.iter().zip(ct_tail.iter_mut()) {
+            self.do_encrypt_blocks_out(core::array::from_ref(p), core::array::from_mut(c))?;
+        }
+        Ok(LEN)
+    }
 
     /// One-shot on a flat byte array: encrypts `LEN` bytes under a fresh init. Returns the generated
     /// init data and the ciphertext.
@@ -231,7 +264,7 @@ pub trait BlockCipherEncryptor<
         ciphertext: &mut [u8; LEN],
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
-        Ok((init_data, encrypt_flat(&mut enc, plaintext, ciphertext)?))
+        Ok((init_data, enc.do_encrypt_out(plaintext, ciphertext)?))
     }
     /// As [`BlockCipherEncryptor::encrypt_out`], but sources randomness from the provided RNG.
     fn encrypt_out_rng<const LEN: usize>(
@@ -241,41 +274,8 @@ pub trait BlockCipherEncryptor<
         ciphertext: &mut [u8; LEN],
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
-        Ok((init_data, encrypt_flat(&mut enc, plaintext, ciphertext)?))
+        Ok((init_data, enc.do_encrypt_out(plaintext, ciphertext)?))
     }
-}
-
-/// Drives a constructed encryptor over flat, block-aligned byte arrays; the shared body of the flat
-/// one-shots on [`BlockCipherEncryptor`].
-///
-/// `LEN % BLOCK_LEN == 0` is asserted at compile time when the caller's `LEN` is instantiated, so the
-/// `as_chunks` remainders are provably empty and are ignored. Blocks are fed in pairs first, so that
-/// a mode which overrides its two-block path gets to use it, then the at-most-one block left over.
-/// Equivalent to a single `do_encrypt_blocks_out::<{LEN / BLOCK_LEN}>` call, which cannot be
-/// written without `generic_const_exprs`.
-fn encrypt_flat<
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const BLOCK_LEN: usize,
-    const LEN: usize,
->(
-    enc: &mut E,
-    plaintext: &[u8; LEN],
-    ciphertext: &mut [u8; LEN],
-) -> Result<usize, SymmetricCipherError> {
-    const { assert!(LEN % BLOCK_LEN == 0, "flat one-shot length must be a whole number of blocks") };
-    let (pt_blocks, _) = plaintext.as_chunks::<BLOCK_LEN>();
-    let (ct_blocks, _) = ciphertext.as_chunks_mut::<BLOCK_LEN>();
-    let (pt_pairs, pt_tail) = pt_blocks.as_chunks::<2>();
-    let (ct_pairs, ct_tail) = ct_blocks.as_chunks_mut::<2>();
-    for (p, c) in pt_pairs.iter().zip(ct_pairs.iter_mut()) {
-        enc.do_encrypt_blocks_out(p, c)?;
-    }
-    for (p, c) in pt_tail.iter().zip(ct_tail.iter_mut()) {
-        enc.do_encrypt_blocks_out(core::array::from_ref(p), core::array::from_mut(c))?;
-    }
-    Ok(LEN)
 }
 
 /// The decryption half of a block cipher's streaming API; see [`BlockCipherEncryptor`].
@@ -290,25 +290,46 @@ pub trait BlockCipherDecryptor<
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError>;
-    /// Decrypts `N` consecutive blocks of ciphertext. A sequence of calls is equivalent to one call over
-    /// the concatenation.
-    ///
-    /// Provided in terms of [`BlockCipherDecryptor::do_decrypt_blocks_out`]; implementors need only
-    /// write the `_out` form.
-    fn do_decrypt_blocks<const N: usize>(
-        &mut self,
-        ciphertext: &[[u8; BLOCK_LEN]; N],
-    ) -> Result<[[u8; BLOCK_LEN]; N], SymmetricCipherError> {
-        let mut plaintext = [[0u8; BLOCK_LEN]; N];
-        self.do_decrypt_blocks_out(ciphertext, &mut plaintext)?;
-        Ok(plaintext)
-    }
-    /// Decrypts `N` consecutive blocks of ciphertext into the provided buffer. Returns `N * BLOCK_LEN`.
+    /// The implementor hook: decrypts `N` consecutive whole blocks into the provided buffer and
+    /// returns `N * BLOCK_LEN`. See [`BlockCipherEncryptor::do_encrypt_blocks_out`]; callers should
+    /// normally use the flat [`BlockCipherDecryptor::do_decrypt`] /
+    /// [`BlockCipherDecryptor::do_decrypt_out`] instead.
     fn do_decrypt_blocks_out<const N: usize>(
         &mut self,
         ciphertext: &[[u8; BLOCK_LEN]; N],
         plaintext: &mut [[u8; BLOCK_LEN]; N],
     ) -> Result<usize, SymmetricCipherError>;
+
+    /// Streaming: decrypts `LEN` bytes, a whole number of blocks; `LEN % BLOCK_LEN == 0` is checked
+    /// at compile time exactly as for [`BlockCipherEncryptor::do_encrypt`].
+    fn do_decrypt<const LEN: usize>(
+        &mut self,
+        ciphertext: &[u8; LEN],
+    ) -> Result<[u8; LEN], SymmetricCipherError> {
+        let mut plaintext = [0u8; LEN];
+        self.do_decrypt_out(ciphertext, &mut plaintext)?;
+        Ok(plaintext)
+    }
+    /// As [`BlockCipherDecryptor::do_decrypt`], into the provided buffer. Returns `LEN`. Pairs first,
+    /// then the tail, as [`BlockCipherEncryptor::do_encrypt_out`].
+    fn do_decrypt_out<const LEN: usize>(
+        &mut self,
+        ciphertext: &[u8; LEN],
+        plaintext: &mut [u8; LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        const { assert!(LEN % BLOCK_LEN == 0, "length must be a whole number of BLOCK_LEN-byte blocks") };
+        let (ct_blocks, _) = ciphertext.as_chunks::<BLOCK_LEN>();
+        let (pt_blocks, _) = plaintext.as_chunks_mut::<BLOCK_LEN>();
+        let (ct_pairs, ct_tail) = ct_blocks.as_chunks::<2>();
+        let (pt_pairs, pt_tail) = pt_blocks.as_chunks_mut::<2>();
+        for (c, p) in ct_pairs.iter().zip(pt_pairs.iter_mut()) {
+            self.do_decrypt_blocks_out(c, p)?;
+        }
+        for (c, p) in ct_tail.iter().zip(pt_tail.iter_mut()) {
+            self.do_decrypt_blocks_out(core::array::from_ref(c), core::array::from_mut(p))?;
+        }
+        Ok(LEN)
+    }
 
     /// One-shot on a flat byte array: decrypts `LEN` bytes from the given init data.
     ///
@@ -330,35 +351,8 @@ pub trait BlockCipherDecryptor<
         ciphertext: &[u8; LEN],
         plaintext: &mut [u8; LEN],
     ) -> Result<usize, SymmetricCipherError> {
-        let mut dec = Self::do_decrypt_init(key, init_data)?;
-        decrypt_flat(&mut dec, ciphertext, plaintext)
+        Self::do_decrypt_init(key, init_data)?.do_decrypt_out(ciphertext, plaintext)
     }
-}
-
-/// Decryption counterpart of [`encrypt_flat`]; see it for the alignment check and the pairing.
-fn decrypt_flat<
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const BLOCK_LEN: usize,
-    const LEN: usize,
->(
-    dec: &mut D,
-    ciphertext: &[u8; LEN],
-    plaintext: &mut [u8; LEN],
-) -> Result<usize, SymmetricCipherError> {
-    const { assert!(LEN % BLOCK_LEN == 0, "flat one-shot length must be a whole number of blocks") };
-    let (ct_blocks, _) = ciphertext.as_chunks::<BLOCK_LEN>();
-    let (pt_blocks, _) = plaintext.as_chunks_mut::<BLOCK_LEN>();
-    let (ct_pairs, ct_tail) = ct_blocks.as_chunks::<2>();
-    let (pt_pairs, pt_tail) = pt_blocks.as_chunks_mut::<2>();
-    for (c, p) in ct_pairs.iter().zip(pt_pairs.iter_mut()) {
-        dec.do_decrypt_blocks_out(c, p)?;
-    }
-    for (c, p) in ct_tail.iter().zip(pt_tail.iter_mut()) {
-        dec.do_decrypt_blocks_out(core::array::from_ref(c), core::array::from_mut(p))?;
-    }
-    Ok(LEN)
 }
 
 /// A block padding scheme, used to extend arbitrary-length data to a whole number of blocks so that it

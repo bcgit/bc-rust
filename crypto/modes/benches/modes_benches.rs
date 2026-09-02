@@ -83,7 +83,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let (mut enc, _) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
             for block in blocks.iter() {
-                black_box(enc.do_encrypt_blocks(&[*block]).unwrap());
+                black_box(enc.do_encrypt(block).unwrap());
             }
         })
     });
@@ -92,8 +92,8 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let (mut enc, _) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
             for chunk in blocks.chunks_exact(8) {
-                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-                black_box(enc.do_encrypt_blocks(arr).unwrap());
+                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(enc.do_encrypt(arr).unwrap());
             }
         })
     });
@@ -104,7 +104,9 @@ fn bench_aes128(c: &mut Criterion) {
         .chunks_exact(8)
         .flat_map(|chunk| {
             let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-            enc.do_encrypt_blocks(arr).unwrap()
+            let mut out = [[0u8; BLOCK_LEN]; 8];
+            enc.do_encrypt_blocks_out(arr, &mut out).unwrap();
+            out
         })
         .collect();
 
@@ -114,7 +116,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
             for block in ciphertext.iter() {
-                black_box(dec.do_decrypt_blocks(&[*block]).unwrap());
+                black_box(dec.do_decrypt(block).unwrap());
             }
         })
     });
@@ -124,8 +126,8 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
             for chunk in ciphertext.chunks_exact(2) {
-                let arr: &[[u8; BLOCK_LEN]; 2] = chunk.try_into().unwrap();
-                black_box(dec.do_decrypt_blocks(arr).unwrap());
+                let arr: &[u8; 2 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(dec.do_decrypt(arr).unwrap());
             }
         })
     });
@@ -134,8 +136,8 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
             for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-                black_box(dec.do_decrypt_blocks(arr).unwrap());
+                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(dec.do_decrypt(arr).unwrap());
             }
         })
     });
@@ -145,8 +147,8 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
             for chunk in ciphertext.chunks_exact(9) {
-                let arr: &[[u8; BLOCK_LEN]; 9] = chunk.try_into().unwrap();
-                black_box(dec.do_decrypt_blocks(arr).unwrap());
+                let arr: &[u8; 9 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(dec.do_decrypt(arr).unwrap());
             }
         })
     });
@@ -157,8 +159,8 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
             for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-                black_box(dec.do_decrypt_blocks(arr).unwrap());
+                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(dec.do_decrypt(arr).unwrap());
             }
         })
     });
@@ -167,8 +169,8 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut dec = UnpairedAes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
             for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-                black_box(dec.do_decrypt_blocks(arr).unwrap());
+                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(dec.do_decrypt(arr).unwrap());
             }
         })
     });
@@ -187,8 +189,8 @@ fn bench_aes256(c: &mut Criterion) {
         b.iter(|| {
             let (mut enc, _) = Aes256Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
             for chunk in blocks.chunks_exact(8) {
-                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-                black_box(enc.do_encrypt_blocks(arr).unwrap());
+                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(enc.do_encrypt(arr).unwrap());
             }
         })
     });
@@ -198,7 +200,9 @@ fn bench_aes256(c: &mut Criterion) {
         .chunks_exact(8)
         .flat_map(|chunk| {
             let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-            enc.do_encrypt_blocks(arr).unwrap()
+            let mut out = [[0u8; BLOCK_LEN]; 8];
+            enc.do_encrypt_blocks_out(arr, &mut out).unwrap();
+            out
         })
         .collect();
 
@@ -206,8 +210,8 @@ fn bench_aes256(c: &mut Criterion) {
         b.iter(|| {
             let mut dec = Aes256Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
             for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-                black_box(dec.do_decrypt_blocks(arr).unwrap());
+                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
+                black_box(dec.do_decrypt(arr).unwrap());
             }
         })
     });

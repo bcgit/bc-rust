@@ -28,11 +28,11 @@ use bouncycastle_modes::Cbc;
 ///
 /// // Streaming, a few blocks at a time:
 /// let (mut enc, iv) = AES_CBC_128::<Encrypting>::do_encrypt_init(&key).unwrap();
-/// let first = enc.do_encrypt_blocks(&[[0u8; 16]]).unwrap();
-/// let rest = enc.do_encrypt_blocks(&[[1u8; 16], [2u8; 16]]).unwrap();
+/// let first = enc.do_encrypt(&[0u8; 16]).unwrap();
+/// let rest = enc.do_encrypt(&[1u8; 32]).unwrap();
 /// let mut dec = AES_CBC_128::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-/// assert_eq!(dec.do_decrypt_blocks(&first).unwrap(), [[0u8; 16]]);
-/// assert_eq!(dec.do_decrypt_blocks(&rest).unwrap(), [[1u8; 16], [2u8; 16]]);
+/// assert_eq!(dec.do_decrypt(&first).unwrap(), [0u8; 16]);
+/// assert_eq!(dec.do_decrypt(&rest).unwrap(), [1u8; 32]);
 /// ```
 ///
 /// A length that is not a whole number of blocks is a **compile** error, not a runtime one:

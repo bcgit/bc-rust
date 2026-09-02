@@ -17,6 +17,26 @@ use common::{SwappedPairToy, TOY_LEN, Toy, toy_key};
 type ToyCbc<Dir> = Cbc<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedCbc<Dir> = Cbc<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 
+/// The implementor hook `do_encrypt_blocks_out`, by value, for tests whose data is block-shaped.
+fn enc_blocks<const N: usize>(
+    enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    plaintext: &[[u8; TOY_LEN]; N],
+) -> [[u8; TOY_LEN]; N] {
+    let mut ct = [[0u8; TOY_LEN]; N];
+    enc.do_encrypt_blocks_out(plaintext, &mut ct).unwrap();
+    ct
+}
+
+/// The implementor hook `do_decrypt_blocks_out`, by value.
+fn dec_blocks<const N: usize>(
+    dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    ciphertext: &[[u8; TOY_LEN]; N],
+) -> [[u8; TOY_LEN]; N] {
+    let mut pt = [[0u8; TOY_LEN]; N];
+    dec.do_decrypt_blocks_out(ciphertext, &mut pt).unwrap();
+    pt
+}
+
 // ---- the toy itself, and the mode, against the shared frameworks -------------------------
 
 /// The toy must be a real permutation before any conclusion drawn from it is worth anything.
@@ -55,16 +75,16 @@ fn call_grouping_does_not_change_the_result() {
     let (mut enc, got_iv) =
         ToyCbc::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng()).unwrap();
     assert_eq!(got_iv, iv, "the pinned RNG should reproduce the IV");
-    let reference = enc.do_encrypt_blocks(&plaintext).unwrap();
+    let reference = enc_blocks(&mut enc, &plaintext);
 
     // The same eight blocks, grouped every way that exercises a different code path.
     let (mut enc, _) = ToyCbc::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng()).unwrap();
     let mut got = [[0u8; TOY_LEN]; 8];
-    let a = enc.do_encrypt_blocks(&[plaintext[0]]).unwrap(); // N = 1
-    let b = enc.do_encrypt_blocks(&[plaintext[1], plaintext[2]]).unwrap(); // N = 2
-    let c = enc.do_encrypt_blocks(&[plaintext[3], plaintext[4], plaintext[5]]).unwrap(); // N = 3
-    let d = enc.do_encrypt_blocks(&[plaintext[6], plaintext[7]]).unwrap(); // N = 2
-    got[0] = a[0];
+    let a = enc.do_encrypt(&plaintext[0]).unwrap(); // one block, flat
+    let b = enc_blocks(&mut enc, &[plaintext[1], plaintext[2]]); // N = 2
+    let c = enc_blocks(&mut enc, &[plaintext[3], plaintext[4], plaintext[5]]); // N = 3
+    let d = enc_blocks(&mut enc, &[plaintext[6], plaintext[7]]); // N = 2
+    got[0] = a;
     got[1..3].copy_from_slice(&b);
     got[3..6].copy_from_slice(&c);
     got[6..8].copy_from_slice(&d);
@@ -75,7 +95,7 @@ fn call_grouping_does_not_change_the_result() {
     let ct = reference;
 
     let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    let all_at_once = dec.do_decrypt_blocks(&ct).unwrap();
+    let all_at_once = dec_blocks(&mut dec, &ct);
     assert_eq!(all_at_once, plaintext);
 
     for grouping in [1usize, 2, 4] {
@@ -85,17 +105,14 @@ fn call_grouping_does_not_change_the_result() {
         while at < 8 {
             match grouping {
                 1 => {
-                    let [p] = dec.do_decrypt_blocks(&[ct[at]]).unwrap();
-                    out[at] = p;
+                    out[at] = dec.do_decrypt(&ct[at]).unwrap();
                 }
                 2 => {
-                    let p = dec.do_decrypt_blocks(&[ct[at], ct[at + 1]]).unwrap();
+                    let p = dec_blocks(&mut dec, &[ct[at], ct[at + 1]]);
                     out[at..at + 2].copy_from_slice(&p);
                 }
                 _ => {
-                    let p = dec
-                        .do_decrypt_blocks(&[ct[at], ct[at + 1], ct[at + 2], ct[at + 3]])
-                        .unwrap();
+                    let p = dec_blocks(&mut dec, &[ct[at], ct[at + 1], ct[at + 2], ct[at + 3]]);
                     out[at..at + 4].copy_from_slice(&p);
                 }
             }
@@ -106,8 +123,8 @@ fn call_grouping_does_not_change_the_result() {
 
     // N = 3 and N = 5 both leave a one-block remainder after the pair loop.
     let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    let three = dec.do_decrypt_blocks(&[ct[0], ct[1], ct[2]]).unwrap();
-    let five = dec.do_decrypt_blocks(&[ct[3], ct[4], ct[5], ct[6], ct[7]]).unwrap();
+    let three = dec_blocks(&mut dec, &[ct[0], ct[1], ct[2]]);
+    let five = dec_blocks(&mut dec, &[ct[3], ct[4], ct[5], ct[6], ct[7]]);
     assert_eq!(three, [plaintext[0], plaintext[1], plaintext[2]]);
     assert_eq!(five, [plaintext[3], plaintext[4], plaintext[5], plaintext[6], plaintext[7]]);
 }
@@ -125,37 +142,39 @@ fn the_pair_path_is_really_used() {
 
     // The correct toy round-trips.
     let (mut enc, iv) = ToyCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
-    let ct = enc.do_encrypt_blocks(&plaintext).unwrap();
+    let ct = enc_blocks(&mut enc, &plaintext);
     let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_eq!(dec.do_decrypt_blocks(&ct).unwrap(), plaintext);
+    assert_eq!(dec_blocks(&mut dec, &ct), plaintext);
 
     // The swapped-pair toy encrypts identically (encryption is serial and never pairs)...
     let (mut enc, iv) = SwappedCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
-    let ct = enc.do_encrypt_blocks(&plaintext).unwrap();
+    let ct = enc_blocks(&mut enc, &plaintext);
 
     // ...but decrypting the pair together must now be wrong, because the pair path is used.
     let mut dec = SwappedCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_ne!(
-        dec.do_decrypt_blocks(&ct).unwrap(),
+        dec_blocks(&mut dec, &ct),
         plaintext,
         "decrypting a pair must go through decrypt_blocks2"
     );
 
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
     let mut dec = SwappedCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    let [p0] = dec.do_decrypt_blocks(&[ct[0]]).unwrap();
-    let [p1] = dec.do_decrypt_blocks(&[ct[1]]).unwrap();
+    let p0 = dec.do_decrypt(&ct[0]).unwrap();
+    let p1 = dec.do_decrypt(&ct[1]).unwrap();
     assert_eq!([p0, p1], plaintext, "the single-block path must not pair");
 }
 
-/// The `_out` variants must agree with the by-value ones and report the byte count.
+/// The flat streaming method must agree with the block-shaped implementor hook and report the
+/// byte count.
 #[test]
-fn out_variants_agree_with_by_value() {
+fn flat_streaming_agrees_with_the_block_hook() {
     let key = toy_key();
     let plaintext = [[0x11u8; TOY_LEN], [0x22u8; TOY_LEN], [0x33u8; TOY_LEN]];
+    let flat_plaintext: [u8; 3 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
 
     let (mut enc, iv) = ToyCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
-    let by_value = enc.do_encrypt_blocks(&plaintext).unwrap();
+    let by_value = enc.do_encrypt(&flat_plaintext).unwrap();
 
     let (mut enc, iv2) = ToyCbc::<Encrypting>::do_encrypt_init_rng(
         &key,
@@ -166,7 +185,7 @@ fn out_variants_agree_with_by_value() {
     let mut out = [[0u8; TOY_LEN]; 3];
     let n = enc.do_encrypt_blocks_out(&plaintext, &mut out).unwrap();
     assert_eq!(n, 3 * TOY_LEN);
-    assert_eq!(out, by_value);
+    assert_eq!(*out.as_flattened(), by_value, "flat streaming must equal the block hook");
 
     let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     let mut back = [[0u8; TOY_LEN]; 3];
@@ -189,7 +208,7 @@ fn an_iv_bit_error_flips_exactly_that_bit_of_the_first_block() {
     let plaintext = [[0x00u8; TOY_LEN], [0x11u8; TOY_LEN], [0x22u8; TOY_LEN]];
 
     let (mut enc, iv) = ToyCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
-    let ct = enc.do_encrypt_blocks(&plaintext).unwrap();
+    let ct = enc_blocks(&mut enc, &plaintext);
 
     for byte in 0..TOY_LEN {
         for bit in 0..8 {
@@ -197,7 +216,7 @@ fn an_iv_bit_error_flips_exactly_that_bit_of_the_first_block() {
             corrupt_iv[byte] ^= 1 << bit;
 
             let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key, &corrupt_iv).unwrap();
-            let got = dec.do_decrypt_blocks(&ct).unwrap();
+            let got = dec_blocks(&mut dec, &ct);
 
             let mut expected = plaintext;
             expected[0][byte] ^= 1 << bit;
@@ -217,13 +236,13 @@ fn a_ciphertext_bit_error_affects_only_two_blocks() {
     let plaintext = [[0x00u8; TOY_LEN], [0x11u8; TOY_LEN], [0x22u8; TOY_LEN], [0x33u8; TOY_LEN]];
 
     let (mut enc, iv) = ToyCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
-    let ct = enc.do_encrypt_blocks(&plaintext).unwrap();
+    let ct = enc_blocks(&mut enc, &plaintext);
 
     let mut corrupt = ct;
     corrupt[1][3] ^= 0b0010_0000;
 
     let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    let got = dec.do_decrypt_blocks(&corrupt).unwrap();
+    let got = dec_blocks(&mut dec, &corrupt);
 
     assert_eq!(got[0], plaintext[0], "P1 depends only on C1 and the IV");
     assert_ne!(got[1], plaintext[1], "P2 comes from the corrupted C2");
@@ -317,7 +336,7 @@ fn one_shots_agree_with_the_streaming_api() {
     let (iv_a, ct_blocks) = {
         let (mut enc, iv) =
             ToyCbc::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng()).unwrap();
-        (iv, enc.do_encrypt_blocks(&blocks3).unwrap())
+        (iv, enc_blocks(&mut enc, &blocks3))
     };
     let (iv_b, ct_flat) =
         ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &flat3).unwrap();
@@ -343,7 +362,7 @@ fn one_shots_agree_with_the_streaming_api() {
     let (_, ct_blocks) = {
         let (mut enc, iv) =
             ToyCbc::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng()).unwrap();
-        (iv, enc.do_encrypt_blocks(&blocks4).unwrap())
+        (iv, enc_blocks(&mut enc, &blocks4))
     };
     let (_, ct_flat) = ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &flat4).unwrap();
     assert_eq!(ct_flat, *ct_blocks.as_flattened(), "4 blocks: one-shot must equal streaming");

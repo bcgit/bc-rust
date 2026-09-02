@@ -121,8 +121,7 @@ where
         let Self { mut inner, mut buf, buf_len, .. } = self;
         // buf_len < BLOCK_LEN is an invariant of this type, so pad() cannot fail here.
         P::pad(&mut buf, buf_len)?;
-        let [ct] = inner.do_encrypt_blocks(from_ref(&*buf))?;
-        Ok(ct)
+        inner.do_encrypt(&*buf)
     }
 
     /// As [`do_final`](Self::do_final), writing the final block into `ciphertext`. Returns `BLOCK_LEN`.
@@ -306,7 +305,7 @@ where
         let Some(last) = held else {
             return Err(SymmetricCipherError::DecryptionFailed);
         };
-        let [pt] = inner.do_decrypt_blocks(from_ref(&last))?;
+        let pt = inner.do_decrypt(&last)?;
         let data_len = P::unpad(&pt)?;
         Ok((pt, data_len))
     }

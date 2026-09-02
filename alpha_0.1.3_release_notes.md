@@ -71,8 +71,9 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   not be secret (SP 800-38A Sec 5.3), so this is sound.
 * Input must be a whole number of 16-byte blocks. Unaligned input is rejected with a message
   pointing at the missing padding layer rather than being silently padded.
-* Reads do not respect block boundaries, so a block split across two reads is carried over;
-  verified by round-tripping 64 KiB through `dd bs=3`.
+* Reads need not respect block boundaries: bytes accumulate in a 1 KiB buffer that goes through the flat
+  `do_*_out::<1024>` when full, and the whole-block remainder at end of input goes one block at a time; verified by
+  round-tripping 64 KiB through `dd bs=3`.
 * Verified against SP 800-38A F.2: prepending the spec's IV to the spec's ciphertext and running
   `decrypt` reproduces the spec's plaintext for all three key lengths. The `encrypt` direction was
   cross-checked against an independent CBC implementation under the IV the CLI generated.
@@ -145,8 +146,11 @@ Block cipher traits (PR #96):
   take a flat `[u8; LEN]`; `LEN` must be a whole number of blocks, and this is enforced at **compile time** by an
   inline `const` assertion at the instantiating call site, so there is no runtime length check and no error variant
   for it. (An earlier form of these one-shots took `[[u8; BLOCK_LEN]; N]`; it was replaced before release.)
-* The by-value streaming methods `do_{en,de}crypt_blocks` are provided in terms of their `_out` forms, so an
-  implementor writes only `do_{en,de}crypt_init[_rng]` and `do_{en,de}crypt_blocks_out`.
+* The streaming API is flat as well: `do_{en,de}crypt<LEN>` / `do_{en,de}crypt_out<LEN>` take a `[u8; LEN]` with the
+  same compile-time alignment check, and are provided methods. The single block-shaped method left is the implementor
+  hook `do_{en,de}crypt_blocks_out<N>` over `[[u8; BLOCK_LEN]; N]`, which is what guarantees an implementation never
+  sees a partial block and that input and output lengths agree at compile time; an implementor writes only
+  `do_{en,de}crypt_init[_rng]` and that hook. (The by-value `do_{en,de}crypt_blocks` of #96 are gone.)
 
 Testing:
 
