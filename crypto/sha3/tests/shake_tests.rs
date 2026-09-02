@@ -27,32 +27,30 @@ mod shake_tests {
         assert_eq!(output, output2);
 
         // test bounds
+        // 0 is in range: it requests no bits, so the result is 0x00.
         let mut shake = SHAKE128::new();
         shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
         let _throwaway = shake.squeeze(3);
-        match shake.squeeze_partial_byte_final(0) {
-            Err(_) => { /* good */ }
-            _ => {
-                panic!("Should have failed")
-            }
+        assert_eq!(shake.squeeze_partial_byte_final(0).expect("Squeeze failed"), 0x00);
+
+        // 8 and above are out of range.
+        for bad in [8usize, 9, 15, 16, 64, usize::MAX] {
+            let mut shake = SHAKE128::new();
+            shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
+            let _throwaway = shake.squeeze(3);
+            assert!(
+                matches!(shake.squeeze_partial_byte_final(bad), Err(HashError::InvalidLength(_))),
+                "num_bits={bad}"
+            );
         }
 
-        let mut shake = SHAKE128::new();
-        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
-        let _throwaway = shake.squeeze(3);
-        match shake.squeeze_partial_byte_final(8) {
-            Err(_) => { /* good */ }
-            _ => {
-                panic!("Should have failed")
-            }
-        }
-
-        for i in 1..7 {
+        for i in 0..=7 {
             let mut shake = SHAKE128::new();
             shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
             _ = shake.squeeze(3);
             let out: u8 = shake.squeeze_partial_byte_final(i).expect("Squeeze failed");
-            assert_eq!(out, 0xFF >> (8 - i));
+            // byte [3] of the stream is 0xFF, so the low `i` bits of it are the low `i` set bits.
+            assert_eq!(out, ((1u16 << i) - 1) as u8);
         }
 
         // success case -- output slice version
@@ -80,7 +78,7 @@ mod shake_tests {
                 "test vector byte must be non-uniform: {full:#x}"
             );
 
-            for n in 1..=7usize {
+            for n in 0..=7usize {
                 let mut shake = SHAKE256::new();
                 shake.absorb(msg).unwrap();
                 if skip > 0 {

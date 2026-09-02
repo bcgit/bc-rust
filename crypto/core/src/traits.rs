@@ -1106,6 +1106,8 @@ pub trait XOF: Default {
     /// remaining high bits zero. This follows the FIPS 202 Appendix B.1 bit-string convention
     /// (the first bit of a byte is its least significant bit) and matches the input convention of
     /// [`XOF::absorb_last_partial_byte`].
+    /// 0 is a valid value and requests no bits, so the result is `0x00`.
+    /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     /// This is a final call and consumes self.
     fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError>;
 
