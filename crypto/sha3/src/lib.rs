@@ -108,6 +108,31 @@
 //! [`KeyType::CryptographicRandom`] since the input [`KeyMaterial`] is 16 bytes but [`SHA3_256`] needs at least 32 bytes of
 //! full-entropy input key material in order to be able to produce full entropy output key material.
 //!
+//! # Memory Usage
+//!
+//! All SHA3 and SHAKE variants share the same Keccak-f\[1600\] sponge and so have identical memory
+//! footprints. No heap memory is used by the algorithms themselves; the `Vec<u8>`-returning
+//! convenience methods allocate only the output buffer, and the `*_out` variants allocate nothing.
+//!
+//! | Object                                  | Size (bytes) |
+//! |-----------------------------------------|--------------|
+//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256` | 440          |
+//! | Suspended state ([`Suspendable`])       | 415          |
+//!
+//! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
+//! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
+//! massif entry points for measuring peak stack usage of the hash, XOF and suspend/resume paths.
+//!
+//! # Security Considerations
+//!
+//! * SHA3-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively; SHAKE128
+//!   and SHAKE256 offer 128 and 256 bits of security for output lengths at least twice that size
+//!   (FIPS 202 Appendix A.1).
+//! * SHAKE is an XOF, not a hash: `SHAKE128(m, 32)` is a prefix of `SHAKE128(m, 64)`. If the output
+//!   length must be bound to the digest, include it in the message (FIPS 202 Appendix A.2).
+//! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
+//!   drop.
+//!
 //! # Suspending and resuming execution
 //!
 //! When hashing a large message, it can be advantageous to be able to suspend the operation
