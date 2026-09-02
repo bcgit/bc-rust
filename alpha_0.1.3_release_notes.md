@@ -104,6 +104,23 @@ Testing:
   both still have no implementors, so it stays latent. (`TestFrameworkStreamCipher` has no
   security-strength handling at all and is unaffected.)
 
+* Block cipher padding (PR #97):
+    * padding -- new crate (`bouncycastle-padding`, no_std, re-exported as `bouncycastle::padding`) providing `PKCS7`,
+      the padding scheme of RFC 5652 s. 6.3, for any block length 1..=255 (enforced at compile time). `unpad` examines
+      every byte with `Condition<i64>` mask arithmetic and has a single public decision point, so it does not leak a
+      padding oracle through timing or error detail.
+    * `PaddedEncryptor<E, P>` / `PaddedDecryptor<D, P>` adapt a block-aligned `BlockCipherEncryptor` /
+      `BlockCipherDecryptor` to arbitrary-length data: streaming `do_update_out` / `do_final(self)` plus one-shot
+      `encrypt_out` / `decrypt_out`, with exact output-length helpers. The buffered partial plaintext block is held in
+      a `Secret`, and the decryptor withholds one complete block until `do_final`, since only the last block carries
+      padding.
+    * `core` gains the `Padding<const BLOCK_LEN>` trait (in-place `pad(block, data_len)`, constant-time
+      `unpad(block) -> data_len`) and `PaddingError { DataLengthTooLong, InvalidPadding }`, wrapped as a new variant of
+      `SymmetricCipherError`.
+    * Tests are derived from the RFC 5652 padding rule; the adapters are driven with a toy XOR-CBC cipher implementing
+      the new block cipher traits, covering every data length, ten chunkings in both directions, tampering, malformed
+      lengths, and buffer sizing. Criterion bench included.
+
 ## Minor features / bug fixes
 
 * bug fixes to the way SHA3/SHAKE handled absorbing and squeezing a partial final byte.
