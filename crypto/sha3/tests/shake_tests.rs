@@ -10,6 +10,7 @@ mod shake_tests {
     use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+    use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
     use bouncycastle_sha3::{SHA3_256, SHAKE128, SHAKE256};
 
     #[test]
@@ -344,6 +345,13 @@ mod shake_tests {
     #[test]
     fn run_kats() {
         run_test_vectors(read_test_vectors("tests/data/SHAKETestVectors.txt"));
+    }
+
+    #[test]
+    fn test_framework_xof() {
+        let test_framework = TestFrameworkXOF::new();
+        test_framework.test_xof::<SHAKE128>(&DUMMY_SEED[..512], b"\x88\x90\xED\x20\x4D\x22\x89\xE1\x72\xE9\xAE\x68\x48\x18\x23\x77\x08\x20\x90\x80\x60\xA4\xDF\x33\x51\xA3\xF1\x84\xEB\xB6\xDD\x0F\x9D\x23\x15\x60\x68\x0F\x2C\x65\x8A\xC4\x84\x97\xAD\xB5\xA4\x83\x99\x36\xA3\x16\x55\x16\xFA\x5E\x13\xBF\x8A\x15\xBA\xBC\x14\x1F");
+        test_framework.test_xof::<SHAKE256>(&DUMMY_SEED[..512], b"\xA1\xD7\x18\x85\xB0\xA8\x41\xF0\x3D\x1D\xC7\xF2\x73\x8A\x15\xCC\x98\x40\x71\xA1\x7F\xFE\xD5\xEC\xAC\xB9\xF5\x87\x20\xA4\x73\xBE\x1F\x2D\x28\xB9\x6D\x54\x3A\x36\x7C\x81\x11\x42\x06\xF5\xAF\x37\x18\xE7\x31\x5B\x57\xF2\x90\xB6\x4D\x8D\x29\xCF\x43\x7E\x40\x4C");
     }
 
     #[test]

@@ -55,20 +55,31 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
 
     /// Swallows errors and simply returns an empty Vec<u8> if the hashes fails for whatever reason.
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        // Infallible: this is the only absorb, and it precedes the squeeze below.
-        self.absorb(data).expect("absorb precedes squeeze on a fresh SHAKE");
+        // The absorb fails if this object has already begun squeezing, which the caller is free to
+        // have done: these one-shot APIs take `self`, they do not require a fresh object.
+        if self.absorb(data).is_err() {
+            return Vec::new();
+        }
         self.squeeze(result_len)
     }
 
+    /// Swallows errors and simply returns 0, leaving `output` zeroized, if the hashes fails for
+    /// whatever reason.
     fn hash_internal_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         output.fill(0);
 
-        // Infallible: this is the only absorb, and it precedes the squeeze below.
-        self.absorb(data).expect("absorb precedes squeeze on a fresh SHAKE");
+        // The absorb fails if this object has already begun squeezing, which the caller is free to
+        // have done: these one-shot APIs take `self`, they do not require a fresh object.
+        if self.absorb(data).is_err() {
+            return 0;
+        }
         self.squeeze_out(output)
     }
 
-    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
+    /// Returns [`KDFError::HashError`] wrapping a [`HashError::InvalidState`] if this object has
+    /// already begun squeezing, since key material absorbed after that point would not contribute
+    /// to the derived key.
+    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) -> Result<(), KDFError> {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
 
@@ -84,8 +95,9 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
             .clone();
         }
 
-        // Infallible: mix_key_internal is only called during the absorb phase, before any squeeze.
-        self.absorb(key.ref_to_bytes()).expect("absorb precedes squeeze during key mixing");
+        // The absorb fails if this object has already begun squeezing, which the caller is free to
+        // have done: the KDF entry points take `self`, they do not require a fresh object.
+        Ok(self.absorb(key.ref_to_bytes())?)
     }
 
     fn derive_key_final_internal(
@@ -121,9 +133,8 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
-        // Infallible: additional_input is absorbed before the squeeze below, and this method is only
-        // reached during the absorb phase.
-        self.absorb(additional_input).expect("absorb precedes squeeze during key derivation");
+        // As in mix_key_internal(): the absorb fails if this object has already begun squeezing.
+        self.absorb(additional_input)?;
 
         let mut bytes_written: usize = 0;
         key_material::do_hazardous_operations(output_key, |output_key| {
@@ -206,7 +217,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         // self.derive_key_from_multiple(&[key], additional_input)
-        self.mix_key_internal(key);
+        self.mix_key_internal(key)?;
         self.derive_key_final_internal(additional_input)
     }
 
@@ -217,7 +228,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // self.derive_key_from_multiple_out(&[key], additional_input, output)
-        self.mix_key_internal(key);
+        self.mix_key_internal(key)?;
         self.derive_key_out_final_internal(additional_input, output_key)
     }
 
@@ -236,7 +247,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key);
+            self.mix_key_internal(*key)?;
         }
         self.derive_key_final_internal(additional_input)
     }
@@ -248,7 +259,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key);
+            self.mix_key_internal(*key)?;
         }
         self.derive_key_out_final_internal(additional_input, output_key)
     }
