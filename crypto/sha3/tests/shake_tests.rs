@@ -3,12 +3,14 @@ extern crate core;
 #[cfg(test)]
 mod shake_tests {
     use super::shake_test_helpers::*;
+    use bouncycastle_core::errors::HashError;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
+    use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
     use bouncycastle_sha3::{SHA3_256, SHAKE128, SHAKE256};
 
     #[test]
@@ -25,32 +27,30 @@ mod shake_tests {
         assert_eq!(output, output2);
 
         // test bounds
+        // 0 is in range: it requests no bits, so the result is 0x00.
         let mut shake = SHAKE128::new();
         shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
         let _throwaway = shake.squeeze(3);
-        match shake.squeeze_partial_byte_final(0) {
-            Err(_) => { /* good */ }
-            _ => {
-                panic!("Should have failed")
-            }
+        assert_eq!(shake.squeeze_partial_byte_final(0).expect("Squeeze failed"), 0x00);
+
+        // 8 and above are out of range.
+        for bad in [8usize, 9, 15, 16, 64, usize::MAX] {
+            let mut shake = SHAKE128::new();
+            shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
+            let _throwaway = shake.squeeze(3);
+            assert!(
+                matches!(shake.squeeze_partial_byte_final(bad), Err(HashError::InvalidLength(_))),
+                "num_bits={bad}"
+            );
         }
 
-        let mut shake = SHAKE128::new();
-        shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
-        let _throwaway = shake.squeeze(3);
-        match shake.squeeze_partial_byte_final(8) {
-            Err(_) => { /* good */ }
-            _ => {
-                panic!("Should have failed")
-            }
-        }
-
-        for i in 1..7 {
+        for i in 0..=7 {
             let mut shake = SHAKE128::new();
             shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
             _ = shake.squeeze(3);
             let out: u8 = shake.squeeze_partial_byte_final(i).expect("Squeeze failed");
-            assert_eq!(out, 0xFF >> (8 - i));
+            // byte [3] of the stream is 0xFF, so the low `i` bits of it are the low `i` set bits.
+            assert_eq!(out, ((1u16 << i) - 1) as u8);
         }
 
         // success case -- output slice version
@@ -60,6 +60,77 @@ mod shake_tests {
         let mut out = 0u8;
         shake.squeeze_partial_byte_final_out(1, &mut out).expect("Squeeze failed");
         assert_eq!(out, 0x01);
+    }
+
+    /// Regression: squeeze_partial_byte_final() as the *first* squeeze must apply the SHAKE "1111"
+    /// domain suffix (previously it bypassed it and returned raw Keccak output), and must return the
+    /// low `num_bits` bits of the next output byte (FIPS 202 B.1 bit ordering), zero-extended.
+    #[test]
+    fn partial_bit_output_as_first_squeeze_matches_full_output() {
+        let msg = b"abc";
+        for skip in [0usize, 1, 5] {
+            let mut shake = SHAKE256::new();
+            shake.absorb(msg).unwrap();
+            let full = shake.squeeze(skip + 1)[skip];
+            // pick a byte that is not all-ones/all-zeros so bit selection is actually tested
+            assert!(
+                full != 0x00 && full != 0xFF,
+                "test vector byte must be non-uniform: {full:#x}"
+            );
+
+            for n in 0..=7usize {
+                let mut shake = SHAKE256::new();
+                shake.absorb(msg).unwrap();
+                if skip > 0 {
+                    _ = shake.squeeze(skip);
+                }
+                let got = shake.squeeze_partial_byte_final(n).unwrap();
+                assert_eq!(got, full & ((1u8 << n) - 1), "skip={skip} n={n}");
+                assert_eq!(got >> n, 0, "high bits must be zero");
+            }
+        }
+    }
+
+    /// Regression: when the 4 trailing message bits plus the SHAKE "1111" suffix exactly fill a byte,
+    /// the sponge must still switch to squeezing, otherwise the first squeeze appended a second suffix.
+    /// Vector: NIST CAVP SHA3VS SHAKE128ShortMsg (bit-oriented), Len = 4, Msg = 08.
+    #[test]
+    fn absorb_last_partial_byte_four_bits() {
+        let mut shake = SHAKE128::new();
+        shake.absorb_last_partial_byte(0x08, 4).unwrap();
+        assert_eq!(
+            shake.squeeze(16),
+            bouncycastle_hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
+            "SHAKE128 of the 4-bit message 0001"
+        );
+    }
+
+    /// absorb_last_partial_byte() must validate num_partial_bits before shifting: 0 is allowed
+    /// (finalize with no partial byte), 8+ is rejected with InvalidLength rather than panicking.
+    #[test]
+    fn absorb_last_partial_byte_validates_range() {
+        for bad in [8usize, 9, 15, 16, 64, usize::MAX] {
+            let mut shake = SHAKE128::new();
+            shake.absorb(b"abc").unwrap();
+            assert!(
+                matches!(
+                    shake.absorb_last_partial_byte(0xFF, bad),
+                    Err(HashError::InvalidLength(_))
+                ),
+                "num_partial_bits={bad}"
+            );
+        }
+        let mut a = SHAKE128::new();
+        a.absorb(b"abc").unwrap();
+        a.absorb_last_partial_byte(0xFF, 0).unwrap();
+        assert_eq!(a.squeeze(32), SHAKE128::new().hash_xof(b"abc", 32));
+
+        // Upper boundary: 7 bits is the largest valid partial byte and must be accepted, and must
+        // actually change the output relative to the byte-aligned message.
+        let mut b = SHAKE128::new();
+        b.absorb(b"abc").unwrap();
+        b.absorb_last_partial_byte(0x7F, 7).unwrap();
+        assert_ne!(b.squeeze(32), SHAKE128::new().hash_xof(b"abc", 32));
     }
 
     /// Once squeezing has begun, a SHAKE cannot return to absorbing (FIPS 202 defines SHAKE as a
@@ -100,7 +171,7 @@ mod shake_tests {
 
     #[test]
     fn test_update_bytes() {
-        for tc in read_test_vectors("tests/data/SHAKETestVectors.txt") {
+        for tc in read_test_vectors("SHAKETestVectors.txt") {
             //println!("SHAKE-{} {}-bits", &tc.algorithm, &tc.bits);
             //println!("msg {}", hex::encode_upper(&tc.msg));
             //println!("hashes {}", hex::encode_upper(&tc.output));
@@ -271,7 +342,21 @@ mod shake_tests {
 
     #[test]
     fn run_kats() {
-        run_test_vectors(read_test_vectors("tests/data/SHAKETestVectors.txt"));
+        run_test_vectors(read_test_vectors("SHAKETestVectors.txt"));
+    }
+
+    #[test]
+    fn test_framework_xof() {
+        let test_framework = TestFrameworkXOF::new();
+        test_framework.test_xof::<SHAKE128>(&DUMMY_SEED[..512], b"\x88\x90\xED\x20\x4D\x22\x89\xE1\x72\xE9\xAE\x68\x48\x18\x23\x77\x08\x20\x90\x80\x60\xA4\xDF\x33\x51\xA3\xF1\x84\xEB\xB6\xDD\x0F\x9D\x23\x15\x60\x68\x0F\x2C\x65\x8A\xC4\x84\x97\xAD\xB5\xA4\x83\x99\x36\xA3\x16\x55\x16\xFA\x5E\x13\xBF\x8A\x15\xBA\xBC\x14\x1F");
+        test_framework.test_xof::<SHAKE256>(&DUMMY_SEED[..512], b"\xA1\xD7\x18\x85\xB0\xA8\x41\xF0\x3D\x1D\xC7\xF2\x73\x8A\x15\xCC\x98\x40\x71\xA1\x7F\xFE\xD5\xEC\xAC\xB9\xF5\x87\x20\xA4\x73\xBE\x1F\x2D\x28\xB9\x6D\x54\x3A\x36\x7C\x81\x11\x42\x06\xF5\xAF\x37\x18\xE7\x31\x5B\x57\xF2\x90\xB6\x4D\x8D\x29\xCF\x43\x7E\x40\x4C");
+    }
+
+    #[test]
+    fn test_framework_xof() {
+        let test_framework = TestFrameworkXOF::new();
+        test_framework.test_xof::<SHAKE128>(&DUMMY_SEED[..512], b"\x88\x90\xED\x20\x4D\x22\x89\xE1\x72\xE9\xAE\x68\x48\x18\x23\x77\x08\x20\x90\x80\x60\xA4\xDF\x33\x51\xA3\xF1\x84\xEB\xB6\xDD\x0F\x9D\x23\x15\x60\x68\x0F\x2C\x65\x8A\xC4\x84\x97\xAD\xB5\xA4\x83\x99\x36\xA3\x16\x55\x16\xFA\x5E\x13\xBF\x8A\x15\xBA\xBC\x14\x1F");
+        test_framework.test_xof::<SHAKE256>(&DUMMY_SEED[..512], b"\xA1\xD7\x18\x85\xB0\xA8\x41\xF0\x3D\x1D\xC7\xF2\x73\x8A\x15\xCC\x98\x40\x71\xA1\x7F\xFE\xD5\xEC\xAC\xB9\xF5\x87\x20\xA4\x73\xBE\x1F\x2D\x28\xB9\x6D\x54\x3A\x36\x7C\x81\x11\x42\x06\xF5\xAF\x37\x18\xE7\x31\x5B\x57\xF2\x90\xB6\x4D\x8D\x29\xCF\x43\x7E\x40\x4C");
     }
 
     #[test]
@@ -381,6 +466,34 @@ mod shake_tests {
 pub(crate) mod shake_test_helpers {
     use bouncycastle_hex as hex;
     use std::fs;
+    use std::path::Path;
+    use std::sync::Once;
+
+    // Test vectors are read from the bc-test-data repo (https://github.com/bcgit/bc-test-data),
+    // which must be cloned alongside this repo at "../bc-test-data" (same convention as the mldsa
+    // and mlkem crates). If it is not present the vector tests print a warning and pass vacuously.
+    const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto";
+    const TEST_DATA_PATH: &str = "../bc-test-data/crypto";
+
+    static TEST_DATA_CHECK: Once = Once::new();
+
+    /// Returns the contents of `filename` from bc-test-data, or `None` (after a one-time warning)
+    /// if the repo is not checked out.
+    fn get_test_data(filename: &str) -> Option<String> {
+        let dir =
+            [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH].into_iter().find(|d| Path::new(d).exists());
+        TEST_DATA_CHECK.call_once(|| match dir {
+            Some(d) => println!("bc-test-data found at: {d:?}"),
+            None => {
+                println!("WARNING: bc-test-data directory not found; vector tests will be skipped")
+            }
+        });
+        let dir = dir?;
+        Some(
+            fs::read_to_string(format!("{dir}/{filename}"))
+                .expect("failed to read test vector file"),
+        )
+    }
 
     const SAMPLE_OF: &str = " sample of ";
     const MSG_HEADER: &str = "Msg as bit string";
@@ -393,10 +506,14 @@ pub(crate) mod shake_test_helpers {
         pub(crate) output: Vec<u8>,
     }
 
-    pub(crate) fn read_test_vectors(path: &str) -> Vec<TestCase> {
+    /// Parses the named NIST FIPS 202 example-vector file from bc-test-data. Returns an empty list
+    /// (skipping the test) if bc-test-data is not available.
+    pub(crate) fn read_test_vectors(filename: &str) -> Vec<TestCase> {
         let mut test_vectors: Vec<TestCase> = vec![];
-        let string_content: Vec<String> =
-            fs::read_to_string(path).unwrap().lines().map(String::from).collect();
+        let Some(content) = get_test_data(filename) else {
+            return test_vectors;
+        };
+        let string_content: Vec<String> = content.lines().map(String::from).collect();
 
         let mut i = 0;
         while i < string_content.len() {

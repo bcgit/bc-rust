@@ -55,20 +55,31 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
 
     /// Swallows errors and simply returns an empty Vec<u8> if the hashes fails for whatever reason.
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        // Infallible: this is the only absorb, and it precedes the squeeze below.
-        self.absorb(data).expect("absorb precedes squeeze on a fresh SHAKE");
+        // The absorb fails if this object has already begun squeezing, which the caller is free to
+        // have done: these one-shot APIs take `self`, they do not require a fresh object.
+        if self.absorb(data).is_err() {
+            return Vec::new();
+        }
         self.squeeze(result_len)
     }
 
+    /// Swallows errors and simply returns 0, leaving `output` zeroized, if the hashes fails for
+    /// whatever reason.
     fn hash_internal_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         output.fill(0);
 
-        // Infallible: this is the only absorb, and it precedes the squeeze below.
-        self.absorb(data).expect("absorb precedes squeeze on a fresh SHAKE");
+        // The absorb fails if this object has already begun squeezing, which the caller is free to
+        // have done: these one-shot APIs take `self`, they do not require a fresh object.
+        if self.absorb(data).is_err() {
+            return 0;
+        }
         self.squeeze_out(output)
     }
 
-    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
+    /// Returns [`KDFError::HashError`] wrapping a [`HashError::InvalidState`] if this object has
+    /// already begun squeezing, since key material absorbed after that point would not contribute
+    /// to the derived key.
+    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) -> Result<(), KDFError> {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
 
@@ -76,16 +87,16 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         if key.is_full_entropy() {
             self.kdf_entropy += key.key_len();
             self.kdf_security_strength =
-                max(&self.kdf_security_strength, &key.security_strength()).clone();
-            self.kdf_security_strength = min(
+                *max(&self.kdf_security_strength, &key.security_strength());
+            self.kdf_security_strength = *min(
                 &self.kdf_security_strength,
                 &SecurityStrength::from_bits(PARAMS::SIZE as usize),
-            )
-            .clone();
+            );
         }
 
-        // Infallible: mix_key_internal is only called during the absorb phase, before any squeeze.
-        self.absorb(key.ref_to_bytes()).expect("absorb precedes squeeze during key mixing");
+        // The absorb fails if this object has already begun squeezing, which the caller is free to
+        // have done: the KDF entry points take `self`, they do not require a fresh object.
+        Ok(self.absorb(key.ref_to_bytes())?)
     }
 
     fn derive_key_final_internal(
@@ -117,13 +128,12 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         // TODO: The intuition behind this is that SHAKE256 and SHA3-256 are both KECCAK[512], and SHAKE128 is KECCAK[256],
         // TODO: However, it is necessary to find an actual reference for this "fully-seeded" threshold.
         if self.kdf_entropy < 2 * (PARAMS::SIZE as usize) / 8 {
-            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::Unknown).clone();
+            self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
-        // Infallible: additional_input is absorbed before the squeeze below, and this method is only
-        // reached during the absorb phase.
-        self.absorb(additional_input).expect("absorb precedes squeeze during key derivation");
+        // As in mix_key_internal(): the absorb fails if this object has already begun squeezing.
+        self.absorb(additional_input)?;
 
         let mut bytes_written: usize = 0;
         key_material::do_hazardous_operations(output_key, |output_key| {
@@ -139,10 +149,10 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         }
         key_material::do_hazardous_operations(output_key, |output_key| {
             output_key.set_key_type(self.kdf_key_type)?;
-            output_key.set_security_strength(
-                min(&self.kdf_security_strength, &SecurityStrength::from_bits(bytes_written * 8))
-                    .clone(),
-            )
+            output_key.set_security_strength(*min(
+                &self.kdf_security_strength,
+                &SecurityStrength::from_bits(bytes_written * 8),
+            ))
         })?;
         Ok(bytes_written)
     }
@@ -206,7 +216,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         // self.derive_key_from_multiple(&[key], additional_input)
-        self.mix_key_internal(key);
+        self.mix_key_internal(key)?;
         self.derive_key_final_internal(additional_input)
     }
 
@@ -217,7 +227,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // self.derive_key_from_multiple_out(&[key], additional_input, output)
-        self.mix_key_internal(key);
+        self.mix_key_internal(key)?;
         self.derive_key_out_final_internal(additional_input, output_key)
     }
 
@@ -236,7 +246,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key);
+            self.mix_key_internal(*key)?;
         }
         self.derive_key_final_internal(additional_input)
     }
@@ -248,7 +258,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key);
+            self.mix_key_internal(*key)?;
         }
         self.derive_key_out_final_internal(additional_input, output_key)
     }
@@ -270,8 +280,7 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
     }
 
     fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
+        // hash_internal_out zeroizes `output` before writing.
         self.hash_internal_out(data, output)
     }
 
@@ -304,8 +313,9 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         if self.keccak.squeezing {
             return Err(HashError::InvalidState("cannot absorb after squeezing has begun"));
         }
-        if !(1..=7).contains(&num_partial_bits) {
-            return Err(HashError::InvalidLength("must be in the range [0,7]"));
+        // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
         // Mutants note: This is just bit-setting into empty space.
         // It works the same regardless of whether it's OR or XOR.
@@ -354,15 +364,19 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         num_bits: usize,
         output: &mut u8,
     ) -> Result<(), HashError> {
-        if !(1..=7).contains(&num_bits) {
-            return Err(HashError::InvalidLength("must be in the range [0,7]"));
+        // A partial byte has at most 7 bits; 0 means no bits are requested. Checked before the shift
+        // below, which would overflow for num_bits >= 8.
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
         }
 
         *output = 0;
 
+        // Via squeeze_out() so the SHAKE "1111" suffix (FIPS 202 s. 6.2) is applied on a first squeeze.
         let mut buf = [0u8; 1];
-        self.keccak.squeeze(&mut buf);
-        *output = buf[0] >> 8 - num_bits;
+        self.squeeze_out(&mut buf);
+
+        *output = buf[0] & ((1u8 << num_bits) - 1);
         Ok(())
     }
 

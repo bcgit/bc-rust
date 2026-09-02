@@ -21,6 +21,7 @@ pub mod mac;
 pub mod signature;
 pub mod suspendable_state;
 pub mod symmetric_ciphers;
+pub mod xof;
 
 mod fixed_seed_rng;
 pub use fixed_seed_rng::FixedSeedRNG;

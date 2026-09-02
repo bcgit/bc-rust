@@ -306,26 +306,26 @@ pub trait Hash: Algorithm + Default {
     /// The entire output buffer is zeroized before the hash output is written, so any bytes past
     /// [`Hash::output_len`] will be 0.
     ///
+    /// The output byte is zeroized before the result is written.
     /// The return value is the number of bytes written.
     fn do_final_out(self, output: &mut [u8]) -> usize;
 
     /// The same as [`Hash::do_final`], but allows for supplying a partial byte as the last input.
-    /// Assumes that the input is in the least significant bits (big endian).
-    fn do_final_partial_bits(
-        self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<Vec<u8>, HashError>;
+    /// The `num_bits` message bits are taken from the least significant bits of
+    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
+    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library.
+    /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`Hash::do_final`]).
+    /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
+    fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)
+    -> Result<Vec<u8>, HashError>;
 
-    /// The same as [`Hash::do_final_out`], but allows for supplying a partial byte as the last input.
-    /// Assumes that the input is in the least significant bits (big endian).
-    /// will be placed in the first [`Hash::output_len`] bytes.
-    /// The entire output buffer is zeroized before the hash output is written.
+    /// The same as [`Hash::do_final_partial_bits`], but takes the output buffer as an argument.
+    /// The output byte is zeroized before the result is written.
     /// The return value is the number of bytes written.
     fn do_final_partial_bits_out(
         self,
         partial_byte: u8,
-        num_partial_bits: usize,
+        num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError>;
 
@@ -1057,6 +1057,15 @@ pub trait SignatureVerifier<
 /// to break anonymity-preserving technology.
 /// Applications that require the arbitrary-length output of an XOF, but also care about these
 /// distinguishing attacks should consider adding a cryptographic salt to diversify the inputs.
+///
+/// # State and Absorb-after-Squeeze
+/// This trait makes the design choice that an XOF consists of an absorb phase followed by a squeeze phase.
+/// This means that once the XOF has begun squeezing, attempting to absorb more will return
+/// [`HashError::InvalidState`] and leave the object usable for further squeezing.
+///
+/// Without this restriction, the [`XOF::absorb_last_partial_byte`] API cannot function correctly.
+///
+/// If Absorb-after-Squeeze becomes necessary to support in the future, then these design choices can be revisited.
 pub trait XOF: Default {
     /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
     fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8>;
@@ -1069,11 +1078,19 @@ pub trait XOF: Default {
     /// Absorb some amount of input.
     fn absorb(&mut self, data: &[u8]) -> Result<(), HashError>;
 
-    /// Switches to squeezing.
+    /// The same as [`XOF::absorb`], but allows for supplying a partial byte as the last input.
+    /// The `num_bits` message bits are taken from the least significant bits of
+    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
+    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library.
+    /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`XOF::absorb`]).
+    /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
+    ///
+    /// Unlike [`XOF::absorb`], this switches the XOF from Absorbing mode into Squeezing mode because
+    /// absorbing more input after absorbing a partial byte is undefined behaviour.
     fn absorb_last_partial_byte(
         &mut self,
         partial_byte: u8,
-        num_partial_bits: usize,
+        num_bits: usize,
     ) -> Result<(), HashError>;
 
     /// Can be called multiple times.
@@ -1084,8 +1101,13 @@ pub trait XOF: Default {
     /// The entire output buffer is zeroized before the output is written.
     fn squeeze_out(&mut self, output: &mut [u8]) -> usize;
 
-    /// Squeezes a partial byte from the XOF.
-    /// Output will be in the top `num_bits` bits of the returned u8 (ie Big Endian).
+    /// Squeezes a partial byte (`num_bits` in `0..=7`) from the XOF.
+    /// The bits are returned in the least significant `num_bits` bits of the returned u8, with the
+    /// remaining high bits zero. This follows the FIPS 202 Appendix B.1 bit-string convention
+    /// (the first bit of a byte is its least significant bit) and matches the input convention of
+    /// [`XOF::absorb_last_partial_byte`].
+    /// 0 is a valid value and requests no bits, so the result is `0x00`.
+    /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     /// This is a final call and consumes self.
     fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError>;
 

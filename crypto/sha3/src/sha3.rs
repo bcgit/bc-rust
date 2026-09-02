@@ -15,7 +15,7 @@ use bouncycastle_utils::{max, min};
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
 pub struct SHA3Internal<PARAMS: SHA3Params> {
-    _params: std::marker::PhantomData<PARAMS>,
+    _params: core::marker::PhantomData<PARAMS>,
     keccak: KeccakInternal,
     kdf_key_type: KeyType,
     kdf_security_strength: SecurityStrength,
@@ -28,7 +28,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     /// Get a new SHA3 instance, ready for use.
     pub fn new() -> Self {
         Self {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             keccak: KeccakInternal::new(PARAMS::SIZE),
             kdf_key_type: KeyType::Zeroized,
             kdf_security_strength: SecurityStrength::None,
@@ -44,6 +44,49 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         self.do_final_out(output)
     }
 
+    /// Appends the SHA3 domain-separation suffix and pads as per FIPS 202 s. 6.1, then squeezes the digest.
+    ///
+    /// Private, infallible body shared by [`Hash::do_final_out`] and [`Hash::do_final_partial_bits_out`].
+    /// `num_partial_bits` (0..=7, validated by the caller) trailing message bits are taken from the
+    /// least significant bits of `partial_byte` (FIPS 202 Appendix B.1 bit ordering). FIPS 202 s. 6.1
+    /// defines SHA3-d(M) = KECCAK[c](M || 01, d), so the two suffix bits are appended directly above
+    /// the message bits; pad10*1 is then applied by the sponge when it switches to squeezing.
+    ///
+    /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
+    /// truncates the digest, a longer one is zero-filled past the digest.
+    fn do_final_bits_out(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
+        debug_assert!(num_partial_bits <= 7);
+        output.fill(0);
+
+        // Mutants note: This is just bit-setting into empty space.
+        // It works the same regardless of whether it's OR or XOR.
+        let mut final_input: u16 =
+            ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);
+        let mut final_bits = num_partial_bits + 2;
+
+        // If message bits + suffix fill a whole byte, absorb it as a normal byte first.
+        if final_bits >= 8 {
+            self.keccak.absorb(&[final_input as u8]);
+            final_bits -= 8;
+            final_input >>= 8;
+        }
+
+        // Infallible: the queue is byte-aligned here, final_bits is in 0..=7 by construction, and a
+        // Hash object cannot have started squeezing (do_final_bits_out consumes self and is the only squeeze path).
+        self.keccak
+            .absorb_bits(final_input as u8, final_bits)
+            .expect("absorb_bits is infallible on a byte-aligned, not-yet-squeezing Hash");
+
+        // Truncate to OUTPUT_LEN if the caller supplied a larger buffer (see the Hash trait docs).
+        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
+        self.keccak.squeeze(&mut output[..n])
+    }
+
     fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
@@ -52,12 +95,11 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         if key.is_full_entropy() {
             self.kdf_entropy += key.key_len();
             self.kdf_security_strength =
-                max(&self.kdf_security_strength, &key.security_strength()).clone();
-            self.kdf_security_strength = min(
+                *max(&self.kdf_security_strength, &key.security_strength());
+            self.kdf_security_strength = *min(
                 &self.kdf_security_strength,
                 &SecurityStrength::from_bits(PARAMS::OUTPUT_LEN * 8 / 2),
-            )
-            .clone();
+            );
         }
 
         self.do_update(key.ref_to_bytes())
@@ -82,14 +124,14 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         // it requires full-entropy input that is at least block length.
         // TODO: citation needed (NIST)
         if self.kdf_entropy < PARAMS::OUTPUT_LEN {
-            self.kdf_key_type = min(&self.kdf_key_type, &KeyType::Unknown).clone();
+            self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
         }
 
         self.do_update(additional_input);
 
-        let mut key_type = self.kdf_key_type.clone();
-        let output_security_strength = self.kdf_security_strength.clone();
+        let mut key_type = self.kdf_key_type;
+        let output_security_strength = self.kdf_security_strength;
         let mut bytes_written: usize = 0;
         key_material::do_hazardous_operations(output_key, |output_key| {
             bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
@@ -107,16 +149,17 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         }
         key_material::do_hazardous_operations(&mut *output_key, |output_key| {
             output_key.set_key_type(key_type)?;
-            output_key.set_security_strength(
-                min(&output_security_strength, &SecurityStrength::from_bits(bytes_written * 8)).clone(),
-            )
+            output_key.set_security_strength(*min(
+                &output_security_strength,
+                &SecurityStrength::from_bits(bytes_written * 8),
+            ))
         })
         .expect(
             "both set_key_type() and set_security_strength() should be infallible within a hazop block",
         );
 
         output_key
-            .set_key_len(min(&output_key.key_len(), &PARAMS::OUTPUT_LEN).clone())
+            .set_key_len(*min(&output_key.key_len(), &PARAMS::OUTPUT_LEN))
             .expect("should be infallible to truncate key length");
         Ok(bytes_written)
     }
@@ -150,10 +193,8 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         output
     }
 
-    fn hash_out(self, data: &[u8], mut output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        self.hash_internal(data, &mut output)
+    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        self.hash_internal(data, output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -171,21 +212,9 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
 
     // TODO: investigate why this doesn't take a &mut [u8; HASH_LEN]
     // Being able to do so would improve ergonomics
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        // this shouldn't fail because, by construction, the function is only called once,
-        // and this is the only way to absorb partial bits.
-        self.keccak.absorb_bits(0x02, 2).expect("do_final_out: keccak.absorb_bits failed.");
-
-        let bytes_written = if output.len() <= self.output_len() {
-            self.keccak.squeeze(output)
-        } else {
-            let min =
-                if output.len() >= self.output_len() { self.output_len() } else { output.len() };
-            self.keccak.squeeze(&mut output[..min])
-        };
-        bytes_written
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        // A whole-byte message is the zero-partial-bits case of the general finalization.
+        self.do_final_bits_out(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -193,21 +222,21 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         partial_byte: u8,
         num_partial_bits: usize,
     ) -> Result<Vec<u8>, HashError> {
-        let dbg_rslt_len = self.output_len();
-        let mut output: Vec<u8> = vec![0u8; self.output_len()];
-        let bytes_written =
-            self.do_final_partial_bits_out(partial_byte, num_partial_bits, output.as_mut_slice())?;
-        debug_assert_eq!(bytes_written, dbg_rslt_len);
-
+        let mut output: Vec<u8> = vec![0u8; PARAMS::OUTPUT_LEN];
+        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
         Ok(output)
     }
 
     fn do_final_partial_bits_out(
-        mut self,
+        self,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
+        }
         output.fill(0);
 
         // Mutants note: This is just bit-setting into empty space.
@@ -221,11 +250,7 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
             final_bits -= 8;
             final_input >>= 8;
         }
-
-        self.keccak.absorb_bits(final_input as u8, final_bits)?;
-
-        let min = if output.len() >= self.output_len() { self.output_len() } else { output.len() };
-        Ok(self.keccak.squeeze(&mut output[..min]))
+        Ok(self.do_final_bits_out(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -321,7 +346,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
         Ok(SHA3Internal {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             keccak,
             kdf_key_type,
             kdf_security_strength,

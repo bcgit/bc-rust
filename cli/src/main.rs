@@ -119,7 +119,7 @@ enum Subcommands {
         /// Length of the output in bytes.
         length: usize,
 
-        #[arg(long)]
+        #[arg(short)]
         /// Output the hashes in hex format.
         x: bool,
     },
