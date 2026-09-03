@@ -292,99 +292,141 @@ fn bench_cfb_aes128(c: &mut Criterion) {
 
     // ---- encryption: serial. Oj+1 = CIPH_K(Cj), and Cj is the previous call's output ----
     group.bench_function("16KiB encrypt -- N=1", |b| {
-        b.iter(|| {
-            let (mut enc, _) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
-            for block in blocks.iter() {
-                black_box(enc.do_encrypt(block).unwrap());
-            }
-        })
+        b.iter_batched(
+            || blocks.clone(),
+            |mut scratch| {
+                let (mut enc, _) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                for block in scratch.iter_mut() {
+                    enc.do_encrypt(block).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     group.bench_function("16KiB encrypt -- N=8", |b| {
-        b.iter(|| {
-            let (mut enc, _) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
-            for chunk in blocks.chunks_exact(8) {
-                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(enc.do_encrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || blocks.clone(),
+            |mut scratch| {
+                let (mut enc, _) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    enc.do_encrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     // ---- decryption: parallel, and uses `encrypt_blocks2` -- the FORWARD pair method ----
     let (mut enc, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
-    let ciphertext: Vec<[u8; BLOCK_LEN]> = blocks
-        .chunks_exact(8)
-        .flat_map(|chunk| {
-            let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-            let mut out = [[0u8; BLOCK_LEN]; 8];
-            enc.do_encrypt_blocks_out(arr, &mut out).unwrap();
-            out
-        })
-        .collect();
+    let mut ciphertext = blocks.clone();
+    for chunk in ciphertext.chunks_exact_mut(8) {
+        let arr: &mut [[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
+        enc.do_encrypt_blocks(arr).unwrap();
+    }
 
     // N=1 never forms a pair, so this is the single-block path: the ratio against encrypt should
     // be about 1.
     group.bench_function("16KiB decrypt -- N=1 (no pairing)", |b| {
-        b.iter(|| {
-            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
-            for block in ciphertext.iter() {
-                black_box(dec.do_decrypt(block).unwrap());
-            }
-        })
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                for block in scratch.iter_mut() {
+                    dec.do_decrypt(block).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     // N=2 and N=8 are all pairs, so every block goes through encrypt_blocks2.
     group.bench_function("16KiB decrypt -- N=2 (all pairs)", |b| {
-        b.iter(|| {
-            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
-            for chunk in ciphertext.chunks_exact(2) {
-                let arr: &[u8; 2 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(dec.do_decrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                for chunk in scratch.chunks_exact_mut(2) {
+                    let arr: &mut [u8; 2 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    dec.do_decrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     group.bench_function("16KiB decrypt -- N=8 (all pairs)", |b| {
-        b.iter(|| {
-            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
-            for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(dec.do_decrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    dec.do_decrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     // N=9 is four pairs plus a one-block remainder, so it exercises the tail path too.
     group.bench_function("16KiB decrypt -- N=9 (pairs + remainder)", |b| {
-        b.iter(|| {
-            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
-            for chunk in ciphertext.chunks_exact(9) {
-                let arr: &[u8; 9 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(dec.do_decrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                for chunk in scratch.chunks_exact_mut(9) {
+                    let arr: &mut [u8; 9 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    dec.do_decrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     // The controlled comparison: identical N, identical cipher, pair methods overridden vs not.
     // This pair of numbers -- and only this pair -- measures what `encrypt_blocks2` buys CFB.
     group.bench_function("16KiB decrypt -- N=8, pair path (blocks2 overridden)", |b| {
-        b.iter(|| {
-            let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
-            for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(dec.do_decrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    dec.do_decrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     group.bench_function("16KiB decrypt -- N=8, no pair path (trait default)", |b| {
-        b.iter(|| {
-            let mut dec = UnpairedAes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
-            for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(dec.do_decrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let mut dec = UnpairedAes128Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    dec.do_decrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     group.finish();
@@ -398,34 +440,42 @@ fn bench_cfb_aes256(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB encrypt -- N=8", |b| {
-        b.iter(|| {
-            let (mut enc, _) = Aes256Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
-            for chunk in blocks.chunks_exact(8) {
-                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(enc.do_encrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || blocks.clone(),
+            |mut scratch| {
+                let (mut enc, _) = Aes256Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    enc.do_encrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     let (mut enc, iv) = Aes256Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
-    let ciphertext: Vec<[u8; BLOCK_LEN]> = blocks
-        .chunks_exact(8)
-        .flat_map(|chunk| {
-            let arr: &[[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-            let mut out = [[0u8; BLOCK_LEN]; 8];
-            enc.do_encrypt_blocks_out(arr, &mut out).unwrap();
-            out
-        })
-        .collect();
+    let mut ciphertext = blocks.clone();
+    for chunk in ciphertext.chunks_exact_mut(8) {
+        let arr: &mut [[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
+        enc.do_encrypt_blocks(arr).unwrap();
+    }
 
     group.bench_function("16KiB decrypt -- N=8 (all pairs)", |b| {
-        b.iter(|| {
-            let mut dec = Aes256Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
-            for chunk in ciphertext.chunks_exact(8) {
-                let arr: &[u8; 8 * BLOCK_LEN] = chunk.as_flattened().try_into().unwrap();
-                black_box(dec.do_decrypt(arr).unwrap());
-            }
-        })
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let mut dec = Aes256Cfb::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    dec.do_decrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     group.finish();

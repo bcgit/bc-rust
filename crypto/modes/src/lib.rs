@@ -105,13 +105,16 @@
 //!     .expect("a 16-byte symmetric cipher key");
 //! let plaintext = [0x5Au8; 32];
 //!
-//! let (iv, ciphertext) = Aes128Cfb::<Encrypting>::encrypt(&key, &plaintext).expect("encryption");
-//! let recovered = Aes128Cfb::<Decrypting>::decrypt(&key, &iv, &ciphertext).expect("decryption");
+//! let mut ciphertext = plaintext;
+//! let iv = Aes128Cfb::<Encrypting>::encrypt(&key, &mut ciphertext).expect("encryption");
+//! let mut recovered = ciphertext;
+//! Aes128Cfb::<Decrypting>::decrypt(&key, &iv, &mut recovered).expect("decryption");
 //! assert_eq!(recovered, plaintext);
 //!
 //! // The modes are not interchangeable: a ciphertext must be decrypted with the mode that
 //! // produced it, and nothing at the type level stops you getting that wrong.
-//! let as_if_cbc = Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &ciphertext).expect("decryption");
+//! let mut as_if_cbc = ciphertext;
+//! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut as_if_cbc).expect("decryption");
 //! assert_ne!(as_if_cbc, plaintext);
 //! ```
 //!

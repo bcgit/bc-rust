@@ -53,9 +53,9 @@ pub(crate) const BLOCK_LEN: usize = 16;
 
 /// Bytes processed per call: 1 KiB = 64 blocks, matching the other streaming commands.
 ///
-/// A full chunk goes through `do_*_out::<CHUNK_LEN>` in one call, which for decryption means 32
-/// pairs down the mode's two-block path. The at-most-63-block tail at end of input goes one block
-/// at a time; it is bounded, so its cost does not scale with the input.
+/// A full chunk goes through `do_*::<CHUNK_LEN>` in one call, in place, which for decryption means
+/// 32 pairs down the mode's two-block path. The at-most-63-block tail at end of input goes one
+/// block at a time; it is bounded, so its cost does not scale with the input.
 pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 
 /// Which direction to run. Shared by every mode subcommand.
@@ -151,20 +151,18 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize>(
     // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up.
     write_bytes_or_hex(&iv, output_hex);
 
-    let mut out = [0u8; CHUNK_LEN];
-
-    stream_aligned(mode, |data| match <&[u8; CHUNK_LEN]>::try_from(data) {
-        Ok(chunk) => {
-            // Cannot fail: the mode's block methods are infallible for a constructed value.
-            enc.do_encrypt_out(chunk, &mut out).unwrap();
-            write_bytes_or_hex(&out, output_hex);
-        }
-        Err(_) => {
+    // The cipher works in place: `data` holds plaintext on the way in and ciphertext on the way out.
+    stream_aligned(mode, |data| {
+        if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
+            // Cannot fail: neither mode has a per-IV data limit.
+            enc.do_encrypt(chunk).unwrap();
+        } else {
             // The bounded tail at end of input: whole blocks, fewer than a chunk.
-            for block in data.as_chunks::<BLOCK_LEN>().0 {
-                write_bytes_or_hex(&enc.do_encrypt(block).unwrap(), output_hex);
+            for block in data.as_chunks_mut::<BLOCK_LEN>().0 {
+                enc.do_encrypt(block).unwrap();
             }
         }
+        write_bytes_or_hex(data, output_hex);
     });
 
     finish(output_hex);
@@ -193,32 +191,29 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize>(
         exit(-1);
     });
 
-    let mut out = [0u8; CHUNK_LEN];
-
-    stream_aligned(mode, |data| match <&[u8; CHUNK_LEN]>::try_from(data) {
-        Ok(chunk) => {
+    stream_aligned(mode, |data| {
+        if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
             // A full chunk is 32 pairs, so this is the mode's two-block path.
-            dec.do_decrypt_out(chunk, &mut out).unwrap();
-            write_bytes_or_hex(&out, output_hex);
-        }
-        Err(_) => {
-            for block in data.as_chunks::<BLOCK_LEN>().0 {
-                write_bytes_or_hex(&dec.do_decrypt(block).unwrap(), output_hex);
+            dec.do_decrypt(chunk).unwrap();
+        } else {
+            for block in data.as_chunks_mut::<BLOCK_LEN>().0 {
+                dec.do_decrypt(block).unwrap();
             }
         }
+        write_bytes_or_hex(data, output_hex);
     });
 
     finish(output_hex);
 }
 
-/// Reads stdin and hands it to `process` in block-aligned pieces: a full `CHUNK_LEN` bytes each time
-/// one has accumulated, then once more at end of input with whatever whole blocks remain (fewer
-/// than a chunk). Reads need not respect block or chunk boundaries -- bytes simply accumulate in the
+/// Reads stdin and hands it to `process` in block-aligned pieces, mutably so it can be transformed
+/// in place: a full `CHUNK_LEN` bytes each time one has accumulated, then once more at end of input
+/// with whatever whole blocks remain (fewer than a chunk). Reads need not respect block or chunk boundaries -- bytes simply accumulate in the
 /// buffer until it is full -- so a block split across two reads needs no special handling.
 ///
 /// Input whose total length is not a multiple of `BLOCK_LEN` is an error, because neither mode is
 /// defined on a partial block and these commands do not pad.
-fn stream_aligned(mode: &str, mut process: impl FnMut(&[u8])) {
+fn stream_aligned(mode: &str, mut process: impl FnMut(&mut [u8])) {
     let mut buf = [0u8; CHUNK_LEN];
     let mut filled = 0usize;
 
@@ -232,12 +227,12 @@ fn stream_aligned(mode: &str, mut process: impl FnMut(&[u8])) {
         }
         filled += n;
         if filled == CHUNK_LEN {
-            process(&buf);
+            process(&mut buf);
             filled = 0;
         }
     }
 
-    if filled % BLOCK_LEN != 0 {
+    if !filled.is_multiple_of(BLOCK_LEN) {
         eprintln!(
             "Error: input is not a whole number of {BLOCK_LEN}-byte blocks ({} trailing byte(s)). \
              {mode} is defined only on whole blocks (SP 800-38A Sec 5.2), and these commands apply \
@@ -247,7 +242,7 @@ fn stream_aligned(mode: &str, mut process: impl FnMut(&[u8])) {
         exit(-1);
     }
     if filled != 0 {
-        process(&buf[..filled]);
+        process(&mut buf[..filled]);
     }
 }
 

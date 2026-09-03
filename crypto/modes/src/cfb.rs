@@ -77,8 +77,7 @@ use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    BlockCipher, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, RNG,
-    SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, RNG, SecurityStrength,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
@@ -128,29 +127,30 @@ where
         o
     }
 
-    /// `Cj = Pj XOR Oj`, then `Cj` becomes the next input block.
+    /// `Cj = Pj XOR Oj` in place, then `Cj` becomes the next input block.
     #[inline]
-    fn encrypt_one(&mut self, plaintext: &[u8; BLOCK_LEN], ciphertext: &mut [u8; BLOCK_LEN]) {
+    fn encrypt_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
         let o = self.keystream();
-        for (out, (p, o)) in ciphertext.iter_mut().zip(plaintext.iter().zip(o.iter())) {
-            *out = *p ^ *o;
+        for (b, o) in block.iter_mut().zip(o.iter()) {
+            *b ^= *o;
         }
         // I_{j+1} = Cj. Serial: this is the input to the next cipher call.
-        self.chain = *ciphertext;
+        self.chain = *block;
     }
 
-    /// `Pj = Cj XOR Oj`, then `Cj` -- the *ciphertext*, not the recovered plaintext -- becomes the
-    /// next input block.
+    /// `Pj = Cj XOR Oj` in place, then `Cj` -- the *ciphertext*, not the recovered plaintext --
+    /// becomes the next input block. `Cj` is overwritten by `Pj`, so it is copied first.
     #[inline]
-    fn decrypt_one(&mut self, ciphertext: &[u8; BLOCK_LEN], plaintext: &mut [u8; BLOCK_LEN]) {
-        let o = self.keystream();
-        for (out, (c, o)) in plaintext.iter_mut().zip(ciphertext.iter().zip(o.iter())) {
-            *out = *c ^ *o;
-        }
+    fn decrypt_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
         // `I_{j+1} = C#_j` of the spec equations: the ciphertext segment is what is fed back.
         // Feeding back the plaintext instead would still decrypt the first block correctly and
         // nothing after it, which is why `cfb_tests.rs` checks exactly that.
-        self.chain = *ciphertext;
+        let cj = *block;
+        let o = self.keystream();
+        for (b, o) in block.iter_mut().zip(o.iter()) {
+            *b ^= *o;
+        }
+        self.chain = cj;
     }
 
     /// Decrypts two consecutive blocks with one [`BlockPermutation::encrypt_blocks2`] call.
@@ -167,34 +167,36 @@ where
     /// just `Cj`, which the caller supplied -- so the two forward ciphers are independent and
     /// computing them together changes nothing. This is precisely the parallelism Sec 6.3 describes,
     /// with the input blocks "first constructed (in series) from the IV and the ciphertext".
+    ///
+    /// In place: the two input blocks are the keystream buffer, so the ciphertext is never
+    /// overwritten before it has been read, and only `Cj+1` needs copying for the chaining value.
     #[inline]
-    fn decrypt_pair(
-        &mut self,
-        ciphertext: &[[u8; BLOCK_LEN]; 2],
-        plaintext: &mut [[u8; BLOCK_LEN]; 2],
-    ) {
+    fn decrypt_pair(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         // The two input blocks, constructed in series: Ij (already held) and Ij+1 (= Cj).
-        let mut o = [self.chain, ciphertext[0]];
+        let mut o = [self.chain, blocks[0]];
         self.perm.encrypt_blocks2(&mut o);
 
-        for ((out, c), o) in plaintext.iter_mut().zip(ciphertext.iter()).zip(o.iter()) {
-            for ((out, c), o) in out.iter_mut().zip(c.iter()).zip(o.iter()) {
-                *out = *c ^ *o;
+        // I_{j+2} = Cj+1, read before the XOR below turns it into Pj+1.
+        self.chain = blocks[1];
+
+        for (block, o) in blocks.iter_mut().zip(o.iter()) {
+            for (b, o) in block.iter_mut().zip(o.iter()) {
+                *b ^= *o;
             }
         }
-
-        // I_{j+2} = Cj+1.
-        self.chain = ciphertext[1];
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipher
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
     P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
 {
+    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
+    /// concatenated in a `const`, and the mode is already in the type.
+    const ALG_NAME: &'static str = P::ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
-    const MAX_SECURITY_STRENGTH: SecurityStrength = <P as BlockCipher>::MAX_SECURITY_STRENGTH;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
@@ -221,19 +223,18 @@ where
         Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
     }
 
-    /// The implementor hook (the flat `do_encrypt[_out]` are provided over it).
+    /// The implementor hook (the flat `do_encrypt` is provided over it).
     ///
     /// Strictly serial: `Oj+1 = CIPH_K(Cj)` and `Cj` is the *output* of the previous cipher call, so
-    /// there is no pair path here. See the module docs.
-    fn do_encrypt_blocks_out<const N: usize>(
+    /// there is no pair path here. See the module docs. Never fails: CFB has no per-IV data limit.
+    fn do_encrypt_blocks<const N: usize>(
         &mut self,
-        plaintext: &[[u8; BLOCK_LEN]; N],
-        ciphertext: &mut [[u8; BLOCK_LEN]; N],
-    ) -> Result<usize, SymmetricCipherError> {
-        for (p, c) in plaintext.iter().zip(ciphertext.iter_mut()) {
-            self.encrypt_one(p, c);
+        blocks: &mut [[u8; BLOCK_LEN]; N],
+    ) -> Result<(), SymmetricCipherError> {
+        for block in blocks.iter_mut() {
+            self.encrypt_one(block);
         }
-        Ok(N * BLOCK_LEN)
+        Ok(())
     }
 }
 
@@ -253,27 +254,24 @@ where
         Ok(Self { perm, chain: *init_data, _dir: PhantomData })
     }
 
-    /// The implementor hook (the flat `do_decrypt[_out]` are provided over it).
+    /// The implementor hook (the flat `do_decrypt` is provided over it).
     ///
     /// Walks the input in pairs so the permutation's two-block *forward* path is used, with an
-    /// at-most-one block remainder for odd `N`. `as_chunks` splits into exactly that shape with no
-    /// runtime length check and no indexing arithmetic; `N` is a compile-time constant, so for even
-    /// `N` the tail loop is empty and for `N = 1` the pair loop is.
-    fn do_decrypt_blocks_out<const N: usize>(
+    /// at-most-one block remainder for odd `N`. `as_chunks_mut` splits into exactly that shape with
+    /// no runtime length check and no indexing arithmetic; `N` is a compile-time constant, so for
+    /// even `N` the tail loop is empty and for `N = 1` the pair loop is. Never fails: CFB has no
+    /// per-IV data limit.
+    fn do_decrypt_blocks<const N: usize>(
         &mut self,
-        ciphertext: &[[u8; BLOCK_LEN]; N],
-        plaintext: &mut [[u8; BLOCK_LEN]; N],
-    ) -> Result<usize, SymmetricCipherError> {
-        let (ct_pairs, ct_tail) = ciphertext.as_chunks::<2>();
-        let (pt_pairs, pt_tail) = plaintext.as_chunks_mut::<2>();
-
-        for (ct_pair, pt_pair) in ct_pairs.iter().zip(pt_pairs.iter_mut()) {
-            self.decrypt_pair(ct_pair, pt_pair);
+        blocks: &mut [[u8; BLOCK_LEN]; N],
+    ) -> Result<(), SymmetricCipherError> {
+        let (pairs, tail) = blocks.as_chunks_mut::<2>();
+        for pair in pairs.iter_mut() {
+            self.decrypt_pair(pair);
         }
-        for (c, p) in ct_tail.iter().zip(pt_tail.iter_mut()) {
-            self.decrypt_one(c, p);
+        for block in tail.iter_mut() {
+            self.decrypt_one(block);
         }
-
-        Ok(N * BLOCK_LEN)
+        Ok(())
     }
 }

@@ -136,7 +136,8 @@ pub struct ForwardOnlyToy {
     inner: Toy,
 }
 
-impl BlockCipher for ForwardOnlyToy {
+impl Algorithm for ForwardOnlyToy {
+    const ALG_NAME: &'static str = "ForwardOnlyToy";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 

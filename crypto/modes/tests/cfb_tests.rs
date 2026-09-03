@@ -25,24 +25,44 @@ type ToyCfb<Dir> = Cfb<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedCfb<Dir> = Cfb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 type ForwardOnlyCfb<Dir> = Cfb<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN>;
 
-/// The implementor hook `do_encrypt_blocks_out`, by value, for tests whose data is block-shaped.
+/// The implementor hook `do_encrypt_blocks`, by value, for tests whose data is block-shaped.
 fn enc_blocks<const N: usize>(
     enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
-    let mut ct = [[0u8; TOY_LEN]; N];
-    enc.do_encrypt_blocks_out(plaintext, &mut ct).unwrap();
-    ct
+    let mut blocks = *plaintext;
+    enc.do_encrypt_blocks(&mut blocks).unwrap();
+    blocks
 }
 
-/// The implementor hook `do_decrypt_blocks_out`, by value.
+/// The implementor hook `do_decrypt_blocks`, by value.
 fn dec_blocks<const N: usize>(
     dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
-    let mut pt = [[0u8; TOY_LEN]; N];
-    dec.do_decrypt_blocks_out(ciphertext, &mut pt).unwrap();
-    pt
+    let mut blocks = *ciphertext;
+    dec.do_decrypt_blocks(&mut blocks).unwrap();
+    blocks
+}
+
+/// The flat streaming method `do_encrypt`, by value.
+fn enc_flat<const LEN: usize>(
+    enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    plaintext: &[u8; LEN],
+) -> [u8; LEN] {
+    let mut data = *plaintext;
+    enc.do_encrypt(&mut data).unwrap();
+    data
+}
+
+/// The flat streaming method `do_decrypt`, by value.
+fn dec_flat<const LEN: usize>(
+    dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    ciphertext: &[u8; LEN],
+) -> [u8; LEN] {
+    let mut data = *ciphertext;
+    dec.do_decrypt(&mut data).unwrap();
+    data
 }
 
 /// A pinned IV, so two runs are comparable. Encryption never accepts one, so it is fed through the
@@ -135,17 +155,13 @@ fn the_mode_matches_the_spec_equations() {
     // Anchor 2: with `P1 = 0`, `C1 = O1`. CFB is a keystream mode, and this is what that means.
     let (mut enc, _) =
         ToyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
-    assert_eq!(
-        enc.do_encrypt(&[0u8; TOY_LEN]).unwrap(),
-        o1,
-        "encrypting zero yields the keystream"
-    );
+    assert_eq!(enc_flat(&mut enc, &[0u8; TOY_LEN]), o1, "encrypting zero yields the keystream");
 
     // ...and CFB is not CBC: CBC computes `CIPH_K(P1 XOR IV)`, CFB computes `P1 XOR CIPH_K(IV)`.
     let (mut cbc, _) =
         Cbc::<Toy, Encrypting, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(&key, &mut pinned_rng(iv))
             .unwrap();
-    assert_ne!(cbc.do_encrypt(&plaintext[0]).unwrap(), ct[0], "CFB must not agree with CBC");
+    assert_ne!(enc_flat(&mut cbc, &plaintext[0]), ct[0], "CFB must not agree with CBC");
 }
 
 // ---- the forward-cipher-only rule ---------------------------------------------------------
@@ -175,7 +191,7 @@ fn neither_direction_uses_the_inverse_cipher() {
     // The single-block path.
     let mut dec = ForwardOnlyCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     for (c, p) in ct.iter().zip(plaintext.iter()) {
-        assert_eq!(&dec.do_decrypt(c).unwrap(), p, "single-block path, forward cipher only");
+        assert_eq!(&dec_flat(&mut dec, c), p, "single-block path, forward cipher only");
     }
 
     // N = 3 leaves a remainder after the pair loop, so both paths run in one call.
@@ -239,7 +255,7 @@ fn call_grouping_does_not_change_the_result() {
     let (mut enc, _) =
         ToyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
     let mut got = [[0u8; TOY_LEN]; 8];
-    let a = enc.do_encrypt(&plaintext[0]).unwrap(); // one block, flat
+    let a = enc_flat(&mut enc, &plaintext[0]); // one block, flat
     let b = enc_blocks(&mut enc, &[plaintext[1], plaintext[2]]); // N = 2
     let c = enc_blocks(&mut enc, &[plaintext[3], plaintext[4], plaintext[5]]); // N = 3
     let d = enc_blocks(&mut enc, &[plaintext[6], plaintext[7]]); // N = 2
@@ -263,7 +279,7 @@ fn call_grouping_does_not_change_the_result() {
         while at < 8 {
             match grouping {
                 1 => {
-                    out[at] = dec.do_decrypt(&ct[at]).unwrap();
+                    out[at] = dec_flat(&mut dec, &ct[at]);
                 }
                 2 => {
                     let p = dec_blocks(&mut dec, &[ct[at], ct[at + 1]]);
@@ -287,7 +303,7 @@ fn call_grouping_does_not_change_the_result() {
     assert_eq!(five, [plaintext[3], plaintext[4], plaintext[5], plaintext[6], plaintext[7]]);
 }
 
-/// The pair path in `do_decrypt_blocks_out` must actually be taken.
+/// The pair path in `do_decrypt_blocks` must actually be taken.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block methods
 /// are correct. CFB decryption pairs through `encrypt_blocks2`, so with this permutation a pair
@@ -323,13 +339,12 @@ fn the_pair_path_is_really_used() {
 
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
     let mut dec = SwappedCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    let p0 = dec.do_decrypt(&swapped_ct[0]).unwrap();
-    let p1 = dec.do_decrypt(&swapped_ct[1]).unwrap();
+    let p0 = dec_flat(&mut dec, &swapped_ct[0]);
+    let p1 = dec_flat(&mut dec, &swapped_ct[1]);
     assert_eq!([p0, p1], plaintext, "the single-block path must not pair");
 }
 
-/// The flat streaming method must agree with the block-shaped implementor hook and report the
-/// byte count.
+/// The flat streaming method must agree with the block-shaped implementor hook.
 #[test]
 fn flat_streaming_agrees_with_the_block_hook() {
     let key = toy_key();
@@ -339,25 +354,22 @@ fn flat_streaming_agrees_with_the_block_hook() {
 
     let (mut enc, _) =
         ToyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
-    let by_value = enc.do_encrypt(&flat_plaintext).unwrap();
+    let flat_ct = enc_flat(&mut enc, &flat_plaintext);
 
     let (mut enc, _) =
         ToyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
-    let mut out = [[0u8; TOY_LEN]; 3];
-    let n = enc.do_encrypt_blocks_out(&plaintext, &mut out).unwrap();
-    assert_eq!(n, 3 * TOY_LEN);
-    assert_eq!(*out.as_flattened(), by_value, "flat streaming must equal the block hook");
+    let block_ct = enc_blocks(&mut enc, &plaintext);
+    assert_eq!(*block_ct.as_flattened(), flat_ct, "flat streaming must equal the block hook");
 
     let mut dec = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    let mut back = [[0u8; TOY_LEN]; 3];
-    let n = dec.do_decrypt_blocks_out(&out, &mut back).unwrap();
-    assert_eq!(n, 3 * TOY_LEN);
-    assert_eq!(back, plaintext);
+    assert_eq!(dec_blocks(&mut dec, &block_ct), plaintext);
+    let mut dec = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_eq!(dec_flat(&mut dec, &flat_ct), flat_plaintext);
 }
 
-/// The one-shots (`encrypt` / `decrypt` on a `[u8; LEN]`) must produce exactly what the streaming
-/// API produces over the same blocks, for an odd block count (pairs plus a one-block tail) and an
-/// even one (pairs only), in both directions and through the `_out` variants.
+/// The one-shots (`encrypt` / `decrypt` on a `[u8; LEN]`, in place) must produce exactly what the
+/// streaming API produces over the same blocks, for an odd block count (pairs plus a one-block
+/// tail) and an even one (pairs only), in both directions.
 #[test]
 fn one_shots_agree_with_the_streaming_api() {
     let key = toy_key();
@@ -372,23 +384,12 @@ fn one_shots_agree_with_the_streaming_api() {
             ToyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
         (got, enc_blocks(&mut enc, &blocks3))
     };
-    let (iv_b, ct_flat) =
-        ToyCfb::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(iv), &flat3).unwrap();
+    let mut buf = flat3;
+    let iv_b = ToyCfb::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(iv), &mut buf).unwrap();
     assert_eq!(iv_a, iv_b);
-    assert_eq!(ct_flat, *ct_blocks.as_flattened(), "3 blocks: one-shot must equal streaming");
-    assert_eq!(ToyCfb::<Decrypting>::decrypt(&key, &iv, &ct_flat).unwrap(), flat3);
-
-    let mut ct_out = [0u8; 3 * TOY_LEN];
-    let (_, n) =
-        ToyCfb::<Encrypting>::encrypt_out_rng(&key, &mut pinned_rng(iv), &flat3, &mut ct_out)
-            .unwrap();
-    assert_eq!((n, ct_out), (3 * TOY_LEN, ct_flat));
-    let mut pt_out = [0u8; 3 * TOY_LEN];
-    assert_eq!(
-        ToyCfb::<Decrypting>::decrypt_out(&key, &iv, &ct_out, &mut pt_out).unwrap(),
-        3 * TOY_LEN
-    );
-    assert_eq!(pt_out, flat3);
+    assert_eq!(buf, *ct_blocks.as_flattened(), "3 blocks: one-shot must equal streaming");
+    ToyCfb::<Decrypting>::decrypt(&key, &iv, &mut buf).unwrap();
+    assert_eq!(buf, flat3);
 
     // 4 blocks = 64 bytes: pairs only, no tail.
     let flat4: [u8; 4 * TOY_LEN] = core::array::from_fn(|i| (i * 13 + 1) as u8);
@@ -399,14 +400,18 @@ fn one_shots_agree_with_the_streaming_api() {
             ToyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
         enc_blocks(&mut enc, &blocks4)
     };
-    let (_, ct_flat) =
-        ToyCfb::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(iv), &flat4).unwrap();
-    assert_eq!(ct_flat, *ct_blocks.as_flattened(), "4 blocks: one-shot must equal streaming");
-    assert_eq!(ToyCfb::<Decrypting>::decrypt(&key, &iv, &ct_flat).unwrap(), flat4);
+    let mut buf = flat4;
+    ToyCfb::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(iv), &mut buf).unwrap();
+    assert_eq!(buf, *ct_blocks.as_flattened(), "4 blocks: one-shot must equal streaming");
+    ToyCfb::<Decrypting>::decrypt(&key, &iv, &mut buf).unwrap();
+    assert_eq!(buf, flat4);
 
     // The OS-RNG variant round-trips too.
-    let (iv_fresh, ct) = ToyCfb::<Encrypting>::encrypt(&key, &flat3).unwrap();
-    assert_eq!(ToyCfb::<Decrypting>::decrypt(&key, &iv_fresh, &ct).unwrap(), flat3);
+    let mut buf = flat3;
+    let iv_fresh = ToyCfb::<Encrypting>::encrypt(&key, &mut buf).unwrap();
+    assert_ne!(buf, flat3);
+    ToyCfb::<Decrypting>::decrypt(&key, &iv_fresh, &mut buf).unwrap();
+    assert_eq!(buf, flat3);
 }
 
 // ---- SP 800-38A Appendix D error propagation ---------------------------------------------
@@ -476,8 +481,8 @@ fn an_iv_bit_error_randomises_only_the_first_block() {
         Aes128Cfb::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<LEN>::new(iv))
             .unwrap();
     assert_eq!(got_iv, iv);
-    let mut ct = [[0u8; LEN]; 3];
-    enc.do_encrypt_blocks_out(&plaintext, &mut ct).unwrap();
+    let mut ct = plaintext;
+    enc.do_encrypt_blocks(&mut ct).unwrap();
 
     let mut first_blocks = std::collections::BTreeSet::new();
 
@@ -487,8 +492,8 @@ fn an_iv_bit_error_randomises_only_the_first_block() {
             corrupt_iv[byte] ^= 1 << bit;
 
             let mut dec = Aes128Cfb::<Decrypting>::do_decrypt_init(&key, &corrupt_iv).unwrap();
-            let mut got = [[0u8; LEN]; 3];
-            dec.do_decrypt_blocks_out(&ct, &mut got).unwrap();
+            let mut got = ct;
+            dec.do_decrypt_blocks(&mut got).unwrap();
 
             // Only P1 is affected: with s = b, Appendix D's "first i/s (rounding up) ciphertext
             // segments" is one segment for every bit position i.
@@ -537,8 +542,10 @@ fn identical_plaintext_gives_different_ciphertext() {
     let key = toy_key();
     let plaintext = [0x77u8; 2 * TOY_LEN];
 
-    let (_, first) = ToyCfb::<Encrypting>::encrypt(&key, &plaintext).unwrap();
-    let (_, second) = ToyCfb::<Encrypting>::encrypt(&key, &plaintext).unwrap();
+    let mut first = plaintext;
+    ToyCfb::<Encrypting>::encrypt(&key, &mut first).unwrap();
+    let mut second = plaintext;
+    ToyCfb::<Encrypting>::encrypt(&key, &mut second).unwrap();
     assert_ne!(first, second);
 
     // ...and, within one message, two identical plaintext blocks must not give identical ciphertext

@@ -122,7 +122,7 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// Runs one Appendix F.3 encrypt subsection.
 ///
 /// Checks the whole message in one call, then again one segment at a time, then again through the
-/// `_out` variant -- the vector should not care how the calls are grouped.
+/// implementor hook -- the vector should not care how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
     P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
@@ -139,11 +139,9 @@ where
     )
     .unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
-    assert_eq!(
-        enc.do_encrypt(&flat(&PLAINTEXTS)).unwrap(),
-        flat(expected),
-        "{section}: four segments in one call"
-    );
+    let mut data = flat(&PLAINTEXTS);
+    enc.do_encrypt(&mut data).unwrap();
+    assert_eq!(data, flat(expected), "{section}: four segments in one call");
 
     // One segment at a time.
     let (mut enc, _) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
@@ -152,26 +150,26 @@ where
     )
     .unwrap();
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
-        let got = enc.do_encrypt(p).unwrap();
+        let mut got = *p;
+        enc.do_encrypt(&mut got).unwrap();
         assert_eq!(&got, c, "{section}: segment #{}", i + 1);
     }
 
-    // Through the implementor hook, `do_*_blocks_out`.
+    // Through the implementor hook, `do_*_blocks`.
     let (mut enc, _) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
         &key,
         &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
     )
     .unwrap();
-    let mut out = [[0u8; BLOCK_LEN]; 4];
-    let n = enc.do_encrypt_blocks_out(&pt, &mut out).unwrap();
-    assert_eq!(n, 4 * BLOCK_LEN);
-    assert_eq!(out, ct, "{section}: _out variant");
+    let mut blocks = pt;
+    enc.do_encrypt_blocks(&mut blocks).unwrap();
+    assert_eq!(blocks, ct, "{section}: implementor hook");
 }
 
 /// Runs one Appendix F.3 decrypt subsection.
 ///
 /// Checks one call, one segment at a time, and the odd grouping `3 + 1` -- which is the grouping
-/// that leaves a one-block remainder after the pair loop in `do_decrypt_blocks_out`.
+/// that leaves a one-block remainder after the pair loop in `do_decrypt_blocks`.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
     P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
@@ -185,33 +183,32 @@ where
 
     // All four segments in one call (two pairs, no remainder).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    assert_eq!(
-        dec.do_decrypt(&flat(ciphertext)).unwrap(),
-        flat(&PLAINTEXTS),
-        "{section}: four segments in one call"
-    );
+    let mut data = flat(ciphertext);
+    dec.do_decrypt(&mut data).unwrap();
+    assert_eq!(data, flat(&PLAINTEXTS), "{section}: four segments in one call");
 
     // One segment at a time (never takes the pair path).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     for (i, (c, p)) in ct.iter().zip(pt.iter()).enumerate() {
-        let got = dec.do_decrypt(c).unwrap();
+        let mut got = *c;
+        dec.do_decrypt(&mut got).unwrap();
         assert_eq!(&got, p, "{section}: segment #{}", i + 1);
     }
 
     // 3 + 1: one pair plus a remainder, then a lone block.
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    let first_three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
-    let three = dec.do_decrypt(&first_three).unwrap();
-    let one = dec.do_decrypt(&ct[3]).unwrap();
+    let mut three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
+    dec.do_decrypt(&mut three).unwrap();
+    let mut one = ct[3];
+    dec.do_decrypt(&mut one).unwrap();
     assert_eq!(&three[..], pt[..3].as_flattened(), "{section}: segments 1-3");
     assert_eq!(one, pt[3], "{section}: segment 4");
 
-    // Through the implementor hook, `do_*_blocks_out`.
+    // Through the implementor hook, `do_*_blocks`.
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    let mut out = [[0u8; BLOCK_LEN]; 4];
-    let n = dec.do_decrypt_blocks_out(&ct, &mut out).unwrap();
-    assert_eq!(n, 4 * BLOCK_LEN);
-    assert_eq!(out, pt, "{section}: _out variant");
+    let mut blocks = ct;
+    dec.do_decrypt_blocks(&mut blocks).unwrap();
+    assert_eq!(blocks, pt, "{section}: implementor hook");
 }
 
 #[test]
@@ -245,39 +242,27 @@ fn f_3_18_cfb128_aes256_decrypt() {
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
-/// The one-shots take flat arrays, so the four segments are presented as 64 contiguous bytes.
+/// The one-shots take flat arrays and work in place, so the four ciphertext segments are presented
+/// as 64 contiguous bytes and become the four plaintext blocks.
 #[test]
 fn the_one_shot_api_matches_the_vectors() {
     let iv = block(IV);
     let pt = flat(&PLAINTEXTS);
 
-    assert_eq!(
-        Cfb::<Aes128, Decrypting, 16, 16>::decrypt(
-            &key_material::<16>(KEY_128),
-            &iv,
-            &flat(&CIPHERTEXTS_128)
-        )
-        .unwrap(),
-        pt
-    );
-    assert_eq!(
-        Cfb::<Aes192, Decrypting, 24, 16>::decrypt(
-            &key_material::<24>(KEY_192),
-            &iv,
-            &flat(&CIPHERTEXTS_192)
-        )
-        .unwrap(),
-        pt
-    );
-    assert_eq!(
-        Cfb::<Aes256, Decrypting, 32, 16>::decrypt(
-            &key_material::<32>(KEY_256),
-            &iv,
-            &flat(&CIPHERTEXTS_256)
-        )
-        .unwrap(),
-        pt
-    );
+    let mut data = flat(&CIPHERTEXTS_128);
+    Cfb::<Aes128, Decrypting, 16, 16>::decrypt(&key_material::<16>(KEY_128), &iv, &mut data)
+        .unwrap();
+    assert_eq!(data, pt);
+
+    let mut data = flat(&CIPHERTEXTS_192);
+    Cfb::<Aes192, Decrypting, 24, 16>::decrypt(&key_material::<24>(KEY_192), &iv, &mut data)
+        .unwrap();
+    assert_eq!(data, pt);
+
+    let mut data = flat(&CIPHERTEXTS_256);
+    Cfb::<Aes256, Decrypting, 32, 16>::decrypt(&key_material::<32>(KEY_256), &iv, &mut data)
+        .unwrap();
+    assert_eq!(data, pt);
 }
 
 /// The spec's tabulated **Output Blocks** are the CFB keystream, and its **Input Blocks** are the
@@ -368,10 +353,12 @@ fn cfb128_agrees_with_ofb_on_the_first_block_only() {
     .unwrap();
     assert_eq!(got_iv, iv);
 
-    let c1 = enc.do_encrypt(&block(PLAINTEXTS[0])).unwrap();
+    let mut c1 = block(PLAINTEXTS[0]);
+    enc.do_encrypt(&mut c1).unwrap();
     assert_eq!(c1, block(OFB_CIPHERTEXT_1), "block 1 must match OFB, and F.3.13");
 
-    let c2 = enc.do_encrypt(&block(PLAINTEXTS[1])).unwrap();
+    let mut c2 = block(PLAINTEXTS[1]);
+    enc.do_encrypt(&mut c2).unwrap();
     assert_eq!(c2, block(CIPHERTEXTS_128[1]), "block 2 must match F.3.13");
     assert_ne!(c2, block(OFB_CIPHERTEXT_2), "block 2 must NOT match OFB");
 }
