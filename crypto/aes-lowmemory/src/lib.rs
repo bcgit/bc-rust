@@ -73,10 +73,13 @@
 //! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
 //! let plaintext = [0x5Au8; 48];
 //!
-//! // The IV is generated for you and returned; there is no API for supplying one.
-//! let (iv, ciphertext) = AES_CBC_256::<Encrypting>::encrypt(&key, &plaintext).unwrap();
-//! let recovered = AES_CBC_256::<Decrypting>::decrypt(&key, &iv, &ciphertext).unwrap();
-//! assert_eq!(recovered, plaintext);
+//! // Encryption is in place. The IV is generated for you and returned; there is no API for
+//! // supplying one.
+//! let mut data = plaintext;
+//! let iv = AES_CBC_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
+//! assert_ne!(data, plaintext);
+//! AES_CBC_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+//! assert_eq!(data, plaintext);
 //! ```
 //!
 //! There is no one-shot static on the permutation, because `Aes128::new(&key)?.encrypt_block(..)`

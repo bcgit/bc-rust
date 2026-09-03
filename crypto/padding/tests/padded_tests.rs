@@ -55,18 +55,17 @@ impl BlockCipherEncryptor<B, B, B> for ToyCbc {
         rng.next_bytes_out(&mut iv)?;
         Ok((Self { key, chain: iv }, iv))
     }
-    fn do_encrypt_blocks_out<const N: usize>(
+    fn do_encrypt_blocks<const N: usize>(
         &mut self,
-        plaintext: &[[u8; B]; N],
-        ciphertext: &mut [[u8; B]; N],
-    ) -> Result<usize, SymmetricCipherError> {
-        for (p, c) in plaintext.iter().zip(ciphertext.iter_mut()) {
-            for i in 0..B {
-                c[i] = p[i] ^ self.chain[i] ^ self.key[i];
+        blocks: &mut [[u8; B]; N],
+    ) -> Result<(), SymmetricCipherError> {
+        for block in blocks.iter_mut() {
+            for (b, (c, k)) in block.iter_mut().zip(self.chain.iter().zip(self.key.iter())) {
+                *b ^= c ^ k;
             }
-            self.chain = *c;
+            self.chain = *block;
         }
-        Ok(N * B)
+        Ok(())
     }
 }
 
@@ -74,18 +73,18 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
     fn do_decrypt_init(key: &KeyMaterial<B>, iv: &[u8; B]) -> Result<Self, SymmetricCipherError> {
         Ok(Self { key: Self::check_key(key)?, chain: *iv })
     }
-    fn do_decrypt_blocks_out<const N: usize>(
+    fn do_decrypt_blocks<const N: usize>(
         &mut self,
-        ciphertext: &[[u8; B]; N],
-        plaintext: &mut [[u8; B]; N],
-    ) -> Result<usize, SymmetricCipherError> {
-        for (c, p) in ciphertext.iter().zip(plaintext.iter_mut()) {
-            for i in 0..B {
-                p[i] = c[i] ^ self.chain[i] ^ self.key[i];
+        blocks: &mut [[u8; B]; N],
+    ) -> Result<(), SymmetricCipherError> {
+        for block in blocks.iter_mut() {
+            let ct = *block;
+            for (b, (c, k)) in block.iter_mut().zip(self.chain.iter().zip(self.key.iter())) {
+                *b ^= c ^ k;
             }
-            self.chain = *c;
+            self.chain = ct;
         }
-        Ok(N * B)
+        Ok(())
     }
 }
 

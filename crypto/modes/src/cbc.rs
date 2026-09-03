@@ -68,26 +68,27 @@ impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<P, Dir, KEY_LEN, 
 where
     P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
 {
-    /// `Cj = CIPH_K(Pj XOR Cj-1)`, then `Cj` becomes the next chaining value.
+    /// `Cj = CIPH_K(Pj XOR Cj-1)` in place, then `Cj` becomes the next chaining value.
     #[inline]
-    fn encrypt_one(&mut self, plaintext: &[u8; BLOCK_LEN], ciphertext: &mut [u8; BLOCK_LEN]) {
-        for (out, (p, chain)) in ciphertext.iter_mut().zip(plaintext.iter().zip(self.chain.iter()))
-        {
-            *out = *p ^ *chain;
+    fn encrypt_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
+        for (b, chain) in block.iter_mut().zip(self.chain.iter()) {
+            *b ^= *chain; // Pj XOR Cj-1
         }
-        self.perm.encrypt_block(ciphertext);
-        self.chain = *ciphertext;
+        self.perm.encrypt_block(block); // Cj = CIPH_K(..)
+        self.chain = *block;
     }
 
-    /// `Pj = CIPH^-1_K(Cj) XOR Cj-1`, then `Cj` becomes the next chaining value.
+    /// `Pj = CIPH^-1_K(Cj) XOR Cj-1` in place, then `Cj` becomes the next chaining value.
+    ///
+    /// `Cj` is overwritten by `Pj`, so it is copied first: it is the next chaining value.
     #[inline]
-    fn decrypt_one(&mut self, ciphertext: &[u8; BLOCK_LEN], plaintext: &mut [u8; BLOCK_LEN]) {
-        *plaintext = *ciphertext;
-        self.perm.decrypt_block(plaintext);
-        for (out, chain) in plaintext.iter_mut().zip(self.chain.iter()) {
-            *out ^= *chain;
+    fn decrypt_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
+        let cj = *block;
+        self.perm.decrypt_block(block); // CIPH^-1_K(Cj)
+        for (b, chain) in block.iter_mut().zip(self.chain.iter()) {
+            *b ^= *chain; // XOR Cj-1
         }
-        self.chain = *ciphertext;
+        self.chain = cj;
     }
 
     /// Decrypts two consecutive blocks with one [`BlockPermutation::decrypt_blocks2`] call.
@@ -101,26 +102,22 @@ where
     ///
     /// Neither inverse cipher depends on the other's *output* -- only on ciphertext, which is
     /// already in hand -- so computing them together changes nothing. The two XOR operands do
-    /// differ, and the second one is `Cj`, so both are read out of `ciphertext` before the
-    /// chaining value is advanced to `Cj+1`.
+    /// differ, and the second one is `Cj`, so both ciphertext blocks are copied out before the
+    /// permutation overwrites them, and the chaining value is then advanced to `Cj+1`.
     #[inline]
-    fn decrypt_pair(
-        &mut self,
-        ciphertext: &[[u8; BLOCK_LEN]; 2],
-        plaintext: &mut [[u8; BLOCK_LEN]; 2],
-    ) {
-        *plaintext = *ciphertext;
-        self.perm.decrypt_blocks2(plaintext);
+    fn decrypt_pair(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
+        let [cj, cj1] = *blocks;
+        self.perm.decrypt_blocks2(blocks);
 
-        let (first, rest) = plaintext.split_at_mut(1);
-        for (out, chain) in first[0].iter_mut().zip(self.chain.iter()) {
-            *out ^= *chain; // XOR Cj-1
+        let [pj, pj1] = blocks;
+        for (b, chain) in pj.iter_mut().zip(self.chain.iter()) {
+            *b ^= *chain; // XOR Cj-1
         }
-        for (out, prev) in rest[0].iter_mut().zip(ciphertext[0].iter()) {
-            *out ^= *prev; // XOR Cj
+        for (b, prev) in pj1.iter_mut().zip(cj.iter()) {
+            *b ^= *prev; // XOR Cj
         }
 
-        self.chain = ciphertext[1];
+        self.chain = cj1;
     }
 }
 
@@ -159,19 +156,18 @@ where
         Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
     }
 
-    /// The implementor hook (the flat `do_encrypt[_out]` are provided over it).
+    /// The implementor hook (the flat `do_encrypt` is provided over it).
     ///
     /// Strictly serial: `Cj` is the input to block `j + 1`, so there is no pair path here. See the
-    /// module docs.
-    fn do_encrypt_blocks_out<const N: usize>(
+    /// module docs. Never fails: CBC has no per-IV data limit.
+    fn do_encrypt_blocks<const N: usize>(
         &mut self,
-        plaintext: &[[u8; BLOCK_LEN]; N],
-        ciphertext: &mut [[u8; BLOCK_LEN]; N],
-    ) -> Result<usize, SymmetricCipherError> {
-        for (p, c) in plaintext.iter().zip(ciphertext.iter_mut()) {
-            self.encrypt_one(p, c);
+        blocks: &mut [[u8; BLOCK_LEN]; N],
+    ) -> Result<(), SymmetricCipherError> {
+        for block in blocks.iter_mut() {
+            self.encrypt_one(block);
         }
-        Ok(N * BLOCK_LEN)
+        Ok(())
     }
 }
 
@@ -190,27 +186,24 @@ where
         Ok(Self { perm, chain: *init_data, _dir: PhantomData })
     }
 
-    /// The implementor hook (the flat `do_decrypt[_out]` are provided over it).
+    /// The implementor hook (the flat `do_decrypt` is provided over it).
     ///
     /// Walks the input in pairs so the permutation's two-block path is used, with an at-most-one
-    /// block remainder for odd `N`. `as_chunks` splits into exactly that shape with no runtime
+    /// block remainder for odd `N`. `as_chunks_mut` splits into exactly that shape with no runtime
     /// length check and no indexing arithmetic; `N` is a compile-time constant, so for even `N` the
-    /// tail loop is empty and for `N = 1` the pair loop is.
-    fn do_decrypt_blocks_out<const N: usize>(
+    /// tail loop is empty and for `N = 1` the pair loop is. Never fails: CBC has no per-IV data
+    /// limit.
+    fn do_decrypt_blocks<const N: usize>(
         &mut self,
-        ciphertext: &[[u8; BLOCK_LEN]; N],
-        plaintext: &mut [[u8; BLOCK_LEN]; N],
-    ) -> Result<usize, SymmetricCipherError> {
-        let (ct_pairs, ct_tail) = ciphertext.as_chunks::<2>();
-        let (pt_pairs, pt_tail) = plaintext.as_chunks_mut::<2>();
-
-        for (ct_pair, pt_pair) in ct_pairs.iter().zip(pt_pairs.iter_mut()) {
-            self.decrypt_pair(ct_pair, pt_pair);
+        blocks: &mut [[u8; BLOCK_LEN]; N],
+    ) -> Result<(), SymmetricCipherError> {
+        let (pairs, tail) = blocks.as_chunks_mut::<2>();
+        for pair in pairs.iter_mut() {
+            self.decrypt_pair(pair);
         }
-        for (c, p) in ct_tail.iter().zip(pt_tail.iter_mut()) {
-            self.decrypt_one(c, p);
+        for block in tail.iter_mut() {
+            self.decrypt_one(block);
         }
-
-        Ok(N * BLOCK_LEN)
+        Ok(())
     }
 }

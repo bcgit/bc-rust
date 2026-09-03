@@ -141,17 +141,19 @@ Block cipher traits (PR #96):
   pattern.
 * The `do_{en,de}crypt_final[_out]` methods are removed: the traits are now strictly block-aligned, and padding of
   arbitrary-length data belongs to a separate `PaddedEncryptor` / `PaddedDecryptor` layer built on top.
-* One-shot static APIs are provided (default) methods implemented once in the traits -- `encrypt`, `encrypt_rng`,
-  `encrypt_out`, `encrypt_out_rng` on `BlockCipherEncryptor` and `decrypt`, `decrypt_out` on `BlockCipherDecryptor` --
-  so every block-aligned mode gets the house-standard take-data-return-result API at no cost to implementors. They
-  take a flat `[u8; LEN]`; `LEN` must be a whole number of blocks, and this is enforced at **compile time** by an
-  inline `const` assertion at the instantiating call site, so there is no runtime length check and no error variant
-  for it. (An earlier form of these one-shots took `[[u8; BLOCK_LEN]; N]`; it was replaced before release.)
-* The streaming API is flat as well: `do_{en,de}crypt<LEN>` / `do_{en,de}crypt_out<LEN>` take a `[u8; LEN]` with the
-  same compile-time alignment check, and are provided methods. The single block-shaped method left is the implementor
-  hook `do_{en,de}crypt_blocks_out<N>` over `[[u8; BLOCK_LEN]; N]`, which is what guarantees an implementation never
-  sees a partial block and that input and output lengths agree at compile time; an implementor writes only
-  `do_{en,de}crypt_init[_rng]` and that hook. (The by-value `do_{en,de}crypt_blocks` of #96 are gone.)
+* One-shot static APIs are provided (default) methods implemented once in the traits -- `encrypt`, `encrypt_rng` on
+  `BlockCipherEncryptor` and `decrypt` on `BlockCipherDecryptor` -- so every block-aligned mode gets the
+  house-standard one-shot API at no cost to implementors. They take a flat `&mut [u8; LEN]` and work **in place**
+  (plaintext in, ciphertext out in the same bytes; `encrypt` returns the generated init data). `LEN` must be a whole
+  number of blocks, and this is enforced at **compile time** by an inline `const` assertion at the instantiating call
+  site, so there is no runtime length check and no error variant for it. Data whose length is only known at run
+  time goes block by block or through the padding layer. (Earlier forms took `[[u8; BLOCK_LEN]; N]`, then separate
+  input and output arrays; both were replaced before release.)
+* The streaming API is flat and in place as well: `do_{en,de}crypt<LEN>(&mut [u8; LEN])`, with the same compile-time
+  alignment check, are provided methods. The single block-shaped method left is the implementor hook
+  `do_{en,de}crypt_blocks<N>(&mut [[u8; BLOCK_LEN]; N])`, which is what guarantees an implementation never sees a
+  partial block; an implementor writes only `do_{en,de}crypt_init[_rng]` and that hook. The data methods keep a
+  `Result` only for modes with a per-initialization data limit (counter-based modes); CBC never fails them.
 
 Testing:
 

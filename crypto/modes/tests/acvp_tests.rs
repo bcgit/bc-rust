@@ -127,18 +127,22 @@ where
         match grouping {
             Grouping::Single => {
                 for block in input {
-                    out.push(enc.do_encrypt(block).unwrap());
+                    let mut c = *block;
+                    enc.do_encrypt(&mut c).unwrap();
+                    out.push(c);
                 }
             }
             Grouping::Pairs => {
                 let (pairs, tail) = input.as_chunks::<2>();
                 for pair in pairs {
-                    let mut c = [[0u8; BLOCK_LEN]; 2];
-                    enc.do_encrypt_blocks_out(pair, &mut c).unwrap();
+                    let mut c = *pair;
+                    enc.do_encrypt_blocks(&mut c).unwrap();
                     out.extend_from_slice(&c);
                 }
                 for block in tail {
-                    out.push(enc.do_encrypt(block).unwrap());
+                    let mut c = *block;
+                    enc.do_encrypt(&mut c).unwrap();
+                    out.push(c);
                 }
             }
         }
@@ -149,18 +153,22 @@ where
         match grouping {
             Grouping::Single => {
                 for block in input {
-                    out.push(dec.do_decrypt(block).unwrap());
+                    let mut p = *block;
+                    dec.do_decrypt(&mut p).unwrap();
+                    out.push(p);
                 }
             }
             Grouping::Pairs => {
                 let (pairs, tail) = input.as_chunks::<2>();
                 for pair in pairs {
-                    let mut p = [[0u8; BLOCK_LEN]; 2];
-                    dec.do_decrypt_blocks_out(pair, &mut p).unwrap();
+                    let mut p = *pair;
+                    dec.do_decrypt_blocks(&mut p).unwrap();
                     out.extend_from_slice(&p);
                 }
                 for block in tail {
-                    out.push(dec.do_decrypt(block).unwrap());
+                    let mut p = *block;
+                    dec.do_decrypt(&mut p).unwrap();
+                    out.push(p);
                 }
             }
         }

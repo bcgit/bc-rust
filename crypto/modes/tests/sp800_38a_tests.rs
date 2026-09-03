@@ -88,7 +88,7 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// Runs one Appendix F.2 encrypt subsection.
 ///
 /// Checks the whole message in one call, then again one block at a time, then again through the
-/// `_out` variant -- the vector should not care how the calls are grouped.
+/// implementor hook -- the vector should not care how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
     P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
@@ -105,11 +105,9 @@ where
     )
     .unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
-    assert_eq!(
-        enc.do_encrypt(&flat(&PLAINTEXTS)).unwrap(),
-        flat(expected),
-        "{section}: four blocks in one call"
-    );
+    let mut data = flat(&PLAINTEXTS);
+    enc.do_encrypt(&mut data).unwrap();
+    assert_eq!(data, flat(expected), "{section}: four blocks in one call");
 
     // One block at a time.
     let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
@@ -118,26 +116,26 @@ where
     )
     .unwrap();
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
-        let got = enc.do_encrypt(p).unwrap();
+        let mut got = *p;
+        enc.do_encrypt(&mut got).unwrap();
         assert_eq!(&got, c, "{section}: block #{}", i + 1);
     }
 
-    // Through the implementor hook, `do_*_blocks_out`.
+    // Through the implementor hook, `do_*_blocks`.
     let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
         &key,
         &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
     )
     .unwrap();
-    let mut out = [[0u8; BLOCK_LEN]; 4];
-    let n = enc.do_encrypt_blocks_out(&pt, &mut out).unwrap();
-    assert_eq!(n, 4 * BLOCK_LEN);
-    assert_eq!(out, ct, "{section}: _out variant");
+    let mut blocks = pt;
+    enc.do_encrypt_blocks(&mut blocks).unwrap();
+    assert_eq!(blocks, ct, "{section}: implementor hook");
 }
 
 /// Runs one Appendix F.2 decrypt subsection.
 ///
 /// Checks one call, one block at a time, and the odd grouping `3 + 1` -- which is the grouping that
-/// leaves a one-block remainder after the pair loop in `do_decrypt_blocks_out`.
+/// leaves a one-block remainder after the pair loop in `do_decrypt_blocks`.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
     P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
@@ -151,33 +149,32 @@ where
 
     // All four blocks in one call (two pairs, no remainder).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    assert_eq!(
-        dec.do_decrypt(&flat(ciphertext)).unwrap(),
-        flat(&PLAINTEXTS),
-        "{section}: four blocks in one call"
-    );
+    let mut data = flat(ciphertext);
+    dec.do_decrypt(&mut data).unwrap();
+    assert_eq!(data, flat(&PLAINTEXTS), "{section}: four blocks in one call");
 
     // One block at a time (never takes the pair path).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     for (i, (c, p)) in ct.iter().zip(pt.iter()).enumerate() {
-        let got = dec.do_decrypt(c).unwrap();
+        let mut got = *c;
+        dec.do_decrypt(&mut got).unwrap();
         assert_eq!(&got, p, "{section}: block #{}", i + 1);
     }
 
     // 3 + 1: one pair plus a remainder, then a lone block.
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    let first_three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
-    let three = dec.do_decrypt(&first_three).unwrap();
-    let one = dec.do_decrypt(&ct[3]).unwrap();
+    let mut three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
+    dec.do_decrypt(&mut three).unwrap();
+    let mut one = ct[3];
+    dec.do_decrypt(&mut one).unwrap();
     assert_eq!(&three[..], pt[..3].as_flattened(), "{section}: blocks 1-3");
     assert_eq!(one, pt[3], "{section}: block 4");
 
-    // Through the implementor hook, `do_*_blocks_out`.
+    // Through the implementor hook, `do_*_blocks`.
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    let mut out = [[0u8; BLOCK_LEN]; 4];
-    let n = dec.do_decrypt_blocks_out(&ct, &mut out).unwrap();
-    assert_eq!(n, 4 * BLOCK_LEN);
-    assert_eq!(out, pt, "{section}: _out variant");
+    let mut blocks = ct;
+    dec.do_decrypt_blocks(&mut blocks).unwrap();
+    assert_eq!(blocks, pt, "{section}: implementor hook");
 }
 
 #[test]
@@ -211,39 +208,27 @@ fn f_2_6_cbc_aes256_decrypt() {
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
-/// The one-shots take flat arrays, so the four blocks are presented as 64 contiguous bytes.
+/// The one-shots take flat arrays and work in place, so the four ciphertext blocks are presented
+/// as 64 contiguous bytes and become the four plaintext blocks.
 #[test]
 fn the_one_shot_api_matches_the_vectors() {
     let iv = block(IV);
     let pt = flat(&PLAINTEXTS);
 
-    assert_eq!(
-        Cbc::<Aes128, Decrypting, 16, 16>::decrypt(
-            &key_material::<16>(KEY_128),
-            &iv,
-            &flat(&CIPHERTEXTS_128)
-        )
-        .unwrap(),
-        pt
-    );
-    assert_eq!(
-        Cbc::<Aes192, Decrypting, 24, 16>::decrypt(
-            &key_material::<24>(KEY_192),
-            &iv,
-            &flat(&CIPHERTEXTS_192)
-        )
-        .unwrap(),
-        pt
-    );
-    assert_eq!(
-        Cbc::<Aes256, Decrypting, 32, 16>::decrypt(
-            &key_material::<32>(KEY_256),
-            &iv,
-            &flat(&CIPHERTEXTS_256)
-        )
-        .unwrap(),
-        pt
-    );
+    let mut data = flat(&CIPHERTEXTS_128);
+    Cbc::<Aes128, Decrypting, 16, 16>::decrypt(&key_material::<16>(KEY_128), &iv, &mut data)
+        .unwrap();
+    assert_eq!(data, pt);
+
+    let mut data = flat(&CIPHERTEXTS_192);
+    Cbc::<Aes192, Decrypting, 24, 16>::decrypt(&key_material::<24>(KEY_192), &iv, &mut data)
+        .unwrap();
+    assert_eq!(data, pt);
+
+    let mut data = flat(&CIPHERTEXTS_256);
+    Cbc::<Aes256, Decrypting, 32, 16>::decrypt(&key_material::<32>(KEY_256), &iv, &mut data)
+        .unwrap();
+    assert_eq!(data, pt);
 }
 
 /// The IV really is what distinguishes CBC from ECB here: the same key and plaintext under the
@@ -270,7 +255,8 @@ fn cbc_differs_from_ecb_by_the_iv() {
         &mut FixedSeedRNG::<16>::new(iv),
     )
     .unwrap();
-    let cbc = enc.do_encrypt(&block(PLAINTEXTS[0])).unwrap();
+    let mut cbc = block(PLAINTEXTS[0]);
+    enc.do_encrypt(&mut cbc).unwrap();
     assert_eq!(cbc, block(CIPHERTEXTS_128[0]), "F.2.1 block #1");
     assert_ne!(cbc, ecb);
 }

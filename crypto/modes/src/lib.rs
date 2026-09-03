@@ -37,11 +37,13 @@
 //! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
 //! let plaintext: [u8; 48] = *b"The quick brown fox jumps over the lazy dog. OK!";
 //!
-//! // One shot: encrypts under a freshly generated IV, which is returned alongside the ciphertext.
-//! let (iv, ciphertext) = Aes128Cbc::<Encrypting>::encrypt(&key, &plaintext).expect("encryption");
+//! // One shot, in place: encrypts under a freshly generated IV, which is returned.
+//! let mut data = plaintext;
+//! let iv = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! assert_ne!(data, plaintext);
 //!
-//! let recovered = Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &ciphertext).expect("decryption");
-//! assert_eq!(recovered, plaintext);
+//! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
 //! ```
 //!
 //! Streaming, for data that arrives in pieces. A sequence of calls is equivalent to one call over
@@ -60,12 +62,16 @@
 //!
 //! let (mut encryptor, iv) =
 //!     Aes256Cbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
-//! let first = encryptor.do_encrypt(&[0xAAu8; 16]).expect("block 1");
-//! let rest = encryptor.do_encrypt(&[0xBBu8; 32]).expect("blocks 2-3");
+//! let mut first = [0xAAu8; 16];
+//! let mut rest = [0xBBu8; 32];
+//! encryptor.do_encrypt(&mut first).expect("block 1");
+//! encryptor.do_encrypt(&mut rest).expect("blocks 2-3");
 //!
 //! let mut decryptor = Aes256Cbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
-//! assert_eq!(decryptor.do_decrypt(&first).unwrap(), [0xAAu8; 16]);
-//! assert_eq!(decryptor.do_decrypt(&rest).unwrap(), [0xBBu8; 32]);
+//! decryptor.do_decrypt(&mut first).unwrap();
+//! decryptor.do_decrypt(&mut rest).unwrap();
+//! assert_eq!(first, [0xAAu8; 16]);
+//! assert_eq!(rest, [0xBBu8; 32]);
 //! ```
 //!
 //! Using the wrong direction does not compile:
@@ -109,8 +115,8 @@
 //! | AES-192 CBC | 208 B | 16 B | 224 B |
 //! | AES-256 CBC | 240 B | 16 B | 256 B |
 //!
-//! `do_*_blocks_out::<N>` adds nothing; the by-value `do_*_blocks::<N>` adds `N * BLOCK_LEN` of
-//! stack for the returned array. [`Encrypting`] and [`Decrypting`] are zero-sized and held in a
+//! The data methods work in place and add nothing beyond the copy of the two ciphertext blocks
+//! `decrypt_pair` keeps for the chaining value. [`Encrypting`] and [`Decrypting`] are zero-sized and held in a
 //! `PhantomData`, so encoding the direction in the type is free. The table is pinned by
 //! `sizes_match_the_documented_memory_table` in `tests/cbc_tests.rs`.
 //!
