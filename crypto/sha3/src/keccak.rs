@@ -557,12 +557,9 @@ mod keccak_tests {
         }
     }
 
-    /// Pins the serialized-state wire format. These constants are part of the public
-    /// `Suspendable` contract: an oversized buffer would still round-trip (trailing zeros are
-    /// ignored), so only an exact check protects the layout documented on [`KECCAK_SERIALIZED_LEN`]
-    /// and [`SHA3_FAMILY_STATE_LEN`].
+    /// Pins the constants for the lengths of the SHA3 [`Suspendable`] state arrays.
     #[test]
-    fn serialized_state_lengths_are_pinned() {
+    fn pin_serialized_state_constants() {
         assert_eq!(
             KECCAK_SERIALIZED_LEN, 401,
             "200 (state) + 192 (queue) + 8 (bits) + 1 (squeezing)"
@@ -574,7 +571,8 @@ mod keccak_tests {
     /// The three KDF metadata fields sit in adjacent slots after the keccak state, and the public
     /// `Suspendable` impls can only ever serialize them at their defaults (the KDF entry points are
     /// one-shot and consume `self`), so the integration-level round-trip tests cannot tell the slots
-    /// apart. Round-trip distinct, non-zero values for every field here so that a mixed-up offset
+    /// apart.
+    /// Test: Round-trip distinct, non-zero values for every field here so that a mixed-up offset
     /// in either direction is caught.
     #[test]
     fn sha3_family_state_round_trips_kdf_metadata() {
@@ -585,6 +583,7 @@ mod keccak_tests {
         // Every field gets a value that is distinct from every other field's value, and non-zero.
         let (tag, key_type, strength, entropy) =
             (0x42u8, KeyType::Unknown, SecurityStrength::_192bit, 0x0102_0304_0506_0708usize);
+        // Check that these two in fact serialize to different byte values.
         assert_ne!(key_type as u8, strength as u8);
 
         let mut out = [0u8; SHA3_FAMILY_STATE_LEN];
