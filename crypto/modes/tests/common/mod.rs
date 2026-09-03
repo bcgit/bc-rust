@@ -15,7 +15,7 @@
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{BlockCipher, BlockPermutation, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, BlockPermutation, SecurityStrength};
 
 /// Block and key length of the toy ciphers, chosen to match AES so the tests exercise the same
 /// shapes the real thing will.
@@ -46,7 +46,8 @@ pub struct Toy {
     key: [u8; TOY_LEN],
 }
 
-impl BlockCipher for Toy {
+impl Algorithm for Toy {
+    const ALG_NAME: &'static str = "Toy";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
@@ -83,7 +84,8 @@ pub struct SwappedPairToy {
     inner: Toy,
 }
 
-impl BlockCipher for SwappedPairToy {
+impl Algorithm for SwappedPairToy {
+    const ALG_NAME: &'static str = "SwappedPairToy";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 

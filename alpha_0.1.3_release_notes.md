@@ -71,8 +71,9 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   not be secret (SP 800-38A Sec 5.3), so this is sound.
 * Input must be a whole number of 16-byte blocks. Unaligned input is rejected with a message
   pointing at the missing padding layer rather than being silently padded.
-* Reads do not respect block boundaries, so a block split across two reads is carried over;
-  verified by round-tripping 64 KiB through `dd bs=3`.
+* Reads need not respect block boundaries: bytes accumulate in a 1 KiB buffer that goes through the flat
+  `do_*_out::<1024>` when full, and the whole-block remainder at end of input goes one block at a time; verified by
+  round-tripping 64 KiB through `dd bs=3`.
 * Verified against SP 800-38A F.2: prepending the spec's IV to the spec's ciphertext and running
   `decrypt` reproduces the spec's plaintext for all three key lengths. The `encrypt` direction was
   cross-checked against an independent CBC implementation under the IV the CLI generated.
@@ -86,9 +87,8 @@ keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode
 `new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_blocks2` / `decrypt_blocks2` that
 default to two single-block calls and which bit-sliced implementations override. The block methods
 are infallible; only `new` can fail, and only on the key. `bouncycastle-aes-lowmemory` implements
-it for all three key lengths (and `BlockCipher`, which is metadata only and is
-`BlockPermutation`'s supertrait; the data-encryption traits are still deliberately not
-implemented there).
+it for all three key lengths (the data-encryption traits are still deliberately not implemented
+there).
 
 Testing:
 
@@ -130,8 +130,10 @@ Testing:
 Block cipher traits (PR #96):
 
 * The single `BlockCipher` streaming trait is split into `BlockCipherEncryptor` and `BlockCipherDecryptor` (mirroring
-  `KEMEncapsulator` / `KEMDecapsulator`) so the direction is encoded in the implementing type. A minimal `BlockCipher`
-  supertrait carries the shared `MAX_SECURITY_STRENGTH`; the `SymmetricCipher` one-shot API is no longer a supertrait.
+  `KEMEncapsulator` / `KEMDecapsulator`) so the direction is encoded in the implementing type. Both, and
+  `BlockPermutation`, are bounded on `Algorithm`, whose `MAX_SECURITY_STRENGTH` is the strength the `_init`
+  constructors enforce (a mode reports its permutation's name and strength); the `SymmetricCipher` one-shot API is no
+  longer a supertrait.
 * The single-block `do_{en,de}crypt_block[_out]` methods are replaced by multi-block
   `do_{en,de}crypt_blocks[_out]<const N>`, taking `&[[u8; BLOCK_LEN]; N]` so the block count is compile-time and
   input/output lengths cannot disagree.
@@ -139,10 +141,19 @@ Block cipher traits (PR #96):
   pattern.
 * The `do_{en,de}crypt_final[_out]` methods are removed: the traits are now strictly block-aligned, and padding of
   arbitrary-length data belongs to a separate `PaddedEncryptor` / `PaddedDecryptor` layer built on top.
-* One-shot static APIs are provided (default) methods implemented once in the traits -- `encrypt_blocks`,
-  `encrypt_blocks_rng`, `encrypt_blocks_out`, `encrypt_blocks_out_rng` on `BlockCipherEncryptor` and `decrypt_blocks`,
-  `decrypt_blocks_out` on `BlockCipherDecryptor` -- so every block-aligned mode gets the house-standard
-  take-data-return-result API at no cost to implementors.
+* One-shot static APIs are provided (default) methods implemented once in the traits -- `encrypt`, `encrypt_rng` on
+  `BlockCipherEncryptor` and `decrypt` on `BlockCipherDecryptor` -- so every block-aligned mode gets the
+  house-standard one-shot API at no cost to implementors. They take a flat `&mut [u8; LEN]` and work **in place**
+  (plaintext in, ciphertext out in the same bytes; `encrypt` returns the generated init data). `LEN` must be a whole
+  number of blocks, and this is enforced at **compile time** by an inline `const` assertion at the instantiating call
+  site, so there is no runtime length check and no error variant for it. Data whose length is only known at run
+  time goes block by block or through the padding layer. (Earlier forms took `[[u8; BLOCK_LEN]; N]`, then separate
+  input and output arrays; both were replaced before release.)
+* The streaming API is flat and in place as well: `do_{en,de}crypt<LEN>(&mut [u8; LEN])`, with the same compile-time
+  alignment check, are provided methods. The single block-shaped method left is the implementor hook
+  `do_{en,de}crypt_blocks<N>(&mut [[u8; BLOCK_LEN]; N])`, which is what guarantees an implementation never sees a
+  partial block; an implementor writes only `do_{en,de}crypt_init[_rng]` and that hook. The data methods keep a
+  `Result` only for modes with a per-initialization data limit (counter-based modes); CBC never fails them.
 
 Testing:
 

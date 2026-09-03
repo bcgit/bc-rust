@@ -1,6 +1,6 @@
 //! Generic behaviour tests for the symmetric cipher traits.
 
-use crate::DUMMY_SEED;
+use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
@@ -140,75 +140,71 @@ impl TestFrameworkBlockCipher {
         let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
         let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
 
-        // one block at a time (N = 1)
+        // one block at a time, through the flat streaming methods (LEN = BLOCK_LEN), in place
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let ct = encryptor.do_encrypt_blocks(&[*msg_chunk]).unwrap();
-            let [pt] = decryptor.do_decrypt_blocks(&ct).unwrap();
-            assert_eq!(msg_chunk, &pt);
+            let mut buf = *msg_chunk;
+            encryptor.do_encrypt(&mut buf).unwrap();
+            decryptor.do_decrypt(&mut buf).unwrap();
+            assert_eq!(msg_chunk, &buf);
         }
 
-        // do it again using the _out versions
-
+        // multi-block (N = 2) through the implementor hook `do_*_blocks`: blocks encrypted together
+        // must decrypt both together and one at a time, and blocks encrypted one at a time must
+        // decrypt together.
         let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
         let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
 
-        let mut ct = [[0u8; BLOCK_LEN]; 1];
-        let mut pt = [[0u8; BLOCK_LEN]; 1];
-        for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let ct_bytes_written = encryptor.do_encrypt_blocks_out(&[*msg_chunk], &mut ct).unwrap();
-            assert_eq!(ct_bytes_written, BLOCK_LEN);
-
-            let pt_bytes_written = decryptor.do_decrypt_blocks_out(&ct, &mut pt).unwrap();
-            assert_eq!(pt_bytes_written, BLOCK_LEN);
-
-            assert_eq!(msg_chunk, &pt[0]);
-        }
-
-        // multi-block (N = 2): blocks encrypted together must decrypt both together and one at a time,
-        // and blocks encrypted one at a time must decrypt together.
-        let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
-        let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
-
-        let mut ct = [[0u8; BLOCK_LEN]; 2];
-        let mut pt = [[0u8; BLOCK_LEN]; 2];
         for msg_pair in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0.iter() {
-            // encrypt together, decrypt together (by value)
-            let ct_by_value = encryptor.do_encrypt_blocks(msg_pair).unwrap();
-            let pt_by_value = decryptor.do_decrypt_blocks(&ct_by_value).unwrap();
-            assert_eq!(msg_pair, &pt_by_value);
+            // encrypt together, decrypt together
+            let mut buf = *msg_pair;
+            encryptor.do_encrypt_blocks(&mut buf).unwrap();
+            decryptor.do_decrypt_blocks(&mut buf).unwrap();
+            assert_eq!(msg_pair, &buf);
 
-            // encrypt together (_out), decrypt one at a time
-            let ct_bytes_written = encryptor.do_encrypt_blocks_out(msg_pair, &mut ct).unwrap();
-            assert_eq!(ct_bytes_written, 2 * BLOCK_LEN);
-            for (msg_chunk, ct_chunk) in msg_pair.iter().zip(ct.iter()) {
-                let [pt] = decryptor.do_decrypt_blocks(&[*ct_chunk]).unwrap();
-                assert_eq!(msg_chunk, &pt);
+            // encrypt together, decrypt one at a time
+            let mut buf = *msg_pair;
+            encryptor.do_encrypt_blocks(&mut buf).unwrap();
+            for (msg_chunk, block) in msg_pair.iter().zip(buf.iter_mut()) {
+                decryptor.do_decrypt(block).unwrap();
+                assert_eq!(msg_chunk, block);
             }
 
-            // encrypt one at a time, decrypt together (_out)
-            for (msg_chunk, ct_chunk) in msg_pair.iter().zip(ct.iter_mut()) {
-                let [c] = encryptor.do_encrypt_blocks(&[*msg_chunk]).unwrap();
-                *ct_chunk = c;
+            // encrypt one at a time, decrypt together
+            let mut buf = *msg_pair;
+            for block in buf.iter_mut() {
+                encryptor.do_encrypt(block).unwrap();
             }
-            let pt_bytes_written = decryptor.do_decrypt_blocks_out(&ct, &mut pt).unwrap();
-            assert_eq!(pt_bytes_written, 2 * BLOCK_LEN);
-            assert_eq!(msg_pair, &pt);
+            decryptor.do_decrypt_blocks(&mut buf).unwrap();
+            assert_eq!(msg_pair, &buf);
         }
 
-        // one-shot API: must agree with the streaming API for the same key, and round-trip
-        let two_blocks: &[[u8; BLOCK_LEN]; 2] =
-            &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0[0];
-        let (iv, ct) = E::encrypt_blocks(&key, two_blocks).unwrap();
-        assert_eq!(D::decrypt_blocks(&key, &iv, &ct).unwrap(), *two_blocks);
+        // one-shot API: a block-aligned byte array, in place. It must round-trip and agree with the
+        // streaming API for the same key and init data. Only LEN = BLOCK_LEN can be formed
+        // generically here (`2 * BLOCK_LEN` needs generic_const_exprs); multi-block one-shots are
+        // covered by the modes crate's tests with a concrete BLOCK_LEN.
+        let one_block: &[u8; BLOCK_LEN] = &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0[0];
+        let mut buf = *one_block;
+        let iv = E::encrypt(&key, &mut buf).unwrap();
+        let ct = buf;
+        D::decrypt(&key, &iv, &mut buf).unwrap();
+        assert_eq!(buf, *one_block);
+        // ...and it must agree with the streaming API under the same init data.
         let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
-        assert_eq!(streamed.do_decrypt_blocks(&ct).unwrap(), *two_blocks);
+        let mut buf = ct;
+        streamed.do_decrypt(&mut buf).unwrap();
+        assert_eq!(buf, *one_block);
 
-        let mut ct = [[0u8; BLOCK_LEN]; 2];
-        let mut pt = [[0u8; BLOCK_LEN]; 2];
-        let (iv, n) = E::encrypt_blocks_out(&key, two_blocks, &mut ct).unwrap();
-        assert_eq!(n, 2 * BLOCK_LEN);
-        assert_eq!(D::decrypt_blocks_out(&key, &iv, &ct, &mut pt).unwrap(), 2 * BLOCK_LEN);
-        assert_eq!(pt, *two_blocks);
+        // the RNG-taking one-shot must give the streaming API's answer for the same RNG stream
+        let pinned = [0xA5u8; INIT_DATA_LEN];
+        let mut expected = *one_block;
+        let (mut streamed, iv_streamed) =
+            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned)).unwrap();
+        streamed.do_encrypt(&mut expected).unwrap();
+        let mut buf = *one_block;
+        let iv = E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
+            .unwrap();
+        assert_eq!(iv, iv_streamed);
+        assert_eq!(buf, expected);
 
         // test that the iv is random (ie not the same on two runs)
         let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();
