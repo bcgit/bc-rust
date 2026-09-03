@@ -26,26 +26,37 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
 * Deliberately ships no CLI subcommand, no factory entry and no `core` cipher-trait impls: a raw permutation can
   only offer ECB, and those are mode-of-operation concerns. `Algorithm` is implemented (name and security
   strength); per-mode OIDs and the `BlockCipherEncryptor` / `BlockCipherDecryptor` impls belong to the mode crates.
+* Ships the type aliases `AES_CBC_128` / `AES_CBC_192` / `AES_CBC_256` and `AES_CFB_128` /
+  `AES_CFB_192` / `AES_CFB_256`, which fill in the const parameters of `bouncycastle-modes`' `Cbc`
+  and `Cfb` and leave the direction as the type parameter. They are aliases only -- no new engine
+  code, and each one's doctest round-trips and shows that a misaligned length fails to compile.
 
 New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of operation
-(NIST SP 800-38A), currently **CBC** (Sec 6.2). Re-exported from the umbrella crate.
+(NIST SP 800-38A), providing **CBC** (Sec 6.2) and **CFB128** (Sec 6.3). Re-exported from the
+umbrella crate.
 
-* `Cbc<P, Dir, KEY_LEN, BLOCK_LEN>` over any `BlockPermutation`, so the crate depends on no
-  concrete cipher. The direction is a type parameter: `BlockCipherEncryptor` is implemented only
-  for `Cbc<_, Encrypting, _, _>` and `BlockCipherDecryptor` only for `Cbc<_, Decrypting, _, _>`,
-  making a wrong-direction call a compile error rather than a runtime check.
-* **The IV is generated, never accepted.** SP 800-38A Sec 5.3 requires the CBC IV to be
+* `Cbc<P, Dir, KEY_LEN, BLOCK_LEN>` and `Cfb<P, Dir, KEY_LEN, BLOCK_LEN>` over any
+  `BlockPermutation`, so the crate depends on no concrete cipher. The direction is a type parameter:
+  `BlockCipherEncryptor` is implemented only for `<_, Encrypting, _, _>` and `BlockCipherDecryptor`
+  only for `<_, Decrypting, _, _>`, making a wrong-direction call a compile error rather than a
+  runtime check. The two types have identical APIs and identical size, so swapping one for the other
+  is a one-word change.
+* **The IV is generated, never accepted.** SP 800-38A Sec 5.3 requires the CBC *and CFB* IV to be
   *unpredictable*, not merely unique, so `do_encrypt_init` draws one from the library's default
   OS-backed DRBG (Appendix C's second recommended method) and returns it; there is no API for
   supplying your own. Known-answer tests drive `do_encrypt_init_rng` with a fixed-output test RNG.
+  This matters more for CFB than for CBC: CFB XORs a keystream, so a repeated key-and-IV pair leaks
+  `P1 XOR P1'` outright rather than merely whether the blocks were equal.
 * **Parallel decryption.** Sec 6.2 notes CBC decryption's inverse cipher calls can run in
   parallel, so `do_decrypt_blocks[_out]` walks the ciphertext in pairs through
   `BlockPermutation::decrypt_blocks2`, with a one-block remainder for odd `N`. Measured against an
   otherwise identical permutation that does not override the pair methods, this is **1.83x** the
   decryption throughput (67.9 vs 37.1 MiB/s, AES-128, 16 KiB, N=8). CBC encryption is serial by
   construction and does not use it.
-* Strictly block-aligned, as Sec 5.2 requires of CBC. Arbitrary-length data needs a padding layer,
-  which does not exist in this workspace yet; when it lands, CBC gets it by being wrapped.
+* Strictly block-aligned, as Sec 5.2 requires of CBC. Arbitrary-length data goes through
+  `bouncycastle-padding`'s `PaddedEncryptor` / `PaddedDecryptor`, which wrap either mode; no padding
+  logic lives in this crate. `crypto/modes/tests/cfb_tests.rs` round-trips every length from 0 to
+  `3 * BLOCK_LEN + 1` through PKCS7 to pin that the two crates compose.
 * Verified against all six SP 800-38A Appendix F.2 vectors (CBC-AES128/192/256, Encrypt and
   Decrypt), each checked in one call, one block at a time, in a `3 + 1` grouping that exercises the
   pair remainder, and through the `_out` variant. Appendix D error propagation is tested
@@ -58,29 +69,90 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   file, the CBC one carries only the answer against a `tcId`, so the request and response files are
   joined; the 6 MCT groups are skipped and the count reported. These vectors were already in
   `bc-test-data` and previously unused.
-* No CFB yet -- see the crate docs' "Not yet implemented".
+CFB (`Cfb`), SP 800-38A Sec 6.3:
 
-`cli`: three new subcommands, `aes128-cbc`, `aes192-cbc` and `aes256-cbc`, each taking `encrypt` or
-`decrypt` and streaming stdin to stdout in 1 KiB chunks.
+* **Full-block segment only.** Sec 6.3 parameterises CFB by a segment size `s` with `1 <= s <= b`;
+  `Cfb` implements `s = b` -- CFB128 for AES -- because that is the only segment size that is
+  block-aligned and therefore the only one that fits `BlockCipherEncryptor` /
+  `BlockCipherDecryptor`. With `s = b` the spec's `LSB_{b-s}(I_{j-1}) | C#_{j-1}` collapses to
+  `Ij = C_{j-1}` and `MSB_s(Oj)` to `Oj`, which the module docs derive step by step. **CFB8 and
+  CFB1 are different, non-interoperable modes and are not provided**; they need a `StreamCipher`
+  shape, and both the crate docs and the CLI help say so explicitly.
+* **Decryption uses the forward cipher function.** Sec 6.3 applies `CIPH_K` in both directions, so
+  `Cfb<_, Decrypting, _, _>` never calls `decrypt_block` or `decrypt_blocks2`. This is pinned by a
+  test permutation whose inverse methods panic, run over both the pair and single-block paths -- so
+  the claim is enforced rather than merely documented.
+* **Parallel decryption**, via `encrypt_blocks2`: Sec 6.3 notes CFB decryption's forward cipher
+  calls "can be performed in parallel if the input blocks are first constructed (in series) from the
+  IV and the ciphertext", and with `s = b` those input blocks simply *are* the IV followed by the
+  ciphertext. Measured against an otherwise identical permutation that does not override the pair
+  methods, this is **2.08x** the decryption throughput (110.9 vs 53.3 MiB/s, AES-128, 16 KiB, N=8).
+  In the same run CFB decryption was **1.37x** CBC decryption (110.9 vs 80.8 MiB/s), because the
+  bit-sliced engine's forward direction is cheaper than its inverse and CFB only ever needs the
+  forward one. CFB encryption is serial by construction and does not use the pair path -- verified,
+  not assumed: the swapped-pair test permutation produces identical ciphertext under `Cfb` encrypt.
+* Same size as `Cbc` -- one permutation plus one block of feedback (192/224/256 B for
+  AES-128/192/256) -- because the keystream block `Oj` is recomputed per call and lives only in a
+  local, so no keystream outlives the call that used it.
+* Verified against all six SP 800-38A **Appendix F.3.13-F.3.18** vectors (CFB128-AES128/192/256,
+  Encrypt and Decrypt) in the same four groupings as CBC. F.3 additionally tabulates the *output
+  blocks* -- the keystream -- so those are checked against the raw permutation too
+  (`Oj == CIPH_K(I_j)` and `Cj == Pj XOR Oj` for all four segments of all three key lengths), which
+  pins the mode's internals and not just its final output. As a transcription cross-check, CFB128
+  is required to agree with **Appendix F.4.1 (OFB)** on the first block -- both compute
+  `C1 = P1 XOR CIPH_K(IV)` -- and to disagree from the second.
+* Also verified against the **2138 NIST ACVP `ACVP-AES-CFB128` AFT cases** from `bc-test-data` (all
+  three key lengths, both directions, 54 of them spanning 2-10 blocks), each run twice, block by
+  block and in pairs with a remainder. The 6 MCT groups are skipped and the count reported. These
+  vectors were already in `bc-test-data` and previously unused.
+* Appendix D error propagation is tested in the direction that distinguishes CFB from CBC. Table D.2
+  gives CFB "SBE in the decryption of Cj": every one of the 128 bit positions of `C2` is flipped and
+  required to flip *exactly* that bit of `P2` (the block the attacker aimed at, unlike CBC where it
+  lands in `P3`), to randomise `P3`, and to leave `P1` and `P4` untouched. The IV case is checked
+  with real AES, where a corrupted IV must *randomise* `P1` rather than flip a bit in place, and
+  must not affect any later block -- with `s = b`, Appendix D's "first `i/s` (rounding up)"
+  segments is one segment for every bit position.
+* Mutation-tested: `cargo mutants -p bouncycastle-modes` reports **0 surviving mutants** (72
+  mutants, 39 caught, 33 unviable), including every `^`-to-`|`/`&` substitution and every
+  keystream-stubbing mutant in `cfb.rs`.
+* Still not implemented, and listed in the crate docs: the CFB segment sizes below the block size
+  (`s = 8`, `s = 1`), and ECB, OFB and CTR.
 
+`cli`: six new subcommands -- `aes128-cbc`, `aes192-cbc`, `aes256-cbc`, `aes128-cfb`, `aes192-cfb`
+and `aes256-cfb` -- each taking `encrypt` or `decrypt` and streaming stdin to stdout in 1 KiB
+chunks.
+
+* All the mode-independent plumbing -- key loading, stdin framing, block-alignment enforcement,
+  hex/binary output -- lives once in `cli/src/block_mode_cmd.rs`, generic over the mode via
+  `BlockCipherEncryptor` / `BlockCipherDecryptor`. `aes_cbc_cmd.rs` and `aes_cfb_cmd.rs` are thin
+  dispatchers over it, so the two commands cannot drift apart on the parts that affect correctness.
 * Key from `--key` (hex) or `--key-file` (binary or hex), with the usual note that secrets on the
   command line end up in shell history. The key length must match the variant exactly.
 * **The IV travels in the ciphertext**: since there is no API for supplying one, `encrypt` writes
   the generated IV as the first 16 bytes of its output and `decrypt` reads it back from the first
   16 bytes of its input, so `encrypt | decrypt` composes with no `--iv` flag anywhere. The IV need
   not be secret (SP 800-38A Sec 5.3), so this is sound.
-* Input must be a whole number of 16-byte blocks. Unaligned input is rejected with a message
-  pointing at the missing padding layer rather than being silently padded.
+* Input must be a whole number of 16-byte blocks. Unaligned input is rejected with a message saying
+  the commands apply no padding rather than being silently padded.
+* The `-cfb` commands are **CFB128**, and both the subcommand help and the alignment error name the
+  segment size, because `CFB8` and `CFB1` are different modes that would silently produce
+  incompatible output.
 * Reads need not respect block boundaries: bytes accumulate in a 1 KiB buffer that goes through the flat
   `do_*_out::<1024>` when full, and the whole-block remainder at end of input goes one block at a time; verified by
   round-tripping 64 KiB through `dd bs=3`.
-* Verified against SP 800-38A F.2: prepending the spec's IV to the spec's ciphertext and running
-  `decrypt` reproduces the spec's plaintext for all three key lengths. The `encrypt` direction was
-  cross-checked against an independent CBC implementation under the IV the CLI generated.
+* Verified against SP 800-38A F.2 (CBC) and F.3.13/F.3.15/F.3.17 (CFB128): prepending the spec's IV
+  to the spec's ciphertext and running `decrypt` reproduces the spec's plaintext for all three key
+  lengths in both modes. The CBC `encrypt` direction was cross-checked against an independent CBC
+  implementation under the IV the CLI generated.
 * `cli/tests/aes_cbc_cli_tests.rs` (16 tests) drives the built binary as a subprocess via
   `CARGO_BIN_EXE_bc-rust`, so all of the above is asserted by `cargo test` rather than by hand:
   the F.2 vectors, round trips across the chunk boundary, a fresh IV per invocation, hex/binary
   agreement, `--key-file` in both hex and binary, and every error path with its message.
+* `cli/tests/aes_cfb_cli_tests.rs` (18 tests) mirrors that suite -- the shared plumbing is generic
+  over the mode, so a wiring mistake in the CFB dispatcher would not show up in the CBC tests -- and
+  adds three CFB-specific checks: the F.3 vectors, the Appendix D single-bit malleability observed
+  end to end through the pipe, and a guard that a CFB ciphertext does not decrypt as CBC or vice
+  versa (neither mode is authenticated, so the mismatch is otherwise silent).
 
 `core`: new `BlockPermutation<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
