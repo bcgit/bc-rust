@@ -13,6 +13,11 @@
 //! round-trip. [`Toy`] is therefore asymmetric: it rotates before XOR-ing, so the two directions are
 //! genuinely different functions.
 
+// Each test binary that includes this module uses a subset of it -- `cfb_tests.rs` needs
+// `ForwardOnlyToy`, `cbc_tests.rs` does not -- and an unused item in an integration test's private
+// module is otherwise a dead-code warning.
+#![allow(dead_code)]
+
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, BlockPermutation, SecurityStrength};
@@ -112,6 +117,48 @@ impl BlockPermutation<TOY_LEN, TOY_LEN> for SwappedPairToy {
         self.inner.decrypt_block(&mut blocks[0]);
         self.inner.decrypt_block(&mut blocks[1]);
         blocks.swap(0, 1);
+    }
+}
+
+/// A toy whose **inverse cipher function panics**.
+///
+/// SP 800-38A Sec 6.3 applies the forward cipher function in both directions of CFB, so a correct
+/// `Cfb` never touches `decrypt_block` or `decrypt_blocks2`. Running a full CFB round trip over this
+/// permutation turns that claim into a test: if either decryption entry point is ever reached, the
+/// test panics with the message below rather than quietly producing a right answer for the wrong
+/// reason.
+///
+/// This is deliberately not a valid [`BlockPermutation`] -- it cannot pass
+/// `TestFrameworkBlockPermutation`, which exercises both directions -- so it is only ever used with
+/// `Cfb`. Its forward methods delegate to [`Toy`], including the pair method, so a CFB round trip
+/// over it must agree with one over `Toy`.
+pub struct ForwardOnlyToy {
+    inner: Toy,
+}
+
+impl BlockCipher for ForwardOnlyToy {
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl BlockPermutation<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
+    fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
+        Ok(Self { inner: Toy::new(key)? })
+    }
+
+    fn encrypt_block(&self, block: &mut [u8; TOY_LEN]) {
+        self.inner.encrypt_block(block);
+    }
+
+    fn decrypt_block(&self, _block: &mut [u8; TOY_LEN]) {
+        panic!("CFB must never call the inverse cipher function (SP 800-38A Sec 6.3)");
+    }
+
+    fn encrypt_blocks2(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+        self.inner.encrypt_blocks2(blocks);
+    }
+
+    fn decrypt_blocks2(&self, _blocks: &mut [[u8; TOY_LEN]; 2]) {
+        panic!("CFB must never call the inverse cipher pair function (SP 800-38A Sec 6.3)");
     }
 }
 
