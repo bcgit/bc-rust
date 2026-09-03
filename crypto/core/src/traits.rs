@@ -80,13 +80,6 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Alg
     ) -> Result<usize, SymmetricCipherError>;
 }
 
-/// Metadata shared by [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`].
-pub trait BlockCipher {
-    /// Maximum security strength supported by the algorithm; keys tagged with a lower strength are
-    /// rejected by the `_init` constructors.
-    const MAX_SECURITY_STRENGTH: SecurityStrength;
-}
-
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
 ///
 /// This is the raw primitive a mode of operation is built on, not something to encrypt data with.
@@ -103,13 +96,13 @@ pub trait BlockCipher {
 /// is nothing a caller can get wrong once [`BlockPermutation::new`] has returned. Only `new` can
 /// fail, and only because of the key.
 pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
-    BlockCipher + Sized
+    Algorithm + Sized
 {
     /// Expands the key.
     ///
     /// # Errors
     /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
-    /// security strength is below [`BlockCipher::MAX_SECURITY_STRENGTH`], both as a
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError>;
 
@@ -165,7 +158,7 @@ pub trait BlockCipherEncryptor<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
->: BlockCipher + Sized
+>: Algorithm + Sized
 {
     /// Begins a streaming encryption flow, returning the generated init data (e.g. IV).
     /// Sources randomness from the library's default OS-backed RNG.
@@ -283,7 +276,7 @@ pub trait BlockCipherDecryptor<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
->: BlockCipher + Sized
+>: Algorithm + Sized
 {
     /// Begins a streaming decryption flow from the init data returned by [`BlockCipherEncryptor::do_encrypt_init`].
     fn do_decrypt_init(

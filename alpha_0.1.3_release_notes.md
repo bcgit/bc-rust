@@ -87,9 +87,8 @@ keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode
 `new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_blocks2` / `decrypt_blocks2` that
 default to two single-block calls and which bit-sliced implementations override. The block methods
 are infallible; only `new` can fail, and only on the key. `bouncycastle-aes-lowmemory` implements
-it for all three key lengths (and `BlockCipher`, which is metadata only and is
-`BlockPermutation`'s supertrait; the data-encryption traits are still deliberately not
-implemented there).
+it for all three key lengths (the data-encryption traits are still deliberately not implemented
+there).
 
 Testing:
 
@@ -131,8 +130,10 @@ Testing:
 Block cipher traits (PR #96):
 
 * The single `BlockCipher` streaming trait is split into `BlockCipherEncryptor` and `BlockCipherDecryptor` (mirroring
-  `KEMEncapsulator` / `KEMDecapsulator`) so the direction is encoded in the implementing type. A minimal `BlockCipher`
-  supertrait carries the shared `MAX_SECURITY_STRENGTH`; the `SymmetricCipher` one-shot API is no longer a supertrait.
+  `KEMEncapsulator` / `KEMDecapsulator`) so the direction is encoded in the implementing type. Both, and
+  `BlockPermutation`, are bounded on `Algorithm`, whose `MAX_SECURITY_STRENGTH` is the strength the `_init`
+  constructors enforce (a mode reports its permutation's name and strength); the `SymmetricCipher` one-shot API is no
+  longer a supertrait.
 * The single-block `do_{en,de}crypt_block[_out]` methods are replaced by multi-block
   `do_{en,de}crypt_blocks[_out]<const N>`, taking `&[[u8; BLOCK_LEN]; N]` so the block count is compile-time and
   input/output lengths cannot disagree.

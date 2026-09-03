@@ -35,8 +35,7 @@ use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    BlockCipher, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, RNG,
-    SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, RNG, SecurityStrength,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
@@ -125,13 +124,16 @@ where
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipher
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
     P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
 {
+    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
+    /// concatenated in a `const`, and the mode is already in the type.
+    const ALG_NAME: &'static str = P::ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
-    const MAX_SECURITY_STRENGTH: SecurityStrength = <P as BlockCipher>::MAX_SECURITY_STRENGTH;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>

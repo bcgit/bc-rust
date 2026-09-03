@@ -15,7 +15,7 @@ use bouncycastle_aes_lowmemory::{Aes128, Aes256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    BlockCipher, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
 };
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -41,7 +41,8 @@ type Aes256Cbc<Dir> = Cbc<Aes256, Dir, 32, BLOCK_LEN>;
 /// speeds up substantially between those two, so call granularity dominates that comparison.
 struct UnpairedAes128(Aes128);
 
-impl BlockCipher for UnpairedAes128 {
+impl Algorithm for UnpairedAes128 {
+    const ALG_NAME: &'static str = "AES-128 (unpaired)";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 

@@ -8,7 +8,7 @@
 use bouncycastle_core::errors::{KeyMaterialError, PaddingError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
-    BlockCipher, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SecurityStrength,
 };
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
@@ -36,7 +36,8 @@ impl ToyCbc {
     }
 }
 
-impl BlockCipher for ToyCbc {
+impl Algorithm for ToyCbc {
+    const ALG_NAME: &'static str = "ToyCbc";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
 }
 

@@ -5,7 +5,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{BlockCipher, BlockPermutation, SecurityStrength};
+use bouncycastle_core::traits::{BlockPermutation, SecurityStrength};
 
 /// Instance of the test framework.
 pub struct TestFrameworkBlockPermutation {
@@ -35,7 +35,9 @@ impl TestFrameworkBlockPermutation {
     ///   semantics, and it is the reason the pair methods are worth having in the trait at all;
     /// * the pair methods round-trip each other;
     /// * a key of the wrong [`KeyType`] is rejected;
-    /// * the security-strength policy matches [`BlockCipher::MAX_SECURITY_STRENGTH`].
+    /// * the security-strength policy matches [`Algorithm::MAX_SECURITY_STRENGTH`].
+    ///
+    /// [`Algorithm::MAX_SECURITY_STRENGTH`]: bouncycastle_core::traits::Algorithm::MAX_SECURITY_STRENGTH
     pub fn test<
         const KEY_LEN: usize,
         const BLOCK_LEN: usize,
@@ -152,11 +154,11 @@ impl TestFrameworkBlockPermutation {
 
             match P::new(&key) {
                 Ok(_) => assert!(
-                    ss >= &<P as BlockCipher>::MAX_SECURITY_STRENGTH,
+                    ss >= &P::MAX_SECURITY_STRENGTH,
                     "should have required a key at least as strong as the algorithm"
                 ),
                 Err(SymmetricCipherError::KeyMaterialError(_)) => assert!(
-                    ss < &<P as BlockCipher>::MAX_SECURITY_STRENGTH,
+                    ss < &P::MAX_SECURITY_STRENGTH,
                     "should not have rejected a key strong enough for the algorithm"
                 ),
                 _ => panic!("Unexpected error"),
