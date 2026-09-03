@@ -557,6 +557,68 @@ mod keccak_tests {
         }
     }
 
+    /// Pins the serialized-state wire format. These constants are part of the public
+    /// `Suspendable` contract: an oversized buffer would still round-trip (trailing zeros are
+    /// ignored), so only an exact check protects the layout documented on [`KECCAK_SERIALIZED_LEN`]
+    /// and [`SHA3_FAMILY_STATE_LEN`].
+    #[test]
+    fn serialized_state_lengths_are_pinned() {
+        assert_eq!(
+            KECCAK_SERIALIZED_LEN, 401,
+            "200 (state) + 192 (queue) + 8 (bits) + 1 (squeezing)"
+        );
+        assert_eq!(SHA3_FAMILY_STATE_LEN, 412, "1 (tag) + 401 (keccak) + 1 + 1 + 8 (kdf metadata)");
+        assert_eq!(SUSPENDED_SHA3_STATE_LEN, 415, "3 (lib version) + 412");
+    }
+
+    /// The three KDF metadata fields sit in adjacent slots after the keccak state, and the public
+    /// `Suspendable` impls can only ever serialize them at their defaults (the KDF entry points are
+    /// one-shot and consume `self`), so the integration-level round-trip tests cannot tell the slots
+    /// apart. Round-trip distinct, non-zero values for every field here so that a mixed-up offset
+    /// in either direction is caught.
+    #[test]
+    fn sha3_family_state_round_trips_kdf_metadata() {
+        let rate = 1600 - ((KeccakSize::_256 as usize) << 1);
+        let mut d = KeccakInternal::new(KeccakSize::_256);
+        d.absorb(b"message");
+
+        // Every field gets a value that is distinct from every other field's value, and non-zero.
+        let (tag, key_type, strength, entropy) =
+            (0x42u8, KeyType::Unknown, SecurityStrength::_192bit, 0x0102_0304_0506_0708usize);
+        assert_ne!(key_type as u8, strength as u8);
+
+        let mut out = [0u8; SHA3_FAMILY_STATE_LEN];
+        serialize_sha3_family_state(&mut out, tag, &d, key_type, strength, entropy);
+
+        // Layout per the doc comment on SHA3_FAMILY_STATE_LEN.
+        assert_eq!(out[0], tag);
+        assert_eq!(out[1 + KECCAK_SERIALIZED_LEN], key_type as u8);
+        assert_eq!(out[1 + KECCAK_SERIALIZED_LEN + 1], strength as u8);
+        assert_eq!(
+            &out[1 + KECCAK_SERIALIZED_LEN + 2..],
+            &(entropy as u64).to_le_bytes(),
+            "kdf_entropy occupies the final 8 bytes"
+        );
+
+        let (d2, kt2, ss2, e2) = deserialize_sha3_family_state(&out, tag, rate).unwrap();
+        assert_eq!(kt2, key_type);
+        assert_eq!(ss2, strength);
+        assert_eq!(e2, entropy);
+
+        // The keccak state itself must also have survived: both sponges give the same output.
+        let (mut o1, mut o2) = ([0u8; 32], [0u8; 32]);
+        d.squeeze(&mut o1);
+        let mut d2 = d2;
+        d2.squeeze(&mut o2);
+        assert_eq!(o1, o2);
+
+        // A wrong tag is rejected before anything else is inspected.
+        assert!(matches!(
+            deserialize_sha3_family_state(&out, tag ^ 1, rate),
+            Err(SuspendableError::InvalidData)
+        ));
+    }
+
     /// Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt
     /// state whose bits_in_queue is not byte-aligned, or equals/exceeds the rate, must be rejected as
     /// InvalidData rather than deserialized into a value that later trips the debug_assert in absorb()
