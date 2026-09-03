@@ -80,6 +80,10 @@ For minor updates, you can instead choose to create an issue with short snippets
 For more information, refer to the Bouncy Castle documentation
 on [Getting Started with Bouncy Castle](https://doc.primekey.com/bouncycastle/introduction#Introduction-GettingStartedwithBouncyCastle).
 
+### Creating sub-issues
+
+When an issue requires a large amount of time or code changes to complete, it may be convenient for a contributor to break it up into distinct sub-issues, which can each be addressed by a separate pull request. This avoids reviewers managing very large PRs, or submitters needing to frequently resolve merge conflicts in their branches. If you would like to break up issue into sub-issues, see the instructions in [Issues Style Guide](ISSUES_STYLE_GUIDE.md).
+
 ### Quality Standards
 
 Except where otherwise noted, all crates must have:
