@@ -102,6 +102,30 @@ mod hash_factory_tests {
         }
 
         #[test]
+        fn ascon_hash_tests() {
+            use bouncycastle_ascon::ASCON_HASH256_NAME;
+            use bouncycastle_ascon::ascon_hash256::AsconHash256;
+            use bouncycastle_factory::FactoryError;
+
+            let direct = AsconHash256::new().hash(&DUMMY_SEED[..512]);
+
+            // Construct by literal name and by the crate's name constant; both must match the
+            // direct implementation.
+            let by_name = HashFactory::new("Ascon-Hash256").unwrap();
+            assert_eq!(by_name.output_len(), 32);
+            assert_eq!(by_name.hash(&DUMMY_SEED[..512]), direct);
+
+            let by_const = HashFactory::new(ASCON_HASH256_NAME).unwrap();
+            assert_eq!(by_const.hash(&DUMMY_SEED[..512]), direct);
+
+            // Unknown algorithm names are still rejected.
+            assert!(matches!(
+                HashFactory::new("Ascon-Hash999"),
+                Err(FactoryError::UnsupportedAlgorithm(_))
+            ));
+        }
+
+        #[test]
         fn test_defaults() {
             // All the ways to get "default"
             let hash = HashFactory::default();

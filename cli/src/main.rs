@@ -1,3 +1,4 @@
+mod ascon_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -121,6 +122,76 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-Hash256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    AsconHash256 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-XOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-CXOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconCXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        /// Customization string in hex (optional).
+        #[arg(long)]
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Ascon-AEAD128 authenticated encryption/decryption of the content provided on stdin.
+    /// Encrypts by default (stdin = plaintext, output = ciphertext||tag); with --decrypt the
+    /// reverse. Decryption fails with a non-zero exit status if the tag does not verify.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AsconAEAD128 {
+        /// The 128-bit key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 128-bit key in binary.
+        #[arg(long)]
+        key_file: Option<String>,
+
+        /// The 128-bit nonce in hex. Must be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the 128-bit nonce in binary.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex (authenticated but not encrypted).
+        #[arg(long)]
+        ad: Option<String>,
+
+        /// Decrypt instead of encrypt.
+        #[arg(short, long)]
+        decrypt: bool,
+
+        #[arg(short)]
+        /// Output in hex format.
         x: bool,
     },
 
@@ -530,6 +601,18 @@ fn main() {
         }
         Some(Subcommands::SHAKE256 { length, x }) => {
             sha3_cmd::shake_cmd(256, *length, *x);
+        }
+        Some(Subcommands::AsconHash256 { x }) => {
+            ascon_cmd::hash256_cmd(*x);
+        }
+        Some(Subcommands::AsconXOF128 { length, x }) => {
+            ascon_cmd::xof128_cmd(*length, *x);
+        }
+        Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
+            ascon_cmd::cxof128_cmd(customization, *length, *x);
+        }
+        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, decrypt, x }) => {
+            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, *decrypt, *x);
         }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
