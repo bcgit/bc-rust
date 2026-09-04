@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
+bouncycastle-factory-macros.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-sha2.workspace = true
