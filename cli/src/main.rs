@@ -3,6 +3,7 @@ mod aes_cfb8_cmd;
 mod aes_cfb_cmd;
 mod aes_ctr_cmd;
 mod aes_ecb_cmd;
+mod aria_cbc_cmd;
 mod block_mode_cmd;
 mod encoders_cmd;
 mod helpers;
@@ -956,6 +957,75 @@ enum Subcommands {
         x: bool,
     },
 
+    /// ARIA-128 in CBC mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; the key
+    /// and block are both 16 bytes, as for AES-128.
+    ARIA128_CBC {
+        action: BlockModeAction,
+
+        /// The 16-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-192 in CBC mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    ARIA192_CBC {
+        action: BlockModeAction,
+
+        /// The 24-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 in CBC mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    ARIA256_CBC {
+        action: BlockModeAction,
+
+        /// The 32-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -1335,6 +1405,15 @@ fn main() {
         }
         Some(Subcommands::AES256_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes256_ecb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA128_CBC { action, key, key_file, x }) => {
+            aria_cbc_cmd::aria128_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA192_CBC { action, key, key_file, x }) => {
+            aria_cbc_cmd::aria192_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA256_CBC { action, key, key_file, x }) => {
+            aria_cbc_cmd::aria256_cbc_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
