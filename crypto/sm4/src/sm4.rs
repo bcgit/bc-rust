@@ -17,8 +17,8 @@ pub const KEY_LEN: usize = 16;
 /// One SM4 block.
 pub type Block = [u8; BLOCK_LEN];
 
-/// The number of blocks the bit-sliced S-box substitutes at once. See [`SM4::encrypt_8blocks`].
-pub const LANES: usize = 8;
+/// The number of blocks the bit-sliced S-box substitutes at once. See [`SM4::encrypt_4blocks`].
+pub const LANES: usize = 4;
 
 /// The SM4 keyed permutation, constant-time.
 ///
@@ -74,58 +74,59 @@ impl SM4 {
         Ok(Self { rk: expand(bytes) })
     }
 
-    /// Encrypts eight independent blocks in place (Sec 7.1): the round keys in the order
+    /// Encrypts four independent blocks in place (Sec 7.1): the round keys in the order
     /// `rk_0, ..., rk_31`.
     ///
-    /// This is the natural unit of work. The S-box circuit substitutes 32 bytes per pass and a
-    /// round substitutes four bytes per block, so eight blocks fill it exactly; fewer blocks cost
+    /// This is the natural unit of work. The S-box circuit substitutes 16 bytes per pass and a
+    /// round substitutes four bytes per block, so four blocks fill it exactly; fewer blocks cost
     /// the same. Modes whose blocks are independent -- CTR, and the decryption direction of CBC
-    /// and CFB -- should prefer this; CBC encryption cannot, since its blocks are serially
-    /// dependent.
+    /// and CFB -- reach it as the `ElectronicCodeBook` four-block batch; CBC encryption cannot,
+    /// since its blocks are serially dependent.
     ///
     /// Infallible: a constructed [`SM4`] is always usable and every input length is fixed.
-    pub fn encrypt_8blocks(&self, blocks: &mut [Block; LANES]) {
+    pub fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         rounds(blocks, |i| self.rk[i]);
     }
 
-    /// Decrypts eight independent blocks in place (Sec 7.2): "an identical process as encryption,
+    /// Decrypts four independent blocks in place (Sec 7.2): "an identical process as encryption,
     /// with the only difference the order of the round key sequence", `rk_31, rk_30, ..., rk_0`.
-    /// See [`SM4::encrypt_8blocks`].
-    pub fn decrypt_8blocks(&self, blocks: &mut [Block; LANES]) {
+    /// See [`SM4::encrypt_4blocks`].
+    pub fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         rounds(blocks, |i| self.rk[31 - i]);
     }
 
     /// Encrypts one block in place.
     ///
-    /// The circuit always processes eight lanes, so a single-block call puts the block in every
-    /// lane and discards seven results: it does eight blocks' worth of work. Use
-    /// [`SM4::encrypt_8blocks`] where independent blocks are available.
+    /// The circuit always processes four lanes, so a single-block call puts the block in every
+    /// lane and discards three results: it does four blocks' worth of work. Use
+    /// [`SM4::encrypt_4blocks`] where independent blocks are
+    /// available.
     ///
     /// Filling the spare lanes with copies costs exactly what zeros would, and buys a free
-    /// self-check: all eight lanes must agree, which `debug_assert` verifies. It is not a security
+    /// self-check: all four lanes must agree, which `debug_assert` verifies. It is not a security
     /// property; the spare lanes are never returned either way.
     pub fn encrypt_block(&self, block: &mut Block) {
         let mut lanes = [*block; LANES];
-        self.encrypt_8blocks(&mut lanes);
+        self.encrypt_4blocks(&mut lanes);
         debug_assert!(lanes.iter().all(|b| *b == lanes[0]), "all lanes must agree");
         *block = lanes[0];
     }
 
-    /// Decrypts one block in place. See [`SM4::encrypt_block`] for the eight-lane caveat.
+    /// Decrypts one block in place. See [`SM4::encrypt_block`] for the four-lane caveat.
     pub fn decrypt_block(&self, block: &mut Block) {
         let mut lanes = [*block; LANES];
-        self.decrypt_8blocks(&mut lanes);
+        self.decrypt_4blocks(&mut lanes);
         debug_assert!(lanes.iter().all(|b| *b == lanes[0]), "all lanes must agree");
         *block = lanes[0];
     }
 
-    /// Encrypts two blocks in place, in lanes 0 and 1; the other six lanes carry copies of the
-    /// first and are discarded. Two blocks for the price of eight, but four times better than
-    /// two [`SM4::encrypt_block`] calls, which is why the trait method is overridden.
+    /// Encrypts two blocks in place, in lanes 0 and 1; the other two lanes carry copies of the
+    /// first and are discarded. Two blocks for the price of four, but twice as good as two
+    /// [`SM4::encrypt_block`] calls, which is why the trait method is overridden.
     pub fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
-        self.encrypt_8blocks(&mut lanes);
+        self.encrypt_4blocks(&mut lanes);
         *blocks = [lanes[0], lanes[1]];
     }
 
@@ -133,26 +134,8 @@ impl SM4 {
     pub fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
-        self.decrypt_8blocks(&mut lanes);
+        self.decrypt_4blocks(&mut lanes);
         *blocks = [lanes[0], lanes[1]];
-    }
-
-    /// Encrypts four independent blocks in place: four of the eight lanes, the other four
-    /// duplicates that are discarded. This is the `ElectronicCodeBook` four-block batch, so modes
-    /// reach the eight-lane circuit through it at four blocks per pass.
-    pub fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let mut lanes = [blocks[0]; LANES];
-        lanes[..4].copy_from_slice(blocks);
-        self.encrypt_8blocks(&mut lanes);
-        blocks.copy_from_slice(&lanes[..4]);
-    }
-
-    /// Decrypts four blocks in place. See [`SM4::encrypt_4blocks`].
-    pub fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let mut lanes = [blocks[0]; LANES];
-        lanes[..4].copy_from_slice(blocks);
-        self.decrypt_8blocks(&mut lanes);
-        blocks.copy_from_slice(&lanes[..4]);
     }
 }
 
@@ -162,7 +145,7 @@ fn l(b: u32) -> u32 {
     b ^ b.rotate_left(2) ^ b.rotate_left(10) ^ b.rotate_left(18) ^ b.rotate_left(24)
 }
 
-/// The 32 rounds and the reverse transformation `R` (Sec 7.1) on eight blocks at once, with
+/// The 32 rounds and the reverse transformation `R` (Sec 7.1) on four blocks at once, with
 /// `rk(i)` supplying the round key for round `i` -- `rk_i` for encryption, `rk_{31-i}` for
 /// decryption (Sec 7.2).
 ///
@@ -175,8 +158,8 @@ fn l(b: u32) -> u32 {
 /// one-round-at-a-time form is in `tests::literal_rounds`, which pins every intermediate `X_i` of
 /// Appendix A.1.1 and A.1.4 and agrees with this function.
 ///
-/// The eight blocks are processed together only because `tau` is: the argument
-/// `X_{i+1} xor X_{i+2} xor X_{i+3} xor rk_i` is formed per block, all eight go through the
+/// The four blocks are processed together only because `tau` is: the argument
+/// `X_{i+1} xor X_{i+2} xor X_{i+3} xor rk_i` is formed per block, all four go through the
 /// circuit in one pass, and `L` and the final XOR are again per block. The blocks never mix.
 ///
 /// Sec 7.1 (b): `(Y_0, Y_1, Y_2, Y_3) = R(X_32, X_33, X_34, X_35) = (X_35, X_34, X_33, X_32)`.
@@ -204,7 +187,7 @@ fn rounds(blocks: &mut [Block; LANES], rk: impl Fn(usize) -> u32) {
         for (ab, xb) in a.iter_mut().zip(x.iter()) {
             *ab = xb[s1] ^ xb[s2] ^ xb[s3] ^ k;
         }
-        // tau on all eight words at once, then L and the XOR into X_i per block.
+        // tau on all four words at once, then L and the XOR into X_i per block.
         tau(&mut a);
         for (ab, xb) in a.iter().zip(x.iter_mut()) {
             xb[s0] ^= l(*ab);
@@ -227,9 +210,9 @@ impl Algorithm for SM4 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-/// One-line delegations to the inherent methods. The pair and eight-block methods are overridden
-/// because two or eight blocks in as many lanes cost one circuit pass, where the defaults would
-/// cost two or four.
+/// One-line delegations to the inherent methods. The pair and four-block methods are overridden:
+/// two blocks in two of the four lanes cost one circuit pass per round where the default would
+/// cost two, and four blocks are one full pass where the default (two pair calls) would be two.
 impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4 {
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
         SM4::new(key)
@@ -246,10 +229,10 @@ impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4 {
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         SM4::decrypt_2blocks(self, blocks)
     }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         SM4::encrypt_4blocks(self, blocks)
     }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         SM4::decrypt_4blocks(self, blocks)
     }
 }
@@ -265,7 +248,7 @@ impl core::fmt::Debug for SM4 {
 mod tests {
     use super::*;
 
-    /// `T(.) = L(tau(.))` on one word (Sec 6.2), via the eight-lane `tau` with the word in every
+    /// `T(.) = L(tau(.))` on one word (Sec 6.2), via the four-lane `tau` with the word in every
     /// lane.
     fn t(z: u32) -> u32 {
         let mut words = [z; LANES];
@@ -283,7 +266,7 @@ mod tests {
     /// Sec 7.1 (a) written literally, one round per step on one block, returning all of
     /// `X_0 .. X_35`.
     ///
-    /// This is the reference the slot-rotating, eight-lane [`rounds`] is checked against, and it
+    /// This is the reference the slot-rotating, four-lane [`rounds`] is checked against, and it
     /// is what lets the per-round `X_i` columns of Appendix A.1 be pinned rather than only the
     /// final ciphertext.
     fn literal_rounds(block: &Block, rk: &RoundKeys) -> [u32; 36] {
@@ -321,7 +304,7 @@ mod tests {
         }
         assert_eq!(&from_literal, ciphertext, "literal Sec 7.1 must give the ciphertext");
 
-        // ...and the slot-rotating eight-lane form agrees with the literal one, with the block in
+        // ...and the slot-rotating four-lane form agrees with the literal one, with the block in
         // any lane and unrelated blocks in the others.
         let lanes: [Block; LANES] = core::array::from_fn(|i| [i as u8 * 17 + 1; 16]);
         let mut alone = lanes;
@@ -331,7 +314,7 @@ mod tests {
         for lane in 0..LANES {
             let mut mixed = lanes;
             mixed[lane] = *plaintext;
-            sm4.encrypt_8blocks(&mut mixed);
+            sm4.encrypt_4blocks(&mut mixed);
             assert_eq!(mixed[lane], from_literal, "lane {lane} must match the literal form");
             for other in (0..LANES).filter(|&o| o != lane) {
                 assert_eq!(mixed[other], alone[other], "lane {other} must be undisturbed");
@@ -405,9 +388,13 @@ mod tests {
 
     #[test]
     fn test_lanes_constant() {
-        // The "Memory Usage" docs and the two-block override both assume eight lanes.
-        assert_eq!(LANES, 8);
-        assert_eq!(LANES * 4, 32, "eight four-byte words fill the 32 byte positions of the planes");
+        // The "Memory Usage" docs and the two-block override both assume four lanes.
+        assert_eq!(LANES, 4);
+        assert_eq!(
+            LANES * 4,
+            16,
+            "four four-byte words fill the 16 byte positions of the u16 planes"
+        );
     }
 
     #[test]

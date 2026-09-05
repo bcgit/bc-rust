@@ -21,8 +21,8 @@
 //!
 //! Like AES, SM4 has no interesting stack profile: peak usage is a small constant plus the round
 //! keys. The number worth recording in the crate docs is what `print_struct_sizes` prints -- the
-//! persistent 128 bytes of round keys -- and the confirmation that per-call work is the eight-block
-//! working state (128 bytes), the eight S-box planes (32 bytes) and circuit temporaries. There are
+//! persistent 128 bytes of round keys -- and the confirmation that per-call work is the four-block
+//! working state (64 bytes), the eight `u16` S-box planes (16 bytes) and circuit temporaries. There are
 //! no lookup tables; BC Java's `SM4Engine` adds a 256-byte table on top of these numbers.
 
 #![allow(dead_code)]
@@ -80,12 +80,12 @@ fn bench_sm4_decrypt_block() {
     print!("{block:x?}");
 }
 
-fn bench_sm4_encrypt_8blocks() {
-    eprintln!("SM4::encrypt_8blocks");
+fn bench_sm4_encrypt_4blocks() {
+    eprintln!("SM4::encrypt_4blocks");
 
     let sm4 = SM4::new(&key()).unwrap();
     let mut blocks: [[u8; 16]; LANES] = core::array::from_fn(|i| [0x11 * (i as u8 + 1); 16]);
-    sm4.encrypt_8blocks(&mut blocks);
+    sm4.encrypt_4blocks(&mut blocks);
     print!("{blocks:x?}");
 }
 
@@ -95,5 +95,5 @@ fn main() {
     // bench_sm4_key_expansion()
     // bench_sm4_encrypt_block()
     // bench_sm4_decrypt_block()
-    // bench_sm4_encrypt_8blocks()
+    // bench_sm4_encrypt_4blocks()
 }
