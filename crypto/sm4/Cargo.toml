@@ -1,0 +1,20 @@
+[package]
+name = "bouncycastle-sm4"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-utils.workspace = true
+# Only for the SM4-CBC type alias in `cbc.rs`; the engine itself does not use it.
+bouncycastle-modes.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "sm4_benches"
+harness = false
