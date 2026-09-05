@@ -15,8 +15,8 @@
 //! secret-dependent memory access and no secret-dependent branch. This is the only place in the
 //! crate where secret data meets non-linear logic; everything else is XOR and rotate.
 //!
-//! Because the planes hold the four bytes of one word from each of eight blocks, one pass of the
-//! circuit is `tau` for eight blocks at once.
+//! Because the planes hold the four bytes of one word from each of four blocks -- as two 16-bit
+//! halves each -- one pass of the circuit is `tau` for four blocks at once.
 //!
 //! # What the circuit computes, and where it came from
 //!
@@ -65,6 +65,7 @@
 //! against the AES crate; its inputs are bound from the generated top layer, so its `U0`-is-MSB
 //! convention never appears here.
 
+use crate::LANES;
 use crate::bitslice::{Planes, ortho};
 
 /// `S` applied to every byte position of the eight words in `q` (Sec 6.2.3, Figure 1), on
@@ -258,17 +259,29 @@ pub(crate) fn sbox(q: &mut Planes) {
     q[7] = b32;
 }
 
-/// `tau(A) = (S(a_0), S(a_1), S(a_2), S(a_3))` (Sec 6.2.1), on one word from each of eight
+/// `tau(A) = (S(a_0), S(a_1), S(a_2), S(a_3))` (Sec 6.2.1), on one word from each of four
 /// blocks at once.
 ///
-/// The eight words are transposed into bit-planes, every byte position is substituted by one
-/// pass of [`sbox`], and the planes are transposed back. The byte order within a word is
-/// irrelevant to `tau`, which substitutes each byte independently; [`ortho`] being its own
-/// inverse is what returns each substituted byte to its original position.
-pub(crate) fn tau(words: &mut [u32; 8]) {
-    ortho(words);
-    sbox(words);
-    ortho(words);
+/// Each word is split into its two 16-bit halves -- the high halves in plane words `0 .. 4`, the
+/// low halves in `4 .. 8` -- the eight half-words are transposed into bit-planes, every byte
+/// position is substituted by one pass of [`sbox`], the planes are transposed back and the halves
+/// rejoined. The byte order within a word is irrelevant to `tau`, which substitutes each byte
+/// independently; [`ortho`] being its own inverse is what returns each substituted byte to its
+/// original position.
+pub(crate) fn tau(words: &mut [u32; LANES]) {
+    let mut q: Planes = [0; 8];
+    for b in 0..LANES {
+        q[b] = (words[b] >> 16) as u16;
+        q[LANES + b] = words[b] as u16;
+    }
+    ortho(&mut q);
+    sbox(&mut q);
+    ortho(&mut q);
+    for b in 0..LANES {
+        // The two halves occupy disjoint bit ranges, so `|` and `^` agree here -- a surviving
+        // `cargo mutants` equivalence, not a gap.
+        words[b] = ((q[b] as u32) << 16) | q[LANES + b] as u32;
+    }
 }
 
 #[cfg(test)]
@@ -320,13 +333,13 @@ mod tests {
 
     #[test]
     fn test_sbox_matches_figure_1() {
-        // Exhaustive: all 256 inputs. 32 byte positions per pass, so eight passes cover them all,
-        // with the byte value `32 * pass + position` at each position. This is what makes the
+        // Exhaustive: all 256 inputs. 16 byte positions per pass, so sixteen passes cover them
+        // all, with the byte value `16 * pass + position` at each position. This is what makes the
         // generated gate list trustworthy, so it must stay exhaustive.
-        for pass in 0..8u32 {
+        for pass in 0..16u16 {
             let mut q: Planes = core::array::from_fn(|w| {
-                let base = 32 * pass + 4 * w as u32;
-                u32::from_le_bytes([base as u8, base as u8 + 1, base as u8 + 2, base as u8 + 3])
+                let base = 16 * pass + 2 * w as u16;
+                u16::from_le_bytes([base as u8, base as u8 + 1])
             });
             let inputs = q;
             ortho(&mut q);
@@ -338,7 +351,7 @@ mod tests {
                     .iter()
                     .zip(input.to_le_bytes().iter().map(|&b| SBOX[b as usize]))
                 {
-                    assert_eq!(*byte, expected, "pass {pass}, word {w}, input {input:#010x}");
+                    assert_eq!(*byte, expected, "pass {pass}, word {w}, input {input:#06x}");
                 }
             }
         }
@@ -346,15 +359,18 @@ mod tests {
 
     #[test]
     fn test_tau_matches_the_table_form() {
-        // Eight different words at once, against the byte-by-byte table lookup.
-        let mut words: [u32; 8] = [
-            0xEF00_0000, 0x00EF_0000, 0x0000_EF00, 0x0000_00EF, 0x0123_4567, 0x89AB_CDEF,
-            0xFFFF_FFFF, 0x0000_0000,
-        ];
-        let expected: [u32; 8] = core::array::from_fn(|i| tau_table(words[i]));
-        tau(&mut words);
-        assert_eq!(words, expected);
+        // Four different words at once, against the byte-by-byte table lookup, twice.
+        for mut words in [
+            [0xEF00_0000u32, 0x00EF_0000, 0x0000_EF00, 0x0000_00EF],
+            [0x0123_4567, 0x89AB_CDEF, 0xFFFF_FFFF, 0x0000_0000],
+        ] {
+            let expected: [u32; LANES] = core::array::from_fn(|i| tau_table(words[i]));
+            tau(&mut words);
+            assert_eq!(words, expected);
+        }
         // Sec 6.2.1: the bytes are independent, most significant byte first.
+        let mut words = [0xEF00_0000u32, 0x00EF_0000, 0x0000_EF00, 0x0000_00EF];
+        tau(&mut words);
         assert_eq!(words[0], 0x84D6_D6D6);
         assert_eq!(words[3], 0xD6D6_D684);
     }
@@ -362,14 +378,15 @@ mod tests {
     #[test]
     fn test_tau_lanes_are_independent() {
         // Changing one word must not change any other word's output.
-        let base: [u32; 8] = core::array::from_fn(|i| 0x1111_1111u32.wrapping_mul(i as u32 + 1));
+        let base: [u32; LANES] =
+            core::array::from_fn(|i| 0x1111_1111u32.wrapping_mul(i as u32 + 1));
         let mut expected = base;
         tau(&mut expected);
-        for lane in 0..8 {
+        for lane in 0..LANES {
             let mut words = base;
             words[lane] ^= 0xA5A5_5A5A;
             tau(&mut words);
-            for other in (0..8).filter(|&o| o != lane) {
+            for other in (0..LANES).filter(|&o| o != lane) {
                 assert_eq!(words[other], expected[other], "lane {lane} disturbed lane {other}");
             }
             assert_eq!(words[lane], tau_table(base[lane] ^ 0xA5A5_5A5A));
