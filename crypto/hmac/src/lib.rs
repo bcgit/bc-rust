@@ -193,6 +193,7 @@ use bouncycastle_sha2::{
     SHA224, SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
 };
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SUSPENDED_SHA3_STATE_LEN};
+use bouncycastle_sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 
@@ -213,6 +214,8 @@ pub const HMAC_SHA3_256_NAME: &str = "HMAC-SHA3-256";
 pub const HMAC_SHA3_384_NAME: &str = "HMAC-SHA3-384";
 ///
 pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
+///
+pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
 
 /*** Type aliases ***/
 /// Public type for HMAC using SHA224.
@@ -321,6 +324,20 @@ impl AlgorithmOID for HMAC_SHA3_512 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
+}
+
+/// Public type for HMAC using SM3 (GB/T 32905-2016). Block length 64 bytes.
+#[allow(non_camel_case_types)]
+pub type HMAC_SM3 = HMAC<SM3, 64>;
+impl Algorithm for HMAC_SM3 {
+    const ALG_NAME: &'static str = HMAC_SM3_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+/// Assigned by the Chinese OSCCA (GM/T 0006): sm3-with-key / hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
+impl AlgorithmOID for HMAC_SM3 {
+    const OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401, 2];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x83, 0x11, 0x02];
 }
 
 // The internal key buffer must be able to hold a key up to the *block length* of the underlying hash:
@@ -562,6 +579,8 @@ pub const SUSPENDED_HMAC_SHA3_256_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
 pub const SUSPENDED_HMAC_SHA3_384_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
 /// Length in bytes of the serialized state of [`HMAC_SHA3_512`].
 pub const SUSPENDED_HMAC_SHA3_512_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
+/// Length in bytes of the serialized state of [`HMAC_SM3`].
+pub const SUSPENDED_HMAC_SM3_STATE_LEN: usize = SUSPENDED_SM3_STATE_LEN;
 
 /// HMAC is a keyed algorithm, so it implements [`SuspendableKeyed`] (rather than
 /// [`Suspendable`]) for suspending and resuming in-progress operations.
@@ -642,3 +661,4 @@ impl_hmac_keygen!(SHA3_224, 144, 28, HashDRBG_SHA256);
 impl_hmac_keygen!(SHA3_256, 136, 32, HashDRBG_SHA256);
 impl_hmac_keygen!(SHA3_384, 104, 48, HashDRBG_SHA512);
 impl_hmac_keygen!(SHA3_512, 72, 64, HashDRBG_SHA512);
+impl_hmac_keygen!(SM3, 64, 32, HashDRBG_SHA256);

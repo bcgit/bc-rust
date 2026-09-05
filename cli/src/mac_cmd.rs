@@ -7,11 +7,12 @@ use bouncycastle::core::key_material::{
 };
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
-use bouncycastle::hmac::{HMAC_SHA256, HMAC_SHA512};
+use bouncycastle::hmac::{HMAC_SHA256, HMAC_SHA512, HMAC_SM3};
 
 pub(crate) enum HMACVariant {
     SHA256,
     SHA512,
+    SM3,
 }
 
 pub(crate) fn mac_cmd(
@@ -46,6 +47,10 @@ pub(crate) fn mac_cmd(
         }
         HMACVariant::SHA512 => {
             let mac = HMAC_SHA512::new_allow_weak_key(&key).unwrap();
+            do_mac(mac, verify_val, output_hex);
+        }
+        HMACVariant::SM3 => {
+            let mac = HMAC_SM3::new_allow_weak_key(&key).unwrap();
             do_mac(mac, verify_val, output_hex);
         }
     }

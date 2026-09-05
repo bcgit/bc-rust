@@ -7,6 +7,7 @@ mod mlkem_cmd;
 mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
+mod sm3_cmd;
 
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
@@ -102,6 +103,14 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform SM3 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SM3 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
     /// Perform SHAKE128 of the content provided on stdin. Requires the output length in bytes.
     /// Supports streaming update for low memory footprint.
     SHAKE128 {
@@ -153,6 +162,31 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HMAC_SHA512 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SM3 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SM3 {
         /// The MAC key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
@@ -525,6 +559,9 @@ fn main() {
         Some(Subcommands::SHA3_512 { x }) => {
             sha3_cmd::sha3_cmd(512, *x);
         }
+        Some(Subcommands::SM3 { x }) => {
+            sm3_cmd::sm3_cmd(*x);
+        }
         Some(Subcommands::SHAKE128 { length, x }) => {
             sha3_cmd::shake_cmd(128, *length, *x);
         }
@@ -536,6 +573,9 @@ fn main() {
         }
         Some(Subcommands::HMAC_SHA512 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA512, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HMAC_SM3 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
         }
         Some(Subcommands::HKDF_SHA256 {
             salt,
