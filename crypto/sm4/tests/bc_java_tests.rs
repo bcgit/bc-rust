@@ -75,7 +75,7 @@ fn provider_cipher_tests_entry() {
 /// The decryption half is the part not printed in the specification, and it is the strongest
 /// check of the reversed-round-key decryption path: one wrong `rk_{31-i}` would derail a million
 /// chained blocks.
-/// Gated to optimised builds: a million single-block calls through the eight-lane circuit take
+/// Gated to optimised builds: a million single-block calls through the four-lane circuit take
 /// over a minute unoptimised. `cargo test --release -p bouncycastle-sm4` runs it.
 #[cfg_attr(debug_assertions, ignore = "1,000,000 iterations; run with `cargo test --release`")]
 #[test]

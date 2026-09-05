@@ -74,7 +74,7 @@ fn a_1_2_example_2_decrypt() {
 }
 
 /// A.1.3: "encryption of a plaintext 1,000,000 times repeatedly, using a fixed encryption key".
-/// Gated to optimised builds: a million single-block calls through the eight-lane circuit take
+/// Gated to optimised builds: a million single-block calls through the four-lane circuit take
 /// over a minute unoptimised. `cargo test --release -p bouncycastle-sm4` runs it.
 #[cfg_attr(debug_assertions, ignore = "1,000,000 iterations; run with `cargo test --release`")]
 #[test]
@@ -104,7 +104,7 @@ fn a_1_5_example_5_decrypt() {
 }
 
 /// A.1.6: Example 4 iterated 1,000,000 times.
-/// Gated to optimised builds: a million single-block calls through the eight-lane circuit take
+/// Gated to optimised builds: a million single-block calls through the four-lane circuit take
 /// over a minute unoptimised. `cargo test --release -p bouncycastle-sm4` runs it.
 #[cfg_attr(debug_assertions, ignore = "1,000,000 iterations; run with `cargo test --release`")]
 #[test]

@@ -64,10 +64,10 @@ fn single_block_agrees_with_the_reference() {
     }
 }
 
-/// Eight-lane API against the reference: every lane must carry its own block, undisturbed by
-/// the others.
+/// Four-lane API -- the natural unit -- against the reference: every lane must carry its own
+/// block, undisturbed by the others.
 #[test]
-fn eight_lanes_agree_with_the_reference() {
+fn four_lanes_agree_with_the_reference() {
     let mut seed = 0x5EED_0002;
     for _ in 0..128 {
         let key: [u8; 16] = common::pseudo_random(&mut seed);
@@ -75,18 +75,18 @@ fn eight_lanes_agree_with_the_reference() {
         let blocks: [Block; LANES] = core::array::from_fn(|_| common::pseudo_random(&mut seed));
 
         let mut ours = blocks;
-        sm4.encrypt_8blocks(&mut ours);
+        sm4.encrypt_4blocks(&mut ours);
         for (lane, (o, b)) in ours.iter().zip(blocks.iter()).enumerate() {
             let mut theirs = *b;
             common::encrypt_block(&key, &mut theirs);
             assert_eq!(*o, theirs, "encrypt lane {lane}");
         }
 
-        sm4.decrypt_8blocks(&mut ours);
-        assert_eq!(ours, blocks, "decrypt_8blocks must invert encrypt_8blocks");
+        sm4.decrypt_4blocks(&mut ours);
+        assert_eq!(ours, blocks, "decrypt_4blocks must invert encrypt_4blocks");
 
         let mut ours = blocks;
-        sm4.decrypt_8blocks(&mut ours);
+        sm4.decrypt_4blocks(&mut ours);
         for (lane, (o, b)) in ours.iter().zip(blocks.iter()).enumerate() {
             let mut theirs = *b;
             common::decrypt_block(&key, &mut theirs);

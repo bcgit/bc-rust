@@ -1,12 +1,13 @@
-//! A constant-time, table-free SM4 block cipher engine (GB/T 32907-2016), ported from Bouncy
-//! Castle Java's `SM4Engine`.
+//! A constant-time, table-free, low-memory SM4 block cipher engine (GB/T 32907-2016), ported from
+//! Bouncy Castle Java's `SM4Engine`.
 //!
 //! This crate provides the raw SM4 keyed permutation -- [`SM4`] -- a 128-bit block cipher with a
 //! single 128-bit key length, standardised by the State Cryptography Administration of China as
 //! GB/T 32907-2016 and described in English in the CFRG document `draft-ribose-cfrg-sm4-10`, which
 //! is the specification every comment in this crate cites. The S-box is evaluated as a Boolean
-//! circuit over bit-planes rather than looked up in a table, so the engine is constant-time; see
-//! [Design](#design).
+//! circuit over bit-planes rather than looked up in a table, so the engine is constant-time and
+//! carries no table at all; the planes are 16 bits wide so that the working set stays small, which
+//! is what "lowmemory" means here. See [Design](#design).
 //!
 //! It is a *permutation*, not a cipher you can encrypt data with. See
 //! [Security Considerations](#security-considerations).
@@ -40,11 +41,12 @@
 //!                    0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10]);
 //! ```
 //!
-//! ## Eight blocks at a time
+//! ## Four blocks at a time
 //!
-//! The bit-sliced S-box substitutes 32 bytes per pass, and a round substitutes four bytes per
-//! block, so eight independent blocks cost the same as one. Where a caller has eight,
-//! [`SM4::encrypt_8blocks`] is eight times the throughput of eight [`SM4::encrypt_block`] calls:
+//! The bit-sliced S-box substitutes 16 bytes per pass, and a round substitutes four bytes per
+//! block, so four independent blocks cost the same as one. Where a caller has four,
+//! [`SM4::encrypt_4blocks`] is four times the throughput of four [`SM4::encrypt_block`] calls, and it
+//! is also the four-block batch the `ElectronicCodeBook` trait offers to modes:
 //!
 //! ```
 //! use bouncycastle_sm4::{SM4, LANES};
@@ -56,8 +58,8 @@
 //!
 //! let mut blocks: [[u8; 16]; LANES] = core::array::from_fn(|i| [i as u8; 16]);
 //! let original = blocks;
-//! sm4.encrypt_8blocks(&mut blocks);
-//! sm4.decrypt_8blocks(&mut blocks);
+//! sm4.encrypt_4blocks(&mut blocks);
+//! sm4.decrypt_4blocks(&mut blocks);
 //! assert_eq!(blocks, original);
 //! ```
 //!
@@ -121,9 +123,10 @@
 //! The whole S-box is 127 gates: 32 AND, 82 XOR, 12 XNOR, 1 NOT. The `sbox` module docs give the
 //! full derivation.
 //!
-//! A round substitutes only four bytes per block, and the circuit's eight `u32` planes hold 32
-//! byte positions, so the engine works on **eight blocks at once**: each round forms the argument
-//! of `T` for every block, transposes the eight words into planes, runs the circuit once,
+//! A round substitutes only four bytes per block, and the circuit's eight `u16` planes hold 16
+//! byte positions, so the engine works on **four blocks at once**: each round forms the argument
+//! of `T` for every block, splits the four words into eight 16-bit halves, transposes them into
+//! planes, runs the circuit once,
 //! transposes back, and finishes the round per block. The blocks never mix. Everything else in
 //! the round -- the XORs, the five rotations of `L` -- is already constant-time on words, so the
 //! rest of the engine is the straightforward word-oriented port of BC Java, with the roles of the
@@ -135,6 +138,14 @@
 //! facts here); and [`SM4::new`] requires a key tagged as a symmetric cipher key of at least
 //! 128-bit strength, as every cipher in this workspace does.
 //!
+//! ## Why "lowmemory"
+//!
+//! Two things. First, no table: BC Java's `SM4Engine` carries a 256-byte S-box indexed by secret
+//! data; here the S-box is code. Second, the working set. Eight `u32` planes would take eight
+//! blocks per pass and double the throughput, but every per-call buffer -- the block state and the
+//! planes -- would double with them. Four lanes over `u16` planes keep the whole per-call working
+//! state near 100 bytes.
+//!
 //! # Memory Usage
 //!
 //! No heap allocation and no lookup tables. The persistent state is the 32 round keys of Sec 7.3:
@@ -143,8 +154,9 @@
 //! |---|---|---|---|---|
 //! | [`SM4`] | 16 B | 32 | 128 B | 0 B |
 //!
-//! Per-call stack usage is the eight-block working state -- four words per block, 128 bytes --
-//! plus the eight planes of the S-box argument (32 bytes) and the circuit's temporaries, most of
+//! Per-call stack usage is the four-block working state -- four words per block, 64 bytes --
+//! plus the four `T` arguments (16 bytes), the eight `u16` planes of the S-box argument (16
+//! bytes) and the circuit's temporaries, most of
 //! which the compiler keeps in registers. Measure with
 //! `cargo run --release -p mem_usage_benches --bin bench_sm4_mem_usage`.
 //!
@@ -171,7 +183,7 @@
 //! * The Rust compiler makes no guarantee it will preserve this. The code is written so that the
 //!   natural code generation is straight-line, and `#![forbid(unsafe_code)]` rules out the usual
 //!   ways of forcing the issue, but the property is not contractual.
-//! * The eight-block working state is not scrubbed after a call. Only the round keys are wrapped
+//! * The four-block working state is not scrubbed after a call. Only the round keys are wrapped
 //!   in `Secret`, and so only they are guaranteed to be zeroized on drop.
 //! * Constant-time execution says nothing about power or electromagnetic side channels, which
 //!   Sec 12 of the specification specifically raises for SM4 hardware.
