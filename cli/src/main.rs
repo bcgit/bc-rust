@@ -4,6 +4,7 @@ mod aes_cfb_cmd;
 mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod block_mode_cmd;
+mod camellia_cbc_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -956,6 +957,75 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Camellia-128 in CBC mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; the key
+    /// and block are both 16 bytes, as for AES-128.
+    CAMELLIA128_CBC {
+        action: BlockModeAction,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-192 in CBC mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    CAMELLIA192_CBC {
+        action: BlockModeAction,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-256 in CBC mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    CAMELLIA256_CBC {
+        action: BlockModeAction,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -1335,6 +1405,15 @@ fn main() {
         }
         Some(Subcommands::AES256_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes256_ecb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::CAMELLIA128_CBC { action, key, key_file, x }) => {
+            camellia_cbc_cmd::camellia128_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::CAMELLIA192_CBC { action, key, key_file, x }) => {
+            camellia_cbc_cmd::camellia192_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::CAMELLIA256_CBC { action, key, key_file, x }) => {
+            camellia_cbc_cmd::camellia256_cbc_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
