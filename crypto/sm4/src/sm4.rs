@@ -136,6 +136,24 @@ impl SM4 {
         self.decrypt_8blocks(&mut lanes);
         *blocks = [lanes[0], lanes[1]];
     }
+
+    /// Encrypts four independent blocks in place: four of the eight lanes, the other four
+    /// duplicates that are discarded. This is the `ElectronicCodeBook` four-block batch, so modes
+    /// reach the eight-lane circuit through it at four blocks per pass.
+    pub fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let mut lanes = [blocks[0]; LANES];
+        lanes[..4].copy_from_slice(blocks);
+        self.encrypt_8blocks(&mut lanes);
+        blocks.copy_from_slice(&lanes[..4]);
+    }
+
+    /// Decrypts four blocks in place. See [`SM4::encrypt_4blocks`].
+    pub fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let mut lanes = [blocks[0]; LANES];
+        lanes[..4].copy_from_slice(blocks);
+        self.decrypt_8blocks(&mut lanes);
+        blocks.copy_from_slice(&lanes[..4]);
+    }
 }
 
 /// `L(B) = B xor (B <<< 2) xor (B <<< 10) xor (B <<< 18) xor (B <<< 24)` (Sec 6.2.2).
@@ -209,8 +227,9 @@ impl Algorithm for SM4 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-/// One-line delegations to the inherent methods. The pair methods are overridden because two
-/// blocks in two lanes cost one circuit pass where the default's two single-block calls cost two.
+/// One-line delegations to the inherent methods. The pair and eight-block methods are overridden
+/// because two or eight blocks in as many lanes cost one circuit pass, where the defaults would
+/// cost two or four.
 impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4 {
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
         SM4::new(key)
@@ -226,6 +245,12 @@ impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4 {
     }
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         SM4::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        SM4::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        SM4::decrypt_4blocks(self, blocks)
     }
 }
 
