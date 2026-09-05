@@ -14,6 +14,7 @@ mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
+mod sm4_cbc_cmd;
 mod stream_mode_cmd;
 
 use crate::block_mode_cmd::BlockModeAction;
@@ -956,6 +957,29 @@ enum Subcommands {
         x: bool,
     },
 
+    /// SM4 in CBC mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; the key
+    /// and block are both 16 bytes, as for AES-128.
+    SM4_CBC {
+        action: BlockModeAction,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -1299,6 +1323,9 @@ fn main() {
         }
         Some(Subcommands::AES256_CBC { action, key, key_file, x }) => {
             aes_cbc_cmd::aes256_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::SM4_CBC { action, key, key_file, x }) => {
+            sm4_cbc_cmd::sm4_cbc_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::AES128_CFB { action, key, key_file, x }) => {
             aes_cfb_cmd::aes128_cfb_cmd(action, key, key_file, *x);

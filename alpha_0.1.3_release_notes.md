@@ -5,6 +5,7 @@
 * New algorithms added to crypto/ :
     * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java.
     * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_GCM.
+    * SM4 -- the SM4 block cipher (GB/T 32907-2016), ported from bc-java, along with its SM4_CBC mode.
 
 ## Minor features / bug fixes
 
