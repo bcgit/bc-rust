@@ -17,6 +17,7 @@
 //! a full circuit evaluation per round key to substitute four bytes, which is wasteful, but it
 //! happens 32 times per key rather than per block.
 
+use crate::LANES;
 use crate::sbox::tau;
 use bouncycastle_utils::secret::Secret;
 
@@ -47,10 +48,10 @@ fn l_prime(b: u32) -> u32 {
 
 /// `T'(.) = L'(tau(.))` (Sec 6.2): the permutation `T` with `L` replaced by `L'`. BC Java's `T_ap`.
 ///
-/// `tau` works on eight words at once; the one word here is placed in every lane, and lane 0 is
-/// read back. All eight lanes then hold the same result, which `test_t_prime_lanes_agree` checks.
+/// `tau` works on four words at once; the one word here is placed in every lane, and lane 0 is
+/// read back. All four lanes then hold the same result, which `test_t_prime_lanes_agree` checks.
 fn t_prime(z: u32) -> u32 {
-    let mut words = [z; 8];
+    let mut words = [z; LANES];
     tau(&mut words);
     l_prime(words[0])
 }
@@ -148,10 +149,10 @@ mod tests {
 
     #[test]
     fn test_t_prime_lanes_agree() {
-        // The single-word T' fills all eight lanes with the same word; every lane must come back
+        // The single-word T' fills all four lanes with the same word; every lane must come back
         // identical, or lane 0 would not be a valid answer.
         for z in [0u32, 0xFFFF_FFFF, 0x0123_4567, 0xDEAD_BEEF, 0x8000_0001] {
-            let mut words = [z; 8];
+            let mut words = [z; LANES];
             tau(&mut words);
             assert!(words.iter().all(|&w| w == words[0]), "lanes disagree for {z:#010x}");
             assert_eq!(l_prime(words[0]), t_prime(z));

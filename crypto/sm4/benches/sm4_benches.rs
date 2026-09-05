@@ -1,11 +1,10 @@
 //! Criterion benchmarks for the bit-sliced SM4 engine.
 //!
-//! The comparison that matters is `encrypt_block` against `encrypt_2blocks` and `encrypt_8blocks`
-//! over the same number of bytes. The S-box circuit always processes eight lanes, so a
-//! single-block call does eight blocks' worth of work and the eight-block path should be close to
-//! eight times the throughput; the two-block path, which is what the CBC mode's decryption uses,
-//! sits at a quarter of that. Decryption costs the same as encryption (the same loop with the
-//! round keys read backwards).
+//! The comparison that matters is `encrypt_block` against `encrypt_2blocks` and `encrypt_4blocks`
+//! over the same number of bytes. The S-box circuit always processes four lanes, so a single-block
+//! call does four blocks' worth of work and the four-block path (what the CBC mode's decryption
+//! uses) should be close to four times the throughput; the two-block path sits at half. Decryption
+//! costs the same as encryption (the same loop with the round keys read backwards).
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
@@ -70,11 +69,11 @@ fn bench_sm4(c: &mut Criterion) {
         })
     });
 
-    group.bench_function("16KiB -- .encrypt_8blocks() x128", |b| {
+    group.bench_function("16KiB -- .encrypt_4blocks() x256", |b| {
         b.iter(|| {
             let mut buf = blocks.clone();
-            for eight in buf.as_chunks_mut::<LANES>().0 {
-                sm4.encrypt_8blocks(black_box(eight));
+            for four in buf.as_chunks_mut::<LANES>().0 {
+                sm4.encrypt_4blocks(black_box(four));
             }
             black_box(&buf);
         })
@@ -85,16 +84,6 @@ fn bench_sm4(c: &mut Criterion) {
             let mut buf = blocks.clone();
             for block in buf.iter_mut() {
                 sm4.decrypt_block(black_box(block));
-            }
-            black_box(&buf);
-        })
-    });
-
-    group.bench_function("16KiB -- .decrypt_8blocks() x128", |b| {
-        b.iter(|| {
-            let mut buf = blocks.clone();
-            for eight in buf.as_chunks_mut::<LANES>().0 {
-                sm4.decrypt_8blocks(black_box(eight));
             }
             black_box(&buf);
         })
