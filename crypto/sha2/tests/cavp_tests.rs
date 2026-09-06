@@ -1,4 +1,4 @@
-//! NIST CAVP SHAVS test vectors for SHA-224/256/384/512.
+//! NIST CAVP SHAVS test vectors for SHA-224, SHA-256, SHA-384, SHA-512, SHA-512/224 and SHA-512/256.
 //!
 //! Vectors are read from the bc-test-data repo (https://github.com/bcgit/bc-test-data), which must be
 //! cloned alongside this repo at "../bc-test-data" (same convention as the mldsa/mlkem/sha3 crates),
@@ -13,14 +13,12 @@
 //!    them in the least significant bits, hence the `>> (8 - n)` when feeding the last byte.
 //!  * Monte — SHAVS s. 6.4 pseudo-random message test: `MD0 = MD1 = MD2 = Seed`,
 //!    `MDi = SHA(MDi-3 || MDi-2 || MDi-1)` for i in 3..=1002, `MD = MD1002`, then reseed with `MD`
-//!    for the next COUNT. 100 counts per file.
-//!
-//! SHA-512/224 and SHA-512/256 files are present in bc-test-data but those algorithms are not
-//! implemented by this crate, so they are not exercised here.
+//!    for the next COUNT. 100 counts per file. (This differs from the SHA-3 Monte test, which hashes
+//!    only the previous digest.)
 
 use bouncycastle_core::traits::Hash;
 use bouncycastle_hex as hex;
-use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use std::fs;
 use std::path::Path;
 use std::sync::Once;
@@ -108,6 +106,19 @@ fn run_msg_file<H: Hash + Default>(orientation: &str, filename: &str) {
             "{orientation}/{filename}: Len = {}",
             c.len_bits
         );
+        // Whole-byte messages are also fed through the streaming API in uneven chunks.
+        if c.len_bits % 8 == 0 {
+            let mut h = H::default();
+            for chunk in c.msg[..c.len_bits / 8].chunks(37) {
+                h.do_update(chunk);
+            }
+            assert_eq!(
+                h.do_final(),
+                c.md,
+                "{orientation}/{filename}: Len = {} (streamed)",
+                c.len_bits
+            );
+        }
     }
     if orientation == "bit-oriented" {
         assert!(partial_cases > 0, "{orientation}/{filename}: expected bit-length cases");
@@ -197,3 +208,5 @@ cavp_tests!(sha224, SHA224, "SHA224");
 cavp_tests!(sha256, SHA256, "SHA256");
 cavp_tests!(sha384, SHA384, "SHA384");
 cavp_tests!(sha512, SHA512, "SHA512");
+cavp_tests!(sha512_224, SHA512_224, "SHA512_224");
+cavp_tests!(sha512_256, SHA512_256, "SHA512_256");
