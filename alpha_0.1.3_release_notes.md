@@ -84,3 +84,9 @@ Testing:
   in uneven chunks.
 * NIST publishes no full-length known-answer vectors for HMAC-SHA512/224 and /256; the tests use the 160-bit truncated
   ACVP cases and compare the leading bytes, with full-length output cross-checked against OpenSSL.
+
+Housekeeping:
+
+* `no_std` progress: `std::marker::PhantomData` and `std::fmt` replaced with their `core::` equivalents in the SHA-3
+  and Hash_DRBG crates, and the `Copy` types `KeyType` / `SecurityStrength` are now copied rather than `.clone()`d.
+  Removed a redundant second zeroization of the caller's output buffer in `Hash::hash_out()` / `XOF::hash_xof_out()`.
