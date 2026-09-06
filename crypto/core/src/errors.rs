@@ -193,6 +193,9 @@ pub enum PaddingError {
     /// `unpad()` found the block does not carry well-formed padding. Deliberately carries no detail
     /// about *how* the padding was malformed.
     InvalidPadding,
+    /// `pad()` was asked to add padding by a scheme that adds none (`NoPadding`): the data was not
+    /// a whole number of blocks, and the caller must align it.
+    PaddingNotPermitted,
 }
 
 /*** Promotion functions ***/

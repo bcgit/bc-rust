@@ -192,8 +192,10 @@
 //!
 //! Arbitrary-length data therefore needs a padding layer on top. That layer is *not* in this crate:
 //! it is `bouncycastle-padding`, whose `PaddedEncryptor` / `PaddedDecryptor` wrap any
-//! [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] pair, so both modes get arbitrary-length
-//! support by being wrapped rather than by growing padding logic of their own.
+//! [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] pair, so the modes get arbitrary-length
+//! support by being wrapped rather than by growing padding logic of their own. The same adapters
+//! over `bouncycastle-padding`'s `NoPadding` give the opposite guarantee -- an unaligned message is
+//! an error at `do_final` rather than something padded -- for formats defined on whole blocks.
 //!
 //! ```
 //! use bouncycastle_aes_lowmemory::Aes128;

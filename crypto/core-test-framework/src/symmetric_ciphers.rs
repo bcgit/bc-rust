@@ -12,13 +12,18 @@ use bouncycastle_core::traits::{
 
 /// Instance of the test framework.
 pub struct TestFrameworkSymmetricCipher {
-    // Put any config options here
+    /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the plaintext length
+    /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
+    /// -- the block length, for a `PaddedEncryptor` over `NoPadding` -- means only multiples of it
+    /// round-trip, and every other length must be *rejected* by `do_final` / `encrypt_out` with a
+    /// `PaddingError`, which the test then asserts instead.
+    pub required_alignment: usize,
 }
 
 impl TestFrameworkSymmetricCipher {
     ///
     pub fn new() -> Self {
-        Self {}
+        Self { required_alignment: 1 }
     }
 
     /// Test all the members of trait SymmetricCipher against the given input-output pair.
@@ -144,11 +149,27 @@ impl TestFrameworkSymmetricCipher {
         )
         .unwrap();
         // Enough plaintext lengths to cross several final-chunk boundaries (a block, for padding).
-        let max_len = 3 * FINAL_LEN.max(1) + 5;
+        let align = self.required_alignment.max(1);
+        let max_len = (3 * FINAL_LEN.max(1) + 5).next_multiple_of(align);
 
-        // one-shot round trip, every length
+        // one-shot round trip, every (accepted) length; every other length must be refused
         for len in 0..=max_len {
             let msg = &DUMMY_SEED[..len];
+            if !len.is_multiple_of(align) {
+                let mut ct = vec![0u8; E::encrypt_out_len(len) + FINAL_LEN];
+                match E::encrypt_out(&key, msg, &mut ct) {
+                    Err(SymmetricCipherError::PaddingError(_)) => {}
+                    other => panic!("len {len} is not aligned and must be refused, got {other:?}"),
+                }
+                let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+                let mut buf = vec![0u8; enc.update_out_len(len)];
+                enc.do_update_out(msg, &mut buf).unwrap();
+                assert!(
+                    matches!(enc.do_final(), Err(SymmetricCipherError::PaddingError(_))),
+                    "len {len}: streaming do_final must refuse an unaligned message"
+                );
+                continue;
+            }
             let mut ct = vec![0u8; E::encrypt_out_len(len)];
             let (init_data, ct_len) = E::encrypt_out(&key, msg, &mut ct).unwrap();
             assert_eq!(ct_len, ct.len(), "encrypt_out must write exactly encrypt_out_len bytes");
@@ -184,8 +205,9 @@ impl TestFrameworkSymmetricCipher {
                 ct.extend_from_slice(&buf[..n]);
             }
             let mut last = [0u8; FINAL_LEN];
-            assert_eq!(enc.do_final_out(&mut last).unwrap(), FINAL_LEN);
-            ct.extend_from_slice(&last);
+            let last_len = enc.do_final_out(&mut last).unwrap();
+            assert!(last_len <= FINAL_LEN, "do_final_out must not claim more than FINAL_LEN bytes");
+            ct.extend_from_slice(&last[..last_len]);
             assert_eq!(
                 ct.len(),
                 E::encrypt_out_len(len),
@@ -232,7 +254,8 @@ impl TestFrameworkSymmetricCipher {
         let mut streamed = vec![0u8; enc.update_out_len(len)];
         let n = enc.do_update_out(msg, &mut streamed).unwrap();
         streamed.truncate(n);
-        streamed.extend_from_slice(&enc.do_final().unwrap());
+        let (last, last_len) = enc.do_final().unwrap();
+        streamed.extend_from_slice(&last[..last_len]);
         let mut one_shot = vec![0u8; E::encrypt_out_len(len)];
         let (init_data2, n2) = E::encrypt_out_rng(
             &key,
@@ -251,6 +274,7 @@ impl TestFrameworkSymmetricCipher {
         // corrupting the ciphertext does not give back the plaintext (or fails to decrypt)
         let mut ct = vec![0u8; E::encrypt_out_len(len)];
         let (init_data, ct_len) = E::encrypt_out(&key, msg, &mut ct).unwrap();
+        assert!(ct_len > 0, "the test message is non-empty, so its ciphertext must be");
         for flip in [0usize, ct_len / 2, ct_len - 1] {
             let mut bad = ct[..ct_len].to_vec();
             bad[flip] ^= 0x80;
