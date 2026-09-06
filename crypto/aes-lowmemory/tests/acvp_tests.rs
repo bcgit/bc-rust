@@ -21,7 +21,7 @@
 //! | `ACVP-AES-CBC` | `crypto/modes/tests/acvp_tests.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
 //! | `ACVP-AES-CFB128` | `crypto/modes/tests/acvp_cfb_tests.rs` |
-//! | `ACVP-AES-CFB8` | nothing yet (sub-block CFB is unimplemented) |
+//! | `ACVP-AES-CFB8` | `crypto/modes/tests/acvp_cfb8_tests.rs` |
 //! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
 //! | `ACVP-AES-CTR` | nothing yet (CTR is unimplemented) |
 //! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |

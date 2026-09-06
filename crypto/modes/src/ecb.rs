@@ -18,10 +18,11 @@
 //!
 //! There is no IV and no chaining: the mode *is* the keyed permutation applied block by block,
 //! which is why the permutation trait itself is named [`ElectronicCodeBook`]. What this type adds is
-//! the [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] shape shared with `Cbc` and `Cfb` --
-//! the direction in the type, the streaming and one-shot methods with their compile-time length
-//! checks, and the batching -- so ECB can stand wherever the other modes can, including under the
-//! padding layer and behind the CLI. Its `INIT_DATA_LEN` is 0: [`BlockCipherEncryptor::do_encrypt_init`]
+//! the [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] shape shared with `Cbc` -- the direction
+//! in the type, the streaming and one-shot methods with their compile-time length checks, and the
+//! batching -- so ECB can stand wherever the other block modes can, including under the padding
+//! layer and behind the CLI. (`Cfb` and `Cfb8` are stream ciphers and implement the stream traits
+//! instead.) Its `INIT_DATA_LEN` is 0: [`BlockCipherEncryptor::do_encrypt_init`]
 //! returns an empty array and draws nothing from the RNG, and
 //! [`BlockCipherDecryptor::do_decrypt_init`] takes an empty one.
 //!

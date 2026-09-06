@@ -1,14 +1,17 @@
 //! Tests for the `aes128-cfb` / `aes192-cfb` / `aes256-cfb` subcommands.
 //!
 //! These drive the built `bc-rust` binary as a subprocess, because the behaviour worth testing is
-//! the command-line contract itself -- the IV riding in the first block, block-alignment
-//! enforcement, exit codes, key loading -- none of which is reachable from the library API.
+//! the command-line contract itself -- the IV riding in the first block, the chunked streaming
+//! loop, exit codes, key loading -- none of which is reachable from the library API.
 //!
-//! The commands share all of that plumbing with `aes*-cbc` (`cli/src/block_mode_cmd.rs`), so this
-//! file deliberately repeats the CBC suite's coverage rather than assuming it: the shared code is
-//! generic over the mode, and a wiring mistake in the CFB dispatcher would not show up in the CBC
-//! tests. What is *not* shared, and is tested only here, is the F.3 vectors, the CFB-specific
-//! Appendix D error propagation, and the guard that CFB and CBC ciphertexts are not interchangeable.
+//! The commands share their key loading and IV convention with `aes*-cbc`
+//! (`cli/src/block_mode_cmd.rs`) and their streaming loop with `aes*-cfb8`
+//! (`cli/src/stream_mode_cmd.rs`), so this file deliberately repeats the CBC suite's coverage
+//! rather than assuming it: the shared code is generic over the mode, and a wiring mistake in the
+//! CFB dispatcher would not show up in the CBC tests. What is *not* shared, and is tested only
+//! here, is the F.3 vectors, the CFB-specific Appendix D error propagation, the guard that CFB and
+//! CBC ciphertexts are not interchangeable, and -- the difference from the CBC suite -- that input
+//! of *any* length is accepted, because CFB is a stream cipher and pads nothing.
 //!
 //! `CARGO_BIN_EXE_bc-rust` is set by cargo for integration tests and points at the binary for the
 //! current profile, so there is nothing to build or locate by hand.
@@ -82,8 +85,8 @@ const CBC_CT_128: &str = concat!(
 ///
 /// # Why `BrokenPipe` is ignored
 ///
-/// The error-path tests hand a rejected key or a misaligned length to a command that `exit`s before
-/// it reads stdin, so the write races the child's exit and loses. That is an expected outcome, not a
+/// The error-path tests hand a rejected key to a command that `exit`s before it reads stdin, so the
+/// write races the child's exit and loses. That is an expected outcome, not a
 /// harness failure: those tests assert the exit status and stderr, both of which `wait_with_output`
 /// still returns. Any *other* write error is a real problem and still panics.
 /// `a_large_payload_on_an_error_path_does_not_break_the_harness` pins it.
@@ -264,11 +267,12 @@ fn encrypt_then_decrypt_round_trips() {
 
 /// Round trips at sizes that straddle the 1 KiB streaming chunk and the block boundary.
 ///
-/// 1024 is exactly one chunk; 1040 is a chunk plus one block, which exercises the tail path; 4112
-/// is four chunks plus a block; 65536 is many chunks.
+/// 1024 is exactly one chunk; 1040 is a chunk plus one block; 4112 is four chunks plus a block;
+/// 65536 is many chunks. The odd sizes leave a partial final segment and put a chunk boundary in
+/// the middle of a segment.
 #[test]
 fn round_trips_across_chunk_boundaries() {
-    for size in [16usize, 32, 1024, 1040, 4096, 4112, 65536] {
+    for size in [16usize, 32, 1023, 1024, 1025, 1040, 4096, 4112, 65535, 65536] {
         let plaintext = pseudo_random(size, size as u32);
         let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
         let recovered = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
@@ -348,23 +352,58 @@ fn an_all_zero_key_warns_but_proceeds() {
 
 // ---- block alignment and framing --------------------------------------------------------
 
-/// Input that is not a whole number of blocks is rejected, with a message that explains why rather
-/// than just failing. These commands are the `s = b` CFB variant, so they need whole blocks and
-/// they do not pad.
+/// Input of *any* length is accepted and round-trips, and the ciphertext is exactly as long as the
+/// plaintext. CFB is a stream cipher, so unlike `aes*-cbc` these commands neither pad nor reject.
+///
+/// Every length from empty to just past two blocks is covered, which includes the exact multiples
+/// and every partial final segment.
 #[test]
-fn unaligned_input_is_rejected_with_an_explanation() {
-    for extra in [1usize, 7, 15] {
-        let plaintext = pseudo_random(32 + extra, extra as u32);
-        let stderr = run_err(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
-        assert!(
-            stderr.contains("whole number of 16-byte blocks"),
-            "stderr should explain the alignment requirement: {stderr}"
+fn any_input_length_is_accepted_and_round_trips() {
+    for len in 0..=(2 * 16 + 1) {
+        let plaintext = pseudo_random(len, len as u32);
+        let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        assert_eq!(
+            ciphertext.len(),
+            len + 16,
+            "len {len}: output should be the 16-byte IV plus a ciphertext as long as the plaintext"
         );
-        assert!(
-            stderr.contains("padding"),
-            "stderr should point at padding being the caller's job: {stderr}"
-        );
-        assert!(stderr.contains("CFB128"), "stderr should name the mode: {stderr}");
+
+        let recovered = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
+        assert_eq!(recovered, plaintext, "len {len}: round trip");
+    }
+}
+
+/// A message that is not a whole number of blocks must agree with the library, byte for byte,
+/// including its short final segment.
+///
+/// The F.3 vectors are all block-aligned, so this is the one end-to-end check that the CLI's
+/// streaming loop handles a partial final segment the same way `bouncycastle_modes::Cfb` does --
+/// the CLI reads stdin in 1 KiB pieces, so a long unaligned message also crosses a chunk boundary
+/// mid-segment.
+#[test]
+fn an_unaligned_message_matches_the_library() {
+    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle::core::traits::StreamCipherDecryptor;
+    use bouncycastle::modes::{Cfb, Decrypting};
+
+    type Aes128Cfb<Dir> = Cfb<bouncycastle::aes_lowmemory::Aes128, Dir, 16, 16>;
+
+    for len in [5usize, 17, 1000, 1024, 1025, 4099] {
+        let plaintext = pseudo_random(len, len as u32);
+        let out = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        let (iv, ciphertext) = out.split_at(16);
+
+        let key =
+            KeyMaterial::<16>::from_bytes_as_type(&unhex(KEY_128), KeyType::SymmetricCipherKey)
+                .expect("a valid AES-128 key");
+        let mut recovered = ciphertext.to_vec();
+        Aes128Cfb::<Decrypting>::decrypt(
+            &key,
+            iv.try_into().expect("a 16-byte IV"),
+            &mut recovered,
+        )
+        .expect("library decryption");
+        assert_eq!(recovered, plaintext, "len {len}: the CLI must agree with the library");
     }
 }
 
@@ -380,16 +419,14 @@ fn decrypt_input_shorter_than_the_iv_is_rejected() {
     }
 }
 
-/// Decrypt input that carries the IV but then an unaligned body is rejected too.
+/// Decrypt input that carries the IV and then an unaligned body is accepted, for the same reason.
+/// Anything past the IV is ciphertext, whatever its length.
 #[test]
-fn decrypt_rejects_an_unaligned_body() {
+fn decrypt_accepts_an_unaligned_body() {
     let mut input = unhex(IV);
     input.extend_from_slice(&pseudo_random(20, 3)); // 20 is not a multiple of 16
-    let stderr = run_err(&["aes128-cfb", "decrypt", "--key", KEY_128], &input);
-    assert!(
-        stderr.contains("whole number of 16-byte blocks"),
-        "stderr should explain the alignment requirement: {stderr}"
-    );
+    let out = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &input);
+    assert_eq!(out.len(), 20, "the plaintext is exactly as long as the ciphertext");
 }
 
 /// Empty input to `encrypt` produces just the IV: zero blocks in, zero blocks out.
