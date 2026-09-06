@@ -6,6 +6,8 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
+# Only for the AES-CBC type aliases in `cbc.rs`; the engine itself does not use it.
+bouncycastle-modes.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
