@@ -10,6 +10,7 @@ pub use bouncycastle_mldsa_lowmemory as mldsa_lowmemory;
 pub use bouncycastle_mlkem as mlkem;
 pub use bouncycastle_mlkem_lowmemory as mlkem_lowmemory;
 pub use bouncycastle_modes as modes;
+pub use bouncycastle_padding as padding;
 pub use bouncycastle_rng as rng;
 pub use bouncycastle_sha2 as sha2;
 pub use bouncycastle_sha3 as sha3;

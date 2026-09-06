@@ -679,6 +679,24 @@ pub trait MAC: Sized {
     fn max_security_strength(&self) -> SecurityStrength;
 }
 
+/// A block padding scheme, used to extend arbitrary-length data to a whole number of blocks so that it
+/// can be processed by a [`BlockCipherEncryptor`]. Implementations are pure functions of the block
+/// contents: no key, no state.
+///
+/// Only the final, partial block of a message is ever padded; the padding layer sitting between the
+/// caller and the block cipher is responsible for routing whole blocks straight through.
+pub trait Padding<const BLOCK_LEN: usize> {
+    /// Pads `block` in place: bytes `0..data_len` are data and are left untouched, bytes
+    /// `data_len..BLOCK_LEN` are overwritten with padding. `data_len` must be less than `BLOCK_LEN`
+    /// (a full block of data requires a whole additional block of padding, which the caller supplies
+    /// as `data_len = 0`).
+    fn pad(block: &mut [u8; BLOCK_LEN], data_len: usize) -> Result<(), PaddingError>;
+    /// Returns the number of data bytes in a padded `block`, or [`PaddingError::InvalidPadding`].
+    /// Implementations must run in constant time with respect to the block contents, so that a
+    /// decryptor built on them does not leak a padding oracle.
+    fn unpad(block: &[u8; BLOCK_LEN]) -> Result<usize, PaddingError>;
+}
+
 /// Pre-Hashed Signature Verifier is an extension to [`SignatureVerifier`] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.
 pub trait PHSignatureVerifier<
