@@ -6,8 +6,9 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::traits::{
-    AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength, StreamCipher,
-    SymmetricCipher, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipher, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 
 /// Instance of the test framework.
@@ -683,15 +684,173 @@ impl TestFrameworkStreamCipher {
         Self {}
     }
 
-    /// Test all the members of trait StreamCipher against the given input-output pair.
-    /// This gives good baseline test coverage, but is not exhaustive.
+    /// Test the contract of a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair: every
+    /// chunking of the streaming API agrees with the one-shot and round-trips through the other
+    /// direction, the RNG-taking constructors reproduce their init data, and the key-type and
+    /// security-strength policy is enforced. This gives good baseline test coverage, but is not
+    /// exhaustive; algorithm-specific test vectors belong in the implementing crate.
     pub fn test<
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
-        C: StreamCipher<KEY_LEN, INIT_DATA_LEN>,
+        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
     >(
         &self,
     ) {
-        todo!()
+        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
+            &DUMMY_SEED[..KEY_LEN],
+            KeyType::SymmetricCipherKey,
+        )
+        .unwrap();
+
+        // one-shot, in place: must round-trip.
+        let mut buf = *DUMMY_SEED;
+        let iv = E::encrypt(&key, &mut buf).unwrap();
+        let reference_ct = buf;
+        assert_ne!(&reference_ct[..], &DUMMY_SEED[..], "encryption must change the data");
+        D::decrypt(&key, &iv, &mut buf).unwrap();
+        assert_eq!(&buf[..], &DUMMY_SEED[..]);
+
+        // the streaming API under the same init data must give the one-shot's answer whatever
+        // the chunking, including chunks that are not a multiple of any internal keystream block
+        // and empty chunks; and encrypting in one chunking must decrypt in any other.
+        let chunkings: &[usize] = &[1, 3, 7, 16, 63, 64, 65, 250, DUMMY_SEED.len()];
+        for &enc_chunk in chunkings {
+            let mut buf = *DUMMY_SEED;
+            let (mut encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
+            // stream through the encryptor, with an empty chunk thrown in at the start and end
+            encryptor.do_encrypt(&mut []).unwrap();
+            for chunk in buf.chunks_mut(enc_chunk) {
+                encryptor.do_encrypt(chunk).unwrap();
+            }
+            encryptor.do_encrypt(&mut []).unwrap();
+            let ct = buf;
+
+            for &dec_chunk in chunkings {
+                let mut buf = ct;
+                let mut decryptor = D::do_decrypt_init(&key, &iv2).unwrap();
+                decryptor.do_decrypt(&mut []).unwrap();
+                for chunk in buf.chunks_mut(dec_chunk) {
+                    decryptor.do_decrypt(chunk).unwrap();
+                }
+                decryptor.do_decrypt(&mut []).unwrap();
+                assert_eq!(
+                    &buf[..],
+                    &DUMMY_SEED[..],
+                    "enc chunk {enc_chunk}, dec chunk {dec_chunk}"
+                );
+            }
+
+            // and the one-shot decrypt agrees with every streaming encryption
+            let mut buf = ct;
+            D::decrypt(&key, &iv2, &mut buf).unwrap();
+            assert_eq!(&buf[..], &DUMMY_SEED[..]);
+        }
+
+        // the streaming decryptor must agree with the one-shot encryptor under its init data
+        let mut buf = reference_ct;
+        let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
+        for chunk in buf.chunks_mut(5) {
+            streamed.do_decrypt(chunk).unwrap();
+        }
+        assert_eq!(&buf[..], &DUMMY_SEED[..]);
+
+        // the RNG-taking one-shot must give the streaming API's answer for the same RNG stream,
+        // and the same init data.
+        let pinned = [0xA5u8; INIT_DATA_LEN];
+        let mut expected = *DUMMY_SEED;
+        let (mut streamed, iv_streamed) =
+            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned)).unwrap();
+        streamed.do_encrypt(&mut expected).unwrap();
+        let mut buf = *DUMMY_SEED;
+        let iv = E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
+            .unwrap();
+        assert_eq!(iv, iv_streamed);
+        assert_eq!(&buf[..], &expected[..]);
+        // ...and a driven RNG determines the ciphertext: the same RNG stream again gives the same
+        // init data and ciphertext, so the ciphertext is a function of (key, init data) alone.
+        let mut buf2 = *DUMMY_SEED;
+        let iv_again =
+            E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf2)
+                .unwrap();
+        assert_eq!(iv, iv_again);
+        assert_eq!(&buf[..], &buf2[..]);
+
+        // test that the init data is random (ie not the same on two runs). A cipher with no init
+        // data at all (INIT_DATA_LEN == 0) has nothing to compare: two empty arrays are always equal.
+        if INIT_DATA_LEN > 0 {
+            let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();
+            let (_encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
+            assert_ne!(iv1, iv2);
+            // and different init data under the same key gives different ciphertext
+            let mut a = *DUMMY_SEED;
+            let mut b = *DUMMY_SEED;
+            let iv_a = E::encrypt(&key, &mut a).unwrap();
+            let iv_b = E::encrypt(&key, &mut b).unwrap();
+            assert_ne!(iv_a, iv_b);
+            assert_ne!(&a[..], &b[..]);
+        }
+
+        // error case: KeyMaterial of wrong type, for both directions
+        let mac_key =
+            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
+                .unwrap();
+        match E::do_encrypt_init(&mac_key) {
+            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
+            _ => panic!("Unexpected error"),
+        };
+        match D::do_decrypt_init(&mac_key, &[0u8; INIT_DATA_LEN]) {
+            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
+            _ => panic!("Unexpected error"),
+        };
+
+        // error case: security strengths too weak and too strong
+        let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
+            &DUMMY_SEED[..KEY_LEN],
+            KeyType::SymmetricCipherKey,
+        )
+        .unwrap();
+        let security_strengths = [
+            SecurityStrength::None,
+            SecurityStrength::_112bit,
+            SecurityStrength::_128bit,
+            SecurityStrength::_192bit,
+            SecurityStrength::_256bit,
+        ];
+        for ss in security_strengths.iter() {
+            // `set_security_strength` enforces its key-length guard even inside a
+            // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
+            // strength above `from_bytes(KEY_LEN)` -- so skip the strengths this key cannot carry
+            // rather than unwrapping an error. (A 16-byte key can reach 128-bit and no higher.)
+            // Do NOT "fix" this by relaxing that guard in `KeyMaterial`: core's
+            // `test_hazardous_ops_error_handling` requires it to stay enforced.
+            if ss > &SecurityStrength::from_bytes(KEY_LEN) {
+                continue;
+            }
+
+            // Tag the key at an arbitrary strength for the purpose of this test.
+            do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+
+            let check = |r: Result<(), SymmetricCipherError>, max: &SecurityStrength| match r {
+                Ok(_) => {
+                    if ss >= max { /* good */
+                    } else {
+                        panic!("Should have been a strong enough key");
+                    }
+                }
+                Err(SymmetricCipherError::KeyMaterialError(_)) => {
+                    if ss < max { /* good */
+                    } else {
+                        panic!("Should not have accepted a key weaker than algorithm");
+                    }
+                }
+                _ => panic!("Unexpected error"),
+            };
+            check(E::do_encrypt_init(&key).map(|_| ()), &E::MAX_SECURITY_STRENGTH);
+            check(
+                D::do_decrypt_init(&key, &[0u8; INIT_DATA_LEN]).map(|_| ()),
+                &D::MAX_SECURITY_STRENGTH,
+            );
+        }
     }
 }
