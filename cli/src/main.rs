@@ -1,4 +1,5 @@
 mod aes_cbc_cmd;
+mod aes_cfb8_cmd;
 mod aes_cfb_cmd;
 mod aes_ecb_cmd;
 mod block_mode_cmd;
@@ -12,6 +13,7 @@ mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
+mod stream_mode_cmd;
 
 use crate::block_mode_cmd::BlockModeAction;
 use crate::mac_cmd::HMACVariant;
@@ -455,15 +457,15 @@ enum Subcommands {
 
     /// AES-128 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
     ///
-    /// The segment size is the full block, i.e. CFB128. SP 800-38A's 8-bit and 1-bit CFB variants
-    /// are different modes and are NOT interoperable with this command.
+    /// The segment size is the full block, i.e. CFB128. SP 800-38A's 8-bit CFB is a different,
+    /// non-interoperable mode; use `aes128-cfb8` for that. The 1-bit variant is not provided.
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
     /// compose directly in a pipeline. There is deliberately no `--iv` flag.
     ///
-    /// Input must be a whole number of 16-byte blocks: this command is block-aligned and applies
-    /// no padding, so unaligned input is rejected rather than padded.
+    /// Input may be ANY length: CFB is a stream cipher, so nothing is padded and the ciphertext is
+    /// exactly as long as the plaintext.
     ///
     /// WARNING: CFB provides confidentiality only. It does not detect tampering, and neither the
     /// ciphertext nor the IV is authenticated. Flipping a ciphertext bit flips the same bit of the
@@ -492,8 +494,8 @@ enum Subcommands {
 
     /// AES-192 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
     ///
-    /// See `aes128-cfb` for the IV convention, block-alignment requirement and warnings; only the
-    /// key length differs.
+    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
     AES192_CFB {
         action: BlockModeAction,
 
@@ -514,9 +516,92 @@ enum Subcommands {
 
     /// AES-256 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
     ///
-    /// See `aes128-cfb` for the IV convention, block-alignment requirement and warnings; only the
-    /// key length differs.
+    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
     AES256_CFB {
+        action: BlockModeAction,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
+    ///
+    /// The segment size is one byte. This is a DIFFERENT, NON-INTEROPERABLE mode from the CFB128
+    /// of `aes128-cfb`: the two ciphertexts agree only on their first byte. It also costs one AES
+    /// call per byte, sixteen times the work of `aes128-cfb`, so prefer that unless a byte-granular
+    /// self-synchronising stream is required or the format demands CFB8.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
+    ///
+    /// Input may be ANY length: CFB8's segment is a single byte, so nothing is padded and the
+    /// ciphertext is exactly as long as the plaintext.
+    ///
+    /// WARNING: CFB8 provides confidentiality only. It does not detect tampering, and neither the
+    /// ciphertext nor the IV is authenticated. Flipping a ciphertext bit flips the same bit of the
+    /// same plaintext byte and corrupts the following 16 bytes, after which decryption
+    /// resynchronises. Do not decrypt data you have not authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CFB8 {
+        action: BlockModeAction,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
+    ///
+    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES192_CFB8 {
+        action: BlockModeAction,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
+    ///
+    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES256_CFB8 {
         action: BlockModeAction,
 
         /// The 32-byte AES key in hex.
@@ -940,6 +1025,15 @@ fn main() {
         }
         Some(Subcommands::AES256_CFB { action, key, key_file, x }) => {
             aes_cfb_cmd::aes256_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES128_CFB8 { action, key, key_file, x }) => {
+            aes_cfb8_cmd::aes128_cfb8_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES192_CFB8 { action, key, key_file, x }) => {
+            aes_cfb8_cmd::aes192_cfb8_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES256_CFB8 { action, key, key_file, x }) => {
+            aes_cfb8_cmd::aes256_cfb8_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::AES128_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes128_ecb_cmd(action, key, key_file, *x);

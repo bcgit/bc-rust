@@ -127,15 +127,17 @@ The identical loop appears in two other suites in
 | `TestFrameworkSymmetricCipher` | line 87 | 0 | latent, unfixed |
 | `TestFrameworkBlockCipher` | line 240 | 1 (`crypto/modes`) | **fixed** |
 | `TestFrameworkAEADCipher` | line 386 | 0 | latent, unfixed |
-| `TestFrameworkStreamCipher` | — | 0 | unaffected (no strength handling) |
+| `TestFrameworkStreamCipher` | in `test` | 2 (`crypto/modes`: `Cfb`, `Cfb8`) | **fixed** (written later, with the guard) |
 
 Both unfixed suites will panic the first time anything implements their trait with a key shorter
 than 32 bytes — which for `AEADCipher` includes ASCON-128 and AES-128-GCM. They were left alone to
 keep this change scoped to what CBC needed; the fix is the same three lines in each. Worth doing
 before the next implementor arrives rather than after.
 
-Note that `TestFrameworkStreamCipher` is a different case: it has no security-strength handling at
-all, so there is nothing to fix there and nothing being checked either.
+Note that `TestFrameworkStreamCipher` was a different case when this was written: its `test` was a
+`todo!()` with no security-strength handling at all, so there was nothing to fix and nothing being
+checked. It has since been implemented for the `StreamCipherEncryptor` / `StreamCipherDecryptor`
+pair, and carries the same key-length guard as the block suite from the start.
 
 ---
 

@@ -5,6 +5,10 @@
 //! -- F.3.1-F.3.6 (CFB1) and F.3.7-F.3.12 (CFB8) -- covers segment sizes this crate does not
 //! provide, and is deliberately not transcribed; see the [`Cfb`] module docs.
 //!
+//! [`Cfb`] is a stream cipher, so besides the segment-at-a-time and whole-message calls the vectors
+//! are also driven in chunks that do not line up with the segments at all. The expected output is
+//! the same: the chunking of the calls is not visible in the ciphertext.
+//!
 //! All six share the same IV and the same four plaintext blocks (Appendix F preamble: the plaintext
 //! is the same for every subsection except the CFB1 and CFB8 ones, which truncate it); only the key
 //! and the resulting ciphertext differ. The three keys are the same three used by SP 800-38A F.1
@@ -24,13 +28,13 @@
 //! # Driving the IV
 //!
 //! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through [`BlockCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
+//! through [`StreamCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
 //! the vector's IV, and the test asserts the returned init data really is that IV before comparing
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
+use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
@@ -119,10 +123,13 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
         .expect("a valid symmetric cipher key")
 }
 
+/// Chunk sizes that never line up with a 16-byte segment, for the stream-cipher checks.
+const ODD_CHUNKS: [usize; 3] = [5, 23, 63];
+
 /// Runs one Appendix F.3 encrypt subsection.
 ///
-/// Checks the whole message in one call, then again one segment at a time, then again through the
-/// implementor hook -- the vector should not care how the calls are grouped.
+/// Checks the whole message in one call, then again one segment at a time, then again in chunks
+/// that straddle the segments -- the vector should not care how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -132,44 +139,46 @@ where
     let pt = blocks(&PLAINTEXTS);
     let ct = blocks(expected);
 
+    let init = || {
+        let (enc, got_iv) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
+            &key,
+            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
+        )
+        .unwrap();
+        assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+        enc
+    };
+
     // All four segments in one call.
-    let (mut enc, got_iv) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-    )
-    .unwrap();
-    assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+    let mut enc = init();
     let mut data = flat(&PLAINTEXTS);
     enc.do_encrypt(&mut data).unwrap();
     assert_eq!(data, flat(expected), "{section}: four segments in one call");
 
     // One segment at a time.
-    let (mut enc, _) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-    )
-    .unwrap();
+    let mut enc = init();
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
         let mut got = *p;
         enc.do_encrypt(&mut got).unwrap();
         assert_eq!(&got, c, "{section}: segment #{}", i + 1);
     }
 
-    // Through the implementor hook, `do_*_blocks`.
-    let (mut enc, _) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-    )
-    .unwrap();
-    let mut blocks = pt;
-    enc.do_encrypt_blocks(&mut blocks).unwrap();
-    assert_eq!(blocks, ct, "{section}: implementor hook");
+    // In chunks that cut across the segments.
+    for chunk in ODD_CHUNKS {
+        let mut enc = init();
+        let mut data = flat(&PLAINTEXTS);
+        for piece in data.chunks_mut(chunk) {
+            enc.do_encrypt(piece).unwrap();
+        }
+        assert_eq!(data, flat(expected), "{section}: {chunk}-byte calls");
+    }
 }
 
 /// Runs one Appendix F.3 decrypt subsection.
 ///
-/// Checks one call, one segment at a time, and the odd grouping `3 + 1` -- which is the grouping
-/// that leaves a one-block remainder after the pair loop in `do_decrypt_blocks`.
+/// Checks one call, one segment at a time, the odd grouping `3 + 1` -- which is the grouping that
+/// leaves a one-block remainder after the pair loop in `do_decrypt` -- and chunks that straddle the
+/// segments.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -204,11 +213,15 @@ where
     assert_eq!(&three[..], pt[..3].as_flattened(), "{section}: segments 1-3");
     assert_eq!(one, pt[3], "{section}: segment 4");
 
-    // Through the implementor hook, `do_*_blocks`.
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    let mut blocks = ct;
-    dec.do_decrypt_blocks(&mut blocks).unwrap();
-    assert_eq!(blocks, pt, "{section}: implementor hook");
+    // In chunks that cut across the segments.
+    for chunk in ODD_CHUNKS {
+        let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+        let mut data = flat(ciphertext);
+        for piece in data.chunks_mut(chunk) {
+            dec.do_decrypt(piece).unwrap();
+        }
+        assert_eq!(data, flat(&PLAINTEXTS), "{section}: {chunk}-byte calls");
+    }
 }
 
 #[test]
@@ -242,8 +255,8 @@ fn f_3_18_cfb128_aes256_decrypt() {
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
-/// The one-shots take flat arrays and work in place, so the four ciphertext segments are presented
-/// as 64 contiguous bytes and become the four plaintext blocks.
+/// The one-shots work in place, so the four ciphertext segments are presented as 64 contiguous
+/// bytes and become the four plaintext blocks.
 #[test]
 fn the_one_shot_api_matches_the_vectors() {
     let iv = block(IV);
