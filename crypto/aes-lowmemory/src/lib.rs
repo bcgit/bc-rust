@@ -56,6 +56,32 @@
 //! assert_eq!(blocks, [[0u8; 16], [1u8; 16]]);
 //! ```
 //!
+//! ## CBC mode
+//!
+//! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
+//! provides [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] as aliases that fill in the const
+//! parameters, with the direction left as the type parameter:
+//!
+//! ```
+//! use bouncycastle_aes_lowmemory::AES_CBC_256;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Encrypting};
+//!
+//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
+//! let plaintext = [0x5Au8; 48];
+//!
+//! // Encryption is in place. The IV is generated for you and returned; there is no API for
+//! // supplying one.
+//! let mut data = plaintext;
+//! let iv = AES_CBC_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
+//! assert_ne!(data, plaintext);
+//! AES_CBC_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+//! assert_eq!(data, plaintext);
+//! ```
+//!
 //! There is no one-shot static on the permutation, because `Aes128::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
 //! arbitrary-length input and generate their own initialisation data.
@@ -166,10 +192,12 @@
 
 mod aes;
 mod bitslice;
+mod cbc;
 mod round;
 mod sbox;
 mod schedule;
 
 pub use aes::{Aes, Aes128, Aes192, Aes256, BLOCK_LEN};
 pub use bitslice::Block;
+pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams};
