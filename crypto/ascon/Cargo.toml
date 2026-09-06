@@ -16,8 +16,6 @@ bouncycastle-utils.workspace = true
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
-# Only to prove the modes compose with the padding layer for arbitrary-length data; no runtime dep.
-bouncycastle-padding.workspace = true
 criterion.workspace = true
 
 [[bench]]
