@@ -39,7 +39,13 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   `AES_CFB_192` / `AES_CFB_256`, `AES_CFB8_128` / `AES_CFB8_192` / `AES_CFB8_256`,
   `AES_CTR_128` / `AES_CTR_192` / `AES_CTR_256` (12-byte nonce, 4-byte counter) and
   `AES_ECB_128` / `AES_ECB_192` / `AES_ECB_256`, which fill in the
-  const parameters of `bouncycastle-modes`' `Cbc`, `Cfb`, `Cfb8`, `Ctr` and `Ecb` and leave the direction as the type parameter. They are aliases only -- no new engine
+  const parameters of `bouncycastle-modes`' `Cbc`, `Cfb`, `Cfb8`, `Ctr` and `Ecb`. The three stream
+  modes leave the direction as the only type parameter; the two **block** modes, CBC and ECB, take
+  a padding scheme as well -- `AES_CBC_128<Encrypting, PKCS7>` -- because neither is defined on data
+  that is not a whole number of blocks, so the scheme is a choice the caller has to make and one
+  both ends must agree on. Naming it in the type makes a mismatched pair a compile error instead of
+  a decryption that returns plausible rubbish. `PaddedMode` is the projection that lets a single
+  alias carry both parameters, `PaddedEncryptor` and `PaddedDecryptor` being distinct types. They are aliases only -- no new engine
   code, and each one's doctest round-trips and shows that a misaligned length fails to compile.
 
 New crate `bouncycastle-modes` (`bouncycastle::modes`): cipher modes of operation

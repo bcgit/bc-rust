@@ -59,39 +59,47 @@
 //! ## Modes of operation
 //!
 //! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
-//! provides aliases that fill in the const parameters, with the direction left as the type
-//! parameter: [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] for CBC (SP 800-38A Sec 6.2),
-//! and [`AES_CFB_128`], [`AES_CFB_192`] and [`AES_CFB_256`] for CFB128 (Sec 6.3).
+//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
+//! makes: [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] for CBC (SP 800-38A Sec 6.2), which
+//! take the direction **and a padding scheme**, and [`AES_CFB_128`], [`AES_CFB_192`] and
+//! [`AES_CFB_256`] for CFB128 (Sec 6.3), which take only the direction.
 //! [`AES_CFB8_128`], [`AES_CFB8_192`] and [`AES_CFB8_256`] give CFB8, the `s = 8` segment size,
 //! which is a different and non-interoperable mode costing one AES call per byte.
 //! [`AES_CTR_128`], [`AES_CTR_192`] and [`AES_CTR_256`] give CTR (Sec 6.5) with a 12-byte nonce
 //! and a 4-byte counter.
-//! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1) the same shape with no
-//! IV, for interoperability and test vectors only -- see
+//! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1), which takes a padding
+//! scheme like CBC and has no IV, for interoperability and test vectors only -- see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
 //!
-//! CBC is a block cipher and needs whole blocks; the two CFB modes are stream ciphers and take any
-//! length. See the `bouncycastle-modes` crate docs for the comparison.
+//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
+//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
+//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
+//! [`AES_CBC_128`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_aes_lowmemory::AES_CBC_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_padding::PKCS7;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
-//! let plaintext = [0x5Au8; 48];
+//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
+//! let plaintext = [0x5Au8; 50];
 //!
-//! // Encryption is in place. The IV is generated for you and returned; there is no API for
-//! // supplying one.
-//! let mut data = plaintext;
-//! let iv = AES_CBC_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
-//! assert_ne!(data, plaintext);
-//! AES_CBC_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
-//! assert_eq!(data, plaintext);
+//! // The IV is generated for you and returned; there is no API for supplying one.
+//! let (iv, ciphertext) =
+//!     AES_CBC_256::<Encrypting, PKCS7>::encrypt(&key, &plaintext).expect("encryption");
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! let recovered =
+//!     AES_CBC_256::<Decrypting, PKCS7>::decrypt(&key, &iv, &ciphertext).expect("decryption");
+//! assert_eq!(recovered, plaintext);
 //! ```
+//!
+//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
+//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
 //!
 //! There is no one-shot static on the permutation, because `Aes128::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
@@ -164,8 +172,9 @@
 //!
 //! The [`AES_ECB_128`] / [`AES_ECB_192`] / [`AES_ECB_256`] aliases give that same block-by-block
 //! operation the mode API, so that systems and specifications which require ECB -- and test-vector
-//! harnesses -- can use it through the same interface as the other modes. They do not make it
-//! confidential; the warning above applies to them unchanged.
+//! harnesses -- can use it through the same interface as the other modes. Like the CBC aliases they
+//! carry a padding scheme, which is what lets them accept data of any length. Neither the mode API
+//! nor the padding makes ECB confidential; the warning above applies to them unchanged.
 //!
 //! ## Constant-time properties
 //!
@@ -213,6 +222,7 @@ mod cfb;
 mod cfb8;
 mod ctr;
 mod ecb;
+mod padded_mode;
 mod round;
 mod sbox;
 mod schedule;
@@ -224,4 +234,5 @@ pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
+pub use padded_mode::PaddedMode;
 pub use schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams};
