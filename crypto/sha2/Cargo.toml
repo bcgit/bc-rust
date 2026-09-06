@@ -11,6 +11,7 @@ bouncycastle-utils.workspace = true
 criterion.workspace = true
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-rng.workspace = true
+bouncycastle-hex.workspace = true
 
 [[bench]]
 name = "sha2_benches"
