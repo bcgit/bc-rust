@@ -204,8 +204,9 @@ there).
 caller uses, as opposed to the block-aligned `BlockCipher*` traits a mode implements. Their shape is
 taken from `PaddedEncryptor` / `PaddedDecryptor`, which now implement them: streaming
 `do_{en,de}crypt_init[_rng]`, exact `update_out_len`, `do_update_out`, and a consuming `do_final` that
-returns the fixed `FINAL_LEN` trailing bytes (the padded block; a tag or nothing for other cipher kinds),
-the decryptor's paired with how many of them are data. `do_final_out`, the `_out` one-shots
+returns the `FINAL_LEN` trailing buffer (the padded block; a tag for an AEAD) paired with how many of its
+bytes are output -- always `FINAL_LEN` except for a padding scheme that adds nothing to aligned data --
+and, for the decryptor, how many of them are data. `do_final_out`, the `_out` one-shots
 (`encrypt_out[_rng]`, `decrypt_out`, with `encrypt_out_len` exact and `decrypt_out_max_len` an upper
 bound, checked before any work is done) and the `std` `Vec` one-shots are provided over the streaming
 methods, so an implementor writes six methods. The older one-shot-only `SymmetricCipher` trait is
@@ -242,8 +243,16 @@ Testing:
       a `Secret`, and the decryptor withholds one complete block until `do_final`, since only the last block carries
       padding.
     * `core` gains the `Padding<const BLOCK_LEN>` trait (in-place `pad(block, data_len)`, constant-time
-      `unpad(block) -> data_len`) and `PaddingError { DataLengthTooLong, InvalidPadding }`, wrapped as a new variant of
+      `unpad(block) -> data_len`, and `ALWAYS_PADS`, whether the scheme appends a block to already-aligned data) and
+      `PaddingError { DataLengthTooLong, InvalidPadding, PaddingNotPermitted }`, wrapped as a new variant of
       `SymmetricCipherError`.
+    * `NoPadding`: the absence of padding as a `Padding` scheme, for data that must already be a whole number of
+      blocks. `pad` never writes a byte and returns `PaddingNotPermitted` whenever called; `unpad` reports the whole
+      block as data; `ALWAYS_PADS` is false. Through `PaddedEncryptor` / `PaddedDecryptor` this *enforces* alignment
+      with the arbitrary-length API shape: an aligned message passes through with its length unchanged and no final
+      block, an unaligned one fails at `do_final` / `encrypt_out`, and an empty ciphertext decrypts to the empty
+      message. The test framework's `TestFrameworkSymmetricCipher` gained `required_alignment`, which makes it assert
+      that every unaligned length is refused.
     * Tests are derived from the RFC 5652 padding rule; the adapters are driven with a toy XOR-CBC cipher implementing
       the new block cipher traits, covering every data length, ten chunkings in both directions, tampering, malformed
       lengths, and buffer sizing. Criterion bench included.

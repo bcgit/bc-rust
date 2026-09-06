@@ -741,10 +741,20 @@ pub trait MAC: Sized {
 /// Only the final, partial block of a message is ever padded; the padding layer sitting between the
 /// caller and the block cipher is responsible for routing whole blocks straight through.
 pub trait Padding<const BLOCK_LEN: usize> {
+    /// Whether the scheme appends a whole block of padding to data that is already a whole number
+    /// of blocks. `true` for a scheme like PKCS7, which must always add at least one byte so that
+    /// unpadding is unambiguous; a caller then finishes an aligned message with `pad(block, 0)`.
+    /// `false` for a scheme that never adds bytes (`NoPadding`): an aligned message is finished with
+    /// no final block, and `pad` is called only for a partial one -- where such a scheme errors.
+    const ALWAYS_PADS: bool;
     /// Pads `block` in place: bytes `0..data_len` are data and are left untouched, bytes
     /// `data_len..BLOCK_LEN` are overwritten with padding. `data_len` must be less than `BLOCK_LEN`
     /// (a full block of data requires a whole additional block of padding, which the caller supplies
-    /// as `data_len = 0`).
+    /// as `data_len = 0` -- only when [`ALWAYS_PADS`](Self::ALWAYS_PADS) is `true`).
+    ///
+    /// # Errors
+    /// [`PaddingError::DataLengthTooLong`] if `data_len >= BLOCK_LEN`;
+    /// [`PaddingError::PaddingNotPermitted`] from a scheme that adds no bytes and was asked to.
     fn pad(block: &mut [u8; BLOCK_LEN], data_len: usize) -> Result<(), PaddingError>;
     /// Returns the number of data bytes in a padded `block`, or [`PaddingError::InvalidPadding`].
     /// Implementations must run in constant time with respect to the block contents, so that a
@@ -1438,19 +1448,28 @@ pub trait SymmetricCipherEncryptor<
     ) -> Result<usize, SymmetricCipherError>;
 
     /// Finishes the encryption, consuming the encryptor: pads and encrypts whatever was buffered,
-    /// or computes the tag, and returns exactly `FINAL_LEN` bytes, which are the last bytes of
-    /// the ciphertext.
-    fn do_final(self) -> Result<[u8; FINAL_LEN], SymmetricCipherError>;
+    /// or computes the tag, and returns the final buffer together with the number of leading bytes
+    /// of it that are ciphertext -- the last bytes of the message. For most ciphers that is always
+    /// `FINAL_LEN` (the padded block, the tag); a padding scheme that adds nothing to aligned data
+    /// returns 0 for an aligned message. The remainder of the buffer is not output.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::PaddingError`] if the buffered data cannot be finished -- with a
+    /// scheme that adds no padding, a message that is not a whole number of blocks.
+    fn do_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
 
-    /// As [`do_final`](Self::do_final), writing the final bytes into `ciphertext`. Returns
-    /// `FINAL_LEN`.
+    /// As [`do_final`](Self::do_final), writing the final buffer into `ciphertext`. Returns the
+    /// number of leading bytes of it that are output.
     fn do_final_out(self, ciphertext: &mut [u8; FINAL_LEN]) -> Result<usize, SymmetricCipherError> {
-        *ciphertext = self.do_final()?;
-        Ok(FINAL_LEN)
+        let (buffer, out_len) = self.do_final()?;
+        *ciphertext = buffer;
+        Ok(out_len)
     }
 
-    /// The exact ciphertext length for a `plaintext_len`-byte plaintext, i.e. the buffer
-    /// [`encrypt_out`](Self::encrypt_out) requires and the number of bytes it writes.
+    /// The exact ciphertext length for a `plaintext_len`-byte plaintext that the cipher accepts,
+    /// i.e. the buffer [`encrypt_out`](Self::encrypt_out) requires and the number of bytes it
+    /// writes. (A length the cipher rejects -- unaligned data under a scheme that adds no padding --
+    /// fails in [`do_final`](Self::do_final) instead.)
     fn encrypt_out_len(plaintext_len: usize) -> usize;
 
     /// One-shot: encrypts `plaintext` into `ciphertext`, which needs
@@ -1473,10 +1492,10 @@ pub trait SymmetricCipherEncryptor<
         }
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
         let written = enc.do_update_out(plaintext, ciphertext)?;
-        let last = enc.do_final()?;
-        // `encrypt_out_len` is exactly `written + FINAL_LEN`, so this fits in `ciphertext[..needed]`.
-        ciphertext[written..written + FINAL_LEN].copy_from_slice(&last);
-        Ok((init_data, written + FINAL_LEN))
+        let (last, last_len) = enc.do_final()?;
+        // `encrypt_out_len` is exactly `written + last_len`, so this fits in `ciphertext[..needed]`.
+        ciphertext[written..written + last_len].copy_from_slice(&last[..last_len]);
+        Ok((init_data, written + last_len))
     }
 
     /// As [`encrypt_out`](Self::encrypt_out), but sources randomness from the provided RNG.
@@ -1492,9 +1511,9 @@ pub trait SymmetricCipherEncryptor<
         }
         let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
         let written = enc.do_update_out(plaintext, ciphertext)?;
-        let last = enc.do_final()?;
-        ciphertext[written..written + FINAL_LEN].copy_from_slice(&last);
-        Ok((init_data, written + FINAL_LEN))
+        let (last, last_len) = enc.do_final()?;
+        ciphertext[written..written + last_len].copy_from_slice(&last[..last_len]);
+        Ok((init_data, written + last_len))
     }
 
     #[cfg(feature = "std")]
