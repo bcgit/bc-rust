@@ -31,7 +31,9 @@
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait. Define a one-line alias for the combination you use -- or use the ready-made
 //! `AES_CBC_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` and friends from
-//! `bouncycastle-aes-lowmemory`:
+//! `bouncycastle-aes-lowmemory`. Those aliases are not all the same shape: the two block modes take
+//! a padding scheme as well as a direction, since neither is usable on data of arbitrary length
+//! without one, while the three stream modes take only the direction:
 //!
 //! ```
 //! use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
