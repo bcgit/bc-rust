@@ -250,7 +250,8 @@ impl KeccakInternal {
         }
     }
 
-    /// Absorbs the final `bits` (0..=7, in the least significant bits of `data`) of the message and
+    /// Absorbs the final `bits` (0..=7, in the least significant bits of `data`, FIPS 202 B.1 order;
+    /// the public API's MSB-first partial byte is reversed by the callers before reaching here) of the message and
     /// switches the sponge to the squeezing phase. `bits == 0` means "no further bits": the sponge is
     /// padded and switched to squeezing without absorbing anything. Callers that have already applied a
     /// domain-separation suffix rely on this — if the switch did not happen here, a later squeeze would

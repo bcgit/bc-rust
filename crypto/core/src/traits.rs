@@ -210,12 +210,20 @@ pub trait Hash: Algorithm + Default {
     fn do_final_out(self, output: &mut [u8]) -> usize;
 
     /// The same as [`Hash::do_final`], but allows for supplying a partial byte as the last input.
-    /// The `num_bits` message bits are taken from the least significant bits of
-    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
-    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library.
-    /// Note that the NIST CAVP SHAVS (SHA-2) test vector files pack trailing bits MSB-first
-    /// (left-justified) and must be shifted right by `8 - num_bits` before being passed here; the
-    /// SHA3VS files already use the LSB convention.
+    ///
+    /// The partial byte is taken as it arrives in the final octet of an ASN.1 BIT STRING
+    /// (X.690 s. 8.6.2.1: the bits are placed "commencing with the leading bit ... in bits 8 to 1"):
+    /// the `num_bits` message bits are the most significant bits of `partial_byte`, leading bit first,
+    /// and the low `8 - num_bits` bits (the BIT STRING's "unused bits", X.690 s. 8.6.2.2) are ignored.
+    /// So for a BIT STRING whose initial octet is `unused` (1..=7), pass its final content octet with
+    /// `num_bits = 8 - unused`. The convention is the same for every hash family in this library;
+    /// implementations whose native bit order differs (SHA-3, which absorbs a byte LSB-first per
+    /// FIPS 202 Appendix B.1) convert internally.
+    ///
+    /// Note on test vectors: the NIST CAVP SHAVS (SHA-2) bit-oriented files pack trailing bits
+    /// left-justified and can be passed here directly; the SHA3VS files use the FIPS 202 B.1 packing
+    /// (first bit in the LSB) and must be bit-reversed (`u8::reverse_bits`) first.
+    ///
     /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`Hash::do_final`]).
     /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)
@@ -1081,9 +1089,11 @@ pub trait XOF: Default {
     fn absorb(&mut self, data: &[u8]) -> Result<(), HashError>;
 
     /// The same as [`XOF::absorb`], but allows for supplying a partial byte as the last input.
-    /// The `num_bits` message bits are taken from the least significant bits of
-    /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
-    /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library.
+    /// The partial byte is taken as it arrives in the final octet of an ASN.1 BIT STRING
+    /// (X.690 s. 8.6.2.1): the `num_bits` message bits are the most significant bits of
+    /// `partial_byte`, leading bit first, and the low `8 - num_bits` bits (the BIT STRING's "unused
+    /// bits") are ignored. This is the same convention as [`Hash::do_final_partial_bits`]; see there
+    /// for the relationship to the FIPS 202 Appendix B.1 bit order and to the NIST test vector files.
     /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`XOF::absorb`]).
     /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     ///
@@ -1104,10 +1114,11 @@ pub trait XOF: Default {
     fn squeeze_out(&mut self, output: &mut [u8]) -> usize;
 
     /// Squeezes a partial byte (`num_bits` in `0..=7`) from the XOF.
-    /// The bits are returned in the least significant `num_bits` bits of the returned u8, with the
-    /// remaining high bits zero. This follows the FIPS 202 Appendix B.1 bit-string convention
-    /// (the first bit of a byte is its least significant bit) and matches the input convention of
-    /// [`XOF::absorb_last_partial_byte`].
+    /// The bits are returned as they would be placed in the final octet of an ASN.1 BIT STRING
+    /// (X.690 s. 8.6.2.1): in the most significant `num_bits` bits of the returned u8, first output
+    /// bit first, with the low `8 - num_bits` "unused" bits zero. This matches the input convention of
+    /// [`XOF::absorb_last_partial_byte`]. (FIPS 202 Appendix B.1 orders the bits of an output byte
+    /// LSB-first; the implementation converts.)
     /// 0 is a valid value and requests no bits, so the result is `0x00`.
     /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     /// This is a final call and consumes self.

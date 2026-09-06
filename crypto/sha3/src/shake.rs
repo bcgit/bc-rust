@@ -319,8 +319,12 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         }
         // Mutants note: This is just bit-setting into empty space.
         // It works the same regardless of whether it's OR or XOR.
-        let mut final_input: u16 =
-            ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x0F << num_partial_bits);
+        // The public convention puts the message bits in the most significant bits of partial_byte,
+        // leading bit first (ASN.1 BIT STRING order, X.690 s. 8.6.2.1). Keccak absorbs a byte
+        // LSB-first: FIPS 202 Algorithm 10 (h2b) step 3 sets message bit T[8i + j] = b_ij, the bit
+        // of weight 2^j in byte i. So reverse the bit order and keep the low num_partial_bits bits.
+        let message_bits = (partial_byte.reverse_bits() as u16) & ((1 << num_partial_bits) - 1);
+        let mut final_input: u16 = message_bits | (0x0F << num_partial_bits);
         let mut final_bits = num_partial_bits + 4;
 
         if final_bits >= 8 {
@@ -376,7 +380,12 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         let mut buf = [0u8; 1];
         self.squeeze_out(&mut buf);
 
-        *output = buf[0] & ((1u8 << num_bits) - 1);
+        // Keccak emits the bits of an output byte LSB-first (FIPS 202 Algorithm 11, b2h: output bit
+        // T[8i + j] has weight 2^j), and the public convention returns them as the final octet of an
+        // ASN.1 BIT STRING (X.690 s. 8.6.2.1): first bit in the MSB, unused low bits zero. So reverse
+        // the bit order and keep the top num_bits bits. The mask is built in u16 so that num_bits == 0
+        // cannot overflow (0xFF00 >> 0 truncates to 0x00).
+        *output = buf[0].reverse_bits() & ((0xFF00u16 >> num_bits) as u8);
         Ok(())
     }
 

@@ -120,7 +120,7 @@ mod sm3_tests {
     }
 
     /// GB/T 32905-2016 s. 5.2: bit-oriented messages. Zero partial bits must equal the byte-oriented
-    /// digest; more than 7 partial bits is rejected; only the low bits of the partial byte matter;
+    /// digest; more than 7 partial bits is rejected; only the top bits of the partial byte matter;
     /// and the pad byte spilling into a second block must not break.
     #[test]
     fn partial_bits() {
@@ -143,12 +143,12 @@ mod sm3_tests {
         }
 
         for n in 1..=7usize {
-            let mask = ((1u16 << n) - 1) as u8;
+            let mask = (0xFF00u16 >> n) as u8;
             let x = SM3::new().do_final_partial_bits(0xA5, n).unwrap();
             let y = SM3::new().do_final_partial_bits(0xA5 & mask, n).unwrap();
-            let z = SM3::new().do_final_partial_bits(0xA5 ^ 1, n).unwrap();
+            let z = SM3::new().do_final_partial_bits(0xA5 ^ 0x80, n).unwrap();
             assert_eq!(x, y, "n={n}");
-            assert_ne!(x, z, "n={n}: low bit must change the digest");
+            assert_ne!(x, z, "n={n}: the leading bit must change the digest");
             assert_ne!(x, SM3::new().hash(&[]), "n={n}");
             assert_ne!(x, SM3::new().hash(&[0xA5 & mask]), "n={n}");
         }
@@ -157,35 +157,36 @@ mod sm3_tests {
             let mut sm3 = SM3::new();
             sm3.do_update(&vec![0x5Au8; len]);
             let mut out = [0u8; 32];
-            assert_eq!(sm3.do_final_partial_bits_out(0x03, 2, &mut out).unwrap(), 32, "len={len}");
+            assert_eq!(sm3.do_final_partial_bits_out(0xC0, 2, &mut out).unwrap(), 32, "len={len}");
         }
     }
 
     /// Bit-oriented known answers. Neither openssl nor bc-java expose a bit-length SM3 API, so the
     /// expected values come from an independent pure-Python implementation of GB/T 32905-2016 with
     /// bit-length padding, itself checked against `openssl dgst -sm3` on byte-aligned inputs.
-    /// `(prefix, partial_byte, bits, digest)`.
+    /// `(prefix, partial_byte, bits, digest)`, where the `bits` message bits are the top bits of
+    /// `partial_byte` (ASN.1 BIT STRING order).
     #[test]
     fn partial_bits_known_answers() {
         let cases: [(&[u8], u8, usize, &str); 6] = [
-            (b"", 0x01, 1, "985ffe9568be96328729b1c16631e9328d356432413d7556a646b9eefe479b9e"),
-            (b"", 0x15, 5, "469dd7b688a7b98d6362a8e2488a148cb4231bc196b796eee9652cb9044f3dcd"),
-            (b"abc", 0x7f, 7, "5ad9f5745671e4a49f6704fdadff8cc2ff8a9683d1c7c0810a5dd7db367e9d74"),
+            (b"", 0x80, 1, "985ffe9568be96328729b1c16631e9328d356432413d7556a646b9eefe479b9e"),
+            (b"", 0xA8, 5, "469dd7b688a7b98d6362a8e2488a148cb4231bc196b796eee9652cb9044f3dcd"),
+            (b"abc", 0xfe, 7, "5ad9f5745671e4a49f6704fdadff8cc2ff8a9683d1c7c0810a5dd7db367e9d74"),
             (
                 &[0x5a; 55],
-                0x03,
+                0xC0,
                 2,
                 "65985be43230ee70a939d38e34a88198e0d63bb307081459d8d75541d54a382e",
             ),
             (
                 &[0x5a; 111],
-                0x05,
+                0xA0,
                 3,
                 "8dfb4b90e5f899286782c9b192b67c5ebfbbab5a10d827d2518509307b7877c3",
             ),
             (
                 &DUMMY_SEED[..64],
-                0x0f,
+                0xF0,
                 4,
                 "30e64a364406c1ac354ad17845b4df681de5bad9a1b41e996921a6f5effbf85b",
             ),
