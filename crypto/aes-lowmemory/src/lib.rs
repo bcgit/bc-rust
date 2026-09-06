@@ -63,7 +63,9 @@
 //! parameter: [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] for CBC (SP 800-38A Sec 6.2),
 //! and [`AES_CFB_128`], [`AES_CFB_192`] and [`AES_CFB_256`] for CFB128 (Sec 6.3). The two are
 //! interchangeable at the call site -- swap `AES_CBC_256` for `AES_CFB_256` in the example below
-//! and nothing else changes:
+//! and nothing else changes. [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB
+//! (Sec 6.1) the same shape with no IV, for interoperability and test vectors only -- see
+//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
 //!
 //! ```
 //! use bouncycastle_aes_lowmemory::AES_CBC_256;
@@ -154,6 +156,11 @@
 //! structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation, and
 //! prefer an authenticated one so that ciphertext tampering is detected.
 //!
+//! The [`AES_ECB_128`] / [`AES_ECB_192`] / [`AES_ECB_256`] aliases give that same block-by-block
+//! operation the mode API, so that systems and specifications which require ECB -- and test-vector
+//! harnesses -- can use it through the same interface as the other modes. They do not make it
+//! confidential; the warning above applies to them unchanged.
+//!
 //! ## Constant-time properties
 //!
 //! By construction there is no secret-dependent memory access and no secret-dependent branch,
@@ -197,6 +204,7 @@ mod aes;
 mod bitslice;
 mod cbc;
 mod cfb;
+mod ecb;
 mod round;
 mod sbox;
 mod schedule;
@@ -205,4 +213,5 @@ pub use aes::{Aes, Aes128, Aes192, Aes256, BLOCK_LEN};
 pub use bitslice::Block;
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
+pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 pub use schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams};
