@@ -3,7 +3,9 @@
 //!
 //! The public API is the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits, whose
 //! shape was drawn from these two types; the one-shot methods are the traits' provided ones.
-//! `FINAL_LEN` is `BLOCK_LEN`: the final output is the padded block.
+//! `FINAL_LEN` is `BLOCK_LEN`: the final output is the padded block -- or, under a scheme with
+//! [`Padding::ALWAYS_PADS`] `false` (`NoPadding`) and an aligned message, nothing at all, in which
+//! case `do_final` reports 0 of the `FINAL_LEN` bytes as output.
 
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
@@ -21,9 +23,10 @@ const GROUP: usize = 8;
 /// Encrypts arbitrary-length data with a block cipher `E`, padding the final block with `P`.
 ///
 /// Stream with [`SymmetricCipherEncryptor::do_update_out`] then [`SymmetricCipherEncryptor::do_final`],
-/// or use the one-shot [`SymmetricCipherEncryptor::encrypt_out`]. Output is always
-/// `plaintext_len / BLOCK_LEN + 1` blocks. The buffered partial plaintext block is held in a
-/// [`Secret`].
+/// or use the one-shot [`SymmetricCipherEncryptor::encrypt_out`]. Output is
+/// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
+/// input length for one that never does (`NoPadding`, which rejects an unaligned input at
+/// `do_final`). The buffered partial plaintext block is held in a [`Secret`].
 pub struct PaddedEncryptor<
     E,
     P,
@@ -146,19 +149,29 @@ where
         Ok(out_len)
     }
 
-    /// Pads and encrypts the buffered partial block, returning the final ciphertext block.
+    /// Pads and encrypts the buffered partial block, returning the final ciphertext block and
+    /// `BLOCK_LEN` -- or, when the scheme adds nothing to aligned data and nothing is buffered, an
+    /// untouched buffer and 0: there is no final block.
     ///
     /// The block is padded and encrypted inside the `Secret`, so what is copied out is ciphertext.
-    fn do_final(self) -> Result<[u8; BLOCK_LEN], SymmetricCipherError> {
+    /// A scheme that adds no padding turns a buffered partial block into
+    /// [`SymmetricCipherError::PaddingError`] here, which is the alignment check such a scheme
+    /// exists to provide.
+    fn do_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
         let Self { mut inner, mut buf, buf_len, .. } = self;
+        if buf_len == 0 && !P::ALWAYS_PADS {
+            return Ok(([0u8; BLOCK_LEN], 0));
+        }
         P::pad(&mut buf, buf_len)?;
         inner.do_encrypt(&mut buf)?;
-        Ok(*buf)
+        Ok((*buf, BLOCK_LEN))
     }
 
-    /// `(plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN`: always one extra block for the padding.
+    /// `(plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN` -- always one extra block for the padding --
+    /// for a scheme that always pads; `plaintext_len` itself for one that adds nothing (an
+    /// unaligned length is rejected by `do_final`, so this is exact for every accepted input).
     fn encrypt_out_len(plaintext_len: usize) -> usize {
-        (plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN
+        if P::ALWAYS_PADS { (plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN } else { plaintext_len }
     }
 }
 
@@ -290,23 +303,30 @@ where
     }
 
     /// Decrypts and unpads the held final block. Returns the block and its data length; the rest is
-    /// padding. `DecryptionFailed` if the ciphertext was empty or not block-aligned; `PaddingError`
-    /// if the padding is malformed.
+    /// padding. `DecryptionFailed` if the ciphertext was not block-aligned, or was empty under a
+    /// scheme that always pads (a padded message is at least one block); `PaddingError` if the
+    /// padding is malformed. Under a scheme that adds nothing, an empty ciphertext is the empty
+    /// message and every held block is entirely data.
     fn do_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
         let Self { mut inner, buf_len, held, .. } = self;
         if buf_len != 0 {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
         let Some(mut block) = held else {
-            return Err(SymmetricCipherError::DecryptionFailed);
+            return if P::ALWAYS_PADS {
+                Err(SymmetricCipherError::DecryptionFailed)
+            } else {
+                Ok(([0u8; BLOCK_LEN], 0))
+            };
         };
         inner.do_decrypt(&mut block)?;
         let data_len = P::unpad(&block)?;
         Ok((block, data_len))
     }
 
-    /// `ciphertext_len - 1`: at least one byte of the final block is padding.
+    /// `ciphertext_len - 1` for a scheme that always pads (at least one byte of the final block is
+    /// padding); `ciphertext_len` for one that adds nothing.
     fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
-        ciphertext_len.saturating_sub(1)
+        if P::ALWAYS_PADS { ciphertext_len.saturating_sub(1) } else { ciphertext_len }
     }
 }

@@ -11,10 +11,11 @@ use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SecurityStrength,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkBlockCipher, TestFrameworkSymmetricCipher,
 };
-use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 use bouncycastle_rng::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256};
 
 const B: usize = 8;
@@ -87,6 +88,9 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
 
 type Enc = PaddedEncryptor<ToyCbc, PKCS7, B, B, B>;
 type Dec = PaddedDecryptor<ToyCbc, PKCS7, B, B, B>;
+/// The same adapters over `NoPadding`: an alignment check rather than a padding scheme.
+type EncNP = PaddedEncryptor<ToyCbc, NoPadding, B, B, B>;
+type DecNP = PaddedDecryptor<ToyCbc, NoPadding, B, B, B>;
 
 fn key() -> KeyMaterial<B> {
     KeyMaterial::<B>::from_bytes_as_type(&[0x5a; B], KeyType::SymmetricCipherKey).unwrap()
@@ -141,8 +145,9 @@ fn streaming_matches_one_shot_for_every_chunking() {
             assert_eq!(n, expect, "update_out_len must be exact");
             ct.extend_from_slice(&buf[..n]);
         }
-        let last = enc.do_final().unwrap();
-        ct.extend_from_slice(&last);
+        let (last, last_len) = enc.do_final().unwrap();
+        assert_eq!(last_len, B, "PKCS7 always emits a final block");
+        ct.extend_from_slice(&last[..last_len]);
         assert_eq!(ct.len(), Enc::encrypt_out_len(len));
 
         // one-shot decrypt
@@ -294,4 +299,105 @@ fn wrong_key_type_is_rejected_by_adapters() {
         Dec::do_decrypt_init(&mac_key, &[0u8; B]),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
+}
+
+// ---- NoPadding through the adapters --------------------------------------------------------
+
+/// With `NoPadding` the adapters enforce alignment: the framework is told that only multiples of
+/// the block length are accepted, and it asserts that every other length is refused with a
+/// `PaddingError`, at `encrypt_out` and at a streaming `do_final`.
+#[test]
+fn no_padding_adapters_pass_the_symmetric_cipher_framework() {
+    let mut framework = TestFrameworkSymmetricCipher::new();
+    framework.required_alignment = B;
+    framework.test_encryptor_decryptor::<B, B, B, EncNP, DecNP>();
+}
+
+/// An aligned message passes through with its length unchanged -- no final block is added -- and the
+/// ciphertext is exactly what the bare mode produces: NoPadding is a check, not a transformation.
+#[test]
+fn no_padding_adds_nothing_to_aligned_data() {
+    let key = key();
+    for blocks in 0..=4usize {
+        let len = blocks * B;
+        let pt = msg(len);
+        assert_eq!(EncNP::encrypt_out_len(len), len);
+        assert_eq!(DecNP::decrypt_out_max_len(len), len);
+
+        let mut ct = vec![0u8; len];
+        let (iv, n) = EncNP::encrypt_out(&key, &pt, &mut ct).unwrap();
+        assert_eq!(n, len, "{blocks} blocks: output length equals input length");
+
+        // Byte for byte the bare cipher's output under the same IV.
+        let mut bare = pt.clone();
+        let (mut enc, _) =
+            ToyCbc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<B>::new(iv)).unwrap();
+        let (blocks_mut, _) = bare.as_chunks_mut::<B>();
+        enc.do_encrypt_blocks(blocks_mut).unwrap();
+        assert_eq!(ct, bare, "{blocks} blocks: the adapter must not alter the ciphertext");
+
+        let mut out = vec![0u8; len];
+        let m = DecNP::decrypt_out(&key, &iv, &ct, &mut out).unwrap();
+        assert_eq!(&out[..m], &pt[..], "{blocks} blocks: round trip");
+
+        // Streaming: do_final reports zero output bytes.
+        let (mut enc, _) = EncNP::do_encrypt_init(&key).unwrap();
+        let mut buf = vec![0u8; enc.update_out_len(len)];
+        assert_eq!(enc.do_update_out(&pt, &mut buf).unwrap(), len);
+        let (_, last_len) = enc.do_final().unwrap();
+        assert_eq!(last_len, 0, "{blocks} blocks: no final block");
+    }
+}
+
+/// An unaligned message is refused with `PaddingNotPermitted`, from the one-shot and from a
+/// streaming `do_final`, and nothing is written for the final block.
+#[test]
+fn no_padding_refuses_unaligned_data() {
+    let key = key();
+    for len in [1usize, B - 1, B + 1, 2 * B + 3, 3 * B - 1] {
+        let pt = msg(len);
+        let mut ct = vec![0u8; len + B];
+        assert!(
+            matches!(
+                EncNP::encrypt_out(&key, &pt, &mut ct),
+                Err(SymmetricCipherError::PaddingError(PaddingError::PaddingNotPermitted))
+            ),
+            "len {len}: one-shot must refuse an unaligned message"
+        );
+
+        let (mut enc, _) = EncNP::do_encrypt_init(&key).unwrap();
+        let whole = len / B * B;
+        let mut buf = vec![0u8; whole];
+        assert_eq!(enc.do_update_out(&pt, &mut buf).unwrap(), whole, "whole blocks still stream");
+        assert!(
+            matches!(
+                enc.do_final(),
+                Err(SymmetricCipherError::PaddingError(PaddingError::PaddingNotPermitted))
+            ),
+            "len {len}: do_final must refuse the buffered partial block"
+        );
+    }
+}
+
+/// On the decrypt side, an empty ciphertext is the empty message (there is no padding block to
+/// demand), and an unaligned ciphertext is still malformed.
+#[test]
+fn no_padding_decryptor_accepts_empty_and_rejects_unaligned() {
+    let key = key();
+    let iv = [0x11u8; B];
+    let mut out = [0u8; 0];
+    assert_eq!(DecNP::decrypt_out(&key, &iv, &[], &mut out).unwrap(), 0);
+    let dec = DecNP::do_decrypt_init(&key, &iv).unwrap();
+    assert_eq!(dec.do_final().unwrap().1, 0);
+
+    for len in [1usize, B - 1, B + 1, 2 * B + 5] {
+        let mut out = vec![0u8; len];
+        assert!(
+            matches!(
+                DecNP::decrypt_out(&key, &iv, &msg(len), &mut out),
+                Err(SymmetricCipherError::DecryptionFailed)
+            ),
+            "len {len}: an unaligned ciphertext is malformed"
+        );
+    }
 }
