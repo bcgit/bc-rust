@@ -4,6 +4,7 @@
 //! the command-line contract itself -- the IV riding in the first block, the chunked streaming
 //! loop, exit codes, key loading -- none of which is reachable from the library API.
 //!
+<<<<<<<< HEAD:cli/tests/aes_cfb8_cli_tests.rs
 //! The commands share their streaming loop with `aes*-cfb` (`cli/src/stream_mode_cmd.rs`) and their
 //! key loading with `aes*-cbc` (`cli/src/block_mode_cmd.rs`), so this file deliberately repeats
 //! that coverage rather than assuming it: the shared code is generic over the mode, and a wiring
@@ -11,6 +12,16 @@
 //! is the F.3.7/F.3.9/F.3.11 vectors, CFB8's own Appendix D error propagation -- a 16-byte damage
 //! window followed by resynchronisation -- and the guard that CFB8 and CFB128 ciphertexts are not
 //! interchangeable.
+========
+//! The commands share their key loading and IV convention with `aes*-cbc`
+//! (`cli/src/block_mode_cmd.rs`) and their streaming loop with `aes*-cfb8`
+//! (`cli/src/stream_mode_cmd.rs`), so this file deliberately repeats the CBC suite's coverage
+//! rather than assuming it: the shared code is generic over the mode, and a wiring mistake in the
+//! CFB dispatcher would not show up in the CBC tests. What is *not* shared, and is tested only
+//! here, is the F.3 vectors, the CFB-specific Appendix D error propagation, the guard that CFB and
+//! CBC ciphertexts are not interchangeable, and -- the difference from the CBC suite -- that input
+//! of *any* length is accepted, because CFB is a stream cipher and pads nothing.
+>>>>>>>> 97ac6e3d (modes: Cfb becomes a stream cipher taking any length with no padding, and Cfb8 (SP 800-38A Sec 6.3, s = 8) is added, with AES_CFB8_* aliases, aes*-cfb8 CLI subcommands and a shared stream-mode CLI):cli/tests/aes_cfb_cli_tests.rs
 //!
 //! `CARGO_BIN_EXE_bc-rust` is set by cargo for integration tests and points at the binary for the
 //! current profile, so there is nothing to build or locate by hand.
@@ -229,6 +240,7 @@ fn encrypt_then_decrypt_round_trips() {
     }
 }
 
+<<<<<<<< HEAD:cli/tests/aes_cfb8_cli_tests.rs
 /// Input of any length is accepted and round-trips, and the ciphertext is exactly as long as the
 /// plaintext. CFB8's segment is a single byte, so there is no alignment rule at all.
 #[test]
@@ -248,6 +260,16 @@ fn any_input_length_is_accepted_and_round_trips() {
 #[test]
 fn round_trips_across_chunk_boundaries() {
     for size in [1usize, 8, 9, 1023, 1024, 1025, 4096, 4099] {
+========
+/// Round trips at sizes that straddle the 1 KiB streaming chunk and the block boundary.
+///
+/// 1024 is exactly one chunk; 1040 is a chunk plus one block; 4112 is four chunks plus a block;
+/// 65536 is many chunks. The odd sizes leave a partial final segment and put a chunk boundary in
+/// the middle of a segment.
+#[test]
+fn round_trips_across_chunk_boundaries() {
+    for size in [16usize, 32, 1023, 1024, 1025, 1040, 4096, 4112, 65535, 65536] {
+>>>>>>>> 97ac6e3d (modes: Cfb becomes a stream cipher taking any length with no padding, and Cfb8 (SP 800-38A Sec 6.3, s = 8) is added, with AES_CFB8_* aliases, aes*-cfb8 CLI subcommands and a shared stream-mode CLI):cli/tests/aes_cfb_cli_tests.rs
         let plaintext = pseudo_random(size, size as u32);
         let ciphertext = run_ok(&["aes128-cfb8", "encrypt", "--key", KEY_128], &plaintext);
         let recovered = run_ok(&["aes128-cfb8", "decrypt", "--key", KEY_128], &ciphertext);
@@ -321,7 +343,66 @@ fn an_all_zero_key_warns_but_proceeds() {
     assert_eq!(out.stdout.len(), 16 + 18, "IV plus the 18 ciphertext bytes");
 }
 
+<<<<<<<< HEAD:cli/tests/aes_cfb8_cli_tests.rs
 // ---- framing ----------------------------------------------------------------------------
+========
+// ---- block alignment and framing --------------------------------------------------------
+
+/// Input of *any* length is accepted and round-trips, and the ciphertext is exactly as long as the
+/// plaintext. CFB is a stream cipher, so unlike `aes*-cbc` these commands neither pad nor reject.
+///
+/// Every length from empty to just past two blocks is covered, which includes the exact multiples
+/// and every partial final segment.
+#[test]
+fn any_input_length_is_accepted_and_round_trips() {
+    for len in 0..=(2 * 16 + 1) {
+        let plaintext = pseudo_random(len, len as u32);
+        let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        assert_eq!(
+            ciphertext.len(),
+            len + 16,
+            "len {len}: output should be the 16-byte IV plus a ciphertext as long as the plaintext"
+        );
+
+        let recovered = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
+        assert_eq!(recovered, plaintext, "len {len}: round trip");
+    }
+}
+
+/// A message that is not a whole number of blocks must agree with the library, byte for byte,
+/// including its short final segment.
+///
+/// The F.3 vectors are all block-aligned, so this is the one end-to-end check that the CLI's
+/// streaming loop handles a partial final segment the same way `bouncycastle_modes::Cfb` does --
+/// the CLI reads stdin in 1 KiB pieces, so a long unaligned message also crosses a chunk boundary
+/// mid-segment.
+#[test]
+fn an_unaligned_message_matches_the_library() {
+    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle::core::traits::StreamCipherDecryptor;
+    use bouncycastle::modes::{Cfb, Decrypting};
+
+    type Aes128Cfb<Dir> = Cfb<bouncycastle::aes_lowmemory::Aes128, Dir, 16, 16>;
+
+    for len in [5usize, 17, 1000, 1024, 1025, 4099] {
+        let plaintext = pseudo_random(len, len as u32);
+        let out = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        let (iv, ciphertext) = out.split_at(16);
+
+        let key =
+            KeyMaterial::<16>::from_bytes_as_type(&unhex(KEY_128), KeyType::SymmetricCipherKey)
+                .expect("a valid AES-128 key");
+        let mut recovered = ciphertext.to_vec();
+        Aes128Cfb::<Decrypting>::decrypt(
+            &key,
+            iv.try_into().expect("a 16-byte IV"),
+            &mut recovered,
+        )
+        .expect("library decryption");
+        assert_eq!(recovered, plaintext, "len {len}: the CLI must agree with the library");
+    }
+}
+>>>>>>>> 97ac6e3d (modes: Cfb becomes a stream cipher taking any length with no padding, and Cfb8 (SP 800-38A Sec 6.3, s = 8) is added, with AES_CFB8_* aliases, aes*-cfb8 CLI subcommands and a shared stream-mode CLI):cli/tests/aes_cfb_cli_tests.rs
 
 /// Decrypt input shorter than the IV it must start with is rejected, and says so.
 #[test]
@@ -335,7 +416,24 @@ fn decrypt_input_shorter_than_the_iv_is_rejected() {
     }
 }
 
+<<<<<<<< HEAD:cli/tests/aes_cfb8_cli_tests.rs
 /// Empty input to `encrypt` produces just the IV.
+========
+/// Decrypt input that carries the IV and then an unaligned body is accepted, for the same reason.
+/// Anything past the IV is ciphertext, whatever its length.
+#[test]
+fn decrypt_accepts_an_unaligned_body() {
+    let mut input = unhex(IV);
+    input.extend_from_slice(&pseudo_random(20, 3)); // 20 is not a multiple of 16
+    let out = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &input);
+    assert_eq!(out.len(), 20, "the plaintext is exactly as long as the ciphertext");
+}
+
+/// Empty input to `encrypt` produces just the IV: zero blocks in, zero blocks out.
+///
+/// Worth pinning because it is the one input length that is block-aligned but has no blocks, and
+/// it is easy for a streaming loop to mishandle.
+>>>>>>>> 97ac6e3d (modes: Cfb becomes a stream cipher taking any length with no padding, and Cfb8 (SP 800-38A Sec 6.3, s = 8) is added, with AES_CFB8_* aliases, aes*-cfb8 CLI subcommands and a shared stream-mode CLI):cli/tests/aes_cfb_cli_tests.rs
 #[test]
 fn empty_input_produces_only_the_iv() {
     let out = run_ok(&["aes128-cfb8", "encrypt", "--key", KEY_128], &[]);
