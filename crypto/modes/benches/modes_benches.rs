@@ -3,12 +3,14 @@
 //! The number to watch is the **decrypt/encrypt throughput ratio at N >= 2**. Encryption in both
 //! CBC and CFB is serial by construction (SP 800-38A Sec 6.2 and Sec 6.3: each forward cipher input
 //! depends on the previous output), so it can only ever use the single-block path. *Decryption* in
-//! both is parallel, and this implementation hands blocks to the permutation's pair method -- for
-//! CBC that is `decrypt_blocks2`, for CFB it is `encrypt_blocks2`, since CFB uses the forward
-//! function in both directions. With the bit-sliced AES, whose two-block path costs barely more
-//! than one block, decryption should therefore run at roughly twice the throughput of encryption.
-//! That gap is the entire justification for the pair methods on `BlockPermutation`, so if it
-//! disappears, something has stopped taking the pair path.
+//! both is parallel, and this implementation hands blocks to the permutation's batch methods --
+//! eights first, then pairs, then the remainder singly: for CBC that is `decrypt_blocks8` /
+//! `decrypt_blocks2`, for CFB it is `encrypt_blocks8` / `encrypt_blocks2`, since CFB uses the
+//! forward function in both directions. AES overrides only the pair form, so its eights are four
+//! pairs. With the bit-sliced AES, whose two-block path costs barely more than one block,
+//! decryption should therefore run at roughly twice the throughput of encryption. That gap is the
+//! entire justification for the batch methods on `ElectronicCodeBook`, so if it disappears,
+//! something has stopped taking the pair path.
 //!
 //! `N = 1` is included to show the effect vanishing: with one block there is no pair to form, so
 //! decryption falls back to the single-block path and the ratio should be about 1.
@@ -25,7 +27,7 @@ use bouncycastle_aes_lowmemory::{Aes128, Aes256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
 };
 use bouncycastle_modes::{Cbc, Cfb, Decrypting, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -58,15 +60,15 @@ impl Algorithm for UnpairedAes128 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl BlockPermutation<16, BLOCK_LEN> for UnpairedAes128 {
+impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(<Aes128 as BlockPermutation<16, BLOCK_LEN>>::new(key)?))
+        Ok(Self(<Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
     }
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <Aes128 as BlockPermutation<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
+        <Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
     }
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <Aes128 as BlockPermutation<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
+        <Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
     // encrypt_blocks2 / decrypt_blocks2 deliberately left as the trait defaults.
 }
@@ -127,8 +129,7 @@ fn bench_aes128(c: &mut Criterion) {
     let (mut enc, iv) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
-        let arr: &mut [[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-        enc.do_encrypt_blocks(arr).unwrap();
+        enc.do_encrypt_blocks(chunk).unwrap();
     }
 
     // N=1 never forms a pair, so this is the single-block path: the ratio against encrypt should
@@ -147,7 +148,8 @@ fn bench_aes128(c: &mut Criterion) {
         )
     });
 
-    // N=2 and N=8 are all pairs, so every block goes through decrypt_blocks2.
+    // N=2 is one pair and N=8 one eight (four pairs, for AES), so every block goes through
+    // decrypt_blocks2.
     group.bench_function("16KiB decrypt -- N=2 (all pairs)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
@@ -260,8 +262,7 @@ fn bench_aes256(c: &mut Criterion) {
     let (mut enc, iv) = Aes256Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
-        let arr: &mut [[u8; BLOCK_LEN]; 8] = chunk.try_into().unwrap();
-        enc.do_encrypt_blocks(arr).unwrap();
+        enc.do_encrypt_blocks(chunk).unwrap();
     }
 
     group.bench_function("16KiB decrypt -- N=8 (all pairs)", |b| {

@@ -53,8 +53,8 @@
 //! successive input block is formed as in CFB encryption [...] The *forward cipher* function is
 //! applied to each input block to produce the output blocks."
 //!
-//! So [`Cfb<P, Decrypting, ..>`](Cfb) never calls [`BlockPermutation::decrypt_block`] or
-//! [`BlockPermutation::decrypt_blocks2`]. A permutation could implement only the forward direction
+//! So [`Cfb<P, Decrypting, ..>`](Cfb) never calls [`ElectronicCodeBook::decrypt_block`] or
+//! [`ElectronicCodeBook::decrypt_blocks2`]. A permutation could implement only the forward direction
 //! and still work here; `cfb_tests.rs` pins that with a toy whose inverse panics. The mode XORs a
 //! keystream in both directions, and the two directions differ only in which of the two buffers
 //! becomes the next chaining value.
@@ -69,7 +69,7 @@
 //!
 //! Constructing them "in series" is trivial here: with `s = b` the input blocks *are* the IV
 //! followed by the ciphertext blocks, already in hand. Decryption therefore walks the ciphertext in
-//! pairs through [`BlockPermutation::encrypt_blocks2`], which a bit-sliced engine computes for
+//! pairs through [`ElectronicCodeBook::encrypt_blocks2`], which a bit-sliced engine computes for
 //! barely more than the cost of one block. Encryption cannot, and does not.
 
 use crate::iv::random_iv;
@@ -77,12 +77,13 @@ use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, RNG, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, RNG,
+    SecurityStrength,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
 
-/// CFB mode over any [`BlockPermutation`], with the direction encoded in the type.
+/// CFB mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
 /// The segment size is the full block (`s = b`, i.e. CFB128 for AES); see the module docs for why
 /// the other segment sizes are out of scope.
@@ -105,7 +106,7 @@ use core::marker::PhantomData;
 /// lives only in a local, so no keystream outlives the call that used it.
 pub struct Cfb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     perm: P,
     /// `Ij`: the IV, then `C_{j-1}`. See the module docs on why there is only one field for both.
@@ -115,7 +116,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// `Oj = CIPH_K(Ij)`, the keystream block for the current position.
     ///
@@ -153,7 +154,7 @@ where
         self.chain = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`BlockPermutation::encrypt_blocks2`] call.
+    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::encrypt_blocks2`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Ij` the incoming chaining value, the `s = b` equations
     /// give
@@ -170,6 +171,26 @@ where
     ///
     /// In place: the two input blocks are the keystream buffer, so the ciphertext is never
     /// overwritten before it has been read, and only `Cj+1` needs copying for the chaining value.
+    /// Decrypts eight consecutive blocks with one [`ElectronicCodeBook::encrypt_blocks8`] call.
+    ///
+    /// The same construction as [`Self::decrypt_pair`] widened to eight: the input blocks are the
+    /// incoming chaining value followed by the first seven ciphertext blocks, all known before any
+    /// cipher call, so the eight forward ciphers are independent (Sec 6.3's parallel decryption).
+    /// `I_{j+8} = Cj+7` is read before the XOR turns it into `Pj+7`.
+    #[inline]
+    fn decrypt_eight(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+        let mut o = [
+            self.chain, blocks[0], blocks[1], blocks[2], blocks[3], blocks[4], blocks[5], blocks[6],
+        ];
+        self.perm.encrypt_blocks8(&mut o);
+        self.chain = blocks[7];
+        for (block, o) in blocks.iter_mut().zip(o.iter()) {
+            for (b, o) in block.iter_mut().zip(o.iter()) {
+                *b ^= *o;
+            }
+        }
+    }
+
     #[inline]
     fn decrypt_pair(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         // The two input blocks, constructed in series: Ij (already held) and Ij+1 (= Cj).
@@ -190,7 +211,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
     /// concatenated in a `const`, and the mode is already in the type.
@@ -202,7 +223,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -227,9 +248,9 @@ where
     ///
     /// Strictly serial: `Oj+1 = CIPH_K(Cj)` and `Cj` is the *output* of the previous cipher call, so
     /// there is no pair path here. See the module docs. Never fails: CFB has no per-IV data limit.
-    fn do_encrypt_blocks<const N: usize>(
+    fn do_encrypt_blocks(
         &mut self,
-        blocks: &mut [[u8; BLOCK_LEN]; N],
+        blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError> {
         for block in blocks.iter_mut() {
             self.encrypt_one(block);
@@ -241,7 +262,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`BlockCipherEncryptor::do_encrypt_init`].
@@ -256,16 +277,19 @@ where
 
     /// The implementor hook (the flat `do_decrypt` is provided over it).
     ///
-    /// Walks the input in pairs so the permutation's two-block *forward* path is used, with an
-    /// at-most-one block remainder for odd `N`. `as_chunks_mut` splits into exactly that shape with
-    /// no runtime length check and no indexing arithmetic; `N` is a compile-time constant, so for
-    /// even `N` the tail loop is empty and for `N = 1` the pair loop is. Never fails: CFB has no
-    /// per-IV data limit.
-    fn do_decrypt_blocks<const N: usize>(
+    /// Walks the input in eights through the permutation's *forward* eight-block path, then in
+    /// pairs through its forward pair path, then the remaining block singly. `as_chunks_mut` splits
+    /// into exactly those shapes with no runtime length check and no indexing arithmetic. Never
+    /// fails: CFB has no per-IV data limit.
+    fn do_decrypt_blocks(
         &mut self,
-        blocks: &mut [[u8; BLOCK_LEN]; N],
+        blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError> {
-        let (pairs, tail) = blocks.as_chunks_mut::<2>();
+        let (eights, rest) = blocks.as_chunks_mut::<8>();
+        for eight in eights.iter_mut() {
+            self.decrypt_eight(eight);
+        }
+        let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
             self.decrypt_pair(pair);
         }

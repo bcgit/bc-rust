@@ -1,7 +1,7 @@
 //! Block cipher modes of operation (NIST SP 800-38A).
 //!
 //! A mode turns a keyed block permutation -- `bouncycastle-aes-lowmemory`'s `Aes128` and friends,
-//! or anything else implementing [`BlockPermutation`] -- into something that can encrypt more than
+//! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
 //! one block. This crate provides:
 //!
 //! | Mode | Type | Spec | Notes |
@@ -169,6 +169,7 @@
 //! ```
 //! use bouncycastle_aes_lowmemory::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
 //! use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
 //!
@@ -313,7 +314,7 @@ pub use cfb::Cfb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 // end of imports needed for docs
 
 /// Direction marker for a mode that encrypts. See [`Cbc`] and [`Cfb`].

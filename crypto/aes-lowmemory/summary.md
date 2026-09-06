@@ -408,7 +408,7 @@ files (see the ML-KEM and ML-DSA suites).
 
 | Item | Why |
 |---|---|
-| `BlockPermutation` trait impls, and `encrypt_blocks2`/`decrypt_blocks2` as trait methods | The trait does not exist in `crypto/core`, which has the mode-level `BlockCipher` / `BlockCipherEncryptor` / `BlockCipherDecryptor`. Introducing it is the plan's separate "PR A". The two-block entry points are inherent methods for now; promoting them to provided trait methods is a one-line delegation once the trait lands. |
+| `ElectronicCodeBook` trait impls, and `encrypt_blocks2`/`decrypt_blocks2` as trait methods | The trait does not exist in `crypto/core`, which has the mode-level `BlockCipher` / `BlockCipherEncryptor` / `BlockCipherDecryptor`. Introducing it is the plan's separate "PR A". The two-block entry points are inherent methods for now; promoting them to provided trait methods is a one-line delegation once the trait lands. |
 | `core-test-framework` conformance test | Follows from the above — there is no test suite for a raw permutation yet. |
 | ACVP MCT (Monte Carlo) groups — 6 cases | Their expected `resultsArray` comes from a chained key/plaintext update rule defined in the ACVP AES specification, not in FIPS 197. Implementing it from anything other than that specification would be guesswork. The test reports the skip count so the gap is visible rather than silent. |
 | CLI subcommand | A bare permutation only does ECB. `aes128-cbc-*` / `-cfb-*` belong with the modes crate. |
@@ -477,7 +477,7 @@ they print a warning and pass.
    than a technical one.
 2. **Confirm the PR base branch.** The plan specifies `release/0.1.3alpha`, set explicitly — GitHub
    defaults to `main`.
-3. Decide whether `BlockPermutation` (plan PR A) lands before or after this crate, since it
+3. Decide whether `ElectronicCodeBook` (plan PR A) lands before or after this crate, since it
    determines whether the two-block entry points become trait methods now or later (§6).
 4. Note in the PR description that the plan's layout claim (§5.1) and PR B (§5.3) are superseded, so
    the plan document does not mislead the next reader.

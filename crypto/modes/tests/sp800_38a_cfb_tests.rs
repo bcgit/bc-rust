@@ -30,7 +30,7 @@
 
 use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
@@ -125,7 +125,7 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// implementor hook -- the vector should not care how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -172,7 +172,7 @@ where
 /// that leaves a one-block remainder after the pair loop in `do_decrypt_blocks`.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -285,7 +285,7 @@ fn check_output_blocks<P, const KEY_LEN: usize>(
     ciphertexts: &[&str; 4],
     output_blocks: &[&str; 4],
 ) where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let perm = P::new(&key).expect("a valid key");
