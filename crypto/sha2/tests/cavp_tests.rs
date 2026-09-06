@@ -9,8 +9,8 @@
 //!
 //!  * ShortMsg / LongMsg — `Len` (bits), `Msg`, `MD`. In the bit-oriented files `Len` is not a
 //!    multiple of 8 for most cases; the trailing bits are packed MSB-first in the final `Msg` byte
-//!    (SHAVS s. 6.2, "the message is left-justified"), whereas [`Hash::do_final_partial_bits`] takes
-//!    them in the least significant bits, hence the `>> (8 - n)` when feeding the last byte.
+//!    (SHAVS s. 6.2, "the message is left-justified"), which is exactly the ASN.1 BIT STRING order
+//!    that [`Hash::do_final_partial_bits`] takes, so the last byte is passed through unchanged.
 //!  * Monte — SHAVS s. 6.4 pseudo-random message test: `MD0 = MD1 = MD2 = Seed`,
 //!    `MDi = SHA(MDi-3 || MDi-2 || MDi-1)` for i in 3..=1002, `MD = MD1002`, then reseed with `MD`
 //!    for the next COUNT. 100 counts per file. (This differs from the SHA-3 Monte test, which hashes
@@ -75,7 +75,7 @@ fn parse_msg_file(content: &str) -> Vec<MsgCase> {
     cases
 }
 
-/// Hashes the first `len_bits` bits of `msg` (CAVP MSB-first packing) with `H`.
+/// Hashes the first `len_bits` bits of `msg` (CAVP MSB-first packing, as the API takes it) with `H`.
 fn hash_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     let whole_bytes = len_bits / 8;
     let partial_bits = len_bits % 8;
@@ -85,9 +85,8 @@ fn hash_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     } else {
         let mut h = H::default();
         h.do_update(&msg[..whole_bytes]);
-        // CAVP left-justifies the trailing bits in the last byte; the API wants them in the LSBs.
-        let partial_byte = msg[whole_bytes] >> (8 - partial_bits);
-        h.do_final_partial_bits(partial_byte, partial_bits).expect("partial_bits is in 1..=7")
+        // CAVP left-justifies the trailing bits in the last byte, which is the order the API takes.
+        h.do_final_partial_bits(msg[whole_bytes], partial_bits).expect("partial_bits is in 1..=7")
     }
 }
 
