@@ -20,11 +20,12 @@
 //! # Coverage
 //!
 //! 2138 AFT (Algorithm Functional Test) cases across all three key lengths and both directions,
-//! including 54 whose payload spans 2 to 10 blocks. Every case is run **twice**: once block by
-//! block, and once in pairs with a one-block remainder for odd lengths. The second pass is what puts
-//! the multi-block cases through the pair path -- which for CFB is
-//! [`BlockPermutation::encrypt_blocks2`], the *forward* function, even on the decrypt side -- so it
-//! is exercised against real vectors and not only against the toy in `cfb_tests.rs`.
+//! including 54 whose payload spans 2 to 10 blocks. Every case is run **three times**: block by
+//! block, in pairs with a one-block remainder for odd lengths, and as one hook call over the whole
+//! payload. The second and third passes are what put the multi-block cases through the pair and
+//! eight-block paths -- which for CFB are [`ElectronicCodeBook::encrypt_blocks2`] and
+//! [`ElectronicCodeBook::encrypt_blocks8`], the *forward* function, even on the decrypt side -- so
+//! they are exercised against real vectors and not only against the toys in `cfb_tests.rs`.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
@@ -36,7 +37,7 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
@@ -98,6 +99,9 @@ enum Grouping {
     Single,
     /// Two blocks per call, with a one-block remainder for odd lengths. Uses the pair path.
     Pairs,
+    /// The whole payload in one hook call: eights, then pairs, then the remaining block. The cases
+    /// spanning 8 to 10 blocks are the ones that reach `encrypt_blocks8`.
+    Whole,
 }
 
 /// Runs one CFB128 case in one direction, for a given permutation, under the given grouping.
@@ -113,7 +117,7 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<[u8; BLOCK_LEN]>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     let key = cipher_key::<KEY_LEN>(key_bytes);
     let mut out: Vec<[u8; BLOCK_LEN]> = Vec::with_capacity(input.len());
@@ -133,6 +137,11 @@ where
                     enc.do_encrypt(&mut c).unwrap();
                     out.push(c);
                 }
+            }
+            Grouping::Whole => {
+                let mut all = input.to_vec();
+                enc.do_encrypt_blocks(&mut all).unwrap();
+                out.extend_from_slice(&all);
             }
             Grouping::Pairs => {
                 let (pairs, tail) = input.as_chunks::<2>();
@@ -159,6 +168,11 @@ where
                     dec.do_decrypt(&mut p).unwrap();
                     out.push(p);
                 }
+            }
+            Grouping::Whole => {
+                let mut all = input.to_vec();
+                dec.do_decrypt_blocks(&mut all).unwrap();
+                out.extend_from_slice(&all);
             }
             Grouping::Pairs => {
                 let (pairs, tail) = input.as_chunks::<2>();
@@ -282,7 +296,7 @@ fn acvp_aes_cfb128_known_answer_tests() {
                 multi_block += 1;
             }
 
-            for grouping in [Grouping::Single, Grouping::Pairs] {
+            for grouping in [Grouping::Single, Grouping::Pairs, Grouping::Whole] {
                 let got = run_case_for_key_len(&key_bytes, iv, &input, encrypt, grouping);
                 assert_eq!(
                     got,
@@ -302,7 +316,7 @@ fn acvp_aes_cfb128_known_answer_tests() {
         println!("ACVP AES-CFB128 {kind}: {n} cases");
     }
     println!(
-        "ACVP AES-CFB128: {checked} AFT cases checked in two groupings each \
+        "ACVP AES-CFB128: {checked} AFT cases checked in three groupings each \
          ({multi_block} of them multi-block); {skipped_mct} MCT cases skipped"
     );
 

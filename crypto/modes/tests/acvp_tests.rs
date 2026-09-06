@@ -21,7 +21,7 @@
 //! 2150 AFT (Algorithm Functional Test) cases across all three key lengths and both directions,
 //! including 60 whose payload spans 2 to 10 blocks. Every case is run **twice**: once block by
 //! block, and once in pairs with a one-block remainder for odd lengths. The second pass is what
-//! puts the multi-block cases through `BlockPermutation::decrypt_blocks2`, so the pair path is
+//! puts the multi-block cases through `ElectronicCodeBook::decrypt_blocks2`, so the pair path is
 //! exercised against real vectors and not only against the toy in `cbc_tests.rs`.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
@@ -34,7 +34,7 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
@@ -111,7 +111,7 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<[u8; BLOCK_LEN]>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     let key = cipher_key::<KEY_LEN>(key_bytes);
     let mut out: Vec<[u8; BLOCK_LEN]> = Vec::with_capacity(input.len());

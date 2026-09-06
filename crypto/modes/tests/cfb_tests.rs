@@ -6,7 +6,7 @@
 //! known-answer tests against SP 800-38A Appendix F.3.13-F.3.18 are in `sp800_38a_cfb_tests.rs`,
 //! and the ACVP CFB128 set is in `acvp_cfb_tests.rs`.
 //!
-//! The toy's own conformance to [`BlockPermutation`] is pinned once, by
+//! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here, so it
 //! is not re-run.
 
@@ -14,16 +14,20 @@ mod common;
 
 use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation};
+use bouncycastle_core::traits::{
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Cfb, Decrypting, Encrypting};
 use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
-use common::{ForwardOnlyToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use common::{ForwardOnlyToy, SwappedEightToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyCfb<Dir> = Cfb<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedCfb<Dir> = Cfb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 type ForwardOnlyCfb<Dir> = Cfb<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN>;
+type SwappedEightCfb<Dir> = Cfb<SwappedEightToy, Dir, TOY_LEN, TOY_LEN>;
 
 /// The implementor hook `do_encrypt_blocks`, by value, for tests whose data is block-shaped.
 fn enc_blocks<const N: usize>(
@@ -92,7 +96,7 @@ fn cfb_conforms_to_the_block_cipher_framework() {
 /// ```
 ///
 /// This is the independent reference the mode is checked against below. It uses only
-/// [`BlockPermutation::encrypt_block`], because that is all the spec calls for.
+/// [`ElectronicCodeBook::encrypt_block`], because that is all the spec calls for.
 fn reference_cfb(
     perm: &Toy,
     iv: [u8; TOY_LEN],
@@ -122,7 +126,7 @@ fn reference_cfb(
 fn the_mode_matches_the_spec_equations() {
     let key = toy_key();
     let iv = pinned_iv();
-    let perm = <Toy as BlockPermutation<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
     let plaintext: [[u8; TOY_LEN]; 5] =
         core::array::from_fn(|i| core::array::from_fn(|j| (i * 31 + j * 7 + 1) as u8));
 
@@ -342,6 +346,53 @@ fn the_pair_path_is_really_used() {
     let p0 = dec_flat(&mut dec, &swapped_ct[0]);
     let p1 = dec_flat(&mut dec, &swapped_ct[1]);
     assert_eq!([p0, p1], plaintext, "the single-block path must not pair");
+}
+
+/// The eight-block path in `do_decrypt_blocks` must actually be taken, and only for full eights.
+///
+/// [`SwappedEightToy`] returns its eight `encrypt_blocks8` results rotated while its pair and
+/// single-block methods are correct. CFB decryption batches eights through the *forward*
+/// `encrypt_blocks8`, so with this permutation nine blocks handed over together decrypt wrongly
+/// (eight rotated, then one), while the same blocks handed over as two fours (pairs) or one at a
+/// time decrypt correctly. Encryption is serial and never batches, so it is unaffected.
+#[test]
+fn the_eight_block_path_is_really_used() {
+    let key = toy_key();
+    let iv = pinned_iv();
+    let plaintext: [[u8; TOY_LEN]; 9] = core::array::from_fn(|i| [0x10 * i as u8 + 1; TOY_LEN]);
+
+    // The correct toy round-trips nine blocks.
+    let (mut enc, _) =
+        ToyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
+    let ct = enc_blocks(&mut enc, &plaintext);
+    let mut dec = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_eq!(dec_blocks(&mut dec, &ct), plaintext);
+
+    // The rotated-eight toy encrypts identically: CFB encryption is serial and never batches.
+    let (mut enc, _) =
+        SwappedEightCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
+    assert_eq!(enc_blocks(&mut enc, &plaintext), ct, "CFB encryption must not use the eight path");
+
+    // ...but nine blocks together must now be wrong, because the first eight go through
+    // encrypt_blocks8.
+    let mut dec = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "nine blocks must go through encrypt_blocks8");
+
+    // Two fours use the pair path only, so they are correct even for this toy...
+    let mut dec = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    let first = dec_blocks(&mut dec, &[ct[0], ct[1], ct[2], ct[3]]);
+    let second = dec_blocks(&mut dec, &[ct[4], ct[5], ct[6], ct[7]]);
+    assert_eq!(
+        [first, second].as_flattened(),
+        &plaintext[..8],
+        "fours must not use the eight path"
+    );
+
+    // ...and so is one block at a time.
+    let mut dec = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    for (c, p) in ct.iter().zip(plaintext.iter()) {
+        assert_eq!(&dec_flat(&mut dec, c), p, "the single-block path must not batch");
+    }
 }
 
 /// The flat streaming method must agree with the block-shaped implementor hook.

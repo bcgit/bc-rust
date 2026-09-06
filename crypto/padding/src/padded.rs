@@ -1,9 +1,16 @@
 //! [`PaddedEncryptor`] / [`PaddedDecryptor`]: adapt a block-aligned [`BlockCipherEncryptor`] /
 //! [`BlockCipherDecryptor`] to arbitrary-length data using a [`Padding`] scheme.
+//!
+//! The public API is the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits, whose
+//! shape was drawn from these two types; the one-shot methods are the traits' provided ones.
+//! `FINAL_LEN` is `BLOCK_LEN`: the final output is the padded block.
 
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, Padding, RNG};
+use bouncycastle_core::traits::{
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, Padding, RNG, SecurityStrength,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
 use bouncycastle_utils::secret::Secret;
 use core::array::from_mut;
 use core::marker::PhantomData;
@@ -13,9 +20,10 @@ const GROUP: usize = 8;
 
 /// Encrypts arbitrary-length data with a block cipher `E`, padding the final block with `P`.
 ///
-/// Stream with [`do_update_out`](Self::do_update_out) then [`do_final`](Self::do_final), or use the
-/// one-shot [`encrypt_out`](Self::encrypt_out). Output is always `plaintext_len / BLOCK_LEN + 1`
-/// blocks. The buffered partial plaintext block is held in a [`Secret`].
+/// Stream with [`SymmetricCipherEncryptor::do_update_out`] then [`SymmetricCipherEncryptor::do_final`],
+/// or use the one-shot [`SymmetricCipherEncryptor::encrypt_out`]. Output is always
+/// `plaintext_len / BLOCK_LEN + 1` blocks. The buffered partial plaintext block is held in a
+/// [`Secret`].
 pub struct PaddedEncryptor<
     E,
     P,
@@ -39,16 +47,38 @@ where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: Padding<BLOCK_LEN>,
 {
-    /// Begins a streaming encryption, returning the generated init data (e.g. IV).
-    pub fn new(
+    fn wrap(inner: E) -> Self {
+        Self { inner, buf: Secret::new(), buf_len: 0, _padding: PhantomData }
+    }
+}
+
+impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    P: Padding<BLOCK_LEN>,
+{
+    /// The inner cipher's name; padding does not change what the algorithm is.
+    const ALG_NAME: &'static str = E::ALG_NAME;
+    /// Padding does not change the strength of the inner cipher.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = E::MAX_SECURITY_STRENGTH;
+}
+
+impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    P: Padding<BLOCK_LEN>,
+{
+    fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (inner, init_data) = E::do_encrypt_init(key)?;
         Ok((Self::wrap(inner), init_data))
     }
 
-    /// As [`new`](Self::new), but sources randomness from the provided RNG.
-    pub fn new_rng(
+    fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
@@ -56,18 +86,14 @@ where
         Ok((Self::wrap(inner), init_data))
     }
 
-    fn wrap(inner: E) -> Self {
-        Self { inner, buf: Secret::new(), buf_len: 0, _padding: PhantomData }
-    }
-
-    /// Exact number of bytes [`do_update_out`](Self::do_update_out) will write for `input_len` more bytes.
-    pub const fn update_out_len(&self, input_len: usize) -> usize {
+    /// Whole blocks among the buffered bytes plus `input_len`.
+    fn update_out_len(&self, input_len: usize) -> usize {
         (self.buf_len + input_len) / BLOCK_LEN * BLOCK_LEN
     }
 
     /// Encrypts all whole blocks available (buffered + `plaintext`) into `ciphertext`, buffering the
-    /// remainder. `ciphertext` needs [`update_out_len`](Self::update_out_len) bytes; returns bytes written.
-    pub fn do_update_out(
+    /// remainder.
+    fn do_update_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -123,66 +149,16 @@ where
     /// Pads and encrypts the buffered partial block, returning the final ciphertext block.
     ///
     /// The block is padded and encrypted inside the `Secret`, so what is copied out is ciphertext.
-    pub fn do_final(self) -> Result<[u8; BLOCK_LEN], SymmetricCipherError> {
+    fn do_final(self) -> Result<[u8; BLOCK_LEN], SymmetricCipherError> {
         let Self { mut inner, mut buf, buf_len, .. } = self;
-        // buf_len < BLOCK_LEN is an invariant of this type, so pad() cannot fail here.
         P::pad(&mut buf, buf_len)?;
         inner.do_encrypt(&mut buf)?;
         Ok(*buf)
     }
 
-    /// As [`do_final`](Self::do_final), writing the final block into `ciphertext`. Returns `BLOCK_LEN`.
-    pub fn do_final_out(
-        self,
-        ciphertext: &mut [u8; BLOCK_LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        *ciphertext = self.do_final()?;
-        Ok(BLOCK_LEN)
-    }
-
-    /// Ciphertext length for a `plaintext_len`-byte plaintext: `(plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN`.
-    pub const fn encrypt_out_len(plaintext_len: usize) -> usize {
+    /// `(plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN`: always one extra block for the padding.
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
         (plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN
-    }
-
-    /// One-shot encryption. `ciphertext` needs [`encrypt_out_len`](Self::encrypt_out_len) bytes.
-    /// Returns the generated init data and bytes written.
-    pub fn encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
-        let (enc, init_data) = Self::new(key)?;
-        let written = enc.finish_one_shot(plaintext, ciphertext)?;
-        Ok((init_data, written))
-    }
-
-    /// As [`encrypt_out`](Self::encrypt_out), but sources randomness from the provided RNG.
-    pub fn encrypt_out_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
-        let (enc, init_data) = Self::new_rng(key, rng)?;
-        let written = enc.finish_one_shot(plaintext, ciphertext)?;
-        Ok((init_data, written))
-    }
-
-    fn finish_one_shot(
-        mut self,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        let needed = Self::encrypt_out_len(plaintext.len());
-        if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
-        }
-        let written = self.do_update_out(plaintext, ciphertext)?;
-        // The final block always exists and is exactly BLOCK_LEN, so the total is `needed`.
-        let last = self.do_final()?;
-        ciphertext[written..needed].copy_from_slice(&last);
-        Ok(needed)
     }
 }
 
@@ -210,14 +186,26 @@ pub struct PaddedDecryptor<
     _padding: PhantomData<P>,
 }
 
-impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: Padding<BLOCK_LEN>,
 {
-    /// Begins a streaming decryption from the init data returned by the encryptor.
-    pub fn new(
+    /// The inner cipher's name; padding does not change what the algorithm is.
+    const ALG_NAME: &'static str = D::ALG_NAME;
+    /// Padding does not change the strength of the inner cipher.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = D::MAX_SECURITY_STRENGTH;
+}
+
+impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    P: Padding<BLOCK_LEN>,
+{
+    fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
@@ -230,16 +218,14 @@ where
         })
     }
 
-    /// Exact number of bytes [`do_update_out`](Self::do_update_out) will write for `input_len` more bytes.
-    pub const fn update_out_len(&self, input_len: usize) -> usize {
+    /// All complete blocks but the most recent one are released.
+    fn update_out_len(&self, input_len: usize) -> usize {
         let complete = self.held.is_some() as usize + (self.buf_len + input_len) / BLOCK_LEN;
-        // All complete blocks but the most recent one are released.
         complete.saturating_sub(1) * BLOCK_LEN
     }
 
     /// Decrypts all complete blocks except the most recent into `plaintext`, buffering the remainder.
-    /// `plaintext` needs [`update_out_len`](Self::update_out_len) bytes; returns bytes written.
-    pub fn do_update_out(
+    fn do_update_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
@@ -306,7 +292,7 @@ where
     /// Decrypts and unpads the held final block. Returns the block and its data length; the rest is
     /// padding. `DecryptionFailed` if the ciphertext was empty or not block-aligned; `PaddingError`
     /// if the padding is malformed.
-    pub fn do_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
+    fn do_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
         let Self { mut inner, buf_len, held, .. } = self;
         if buf_len != 0 {
             return Err(SymmetricCipherError::DecryptionFailed);
@@ -319,41 +305,8 @@ where
         Ok((block, data_len))
     }
 
-    /// As [`do_final`](Self::do_final), writing the block into `plaintext`. Returns its data length.
-    pub fn do_final_out(
-        self,
-        plaintext: &mut [u8; BLOCK_LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        let (block, data_len) = self.do_final()?;
-        *plaintext = block;
-        Ok(data_len)
-    }
-
-    /// Upper bound on the plaintext recovered from `ciphertext_len` bytes: `ciphertext_len - 1`.
-    pub const fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    /// `ciphertext_len - 1`: at least one byte of the final block is padding.
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
         ciphertext_len.saturating_sub(1)
-    }
-
-    /// One-shot decryption. `plaintext` needs [`decrypt_out_max_len`](Self::decrypt_out_max_len)
-    /// bytes. Returns bytes written.
-    pub fn decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        if ciphertext.len() < BLOCK_LEN || !ciphertext.len().is_multiple_of(BLOCK_LEN) {
-            return Err(SymmetricCipherError::DecryptionFailed);
-        }
-        let needed = Self::decrypt_out_max_len(ciphertext.len());
-        if plaintext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("plaintext", needed));
-        }
-        let mut dec = Self::new(key, init_data)?;
-        let written = dec.do_update_out(ciphertext, plaintext)?;
-        let (last, data_len) = dec.do_final()?;
-        // written == ciphertext.len() - BLOCK_LEN and data_len < BLOCK_LEN, so this fits in `needed`.
-        plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
-        Ok(written + data_len)
     }
 }

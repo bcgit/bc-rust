@@ -12,7 +12,7 @@
 use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key};
 use bouncycastle::aes_lowmemory::{Aes128, Aes192, Aes256};
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::BlockPermutation;
+use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 
 /// Names the mode in error messages.
@@ -51,7 +51,7 @@ fn run<P, const KEY_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     match action {
         BlockModeAction::Encrypt => {

@@ -1,24 +1,24 @@
-//! Shared conformance tests for [`BlockPermutation`] implementors.
+//! Shared conformance tests for [`ElectronicCodeBook`] implementors.
 
 use crate::DUMMY_SEED;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{BlockPermutation, SecurityStrength};
+use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
 
 /// Instance of the test framework.
-pub struct TestFrameworkBlockPermutation {
+pub struct TestFrameworkElectronicCodeBook {
     // Put any config options here
 }
 
-impl Default for TestFrameworkBlockPermutation {
+impl Default for TestFrameworkElectronicCodeBook {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl TestFrameworkBlockPermutation {
+impl TestFrameworkElectronicCodeBook {
     ///
     pub fn new() -> Self {
         Self {}
@@ -34,6 +34,8 @@ impl TestFrameworkBlockPermutation {
     ///   likewise for `decrypt_blocks2` -- this is what pins an override to the default's
     ///   semantics, and it is the reason the pair methods are worth having in the trait at all;
     /// * the pair methods round-trip each other;
+    /// * `encrypt_blocks8` / `decrypt_blocks8` likewise agree with eight single-block calls in
+    ///   order, and round-trip each other;
     /// * a key of the wrong [`KeyType`] is rejected;
     /// * the security-strength policy matches [`Algorithm::MAX_SECURITY_STRENGTH`].
     ///
@@ -41,7 +43,7 @@ impl TestFrameworkBlockPermutation {
     pub fn test<
         const KEY_LEN: usize,
         const BLOCK_LEN: usize,
-        P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+        P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
     >(
         &self,
     ) {
@@ -106,6 +108,36 @@ impl TestFrameworkBlockPermutation {
             perm.encrypt_blocks2(&mut buf);
             perm.decrypt_blocks2(&mut buf);
             assert_eq!(buf, [*a, *b], "decrypt_blocks2 must invert encrypt_blocks2");
+        }
+
+        // The eight-block methods must be indistinguishable from eight single-block calls, in every
+        // slot, whether they are the trait default (four pair calls) or an override.
+        let eights = blocks.as_chunks::<8>().0;
+        assert!(
+            !eights.is_empty(),
+            "DUMMY_SEED should hold at least eight blocks; test setup problem"
+        );
+        for eight in eights.iter() {
+            let mut singly = *eight;
+            for block in singly.iter_mut() {
+                perm.encrypt_block(block);
+            }
+            let mut batched = *eight;
+            perm.encrypt_blocks8(&mut batched);
+            assert_eq!(batched, singly, "encrypt_blocks8 must match eight encrypt_block calls");
+
+            let mut singly = *eight;
+            for block in singly.iter_mut() {
+                perm.decrypt_block(block);
+            }
+            let mut batched = *eight;
+            perm.decrypt_blocks8(&mut batched);
+            assert_eq!(batched, singly, "decrypt_blocks8 must match eight decrypt_block calls");
+
+            let mut buf = *eight;
+            perm.encrypt_blocks8(&mut buf);
+            perm.decrypt_blocks8(&mut buf);
+            assert_eq!(buf, *eight, "decrypt_blocks8 must invert encrypt_blocks8");
         }
 
         // A pair of *identical* blocks must give a pair of identical outputs. This catches an
