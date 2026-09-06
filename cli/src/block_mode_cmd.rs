@@ -5,7 +5,8 @@
 //! [`BlockCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it, so the
 //! commands cannot drift apart on the parts that matter for correctness.
 //!
-//! The CFB commands are stream ciphers and live in [`crate::stream_mode_cmd`] instead; they share
+//! The CFB and CTR commands are stream ciphers and live in [`crate::stream_mode_cmd`] instead;
+//! they share
 //! [`load_key`] and [`BlockModeAction`] with this module, so the key handling and the `encrypt` /
 //! `decrypt` spelling stay identical across all of them.
 //!
@@ -70,13 +71,14 @@ pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 pub(crate) enum BlockModeAction {
     /// Encrypt stdin to stdout.
     /// For CBC, CFB and CFB8 a freshly generated IV is written as the first 16 bytes of the
-    /// output, so that `decrypt` can read it back; ECB has no IV and writes none. The `-cbc` and
-    /// `-ecb` commands need the input to be a multiple of 16 bytes; `-cfb` and `-cfb8` take any
-    /// length. See the individual subcommand's help.
+    /// output, and for CTR a 12-byte nonce, so that `decrypt` can read it back; ECB has neither and
+    /// writes none. The `-cbc` and `-ecb` commands need the input to be a multiple of 16 bytes;
+    /// `-cfb`, `-cfb8` and `-ctr` take any length. See the individual subcommand's help.
     Encrypt,
     /// Decrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 the first 16 bytes of input are taken as the IV, as written by
-    /// `encrypt`; ECB has no IV and reads none. See `encrypt` for the input-length rule.
+    /// For CBC, CFB and CFB8 the first 16 bytes of input are taken as the IV, and for CTR the
+    /// first 12 as the nonce, as written by `encrypt`; ECB has neither and reads none. See
+    /// `encrypt` for the input-length rule.
     Decrypt,
 }
 

@@ -1,10 +1,12 @@
-//! Shared plumbing for the stream-cipher-mode subcommands: `aes{128,192,256}-{cfb,cfb8}`.
+//! Shared plumbing for the stream-cipher-mode subcommands: `aes{128,192,256}-{cfb,cfb8,ctr}`.
 //!
 //! The stream-cipher counterpart of [`crate::block_mode_cmd`], and deliberately parallel to it:
 //! same key loading (reused directly from there), same IV convention, same `-x` hex output, same
 //! 1 KiB streaming chunk. Everything here is mode-independent and generic over
-//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`], so `aes_cfb_cmd` and `aes_cfb8_cmd` are
-//! thin dispatchers over it and cannot drift apart on the parts that matter for correctness.
+//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`], so `aes_cfb_cmd`, `aes_cfb8_cmd` and
+//! `aes_ctr_cmd` are thin dispatchers over it and cannot drift apart on the parts that matter for
+//! correctness. The init data length is a parameter, so it need not be a whole block: it is the
+//! block for the CFB modes and a 12-byte nonce for CTR.
 //!
 //! # The IV travels in the ciphertext
 //!
@@ -27,7 +29,7 @@
 //! stdin is read as binary so the commands compose in a pipeline. `-x` renders the *output* as hex.
 //! For hex input, pipe through `hex-decode` first.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, CHUNK_LEN};
+use crate::block_mode_cmd::{BlockModeAction, CHUNK_LEN};
 use crate::helpers::write_bytes_or_hex;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
@@ -55,7 +57,12 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     // The cipher works in place: `data` holds plaintext on the way in and ciphertext on the way out.
     stream(|data| {
         // Cannot fail: neither CFB nor CFB8 has a per-IV data limit.
-        enc.do_encrypt(data).unwrap();
+        // CFB and CFB8 cannot fail here; CTR can, once its counter is exhausted, which is a real
+        // limit a long enough stream reaches rather than a bug.
+        enc.do_encrypt(data).unwrap_or_else(|e| {
+            eprintln!("Error: encryption failed: {e:?}");
+            exit(-1);
+        });
         write_bytes_or_hex(data, output_hex);
     });
 
@@ -86,7 +93,10 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     });
 
     stream(|data| {
-        dec.do_decrypt(data).unwrap();
+        dec.do_decrypt(data).unwrap_or_else(|e| {
+            eprintln!("Error: decryption failed: {e:?}");
+            exit(-1);
+        });
         write_bytes_or_hex(data, output_hex);
     });
 
@@ -129,16 +139,16 @@ fn finish(output_hex: bool) {
 
 /// Runs one direction of a stream mode. The two `run` dispatchers in `aes_cfb_cmd` and
 /// `aes_cfb8_cmd` differ only in which mode they name, so the match lives here.
-pub(crate) fn run_stream_mode<E, D, const KEY_LEN: usize>(
+pub(crate) fn run_stream_mode<E, D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     action: &BlockModeAction,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    E: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>,
-    D: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>,
+    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
 {
     match action {
-        BlockModeAction::Encrypt => encrypt_stream::<E, KEY_LEN, BLOCK_LEN>(key, output_hex),
-        BlockModeAction::Decrypt => decrypt_stream::<D, KEY_LEN, BLOCK_LEN>(key, output_hex),
+        BlockModeAction::Encrypt => encrypt_stream::<E, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
+        BlockModeAction::Decrypt => decrypt_stream::<D, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
     }
 }

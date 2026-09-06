@@ -64,6 +64,8 @@
 //! and [`AES_CFB_128`], [`AES_CFB_192`] and [`AES_CFB_256`] for CFB128 (Sec 6.3).
 //! [`AES_CFB8_128`], [`AES_CFB8_192`] and [`AES_CFB8_256`] give CFB8, the `s = 8` segment size,
 //! which is a different and non-interoperable mode costing one AES call per byte.
+//! [`AES_CTR_128`], [`AES_CTR_192`] and [`AES_CTR_256`] give CTR (Sec 6.5) with a 12-byte nonce
+//! and a 4-byte counter.
 //! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1) the same shape with no
 //! IV, for interoperability and test vectors only -- see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
@@ -209,6 +211,7 @@ mod bitslice;
 mod cbc;
 mod cfb;
 mod cfb8;
+mod ctr;
 mod ecb;
 mod round;
 mod sbox;
@@ -219,5 +222,6 @@ pub use bitslice::Block;
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
+pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 pub use schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams};
