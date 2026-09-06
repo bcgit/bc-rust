@@ -6,7 +6,7 @@ use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams, expand, round_key};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, BlockCipher, BlockPermutation, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, BlockPermutation, SecurityStrength};
 use bouncycastle_utils::secret::Secret;
 
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
@@ -218,28 +218,6 @@ impl Algorithm for Aes192 {
 
 impl Algorithm for Aes256 {
     const ALG_NAME: &'static str = Aes256Params::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-}
-
-// `BlockCipher` here is metadata only -- it declares `MAX_SECURITY_STRENGTH` and nothing else, and
-// it is the supertrait `BlockPermutation` requires. It is *not* one of the data-encryption traits
-// (`SymmetricCipher`, `BlockCipherEncryptor`, `BlockCipherDecryptor`, `AEADCipher`), which this
-// crate still deliberately does not implement: those are mode-of-operation concerns. See the crate
-// docs.
-//
-// Both `Algorithm` and `BlockCipher` declare `MAX_SECURITY_STRENGTH`, so a bare
-// `Aes128::MAX_SECURITY_STRENGTH` is ambiguous; qualify it as `<Aes128 as Algorithm>::...` or
-// `<Aes128 as BlockCipher>::...` at the use site.
-
-impl BlockCipher for Aes128 {
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
-
-impl BlockCipher for Aes192 {
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
-}
-
-impl BlockCipher for Aes256 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 

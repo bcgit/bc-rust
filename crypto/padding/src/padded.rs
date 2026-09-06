@@ -5,7 +5,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, Padding, RNG};
 use bouncycastle_utils::secret::Secret;
-use core::array::{from_mut, from_ref};
+use core::array::from_mut;
 use core::marker::PhantomData;
 
 /// Blocks per inner-cipher call on the bulk path; the remainder is processed one at a time.
@@ -91,23 +91,27 @@ where
                 return Ok(0);
             }
             // Block completed. out_len >= BLOCK_LEN here, so `split_first_mut` always succeeds.
+            // The cipher works in place, so the block is encrypted inside the `Secret` and only
+            // ciphertext is copied out of it.
             if let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut() {
-                self.inner.do_encrypt_blocks_out(from_ref(&*self.buf), from_mut(first))?;
+                self.inner.do_encrypt_blocks(from_mut(&mut *self.buf))?;
+                *first = *self.buf;
                 out_blocks = rest;
             }
             self.buf_len = 0;
         }
 
-        // 2. Bulk path: whole blocks straight from the input, in groups of GROUP then singly.
+        // 2. Bulk path: whole blocks are copied into the output and encrypted there, in place, in
+        //    groups of GROUP then singly.
         let (in_blocks, remainder) = plaintext.as_chunks::<BLOCK_LEN>();
         debug_assert_eq!(in_blocks.len(), out_blocks.len());
-        let (in_groups, in_tail) = in_blocks.as_chunks::<GROUP>();
+        out_blocks.copy_from_slice(in_blocks);
         let (out_groups, out_tail) = out_blocks.as_chunks_mut::<GROUP>();
-        for (i, o) in in_groups.iter().zip(out_groups.iter_mut()) {
-            self.inner.do_encrypt_blocks_out(i, o)?;
+        for group in out_groups.iter_mut() {
+            self.inner.do_encrypt_blocks(group)?;
         }
-        for (i, o) in in_tail.iter().zip(out_tail.iter_mut()) {
-            self.inner.do_encrypt_blocks_out(from_ref(i), from_mut(o))?;
+        for block in out_tail.iter_mut() {
+            self.inner.do_encrypt_blocks(from_mut(block))?;
         }
 
         // 3. Buffer the trailing partial block (remainder.len() < BLOCK_LEN).
@@ -117,12 +121,14 @@ where
     }
 
     /// Pads and encrypts the buffered partial block, returning the final ciphertext block.
+    ///
+    /// The block is padded and encrypted inside the `Secret`, so what is copied out is ciphertext.
     pub fn do_final(self) -> Result<[u8; BLOCK_LEN], SymmetricCipherError> {
         let Self { mut inner, mut buf, buf_len, .. } = self;
         // buf_len < BLOCK_LEN is an invariant of this type, so pad() cannot fail here.
         P::pad(&mut buf, buf_len)?;
-        let [ct] = inner.do_encrypt_blocks(from_ref(&*buf))?;
-        Ok(ct)
+        inner.do_encrypt(&mut buf)?;
+        Ok(*buf)
     }
 
     /// As [`do_final`](Self::do_final), writing the final block into `ciphertext`. Returns `BLOCK_LEN`.
@@ -130,9 +136,8 @@ where
         self,
         ciphertext: &mut [u8; BLOCK_LEN],
     ) -> Result<usize, SymmetricCipherError> {
-        let Self { mut inner, mut buf, buf_len, .. } = self;
-        P::pad(&mut buf, buf_len)?;
-        inner.do_encrypt_blocks_out(from_ref(&*buf), from_mut(ciphertext))
+        *ciphertext = self.do_final()?;
+        Ok(BLOCK_LEN)
     }
 
     /// Ciphertext length for a `plaintext_len`-byte plaintext: `(plaintext_len / BLOCK_LEN + 1) * BLOCK_LEN`.
@@ -262,7 +267,8 @@ where
             if let Some(prev) = self.held.replace(self.buf)
                 && let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut()
             {
-                self.inner.do_decrypt_blocks_out(from_ref(&prev), from_mut(first))?;
+                *first = prev;
+                self.inner.do_decrypt_blocks(from_mut(first))?;
                 out_blocks = rest;
             }
         }
@@ -274,18 +280,20 @@ where
             if let Some(prev) = self.held.replace(*last)
                 && let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut()
             {
-                self.inner.do_decrypt_blocks_out(from_ref(&prev), from_mut(first))?;
+                *first = prev;
+                self.inner.do_decrypt_blocks(from_mut(first))?;
                 out_blocks = rest;
             }
-            // Then every block of this call except the new held one.
+            // Then every block of this call except the new held one: copied into the output and
+            // decrypted there, in place.
             debug_assert_eq!(release.len(), out_blocks.len());
-            let (in_groups, in_tail) = release.as_chunks::<GROUP>();
+            out_blocks.copy_from_slice(release);
             let (out_groups, out_tail) = out_blocks.as_chunks_mut::<GROUP>();
-            for (i, o) in in_groups.iter().zip(out_groups.iter_mut()) {
-                self.inner.do_decrypt_blocks_out(i, o)?;
+            for group in out_groups.iter_mut() {
+                self.inner.do_decrypt_blocks(group)?;
             }
-            for (i, o) in in_tail.iter().zip(out_tail.iter_mut()) {
-                self.inner.do_decrypt_blocks_out(from_ref(i), from_mut(o))?;
+            for block in out_tail.iter_mut() {
+                self.inner.do_decrypt_blocks(from_mut(block))?;
             }
         }
 
@@ -303,12 +311,12 @@ where
         if buf_len != 0 {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
-        let Some(last) = held else {
+        let Some(mut block) = held else {
             return Err(SymmetricCipherError::DecryptionFailed);
         };
-        let [pt] = inner.do_decrypt_blocks(from_ref(&last))?;
-        let data_len = P::unpad(&pt)?;
-        Ok((pt, data_len))
+        inner.do_decrypt(&mut block)?;
+        let data_len = P::unpad(&block)?;
+        Ok((block, data_len))
     }
 
     /// As [`do_final`](Self::do_final), writing the block into `plaintext`. Returns its data length.
@@ -316,15 +324,9 @@ where
         self,
         plaintext: &mut [u8; BLOCK_LEN],
     ) -> Result<usize, SymmetricCipherError> {
-        let Self { mut inner, buf_len, held, .. } = self;
-        if buf_len != 0 {
-            return Err(SymmetricCipherError::DecryptionFailed);
-        }
-        let Some(last) = held else {
-            return Err(SymmetricCipherError::DecryptionFailed);
-        };
-        inner.do_decrypt_blocks_out(from_ref(&last), from_mut(plaintext))?;
-        Ok(P::unpad(plaintext)?)
+        let (block, data_len) = self.do_final()?;
+        *plaintext = block;
+        Ok(data_len)
     }
 
     /// Upper bound on the plaintext recovered from `ciphertext_len` bytes: `ciphertext_len - 1`.
