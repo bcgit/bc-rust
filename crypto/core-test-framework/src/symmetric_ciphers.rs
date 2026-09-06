@@ -443,10 +443,13 @@ impl TestFrameworkBlockCipher {
         assert_eq!(iv, iv_streamed);
         assert_eq!(buf, expected);
 
-        // test that the iv is random (ie not the same on two runs)
-        let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();
-        let (_encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
-        assert_ne!(iv1, iv2);
+        // test that the iv is random (ie not the same on two runs). A mode with no init data at all
+        // (ECB, INIT_DATA_LEN == 0) has nothing to compare: two empty arrays are always equal.
+        if INIT_DATA_LEN > 0 {
+            let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();
+            let (_encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
+            assert_ne!(iv1, iv2);
+        }
 
         // error case: KeyMaterial of wrong type
         let mac_key =

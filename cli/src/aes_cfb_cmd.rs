@@ -1,8 +1,8 @@
 //! AES-CFB128 encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the IV convention, key loading, stdin framing and
-//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the `aes*-cbc`
-//! commands. See that module for the command-line contract.
+//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the `aes*-cbc` and
+//! `aes*-ecb` commands. See that module for the command-line contract.
 //!
 //! # Which CFB
 //!
@@ -66,10 +66,14 @@ fn run<P, const KEY_LEN: usize>(
 {
     match action {
         BlockModeAction::Encrypt => {
-            encrypt_stream::<Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN>(key, output_hex, MODE)
+            encrypt_stream::<Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
+                key, output_hex, MODE,
+            )
         }
         BlockModeAction::Decrypt => {
-            decrypt_stream::<Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN>(key, output_hex, MODE)
+            decrypt_stream::<Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
+                key, output_hex, MODE,
+            )
         }
     }
 }

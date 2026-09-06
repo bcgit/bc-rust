@@ -1,8 +1,8 @@
 //! AES-CBC encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the IV convention, key loading, stdin framing and
-//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the `aes*-cfb`
-//! commands. See that module for the command-line contract.
+//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the `aes*-cfb` and
+//! `aes*-ecb` commands. See that module for the command-line contract.
 //!
 //! CBC (NIST SP 800-38A Sec 6.2) provides confidentiality only. It does not detect tampering, and
 //! neither the ciphertext nor the IV is authenticated -- a flipped ciphertext bit flips the same bit
@@ -55,10 +55,14 @@ fn run<P, const KEY_LEN: usize>(
 {
     match action {
         BlockModeAction::Encrypt => {
-            encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN>(key, output_hex, MODE)
+            encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
+                key, output_hex, MODE,
+            )
         }
         BlockModeAction::Decrypt => {
-            decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN>(key, output_hex, MODE)
+            decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
+                key, output_hex, MODE,
+            )
         }
     }
 }

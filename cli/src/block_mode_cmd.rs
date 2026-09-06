@@ -1,9 +1,9 @@
-//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,cfb}`.
+//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,cfb,ecb}`.
 //!
 //! Everything here is mode-independent -- key loading, stdin framing, block-alignment enforcement,
 //! output formatting -- and is generic over the mode via [`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`]. `aes_cbc_cmd` and `aes_cfb_cmd` are thin dispatchers over it, so the
-//! two commands cannot drift apart on the parts that matter for correctness.
+//! [`BlockCipherDecryptor`]. `aes_cbc_cmd`, `aes_cfb_cmd` and `aes_ecb_cmd` are thin dispatchers
+//! over it, so the commands cannot drift apart on the parts that matter for correctness.
 //!
 //! # The IV travels in the ciphertext
 //!
@@ -11,7 +11,9 @@
 //! caller-supplied IV, because NIST SP 800-38A Sec 5.3 requires the CBC and CFB IV to be
 //! *unpredictable* rather than merely unique. `encrypt` therefore generates one from the OS-backed
 //! DRBG and writes it as the **first block of the output**; `decrypt` reads it back from the
-//! **first block of the input**. So the two compose directly:
+//! **first block of the input**. So the two compose directly. The framing is generic over the
+//! mode's `INIT_DATA_LEN`: for ECB it is 0, so those commands write and read no IV and the
+//! ciphertext is exactly as long as the plaintext.
 //!
 //! ```text
 //! bc-rust aes128-cbc encrypt --key-file k.bin < plain.bin > cipher.bin
@@ -23,7 +25,7 @@
 //!
 //! # Input must be block-aligned
 //!
-//! Both modes are defined here only on whole blocks (SP 800-38A Sec 5.2), and these commands apply
+//! All these modes are defined only on whole blocks (SP 800-38A Sec 5.2), and these commands apply
 //! no padding, so input that is not a multiple of 16 bytes is rejected rather than silently padded.
 //! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
@@ -62,12 +64,13 @@ pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum BlockModeAction {
     /// Encrypt stdin to stdout.
-    /// A freshly generated IV is written as the first 16 bytes of the output, so that `decrypt`
-    /// can read it back. Input length must be a multiple of 16 bytes.
+    /// For CBC and CFB a freshly generated IV is written as the first 16 bytes of the output, so
+    /// that `decrypt` can read it back; ECB has no IV and writes none. Input length must be a
+    /// multiple of 16 bytes.
     Encrypt,
     /// Decrypt stdin to stdout.
-    /// The first 16 bytes of input are taken as the IV, as written by `encrypt`. The remaining
-    /// length must be a multiple of 16 bytes.
+    /// For CBC and CFB the first 16 bytes of input are taken as the IV, as written by `encrypt`;
+    /// ECB has no IV and reads none. The remaining length must be a multiple of 16 bytes.
     Decrypt,
 }
 
@@ -133,28 +136,32 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     key
 }
 
-/// Encrypts stdin to stdout under the mode `E`, writing the generated IV first.
+/// Encrypts stdin to stdout under the mode `E`, writing the generated init data (the IV) first.
 ///
-/// `mode` names the mode in error messages ("CBC", "CFB128"); it has no effect on the output.
-pub(crate) fn encrypt_stream<E, const KEY_LEN: usize>(
+/// `INIT_DATA_LEN` is the mode's: one block for CBC and CFB, 0 for ECB, in which case nothing is
+/// written ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "CFB128",
+/// "ECB"); it has no effect on the output.
+pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
     mode: &str,
 ) where
-    E: BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
     let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
         exit(-1);
     });
 
-    // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up.
-    write_bytes_or_hex(&iv, output_hex);
+    // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up. (Empty for ECB.)
+    if INIT_DATA_LEN > 0 {
+        write_bytes_or_hex(&iv, output_hex);
+    }
 
     // The cipher works in place: `data` holds plaintext on the way in and ciphertext on the way out.
     stream_aligned(mode, |data| {
         if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
-            // Cannot fail: neither mode has a per-IV data limit.
+            // Cannot fail: none of these modes has a per-IV data limit.
             enc.do_encrypt(chunk).unwrap();
         } else {
             // The bounded tail at end of input: whole blocks, fewer than a chunk.
@@ -168,19 +175,22 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize>(
     finish(output_hex);
 }
 
-/// Decrypts stdin to stdout under the mode `D`, taking the IV from the first block of input.
-pub(crate) fn decrypt_stream<D, const KEY_LEN: usize>(
+/// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from the first
+/// `INIT_DATA_LEN` bytes of input -- one block for CBC and CFB, nothing for ECB.
+pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
     mode: &str,
 ) where
-    D: BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    // The leading block is the IV, not ciphertext.
-    let mut iv = [0u8; BLOCK_LEN];
-    if let Err(e) = io::stdin().read_exact(&mut iv) {
+    // The leading bytes are the IV, not ciphertext. (None for ECB: the read is skipped.)
+    let mut iv = [0u8; INIT_DATA_LEN];
+    if INIT_DATA_LEN > 0
+        && let Err(e) = io::stdin().read_exact(&mut iv)
+    {
         eprintln!(
-            "Error: input too short to contain the {BLOCK_LEN}-byte IV that `encrypt` writes \
+            "Error: input too short to contain the {INIT_DATA_LEN}-byte IV that `encrypt` writes \
              as its first block ({e})."
         );
         exit(-1);
@@ -211,8 +221,8 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize>(
 /// with whatever whole blocks remain (fewer than a chunk). Reads need not respect block or chunk boundaries -- bytes simply accumulate in the
 /// buffer until it is full -- so a block split across two reads needs no special handling.
 ///
-/// Input whose total length is not a multiple of `BLOCK_LEN` is an error, because neither mode is
-/// defined on a partial block and these commands do not pad.
+/// Input whose total length is not a multiple of `BLOCK_LEN` is an error, because none of these
+/// modes is defined on a partial block and these commands do not pad.
 fn stream_aligned(mode: &str, mut process: impl FnMut(&mut [u8])) {
     let mut buf = [0u8; CHUNK_LEN];
     let mut filled = 0usize;
