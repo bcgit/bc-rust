@@ -14,6 +14,7 @@
 // properly document everything.
 #![forbid(missing_docs)]
 
+pub mod block_permutation;
 pub mod hash;
 pub mod kdf;
 pub mod kem;

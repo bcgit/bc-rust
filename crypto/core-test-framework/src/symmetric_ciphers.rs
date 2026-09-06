@@ -238,9 +238,17 @@ impl TestFrameworkBlockCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
-            // Tag the key at an arbitrary strength for the purpose of this test. Inside a
-            // do_hazardous_operations() closure, set_security_strength() raises the strength
-            // (and bypasses the key-length guard) without complaining.
+            // `set_security_strength` enforces its key-length guard even inside a
+            // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
+            // strength above `from_bytes(KEY_LEN)` -- so skip the strengths this key cannot carry
+            // rather than unwrapping an error. (A 16-byte key can reach 128-bit and no higher.)
+            // Do NOT "fix" this by relaxing that guard in `KeyMaterial`: core's
+            // `test_hazardous_ops_error_handling` requires it to stay enforced.
+            if ss > &SecurityStrength::from_bytes(KEY_LEN) {
+                continue;
+            }
+
+            // Tag the key at an arbitrary strength for the purpose of this test.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
 
             match E::do_encrypt_init(&key) {
