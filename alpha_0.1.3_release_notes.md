@@ -35,9 +35,9 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
 * Deliberately ships no CLI subcommand, no factory entry and no `core` cipher-trait impls: a raw permutation can
   only offer ECB, and those are mode-of-operation concerns. `Algorithm` is implemented (name and security
   strength); per-mode OIDs and the `BlockCipherEncryptor` / `BlockCipherDecryptor` impls belong to the mode crates.
-* Ships the type aliases `AES_CBC_128` / `AES_CBC_192` / `AES_CBC_256` and `AES_CFB_128` /
-  `AES_CFB_192` / `AES_CFB_256`, which fill in the const parameters of `bouncycastle-modes`' `Cbc`
-  and `Cfb` and leave the direction as the type parameter. They are aliases only -- no new engine
+* Ships the type aliases `AES_CBC_128` / `AES_CBC_192` / `AES_CBC_256`, `AES_CFB_128` /
+  `AES_CFB_192` / `AES_CFB_256` and `AES_ECB_128` / `AES_ECB_192` / `AES_ECB_256`, which fill in the
+  const parameters of `bouncycastle-modes`' `Cbc`, `Cfb` and `Ecb` and leave the direction as the type parameter. They are aliases only -- no new engine
   code, and each one's doctest round-trips and shows that a misaligned length fails to compile.
 
 New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of operation
@@ -164,6 +164,31 @@ chunks.
   adds three CFB-specific checks: the F.3 vectors, the Appendix D single-bit malleability observed
   end to end through the pipe, and a guard that a CFB ciphertext does not decrypt as CBC or vice
   versa (neither mode is authenticated, so the mismatch is otherwise silent).
+
+ECB (`Ecb`), SP 800-38A Sec 6.1:
+
+* **The raw permutation with the mode API, for interoperability only.** `Ecb<P, Dir, KEY_LEN, BLOCK_LEN>` implements
+  `BlockCipherEncryptor` / `BlockCipherDecryptor` with `INIT_DATA_LEN = 0`: `do_encrypt_init` returns an empty array and
+  draws nothing from the RNG, `do_decrypt_init` takes one. Same direction typing, streaming and one-shot methods,
+  compile-time length checks and padding-layer composition as `Cbc` / `Cfb`, so a key-wrapping scheme, a legacy protocol
+  or a test-vector harness that needs ECB can use it through the same interface. The crate docs, the type docs and the
+  CLI help all say the same thing about it: **not a confidentiality mode for data** (Sec 6.1: "any given plaintext block
+  always gets encrypted to the same ciphertext block"). One block smaller than `Cbc` / `Cfb`, since nothing chains
+  (176 / 208 / 240 B for AES-128/192/256).
+* **Both directions batch.** Sec 6.1 allows forward and inverse cipher calls "to be computed in parallel", so encryption
+  as well as decryption walks the blocks through `ElectronicCodeBook::{en,de}crypt_blocks8`, then the pair methods, then
+  a single block. The swapped-pair and rotated-eight test permutations prove both paths are taken in both directions.
+* `aes128-ecb` / `aes192-ecb` / `aes256-ecb` CLI subcommands over the shared block-mode plumbing, which is now generic
+  over `INIT_DATA_LEN`: nothing is prepended on `encrypt` or consumed on `decrypt`, so output is exactly as long as
+  input. The per-command help carries the warning.
+* Verified against all six SP 800-38A **Appendix F.1** vectors (ECB-AES128/192/256, Encrypt and Decrypt) in five
+  groupings each -- and, since there is no IV, `encrypt` is checked against the published ciphertext too, through the
+  streaming API and the one-shot. Each tabulated ciphertext block is also checked to be `CIPH_K` of its plaintext block
+  through the raw permutation. The **NIST ACVP `ACVP-AES-ECB`** set (2138 AFT cases) already used by `aes-lowmemory`
+  is run again through the mode API, both directions, in three groupings including one that reaches the eight-block
+  path. Structural tests pin the Sec 6.1 equations against a reference over the toy permutation, determinism and the
+  codebook property, Appendix D error propagation (a corrupted block randomises itself and nothing else, checked over
+  all 128 bit positions with real AES), the empty init data, and composition with `bouncycastle-padding`.
 
 `core`: new `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.

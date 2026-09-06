@@ -6,20 +6,24 @@
 //!
 //! | Mode | Type | Spec | Notes |
 //! |---|---|---|---|
+//! | ECB | [`Ecb`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | CBC | [`Cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
 //! | CFB | [`Cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`) only |
 //!
-//! Both are strictly block-aligned and both generate their own IV; they differ only in how the
-//! block permutation is wired up, and the two types have identical APIs and identical size. See
+//! All three are strictly block-aligned. CBC and CFB generate their own IV and differ only in how
+//! the block permutation is wired up; the two types have identical APIs and identical size. ECB has
+//! no IV at all (`INIT_DATA_LEN = 0`), is one block smaller, and is the raw permutation applied
+//! block by block -- see
+//! [ECB is not a confidentiality mode for data](#ecb-is-not-a-confidentiality-mode-for-data) and
 //! [Choosing between CBC and CFB](#choosing-between-cbc-and-cfb).
 //!
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait. Define a one-line alias for the combination you use -- or use the ready-made
-//! `AES_CBC_128` / `AES_CFB_128` and friends from `bouncycastle-aes-lowmemory`:
+//! `AES_CBC_128` / `AES_CFB_128` / `AES_ECB_128` and friends from `bouncycastle-aes-lowmemory`:
 //!
 //! ```
 //! use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
-//! use bouncycastle_modes::{Cbc, Cfb};
+//! use bouncycastle_modes::{Cbc, Cfb, Ecb};
 //!
 //! type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, 16>;
 //! type Aes192Cbc<Dir> = Cbc<Aes192, Dir, 24, 16>;
@@ -28,6 +32,8 @@
 //! type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, 16>;
 //! type Aes192Cfb<Dir> = Cfb<Aes192, Dir, 24, 16>;
 //! type Aes256Cfb<Dir> = Cfb<Aes256, Dir, 32, 16>;
+//!
+//! type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, 16>;
 //! ```
 //!
 //! # Usage Examples
@@ -118,6 +124,29 @@
 //! assert_ne!(as_if_cbc, plaintext);
 //! ```
 //!
+//! ECB has the same shape with no IV: `encrypt` returns an empty array and `decrypt` takes one.
+//! The codebook property that makes it unsuitable for data is visible in the ciphertext:
+//!
+//! ```
+//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+//!
+//! type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, 16>;
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let plaintext = [0x5Au8; 32]; // two equal blocks
+//!
+//! let mut data = plaintext;
+//! let no_iv: [u8; 0] = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
+//!
+//! Aes128Ecb::<Decrypting>::decrypt(&key, &no_iv, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
+//! ```
+//!
 //! Using the wrong direction does not compile:
 //!
 //! ```compile_fail
@@ -135,8 +164,8 @@
 //!
 //! # Choosing between CBC and CFB
 //!
-//! Neither is authenticated, so the honest answer for new designs is "neither -- use an AEAD".
-//! Between the two:
+//! Neither is authenticated, so the honest answer for new designs is "neither -- use an AEAD". ECB
+//! is not a candidate for data at all (below). Between the two:
 //!
 //! * **Error propagation differs**, and it is the sharpest practical difference. SP 800-38A
 //!   Appendix D, Table D.2: a bit error in `Cj` gives CBC a *randomised* `Pj` plus the **same bit**
@@ -156,8 +185,8 @@
 //! # Block alignment
 //!
 //! These types are **strictly block-aligned**: whole blocks in, whole blocks out, no finalization
-//! step. SP 800-38A Sec 5.2 requires exactly that of CBC ("the total number of bits in the
-//! plaintext must be a multiple of the block size"); for CFB it requires the total to be a multiple
+//! step. SP 800-38A Sec 5.2 requires exactly that of ECB and CBC ("For the ECB and CBC modes, the
+//! total number of bits in the plaintext must be a multiple of the block size"); for CFB it requires the total to be a multiple
 //! of the segment size `s`, and this crate fixes `s = b`, so the requirement is the same. Appendix
 //! A puts the formatting of non-aligned data outside the scope of the recommendation.
 //!
@@ -192,12 +221,13 @@
 //!
 //! # Memory Usage
 //!
-//! No heap allocation, and no lookup tables of its own. A mode value is the permutation plus one
-//! block of chaining value:
+//! No heap allocation, and no lookup tables of its own. A CBC or CFB value is the permutation plus
+//! one block of chaining value; an ECB value is just the permutation, since nothing chains:
 //!
 //! ```text
 //! size_of::<Cbc<P, Dir, KEY_LEN, BLOCK_LEN>>() == size_of::<P>() + BLOCK_LEN
 //! size_of::<Cfb<P, Dir, KEY_LEN, BLOCK_LEN>>() == size_of::<P>() + BLOCK_LEN
+//! size_of::<Ecb<P, Dir, KEY_LEN, BLOCK_LEN>>() == size_of::<P>()
 //! ```
 //!
 //! | Combination | Permutation | Chain | Total |
@@ -205,6 +235,9 @@
 //! | AES-128 CBC or CFB | 176 B | 16 B | 192 B |
 //! | AES-192 CBC or CFB | 208 B | 16 B | 224 B |
 //! | AES-256 CBC or CFB | 240 B | 16 B | 256 B |
+//! | AES-128 ECB | 176 B | 0 B | 176 B |
+//! | AES-192 ECB | 208 B | 0 B | 208 B |
+//! | AES-256 ECB | 240 B | 0 B | 240 B |
 //!
 //! CFB is the same size as CBC because it stores the same thing: one block of input to the next
 //! cipher call. Its keystream block `Oj` is recomputed per call and lives only in a local, so it
@@ -213,15 +246,36 @@
 //! The data methods work in place. The pair path in either mode's decryptor adds one
 //! `[[u8; BLOCK_LEN]; 2]` copy of the ciphertext it needs for the chaining value. [`Encrypting`] and [`Decrypting`] are zero-sized and held in a
 //! `PhantomData`, so encoding the direction in the type is free. The table is pinned by
-//! `sizes_match_the_documented_memory_table` in `tests/cbc_tests.rs` and `tests/cfb_tests.rs`.
+//! `sizes_match_the_documented_memory_table` in `tests/cbc_tests.rs`, `tests/cfb_tests.rs` and
+//! `tests/ecb_tests.rs`.
 //!
 //! # Security Considerations
 //!
-//! ## Neither mode is authenticated
+//! ## ECB is not a confidentiality mode for data
 //!
-//! Both provide confidentiality only. Neither detects tampering, and both are malleable in
-//! specific, exploitable ways -- SP 800-38A Appendix D, Table D.2:
+//! SP 800-38A Sec 6.1: "In the ECB mode, under a given key, any given plaintext block always gets
+//! encrypted to the same ciphertext block. If this property is undesirable in a particular
+//! application, the ECB mode should not be used." It is undesirable for data: equal plaintext
+//! blocks give equal ciphertext blocks, so patterns in the plaintext show through the ciphertext;
+//! the same message encrypts to the same ciphertext every time, so an observer learns when a message
+//! repeats; and with nothing tying blocks together, ciphertext blocks can be reordered, duplicated or
+//! deleted, or spliced in from another message under the same key, and the result decrypts to
+//! plaintext that looks valid block by block.
 //!
+//! [`Ecb`] is in this crate because ECB is what some specifications and existing systems require --
+//! a raw permutation exposed through the same mode API as the others, so that a key-wrapping scheme,
+//! a legacy protocol or a test-vector harness can use it -- and because it is the natural way to
+//! drive an [`ElectronicCodeBook`] implementation's known-answer tests. Do not use it to encrypt
+//! data. If you find yourself reaching for it because it needs no IV, that is the problem the IV
+//! solves.
+//!
+//! ## None of the modes is authenticated
+//!
+//! All three provide, at best, confidentiality only. None detects tampering, and each is malleable
+//! in specific, exploitable ways -- SP 800-38A Appendix D, Table D.2:
+//!
+//! * **ECB:** flipping a bit of `Cj` randomises the decryption of `Cj` and nothing else, and whole
+//!   blocks can be reordered, repeated or dropped undetectably (above).
 //! * **CBC:** flipping a bit of `Cj` flips the same bit of the decryption of `Cj+1`, and randomises
 //!   the decryption of `Cj` itself.
 //! * **CFB:** flipping a bit of `Cj` flips the same bit of the decryption of `Cj` -- the block the
@@ -237,6 +291,9 @@
 //! unpadding is not a substitute for authentication.
 //!
 //! ## The IV must be unpredictable, and this crate generates it
+//!
+//! (ECB has no IV; Table D.2 lists its IV column as "Not applicable". This section is about CBC and
+//! CFB.)
 //!
 //! SP 800-38A Sec 5.3 requires that "for the CBC and CFB modes, the IV for any particular execution
 //! of the encryption process must be unpredictable" -- not merely unique. Appendix C spells out
@@ -278,17 +335,17 @@
 //! * **The CFB segment sizes below the block size** (`s = 1` and `s = 8`, for which SP 800-38A
 //!   Appendix F.3 also gives vectors). They are not block-aligned, so they need a
 //!   `StreamCipher`-shaped API rather than [`BlockCipherEncryptor`].
-//! * **ECB, OFB and CTR**, the other three modes of the recommendation. ECB is a raw permutation
-//!   applied per block and is not confidential; OFB and CTR are keystream modes and, like CFB1/8,
-//!   do not require block alignment.
+//! * **OFB and CTR**, the remaining two modes of the recommendation. Both are keystream modes and,
+//!   like CFB1/8, do not require block alignment.
 //!
 //! # Command line
 //!
-//! The `bc-rust` CLI exposes both modes for all three AES key lengths: `aes128-cbc`, `aes192-cbc`,
-//! `aes256-cbc`, `aes128-cfb`, `aes192-cfb` and `aes256-cfb`, each taking `encrypt` or `decrypt`
-//! and streaming stdin to stdout. Because there is no API for a caller-supplied IV, `encrypt`
-//! writes the generated IV as the first block of its output and `decrypt` reads it back from the
-//! first block of its input, so the two compose:
+//! The `bc-rust` CLI exposes all three modes for all three AES key lengths: `aes128-cbc`,
+//! `aes192-cbc`, `aes256-cbc`, `aes128-cfb`, `aes192-cfb`, `aes256-cfb`, `aes128-ecb`,
+//! `aes192-ecb` and `aes256-ecb`, each taking `encrypt` or `decrypt` and streaming stdin to
+//! stdout. For CBC and CFB there is no API for a caller-supplied IV, so `encrypt` writes the
+//! generated IV as the first block of its output and `decrypt` reads it back from the first block
+//! of its input, so the two compose; the `-ecb` commands have no IV and write and read none:
 //!
 //! ```text
 //! bc-rust aes256-cbc encrypt --key-file k.bin < plain.bin > cipher.bin
@@ -296,10 +353,12 @@
 //!
 //! bc-rust aes256-cfb encrypt --key-file k.bin < plain.bin > cipher.bin
 //! bc-rust aes256-cfb decrypt --key-file k.bin < cipher.bin | cmp - plain.bin
+//!
+//! bc-rust aes128-ecb encrypt --key-file k.bin < plain.bin > cipher.bin   # same length out as in
 //! ```
 //!
-//! The `-cfb` commands are CFB128, matching [`Cfb`]. Input must be block-aligned there too, for the
-//! reason given above.
+//! The `-cfb` commands are CFB128, matching [`Cfb`]. Input must be block-aligned for every command,
+//! for the reason given above.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -307,23 +366,25 @@
 
 mod cbc;
 mod cfb;
+mod ecb;
 mod iv;
 
 pub use cbc::Cbc;
 pub use cfb::Cfb;
+pub use ecb::Ecb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 // end of imports needed for docs
 
-/// Direction marker for a mode that encrypts. See [`Cbc`] and [`Cfb`].
+/// Direction marker for a mode that encrypts. See [`Cbc`], [`Cfb`] and [`Ecb`].
 ///
 /// Zero-sized: encoding the direction in the type costs no memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Encrypting;
 
-/// Direction marker for a mode that decrypts. See [`Cbc`] and [`Cfb`].
+/// Direction marker for a mode that decrypts. See [`Cbc`], [`Cfb`] and [`Ecb`].
 ///
 /// Zero-sized: encoding the direction in the type costs no memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

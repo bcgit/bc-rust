@@ -1,5 +1,6 @@
 mod aes_cbc_cmd;
 mod aes_cfb_cmd;
+mod aes_ecb_cmd;
 mod block_mode_cmd;
 mod encoders_cmd;
 mod helpers;
@@ -533,6 +534,84 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-128 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
+    ///
+    /// WARNING: ECB is NOT a confidentiality mode for data. Under a given key every plaintext
+    /// block maps to the same ciphertext block, so equal blocks stay visibly equal, the same input
+    /// always gives the same output, and blocks can be reordered, repeated or removed undetectably.
+    /// This command exists for interoperability with systems that require ECB and for test
+    /// vectors. For data use aes*-cbc or aes*-cfb under separate authentication, or an AEAD.
+    ///
+    /// There is NO IV: nothing is prepended on `encrypt` and nothing is consumed on `decrypt`, so
+    /// the output is exactly as long as the input.
+    ///
+    /// Input must be a whole number of 16-byte blocks: this command is block-aligned and applies
+    /// no padding, so unaligned input is rejected rather than padded.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_ECB {
+        action: BlockModeAction,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
+    ///
+    /// See `aes128-ecb` for the warning, the absence of an IV and the block-alignment requirement;
+    /// only the key length differs.
+    AES192_ECB {
+        action: BlockModeAction,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
+    ///
+    /// See `aes128-ecb` for the warning, the absence of an IV and the block-alignment requirement;
+    /// only the key length differs.
+    AES256_ECB {
+        action: BlockModeAction,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -861,6 +940,15 @@ fn main() {
         }
         Some(Subcommands::AES256_CFB { action, key, key_file, x }) => {
             aes_cfb_cmd::aes256_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES128_ECB { action, key, key_file, x }) => {
+            aes_ecb_cmd::aes128_ecb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES192_ECB { action, key, key_file, x }) => {
+            aes_ecb_cmd::aes192_ecb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES256_ECB { action, key, key_file, x }) => {
+            aes_ecb_cmd::aes256_ecb_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);

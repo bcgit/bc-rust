@@ -29,7 +29,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
 };
-use bouncycastle_modes::{Cbc, Cfb, Decrypting, Encrypting};
+use bouncycastle_modes::{Cbc, Cfb, Decrypting, Ecb, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -42,6 +42,7 @@ type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, BLOCK_LEN>;
 type Aes256Cbc<Dir> = Cbc<Aes256, Dir, 32, BLOCK_LEN>;
 type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, BLOCK_LEN>;
 type Aes256Cfb<Dir> = Cfb<Aes256, Dir, 32, BLOCK_LEN>;
+type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, BLOCK_LEN>;
 
 /// AES-128 with the pair methods **not** overridden, so they fall back to the trait defaults of
 /// two single-block calls.
@@ -75,6 +76,7 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
 
 type UnpairedAes128Cbc<Dir> = Cbc<UnpairedAes128, Dir, 16, BLOCK_LEN>;
 type UnpairedAes128Cfb<Dir> = Cfb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
+type UnpairedAes128Ecb<Dir> = Ecb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -482,6 +484,83 @@ fn bench_cfb_aes256(c: &mut Criterion) {
     group.finish();
 }
 
+/// ECB has no chaining, so *both* directions batch (SP 800-38A Sec 6.1: forward and inverse
+/// cipher functions "can be computed in parallel"). Encryption should therefore show the same
+/// N >= 2 speed-up that only decryption shows for CBC and CFB, and the encrypt/decrypt gap should be
+/// just the permutation's own forward/inverse cost difference.
+fn bench_ecb_aes128(c: &mut Criterion) {
+    let k = key::<16>();
+    let blocks = data();
+
+    let mut group = c.benchmark_group("modes::ecb::Aes128");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    group.bench_function("16KiB encrypt -- N=1 (no batching)", |b| {
+        b.iter_batched(
+            || blocks.clone(),
+            |mut scratch| {
+                let (mut enc, _) = Aes128Ecb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                for block in scratch.iter_mut() {
+                    enc.do_encrypt(block).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    group.bench_function("16KiB encrypt -- N=8 (eights)", |b| {
+        b.iter_batched(
+            || blocks.clone(),
+            |mut scratch| {
+                let (mut enc, _) = Aes128Ecb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    enc.do_encrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    group.bench_function("16KiB decrypt -- N=8 (eights)", |b| {
+        b.iter_batched(
+            || blocks.clone(),
+            |mut scratch| {
+                let mut dec = Aes128Ecb::<Decrypting>::do_decrypt_init(&k, &[]).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    dec.do_decrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // The controlled comparison: identical N, identical cipher, batch methods overridden vs not.
+    group.bench_function("16KiB encrypt -- N=8, no pair path (trait default)", |b| {
+        b.iter_batched(
+            || blocks.clone(),
+            |mut scratch| {
+                let (mut enc, _) = UnpairedAes128Ecb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                for chunk in scratch.chunks_exact_mut(8) {
+                    let arr: &mut [u8; 8 * BLOCK_LEN] =
+                        chunk.as_flattened_mut().try_into().unwrap();
+                    enc.do_encrypt(arr).unwrap();
+                }
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    group.finish();
+}
+
 /// `do_*_init` includes a key expansion, and for encryption also an IV draw from the OS-backed
 /// DRBG. Worth its own measurement, because for short messages it dominates.
 fn bench_init(c: &mut Criterion) {
@@ -521,6 +600,7 @@ fn bench_init(c: &mut Criterion) {
 }
 
 criterion_group!(
-    benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_init
+    benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_ecb_aes128,
+    bench_init
 );
 criterion_main!(benches);
