@@ -6,7 +6,7 @@ use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams, expand, round_key};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, BlockCipher, BlockPermutation, SecurityStrength};
 use bouncycastle_utils::secret::Secret;
 
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
@@ -219,6 +219,89 @@ impl Algorithm for Aes192 {
 impl Algorithm for Aes256 {
     const ALG_NAME: &'static str = Aes256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+// `BlockCipher` here is metadata only -- it declares `MAX_SECURITY_STRENGTH` and nothing else, and
+// it is the supertrait `BlockPermutation` requires. It is *not* one of the data-encryption traits
+// (`SymmetricCipher`, `BlockCipherEncryptor`, `BlockCipherDecryptor`, `AEADCipher`), which this
+// crate still deliberately does not implement: those are mode-of-operation concerns. See the crate
+// docs.
+//
+// Both `Algorithm` and `BlockCipher` declare `MAX_SECURITY_STRENGTH`, so a bare
+// `Aes128::MAX_SECURITY_STRENGTH` is ambiguous; qualify it as `<Aes128 as Algorithm>::...` or
+// `<Aes128 as BlockCipher>::...` at the use site.
+
+impl BlockCipher for Aes128 {
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl BlockCipher for Aes192 {
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+}
+
+impl BlockCipher for Aes256 {
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+// The three `BlockPermutation` impls are one-line delegations to the inherent methods above. They
+// are written out longhand rather than generated, for the `cargo mutants` reason given above.
+//
+// Each overrides `encrypt_blocks2` / `decrypt_blocks2`, because a pair of blocks is exactly what
+// the bit-sliced state holds: the pair form costs barely more than one block, where the default
+// (two single-block calls) would do four blocks' worth of work.
+
+impl BlockPermutation<16, BLOCK_LEN> for Aes128 {
+    fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+        Aes128::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        Aes::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        Aes::decrypt_block(self, block)
+    }
+    fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+        Aes::encrypt_blocks2(self, blocks)
+    }
+    fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+        Aes::decrypt_blocks2(self, blocks)
+    }
+}
+
+impl BlockPermutation<24, BLOCK_LEN> for Aes192 {
+    fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
+        Aes192::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        Aes::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        Aes::decrypt_block(self, block)
+    }
+    fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+        Aes::encrypt_blocks2(self, blocks)
+    }
+    fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+        Aes::decrypt_blocks2(self, blocks)
+    }
+}
+
+impl BlockPermutation<32, BLOCK_LEN> for Aes256 {
+    fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
+        Aes256::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        Aes::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        Aes::decrypt_block(self, block)
+    }
+    fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+        Aes::encrypt_blocks2(self, blocks)
+    }
+    fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+        Aes::decrypt_blocks2(self, blocks)
+    }
 }
 
 impl<P: AesParams> core::fmt::Debug for Aes<P> {

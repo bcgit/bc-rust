@@ -5,11 +5,29 @@
 //! matching the convention used by the ML-KEM and ML-DSA test suites -- `cargo test` must stay
 //! green for someone who has only cloned this repository.
 //!
-//! # Why ACVP ECB vectors
+//! # Why ECB, and where the other ACVP AES files are used
 //!
 //! ECB applies the raw permutation to each block independently, so an ECB test vector *is* a
 //! block-permutation test vector -- which is the only reason ECB is mentioned in this crate. See
 //! the crate docs on why you must never use ECB to encrypt data.
+//!
+//! `bc-test-data` ships thirteen ACVP AES vector sets, one per mode. This file deliberately
+//! consumes only `ACVP-AES-ECB`, because that is the one that tests the permutation rather than a
+//! mode. The others belong with whatever implements the mode:
+//!
+//! | Vector set | Consumed by |
+//! |---|---|
+//! | `ACVP-AES-ECB` | this file |
+//! | `ACVP-AES-CBC` | `crypto/modes/tests/acvp_tests.rs` |
+//! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
+//! | `ACVP-AES-CFB8` / `-CFB128` | nothing yet (CFB is unimplemented) |
+//! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
+//! | `ACVP-AES-CTR` | nothing yet (CTR is unimplemented) |
+//! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |
+//! | `ACVP-AES-FF1` / `-FF3-1` | nothing yet (format-preserving encryption is unimplemented) |
+//!
+//! So an unused vector set here means an unimplemented mode, not an untested one. Adding a mode
+//! should include wiring up its file.
 //!
 //! The response file records `key`, `pt` and `ct` for every test case regardless of the group's
 //! declared direction, so each case is checked in **both** directions: encrypting `pt` must give
