@@ -260,6 +260,19 @@ CTR (`Ctr`), SP 800-38A Sec 6.5:
   it. That width sweep matters because the counter occupies a width-dependent slice, and getting it
   wrong is invisible to a round-trip test: both directions would build the same wrong block and
   still recover the plaintext.
+* Cross-checked against **BC Java's `SICBlockCipher`**, which is the closest comparison available:
+  unlike OpenSSL, whose `-aes-*-ctr` takes the whole block as its IV and so has no notion of a
+  nonce, `SICBlockCipher` is built the same way -- a short IV goes in the leading bytes, the rest is
+  zero-filled so the counter starts at 0, it increments big-endian with carry, and it throws
+  `IllegalStateException("Counter in CTR/SIC mode out of range.")` once the carry would reach the
+  IV. Same construction, same start, same overflow rule; the only difference is that BC Java caps
+  the counter at `min(8, blockSize / 2)` bytes where this type stops at 4, so ours is a subset and
+  the two agree exactly on nonces of 12 to 15 bytes. Agreement is byte for byte on the 69-byte
+  vectors and on a 5000-byte message across the 255-to-256 carry at all three key lengths, and the
+  counter limit falls on the same byte at both the 1-byte (4 KiB) and 2-byte (1 MiB) widths.
+  `ctr_bc_java_tests.rs` pins what neither the ACVP nor the OpenSSL suite can reach: the keystream
+  at **1, 2 and 3-byte counters**, including both ends of the 1-byte counter's range and the
+  2-byte counter's carry from block 255 to 256.
 * SP 800-38A **Appendix F.5** is not transcribed: its vectors start the counter at `0xfcfdfeff`
   rather than zero, so they cannot be expressed through this API. What F.5 does corroborate is the
   split -- across its four blocks the counter moves only within the last four bytes, leaving the
