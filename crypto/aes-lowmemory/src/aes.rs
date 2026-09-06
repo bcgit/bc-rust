@@ -6,7 +6,7 @@ use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams, expand, round_key};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, BlockPermutation, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
 use bouncycastle_utils::secret::Secret;
 
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
@@ -221,14 +221,14 @@ impl Algorithm for Aes256 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
-// The three `BlockPermutation` impls are one-line delegations to the inherent methods above. They
+// The three `ElectronicCodeBook` impls are one-line delegations to the inherent methods above. They
 // are written out longhand rather than generated, for the `cargo mutants` reason given above.
 //
 // Each overrides `encrypt_blocks2` / `decrypt_blocks2`, because a pair of blocks is exactly what
 // the bit-sliced state holds: the pair form costs barely more than one block, where the default
 // (two single-block calls) would do four blocks' worth of work.
 
-impl BlockPermutation<16, BLOCK_LEN> for Aes128 {
+impl ElectronicCodeBook<16, BLOCK_LEN> for Aes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Aes128::new(key)
     }
@@ -246,7 +246,7 @@ impl BlockPermutation<16, BLOCK_LEN> for Aes128 {
     }
 }
 
-impl BlockPermutation<24, BLOCK_LEN> for Aes192 {
+impl ElectronicCodeBook<24, BLOCK_LEN> for Aes192 {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Aes192::new(key)
     }
@@ -264,7 +264,7 @@ impl BlockPermutation<24, BLOCK_LEN> for Aes192 {
     }
 }
 
-impl BlockPermutation<32, BLOCK_LEN> for Aes256 {
+impl ElectronicCodeBook<32, BLOCK_LEN> for Aes256 {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Aes256::new(key)
     }
