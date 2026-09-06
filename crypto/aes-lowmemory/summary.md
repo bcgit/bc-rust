@@ -1,7 +1,7 @@
 # `crypto/aes-lowmemory` — implementation summary
 
-A constant-time, table-free AES block cipher engine (NIST FIPS 197), added 2026-08-31 on branch
-`feature/officialfrancismendoza/98-AES-lowmemory`.
+A constant-time, table-free AES block cipher engine (NIST FIPS 197), added on branch
+`feature/officialfrancismendoza/100-AES-lightengine-CBC-mode`.
 
 This document is the reviewer's orientation: what was built, why the design is the way it is, what
 was verified and how, and — importantly — the three places where the working plan or model recall
@@ -259,6 +259,16 @@ Two details worth knowing:
   default, and `Aes128::new` rejecting it is itself tested. The *test* opts in via
   `do_hazardous_operations`; the engine's guard was **not** weakened to accommodate NIST.
 
+### Only the ECB file belongs to this crate
+
+`bc-test-data` ships thirteen ACVP AES vector sets, one per mode. This crate consumes only
+`ACVP-AES-ECB`, because that is the set that tests the permutation rather than a mode.
+`ACVP-AES-CBC` is consumed by [`crypto/modes/tests/acvp_tests.rs`](../modes/tests/acvp_tests.rs)
+(2150 AFT cases). The remaining eleven — `CBC-CS1/2/3`, `CFB8`, `CFB128`, `OFB`, `CTR`, `KW`,
+`KWP`, `FF1`, `FF3-1` — are unused because those modes are unimplemented, not because they are
+untested. The table in the ACVP test module's docs records which file goes where, so adding a mode
+includes wiring up its file.
+
 ### Constant-time hygiene audit
 
 Mechanically checked, not merely claimed:
@@ -386,7 +396,7 @@ and `MIX_COEFFS` carries a comment about the trap.
 ### 5.3 The plan's "PR B" is unnecessary
 
 The plan calls for downloading CAVP AESAVS `.rsp` files and opening a PR against `bcgit/bc-test-data`
-to add them. `bc-test-data` **already** ships NIST ACVP AES vectors at
+to add them. `bc-test-data` **already** ships NIST ACVP AES vectors for every mode, including
 `crypto/aes_tdes_vectors/AES/ACVP-AES-ECB.4014527.{req,rsp}.json` — 2138 AFT cases across all three
 key lengths, more coverage than the AESAVS KAT/MMT files would have provided. No PR to
 `bc-test-data` is needed. `serde_json` as a dev-dependency is the established way to read these
