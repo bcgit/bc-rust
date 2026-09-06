@@ -342,6 +342,80 @@ fn call_chunking_does_not_change_the_result() {
     assert_eq!(ct, reference, "empty calls must not disturb the state");
 }
 
+/// The same equivalence with **real AES**, at all three key lengths.
+///
+/// `call_chunking_does_not_change_the_result` proves the property over the toy permutation. This
+/// repeats it with the cipher the mode is actually used with, so a chunking bug that only appears
+/// under a real key schedule cannot hide. The AES coverage elsewhere
+/// (`sp800_38a_cfb8_tests.rs`, `acvp_cfb8_tests.rs`) chunks against *published* ciphertext; this is
+/// the direct single-call-versus-chunked comparison.
+///
+/// The message is 171 bytes, which is 21 eight-byte batches and a 3-byte tail, so the chunkings
+/// leave the batch loop with a different remainder each time.
+#[test]
+fn aes_chunking_matches_a_single_call() {
+    fn check<P, const KEY_LEN: usize>(name: &str)
+    where
+        P: ElectronicCodeBook<KEY_LEN, 16>,
+    {
+        let key_bytes: [u8; KEY_LEN] =
+            core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
+        let key =
+            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
+                .expect("a valid AES key");
+        let iv: [u8; 16] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
+        let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
+
+        let encryptor = || {
+            let (enc, got) = Cfb8::<P, Encrypting, KEY_LEN, 16>::do_encrypt_init_rng(
+                &key,
+                &mut FixedSeedRNG::<16>::new(iv),
+            )
+            .expect("encrypt init");
+            assert_eq!(got, iv, "{name}: the pinned RNG should reproduce the IV");
+            enc
+        };
+        let decryptor = || {
+            Cfb8::<P, Decrypting, KEY_LEN, 16>::do_decrypt_init(&key, &iv).expect("decrypt init")
+        };
+
+        // The reference: the whole message in one call.
+        let mut reference = plaintext.clone();
+        encryptor().do_encrypt(&mut reference).expect("one-call encryption");
+        assert_ne!(reference, plaintext, "{name}: the data must actually be encrypted");
+
+        // ...and the round trip of that, also in one call.
+        let mut back = reference.clone();
+        decryptor().do_decrypt(&mut back).expect("one-call decryption");
+        assert_eq!(back, plaintext, "{name}: one-call round trip");
+
+        for &enc_chunk in &CHUNKINGS {
+            let mut ct = plaintext.clone();
+            let mut e = encryptor();
+            for piece in ct.chunks_mut(enc_chunk) {
+                e.do_encrypt(piece).expect("chunked encryption");
+            }
+            assert_eq!(ct, reference, "{name}: encrypting in {enc_chunk}-byte calls");
+
+            for &dec_chunk in &CHUNKINGS {
+                let mut pt = ct.clone();
+                let mut d = decryptor();
+                for piece in pt.chunks_mut(dec_chunk) {
+                    d.do_decrypt(piece).expect("chunked decryption");
+                }
+                assert_eq!(
+                    pt, plaintext,
+                    "{name}: encrypted in {enc_chunk}-byte calls, decrypted in {dec_chunk}-byte calls"
+                );
+            }
+        }
+    }
+
+    check::<Aes128, 16>("AES-128");
+    check::<Aes192, 24>("AES-192");
+    check::<Aes256, 32>("AES-256");
+}
+
 /// The pair path in `do_decrypt` must actually be taken.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block method
