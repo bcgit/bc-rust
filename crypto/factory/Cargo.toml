@@ -9,6 +9,7 @@ bouncycastle-hkdf.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
+bouncycastle-sm3.workspace = true
 bouncycastle-rng.workspace = true
 
 [dev-dependencies]
