@@ -34,14 +34,14 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// and any tampering with it will result in the decryption operation failing the tag check.
     /// Returns a tuple containing the randomly-generated nonce, number of bytes written to the ciphertext buffer, and the tag.
     /// If you need a deterministic mode where you feed in the nonce, use the streaming API of [`BlockCipherEncryptor`]
-    /// or [`StreamCipher`] as appropriate and feed the nonce into the IV field.
+    /// or [`StreamCipherEncryptor`] as appropriate and feed the nonce into the IV field.
     fn aead_encrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError>;
-    /// All AEAD ciphers will also be either a block cipher ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]) or a [`StreamCipher`], and so will already
+    /// All AEAD ciphers will also be either a block cipher ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]) or a stream cipher ([`StreamCipherEncryptor`] / [`StreamCipherDecryptor`]), and so will already
     /// have a streaming API.
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
@@ -70,7 +70,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError>;
-    /// All AEAD ciphers will also be either a block cipher ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]) or a [`StreamCipher`], and so will already
+    /// All AEAD ciphers will also be either a block cipher ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]) or a stream cipher ([`StreamCipherEncryptor`] / [`StreamCipherDecryptor`]), and so will already
     /// have a streaming API.
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
@@ -1093,55 +1093,109 @@ pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG
     fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
 }
 
-/// The basic functions of a stream cipher, which differ from those of a block cipher only in that
-/// a stream cipher is assumed to have no underlying block size tied to the implementation, and so the caller gets to specify
-/// the block size for the streaming APIs.
-pub trait StreamCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
-    SymmetricCipher<KEY_LEN, INIT_DATA_LEN> + Sized
+/// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose
+/// notes on in-place operation, arbitrary lengths and the `Result` all apply here too.
+pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
+    Algorithm + Sized
 {
-    /// Constructor that begins a flow of the streaming API for encrypting one block at a time.
-    /// Allows for the implementation to return init data such as an IV which is generated prior to encrypting the first block.
-    fn do_stream_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
-    /// Encrypts a single block of plaintext.
-    fn do_stream_encrypt_block<const BLOCK_LEN: usize>(
-        &mut self,
-        plaintext: &[u8; BLOCK_LEN],
-    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
-    /// Encrypts a single block of plaintext and writes the ciphertext to the provided buffer.
-    fn do_stream_encrypt_block_out<const BLOCK_LEN: usize>(
-        &mut self,
-        plaintext: &[u8; BLOCK_LEN],
-        ciphertext: &mut [u8; BLOCK_LEN],
-    ) -> Result<usize, SymmetricCipherError>;
-    /// Encrypts the final block of plaintext.
-    fn do_stream_encrypt_final<const BLOCK_LEN: usize>(
-        &mut self,
-        plaintext: &[u8; BLOCK_LEN],
-    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
-    /// Encrypts the final block of plaintext and writes the ciphertext to the provided buffer.
-    fn do_stream_encrypt_final_out<const BLOCK_LEN: usize>(
-        &mut self,
-        plaintext: &[u8; BLOCK_LEN],
-        ciphertext: &mut [u8; BLOCK_LEN],
-    ) -> Result<usize, SymmetricCipherError>;
-    /// Constructor that begins a flow of the streaming API for decryption one block at a time.
-    fn do_stream_decrypt_init(
+    /// Begins a streaming decryption flow from the init data returned by
+    /// [`StreamCipherEncryptor::do_encrypt_init`].
+    fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError>;
-    /// Decrypts a single block of ciphertext.
-    fn do_stream_decrypt_block<const BLOCK_LEN: usize>(
-        &mut self,
-        ciphertext: &[u8; BLOCK_LEN],
-    ) -> Result<[u8; BLOCK_LEN], SymmetricCipherError>;
-    /// Decrypts a single block of ciphertext and writes the plaintext to the provided buffer.
-    fn do_stream_decrypt_block_out<const BLOCK_LEN: usize>(
-        &mut self,
-        ciphertext: &[u8; BLOCK_LEN],
-        plaintext: &mut [u8; BLOCK_LEN],
-    ) -> Result<usize, SymmetricCipherError>;
+
+    /// Streaming: decrypts `data`, of any length, in place. A sequence of calls is equivalent to
+    /// one call over the concatenation, whatever the chunking, exactly as for
+    /// [`StreamCipherEncryptor::do_encrypt`].
+    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError>;
+
+    /// One-shot: decrypts `data` in place from the given init data.
+    fn decrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+        data: &mut [u8],
+    ) -> Result<(), SymmetricCipherError> {
+        Self::do_decrypt_init(key, init_data)?.do_decrypt(data)
+    }
+}
+
+/// The encryption half of a stream cipher's streaming API. This is the stream-cipher counterpart
+/// of [`BlockCipherEncryptor`]: the same in-place, init-data-generating shape, but with no block
+/// length. A stream cipher applies its keystream byte by byte, so the data methods take a
+/// `&mut [u8]` of any length, and there is no alignment to check, no padding layer to reach for,
+/// and no finalization step.
+///
+/// Encryption and decryption are separate traits for the same reasons as
+/// [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]: the direction is encoded in the type, and a
+/// policy can permit decryption of an algorithm while forbidding new encryptions.
+///
+/// Init data (a nonce or IV) is generated securely by the implementation in the constructor and
+/// returned for transmission alongside the ciphertext; there is no API for the user to supply it,
+/// for the same reason as in [`BlockCipherEncryptor`]. A stream cipher is only as safe as its
+/// nonce is unique, so if you require a caller-chosen nonce, see the documentation for the
+/// underlying implementation.
+///
+/// # Everything is in place
+///
+/// Every data method here transforms its buffer in place: the plaintext goes in, the ciphertext
+/// comes out in the same bytes. A stream cipher never changes the length of its data, so a
+/// separate output buffer would only ever be a copy, and a copy of plaintext is one more thing to
+/// scrub. Callers that need to keep the plaintext copy it first.
+///
+/// # Any length, as a slice
+///
+/// The data is a `&mut [u8]` rather than a `&[u8; LEN]` because every length is valid, including
+/// zero, so there is no invariant for a const parameter to carry and nothing for a compile-time
+/// check to check. How the keystream is produced internally -- in 64-byte blocks, in words, a bit
+/// at a time -- is the cipher's business; it buffers any unused keystream between calls so that
+/// the caller's chunking is never visible in the output.
+///
+/// # Why the data methods still return `Result`
+///
+/// Nothing about the buffer can go wrong, and a constructed value is always ready to use. The
+/// `Result` is for the per-initialization data limit most stream ciphers have: a counter-driven
+/// keystream must refuse to run past the point where its counter would wrap and the keystream
+/// repeat, and a streaming API cannot check that any earlier than the call that would cross it.
+pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
+    Algorithm + Sized
+{
+    /// Begins a streaming encryption flow, returning the generated init data (e.g. nonce).
+    /// Sources randomness from the library's default OS-backed RNG.
+    fn do_encrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    /// As [`StreamCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
+    fn do_encrypt_init_rng(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// Streaming: encrypts `data`, of any length, in place. A sequence of calls is equivalent to
+    /// one call over the concatenation, whatever the chunking.
+    ///
+    /// This is the only method an implementor writes besides the two `_init` constructors.
+    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError>;
+
+    /// One-shot: encrypts `data` in place under a fresh init, and returns the generated init data.
+    fn encrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        data: &mut [u8],
+    ) -> Result<[u8; INIT_DATA_LEN], SymmetricCipherError> {
+        let (mut enc, init_data) = Self::do_encrypt_init(key)?;
+        enc.do_encrypt(data)?;
+        Ok(init_data)
+    }
+    /// As [`StreamCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    fn encrypt_rng(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        data: &mut [u8],
+    ) -> Result<[u8; INIT_DATA_LEN], SymmetricCipherError> {
+        let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
+        enc.do_encrypt(data)?;
+        Ok(init_data)
+    }
 }
 
 /// Allows a stateful object to suspend its operation by serializing its state into a byte array
@@ -1207,8 +1261,9 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
     ) -> Result<Self, SuspendableError>;
 }
 
-// todo -- migrate AEADCipher and StreamCipher onto SymmetricCipherEncryptor /
-// SymmetricCipherDecryptor (below), which are the split form of this trait, and retire this one.
+// todo -- migrate AEADCipher onto SymmetricCipherEncryptor / SymmetricCipherDecryptor (below),
+// which are the split form of this trait, and retire this one. (StreamCipher has already gone:
+// its split form is StreamCipherEncryptor / StreamCipherDecryptor.)
 /// The basic one-shot encrypt and decrypt that all types of symmetric ciphers must implement.
 /// These are meant to be simple, easy to use, secure, and fool-proof APIs, but they may result in
 /// ciphertexts that are incompatible with other implementations as ciphers in more complex modes, such
