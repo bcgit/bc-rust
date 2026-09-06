@@ -1,6 +1,7 @@
 mod aes_cbc_cmd;
 mod aes_cfb8_cmd;
 mod aes_cfb_cmd;
+mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod block_mode_cmd;
 mod encoders_cmd;
@@ -619,6 +620,90 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-128 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
+    ///
+    /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
+    /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
+    /// repeating keystream.
+    ///
+    /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output;
+    /// on `decrypt` it is read back from the first 12 bytes of the input, so the two compose
+    /// directly in a pipeline. Note that this is 12 bytes, not the 16 the other modes write. There
+    /// is deliberately no `--iv` flag.
+    ///
+    /// Input may be ANY length: CTR is a stream cipher, so nothing is padded and the ciphertext is
+    /// exactly as long as the plaintext.
+    ///
+    /// WARNING: CTR provides confidentiality only and is the most malleable mode here. It does not
+    /// detect tampering, and flipping any ciphertext bit flips exactly the corresponding plaintext
+    /// bit and nothing else, so an attacker can edit the plaintext at will with no garbling to give
+    /// it away. A repeated nonce under one key leaks the XOR of the two messages outright. Do not
+    /// decrypt data you have not authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CTR {
+        action: BlockModeAction,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
+    ///
+    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    AES192_CTR {
+        action: BlockModeAction,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
+    ///
+    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    AES256_CTR {
+        action: BlockModeAction,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// AES-128 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
     ///
     /// WARNING: ECB is NOT a confidentiality mode for data. Under a given key every plaintext
@@ -1034,6 +1119,15 @@ fn main() {
         }
         Some(Subcommands::AES256_CFB8 { action, key, key_file, x }) => {
             aes_cfb8_cmd::aes256_cfb8_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES128_CTR { action, key, key_file, x }) => {
+            aes_ctr_cmd::aes128_ctr_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES192_CTR { action, key, key_file, x }) => {
+            aes_ctr_cmd::aes192_ctr_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES256_CTR { action, key, key_file, x }) => {
+            aes_ctr_cmd::aes256_ctr_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::AES128_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes128_ecb_cmd(action, key, key_file, *x);

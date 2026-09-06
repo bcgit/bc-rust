@@ -10,17 +10,19 @@
 //! | CBC | [`Cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
 //! | CFB | [`Cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`Cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
+//! | CTR | [`Ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
 //!
 //! They divide two ways. **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] /
 //! [`BlockCipherDecryptor`]): whole blocks in, whole blocks out, and arbitrary-length data needs
-//! the padding layer. **CFB and CFB8 are stream ciphers** ([`StreamCipherEncryptor`] /
+//! the padding layer. **CFB, CFB8 and CTR are stream ciphers** ([`StreamCipherEncryptor`] /
 //! [`StreamCipherDecryptor`]): any length in, the same length out, no padding, no finalization --
 //! see [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
 //!
-//! CBC, CFB and CFB8 generate their own IV. ECB has no IV at all (`INIT_DATA_LEN = 0`) and is the
-//! raw permutation applied block by block -- see
+//! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
+//! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
+//! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block -- see
 //! [ECB is not a confidentiality mode for data](#ecb-is-not-a-confidentiality-mode-for-data) and
-//! [Choosing between CBC, CFB and CFB8](#choosing-between-cbc-cfb-and-cfb8).
+//! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! [`Cfb`] and [`Cfb8`] are the same construction at two segment sizes, but they are **different,
 //! non-interoperable modes** whose ciphertexts differ from the first byte. "CFB" unqualified is
@@ -28,12 +30,12 @@
 //!
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait. Define a one-line alias for the combination you use -- or use the ready-made
-//! `AES_CBC_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_ECB_128` and friends from
+//! `AES_CBC_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` and friends from
 //! `bouncycastle-aes-lowmemory`:
 //!
 //! ```
 //! use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
-//! use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ecb};
+//! use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ctr, Ecb};
 //!
 //! type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, 16>;
 //! type Aes192Cbc<Dir> = Cbc<Aes192, Dir, 24, 16>;
@@ -44,6 +46,10 @@
 //! type Aes256Cfb<Dir> = Cfb<Aes256, Dir, 32, 16>;
 //!
 //! type Aes128Cfb8<Dir> = Cfb8<Aes128, Dir, 16, 16>;
+//!
+//! // CTR takes one more parameter: the nonce length, which fixes the counter width at
+//! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
+//! type Aes128Ctr<Dir> = Ctr<Aes128, Dir, 16, 16, 12>;
 //!
 //! type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, 16>;
 //! ```
@@ -211,10 +217,10 @@
 //! let _ = Aes128Cbc::<Encrypting>::do_decrypt_init(&key, &[0u8; 16]);
 //! ```
 //!
-//! # Choosing between CBC, CFB and CFB8
+//! # Choosing between the modes
 //!
 //! None is authenticated, so the honest answer for new designs is "none of them -- use an AEAD".
-//! ECB is not a candidate for data at all (below). Between the three:
+//! ECB is not a candidate for data at all (below). Between the rest:
 //!
 //! * **Only CBC needs padding.** CFB and CFB8 are stream ciphers: any length in, the same length
 //!   out. CBC needs the data padded to a whole number of blocks, which means a padding layer and
@@ -238,6 +244,16 @@
 //!   are matching an existing system, check which segment size it means. CBC has no such ambiguity.
 //! * CBC, CFB and CFB8 all encrypt serially and decrypt in parallel, so their scaling with `N`
 //!   matches.
+//! * **CTR is parallel in both directions**, the only one here that is. Its counter blocks depend
+//!   on nothing but the nonce and the index (Sec 6.5), so encryption batches exactly as decryption
+//!   does and the two run at the same speed -- roughly what the feedback modes reach only when
+//!   decrypting. It needs only the forward cipher function, like the CFB modes.
+//! * **CTR has a per-message limit and enforces it.** The counter is `BLOCK_LEN - NONCE_LEN` bytes,
+//!   capped at 4, so a message is at most `2^(8 * counter bytes)` blocks; past that [`Ctr`] returns
+//!   an error rather than repeating keystream. None of the other modes can fail on a data method.
+//! * **CTR is the most malleable.** A flipped ciphertext bit flips exactly the corresponding
+//!   plaintext bit and disturbs nothing else, so tampering leaves no garbling behind at all; the
+//!   feedback modes at least randomise a neighbouring block. Authenticate the ciphertext.
 //!
 //! # Block alignment, and which modes need it
 //!
@@ -252,6 +268,10 @@
 //!   blocks; [`Cfb`] accepts any length anyway and treats a short final segment as `s = 8r` for
 //!   that segment only, which is what every streaming CFB128 implementation does and what makes
 //!   the ciphertexts interoperate. Its module docs derive that from the Sec 6.3 equations.
+//! * **CTR** -- "the plaintext need not be a multiple of the block size", and Sec 6.5 says what to
+//!   do with the last, possibly partial, block: XOR it with `MSB_u(On)` and discard the rest of the
+//!   output block. So [`Ctr`] has no alignment requirement at all, by the recommendation's own
+//!   terms rather than by extension.
 //!
 //! Appendix A puts the formatting of non-aligned data outside the scope of the recommendation.
 //!
@@ -289,14 +309,18 @@
 //! # Memory Usage
 //!
 //! No heap allocation, and no lookup tables of its own. A CBC or CFB8 value is the permutation plus
-//! one block of chaining value; a CFB value adds a `usize` to that; an ECB value is just the
-//! permutation, since nothing chains:
+//! one block of chaining value; a CFB value adds a `usize` to that; a CTR value carries the nonce,
+//! a counter and a keystream block; an ECB value is just the permutation, since nothing chains:
 //!
 //! ```text
 //! size_of::<Cbc<P, Dir, KEY_LEN, BLOCK_LEN>>()  == size_of::<P>() + BLOCK_LEN
 //! size_of::<Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>>() == size_of::<P>() + BLOCK_LEN
 //! size_of::<Cfb<P, Dir, KEY_LEN, BLOCK_LEN>>()  == size_of::<P>() + BLOCK_LEN + size_of::<usize>()
 //! size_of::<Ecb<P, Dir, KEY_LEN, BLOCK_LEN>>()  == size_of::<P>()
+//!
+//! // CTR, rounded up to the counter's 8-byte alignment:
+//! size_of::<Ctr<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN>>()
+//!     == align8(size_of::<P>() + NONCE_LEN + 8 + BLOCK_LEN + 8)
 //! ```
 //!
 //! | Combination | Permutation | Chain | Count | Total |
@@ -307,6 +331,9 @@
 //! | AES-128 CFB | 176 B | 16 B | 8 B | 200 B |
 //! | AES-192 CFB | 208 B | 16 B | 8 B | 232 B |
 //! | AES-256 CFB | 240 B | 16 B | 8 B | 264 B |
+//! | AES-128 CTR | 176 B | 12 B nonce + 16 B keystream | 8 B | 224 B |
+//! | AES-192 CTR | 208 B | 12 B nonce + 16 B keystream | 8 B | 256 B |
+//! | AES-256 CTR | 240 B | 12 B nonce + 16 B keystream | 8 B | 288 B |
 //! | AES-128 ECB | 176 B | 0 B | -- | 176 B |
 //! | AES-192 ECB | 208 B | 0 B | -- | 208 B |
 //! | AES-256 ECB | 240 B | 0 B | -- | 240 B |
@@ -316,6 +343,14 @@
 //! part-way through one, so it records how much of the current segment has been used; its single
 //! block does triple duty as the input block, the output block and the next input block, which is
 //! why there is no second buffer. (The 8 B figure is a 64-bit `usize`.)
+//!
+//! CTR is the largest because it is the only mode that must keep a keystream block *and* the state
+//! that generates it: the nonce and the counter cannot be recovered from the keystream, and the
+//! keystream cannot be recomputed without them. Its counter is a `u64` rather than the 1-to-4
+//! counter bytes so that exhaustion is representable -- the counter field itself wraps, and a mode
+//! that read its position back out of those bytes could not tell "just started" from "used up".
+//! The keystream block is the one buffer in this crate held in a `Secret`: unlike a chaining value
+//! it is live key material for the bytes not yet consumed.
 //!
 //! The data methods work in place. The batch paths in a decryptor are the transient cost: a
 //! `[[u8; BLOCK_LEN]; 8]` of stack for the eight-block path -- 128 B on AES -- and a
@@ -360,6 +395,10 @@
 //! * **CFB:** flipping a bit of `Cj` flips the same bit of the decryption of `Cj` -- the segment
 //!   the attacker aimed at -- and randomises the decryption of `Cj+1`, `b/s` being 1 here. So the
 //!   controlled flip lands in the targeted block rather than the next one.
+//! * **CTR:** flipping a bit of `Cj` flips the same bit of the decryption of `Cj` and affects
+//!   **nothing else at all** -- Table D.2's CTR row is "SBE in the decryption of Cj" with no second
+//!   clause. That makes it the most malleable of the five: an attacker can edit any plaintext bit
+//!   they can locate, leaving no garbled block anywhere to betray the change.
 //! * **CFB8:** the same controlled flip in the targeted byte, but `b/s` is 16 on a 16-byte block,
 //!   so the randomised run is the **next 16 bytes** rather than the next one. After that the shift
 //!   register has flushed and decryption resynchronises, which is the self-synchronising property
@@ -413,6 +452,15 @@
 //! Nothing here stops one key being used for many messages, which is fine for any of them provided
 //! each gets a fresh unpredictable IV. It is the IV, not the key, that must not repeat.
 //!
+//! For **CTR** a repeated nonce is not merely unwise, it is fatal, and in a way the IV modes are
+//! not: the counter blocks are a pure function of the nonce and the index, so the same nonce under
+//! the same key reproduces the *entire keystream* from the first byte, and two messages encrypted
+//! under it differ by exactly the XOR of their plaintexts. Sec 6.5 states the requirement as an
+//! absolute: "across all of the messages that are encrypted under the given key, all of the
+//! counters must be distinct". [`Ctr`] draws its nonce from the DRBG and enforces the within-message
+//! half of that by refusing to run past the counter's last value; the across-message half is what
+//! the nonce is for.
+//!
 //! Repeating one matters more for CFB and CFB8. Both XOR a keystream, so two messages encrypted
 //! under the same key *and* IV satisfy `C1 XOR C1' == P1 XOR P1'` -- the plaintext XOR leaks
 //! directly, the classic two-time-pad failure, and it continues for as long as the two ciphertexts
@@ -425,18 +473,16 @@
 //! * **CFB1**, the `s = 1` segment size (SP 800-38A Appendix F.3.1-F.3.6). Its segment is a single
 //!   *bit*, so unlike [`Cfb`] and [`Cfb8`] it does not fit a byte-oriented API at all: a message is
 //!   a bit string whose length need not be a multiple of 8, which this crate has no type for.
-//! * **OFB and CTR**, the remaining two modes of the recommendation. Both are keystream modes and,
-//!   like CFB and CFB8, would implement [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`].
+//! * **OFB**, the one remaining mode of the recommendation. It is a keystream mode and, like CFB,
+//!   CFB8 and CTR, would implement [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`].
 //!
 //! # Command line
 //!
-//! The `bc-rust` CLI exposes all four modes for all three AES key lengths: `aes128-cbc`,
-//! `aes192-cbc`, `aes256-cbc`, `aes128-cfb`, `aes192-cfb`, `aes256-cfb`, `aes128-cfb8`,
-//! `aes192-cfb8`, `aes256-cfb8`, `aes128-ecb`, `aes192-ecb` and `aes256-ecb`, each taking
-//! `encrypt` or `decrypt` and streaming stdin to stdout. For CBC, CFB and CFB8 there is no API for
-//! a caller-supplied IV, so `encrypt` writes the generated IV as the first block of its output and
-//! `decrypt` reads it back from the first block of its input, so the two compose; the `-ecb`
-//! commands have no IV and write and read none:
+//! The `bc-rust` CLI exposes all five modes for all three AES key lengths: `aes{128,192,256}-cbc`,
+//! `-cfb`, `-cfb8`, `-ctr` and `-ecb`, each taking `encrypt` or `decrypt` and streaming stdin to
+//! stdout. There is no API for caller-supplied init data anywhere, so `encrypt` writes what it
+//! generated at the front of its output and `decrypt` reads it back, and the two compose. That is
+//! one block for CBC, CFB and CFB8, **12 bytes** for CTR, and nothing at all for `-ecb`:
 //!
 //! ```text
 //! bc-rust aes256-cbc encrypt --key-file k.bin < plain.bin > cipher.bin
@@ -445,12 +491,16 @@
 //! bc-rust aes256-cfb encrypt --key-file k.bin < plain.bin > cipher.bin
 //! bc-rust aes256-cfb decrypt --key-file k.bin < cipher.bin | cmp - plain.bin
 //!
+//! bc-rust aes256-ctr encrypt --key-file k.bin < plain.bin > cipher.bin   # 12-byte nonce first
+//! bc-rust aes256-ctr decrypt --key-file k.bin < cipher.bin | cmp - plain.bin
+//!
 //! bc-rust aes128-ecb encrypt --key-file k.bin < plain.bin > cipher.bin   # same length out as in
 //! ```
 //!
 //! The `-cfb` commands are CFB128, matching [`Cfb`], and the `-cfb8` commands are CFB8, matching
-//! [`Cfb8`]; the two are not interoperable. Input must be block-aligned for the `-cbc` and `-ecb`
-//! commands, and may be any length for `-cfb` and `-cfb8`, for the reason given above.
+//! [`Cfb8`]; the two are not interoperable. The `-ctr` commands use a 12-byte nonce and so a 4-byte
+//! counter, matching `AES_CTR_*`. Input must be block-aligned for the `-cbc` and `-ecb` commands,
+//! and may be any length for `-cfb`, `-cfb8` and `-ctr`, for the reason given above.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -459,12 +509,14 @@
 mod cbc;
 mod cfb;
 mod cfb8;
+mod ctr;
 mod ecb;
 mod iv;
 
 pub use cbc::Cbc;
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
+pub use ctr::Ctr;
 pub use ecb::Ecb;
 
 // Imports needed for docs
@@ -475,13 +527,13 @@ use bouncycastle_core::traits::{
 };
 // end of imports needed for docs
 
-/// Direction marker for a mode that encrypts. See [`Cbc`], [`Cfb`], [`Cfb8`] and [`Ecb`].
+/// Direction marker for a mode that encrypts. See [`Cbc`], [`Cfb`], [`Cfb8`], [`Ctr`] and [`Ecb`].
 ///
 /// Zero-sized: encoding the direction in the type costs no memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Encrypting;
 
-/// Direction marker for a mode that decrypts. See [`Cbc`], [`Cfb`], [`Cfb8`] and [`Ecb`].
+/// Direction marker for a mode that decrypts. See [`Cbc`], [`Cfb`], [`Cfb8`], [`Ctr`] and [`Ecb`].
 ///
 /// Zero-sized: encoding the direction in the type costs no memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

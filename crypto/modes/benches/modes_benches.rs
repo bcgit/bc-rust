@@ -44,7 +44,7 @@ use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
     StreamCipherDecryptor, StreamCipherEncryptor,
 };
-use bouncycastle_modes::{Cbc, Cfb, Cfb8, Decrypting, Ecb, Encrypting};
+use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ctr, Decrypting, Ecb, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -58,6 +58,8 @@ type Aes256Cbc<Dir> = Cbc<Aes256, Dir, 32, BLOCK_LEN>;
 type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, BLOCK_LEN>;
 type Aes256Cfb<Dir> = Cfb<Aes256, Dir, 32, BLOCK_LEN>;
 type Aes128Cfb8<Dir> = Cfb8<Aes128, Dir, 16, BLOCK_LEN>;
+type Aes128Ctr<Dir> = Ctr<Aes128, Dir, 16, BLOCK_LEN, 12>;
+type Aes256Ctr<Dir> = Ctr<Aes256, Dir, 32, BLOCK_LEN, 12>;
 type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, BLOCK_LEN>;
 
 /// AES-128 with the pair methods **not** overridden, so they fall back to the trait defaults of
@@ -302,8 +304,13 @@ fn bench_aes256(c: &mut Criterion) {
     group.finish();
 }
 
-/// Runs the 16 KiB through a CFB encryptor in `call_len`-byte calls.
-fn cfb_encrypt_in_calls<E: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>, const KEY_LEN: usize>(
+/// Runs the 16 KiB through a stream-cipher encryptor in `call_len`-byte calls. Used by the CFB,
+/// CFB8 and CTR groups: it is generic over the trait, not over the mode.
+fn cfb_encrypt_in_calls<
+    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+>(
     k: &KeyMaterial<KEY_LEN>,
     scratch: &mut [u8],
     call_len: usize,
@@ -314,10 +321,14 @@ fn cfb_encrypt_in_calls<E: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>, const KEY_
     }
 }
 
-/// Runs the 16 KiB through a CFB decryptor in `call_len`-byte calls.
-fn cfb_decrypt_in_calls<D: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>, const KEY_LEN: usize>(
+/// Runs the 16 KiB through a stream-cipher decryptor in `call_len`-byte calls. Shared as above.
+fn cfb_decrypt_in_calls<
+    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+>(
     k: &KeyMaterial<KEY_LEN>,
-    iv: &[u8; BLOCK_LEN],
+    iv: &[u8; INIT_DATA_LEN],
     scratch: &mut [u8],
     call_len: usize,
 ) {
@@ -347,7 +358,9 @@ fn bench_cfb_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || flat.clone(),
                 |mut scratch| {
-                    cfb_encrypt_in_calls::<Aes128Cfb<Encrypting>, 16>(&k, &mut scratch, call_len);
+                    cfb_encrypt_in_calls::<Aes128Cfb<Encrypting>, 16, BLOCK_LEN>(
+                        &k, &mut scratch, call_len,
+                    );
                     black_box(&scratch);
                 },
                 BatchSize::LargeInput,
@@ -377,7 +390,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || ciphertext.clone(),
                 |mut scratch| {
-                    cfb_decrypt_in_calls::<Aes128Cfb<Decrypting>, 16>(
+                    cfb_decrypt_in_calls::<Aes128Cfb<Decrypting>, 16, BLOCK_LEN>(
                         &k, &iv, &mut scratch, call_len,
                     );
                     black_box(&scratch);
@@ -393,7 +406,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                cfb_decrypt_in_calls::<Aes128Cfb<Decrypting>, 16>(
+                cfb_decrypt_in_calls::<Aes128Cfb<Decrypting>, 16, BLOCK_LEN>(
                     &k,
                     &iv,
                     &mut scratch,
@@ -409,7 +422,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                cfb_decrypt_in_calls::<UnpairedAes128Cfb<Decrypting>, 16>(
+                cfb_decrypt_in_calls::<UnpairedAes128Cfb<Decrypting>, 16, BLOCK_LEN>(
                     &k,
                     &iv,
                     &mut scratch,
@@ -435,7 +448,11 @@ fn bench_cfb_aes256(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                cfb_encrypt_in_calls::<Aes256Cfb<Encrypting>, 32>(&k, &mut scratch, 8 * BLOCK_LEN);
+                cfb_encrypt_in_calls::<Aes256Cfb<Encrypting>, 32, BLOCK_LEN>(
+                    &k,
+                    &mut scratch,
+                    8 * BLOCK_LEN,
+                );
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
@@ -450,7 +467,7 @@ fn bench_cfb_aes256(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                cfb_decrypt_in_calls::<Aes256Cfb<Decrypting>, 32>(
+                cfb_decrypt_in_calls::<Aes256Cfb<Decrypting>, 32, BLOCK_LEN>(
                     &k,
                     &iv,
                     &mut scratch,
@@ -483,7 +500,9 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                cfb_encrypt_in_calls::<Aes128Cfb8<Encrypting>, 16>(&k, &mut scratch, DATA_LEN);
+                cfb_encrypt_in_calls::<Aes128Cfb8<Encrypting>, 16, BLOCK_LEN>(
+                    &k, &mut scratch, DATA_LEN,
+                );
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
@@ -507,7 +526,7 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || ciphertext.clone(),
                 |mut scratch| {
-                    cfb_decrypt_in_calls::<Aes128Cfb8<Decrypting>, 16>(
+                    cfb_decrypt_in_calls::<Aes128Cfb8<Decrypting>, 16, BLOCK_LEN>(
                         &k, &iv, &mut scratch, call_len,
                     );
                     black_box(&scratch);
@@ -516,6 +535,92 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
             )
         });
     }
+
+    group.finish();
+}
+
+/// CTR: the only mode here whose **encryption** is parallel too.
+///
+/// Counter blocks depend on nothing but the nonce and the index (SP 800-38A Sec 6.5), so unlike CBC
+/// and CFB there is no serial direction: encryption should show the same `N >= 2` speed-up that only
+/// decryption shows for the feedback modes, and the two directions should measure the same, since
+/// they are the same operation. That symmetry is the number to watch here.
+fn bench_ctr_aes128(c: &mut Criterion) {
+    let k = key::<16>();
+    let flat: Vec<u8> = data().as_flattened().to_vec();
+
+    let mut group = c.benchmark_group("modes::ctr::Aes128");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    for (name, call_len) in [
+        // N=1 never forms a pair: the single-block path, and the baseline for the batch effect.
+        ("16KiB encrypt -- N=1 (no batching)", BLOCK_LEN),
+        ("16KiB encrypt -- N=2 (all pairs)", 2 * BLOCK_LEN),
+        ("16KiB encrypt -- N=8 (one eight per call)", 8 * BLOCK_LEN),
+        // Calls that are not a whole number of blocks, so each end goes byte by byte.
+        ("16KiB encrypt -- 125-byte calls (byte path at both ends)", 125),
+    ] {
+        group.bench_function(name, |b| {
+            b.iter_batched(
+                || flat.clone(),
+                |mut scratch| {
+                    cfb_encrypt_in_calls::<Aes128Ctr<Encrypting>, 16, 12>(
+                        &k, &mut scratch, call_len,
+                    );
+                    black_box(&scratch);
+                },
+                BatchSize::LargeInput,
+            )
+        });
+    }
+
+    let (mut enc, nonce) = Aes128Ctr::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let mut ciphertext = flat.clone();
+    enc.do_encrypt(&mut ciphertext).unwrap();
+
+    for (name, call_len) in [
+        ("16KiB decrypt -- N=1 (no batching)", BLOCK_LEN),
+        ("16KiB decrypt -- N=8 (one eight per call)", 8 * BLOCK_LEN),
+    ] {
+        group.bench_function(name, |b| {
+            b.iter_batched(
+                || ciphertext.clone(),
+                |mut scratch| {
+                    cfb_decrypt_in_calls::<Aes128Ctr<Decrypting>, 16, 12>(
+                        &k, &nonce, &mut scratch, call_len,
+                    );
+                    black_box(&scratch);
+                },
+                BatchSize::LargeInput,
+            )
+        });
+    }
+
+    group.finish();
+}
+
+/// AES-256 CTR, for the same key-length comparison the other modes carry.
+fn bench_ctr_aes256(c: &mut Criterion) {
+    let k = key::<32>();
+    let flat: Vec<u8> = data().as_flattened().to_vec();
+
+    let mut group = c.benchmark_group("modes::ctr::Aes256");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    group.bench_function("16KiB encrypt -- N=8", |b| {
+        b.iter_batched(
+            || flat.clone(),
+            |mut scratch| {
+                cfb_encrypt_in_calls::<Aes256Ctr<Encrypting>, 32, 12>(
+                    &k,
+                    &mut scratch,
+                    8 * BLOCK_LEN,
+                );
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
 
     group.finish();
 }
@@ -637,6 +742,6 @@ fn bench_init(c: &mut Criterion) {
 
 criterion_group!(
     benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_cfb8_aes128,
-    bench_ecb_aes128, bench_init
+    bench_ctr_aes128, bench_ctr_aes256, bench_ecb_aes128, bench_init
 );
 criterion_main!(benches);
