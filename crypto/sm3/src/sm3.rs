@@ -11,6 +11,9 @@ const SM3_IV: [u32; 8] = [
 
 /// GB/T 32905-2016 s. 4.2: constants T_j = 79CC4519 for 0 <= j <= 15, 7A879D8A for 16 <= j <= 63.
 /// The round function uses (T_j <<< (j mod 32)), which is precomputed here at compile time.
+/// Mutants note: `u32::rotate_left` reduces its argument modulo 32 itself, so replacing `j % 32`
+/// with `j + 32` is an equivalent mutant; and `+=` -> `*=` on the loop counter is an infinite loop
+/// in `const` evaluation, reported as a build timeout.
 const SM3_T: [u32; 64] = {
     let mut t = [0u32; 64];
     let mut j = 0;
@@ -29,12 +32,16 @@ fn ff0(x: u32, y: u32, z: u32) -> u32 {
 }
 
 /// GB/T 32905-2016 s. 4.3: FF_j for 16 <= j <= 63 (majority).
+/// Mutants note: majority can be written with `|` or `^` between the three terms (FIPS 180-4 writes
+/// Maj with XOR), so a surviving `|`/`^` swap in this function is an equivalent mutant.
 #[inline]
 fn ff1(x: u32, y: u32, z: u32) -> u32 {
     (x & y) | (x & z) | (y & z)
 }
 
 /// GB/T 32905-2016 s. 4.3: GG_j for 16 <= j <= 63 (choice).
+/// Mutants note: the two masks are disjoint, so `|` and `^` give identical results here; a
+/// surviving `|`/`^` swap in this function is an equivalent mutant.
 #[inline]
 fn gg1(x: u32, y: u32, z: u32) -> u32 {
     (x & y) | (!x & z)
@@ -166,6 +173,8 @@ impl SM3 {
         // no partial bits this is 0x80. The mask is built in u16 so that the 8-bit shift for
         // num_partial_bits == 0 cannot overflow (0xFF00 >> 0 truncates to 0x00).
         let mask = (0xFF00u16 >> num_partial_bits) as u8;
+        // Mutants note: the masked message bits and the padding bit occupy disjoint bit positions, so
+        // `|` and `^` give identical results here; a surviving `|`/`^` swap is an equivalent mutant.
         let pad_byte = (partial_byte & mask) | (0x80u8 >> num_partial_bits);
 
         self.x_buf[self.x_buf_off] = pad_byte;
@@ -182,6 +191,8 @@ impl SM3 {
 
         // ... then the 64-bit big-endian message length l in bits. byte_count is a byte counter, so
         // l = (byte_count << 3) | num_partial_bits (the low three bits of byte_count << 3 are zero).
+        // Mutants note: the low three bits of byte_count << 3 are zero, so `|` and `^` give identical
+        // results here; a surviving `|`/`^` swap is an equivalent mutant.
         let bit_len: u64 = (self.byte_count << 3) | (num_partial_bits as u64);
         self.x_buf[56..64].copy_from_slice(&bit_len.to_be_bytes());
         Self::compress(&mut self.v, slice::from_ref(&self.x_buf));
