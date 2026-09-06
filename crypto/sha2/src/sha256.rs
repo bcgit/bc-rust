@@ -208,6 +208,8 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
         // with no partial bits this is the familiar 0x80. The mask is built in u16 so that the 8-bit
         // shift for num_partial_bits == 0 cannot overflow (0xFF00 >> 0 truncates to 0x00).
         let mask = (0xFF00u16 >> num_partial_bits) as u8;
+        // Mutants note: the masked message bits and the padding bit occupy disjoint bit positions, so
+        // `|` and `^` give identical results here; a surviving `|`/`^` swap is an equivalent mutant.
         let pad_byte = (partial_byte & mask) | (0x80u8 >> num_partial_bits);
 
         self.x_buf[self.x_buf_off] = pad_byte;
@@ -225,6 +227,8 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
         self.x_buf[self.x_buf_off..56].fill(0x00);
         // byte_count is a byte counter, so l = (byte_count << 3) | num_partial_bits (the low three bits
         // of byte_count << 3 are zero).
+        // Mutants note: the low three bits of byte_count << 3 are zero, so `|` and `^` give identical
+        // results here; a surviving `|`/`^` swap is an equivalent mutant.
         let bit_len: u64 = (self.byte_count << 3) | (num_partial_bits as u64);
         self.x_buf[56..64].copy_from_slice(&bit_len.to_be_bytes());
         self.state.compress(slice::from_ref(&self.x_buf));
