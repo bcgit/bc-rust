@@ -9,8 +9,11 @@ use bouncycastle_core::errors::{KeyMaterialError, PaddingError, SymmetricCipherE
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SecurityStrength,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
+use bouncycastle_core_test_framework::symmetric_ciphers::{
+    TestFrameworkBlockCipher, TestFrameworkSymmetricCipher,
+};
 use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
 use bouncycastle_rng::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256};
 
@@ -55,10 +58,7 @@ impl BlockCipherEncryptor<B, B, B> for ToyCbc {
         rng.next_bytes_out(&mut iv)?;
         Ok((Self { key, chain: iv }, iv))
     }
-    fn do_encrypt_blocks<const N: usize>(
-        &mut self,
-        blocks: &mut [[u8; B]; N],
-    ) -> Result<(), SymmetricCipherError> {
+    fn do_encrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<(), SymmetricCipherError> {
         for block in blocks.iter_mut() {
             for (b, (c, k)) in block.iter_mut().zip(self.chain.iter().zip(self.key.iter())) {
                 *b ^= c ^ k;
@@ -73,10 +73,7 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
     fn do_decrypt_init(key: &KeyMaterial<B>, iv: &[u8; B]) -> Result<Self, SymmetricCipherError> {
         Ok(Self { key: Self::check_key(key)?, chain: *iv })
     }
-    fn do_decrypt_blocks<const N: usize>(
-        &mut self,
-        blocks: &mut [[u8; B]; N],
-    ) -> Result<(), SymmetricCipherError> {
+    fn do_decrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<(), SymmetricCipherError> {
         for block in blocks.iter_mut() {
             let ct = *block;
             for (b, (c, k)) in block.iter_mut().zip(self.chain.iter().zip(self.key.iter())) {
@@ -104,6 +101,13 @@ fn toy_cipher_passes_core_test_framework() {
     TestFrameworkBlockCipher::new().test::<B, B, B, ToyCbc, ToyCbc>();
 }
 
+/// The padded adapters are the first implementors of `SymmetricCipherEncryptor` /
+/// `SymmetricCipherDecryptor`, so this is also what exercises those traits' provided one-shots.
+#[test]
+fn padded_adapters_pass_the_symmetric_cipher_framework() {
+    TestFrameworkSymmetricCipher::new().test_encryptor_decryptor::<B, B, B, Enc, Dec>();
+}
+
 #[test]
 fn one_shot_roundtrip_all_lengths() {
     let key = key();
@@ -128,7 +132,7 @@ fn streaming_matches_one_shot_for_every_chunking() {
 
     for chunk in [1usize, 2, 3, 7, 8, 9, 15, 16, 17, len] {
         // encrypt in chunks
-        let (mut enc, iv) = Enc::new(&key).unwrap();
+        let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
         let mut ct = Vec::new();
         for piece in pt.chunks(chunk) {
             let expect = enc.update_out_len(piece.len());
@@ -147,7 +151,7 @@ fn streaming_matches_one_shot_for_every_chunking() {
         assert_eq!(&out[..m], &pt[..], "chunk {chunk}");
 
         // decrypt in the same chunks
-        let mut dec = Dec::new(&key, &iv).unwrap();
+        let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
         let mut rec = Vec::new();
         for piece in ct.chunks(chunk) {
             let expect = dec.update_out_len(piece.len());
@@ -171,7 +175,7 @@ fn decryptor_lags_by_exactly_one_block() {
         (iv, ct)
     };
     assert_eq!(ct.len(), 3 * B);
-    let mut dec = Dec::new(&key, &iv).unwrap();
+    let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     let mut out = [0u8; 3 * B];
     // first block: nothing can be released yet
     assert_eq!(dec.update_out_len(B), 0);
@@ -190,7 +194,7 @@ fn decryptor_lags_by_exactly_one_block() {
 #[test]
 fn final_out_variants() {
     let key = key();
-    let (mut enc, iv) = Enc::new(&key).unwrap();
+    let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
     let mut ct = [0u8; 2 * B];
     let n = enc.do_update_out(&msg(B + 2), &mut ct).unwrap();
     assert_eq!(n, B);
@@ -198,7 +202,7 @@ fn final_out_variants() {
     assert_eq!(enc.do_final_out(&mut last).unwrap(), B);
     ct[B..].copy_from_slice(&last);
 
-    let mut dec = Dec::new(&key, &iv).unwrap();
+    let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     let mut out = [0u8; B];
     assert_eq!(dec.do_update_out(&ct, &mut out).unwrap(), B);
     let mut last_pt = [0u8; B];
@@ -242,11 +246,11 @@ fn malformed_ciphertext_lengths_are_rejected() {
         Err(SymmetricCipherError::DecryptionFailed)
     ));
     // streaming: partial trailing block at final
-    let mut dec = Dec::new(&key, &iv).unwrap();
+    let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     dec.do_update_out(&[0u8; B + 3], &mut out).unwrap();
     assert!(matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)));
     // streaming: nothing fed at all
-    let dec = Dec::new(&key, &iv).unwrap();
+    let dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     assert!(matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)));
 }
 
@@ -261,7 +265,7 @@ fn output_buffer_too_small_reports_required_length() {
         other => panic!("{other:?}"),
     }
 
-    let (mut enc, iv) = Enc::new(&key).unwrap();
+    let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
     let mut tiny = [0u8; B - 1];
     match enc.do_update_out(&pt, &mut tiny) {
         Err(SymmetricCipherError::IncorrectOutputBufferLength(_, need)) => assert_eq!(need, 2 * B),
@@ -282,9 +286,12 @@ fn output_buffer_too_small_reports_required_length() {
 #[test]
 fn wrong_key_type_is_rejected_by_adapters() {
     let mac_key = KeyMaterial::<B>::from_bytes_as_type(&[1u8; B], KeyType::MACKey).unwrap();
-    assert!(matches!(Enc::new(&mac_key), Err(SymmetricCipherError::KeyMaterialError(_))));
     assert!(matches!(
-        Dec::new(&mac_key, &[0u8; B]),
+        Enc::do_encrypt_init(&mac_key),
+        Err(SymmetricCipherError::KeyMaterialError(_))
+    ));
+    assert!(matches!(
+        Dec::do_decrypt_init(&mac_key, &[0u8; B]),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
 }

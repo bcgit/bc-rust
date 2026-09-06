@@ -26,21 +26,24 @@
 //! operation (except the first) depends on the result of the previous forward cipher operation, so
 //! the forward cipher operations cannot be performed in parallel".
 //!
-//! This implementation uses that: decryption walks the ciphertext two blocks at a time and hands
-//! both to [`BlockPermutation::decrypt_blocks2`], which a bit-sliced engine computes for barely
-//! more than the cost of one block. Encryption cannot, and does not.
+//! This implementation uses that: decryption walks the ciphertext eight blocks at a time through
+//! [`ElectronicCodeBook::decrypt_blocks8`], then any remaining pair through
+//! [`ElectronicCodeBook::decrypt_blocks2`], then the last block singly. A bit-sliced engine
+//! computes a pair (AES) or eight blocks (SM4) for barely more than the cost of one. Encryption
+//! cannot, and does not.
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, RNG, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, RNG,
+    SecurityStrength,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
 
-/// CBC mode over any [`BlockPermutation`], with the direction encoded in the type.
+/// CBC mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`]. [`BlockCipherEncryptor`] is implemented only for the
 /// former and [`BlockCipherDecryptor`] only for the latter, so a `Cbc<_, Encrypting, _, _>` has no
@@ -56,7 +59,7 @@ use core::marker::PhantomData;
 /// ciphertext block, both of which are public, so it is deliberately not wrapped in a `Secret`.
 pub struct Cbc<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     perm: P,
     /// `Cj-1`, initialised to the IV. See the module docs on why there is only one field for both.
@@ -66,7 +69,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// `Cj = CIPH_K(Pj XOR Cj-1)` in place, then `Cj` becomes the next chaining value.
     #[inline]
@@ -91,7 +94,7 @@ where
         self.chain = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`BlockPermutation::decrypt_blocks2`] call.
+    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::decrypt_blocks2`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Cj-1` the incoming chaining value, Sec 6.2 gives
     ///
@@ -119,12 +122,34 @@ where
 
         self.chain = cj1;
     }
+
+    /// Decrypts eight consecutive blocks with one [`ElectronicCodeBook::decrypt_blocks8`] call.
+    ///
+    /// The same argument as [`Self::decrypt_pair`], eight wide: `Pj+k = CIPH^-1_K(Cj+k) XOR Cj+k-1`
+    /// for `k = 0..8`, with `Cj-1` the incoming chaining value. No inverse cipher depends on
+    /// another's output, so all eight run together; the ciphertexts are copied out first because
+    /// the permutation overwrites them and each is the next block's XOR operand, and the chaining
+    /// value advances to `Cj+7`.
+    #[inline]
+    fn decrypt_eight(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+        let cts = *blocks;
+        self.perm.decrypt_blocks8(blocks);
+
+        let mut prev = self.chain;
+        for (pj, cj) in blocks.iter_mut().zip(cts.iter()) {
+            for (b, chain) in pj.iter_mut().zip(prev.iter()) {
+                *b ^= *chain; // XOR Cj+k-1
+            }
+            prev = *cj;
+        }
+        self.chain = prev;
+    }
 }
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
     /// concatenated in a `const`, and the mode is already in the type.
@@ -136,7 +161,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -160,9 +185,9 @@ where
     ///
     /// Strictly serial: `Cj` is the input to block `j + 1`, so there is no pair path here. See the
     /// module docs. Never fails: CBC has no per-IV data limit.
-    fn do_encrypt_blocks<const N: usize>(
+    fn do_encrypt_blocks(
         &mut self,
-        blocks: &mut [[u8; BLOCK_LEN]; N],
+        blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError> {
         for block in blocks.iter_mut() {
             self.encrypt_one(block);
@@ -174,7 +199,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`BlockCipherEncryptor::do_encrypt_init`].
@@ -188,16 +213,19 @@ where
 
     /// The implementor hook (the flat `do_decrypt` is provided over it).
     ///
-    /// Walks the input in pairs so the permutation's two-block path is used, with an at-most-one
-    /// block remainder for odd `N`. `as_chunks_mut` splits into exactly that shape with no runtime
-    /// length check and no indexing arithmetic; `N` is a compile-time constant, so for even `N` the
-    /// tail loop is empty and for `N = 1` the pair loop is. Never fails: CBC has no per-IV data
-    /// limit.
-    fn do_decrypt_blocks<const N: usize>(
+    /// Walks the input in eights through `decrypt_blocks8`, then pairs through `decrypt_blocks2`,
+    /// then the at-most-one block left over: Sec 6.2's parallelism, in the units the permutation
+    /// offers. `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
+    /// indexing arithmetic. Never fails: CBC has no per-IV data limit.
+    fn do_decrypt_blocks(
         &mut self,
-        blocks: &mut [[u8; BLOCK_LEN]; N],
+        blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError> {
-        let (pairs, tail) = blocks.as_chunks_mut::<2>();
+        let (eights, rest) = blocks.as_chunks_mut::<8>();
+        for eight in eights.iter_mut() {
+            self.decrypt_eight(eight);
+        }
+        let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
             self.decrypt_pair(pair);
         }

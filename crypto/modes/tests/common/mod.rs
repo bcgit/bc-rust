@@ -1,4 +1,4 @@
-//! Toy [`BlockPermutation`] implementations, for testing the mode independently of any real cipher.
+//! Toy [`ElectronicCodeBook`] implementations, for testing the mode independently of any real cipher.
 //!
 //! These are **not** cryptography. They exist so the structural properties of a mode -- chaining,
 //! sequencing, the pair/remainder split, direction typing -- can be tested without an AES
@@ -20,7 +20,7 @@
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, BlockPermutation, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
 
 /// Block and key length of the toy ciphers, chosen to match AES so the tests exercise the same
 /// shapes the real thing will.
@@ -56,7 +56,7 @@ impl Algorithm for Toy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl BlockPermutation<TOY_LEN, TOY_LEN> for Toy {
+impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         validate(key)?;
         let mut bytes = [0u8; TOY_LEN];
@@ -94,7 +94,7 @@ impl Algorithm for SwappedPairToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl BlockPermutation<TOY_LEN, TOY_LEN> for SwappedPairToy {
+impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
@@ -123,14 +123,14 @@ impl BlockPermutation<TOY_LEN, TOY_LEN> for SwappedPairToy {
 /// A toy whose **inverse cipher function panics**.
 ///
 /// SP 800-38A Sec 6.3 applies the forward cipher function in both directions of CFB, so a correct
-/// `Cfb` never touches `decrypt_block` or `decrypt_blocks2`. Running a full CFB round trip over this
+/// `Cfb` never touches `decrypt_block`, `decrypt_blocks2` or `decrypt_blocks8`. Running a full CFB round trip over this
 /// permutation turns that claim into a test: if either decryption entry point is ever reached, the
 /// test panics with the message below rather than quietly producing a right answer for the wrong
 /// reason.
 ///
-/// This is deliberately not a valid [`BlockPermutation`] -- it cannot pass
-/// `TestFrameworkBlockPermutation`, which exercises both directions -- so it is only ever used with
-/// `Cfb`. Its forward methods delegate to [`Toy`], including the pair method, so a CFB round trip
+/// This is deliberately not a valid [`ElectronicCodeBook`] -- it cannot pass
+/// `TestFrameworkElectronicCodeBook`, which exercises both directions -- so it is only ever used with
+/// `Cfb`. Its forward methods delegate to [`Toy`], including the pair and eight-block methods, so a CFB round trip
 /// over it must agree with one over `Toy`.
 pub struct ForwardOnlyToy {
     inner: Toy,
@@ -141,7 +141,7 @@ impl Algorithm for ForwardOnlyToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl BlockPermutation<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
+impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
@@ -160,6 +160,57 @@ impl BlockPermutation<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
 
     fn decrypt_blocks2(&self, _blocks: &mut [[u8; TOY_LEN]; 2]) {
         panic!("CFB must never call the inverse cipher pair function (SP 800-38A Sec 6.3)");
+    }
+
+    fn encrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+        self.inner.encrypt_blocks8(blocks);
+    }
+
+    fn decrypt_blocks8(&self, _blocks: &mut [[u8; TOY_LEN]; 8]) {
+        panic!("CFB must never call the inverse cipher eight-block function (SP 800-38A Sec 6.3)");
+    }
+}
+
+/// A [`Toy`] whose `encrypt_blocks8` / `decrypt_blocks8` return their eight results rotated by one
+/// slot, while every other method -- single block and pair -- is correct.
+///
+/// The eight-block analogue of [`SwappedPairToy`]: a CBC decryptor that uses `decrypt_blocks8`
+/// must produce something other than the correct plaintext for eight or more blocks, while fewer
+/// than eight, which go through the pair and single paths, still round-trip.
+pub struct SwappedEightToy {
+    inner: Toy,
+}
+
+impl Algorithm for SwappedEightToy {
+    const ALG_NAME: &'static str = "SwappedEightToy";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedEightToy {
+    fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
+        Ok(Self { inner: Toy::new(key)? })
+    }
+
+    fn encrypt_block(&self, block: &mut [u8; TOY_LEN]) {
+        self.inner.encrypt_block(block);
+    }
+
+    fn decrypt_block(&self, block: &mut [u8; TOY_LEN]) {
+        self.inner.decrypt_block(block);
+    }
+
+    fn encrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+        for block in blocks.iter_mut() {
+            self.inner.encrypt_block(block);
+        }
+        blocks.rotate_left(1);
+    }
+
+    fn decrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+        for block in blocks.iter_mut() {
+            self.inner.decrypt_block(block);
+        }
+        blocks.rotate_left(1);
     }
 }
 

@@ -45,7 +45,7 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
 umbrella crate.
 
 * `Cbc<P, Dir, KEY_LEN, BLOCK_LEN>` and `Cfb<P, Dir, KEY_LEN, BLOCK_LEN>` over any
-  `BlockPermutation`, so the crate depends on no concrete cipher. The direction is a type parameter:
+  `ElectronicCodeBook`, so the crate depends on no concrete cipher. The direction is a type parameter:
   `BlockCipherEncryptor` is implemented only for `<_, Encrypting, _, _>` and `BlockCipherDecryptor`
   only for `<_, Decrypting, _, _>`, making a wrong-direction call a compile error rather than a
   runtime check. The two types have identical APIs and identical size, so swapping one for the other
@@ -57,8 +57,10 @@ umbrella crate.
   This matters more for CFB than for CBC: CFB XORs a keystream, so a repeated key-and-IV pair leaks
   `P1 XOR P1'` outright rather than merely whether the blocks were equal.
 * **Parallel decryption.** Sec 6.2 notes CBC decryption's inverse cipher calls can run in
-  parallel, so `do_decrypt_blocks[_out]` walks the ciphertext in pairs through
-  `BlockPermutation::decrypt_blocks2`, with a one-block remainder for odd `N`. Measured against an
+  parallel, so `do_decrypt_blocks` walks the ciphertext in eights through
+  `ElectronicCodeBook::decrypt_blocks8`, then pairs through `decrypt_blocks2`, then a one-block
+  remainder. A toy permutation that rotates its eight results proves the eight path is taken, and
+  only for full eights. Measured against an
   otherwise identical permutation that does not override the pair methods, this is **1.83x** the
   decryption throughput (67.9 vs 37.1 MiB/s, AES-128, 16 KiB, N=8). CBC encryption is serial by
   construction and does not use it.
@@ -91,7 +93,7 @@ CFB (`Cfb`), SP 800-38A Sec 6.3:
   `Cfb<_, Decrypting, _, _>` never calls `decrypt_block` or `decrypt_blocks2`. This is pinned by a
   test permutation whose inverse methods panic, run over both the pair and single-block paths -- so
   the claim is enforced rather than merely documented.
-* **Parallel decryption**, via `encrypt_blocks2`: Sec 6.3 notes CFB decryption's forward cipher
+* **Parallel decryption**, via `encrypt_blocks8` / `encrypt_blocks2` (eights, then pairs, then a single block, like CBC): Sec 6.3 notes CFB decryption's forward cipher
   calls "can be performed in parallel if the input blocks are first constructed (in series) from the
   IV and the ciphertext", and with `s = b` those input blocks simply *are* the IV followed by the
   ciphertext. Measured against an otherwise identical permutation that does not override the pair
@@ -163,17 +165,36 @@ chunks.
   end to end through the pipe, and a guard that a CFB ciphertext does not decrypt as CBC or vice
   versa (neither mode is authenticated, so the mismatch is otherwise silent).
 
-`core`: new `BlockPermutation<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
+`core`: new `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
 `new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_blocks2` / `decrypt_blocks2` that
-default to two single-block calls and which bit-sliced implementations override. The block methods
+default to two single-block calls and `encrypt_blocks8` / `decrypt_blocks8` that default to four pair
+calls, all of which bit-sliced implementations override (AES the pair form, SM4 both). The block methods
 are infallible; only `new` can fail, and only on the key. `bouncycastle-aes-lowmemory` implements
 it for all three key lengths (the data-encryption traits are still deliberately not implemented
 there).
 
+`core`: new `SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>` and
+`SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>` traits, the arbitrary-length data API a
+caller uses, as opposed to the block-aligned `BlockCipher*` traits a mode implements. Their shape is
+taken from `PaddedEncryptor` / `PaddedDecryptor`, which now implement them: streaming
+`do_{en,de}crypt_init[_rng]`, exact `update_out_len`, `do_update_out`, and a consuming `do_final` that
+returns the fixed `FINAL_LEN` trailing bytes (the padded block; a tag or nothing for other cipher kinds),
+the decryptor's paired with how many of them are data. `do_final_out`, the `_out` one-shots
+(`encrypt_out[_rng]`, `decrypt_out`, with `encrypt_out_len` exact and `decrypt_out_max_len` an upper
+bound, checked before any work is done) and the `std` `Vec` one-shots are provided over the streaming
+methods, so an implementor writes six methods. The older one-shot-only `SymmetricCipher` trait is
+unchanged for now; `AEADCipher` and `StreamCipher` still build on it and are the next to migrate.
+
 Testing:
 
-* `core-test-framework` gains `TestFrameworkBlockPermutation`, which pins the trait contract:
+* `core-test-framework` gains `TestFrameworkSymmetricCipher::test_encryptor_decryptor`, which pins the
+  paired contract: one-shot round trips at every length up to a few final chunks, the `std` one-shots
+  against the `_out` ones, streaming in eight chunkings with `update_out_len` exact on every call,
+  `do_final_out` against `do_final`, a driven RNG reproducing its init data and determining the
+  ciphertext, corruption detection, short output buffers refused with the required length, and the
+  key-type and security-strength policy. The padded adapters run it.
+* `core-test-framework` gains `TestFrameworkElectronicCodeBook`, which pins the trait contract:
   both directions are inverses either way round, the permutation is injective, and the pair
   methods are indistinguishable from two single-block calls **including their order** -- the check
   that makes an override safe.
@@ -304,7 +325,7 @@ Block cipher traits (PR #96):
 
 * The single `BlockCipher` streaming trait is split into `BlockCipherEncryptor` and `BlockCipherDecryptor` (mirroring
   `KEMEncapsulator` / `KEMDecapsulator`) so the direction is encoded in the implementing type. Both, and
-  `BlockPermutation`, are bounded on `Algorithm`, whose `MAX_SECURITY_STRENGTH` is the strength the `_init`
+  `ElectronicCodeBook`, are bounded on `Algorithm`, whose `MAX_SECURITY_STRENGTH` is the strength the `_init`
   constructors enforce (a mode reports its permutation's name and strength); the `SymmetricCipher` one-shot API is no
   longer a supertrait.
 * The single-block `do_{en,de}crypt_block[_out]` methods are replaced by multi-block
@@ -324,8 +345,12 @@ Block cipher traits (PR #96):
   input and output arrays; both were replaced before release.)
 * The streaming API is flat and in place as well: `do_{en,de}crypt<LEN>(&mut [u8; LEN])`, with the same compile-time
   alignment check, are provided methods. The single block-shaped method left is the implementor hook
-  `do_{en,de}crypt_blocks<N>(&mut [[u8; BLOCK_LEN]; N])`, which is what guarantees an implementation never sees a
-  partial block; an implementor writes only `do_{en,de}crypt_init[_rng]` and that hook. The data methods keep a
+  `do_{en,de}crypt_blocks(&mut [[u8; BLOCK_LEN]])`, which is what guarantees an implementation never sees a
+  partial block; an implementor writes only `do_{en,de}crypt_init[_rng]` and that hook. The hook takes a *slice* of
+  blocks rather than a `[[u8; BLOCK_LEN]; N]` array (it did at first): every whole number of blocks is valid, so
+  there is no length invariant for a const parameter to carry, and batching -- singly, in pairs, in eights -- is the
+  mode's decision. `do_{en,de}crypt<LEN>` therefore hands the whole buffer to the hook in one call, and CBC
+  decryption chunks it into pairs for `decrypt_blocks2` itself. The data methods keep a
   `Result` only for modes with a per-initialization data limit (counter-based modes); CBC never fails them.
 
 Testing:

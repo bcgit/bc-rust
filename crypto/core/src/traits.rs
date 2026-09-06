@@ -108,17 +108,16 @@ pub trait BlockCipherDecryptor<
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError>;
-    /// The implementor hook: decrypts `N` consecutive whole blocks in place. See
+    /// The implementor hook: decrypts consecutive whole blocks in place. See
     /// [`BlockCipherEncryptor::do_encrypt_blocks`]; callers should normally use the flat
     /// [`BlockCipherDecryptor::do_decrypt`] instead.
-    fn do_decrypt_blocks<const N: usize>(
+    fn do_decrypt_blocks(
         &mut self,
-        blocks: &mut [[u8; BLOCK_LEN]; N],
+        blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError>;
 
     /// Streaming: decrypts `LEN` bytes, a whole number of blocks, in place. `LEN % BLOCK_LEN == 0`
-    /// is checked at compile time, and the blocks are fed to the hook pairs first, then the tail,
-    /// exactly as for [`BlockCipherEncryptor::do_encrypt`].
+    /// is checked at compile time, exactly as for [`BlockCipherEncryptor::do_encrypt`].
     fn do_decrypt<const LEN: usize>(
         &mut self,
         data: &mut [u8; LEN],
@@ -129,15 +128,9 @@ pub trait BlockCipherDecryptor<
                 "length must be a whole number of BLOCK_LEN-byte blocks"
             )
         };
+        // The remainder is provably empty (asserted above) and ignored.
         let (blocks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-        let (pairs, tail) = blocks.as_chunks_mut::<2>();
-        for pair in pairs.iter_mut() {
-            self.do_decrypt_blocks(pair)?;
-        }
-        for block in tail.iter_mut() {
-            self.do_decrypt_blocks(core::array::from_mut(block))?;
-        }
-        Ok(())
+        self.do_decrypt_blocks(blocks)
     }
 
     /// One-shot: decrypts `LEN` bytes in place from the given init data. `LEN % BLOCK_LEN == 0` is
@@ -204,26 +197,26 @@ pub trait BlockCipherEncryptor<
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
-    /// The implementor hook: encrypts `N` consecutive whole blocks in place. A sequence of calls
-    /// is equivalent to one call over the concatenation.
+    /// The implementor hook: encrypts consecutive whole blocks in place. A sequence of calls is
+    /// equivalent to one call over the concatenation.
     ///
     /// This is the only method an implementor writes besides the two `_init` constructors; the
-    /// block shape is what guarantees it never sees a partial block. Callers should normally use
-    /// the flat [`BlockCipherEncryptor::do_encrypt`] instead.
-    fn do_encrypt_blocks<const N: usize>(
+    /// block shape is what guarantees it never sees a partial block. It takes a slice rather than
+    /// a `[[u8; BLOCK_LEN]; N]` array because every whole number of blocks is valid, so there is
+    /// no length invariant for a const parameter to carry, and because how to batch the blocks --
+    /// singly, in pairs, in eights -- is the mode's decision, not the caller's: a mode whose
+    /// permutation processes several blocks at once (CBC decryption, CTR) chunks the slice itself.
+    /// Callers should normally use the flat [`BlockCipherEncryptor::do_encrypt`] instead.
+    fn do_encrypt_blocks(
         &mut self,
-        blocks: &mut [[u8; BLOCK_LEN]; N],
+        blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError>;
 
     /// Streaming: encrypts `LEN` bytes, a whole number of blocks, in place. A sequence of calls
     /// is equivalent to one call over the concatenation.
     ///
-    /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs.
-    ///
-    /// Blocks are fed to [`BlockCipherEncryptor::do_encrypt_blocks`] in pairs first, so a mode
-    /// that overrides its two-block path gets to use it, then the at-most-one block left over. This
-    /// is equivalent to a single `do_encrypt_blocks::<{LEN / BLOCK_LEN}>` call, which cannot be
-    /// written without `generic_const_exprs`.
+    /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs. The whole buffer
+    /// then goes to [`BlockCipherEncryptor::do_encrypt_blocks`] in one call.
     fn do_encrypt<const LEN: usize>(
         &mut self,
         data: &mut [u8; LEN],
@@ -234,16 +227,9 @@ pub trait BlockCipherEncryptor<
                 "length must be a whole number of BLOCK_LEN-byte blocks"
             )
         };
-        // The remainders are provably empty (asserted above) and ignored.
+        // The remainder is provably empty (asserted above) and ignored.
         let (blocks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-        let (pairs, tail) = blocks.as_chunks_mut::<2>();
-        for pair in pairs.iter_mut() {
-            self.do_encrypt_blocks(pair)?;
-        }
-        for block in tail.iter_mut() {
-            self.do_encrypt_blocks(core::array::from_mut(block))?;
-        }
-        Ok(())
+        self.do_encrypt_blocks(blocks)
     }
 
     /// One-shot: encrypts `LEN` bytes in place under a fresh init, and returns the generated init
@@ -271,8 +257,8 @@ pub trait BlockCipherEncryptor<
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
 ///
 /// This is the raw primitive a mode of operation is built on, not something to encrypt data with.
-/// It transforms exactly one block, so applying it directly to data is ECB, which is not
-/// confidential. [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
+/// It transforms exactly one block, so applying it directly to data is ECB (Sec 6.1), which is not
+/// confidential -- the trait is named for the mode it *is* when used that way, as a reminder. [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
 /// they carry initialization data and chaining state; this one carries only a key schedule.
 ///
 /// Implementors are expected to hold that key schedule in a zeroize-on-drop wrapper
@@ -281,9 +267,9 @@ pub trait BlockCipherEncryptor<
 /// # Why the block methods are infallible
 ///
 /// Every length here is fixed by a type, and a constructed value is always ready to use, so there
-/// is nothing a caller can get wrong once [`BlockPermutation::new`] has returned. Only `new` can
+/// is nothing a caller can get wrong once [`ElectronicCodeBook::new`] has returned. Only `new` can
 /// fail, and only because of the key.
-pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
+pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     Algorithm + Sized
 {
     /// Expands the key.
@@ -302,12 +288,12 @@ pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
 
     /// The forward cipher function on two *independent* blocks, in place.
     ///
-    /// Provided as two [`BlockPermutation::encrypt_block`] calls. Bit-sliced implementations
+    /// Provided as two [`ElectronicCodeBook::encrypt_block`] calls. Bit-sliced implementations
     /// override it, because a pair of blocks is their natural unit of work and costs barely more
     /// than one; see `bouncycastle-aes-lowmemory`.
     ///
     /// Overrides must be indistinguishable from the default, including the order of the two
-    /// results. `TestFrameworkBlockPermutation` pins that.
+    /// results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes whose structure is parallel -- CBC decryption, CFB decryption, CTR -- should prefer
     /// this. CBC and CFB *encryption* cannot use it: each input block depends on the previous
@@ -319,11 +305,41 @@ pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     }
 
     /// The inverse cipher function on two *independent* blocks, in place.
-    /// See [`BlockPermutation::encrypt_blocks2`].
+    /// See [`ElectronicCodeBook::encrypt_blocks2`].
     fn decrypt_blocks2(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         let [a, b] = blocks;
         self.decrypt_block(a);
         self.decrypt_block(b);
+    }
+
+    /// The forward cipher function on eight *independent* blocks, in place.
+    ///
+    /// Provided as four [`ElectronicCodeBook::encrypt_blocks2`] calls, so an implementation that
+    /// overrides only the pair form gets its benefit here too. An engine whose natural unit is
+    /// larger than a pair overrides this directly: a bit-sliced engine whose S-box circuit
+    /// substitutes four blocks per pass runs eight blocks as two full passes rather than four
+    /// half-empty pair calls.
+    ///
+    /// Overrides must be indistinguishable from the default, including the order of the eight
+    /// results. `TestFrameworkElectronicCodeBook` pins that.
+    ///
+    /// Modes with parallel structure chunk their data into eights first, then pairs, then single
+    /// blocks; see CBC decryption in `bouncycastle-modes`.
+    fn encrypt_blocks8(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+        // Eight is a multiple of two, so the remainder is empty.
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            self.encrypt_blocks2(pair);
+        }
+    }
+
+    /// The inverse cipher function on eight *independent* blocks, in place.
+    /// See [`ElectronicCodeBook::encrypt_blocks8`].
+    fn decrypt_blocks8(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            self.decrypt_blocks2(pair);
+        }
     }
 }
 
@@ -1181,6 +1197,8 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
     ) -> Result<Self, SuspendableError>;
 }
 
+// todo -- migrate AEADCipher and StreamCipher onto SymmetricCipherEncryptor /
+// SymmetricCipherDecryptor (below), which are the split form of this trait, and retire this one.
 /// The basic one-shot encrypt and decrypt that all types of symmetric ciphers must implement.
 /// These are meant to be simple, easy to use, secure, and fool-proof APIs, but they may result in
 /// ciphertexts that are incompatible with other implementations as ciphers in more complex modes, such
@@ -1228,6 +1246,269 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Alg
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError>;
+}
+
+/// The decryption half of a symmetric cipher's arbitrary-length API. See
+/// [`SymmetricCipherEncryptor`] for the shape of the API and the meaning of `FINAL_LEN`; this is
+/// its mirror image, and the two are implemented by paired types.
+///
+/// Decryption is not the exact mirror of encryption in one respect: the last `FINAL_LEN` bytes a
+/// decryptor releases may be only partly data. A padding scheme's final block carries
+/// `data_len < BLOCK_LEN` bytes of plaintext and the rest padding, and an authenticated cipher may
+/// release nothing at all once it has checked the tag. So [`do_final`](Self::do_final) returns the
+/// buffer *and* how much of it is data, and the one-shot length helper is an upper bound rather
+/// than an exact count.
+///
+/// The one-shot [`decrypt_out`](Self::decrypt_out) is provided over the streaming methods, as is
+/// the allocating [`decrypt`](Self::decrypt) behind the `std` feature. An implementor writes only
+/// [`do_decrypt_init`](Self::do_decrypt_init), [`update_out_len`](Self::update_out_len),
+/// [`do_update_out`](Self::do_update_out), [`do_final`](Self::do_final) and
+/// [`decrypt_out_max_len`](Self::decrypt_out_max_len).
+pub trait SymmetricCipherDecryptor<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+>: Algorithm + Sized
+{
+    /// Begins a streaming decryption from the init data returned by
+    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
+    ///
+    /// # Errors
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
+    /// [`SymmetricCipherError::KeyMaterialError`].
+    fn do_decrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Result<Self, SymmetricCipherError>;
+
+    /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
+    /// given `input_len` more bytes of ciphertext. Depends on what is already buffered.
+    fn update_out_len(&self, input_len: usize) -> usize;
+
+    /// Streaming: consumes `ciphertext`, writing every plaintext byte that can be released so far
+    /// into `plaintext` and buffering the rest. Returns the number of bytes written, which is
+    /// exactly [`update_out_len`](Self::update_out_len) of `ciphertext.len()`.
+    ///
+    /// A decryptor may have to hold back the tail of what it has seen -- the last block, which
+    /// might carry the padding, or the bytes that might be the tag -- so a sequence of calls
+    /// releases data later than the corresponding encryptor produced it, but the concatenation of
+    /// everything released plus the data part of [`do_final`](Self::do_final) is the plaintext.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is shorter than
+    /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
+    /// consumed in that case.
+    fn do_update_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// Finishes the decryption, consuming the decryptor: processes whatever was held back, checks
+    /// it -- padding, tag -- and returns the final buffer together with the number of leading
+    /// bytes of it that are plaintext. The remainder of the buffer is not data and must not be
+    /// used.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DecryptionFailed`] if the ciphertext was malformed (empty, or not a
+    /// whole number of blocks); [`SymmetricCipherError::PaddingError`] or
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the check fails. In every error case the
+    /// caller learns only that decryption failed, not where.
+    fn do_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
+
+    /// As [`do_final`](Self::do_final), writing the final buffer into `plaintext`. Returns the
+    /// number of leading bytes of it that are data.
+    fn do_final_out(self, plaintext: &mut [u8; FINAL_LEN]) -> Result<usize, SymmetricCipherError> {
+        let (buffer, data_len) = self.do_final()?;
+        *plaintext = buffer;
+        Ok(data_len)
+    }
+
+    /// An upper bound on the plaintext recovered from `ciphertext_len` bytes of ciphertext, i.e.
+    /// the buffer [`decrypt_out`](Self::decrypt_out) requires. Exact for ciphers with no padding;
+    /// for a padding scheme the exact length is only known after decryption.
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize;
+
+    /// One-shot: decrypts `ciphertext` into `plaintext`, which needs
+    /// [`decrypt_out_max_len`](Self::decrypt_out_max_len) bytes. Returns the number of plaintext
+    /// bytes written.
+    ///
+    /// Provided as `do_decrypt_init`, one `do_update_out` and `do_final`.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is too short, checked
+    /// before any work is done; otherwise whatever the streaming methods return.
+    fn decrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let needed = Self::decrypt_out_max_len(ciphertext.len());
+        if plaintext.len() < needed {
+            return Err(SymmetricCipherError::IncorrectOutputBufferLength("plaintext", needed));
+        }
+        let mut dec = Self::do_decrypt_init(key, init_data)?;
+        let written = dec.do_update_out(ciphertext, plaintext)?;
+        let (last, data_len) = dec.do_final()?;
+        // `decrypt_out_max_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
+        plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
+        Ok(written + data_len)
+    }
+
+    #[cfg(feature = "std")]
+    /// One-shot, allocating: as [`decrypt_out`](Self::decrypt_out), returning the plaintext as a
+    /// `Vec<u8>` of exactly the recovered length. Only available with the `std` feature.
+    fn decrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut plaintext = vec![0u8; Self::decrypt_out_max_len(ciphertext.len())];
+        let written = Self::decrypt_out(key, init_data, ciphertext, &mut plaintext)?;
+        plaintext.truncate(written);
+        Ok(plaintext)
+    }
+}
+
+/// The encryption half of a symmetric cipher's arbitrary-length API: streaming `do_update_out` /
+/// `do_final`, plus one-shots provided over them.
+///
+/// This is the layer a caller with *data* uses, as opposed to the block-aligned
+/// [`BlockCipherEncryptor`] a mode implements. Its shape is that of the padding adapters in
+/// `bouncycastle-padding`, which are its first implementors: an authenticated cipher or a stream
+/// cipher fits the same shape, with the tag or nothing in place of the final padded block.
+///
+/// `FINAL_LEN` is the fixed length of what [`do_final`](Self::do_final) produces after the last
+/// byte of plaintext has been consumed: one block for a padding scheme, the tag length for an
+/// authenticated cipher, zero for a stream cipher. Everything else about the output length is
+/// answered exactly, before the fact, by [`update_out_len`](Self::update_out_len) and
+/// [`encrypt_out_len`](Self::encrypt_out_len), so a caller can size buffers without guessing.
+///
+/// Init data (an IV or nonce) is generated by the constructor and returned, never supplied, for
+/// the same reason as in [`BlockCipherEncryptor`]. Everything is `no_std`-friendly except the
+/// allocating [`encrypt`](Self::encrypt), which sits behind the `std` feature.
+///
+/// The one-shots [`encrypt_out`](Self::encrypt_out) and [`encrypt_out_rng`](Self::encrypt_out_rng)
+/// are provided over the streaming methods. An implementor writes only the two `_init`
+/// constructors, [`update_out_len`](Self::update_out_len), [`do_update_out`](Self::do_update_out),
+/// [`do_final`](Self::do_final) and [`encrypt_out_len`](Self::encrypt_out_len).
+pub trait SymmetricCipherEncryptor<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+>: Algorithm + Sized
+{
+    /// Begins a streaming encryption, returning the encryptor and the generated init data (IV or
+    /// nonce), which the recipient needs for [`SymmetricCipherDecryptor::do_decrypt_init`]. Sources
+    /// randomness from the library's default OS-backed RNG.
+    ///
+    /// # Errors
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
+    /// [`SymmetricCipherError::KeyMaterialError`].
+    fn do_encrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// As [`do_encrypt_init`](Self::do_encrypt_init), but sources randomness from the provided RNG.
+    fn do_encrypt_init_rng(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
+    /// given `input_len` more bytes of plaintext. Depends on what is already buffered.
+    fn update_out_len(&self, input_len: usize) -> usize;
+
+    /// Streaming: consumes `plaintext`, writing every ciphertext byte that can be produced so far
+    /// into `ciphertext` and buffering the rest. Returns the number of bytes written, which is
+    /// exactly [`update_out_len`](Self::update_out_len) of `plaintext.len()`. A sequence of calls
+    /// is equivalent to one call over the concatenation.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is shorter than
+    /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
+    /// consumed in that case.
+    fn do_update_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// Finishes the encryption, consuming the encryptor: pads and encrypts whatever was buffered,
+    /// or computes the tag, and returns exactly `FINAL_LEN` bytes, which are the last bytes of
+    /// the ciphertext.
+    fn do_final(self) -> Result<[u8; FINAL_LEN], SymmetricCipherError>;
+
+    /// As [`do_final`](Self::do_final), writing the final bytes into `ciphertext`. Returns
+    /// `FINAL_LEN`.
+    fn do_final_out(self, ciphertext: &mut [u8; FINAL_LEN]) -> Result<usize, SymmetricCipherError> {
+        *ciphertext = self.do_final()?;
+        Ok(FINAL_LEN)
+    }
+
+    /// The exact ciphertext length for a `plaintext_len`-byte plaintext, i.e. the buffer
+    /// [`encrypt_out`](Self::encrypt_out) requires and the number of bytes it writes.
+    fn encrypt_out_len(plaintext_len: usize) -> usize;
+
+    /// One-shot: encrypts `plaintext` into `ciphertext`, which needs
+    /// [`encrypt_out_len`](Self::encrypt_out_len) bytes. Returns the generated init data and the
+    /// number of bytes written.
+    ///
+    /// Provided as `do_encrypt_init`, one `do_update_out` and `do_final`.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is too short, checked
+    /// before any work is done; otherwise whatever the streaming methods return.
+    fn encrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
+        let needed = Self::encrypt_out_len(plaintext.len());
+        if ciphertext.len() < needed {
+            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
+        }
+        let (mut enc, init_data) = Self::do_encrypt_init(key)?;
+        let written = enc.do_update_out(plaintext, ciphertext)?;
+        let last = enc.do_final()?;
+        // `encrypt_out_len` is exactly `written + FINAL_LEN`, so this fits in `ciphertext[..needed]`.
+        ciphertext[written..written + FINAL_LEN].copy_from_slice(&last);
+        Ok((init_data, written + FINAL_LEN))
+    }
+
+    /// As [`encrypt_out`](Self::encrypt_out), but sources randomness from the provided RNG.
+    fn encrypt_out_rng(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
+        let needed = Self::encrypt_out_len(plaintext.len());
+        if ciphertext.len() < needed {
+            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
+        }
+        let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
+        let written = enc.do_update_out(plaintext, ciphertext)?;
+        let last = enc.do_final()?;
+        ciphertext[written..written + FINAL_LEN].copy_from_slice(&last);
+        Ok((init_data, written + FINAL_LEN))
+    }
+
+    #[cfg(feature = "std")]
+    /// One-shot, allocating: as [`encrypt_out`](Self::encrypt_out), returning the ciphertext as a
+    /// `Vec<u8>`. Only available with the `std` feature.
+    fn encrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        plaintext: &[u8],
+    ) -> Result<([u8; INIT_DATA_LEN], Vec<u8>), SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::encrypt_out_len(plaintext.len())];
+        let (init_data, written) = Self::encrypt_out(key, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok((init_data, ciphertext))
+    }
 }
 
 /// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
