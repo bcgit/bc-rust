@@ -37,13 +37,14 @@
 //! ```
 //!
 //! It is also possible to provide input where the final byte contains fewer than 8 bits of data
-//! (a bit-oriented message, GB/T 32905-2016 s. 5.2); the partial bits are taken from the least
-//! significant bits of the supplied byte. The following hashes 16 bytes plus 3 bits:
+//! (a bit-oriented message, GB/T 32905-2016 s. 5.2). The partial byte is taken as it arrives in the
+//! final octet of an ASN.1 BIT STRING: the message bits are its most significant bits, leading bit
+//! first, and the low "unused" bits are ignored. The following hashes 16 bytes plus the 3 bits `101`:
 //! ```
 //! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sm3::SM3;
 //!
-//! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\x05";
+//! let data: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\xA0";
 //! let mut sm3 = SM3::new();
 //! sm3.do_update(&data[..16]);
 //! let output: Vec<u8> = sm3.do_final_partial_bits(data[16], 3).expect("num_partial_bits is in 0..=7");

@@ -23,7 +23,7 @@ SHA-2 (PR #88):
   (FIPS 180-4 s. 5.1), bringing SHA-2 to parity with SHA-3 for messages whose length is not a multiple of 8 bits.
   Previously these methods hit `unimplemented!()` -- a panic behind a `Result`-returning API. `num_partial_bits` may be
   0..=7 (0 behaves exactly as `do_final_out()`); larger values return `HashError::InvalidLength`. The trailing bits are
-  taken from the least significant bits of `partial_byte`, the same convention as SHA-3 (see the `Hash` trait docs).
+  the most significant bits of `partial_byte`, the same convention as SHA-3 (see "Bit-oriented messages" below).
 * Initial hash values are now compile-time constants (`const H0` on the params traits), removing a runtime
   match-on-`OUTPUT_LEN` and its `panic!` arm. `HashAlgParams` for the public types is forwarded from the `*Params`
   structs, so `OUTPUT_LEN` / `BLOCK_LEN` are defined once.
@@ -36,23 +36,32 @@ Testing:
 * SHA-2 now runs the NIST CAVP SHAVS vector sets from bc-test-data (`crypto/sha2`: ShortMsg, LongMsg and Monte Carlo;
   bit- and byte-oriented, ~12k cases of which ~5.4k are bit-length messages) using the same `../bc-test-data` lookup
   convention as the mldsa/mlkem crates; the tests skip with a warning if the repo is not checked out. The SHAVS files
-  pack trailing message bits MSB-first, so the harness shifts them into the LSB convention used by the API. Note that
+  pack trailing message bits MSB-first (left-justified), which is the convention used by the API. Note that
   `cargo mutants` runs in a copied tree where `../bc-test-data` does not resolve, so these tests do not contribute to
   mutation coverage.
 
 Bit-oriented messages:
 
-* `Hash::do_final_partial_bits()` / `do_final_partial_bits_out()` accept `num_partial_bits` in 0..=7 (0 meaning the
-  message ends on a byte boundary); larger values return `HashError::InvalidLength` instead of panicking. The convention
-  is the same for every hash family: the trailing bits are in the least significant bits of `partial_byte` (FIPS 202
-  Appendix B.1) -- see the `Hash` trait docs, including the note on the MSB-first packing used by the NIST CAVP SHA-2
-  vector files.
+* `Hash::do_final_partial_bits()` / `do_final_partial_bits_out()` and `XOF::absorb_last_partial_byte()` accept
+  `num_partial_bits` in 0..=7 (0 meaning the message ends on a byte boundary); larger values return
+  `HashError::InvalidLength` instead of panicking.
+* The partial byte is taken as it arrives in the final octet of an ASN.1 BIT STRING (X.690 s. 8.6.2): the
+  `num_partial_bits` message bits are the most significant bits of `partial_byte`, leading bit first, and the low
+  `8 - num_partial_bits` bits (the BIT STRING's "unused bits") are ignored -- so for a BIT STRING with `unused` in
+  1..=7, pass the final content octet with `num_partial_bits = 8 - unused`. The convention is the same for every hash
+  family; SHA-3/SHAKE reverse the bits internally into the FIPS 202 Appendix B.1 order that Keccak absorbs (bit 0
+  first). `XOF::squeeze_partial_byte_final()` returns its bits the same way: in the most significant `num_bits` bits,
+  first output bit first, low bits zero. (Previously the API documented FIPS 202 B.1 order -- message bits in the
+  least significant bits, bit 0 first -- but SHA-2 in fact treated the low bits as a left-justified group, so the two
+  families only agreed on palindromic bit patterns. The BIT STRING convention is now applied uniformly.)
+* Test vectors: the NIST CAVP SHAVS (SHA-2) bit-oriented files are left-justified and are passed to the API directly;
+  the SHA3VS files and the FIPS 202 example vectors use the Appendix B.1 packing and are bit-reversed by the harness.
 
 SHA-3 / SHAKE (PR #87):
 
 * Fixed `XOF::squeeze_partial_byte_final()`: when it was the first squeeze it bypassed the SHAKE `1111` domain suffix
-  and returned raw Keccak output, and it returned the *high* rather than the low `num_bits` bits of the output byte.
-  The existing test used `0xFF`, which masked the second error.
+  and returned raw Keccak output, and it returned the wrong `num_bits` bits of the output byte. The existing test used
+  `0xFF`, which masked the second error.
 * Fixed `XOF::absorb_last_partial_byte()` for `num_partial_bits == 4`: the 4 message bits plus the `1111` suffix
   exactly filled a byte and the sponge did not switch to squeezing, so the first squeeze appended the suffix a second
   time. Every SHAKE message with a bit length of 4 mod 8 was affected. Found by the new CAVP harness.

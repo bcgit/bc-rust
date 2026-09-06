@@ -274,10 +274,11 @@ impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
 impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
     /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.2, then writes the digest.
     ///
-    /// `num_partial_bits` (0..=7, validated by the caller) trailing message bits are taken from the
-    /// least significant bits of `partial_byte`. FIPS 180-4 s. 3.1 numbers message bits from the most
-    /// significant bit of each byte, so those bits are shifted to the top of the final message byte
-    /// and the mandatory "1" padding bit follows them immediately in the same byte.
+    /// The `num_partial_bits` (0..=7, validated by the caller) trailing message bits are the most
+    /// significant bits of `partial_byte`, leading bit first: the ASN.1 BIT STRING order of
+    /// X.690 s. 8.6.2.1, which is also how FIPS 180-4 s. 3.1 numbers the bits of a message byte. So
+    /// they are used in place, the low `8 - num_partial_bits` bits are ignored, and the mandatory
+    /// "1" padding bit follows the message bits immediately in the same byte.
     ///
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
@@ -287,13 +288,12 @@ impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
 
         let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
 
-        // FIPS 180-4 s. 5.1.2: append the bit "1" to the end of the message. The final message byte is
-        // [partial bits, MSB-first] [1] [0...]; with no partial bits this is the familiar 0x80. Shifts
-        // are done in u16 so that the 8-bit shift for num_partial_bits == 0 cannot overflow; the masked
-        // value is < 2^num_partial_bits so the result always fits back into a u8.
-        let mask: u8 = ((1u16 << num_partial_bits) - 1) as u8;
-        let message_bits = ((partial_byte & mask) as u16) << (8 - num_partial_bits);
-        let pad_byte = (message_bits as u8) | (0x80u8 >> num_partial_bits);
+        // FIPS 180-4 s. 5.1.2: append the bit "1" to the end of the message. The message bits are the
+        // top num_partial_bits bits of partial_byte, so the final message byte is [those bits] [1] [0...];
+        // with no partial bits this is the familiar 0x80. The mask is built in u16 so that the 8-bit
+        // shift for num_partial_bits == 0 cannot overflow (0xFF00 >> 0 truncates to 0x00).
+        let mask = (0xFF00u16 >> num_partial_bits) as u8;
+        let pad_byte = (partial_byte & mask) | (0x80u8 >> num_partial_bits);
 
         self.x_buf[self.x_buf_off] = pad_byte;
         self.x_buf_off += 1;
@@ -420,9 +420,10 @@ impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
         Ok(output)
     }
 
-    /// FIPS 180-4 s. 5.1: bit-oriented messages. The `num_partial_bits` least significant bits of
-    /// `partial_byte` are appended to the message before padding. `num_partial_bits == 0` behaves
-    /// exactly like [`Hash::do_final_out`].
+    /// FIPS 180-4 s. 5.1: bit-oriented messages. The `num_partial_bits` most significant bits of
+    /// `partial_byte` (ASN.1 BIT STRING order, leading bit first) are appended to the message before
+    /// padding; the low bits are ignored. `num_partial_bits == 0` behaves exactly like
+    /// [`Hash::do_final_out`].
     fn do_final_partial_bits_out(
         self,
         partial_byte: u8,

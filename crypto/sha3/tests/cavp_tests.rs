@@ -5,12 +5,13 @@
 //! under `crypto/sha3/{bit-oriented,byte-oriented}/`. If it is not present the tests print a warning
 //! and pass vacuously.
 //!
-//! Bit ordering: unlike the SHA-2 CAVP files, SHA-3 CAVP follows FIPS 202 Appendix B.1 — the excess
-//! bits of a `Len`-bit message occupy the *least significant* bits of the final `Msg` byte, and the
-//! excess bits of an `Outputlen`-bit SHAKE output occupy the least significant bits of the final
-//! `Output` byte (verified over every partial case in the files: all high bits are zero). This is
-//! exactly the convention of [`Hash::do_final_partial_bits`] / [`XOF::absorb_last_partial_byte`] /
-//! [`XOF::squeeze_partial_byte_final`], so no shifting is needed.
+//! The SHA3VS files pack bit strings per FIPS 202 Appendix B.1 (Algorithms 10/11, h2b/b2h): the
+//! excess bits of a `Len`-bit message occupy the *least significant* bits of the final `Msg` byte,
+//! first bit in the LSB, and likewise the excess bits of an `Outputlen`-bit SHAKE output occupy the
+//! least significant bits of the final `Output` byte. The API takes and returns partial bytes in
+//! ASN.1 BIT STRING order (X.690 s. 8.6.2.1: first bit in the MSB, unused low bits), so the harness
+//! bit-reverses the final message byte before absorbing it and the final output byte after squeezing
+//! it (`u8::reverse_bits`).
 //!
 //! Test types exercised (SHA3VS s. 6):
 //!
@@ -96,7 +97,8 @@ fn parse_msg_file(content: &str) -> Vec<MsgCase> {
     cases
 }
 
-/// Hashes the first `len_bits` bits of `msg` (FIPS 202 B.1 packing: excess bits in the LSBs).
+/// Hashes the first `len_bits` bits of `msg` (FIPS 202 B.1 packing: excess bits in the LSBs, so the
+/// final byte is bit-reversed into the API's MSB-first order).
 fn sha3_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     let whole_bytes = len_bits / 8;
     let partial_bits = len_bits % 8;
@@ -106,7 +108,8 @@ fn sha3_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     } else {
         let mut h = H::default();
         h.do_update(&msg[..whole_bytes]);
-        h.do_final_partial_bits(msg[whole_bytes], partial_bits).expect("partial_bits is in 1..=7")
+        h.do_final_partial_bits(msg[whole_bytes].reverse_bits(), partial_bits)
+            .expect("partial_bits is in 1..=7")
     }
 }
 
@@ -160,18 +163,24 @@ fn run_sha3_monte_file<H: Hash + Default>(orientation: &str, filename: &str) {
 // ---------------------------------------------------------------------------------------------
 
 /// SHAKE of the first `len_bits` bits of `msg`, producing `out_bits` bits of output (FIPS 202 B.1
-/// packing on both sides: excess bits in the LSBs of the final byte).
+/// packing on both sides: excess bits in the LSBs of the final byte, so the final input byte is
+/// bit-reversed into the API's MSB-first order and the final output byte is bit-reversed back).
 fn shake_bits<X: XOF + Default>(msg: &[u8], len_bits: usize, out_bits: usize) -> Vec<u8> {
     let mut x = X::default();
     let (whole, partial) = (len_bits / 8, len_bits % 8);
     x.absorb(&msg[..whole]).expect("absorb before squeeze is infallible");
     if partial != 0 {
-        x.absorb_last_partial_byte(msg[whole], partial).expect("partial is in 1..=7");
+        x.absorb_last_partial_byte(msg[whole].reverse_bits(), partial)
+            .expect("partial is in 1..=7");
     }
     let (out_whole, out_partial) = (out_bits / 8, out_bits % 8);
     let mut out = x.squeeze(out_whole);
     if out_partial != 0 {
-        out.push(x.squeeze_partial_byte_final(out_partial).expect("out_partial is in 1..=7"));
+        out.push(
+            x.squeeze_partial_byte_final(out_partial)
+                .expect("out_partial is in 1..=7")
+                .reverse_bits(),
+        );
     }
     out
 }

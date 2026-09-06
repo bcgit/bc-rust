@@ -49,8 +49,9 @@ mod shake_tests {
             shake.absorb(&[0u8, 1u8, 2u8, 3u8, 4u8]).expect("absorb before squeeze is infallible");
             _ = shake.squeeze(3);
             let out: u8 = shake.squeeze_partial_byte_final(i).expect("Squeeze failed");
-            // byte [3] of the stream is 0xFF, so the low `i` bits of it are the low `i` set bits.
-            assert_eq!(out, ((1u16 << i) - 1) as u8);
+            // byte [3] of the stream is 0xFF, so its first `i` bits, returned MSB-first, are the top
+            // `i` set bits.
+            assert_eq!(out, (0xFF00u16 >> i) as u8);
         }
 
         // success case -- output slice version
@@ -59,12 +60,13 @@ mod shake_tests {
         _ = shake.squeeze(3);
         let mut out = 0u8;
         shake.squeeze_partial_byte_final_out(1, &mut out).expect("Squeeze failed");
-        assert_eq!(out, 0x01);
+        assert_eq!(out, 0x80);
     }
 
     /// Regression: squeeze_partial_byte_final() as the *first* squeeze must apply the SHAKE "1111"
     /// domain suffix (previously it bypassed it and returned raw Keccak output), and must return the
-    /// low `num_bits` bits of the next output byte (FIPS 202 B.1 bit ordering), zero-extended.
+    /// first `num_bits` bits of the next output byte (its low bits, FIPS 202 B.1 bit ordering) in the
+    /// top `num_bits` bits of the result (ASN.1 BIT STRING order), with the unused low bits zero.
     #[test]
     fn partial_bit_output_as_first_squeeze_matches_full_output() {
         let msg = b"abc";
@@ -85,19 +87,25 @@ mod shake_tests {
                     _ = shake.squeeze(skip);
                 }
                 let got = shake.squeeze_partial_byte_final(n).unwrap();
-                assert_eq!(got, full & ((1u8 << n) - 1), "skip={skip} n={n}");
-                assert_eq!(got >> n, 0, "high bits must be zero");
+                assert_eq!(
+                    got,
+                    full.reverse_bits() & ((0xFF00u16 >> n) as u8),
+                    "skip={skip} n={n}"
+                );
+                assert_eq!(got & (0xFFu8 >> n), 0, "unused low bits must be zero");
             }
         }
     }
 
     /// Regression: when the 4 trailing message bits plus the SHAKE "1111" suffix exactly fill a byte,
     /// the sponge must still switch to squeezing, otherwise the first squeeze appended a second suffix.
-    /// Vector: NIST CAVP SHA3VS SHAKE128ShortMsg (bit-oriented), Len = 4, Msg = 08.
+    /// Vector: NIST CAVP SHA3VS SHAKE128ShortMsg (bit-oriented), Len = 4, Msg = 08 (FIPS 202 B.1
+    /// packing: message bits 0001 in the low nibble, first bit in the LSB), i.e. 0x10 in the API's
+    /// MSB-first order.
     #[test]
     fn absorb_last_partial_byte_four_bits() {
         let mut shake = SHAKE128::new();
-        shake.absorb_last_partial_byte(0x08, 4).unwrap();
+        shake.absorb_last_partial_byte(0x10, 4).unwrap();
         assert_eq!(
             shake.squeeze(16),
             bouncycastle_hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
@@ -129,7 +137,7 @@ mod shake_tests {
         // actually change the output relative to the byte-aligned message.
         let mut b = SHAKE128::new();
         b.absorb(b"abc").unwrap();
-        b.absorb_last_partial_byte(0x7F, 7).unwrap();
+        b.absorb_last_partial_byte(0xFE, 7).unwrap();
         assert_ne!(b.squeeze(32), SHAKE128::new().hash_xof(b"abc", 32));
     }
 
@@ -571,15 +579,21 @@ pub(crate) mod shake_test_helpers {
         let total_bytes = (bits + 7) / 8;
         let mut result = vec![0u8; total_bytes];
 
+        // Whole bytes are packed per FIPS 202 Appendix B.1 (Algorithm 11, b2h: message bit 8i + j has
+        // weight 2^j in byte i, i.e. the first bit is the LSB), which is how SHA-3 reads a byte-oriented
+        // message.
         for i in 0..full_bytes {
             let index = i * 8;
             block[index..(index + 8)].reverse();
             result[i] = parse_binary(&block[index..(index + 8)]);
         }
 
+        // The trailing partial byte is packed the way the API takes it: the remaining message bits
+        // in order from the most significant bit down (ASN.1 BIT STRING order, X.690 s. 8.6.2.1),
+        // with the unused low bits zero.
         if total_bytes > full_bytes {
-            block[(full_bytes * 8)..].reverse();
-            result[full_bytes] = parse_binary(&block[(full_bytes * 8)..]);
+            let partial_bits = bits - full_bytes * 8;
+            result[full_bytes] = parse_binary(&block[(full_bytes * 8)..]) << (8 - partial_bits);
         }
 
         result
