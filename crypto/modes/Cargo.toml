@@ -7,6 +7,8 @@ edition.workspace = true
 bouncycastle-core.workspace = true
 # Only for the default OS-backed DRBG that generates the IV in `do_encrypt_init`.
 bouncycastle-rng.workspace = true
+# Only for `Secret`, which holds CTR's unused keystream so it is zeroized on drop.
+bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-aes-lowmemory.workspace = true

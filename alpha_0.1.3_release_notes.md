@@ -36,27 +36,30 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   only offer ECB, and those are mode-of-operation concerns. `Algorithm` is implemented (name and security
   strength); per-mode OIDs and the `BlockCipherEncryptor` / `BlockCipherDecryptor` impls belong to the mode crates.
 * Ships the type aliases `AES_CBC_128` / `AES_CBC_192` / `AES_CBC_256`, `AES_CFB_128` /
-  `AES_CFB_192` / `AES_CFB_256`, `AES_CFB8_128` / `AES_CFB8_192` / `AES_CFB8_256` and
+  `AES_CFB_192` / `AES_CFB_256`, `AES_CFB8_128` / `AES_CFB8_192` / `AES_CFB8_256`,
+  `AES_CTR_128` / `AES_CTR_192` / `AES_CTR_256` (12-byte nonce, 4-byte counter) and
   `AES_ECB_128` / `AES_ECB_192` / `AES_ECB_256`, which fill in the
-  const parameters of `bouncycastle-modes`' `Cbc`, `Cfb`, `Cfb8` and `Ecb` and leave the direction as the type parameter. They are aliases only -- no new engine
+  const parameters of `bouncycastle-modes`' `Cbc`, `Cfb`, `Cfb8`, `Ctr` and `Ecb` and leave the direction as the type parameter. They are aliases only -- no new engine
   code, and each one's doctest round-trips and shows that a misaligned length fails to compile.
 
 New crate `bouncycastle-modes` (`bouncycastle::modes`): cipher modes of operation
 (NIST SP 800-38A), providing **CBC** (Sec 6.2), **CFB128** and **CFB8** (Sec 6.3, `s = b` and
-`s = 8`) and **ECB** (Sec 6.1). Re-exported from the umbrella crate.
+`s = 8`), **CTR** (Sec 6.5) and **ECB** (Sec 6.1) -- four of the recommendation's five modes, with
+only OFB outstanding. Re-exported from the umbrella crate.
 
-* `Cbc`, `Cfb`, `Cfb8` and `Ecb`, each `<P, Dir, KEY_LEN, BLOCK_LEN>` over any
+* `Cbc`, `Cfb`, `Cfb8` and `Ecb`, each `<P, Dir, KEY_LEN, BLOCK_LEN>`, and `Ctr`, which takes a
+  nonce length as a fifth parameter, over any
   `ElectronicCodeBook`, so the crate depends on no concrete cipher. The direction is a type parameter:
   the encryptor trait is implemented only for `<_, Encrypting, _, _>` and the decryptor trait
   only for `<_, Decrypting, _, _>`, making a wrong-direction call a compile error rather than a
   runtime check.
 * **Block modes and stream modes.** `Cbc` and `Ecb` are block ciphers
   (`BlockCipherEncryptor` / `BlockCipherDecryptor`): whole blocks in, whole blocks out, with
-  arbitrary-length data going through `bouncycastle-padding`. `Cfb` and `Cfb8` are stream ciphers
-  (`StreamCipherEncryptor` / `StreamCipherDecryptor`): any length in, the same length out, no
-  padding layer and no finalization step. That split follows SP 800-38A Sec 5.2, which requires a
-  multiple of the *block* size only for ECB and CBC and a multiple of the *segment* size `s` for
-  CFB.
+  arbitrary-length data going through `bouncycastle-padding`. `Cfb`, `Cfb8` and `Ctr` are stream
+  ciphers (`StreamCipherEncryptor` / `StreamCipherDecryptor`): any length in, the same length out,
+  no padding layer and no finalization step. That split follows SP 800-38A Sec 5.2, which requires a
+  multiple of the *block* size only for ECB and CBC, a multiple of the *segment* size `s` for CFB,
+  and nothing at all for CTR ("the plaintext need not be a multiple of the block size").
 * **The IV is generated, never accepted.** SP 800-38A Sec 5.3 requires the CBC *and CFB* IV to be
   *unpredictable*, not merely unique, so `do_encrypt_init` draws one from the library's default
   OS-backed DRBG (Appendix C's second recommended method) and returns it; there is no API for
@@ -150,9 +153,12 @@ CFB128 (`Cfb`), SP 800-38A Sec 6.3 with `s = b`:
   must not affect any later block -- with `s = b`, Appendix D's "first `i/s` (rounding up)"
   segments is one segment for every bit position.
 * Mutation-tested: `cargo mutants -p bouncycastle-modes` reports **0 surviving mutants** across
-  the whole crate (152 mutants, 62 caught, 90 unviable, 0 missed, 0 timed out) -- 28 caught in
-  `cfb.rs`, 14 in `cfb8.rs`, 16 in `cbc.rs`, 2 each in `ecb.rs` and `iv.rs` -- including every
-  `^`-to-`|`/`&` substitution and every keystream-stubbing mutant in both CFB modules.
+  the whole crate (220 mutants, 108 caught, 112 unviable, 0 missed, 0 timed out) -- 45 caught in
+  `ctr.rs`, 28 in `cfb.rs`, 16 in `cbc.rs`, 14 in `cfb8.rs`, 2 each in `ecb.rs` and `iv.rs` --
+  including every `^`-to-`|`/`&` substitution and every keystream-stubbing mutant in the three
+  keystream modes. One mutant needed the tests to reach past runtime behaviour: stubbing out CTR's
+  compile-time counter-width guard cannot fail any runtime test, so the `compile_fail` doctests on
+  `Ctr` are what kill it.
 * Still not implemented, and listed in the crate docs: **CFB1** (`s = 1`), whose segment is a
   single bit rather than a whole number of bytes and so does not fit a byte-oriented API at all,
   and **OFB** and **CTR**.
@@ -207,9 +213,63 @@ CFB8 (`Cfb8`), SP 800-38A Sec 6.3 with `s = 8`:
 * Interoperability checked byte for byte against OpenSSL's `EVP_aes_128_cfb8` on a 37-byte message,
   in both directions.
 
-`cli`: nine new subcommands -- `aes{128,192,256}-cbc`, `aes{128,192,256}-cfb` and
-`aes{128,192,256}-cfb8` -- each taking `encrypt` or `decrypt` and streaming stdin to stdout in 1 KiB
-chunks.
+CTR (`Ctr`), SP 800-38A Sec 6.5:
+
+* **The nonce is the init data, and its length picks the counter width.** Sec 6.5 needs a sequence
+  of counter blocks that are distinct across every message under a key, and Appendix B.2's second
+  approach builds each one as a message nonce followed by a counter: "if N is the message nonce for
+  a given message, then the jth counter block is given by `Tj = N | [j]m`". `Ctr` takes that
+  literally, splitting the block by the length of its init data: the init data *is* the nonce, and
+  the remaining `BLOCK_LEN - INIT_DATA_LEN` bytes are the counter. The counter is capped at **4
+  bytes** and must be at least 1, both checked at compile time, so on AES the nonce is 12, 13, 14 or
+  15 bytes and a wrong one is a compile error rather than a runtime `Err`.
+* **The counter starts at zero**, i.e. `Tj = N | [j - 1]m`, one below B.2's `[j]m`. Appendix B
+  presents B.2 as one of "Two examples of approaches" and closes by allowing "other methods and
+  approaches for achieving the uniqueness property", so both indexings satisfy the only normative
+  requirement, that the blocks be distinct. Zero is what makes a nonce-with-zero-counter vector line
+  up with an implementation handed the whole block as an IV -- which is how the ACVP vectors are
+  written, and how OpenSSL is driven.
+* **Running out of counter is an error, and nothing is consumed.** A `CTR_LEN`-byte counter gives
+  `2^(8 * CTR_LEN)` blocks -- 64 GiB for a 4-byte counter, 4 KiB for a 1-byte one -- and Appendix
+  B.1 bounds a message at exactly that ("provided that `n <= 2^m`"). Past it the counter would
+  repeat, which for a keystream mode is keystream reuse *within one message*. `Ctr` therefore checks
+  the whole call up front and returns `SymmetricCipherError::StateError` without touching the data,
+  so a message is never half-encrypted before the mode notices. This is the first and only use in
+  the crate of the `Result` the data methods have always returned; CBC, CFB, CFB8 and ECB never fail
+  them. The counter is held as a `u64` rather than as the counter bytes precisely so that exhaustion
+  is representable: the counter field itself wraps.
+* **Both directions are parallel**, the only mode here of which that is true. Sec 6.5: "In both CTR
+  encryption and CTR decryption, the forward cipher functions can be performed in parallel."
+  Counter blocks depend on nothing but the nonce and the index, so encryption batches through
+  `encrypt_blocks8` / `encrypt_blocks2` exactly as decryption does, and encryption and decryption are
+  the same operation. Only the forward cipher function is ever used, as in the CFB modes.
+* The keystream block is the one buffer in this crate wrapped in `Secret`: a call may end part-way
+  through a block and the remainder is kept for the next one, and unlike a chaining value that
+  remainder is live key material for the bytes still to come. 224/256/288 B for AES-128/192/256 with
+  a 12-byte nonce.
+* Verified against **1853 of the 2138 NIST ACVP `ACVP-AES-CTR` AFT cases** (all three key lengths,
+  both directions), each in four groupings. The other 285 begin at a non-zero counter and so cannot
+  be expressed through a nonce-plus-zero-counter API; they are skipped with the count reported.
+* **Every ACVP case is a single block**, so none of them exercises the counter increment at all --
+  a mode whose counter never advanced, or advanced little-endian, passes the entire set. (Checked,
+  not assumed: a deliberately little-endian counter was run against the ACVP suite while these tests
+  were written, and passed.) Two things close that gap. `ctr_vector_tests.rs` adds five-block
+  vectors for all three key lengths generated with **OpenSSL 3.0.13**, whose last block is partial
+  so they also pin Sec 6.5's `MSB_u(On)`; and `ctr_tests.rs` checks the counter blocks against the
+  raw permutation **at all four counter widths**, across the 255-to-256 carry where the width allows
+  it. That width sweep matters because the counter occupies a width-dependent slice, and getting it
+  wrong is invisible to a round-trip test: both directions would build the same wrong block and
+  still recover the plaintext.
+* SP 800-38A **Appendix F.5** is not transcribed: its vectors start the counter at `0xfcfdfeff`
+  rather than zero, so they cannot be expressed through this API. What F.5 does corroborate is the
+  split -- across its four blocks the counter moves only within the last four bytes, leaving the
+  leading twelve fixed -- and a test pins that reading.
+* The counter limit is tested at two widths: a 1-byte counter (256 blocks, 4 KiB) and a 2-byte one
+  (65536 blocks, 1 MiB), in both directions, including that a refused call leaves the data and the
+  counter untouched so the bytes that do fit are unaffected by the attempt.
+
+`cli`: twelve new subcommands -- `aes{128,192,256}-cbc`, `-cfb`, `-cfb8` and `-ctr` -- each taking
+`encrypt` or `decrypt` and streaming stdin to stdout in 1 KiB chunks.
 
 * The mode-independent plumbing lives once, in two halves that share their key loading and their
   `encrypt` / `decrypt` spelling. `cli/src/block_mode_cmd.rs` holds the block half -- stdin framing
@@ -231,6 +291,11 @@ chunks.
 * The `-cfb` commands are **CFB128** and the `-cfb8` commands are **CFB8**, and every subcommand's
   help names its segment size and says the two are not interoperable, because they would otherwise
   silently produce incompatible output.
+* The `-ctr` commands write a **12-byte nonce**, not the 16-byte IV every other mode writes, so
+  their output is 12 bytes longer than their input rather than 16. The per-command help says so, and
+  `cli/tests/aes_ctr_cli_tests.rs` (21 tests) pins it along with the OpenSSL vectors end to end,
+  CTR's total malleability (a flipped ciphertext bit flips exactly one plaintext bit and disturbs
+  nothing else), and that a CFB command cannot read a CTR ciphertext.
 * Reads need not respect block boundaries: bytes accumulate in a 1 KiB buffer that goes through the flat
   `do_*_out::<1024>` when full, and the whole-block remainder at end of input goes one block at a time; verified by
   round-tripping 64 KiB through `dd bs=3`.

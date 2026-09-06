@@ -71,5 +71,6 @@ fn run<P, const KEY_LEN: usize>(
         Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>,
         Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>,
         KEY_LEN,
+        BLOCK_LEN,
     >(action, key, output_hex)
 }
