@@ -176,12 +176,32 @@ pub enum SymmetricCipherError {
     ///
     KeyMaterialError(KeyMaterialError),
     ///
+    PaddingError(PaddingError),
+    ///
     RNGError(RNGError),
     ///
     StateError(&'static str),
 }
 
+/// Errors from a [`crate::traits::Padding`] scheme.
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PaddingError {
+    /// `pad()` was asked to pad more data than fits in a block alongside at least one byte of padding.
+    /// The usize is the maximum permitted data length (`BLOCK_LEN - 1`).
+    DataLengthTooLong(usize),
+    /// `unpad()` found the block does not carry well-formed padding. Deliberately carries no detail
+    /// about *how* the padding was malformed.
+    InvalidPadding,
+}
+
 /*** Promotion functions ***/
+impl From<PaddingError> for SymmetricCipherError {
+    fn from(e: PaddingError) -> SymmetricCipherError {
+        Self::PaddingError(e)
+    }
+}
+
 impl From<KeyMaterialError> for SymmetricCipherError {
     fn from(e: KeyMaterialError) -> SymmetricCipherError {
         Self::KeyMaterialError(e)
