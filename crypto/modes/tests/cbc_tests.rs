@@ -9,7 +9,7 @@ mod common;
 use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-use bouncycastle_core_test_framework::block_permutation::TestFrameworkBlockPermutation;
+use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::{SwappedPairToy, TOY_LEN, Toy, toy_key};
@@ -62,7 +62,7 @@ fn dec_flat<const LEN: usize>(
 /// The toy must be a real permutation before any conclusion drawn from it is worth anything.
 #[test]
 fn the_toy_permutation_conforms_to_the_trait() {
-    TestFrameworkBlockPermutation::new().test::<TOY_LEN, TOY_LEN, Toy>();
+    TestFrameworkElectronicCodeBook::new().test::<TOY_LEN, TOY_LEN, Toy>();
 }
 
 #[test]

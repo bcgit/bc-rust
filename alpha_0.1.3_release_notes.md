@@ -30,7 +30,7 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
 New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of operation
 (NIST SP 800-38A), currently **CBC** (Sec 6.2). Re-exported from the umbrella crate.
 
-* `Cbc<P, Dir, KEY_LEN, BLOCK_LEN>` over any `BlockPermutation`, so the crate depends on no
+* `Cbc<P, Dir, KEY_LEN, BLOCK_LEN>` over any `ElectronicCodeBook`, so the crate depends on no
   concrete cipher. The direction is a type parameter: `BlockCipherEncryptor` is implemented only
   for `Cbc<_, Encrypting, _, _>` and `BlockCipherDecryptor` only for `Cbc<_, Decrypting, _, _>`,
   making a wrong-direction call a compile error rather than a runtime check.
@@ -40,7 +40,7 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   supplying your own. Known-answer tests drive `do_encrypt_init_rng` with a fixed-output test RNG.
 * **Parallel decryption.** Sec 6.2 notes CBC decryption's inverse cipher calls can run in
   parallel, so `do_decrypt_blocks[_out]` walks the ciphertext in pairs through
-  `BlockPermutation::decrypt_blocks2`, with a one-block remainder for odd `N`. Measured against an
+  `ElectronicCodeBook::decrypt_blocks2`, with a one-block remainder for odd `N`. Measured against an
   otherwise identical permutation that does not override the pair methods, this is **1.83x** the
   decryption throughput (67.9 vs 37.1 MiB/s, AES-128, 16 KiB, N=8). CBC encryption is serial by
   construction and does not use it.
@@ -82,7 +82,7 @@ New crate `bouncycastle-modes` (`bouncycastle::modes`): block cipher modes of op
   the F.2 vectors, round trips across the chunk boundary, a fresh IV per invocation, hex/binary
   agreement, `--key-file` in both hex and binary, and every error path with its message.
 
-`core`: new `BlockPermutation<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
+`core`: new `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
 `new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_blocks2` / `decrypt_blocks2` that
 default to two single-block calls and which bit-sliced implementations override. The block methods
@@ -92,7 +92,7 @@ there).
 
 Testing:
 
-* `core-test-framework` gains `TestFrameworkBlockPermutation`, which pins the trait contract:
+* `core-test-framework` gains `TestFrameworkElectronicCodeBook`, which pins the trait contract:
   both directions are inverses either way round, the permutation is injective, and the pair
   methods are indistinguishable from two single-block calls **including their order** -- the check
   that makes an override safe.
@@ -131,7 +131,7 @@ Block cipher traits (PR #96):
 
 * The single `BlockCipher` streaming trait is split into `BlockCipherEncryptor` and `BlockCipherDecryptor` (mirroring
   `KEMEncapsulator` / `KEMDecapsulator`) so the direction is encoded in the implementing type. Both, and
-  `BlockPermutation`, are bounded on `Algorithm`, whose `MAX_SECURITY_STRENGTH` is the strength the `_init`
+  `ElectronicCodeBook`, are bounded on `Algorithm`, whose `MAX_SECURITY_STRENGTH` is the strength the `_init`
   constructors enforce (a mode reports its permutation's name and strength); the `SymmetricCipher` one-shot API is no
   longer a supertrait.
 * The single-block `do_{en,de}crypt_block[_out]` methods are replaced by multi-block

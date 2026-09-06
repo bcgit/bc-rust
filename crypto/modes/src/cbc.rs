@@ -27,7 +27,7 @@
 //! the forward cipher operations cannot be performed in parallel".
 //!
 //! This implementation uses that: decryption walks the ciphertext two blocks at a time and hands
-//! both to [`BlockPermutation::decrypt_blocks2`], which a bit-sliced engine computes for barely
+//! both to [`ElectronicCodeBook::decrypt_blocks2`], which a bit-sliced engine computes for barely
 //! more than the cost of one block. Encryption cannot, and does not.
 
 use crate::iv::random_iv;
@@ -35,12 +35,13 @@ use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, RNG, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, RNG,
+    SecurityStrength,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
 
-/// CBC mode over any [`BlockPermutation`], with the direction encoded in the type.
+/// CBC mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`]. [`BlockCipherEncryptor`] is implemented only for the
 /// former and [`BlockCipherDecryptor`] only for the latter, so a `Cbc<_, Encrypting, _, _>` has no
@@ -56,7 +57,7 @@ use core::marker::PhantomData;
 /// ciphertext block, both of which are public, so it is deliberately not wrapped in a `Secret`.
 pub struct Cbc<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     perm: P,
     /// `Cj-1`, initialised to the IV. See the module docs on why there is only one field for both.
@@ -66,7 +67,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// `Cj = CIPH_K(Pj XOR Cj-1)` in place, then `Cj` becomes the next chaining value.
     #[inline]
@@ -91,7 +92,7 @@ where
         self.chain = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`BlockPermutation::decrypt_blocks2`] call.
+    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::decrypt_blocks2`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Cj-1` the incoming chaining value, Sec 6.2 gives
     ///
@@ -124,7 +125,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
     /// concatenated in a `const`, and the mode is already in the type.
@@ -136,7 +137,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -174,7 +175,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`BlockCipherEncryptor::do_encrypt_init`].

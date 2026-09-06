@@ -271,8 +271,9 @@ pub trait BlockCipherEncryptor<
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
 ///
 /// This is the raw primitive a mode of operation is built on, not something to encrypt data with.
-/// It transforms exactly one block, so applying it directly to data is ECB, which is not
-/// confidential. [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
+/// It transforms exactly one block, so applying it directly to data is ECB (Sec 6.1), which is not
+/// confidential -- the trait is named for the mode it *is* when used that way, as a reminder.
+/// [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
 /// they carry initialization data and chaining state; this one carries only a key schedule.
 ///
 /// Implementors are expected to hold that key schedule in a zeroize-on-drop wrapper
@@ -281,9 +282,9 @@ pub trait BlockCipherEncryptor<
 /// # Why the block methods are infallible
 ///
 /// Every length here is fixed by a type, and a constructed value is always ready to use, so there
-/// is nothing a caller can get wrong once [`BlockPermutation::new`] has returned. Only `new` can
+/// is nothing a caller can get wrong once [`ElectronicCodeBook::new`] has returned. Only `new` can
 /// fail, and only because of the key.
-pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
+pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     Algorithm + Sized
 {
     /// Expands the key.
@@ -302,12 +303,12 @@ pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
 
     /// The forward cipher function on two *independent* blocks, in place.
     ///
-    /// Provided as two [`BlockPermutation::encrypt_block`] calls. Bit-sliced implementations
+    /// Provided as two [`ElectronicCodeBook::encrypt_block`] calls. Bit-sliced implementations
     /// override it, because a pair of blocks is their natural unit of work and costs barely more
     /// than one; see `bouncycastle-aes-lowmemory`.
     ///
     /// Overrides must be indistinguishable from the default, including the order of the two
-    /// results. `TestFrameworkBlockPermutation` pins that.
+    /// results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes whose structure is parallel -- CBC decryption, CFB decryption, CTR -- should prefer
     /// this. CBC and CFB *encryption* cannot use it: each input block depends on the previous
@@ -319,7 +320,7 @@ pub trait BlockPermutation<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     }
 
     /// The inverse cipher function on two *independent* blocks, in place.
-    /// See [`BlockPermutation::encrypt_blocks2`].
+    /// See [`ElectronicCodeBook::encrypt_blocks2`].
     fn decrypt_blocks2(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         let [a, b] = blocks;
         self.decrypt_block(a);

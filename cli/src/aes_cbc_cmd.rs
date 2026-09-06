@@ -37,7 +37,7 @@ use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle::core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
 };
 use bouncycastle::hex;
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
@@ -172,7 +172,7 @@ fn load_key<const KEY_LEN: usize>(
 /// Encrypts stdin to stdout, writing the generated IV first.
 fn encrypt_stream<P, const KEY_LEN: usize>(key: &KeyMaterial<KEY_LEN>, output_hex: bool)
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     let (mut enc, iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init(key)
         .unwrap_or_else(|e| {
@@ -203,7 +203,7 @@ where
 /// Decrypts stdin to stdout, taking the IV from the first block of input.
 fn decrypt_stream<P, const KEY_LEN: usize>(key: &KeyMaterial<KEY_LEN>, output_hex: bool)
 where
-    P: BlockPermutation<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     // The leading block is the IV, not ciphertext.
     let mut iv = [0u8; BLOCK_LEN];

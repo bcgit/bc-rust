@@ -6,7 +6,7 @@
 //! implementation hands blocks to `decrypt_blocks2` in pairs. With the bit-sliced AES, whose
 //! two-block path costs barely more than one block, decryption should therefore run at roughly
 //! twice the throughput of encryption. That gap is the entire justification for the pair methods
-//! on `BlockPermutation`, so if it disappears, something has stopped taking the pair path.
+//! on `ElectronicCodeBook`, so if it disappears, something has stopped taking the pair path.
 //!
 //! `N = 1` is included to show the effect vanishing: with one block there is no pair to form, so
 //! decryption falls back to the single-block path and the ratio should be about 1.
@@ -18,7 +18,7 @@ use bouncycastle_aes_lowmemory::{Aes128, Aes256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockPermutation, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
 };
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -49,15 +49,15 @@ impl Algorithm for UnpairedAes128 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl BlockPermutation<16, BLOCK_LEN> for UnpairedAes128 {
+impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(<Aes128 as BlockPermutation<16, BLOCK_LEN>>::new(key)?))
+        Ok(Self(<Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
     }
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <Aes128 as BlockPermutation<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
+        <Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
     }
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <Aes128 as BlockPermutation<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
+        <Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
     // encrypt_blocks2 / decrypt_blocks2 deliberately left as the trait defaults.
 }

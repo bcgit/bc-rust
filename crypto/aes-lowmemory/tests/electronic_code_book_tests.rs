@@ -1,4 +1,4 @@
-//! `BlockPermutation` trait conformance, via the shared test framework.
+//! `ElectronicCodeBook` trait conformance, via the shared test framework.
 //!
 //! The framework checks the properties every implementor must have -- both directions are
 //! inverses, the permutation is injective, the pair methods are indistinguishable from two
@@ -7,19 +7,19 @@
 //! `decrypt_blocks2`, so the default implementation is not what runs.
 
 use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256, BLOCK_LEN};
-use bouncycastle_core_test_framework::block_permutation::TestFrameworkBlockPermutation;
+use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]
-fn aes128_conforms_to_block_permutation() {
-    TestFrameworkBlockPermutation::new().test::<16, BLOCK_LEN, Aes128>();
+fn aes128_conforms_to_electronic_code_book() {
+    TestFrameworkElectronicCodeBook::new().test::<16, BLOCK_LEN, Aes128>();
 }
 
 #[test]
-fn aes192_conforms_to_block_permutation() {
-    TestFrameworkBlockPermutation::new().test::<24, BLOCK_LEN, Aes192>();
+fn aes192_conforms_to_electronic_code_book() {
+    TestFrameworkElectronicCodeBook::new().test::<24, BLOCK_LEN, Aes192>();
 }
 
 #[test]
-fn aes256_conforms_to_block_permutation() {
-    TestFrameworkBlockPermutation::new().test::<32, BLOCK_LEN, Aes256>();
+fn aes256_conforms_to_electronic_code_book() {
+    TestFrameworkElectronicCodeBook::new().test::<32, BLOCK_LEN, Aes256>();
 }

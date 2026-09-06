@@ -1,8 +1,8 @@
-# `crypto/core-test-framework` — changes for `BlockPermutation` and CBC
+# `crypto/core-test-framework` — changes for `ElectronicCodeBook` and CBC
 
 Changes made on branch `feature/officialfrancismendoza/100-AES-lightengine-CBC-mode` while adding
 `crypto/aes-lowmemory` and `crypto/modes`. Two things: a **new** per-trait suite for
-`core::traits::BlockPermutation`, and a **bug fix** to the existing `TestFrameworkBlockCipher`.
+`core::traits::ElectronicCodeBook`, and a **bug fix** to the existing `TestFrameworkBlockCipher`.
 
 For what this crate is for in general, see its [`src/lib.rs`](src/lib.rs) docs: one KAT-style
 harness per `core` trait, so that behaviour which should be consistent across implementations of a
@@ -11,17 +11,17 @@ here rather than re-written per implementation.
 
 ---
 
-## 1. New: `TestFrameworkBlockPermutation`
+## 1. New: `TestFrameworkElectronicCodeBook`
 
-[`src/block_permutation.rs`](src/block_permutation.rs), registered as `pub mod block_permutation;`
+[`src/electronic_code_book.rs`](src/electronic_code_book.rs), registered as `pub mod electronic_code_book;`
 in [`src/lib.rs`](src/lib.rs).
 
-`core::traits::BlockPermutation<KEY_LEN, BLOCK_LEN>` is new in this branch: the raw keyed
+`core::traits::ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` is new in this branch: the raw keyed
 permutation (`CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1) that a mode of operation is built on.
 It needed a conformance suite like every other `core` trait.
 
 ```rust
-TestFrameworkBlockPermutation::new().test::<KEY_LEN, BLOCK_LEN, P>();
+TestFrameworkElectronicCodeBook::new().test::<KEY_LEN, BLOCK_LEN, P>();
 ```
 
 ### What it checks, and why each check exists
@@ -39,7 +39,7 @@ TestFrameworkBlockPermutation::new().test::<KEY_LEN, BLOCK_LEN, P>();
 
 ### The order check is the load-bearing one
 
-`BlockPermutation::encrypt_blocks2` and `decrypt_blocks2` are *provided* methods: the default is
+`ElectronicCodeBook::encrypt_blocks2` and `decrypt_blocks2` are *provided* methods: the default is
 two single-block calls, and implementations are free to override them. `bouncycastle-aes-lowmemory`
 does, because a pair of blocks is exactly what its bit-sliced state holds, so the pair form costs
 barely more than one block.
@@ -56,7 +56,7 @@ takes the pair path.
 
 ### Current implementors
 
-* `crypto/aes-lowmemory/tests/block_permutation_tests.rs` — AES-128, AES-192, AES-256.
+* `crypto/aes-lowmemory/tests/electronic_code_book_tests.rs` — AES-128, AES-192, AES-256.
 * `crypto/modes/tests/cbc_tests.rs` — the toy permutation, checked before anything is concluded
   from it.
 
@@ -169,7 +169,7 @@ cargo fmt --all -- --check
 This crate has no tests of its own — it *is* tests — so it is verified by its consumers. The two
 new suites are exercised by:
 
-* `cargo test -p bouncycastle-aes-lowmemory --test block_permutation_tests` (3 tests)
+* `cargo test -p bouncycastle-aes-lowmemory --test electronic_code_book_tests` (3 tests)
 * `cargo test -p bouncycastle-modes --test cbc_tests` (11 tests, including
   `cbc_conforms_to_the_block_cipher_framework`, which is what the §2 fix unblocked, and
   `the_toy_permutation_conforms_to_the_trait`)
@@ -180,7 +180,7 @@ new suites are exercised by:
 
 1. **Fix the same loop in `TestFrameworkSymmetricCipher` and `TestFrameworkAEADCipher`** (§3).
    Three lines each, and the next implementor of either trait will otherwise hit the panic.
-2. **Decide whether the `Default` impl added to `TestFrameworkBlockPermutation` should be added to
+2. **Decide whether the `Default` impl added to `TestFrameworkElectronicCodeBook` should be added to
    the other suites** for consistency — they all have `new()` and no `Default`, which clippy
    flags on new code but not on existing code.
 3. When `crypto/padding` (PR #97) merges, its toy XOR-CBC cipher becomes a second

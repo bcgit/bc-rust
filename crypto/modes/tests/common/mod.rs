@@ -1,4 +1,4 @@
-//! Toy [`BlockPermutation`] implementations, for testing the mode independently of any real cipher.
+//! Toy [`ElectronicCodeBook`] implementations, for testing the mode independently of any real cipher.
 //!
 //! These are **not** cryptography. They exist so the structural properties of a mode -- chaining,
 //! sequencing, the pair/remainder split, direction typing -- can be tested without an AES
@@ -15,7 +15,7 @@
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, BlockPermutation, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
 
 /// Block and key length of the toy ciphers, chosen to match AES so the tests exercise the same
 /// shapes the real thing will.
@@ -51,7 +51,7 @@ impl Algorithm for Toy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl BlockPermutation<TOY_LEN, TOY_LEN> for Toy {
+impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         validate(key)?;
         let mut bytes = [0u8; TOY_LEN];
@@ -89,7 +89,7 @@ impl Algorithm for SwappedPairToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl BlockPermutation<TOY_LEN, TOY_LEN> for SwappedPairToy {
+impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
