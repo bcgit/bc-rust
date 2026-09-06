@@ -213,6 +213,9 @@ pub trait Hash: Algorithm + Default {
     /// The `num_bits` message bits are taken from the least significant bits of
     /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
     /// FIPS 202 Appendix B.1 convention and is used uniformly for every hash family in this library.
+    /// Note that the NIST CAVP SHAVS (SHA-2) test vector files pack trailing bits MSB-first
+    /// (left-justified) and must be shifted right by `8 - num_bits` before being passed here; the
+    /// SHA3VS files already use the LSB convention.
     /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`Hash::do_final`]).
     /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
     fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)
