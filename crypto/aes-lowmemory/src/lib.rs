@@ -56,11 +56,14 @@
 //! assert_eq!(blocks, [[0u8; 16], [1u8; 16]]);
 //! ```
 //!
-//! ## CBC mode
+//! ## Modes of operation
 //!
 //! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
-//! provides [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] as aliases that fill in the const
-//! parameters, with the direction left as the type parameter:
+//! provides aliases that fill in the const parameters, with the direction left as the type
+//! parameter: [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] for CBC (SP 800-38A Sec 6.2),
+//! and [`AES_CFB_128`], [`AES_CFB_192`] and [`AES_CFB_256`] for CFB128 (Sec 6.3). The two are
+//! interchangeable at the call site -- swap `AES_CBC_256` for `AES_CFB_256` in the example below
+//! and nothing else changes:
 //!
 //! ```
 //! use bouncycastle_aes_lowmemory::AES_CBC_256;
@@ -193,6 +196,7 @@
 mod aes;
 mod bitslice;
 mod cbc;
+mod cfb;
 mod round;
 mod sbox;
 mod schedule;
@@ -200,4 +204,5 @@ mod schedule;
 pub use aes::{Aes, Aes128, Aes192, Aes256, BLOCK_LEN};
 pub use bitslice::Block;
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams};
