@@ -5,6 +5,7 @@ use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
 
+/// FIPS 180-4 s. 4.2.2: the sixty-four 32-bit constants K0..K63 shared by SHA-224 and SHA-256.
 const SHA256_K: [u32; 64] = [
     0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1, 0x923F82A4, 0xAB1C5ED5,
     0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3, 0x72BE5D74, 0x80DEB1FE, 0x9BDC06A7, 0xC19BF174,
@@ -16,34 +17,126 @@ const SHA256_K: [u32; 64] = [
     0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208, 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2,
 ];
 
+/// FIPS 180-4 s. 5.3.2: the initial hash value H(0) for SHA-224.
+pub(crate) const SHA224_H0: [u32; 8] = [
+    0xC1059ED8, 0x367CD507, 0x3070DD17, 0xF70E5939, 0xFFC00B31, 0x68581511, 0x64F98FA7, 0xBEFA4FA4,
+];
+
+/// FIPS 180-4 s. 5.3.3: the initial hash value H(0) for SHA-256.
+pub(crate) const SHA256_H0: [u32; 8] = [
+    0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
+];
+
+/// FIPS 180-4 s. 4.1.2 (4.2) Ch(x, y, z) = (x AND y) XOR (NOT x AND z)
+/// Mutants note: the two masks are disjoint, so `^` and `|` give identical results here; a
+/// surviving `^`/`|` swap in this function is an equivalent mutant, not a missing test.
 #[inline]
-fn ch(x: u32, y: u32, z: u32) -> u32 {
+const fn ch(x: u32, y: u32, z: u32) -> u32 {
     (x & y) ^ (!x & z)
 }
 
+/// FIPS 180-4 s. 4.1.2 (4.3) Maj(x, y, z) = (x AND y) XOR (x AND z) XOR (y AND z).
+/// Written in the equivalent form (x AND y) OR (z AND (x XOR y)), which saves an operation.
+/// Mutants note: the two masks are disjoint, so `^` and `|` give identical results here; a
+/// surviving `^`/`|` swap in this function is an equivalent mutant, not a missing test.
 #[inline]
-fn maj(x: u32, y: u32, z: u32) -> u32 {
+const fn maj(x: u32, y: u32, z: u32) -> u32 {
     (x & y) | (z & (x ^ y))
 }
 
+/// FIPS 180-4 s. 4.1.2 (4.4) Sigma0(x) = ROTR2(x) XOR ROTR13(x) XOR ROTR22(x)
 #[inline]
-fn sum0(x: u32) -> u32 {
+const fn sum0(x: u32) -> u32 {
     x.rotate_right(2) ^ x.rotate_right(13) ^ x.rotate_right(22)
 }
 
+/// FIPS 180-4 s. 4.1.2 (4.5) Sigma1(x) = ROTR6(x) XOR ROTR11(x) XOR ROTR25(x)
 #[inline]
-fn sum1(x: u32) -> u32 {
+const fn sum1(x: u32) -> u32 {
     x.rotate_right(6) ^ x.rotate_right(11) ^ x.rotate_right(25)
 }
 
+/// FIPS 180-4 s. 4.1.2 (4.6) sigma0(x) = ROTR7(x) XOR ROTR18(x) XOR SHR3(x)
 #[inline]
-fn theta0(x: u32) -> u32 {
+const fn theta0(x: u32) -> u32 {
     x.rotate_right(7) ^ x.rotate_right(18) ^ (x >> 3)
 }
 
+/// FIPS 180-4 s. 4.1.2 (4.7) sigma1(x) = ROTR17(x) XOR ROTR19(x) XOR SHR10(x)
 #[inline]
-fn theta1(x: u32) -> u32 {
+const fn theta1(x: u32) -> u32 {
     x.rotate_right(17) ^ x.rotate_right(19) ^ (x >> 10)
+}
+
+/// FIPS 180-4 s. 6.2.2, one iteration of the outer loop: absorbs a single 512-bit message block
+/// into the hash value `s` (H(i-1) in, H(i) out).
+///
+/// Written as a `const fn` (hence `while` rather than `for` loops) to match the SHA-512 side, so the
+/// two compression functions can be read side by side against s. 6.2.2 and s. 6.4.2.
+#[inline]
+const fn compress_block(s: &mut [u32; 8], block: &[u8; 64]) {
+    // FIPS 180-4 s. 6.2.2 step 1: prepare the message schedule {W_t}.
+    let mut x = [0u32; 64];
+    // FIPS 180-4 s. 6.2.2 step 1: W_t = M_t(i) for 0 <= t <= 15 (s. 5.2.1: sixteen big-endian 32-bit words).
+    let (words, _remainder) = block.as_chunks::<4>();
+    let mut i = 0;
+    while i < 16 {
+        x[i] = u32::from_be_bytes(words[i]);
+        i += 1;
+    }
+    // FIPS 180-4 s. 6.2.2 step 1: W_t = sigma1(W_t-2) + W_t-7 + sigma0(W_t-15) + W_t-16 for 16 <= t <= 63.
+    while i < 64 {
+        x[i] = theta1(x[i - 2])
+            .wrapping_add(x[i - 7])
+            .wrapping_add(theta0(x[i - 15]))
+            .wrapping_add(x[i - 16]);
+        i += 1;
+    }
+
+    // FIPS 180-4 s. 6.2.2 step 2: initialize the working variables a..h with H(i-1).
+    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *s;
+
+    // FIPS 180-4 s. 6.2.2 step 3: for t = 0 to 63, one round. The spec rotates the working variables
+    // (h = g, g = f, ...); here the rotation is done by renaming the variables passed to the macro
+    // instead, eight rounds at a time, which is equivalent and avoids the moves. The spec's T1 lands
+    // in the "$h" position, "$d" becomes d + T1, and T1 + T2 is then computed in place.
+    macro_rules! sha256_round {
+        ($a:ident,$b:ident,$c:ident,$d:ident,$e:ident,$f:ident,$g:ident,$h:ident,$t:ident) => {
+            // FIPS 180-4 s. 6.2.2 step 3: T1 = h + Sigma1(e) + Ch(e, f, g) + K_t + W_t
+            $h = $h
+                .wrapping_add(sum1($e))
+                .wrapping_add(ch($e, $f, $g))
+                .wrapping_add(SHA256_K[$t])
+                .wrapping_add(x[$t]);
+            // FIPS 180-4 s. 6.2.2 step 3: e = d + T1
+            $d = $d.wrapping_add($h);
+            // FIPS 180-4 s. 6.2.2 step 3: a = T1 + T2, where T2 = Sigma0(a) + Maj(a, b, c)
+            $h = $h.wrapping_add(sum0($a)).wrapping_add(maj($a, $b, $c));
+            $t += 1;
+        };
+    }
+
+    let mut t: usize = 0;
+    while t < 64 {
+        sha256_round!(a, b, c, d, e, f, g, h, t);
+        sha256_round!(h, a, b, c, d, e, f, g, t);
+        sha256_round!(g, h, a, b, c, d, e, f, t);
+        sha256_round!(f, g, h, a, b, c, d, e, t);
+        sha256_round!(e, f, g, h, a, b, c, d, t);
+        sha256_round!(d, e, f, g, h, a, b, c, t);
+        sha256_round!(c, d, e, f, g, h, a, b, t);
+        sha256_round!(b, c, d, e, f, g, h, a, t);
+    }
+
+    // FIPS 180-4 s. 6.2.2 step 4: H_j(i) = (working variable j) + H_j(i-1).
+    s[0] = s[0].wrapping_add(a);
+    s[1] = s[1].wrapping_add(b);
+    s[2] = s[2].wrapping_add(c);
+    s[3] = s[3].wrapping_add(d);
+    s[4] = s[4].wrapping_add(e);
+    s[5] = s[5].wrapping_add(f);
+    s[6] = s[6].wrapping_add(g);
+    s[7] = s[7].wrapping_add(h);
 }
 
 #[derive(Clone)]
@@ -54,74 +147,16 @@ pub(crate) struct Sha256State<PARAMS: Sha256Family> {
 
 impl<PARAMS: Sha256Family> Sha256State<PARAMS> {
     pub(crate) fn new() -> Self {
-        // FIPS 180-4 s. 5.3: initial hash value H(0), supplied per-variant by the params type.
         let mut h = Secret::<[u32; 8]>::new();
+        // FIPS 180-4 s. 6.2.1 step 1: set the initial hash value H(0) (s. 5.3.3, or s. 5.3.2 for SHA-224).
         h.copy_from_slice(&PARAMS::H0);
         Self { _params: core::marker::PhantomData, h }
     }
 
     fn compress(&mut self, blocks: &[[u8; 64]]) {
-        let mut x = [0u32; 64];
-
-        // infallible; just unwrapping the [u32; 8] and re-casting to itself.
-        let s = &mut *self.h;
-        let &mut [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = s;
-
+        // FIPS 180-4 s. 6.2.2: each message block M(1), ..., M(N) is processed in order.
         for block in blocks {
-            let (chunks, _remainder) = block.as_chunks::<4>();
-            for (i, w) in x[..16].iter_mut().zip(chunks) {
-                *i = u32::from_be_bytes(*w);
-            }
-
-            for i in 16..64 {
-                x[i] = theta1(x[i - 2])
-                    .wrapping_add(x[i - 7])
-                    .wrapping_add(theta0(x[i - 15]))
-                    .wrapping_add(x[i - 16]);
-            }
-
-            macro_rules! sha256_round {
-                ($a:ident,$b:ident,$c:ident,$d:ident,$e:ident,$f:ident,$g:ident,$h:ident,$t:ident,$K:ident,$x:ident) => {
-                    $h = $h
-                        .wrapping_add(sum1($e))
-                        .wrapping_add(ch($e, $f, $g))
-                        .wrapping_add($K[$t])
-                        .wrapping_add($x[$t]);
-                    $d = $d.wrapping_add($h);
-                    $h = $h.wrapping_add(sum0($a)).wrapping_add(maj($a, $b, $c));
-                    $t += 1;
-                };
-            }
-
-            let mut t: usize = 0;
-            for _ in 0..8 {
-                sha256_round!(a, b, c, d, e, f, g, h, t, SHA256_K, x);
-                sha256_round!(h, a, b, c, d, e, f, g, t, SHA256_K, x);
-                sha256_round!(g, h, a, b, c, d, e, f, t, SHA256_K, x);
-                sha256_round!(f, g, h, a, b, c, d, e, t, SHA256_K, x);
-                sha256_round!(e, f, g, h, a, b, c, d, t, SHA256_K, x);
-                sha256_round!(d, e, f, g, h, a, b, c, t, SHA256_K, x);
-                sha256_round!(c, d, e, f, g, h, a, b, t, SHA256_K, x);
-                sha256_round!(b, c, d, e, f, g, h, a, t, SHA256_K, x);
-            }
-
-            a = a.wrapping_add(s[0]);
-            b = b.wrapping_add(s[1]);
-            c = c.wrapping_add(s[2]);
-            d = d.wrapping_add(s[3]);
-            e = e.wrapping_add(s[4]);
-            f = f.wrapping_add(s[5]);
-            g = g.wrapping_add(s[6]);
-            h = h.wrapping_add(s[7]);
-
-            s[0] = a;
-            s[1] = b;
-            s[2] = c;
-            s[3] = d;
-            s[4] = e;
-            s[5] = f;
-            s[6] = g;
-            s[7] = h;
+            compress_block(&mut self.h, block);
         }
     }
 }
@@ -167,10 +202,10 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
 
         let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
 
-        // FIPS 180-4 s. 5.1.1: final message byte = [partial bits, MSB-first] [1] [0...].
-        // With no partial bits this is the familiar 0x80. Shifts are done in u16 so that the 8-bit
-        // shift for num_partial_bits == 0 cannot overflow; the masked value is < 2^num_partial_bits so
-        // the result always fits back into a u8.
+        // FIPS 180-4 s. 5.1.1: append the bit "1" to the end of the message. The final message byte is
+        // [partial bits, MSB-first] [1] [0...]; with no partial bits this is the familiar 0x80. Shifts
+        // are done in u16 so that the 8-bit shift for num_partial_bits == 0 cannot overflow; the masked
+        // value is < 2^num_partial_bits so the result always fits back into a u8.
         let mask: u8 = ((1u16 << num_partial_bits) - 1) as u8;
         let message_bits = ((partial_byte & mask) as u16) << (8 - num_partial_bits);
         let pad_byte = (message_bits as u8) | (0x80u8 >> num_partial_bits);
@@ -178,23 +213,25 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
         self.x_buf[self.x_buf_off] = pad_byte;
         self.x_buf_off += 1;
 
-        // If the length field no longer fits in this block, zero-fill and compress, then start a fresh block.
+        // FIPS 180-4 s. 5.1.1: if fewer than 64 bits remain for l, the k zero bits run into a second block.
         if self.x_buf_off > 56 {
             self.x_buf[self.x_buf_off..].fill(0x00);
             self.state.compress(slice::from_ref(&self.x_buf));
             self.x_buf_off = 0;
         }
 
+        // FIPS 180-4 s. 5.1.1: k zero bits so that l + 1 + k = 448 mod 512, then the 64-bit big-endian
+        // message length l in bits.
         self.x_buf[self.x_buf_off..56].fill(0x00);
-        // FIPS 180-4 s. 5.1.1: append the 64-bit big-endian message length l in bits. byte_count is a
-        // byte counter, so l = (byte_count << 3) | num_partial_bits (the low three bits of
-        // byte_count << 3 are zero).
+        // byte_count is a byte counter, so l = (byte_count << 3) | num_partial_bits (the low three bits
+        // of byte_count << 3 are zero).
         let bit_len: u64 = (self.byte_count << 3) | (num_partial_bits as u64);
         self.x_buf[56..64].copy_from_slice(&bit_len.to_be_bytes());
         self.state.compress(slice::from_ref(&self.x_buf));
 
-        // FIPS 180-4 s. 6.x.2: the digest is H0 || H1 || ... (big-endian words), truncated to OUTPUT_LEN
-        // (and further to the caller's buffer if that is shorter).
+        // FIPS 180-4 s. 6.2.2: the digest is H_0(N) || ... || H_7(N) (big-endian words), truncated to the
+        // left-most OUTPUT_LEN bytes (s. 6.3 exception 2 for SHA-224), and further to the caller's
+        // buffer if that is shorter.
         let h = &self.state.h;
         for i in 0..(n / 4) {
             output[i * 4..i * 4 + 4].copy_from_slice(&h[i].to_be_bytes());
@@ -266,6 +303,7 @@ impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
             self.state.compress(slice::from_ref(&self.x_buf));
         }
 
+        // FIPS 180-4 s. 5.2.1: the message is parsed into 512-bit blocks; a partial trailing block waits in x_buf.
         let (chunks, remainder) = block.as_chunks::<64>();
 
         self.state.compress(chunks);

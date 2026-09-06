@@ -190,7 +190,8 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 use bouncycastle_sha2::{
-    SHA224, SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
+    SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256, SUSPENDED_SHA256_STATE_LEN,
+    SUSPENDED_SHA512_STATE_LEN,
 };
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SUSPENDED_SHA3_STATE_LEN};
 use bouncycastle_utils::{ct, secret::Secret};
@@ -205,6 +206,10 @@ pub const HMAC_SHA256_NAME: &str = "HMAC-SHA256";
 pub const HMAC_SHA384_NAME: &str = "HMAC-SHA384";
 ///
 pub const HMAC_SHA512_NAME: &str = "HMAC-SHA512";
+///
+pub const HMAC_SHA512_224_NAME: &str = "HMAC-SHA512/224";
+///
+pub const HMAC_SHA512_256_NAME: &str = "HMAC-SHA512/256";
 ///
 pub const HMAC_SHA3_224_NAME: &str = "HMAC-SHA3-224";
 ///
@@ -267,6 +272,32 @@ impl AlgorithmOID for HMAC_SHA512 {
     const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0b];
 }
 
+/// Public type for HMAC using SHA512/224.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA512_224 = HMAC<SHA512_224, 128>;
+impl Algorithm for HMAC_SHA512_224 {
+    const ALG_NAME: &'static str = HMAC_SHA512_224_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+}
+/// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-224 { digestAlgorithm 12 }
+impl AlgorithmOID for HMAC_SHA512_224 {
+    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 12];
+    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0c];
+}
+
+/// Public type for HMAC using SHA512/256.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA512_256 = HMAC<SHA512_256, 128>;
+impl Algorithm for HMAC_SHA512_256 {
+    const ALG_NAME: &'static str = HMAC_SHA512_256_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+/// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-256 { digestAlgorithm 13 }
+impl AlgorithmOID for HMAC_SHA512_256 {
+    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 13];
+    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0d];
+}
+
 /// Public type for HKDF using SHA3_224.
 #[allow(non_camel_case_types)]
 pub type HMAC_SHA3_224 = HMAC<SHA3_224, 144>;
@@ -327,7 +358,7 @@ impl AlgorithmOID for HMAC_SHA3_512 {
 // per RFC 2104, a key no longer than the block is used verbatim (only longer keys are pre-hashed down
 // to the output length). So the buffer size is a const parameter of the struct, set per hash to its
 // block length by the type aliases below. Block lengths (bytes): SHA-224/256 = 64, SHA-384/512 = 128,
-// SHA3-224 = 144, SHA3-256 = 136, SHA3-384 = 104, SHA3-512 = 72.
+// SHA-512/224 = SHA-512/256 = 128, SHA3-224 = 144, SHA3-256 = 136, SHA3-384 = 104, SHA3-512 = 72.
 //
 // The default is used only when `HMAC<HASH>` is written without an explicit buffer size; it is the
 // largest block length across all supported hashes, so it is always large enough.
@@ -554,6 +585,10 @@ pub const SUSPENDED_HMAC_SHA256_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
 pub const SUSPENDED_HMAC_SHA384_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
 /// Length in bytes of the serialized state of [`HMAC_SHA512`].
 pub const SUSPENDED_HMAC_SHA512_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
+/// Length in bytes of the serialized state of [`HMAC_SHA512_224`].
+pub const SUSPENDED_HMAC_SHA512_224_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
+/// Length in bytes of the serialized state of [`HMAC_SHA512_256`].
+pub const SUSPENDED_HMAC_SHA512_256_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
 /// Length in bytes of the serialized state of [`HMAC_SHA3_224`].
 pub const SUSPENDED_HMAC_SHA3_224_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
 /// Length in bytes of the serialized state of [`HMAC_SHA3_256`].
@@ -638,6 +673,8 @@ impl_hmac_keygen!(SHA224, 64, 28, HashDRBG_SHA256);
 impl_hmac_keygen!(SHA256, 64, 32, HashDRBG_SHA256);
 impl_hmac_keygen!(SHA384, 128, 48, HashDRBG_SHA512);
 impl_hmac_keygen!(SHA512, 128, 64, HashDRBG_SHA512);
+impl_hmac_keygen!(SHA512_224, 128, 28, HashDRBG_SHA512);
+impl_hmac_keygen!(SHA512_256, 128, 32, HashDRBG_SHA512);
 impl_hmac_keygen!(SHA3_224, 144, 28, HashDRBG_SHA256);
 impl_hmac_keygen!(SHA3_256, 136, 32, HashDRBG_SHA256);
 impl_hmac_keygen!(SHA3_384, 104, 48, HashDRBG_SHA512);

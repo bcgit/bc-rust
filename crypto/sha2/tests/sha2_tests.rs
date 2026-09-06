@@ -50,6 +50,28 @@ mod sha2_tests {
             test_framework.test_hash::<SHA512>(b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu", b"\x8e\x95\x9b\x75\xda\xe3\x13\xda\x8c\xf4\xf7\x28\x14\xfc\x14\x3f\x8f\x77\x79\xc6\xeb\x9f\x7f\xa1\x72\x99\xae\xad\xb6\x88\x90\x18\x50\x1d\x28\x9e\x49\x00\xf7\xe4\x33\x1b\x99\xde\xc4\xb5\x43\x3a\xc7\xd3\x29\xee\xb6\xdd\x26\x54\x5e\x96\xe5\x5b\x87\x4b\xe9\x09");
             test_framework.test_hash::<SHA512>(&DUMMY_SEED[..512], b"\xed\xb9\xbe\xd7\x21\xaa\x6a\x5f\x6f\xbc\x66\x19\xd3\xa3\xc2\xbe\x3d\x04\x30\x43\xf0\x5a\x9a\xeb\xc7\xb1\x19\x7a\x2a\xa9\xc4\x9a\x57\xd5\xdd\xd4\x67\x4c\x17\x85\x78\x50\x88\xd9\xf1\xff\x42\xc7\x97\xa0\x2a\xdc\x9b\x81\x7a\x13\x9a\x50\x97\x0d\xa6\xc9\x95\x24");
         }
+
+        /// Vectors: "" and the one-byte message from NIST CAVP SHA512_224ShortMsg.rsp (Len = 0 and
+        /// Len = 8); "abc" and the two-block message from the NIST example file SHA512_224.pdf.
+        #[test]
+        fn sha512_224() {
+            let test_framework = TestFrameworkHash::new();
+            test_framework.test_hash::<SHA512_224>(b"", b"\x6e\xd0\xdd\x02\x80\x6f\xa8\x9e\x25\xde\x06\x0c\x19\xd3\xac\x86\xca\xbb\x87\xd6\xa0\xdd\xd0\x5c\x33\x3b\x84\xf4");
+            test_framework.test_hash::<SHA512_224>(b"\xcf", b"\x41\x99\x23\x9e\x87\xd4\x7b\x6f\xed\xa0\x16\x80\x2b\xf3\x67\xfb\x6e\x8b\x56\x55\xef\xf6\x22\x5c\xb2\x66\x8f\x4a");
+            test_framework.test_hash::<SHA512_224>(b"abc", b"\x46\x34\x27\x0f\x70\x7b\x6a\x54\xda\xae\x75\x30\x46\x08\x42\xe2\x0e\x37\xed\x26\x5c\xee\xe9\xa4\x3e\x89\x24\xaa");
+            test_framework.test_hash::<SHA512_224>(b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu", b"\x23\xfe\xc5\xbb\x94\xd6\x0b\x23\x30\x81\x92\x64\x0b\x0c\x45\x33\x35\xd6\x64\x73\x4f\xe4\x0e\x72\x68\x67\x4a\xf9");
+        }
+
+        /// Vectors: "" and the one-byte message from NIST CAVP SHA512_256ShortMsg.rsp (Len = 0 and
+        /// Len = 8); "abc" and the two-block message from the NIST example file SHA512_256.pdf.
+        #[test]
+        fn sha512_256() {
+            let test_framework = TestFrameworkHash::new();
+            test_framework.test_hash::<SHA512_256>(b"", b"\xc6\x72\xb8\xd1\xef\x56\xed\x28\xab\x87\xc3\x62\x2c\x51\x14\x06\x9b\xdd\x3a\xd7\xb8\xf9\x73\x74\x98\xd0\xc0\x1e\xce\xf0\x96\x7a");
+            test_framework.test_hash::<SHA512_256>(b"\xfa", b"\xc4\xef\x36\x92\x3c\x64\xe5\x1e\x87\x57\x20\xe5\x50\x29\x8a\x5a\xb8\xa3\xf2\xf8\x75\xb1\xe1\xa4\xc9\xb9\x5b\xab\xf7\x34\x4f\xef");
+            test_framework.test_hash::<SHA512_256>(b"abc", b"\x53\x04\x8e\x26\x81\x94\x1e\xf9\x9b\x2e\x29\xb7\x6b\x4c\x7d\xab\xe4\xc2\xd0\xc6\x34\xfc\x6d\x46\xe0\xe2\xf1\x31\x07\xe7\xaf\x23");
+            test_framework.test_hash::<SHA512_256>(b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu", b"\x39\x28\xe1\x84\xfb\x86\x90\xf8\x40\xda\x39\x88\x12\x1d\x31\xbe\x65\xcb\x9d\x3e\xf8\x3e\xe6\x14\x6f\xea\xc8\x61\xe1\x9b\x56\x3a");
+        }
     }
 
     /// FIPS 180-4 s. 5.1: bit-oriented messages. Zero partial bits must equal the byte-oriented
@@ -101,6 +123,8 @@ mod sha2_tests {
         check::<SHA256>();
         check::<SHA384>();
         check::<SHA512>();
+        check::<SHA512_224>();
+        check::<SHA512_256>();
     }
 
     /// Bit-oriented known answers (FIPS 180-4 s. 5.1). Expected values were produced by an
@@ -187,16 +211,26 @@ mod sha2_tests {
         assert_eq!(SHA256::OUTPUT_LEN, 32);
         assert_eq!(SHA384::OUTPUT_LEN, 48);
         assert_eq!(SHA512::OUTPUT_LEN, 64);
+        assert_eq!(SHA512_224::OUTPUT_LEN, 28);
+        assert_eq!(SHA512_256::OUTPUT_LEN, 32);
+        assert_eq!(SHA512t::<224>::OUTPUT_LEN, 28);
+        assert_eq!(SHA512t::<256>::OUTPUT_LEN, 32);
 
         assert_eq!(SHA224::BLOCK_LEN, 64);
         assert_eq!(SHA256::BLOCK_LEN, 64);
         assert_eq!(SHA384::BLOCK_LEN, 128);
         assert_eq!(SHA512::BLOCK_LEN, 128);
+        assert_eq!(SHA512_224::BLOCK_LEN, 128);
+        assert_eq!(SHA512_256::BLOCK_LEN, 128);
 
         assert_eq!(SHA224::new().block_bitlen(), 512);
         assert_eq!(SHA256::new().block_bitlen(), 512);
         assert_eq!(SHA384::new().block_bitlen(), 1024);
         assert_eq!(SHA512::new().block_bitlen(), 1024);
+        assert_eq!(SHA512_224::new().block_bitlen(), 1024);
+        assert_eq!(SHA512_256::new().block_bitlen(), 1024);
+        assert_eq!(SHA512_224::new().output_len(), 28);
+        assert_eq!(SHA512_256::new().output_len(), 32);
     }
 
     #[test]
@@ -205,6 +239,10 @@ mod sha2_tests {
         assert_eq!(SHA256::ALG_NAME, SHA256_NAME);
         assert_eq!(SHA384::ALG_NAME, SHA384_NAME);
         assert_eq!(SHA512::ALG_NAME, SHA512_NAME);
+        assert_eq!(SHA512_224::ALG_NAME, SHA512_224_NAME);
+        assert_eq!(SHA512_256::ALG_NAME, SHA512_256_NAME);
+        assert_eq!(SHA512_224_NAME, "SHA512/224");
+        assert_eq!(SHA512_256_NAME, "SHA512/256");
     }
 
     #[test]
@@ -213,6 +251,22 @@ mod sha2_tests {
         assert_eq!(SHA256::default().max_security_strength(), SecurityStrength::_128bit);
         assert_eq!(SHA384::default().max_security_strength(), SecurityStrength::_192bit);
         assert_eq!(SHA512::default().max_security_strength(), SecurityStrength::_256bit);
+        assert_eq!(SHA512_224::default().max_security_strength(), SecurityStrength::_112bit);
+        assert_eq!(SHA512_256::default().max_security_strength(), SecurityStrength::_128bit);
+        assert_eq!(SHA512_224::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
+        assert_eq!(SHA512_256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+    }
+
+    /// NIST CSOR: id-sha512-224 { hashAlgs 5 }, id-sha512-256 { hashAlgs 6 }.
+    #[test]
+    fn test_oids() {
+        use bouncycastle_core::traits::AlgorithmOID;
+        assert_eq!(SHA512_224::OID, &[2, 16, 840, 1, 101, 3, 4, 2, 5]);
+        assert_eq!(SHA512_256::OID, &[2, 16, 840, 1, 101, 3, 4, 2, 6]);
+        assert_eq!(SHA512_224::OID_DER.last(), Some(&5));
+        assert_eq!(SHA512_256::OID_DER.last(), Some(&6));
+        assert_eq!(&SHA512_224::OID_DER[..10], &SHA512::OID_DER[..10]);
+        assert_eq!(&SHA512_256::OID_DER[..10], &SHA512::OID_DER[..10]);
     }
 
     #[test]
@@ -277,5 +331,16 @@ mod sha2_tests {
             Err(SuspendableError::InvalidData) => { /* good */ }
             _ => panic!("Expected an error"),
         }
+
+        // SHA512/224: same state layout as SHA512, but the truncated output must survive the
+        // round trip too.
+        let mut sha512_224 = SHA512_224::new();
+        sha512_224.do_update(str.as_bytes());
+        TestFrameworkSuspendableState::new().test(&sha512_224);
+        let serialized_state = sha512_224.clone().suspend();
+        let output = sha512_224.do_final();
+        let output2 = SHA512_224::from_suspended(serialized_state).unwrap().do_final();
+        assert_eq!(output, output2);
+        assert_eq!(output.len(), 28);
     }
 }

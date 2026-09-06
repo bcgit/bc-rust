@@ -78,7 +78,10 @@ use bouncycastle_hmac as hmac;
 use bouncycastle_hmac::{
     HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME,
 };
-use bouncycastle_hmac::{HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_NAME};
+use bouncycastle_hmac::{
+    HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_224_NAME,
+    HMAC_SHA512_256_NAME, HMAC_SHA512_NAME,
+};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha3 as sha3;
 
@@ -105,6 +108,10 @@ pub enum MACFactory {
     HMAC_SHA384(hmac::HMAC<sha2::SHA384>),
     ///
     HMAC_SHA512(hmac::HMAC<sha2::SHA512>),
+    ///
+    HMAC_SHA512_224(hmac::HMAC<sha2::SHA512_224>),
+    ///
+    HMAC_SHA512_256(hmac::HMAC<sha2::SHA512_256>),
     ///
     HMAC_SHA3_224(hmac::HMAC<sha3::SHA3_224>),
     ///
@@ -138,6 +145,12 @@ impl MACFactory {
             HMAC_SHA256_NAME => Ok(Self::HMAC_SHA256(hmac::HMAC::<sha2::SHA256>::new(key)?)),
             HMAC_SHA384_NAME => Ok(Self::HMAC_SHA384(hmac::HMAC::<sha2::SHA384>::new(key)?)),
             HMAC_SHA512_NAME => Ok(Self::HMAC_SHA512(hmac::HMAC::<sha2::SHA512>::new(key)?)),
+            HMAC_SHA512_224_NAME => {
+                Ok(Self::HMAC_SHA512_224(hmac::HMAC::<sha2::SHA512_224>::new(key)?))
+            }
+            HMAC_SHA512_256_NAME => {
+                Ok(Self::HMAC_SHA512_256(hmac::HMAC::<sha2::SHA512_256>::new(key)?))
+            }
             HMAC_SHA3_224_NAME => Ok(Self::HMAC_SHA3_224(hmac::HMAC::<sha3::SHA3_224>::new(key)?)),
             HMAC_SHA3_256_NAME => Ok(Self::HMAC_SHA3_256(hmac::HMAC::<sha3::SHA3_256>::new(key)?)),
             HMAC_SHA3_384_NAME => Ok(Self::HMAC_SHA3_384(hmac::HMAC::<sha3::SHA3_384>::new(key)?)),
@@ -167,6 +180,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.output_len(),
             Self::HMAC_SHA384(h) => h.output_len(),
             Self::HMAC_SHA512(h) => h.output_len(),
+            Self::HMAC_SHA512_224(h) => h.output_len(),
+            Self::HMAC_SHA512_256(h) => h.output_len(),
             Self::HMAC_SHA3_224(h) => h.output_len(),
             Self::HMAC_SHA3_256(h) => h.output_len(),
             Self::HMAC_SHA3_384(h) => h.output_len(),
@@ -180,6 +195,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.mac(data),
             Self::HMAC_SHA384(h) => h.mac(data),
             Self::HMAC_SHA512(h) => h.mac(data),
+            Self::HMAC_SHA512_224(h) => h.mac(data),
+            Self::HMAC_SHA512_256(h) => h.mac(data),
             Self::HMAC_SHA3_224(h) => h.mac(data),
             Self::HMAC_SHA3_256(h) => h.mac(data),
             Self::HMAC_SHA3_384(h) => h.mac(data),
@@ -195,6 +212,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.mac_out(data, out),
             Self::HMAC_SHA384(h) => h.mac_out(data, out),
             Self::HMAC_SHA512(h) => h.mac_out(data, out),
+            Self::HMAC_SHA512_224(h) => h.mac_out(data, out),
+            Self::HMAC_SHA512_256(h) => h.mac_out(data, out),
             Self::HMAC_SHA3_224(h) => h.mac_out(data, out),
             Self::HMAC_SHA3_256(h) => h.mac_out(data, out),
             Self::HMAC_SHA3_384(h) => h.mac_out(data, out),
@@ -208,6 +227,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.verify(data, mac),
             Self::HMAC_SHA384(h) => h.verify(data, mac),
             Self::HMAC_SHA512(h) => h.verify(data, mac),
+            Self::HMAC_SHA512_224(h) => h.verify(data, mac),
+            Self::HMAC_SHA512_256(h) => h.verify(data, mac),
             Self::HMAC_SHA3_224(h) => h.verify(data, mac),
             Self::HMAC_SHA3_256(h) => h.verify(data, mac),
             Self::HMAC_SHA3_384(h) => h.verify(data, mac),
@@ -221,6 +242,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.do_update(data),
             Self::HMAC_SHA384(h) => h.do_update(data),
             Self::HMAC_SHA512(h) => h.do_update(data),
+            Self::HMAC_SHA512_224(h) => h.do_update(data),
+            Self::HMAC_SHA512_256(h) => h.do_update(data),
             Self::HMAC_SHA3_224(h) => h.do_update(data),
             Self::HMAC_SHA3_256(h) => h.do_update(data),
             Self::HMAC_SHA3_384(h) => h.do_update(data),
@@ -234,6 +257,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.do_final(),
             Self::HMAC_SHA384(h) => h.do_final(),
             Self::HMAC_SHA512(h) => h.do_final(),
+            Self::HMAC_SHA512_224(h) => h.do_final(),
+            Self::HMAC_SHA512_256(h) => h.do_final(),
             Self::HMAC_SHA3_224(h) => h.do_final(),
             Self::HMAC_SHA3_256(h) => h.do_final(),
             Self::HMAC_SHA3_384(h) => h.do_final(),
@@ -249,6 +274,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA384(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA512(h) => h.do_final_out(&mut out),
+            Self::HMAC_SHA512_224(h) => h.do_final_out(&mut out),
+            Self::HMAC_SHA512_256(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA3_224(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA3_256(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA3_384(h) => h.do_final_out(&mut out),
@@ -262,6 +289,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.do_verify_final(mac),
             Self::HMAC_SHA384(h) => h.do_verify_final(mac),
             Self::HMAC_SHA512(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA512_224(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA512_256(h) => h.do_verify_final(mac),
             Self::HMAC_SHA3_224(h) => h.do_verify_final(mac),
             Self::HMAC_SHA3_256(h) => h.do_verify_final(mac),
             Self::HMAC_SHA3_384(h) => h.do_verify_final(mac),
@@ -275,6 +304,8 @@ impl MAC for MACFactory {
             Self::HMAC_SHA256(h) => h.max_security_strength(),
             Self::HMAC_SHA384(h) => h.max_security_strength(),
             Self::HMAC_SHA512(h) => h.max_security_strength(),
+            Self::HMAC_SHA512_224(h) => h.max_security_strength(),
+            Self::HMAC_SHA512_256(h) => h.max_security_strength(),
             Self::HMAC_SHA3_224(h) => h.max_security_strength(),
             Self::HMAC_SHA3_256(h) => h.max_security_strength(),
             Self::HMAC_SHA3_384(h) => h.max_security_strength(),
