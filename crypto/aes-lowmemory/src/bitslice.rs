@@ -1,72 +1,24 @@
-//! Conversion between AES blocks and the bit-sliced representation the round functions act on.
+//! Conversion functions between AES blocks and the bit-sliced representation the round functions act on.
 //!
-//! # What "bit-sliced" means here
-//!
-//! The round functions in [`crate::round`] and the S-box in [`crate::sbox`] do not operate on
-//! bytes. They operate on eight `u32` *bit-planes*, `q[0]..q[7]`, where plane `q[k]` collects
-//! bit `k` of every byte of the state. That is what lets the S-box be a Boolean circuit: one
+//! The round functions in [`crate::round`] and the S-box in [`crate::sbox`] opperate accourding to
+//! circuit `SLP_AES_113.txt` from
+//! Peralta's circuit collection, described in J. Boyar and R. Peralta, "A new combinational logic
+//! minimization technique with applications to cryptology", <https://eprint.iacr.org/2009/191.pdf>.
+//! Its fundamental innovation is to take the 16 bytes of the state and effectively transpose it into
+//! 8 u16's where the i'th u16 holds the i'th bit of each byte of the state.
+//! That is what lets the S-box be a Boolean circuit: one
 //! `&` or `^` on a plane applies that gate to all sixteen byte positions at once, and no memory
 //! access is ever indexed by a secret value.
-//!
-//! Eight 32-bit planes hold 256 bits = 32 bytes, which is *two* 16-byte AES blocks. Both blocks
-//! are always processed together; see the crate docs for why, and [`crate::aes`] for how a
-//! single-block call fills the unused half.
-//!
-//! # The layout, derived
-//!
-//! [`ortho`] transposes, within each byte-lane of the eight words, the 8x8 bit matrix indexed by
-//! (word number, bit number within the lane):
-//!
-//! ```text
-//! after ortho:  q[k] bit (8L + i)  ==  before ortho:  q[i] bit (8L + k)
-//! ```
-//!
-//! [`pack`] loads block A as four little-endian `u32`s into the even words and block B into the
-//! odd words, so before `ortho` byte-lane `L` of word `2c` holds `A[4c + L]`. Substituting
-//! `j = 4c + L` for the byte index, and FIPS 197 Eq (3.6) `s[r,c] = in[r + 4c]` -- which makes
-//! `r = j mod 4` and `c = j div 4` -- gives the layout every mask in this crate depends on:
-//!
-//! ```text
-//! q[k] bit (8r + 2c)      ==  bit k of s[r,c] of block A
-//! q[k] bit (8r + 2c + 1)  ==  bit k of s[r,c] of block B
-//! ```
-//!
-//! In words: **the byte-lane of the word selects the state row `r`, and the bit-pair within that
-//! lane selects the state column `c`; the low bit of the pair is block A and the high bit is
-//! block B.** Written out, the bit position of `s[r,c]` within every plane is:
-//!
-//! ```text
-//!            c=0   c=1   c=2   c=3
-//!    r=0 |    0     2     4     6
-//!    r=1 |    8    10    12    14      (bit position of block A;
-//!    r=2 |   16    18    20    22       add 1 for block B)
-//!    r=3 |   24    26    28    30
-//! ```
-//!
-//! This is why SHIFTROWS() becomes a rotation *within* a byte-lane (row `r` lives entirely in
-//! lane `r`, and one column step is two bit positions), and why MIXCOLUMNS() uses rotations by
-//! 8 and 16 (one and two rows). Both are derived from this table in [`crate::round`].
-//!
-//! `test_layout_matches_the_documented_table` below pins the table exhaustively; every mask in
-//! this crate is only correct relative to it.
-//!
-//! # Provenance
-//!
-//! The three-stage masked-swap transpose and the even/odd two-block packing are translated from
-//! BearSSL `src/symcipher/aes_ct.c` (`br_aes_ct_ortho`) and `aes_ct_cbcdec.c` (the `q[0]`,
-//! `q[2]`, `q[4]`, `q[6]` load order), by Thomas Pornin, MIT licensed.
+//! This implementation handles two input blocks at a time, so the planes are in fact u32's still with
+//! 8 lanes.
 
-/// One 16-byte AES block, in the order of FIPS 197 Eq (3.6): `block[r + 4c] == s[r,c]`.
-pub type Block = [u8; crate::BLOCK_LEN];
+use crate::aes::Block;
+use bouncycastle_utils::secret::Secret;
 
 /// The eight bit-planes holding two blocks. See the module docs for the layout.
 pub(crate) type Planes = [u32; 8];
 
 /// Transposes bytes into bit-planes, and back -- it is its own inverse.
-///
-/// Three stages of masked swaps exchange bit-fields of width 1, 2 and 4 between pairs of words,
-/// which together transpose the 8x8 bit matrix inside each byte-lane. See the module docs for
-/// the resulting layout.
 ///
 /// Translated from BearSSL `aes_ct.c:br_aes_ct_ortho` (the `SWAP2`/`SWAP4`/`SWAP8` macros).
 pub(crate) fn ortho(q: &mut Planes) {
@@ -75,10 +27,9 @@ pub(crate) fn ortho(q: &mut Planes) {
     ///
     /// `cl` and `ch` are complementary, and `s` is exactly the field width, so in each returned
     /// word the two combined operands occupy disjoint bits: `(x & cl)` and `(y & cl) << s` cannot
-    /// both be set in the same position. `|` and `^` therefore compute the same function here,
-    /// which is why `cargo mutants` reports the `| -> ^` mutants in this function as surviving --
-    /// they are equivalent programs. `test_ortho_is_an_involution` and
-    /// `test_layout_matches_the_documented_table` are what actually pin this code.
+    /// both be set in the same position.
+    ///
+    /// Mutants note: `|` and `^` compute the same function here.
     #[inline(always)]
     fn swap(cl: u32, ch: u32, s: u32, x: u32, y: u32) -> (u32, u32) {
         ((x & cl) | ((y & cl) << s), ((x & ch) >> s) | (y & ch))
@@ -102,8 +53,10 @@ pub(crate) fn ortho(q: &mut Planes) {
 ///
 /// Block `a` goes into the even words and block `b` into the odd words as little-endian `u32`s,
 /// then [`ortho`] transposes them into planes.
-pub(crate) fn pack(a: &Block, b: &Block) -> Planes {
-    let mut q = [0u32; 8];
+///
+/// As this represents the working state of the block cipher, it is wrapped in [`Secret`].
+pub(crate) fn pack(a: &Block, b: &Block) -> Secret<Planes> {
+    let mut q = Secret::<[u32; 8]>::new();
     for c in 0..4 {
         // `try_into` cannot fail: the slice is a fixed 4-byte window of a 16-byte array.
         q[2 * c] = u32::from_le_bytes(a[4 * c..4 * c + 4].try_into().unwrap());

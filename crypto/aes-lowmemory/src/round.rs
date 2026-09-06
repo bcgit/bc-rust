@@ -1,35 +1,7 @@
-//! The three linear round transformations, on bit-planes.
-//!
-//! | Function | FIPS 197 | Inverse | FIPS 197 |
-//! |---|---|---|---|
-//! | [`add_round_key`] | Sec 5.1.4, Eq 5.9 | itself (XOR) | Sec 5.3.4 |
-//! | [`shift_rows`] | Sec 5.1.2, Eq 5.5 | [`inv_shift_rows`] | Sec 5.3.1, Eq 5.12 |
-//! | [`mix_columns`] | Sec 5.1.3, Eq 5.8 | [`inv_mix_columns`] | Sec 5.3.3, Eq 5.15 |
-//!
-//! SUBBYTES() is in [`crate::sbox`], because it is the only non-linear step and the only one that
-//! needs a circuit rather than masks and rotations.
+//! Implements AddRoundKey(), ShiftRows(), and MixColumns() from FIPS 197.
 //!
 //! Everything here is XOR, AND with a constant mask, and rotation by a constant. No operation
 //! depends on the data, so all of it is inherently constant-time.
-//!
-//! # How the layout turns row and column arithmetic into shifts
-//!
-//! From the layout derived in [`crate::bitslice`], within every plane the bit holding `s[r,c]`
-//! of block A sits at bit position `8r + 2c` (and block B at `8r + 2c + 1`). Two consequences
-//! drive every constant below:
-//!
-//! * **A row is a byte-lane.** All of row `r` lives in bits `8r..8r+8` of every plane, and
-//!   stepping one column along that row is a step of two bit positions. So SHIFTROWS(), which
-//!   only permutes within rows, is a rotation *inside* each byte-lane, by `2r` positions.
-//! * **Rotating a whole plane by 8 changes the row.** `x.rotate_right(8)` brings the contents of
-//!   lane `r+1` into lane `r`, so `rotate_right(8)` reads "the next row down" and
-//!   `rotate_right(16)` reads "two rows down". MIXCOLUMNS(), which combines the four rows of a
-//!   column, is therefore expressible with those two rotations and no shuffling at all.
-//!
-//! Provenance: the mask and rotation constants are translated from BearSSL
-//! `src/symcipher/aes_ct_enc.c` and `aes_ct_dec.c` (MIT, Thomas Pornin). Each is re-derived from
-//! the layout in the comments below, and each is pinned by a test in this file against a
-//! byte-wise reference written directly from the FIPS 197 equations.
 
 use crate::bitslice::Planes;
 
@@ -166,10 +138,7 @@ pub(crate) fn mix_columns(q: &mut Planes) {
 /// The reduction terms are not confined to planes 0, 1, 3 and 4 here, because the higher-degree
 /// coefficients feed carries into every plane.
 ///
-/// Translated from BearSSL `aes_ct_dec.c:inv_mix_columns`. Rather than trust the expansion by
-/// inspection, `test_inv_mix_columns_matches_equation_5_15` checks it against a byte-wise
-/// reference written straight from Eq 5.15, and `test_inv_mix_columns_inverts_mix_columns`
-/// checks the two are inverses.
+/// Translated from BearSSL `aes_ct_dec.c:inv_mix_columns`.
 #[inline(always)]
 #[rustfmt::skip]
 pub(crate) fn inv_mix_columns(q: &mut Planes) {

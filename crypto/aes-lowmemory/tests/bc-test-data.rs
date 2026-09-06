@@ -25,7 +25,7 @@
 //! implementing it from anything other than that specification would be guesswork. The test
 //! reports how many it skipped so the gap is visible rather than silent.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use bouncycastle_aes_lowmemory::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -43,7 +43,7 @@ const TEST_DATA_PATHS: [&str; 2] = [
 
 const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";
 
-/// Locates the ACVP AES directory, or `None` if `bc-test-data` is not checked out.
+/// Locates the bc-test-data AES directory, or `None` if `bc-test-data` is not checked out.
 fn test_data_dir() -> Option<PathBuf> {
     for candidate in TEST_DATA_PATHS {
         let path = Path::new(candidate);
@@ -92,7 +92,7 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
     let transform: BlockTransform = match key.len() {
         16 => {
             let km = cipher_key::<16>(key);
-            let aes = Aes128::new(&km).expect("valid AES-128 key");
+            let aes = AES_128::new(&km).expect("valid AES-128 key");
             if encrypt {
                 Box::new(move |b| aes.encrypt_block(b))
             } else {
@@ -101,7 +101,7 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
         }
         24 => {
             let km = cipher_key::<24>(key);
-            let aes = Aes192::new(&km).expect("valid AES-192 key");
+            let aes = AES_192::new(&km).expect("valid AES-192 key");
             if encrypt {
                 Box::new(move |b| aes.encrypt_block(b))
             } else {
@@ -110,7 +110,7 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
         }
         32 => {
             let km = cipher_key::<32>(key);
-            let aes = Aes256::new(&km).expect("valid AES-256 key");
+            let aes = AES_256::new(&km).expect("valid AES-256 key");
             if encrypt {
                 Box::new(move |b| aes.encrypt_block(b))
             } else {
@@ -139,23 +139,23 @@ fn ecb_pairwise(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
     match key.len() {
         16 => {
             let km = cipher_key::<16>(key);
-            let aes = Aes128::new(&km).unwrap();
+            let aes = AES_128::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
+                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
             });
         }
         24 => {
             let km = cipher_key::<24>(key);
-            let aes = Aes192::new(&km).unwrap();
+            let aes = AES_192::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
+                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
             });
         }
         32 => {
             let km = cipher_key::<32>(key);
-            let aes = Aes256::new(&km).unwrap();
+            let aes = AES_256::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
+                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
             });
         }
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),

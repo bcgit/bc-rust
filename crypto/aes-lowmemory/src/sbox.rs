@@ -1,51 +1,4 @@
 //! SUBBYTES() and INVSUBBYTES() as a Boolean circuit (FIPS 197 Sec 5.1.1 and Sec 5.3.2).
-//!
-//! # Why a circuit and not a table
-//!
-//! FIPS 197 Sec 5.1.1 presents the S-box as a 256-entry lookup table (Table 4). A table lookup
-//! indexed by a byte of the state is indexed by *secret data*, and on any CPU with a data cache
-//! the access pattern -- hence the timing -- depends on that secret. That is the standard AES
-//! cache-timing side channel, and it cannot be closed while keeping the lookup.
-//!
-//! So this module does not have a table. It computes the same function as Table 4 with AND, XOR
-//! and XNOR gates applied to the bit-planes described in [`crate::bitslice`]. Every operation is
-//! a straight-line word operation on public *positions*, so there is no secret-dependent memory
-//! access and no secret-dependent branch. The two functions here are the only place in the crate
-//! where secret data meets non-linear logic; everything else is XOR, rotate and mask.
-//!
-//! Because the planes hold sixteen byte positions of two blocks at once, one pass of the circuit
-//! substitutes all 32 bytes -- the whole SUBBYTES() transformation of two blocks -- rather than
-//! one byte.
-//!
-//! # What the circuit computes
-//!
-//! FIPS 197 Sec 5.1.1 defines the S-box as inversion in GF(2^8) followed by an affine map
-//! (Eq. 5.2), tabulated in Table 4. The circuit below is the 113-gate straight-line program of
-//! Boyar and Peralta -- 32 AND, 77 XOR and 4 XNOR gates -- which computes exactly that,
-//! including the affine map and its `{63}` constant (the constant is folded into the four XNORs
-//! at the end of the bottom linear transformation).
-//!
-//! Sources:
-//! * The straight-line program `SLP_AES_113.txt`, from Peralta's circuit collection.
-//! * J. Boyar and R. Peralta, "A new combinational logic minimization technique with
-//!   applications to cryptology", <https://eprint.iacr.org/2009/191.pdf>.
-//! * The same circuit appears in BearSSL `aes_ct.c:br_aes_ct_bitslice_Sbox` (MIT, Thomas
-//!   Pornin), whose variable naming is kept here so the two can be diffed. BearSSL re-associates
-//!   two gates in the non-linear section (its `t17`/`t21` differ from the SLP file, computing the
-//!   same `t21`) and uses a different but equivalent bottom linear transformation; where they
-//!   disagree this file follows `SLP_AES_113.txt`.
-//!
-//! The gate list is a mechanical transcription of `SLP_AES_113.txt`: `+` became `^`, `x` became
-//! `&`, `#` became `!(.. ^ ..)`, and the SLP variable names are unchanged apart from case. It is
-//! not independently meaningful line by line and should not be "tidied"; it is verified as a
-//! whole by `test_sbox_matches_fips197_table_4`, which checks all 256 inputs against Table 4.
-//!
-//! # Bit numbering
-//!
-//! The SLP numbers its inputs `U0..U7` and outputs `S0..S7` with **`U0` as the most significant
-//! bit** of the byte, which is the reverse of the plane index. So `U0` is plane `q[7]` and `U7`
-//! is plane `q[0]`, and likewise for the outputs. `test_sbox_matches_fips197_table_4` is what
-//! pins this down -- reversing it produces a wrong S-box, not a subtly different one.
 
 use crate::bitslice::Planes;
 
@@ -64,7 +17,6 @@ pub(crate) fn sbox(q: &mut Planes) {
     let u6 = q[1];
     let u7 = q[0];
 
-    // Top linear transformation (23 gates): the input basis change.
     let y14 = u3 ^ u5;
     let y13 = u0 ^ u6;
     let y9 = u0 ^ u3;
@@ -89,7 +41,6 @@ pub(crate) fn sbox(q: &mut Planes) {
     let y21 = y13 ^ y16;
     let y18 = u0 ^ y16;
 
-    // Non-linear section (62 gates): the GF(2^8) inversion, and the only ANDs in the circuit.
     let t2 = y12 & y15;
     let t3 = y3 & y6;
     let t4 = t3 ^ t2;
@@ -125,10 +76,11 @@ pub(crate) fn sbox(q: &mut Planes) {
     let t34 = t23 ^ t33;
     let t35 = t27 ^ t33;
     let t36 = t24 & t35;
-    // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
+
+    // Mutants note: mutants reports the `^ -> |` mutant on the next line as surviving. That is a true
     // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
     // bytes, so XOR and OR agree here. It is the only one of the circuit's 77 XOR gates with that
-    // property -- every other `^ -> |` mutant is killed by `test_sbox_matches_fips197_table_4`.
+    // property.
     let t37 = t36 ^ t34;
     let t38 = t27 ^ t36;
     let t39 = t29 & t38;
@@ -157,8 +109,6 @@ pub(crate) fn sbox(q: &mut Planes) {
     let z16 = t45 & y14;
     let z17 = t41 & y8;
 
-    // Bottom linear transformation (28 gates): the output basis change and the affine map of
-    // Eq. 5.2, whose `{63}` constant is the four XNORs below.
     let tc1 = z15 ^ z16;
     let tc2 = z10 ^ tc1;
     let tc3 = z9 ^ tc2;

@@ -63,7 +63,20 @@ which parts were done for a very specific reason and should not be changed on a 
 
 ## Naming Conventions
 
-All normal rust naming convensions from clippy apply. In addition, some library-specific naming conventions:
+All normal rust naming conventions from clippy apply, with the following exceptions:
+
+* Many bouncycastle crates use `#[allow(non_snake_case)]`, `#[allow(non_upper_case_globals)]`
+  `#[allow(non_camel_case_types)]` and so forth, either locally or crate-wide to indicate a preference for keeping the
+  exact capitalization from a spec (FIPS, RFC, etc) over following rust convention. For example, a struct implementing
+  the Advanced Encryption Standard (AES) in Galois Counter Mode (GCM) should be named `struct AES_GCM` to match the spec
+  even though rust convention might be `struct AesGcm`. The same goes for variable and constant names, for example, if a
+  spec uses a notation where `A` is a matrix and `a` is vector, then it is perfectly acceptable to do
+  `let A = Matrix;` and
+  `let a = Vector`, or the global constant `Rcon` should keep that capitalization and not `RCON` or `R_CON`. The
+  intention is to speed up human code review by a human familiar with the spec is more important than following rust
+  convention.
+
+In addition, some library-specific naming conventions:
 
 * In constants, "LEN" is the length of a value in bytes (typically used for sizing arrays), whereas "SIZE" is a value in
   bits (typically used as a security parameter). For example SHA256 could have constants `HASH_SIZE = 256` and
