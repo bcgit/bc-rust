@@ -1,19 +1,20 @@
 //! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
 
-use crate::matrix::{Matrix, Vector};
+use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mlkem::{N, q, q_inv};
+use crate::params::MLKEMParams;
 use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::XOF;
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
-pub(crate) fn expandA<const k: usize>(rho: &[u8; 32]) -> Matrix<k, k> {
-    let mut A_hat = Matrix::<k, k>::new();
-    for i in 0..k {
+pub(crate) fn expandA<P: MLKEMParams>(rho: &[u8; 32]) -> P::MatrixA {
+    let mut A_hat = P::MatrixA::new();
+    for i in 0..P::k {
         // 5: for (𝑗 ← 0; 𝑗 < 𝑘; 𝑗++)
-        for j in 0..k {
+        for j in 0..P::k {
             // 6: 𝐀[𝑖, 𝑗] ← SampleNTT(𝜌‖𝑗‖𝑖)
             //  ▷ 𝑗 and 𝑖 are bytes 33 and 34 of the input
-            A_hat.elems[i][j] = sample_ntt(rho, &[j as u8, i as u8]);
+            A_hat.set_elem(i, j, sample_ntt(rho, &[j as u8, i as u8]));
         }
     }
 
@@ -158,7 +159,7 @@ pub fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 /// Input: byte array 𝐵 ∈ 𝔹64𝜂 .
 /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the sampled polynomial
 /// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
-pub fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
+pub(crate) fn sample_poly_cbd(bytes: &[u8], eta: i16) -> Polynomial {
     debug_assert_eq!(bytes.len(), 64 * eta as usize);
 
     let mut f = Polynomial::new();
@@ -205,7 +206,7 @@ pub fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
 
 /// SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
 /// Performs both the PRF and SamplePolyCBD steps
-pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial {
+pub(crate) fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
     // Alg 13: 9: 𝐬[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
     //  ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
     match eta {
@@ -220,7 +221,7 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
                 buf
             };
 
-            sample_poly_cbd::<eta>(&buf)
+            sample_poly_cbd(&buf, eta)
         }
         3 => {
             let buf = {
@@ -232,21 +233,18 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
                 buf
             };
 
-            sample_poly_cbd::<eta>(&buf)
+            sample_poly_cbd(&buf, eta)
         }
         _ => unreachable!(),
     }
 }
 
 /// Internal helper for keygen since both s_hat and e_hat have identical sampling code
-pub(crate) fn sample_vector_CBD<const k: usize, const eta: i16>(
-    b: &[u8; 32],
-    mut n: u8,
-) -> Vector<k> {
-    let mut v = Vector::<k>::new();
+pub(crate) fn sample_vector_CBD<P: MLKEMParams>(b: &[u8; 32], mut n: u8, eta: i16) -> P::VecK {
+    let mut v = P::VecK::new();
 
-    for i in 0..k {
-        v[i] = sample_poly_CBD::<eta>(b, n);
+    for i in 0..P::k {
+        v[i] = sample_poly_CBD(b, n, eta);
 
         // Alg 13: 10: 𝑁 ← 𝑁 + 1
         n += 1;
@@ -333,48 +331,36 @@ pub(crate) fn ntt_base_mult(
     r[off + 1] = out_val1;
 }
 
-pub(crate) fn pack_ciphertext<const k: usize, const CT_LEN: usize, const du: i16, const dv: i16>(
-    u: &Vector<k>,
+pub(crate) fn pack_ciphertext<P: MLKEMParams, const CT_LEN: usize>(
+    u: &P::VecK,
     v: &Polynomial,
 ) -> [u8; CT_LEN] {
     let mut out = [0u8; CT_LEN];
 
     // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let lim: usize = k * (N * (du as usize) / 8);
+    let lim: usize = P::k * (N * (P::du as usize) / 8);
 
-    u.compress_pol_vec::<du>(&mut out[..lim]);
-    v.compress_poly::<dv>(&mut out[lim..]);
+    u.compress_pol_vec::<P>(&mut out[..lim]);
+    v.compress_poly::<P>(&mut out[lim..]);
     out
 }
 
-pub(crate) fn unpack_ciphertext_u<
-    const k: usize,
-    const CT_LEN: usize,
-    const du: i16,
-    const dv: i16,
->(
+pub(crate) fn unpack_ciphertext_u<P: MLKEMParams, const CT_LEN: usize>(
     c: &[u8; CT_LEN],
-) -> Vector<k> {
+) -> P::VecK {
     // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let lim: usize = k * (N * (du as usize) / 8);
+    let lim: usize = P::k * (N * (P::du as usize) / 8);
 
-    let u = Vector::<k>::decompress_pol_vec::<du>(&c[..lim]);
-
-    u
+    P::VecK::decompress_pol_vec::<P>(&c[..lim])
 }
 
-pub(crate) fn unpack_ciphertext_v<
-    const k: usize,
-    const CT_LEN: usize,
-    const du: i16,
-    const dv: i16,
->(
+pub(crate) fn unpack_ciphertext_v<P: MLKEMParams, const CT_LEN: usize>(
     c: &[u8; CT_LEN],
 ) -> Polynomial {
     // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let lim: usize = k * (N * (du as usize) / 8);
+    let lim: usize = P::k * (N * (P::du as usize) / 8);
 
-    let v = Polynomial::decompress_poly::<dv>(&c[lim..]);
+    let v = Polynomial::decompress_poly::<P>(&c[lim..]);
 
     v
 }

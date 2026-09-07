@@ -1,6 +1,6 @@
 use crate::aux_functions::{
-    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, bitlen_eta, expandA,
-    power_2_round_vec, simple_bit_pack_t1, simple_bit_unpack_t1,
+    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, expandA, power_2_round_vec,
+    simple_bit_pack_t1, simple_bit_unpack_t1,
 };
 use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa::H;
@@ -447,7 +447,7 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> MLDSAPrivateKey<P
         off += 128;
 
         let mut buf = [0u8; 32 * 4]; // largest possible buffer
-        let eta_pack_len = bitlen_eta(P::ETA);
+        let eta_pack_len = P::POLY_ETA_PACKED_LEN;
 
         let sk_chunks = out[off..off + P::l * eta_pack_len].chunks_mut(eta_pack_len);
         debug_assert_eq!(sk_chunks.len(), P::l);
@@ -611,8 +611,8 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
         };
         key.K.copy_from_slice(&sk[32..64]);
         let mut off = 128;
-        let eta_pack_len = bitlen_eta(P::ETA);
-        let eta = P::ETA as i32;
+        let eta_pack_len = P::POLY_ETA_PACKED_LEN;
+        let eta = P::eta as i32;
 
         // unpack s1 directly into key.s1_hat so that we don't make additional non-Secret copies.
         let sk_chunks = sk[off..off + (P::l * eta_pack_len)].chunks(eta_pack_len);

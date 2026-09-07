@@ -2,9 +2,7 @@
 //! and other intermediate values by never holding the whole thing in memory at once, but re-constructing
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
-use crate::aux_functions::{
-    bit_unpack_eta_out, bitlen_eta, expand_mask_poly, rej_ntt_poly, unpack_z_row,
-};
+use crate::aux_functions::{bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly, unpack_z_row};
 use crate::params::MLDSAParams;
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::SignatureError;
@@ -107,7 +105,7 @@ pub(crate) fn compute_z_component<P: MLDSAParams>(
     let mut z = cs1;
     z.add_ntt(&y);
 
-    if z.check_norm(P::GAMMA1_MINUS_BETA) { Ok(None) } else { Ok(Some(z)) }
+    if z.check_norm(P::gamma1_minus_beta) { Ok(None) } else { Ok(Some(z)) }
 }
 
 pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
@@ -130,7 +128,7 @@ pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
     let mut w0cs2 = w.clone();
     w0cs2.low_bits::<P>();
     w0cs2.sub(&cs2);
-    if w0cs2.check_norm(P::GAMMA2_MINUS_BETA) { None } else { Some(w0cs2) }
+    if w0cs2.check_norm(P::gamma2_minus_beta) { None } else { Some(w0cs2) }
 }
 
 pub(crate) fn compute_ct0_component<P: MLDSAParams>(
@@ -143,7 +141,7 @@ pub(crate) fn compute_ct0_component<P: MLDSAParams>(
     let mut ct0 = t0_hat; // rename
     ct0.inv_ntt();
 
-    if ct0.check_norm(P::GAMMA2) { None } else { Some(ct0) }
+    if ct0.check_norm(P::gamma2) { None } else { Some(ct0) }
 }
 
 /// Unpack a single s value from the packed representation.
@@ -156,7 +154,7 @@ pub(crate) fn s_unpack<P: MLDSAParams, B: ZeroizablePrimitive + AsRef<[u8]>>(
 ) -> Polynomial {
     let mut s = Polynomial::new();
     let packed = (**s_packed).as_ref();
-    let width = bitlen_eta(P::ETA);
+    let width = P::POLY_ETA_PACKED_LEN;
     bit_unpack_eta_out::<P>(&packed[idx * width..(idx + 1) * width], &mut s);
     s
 }

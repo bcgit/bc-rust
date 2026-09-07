@@ -1,5 +1,5 @@
 use crate::aux_functions::{
-    bit_pack_eta, bit_pack_t0, bitlen_eta, power_2_round, rej_bounded_poly, simple_bit_pack_t1,
+    bit_pack_eta, bit_pack_t0, power_2_round, rej_bounded_poly, simple_bit_pack_t1,
     simple_bit_unpack_t1,
 };
 use crate::low_memory_helpers::{expandA_elem, s_unpack};
@@ -314,7 +314,7 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
             ));
         }
 
-        if seed.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
+        if seed.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(SignatureError::KeyGenError("SecurityStrength"));
         }
 
@@ -574,12 +574,10 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
 
     fn compute_s1_packed(&self) -> Secret<P::S1Packed> {
         let mut s1_packed: Secret<P::S1Packed> = Secret::new();
+        let width = P::POLY_ETA_PACKED_LEN;
         for idx in 0..P::l {
             let s1_i = self.compute_s1_row(idx);
-            bit_pack_eta::<P>(
-                &s1_i,
-                &mut s1_packed.as_mut()[idx * bitlen_eta(P::ETA)..(idx + 1) * bitlen_eta(P::ETA)],
-            );
+            bit_pack_eta::<P>(&s1_i, &mut s1_packed.as_mut()[idx * width..(idx + 1) * width]);
         }
         s1_packed
     }
@@ -591,12 +589,10 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
 
     fn compute_s2_packed(&self) -> Secret<P::S2Packed> {
         let mut s2_packed: Secret<P::S2Packed> = Secret::new();
+        let width = P::POLY_ETA_PACKED_LEN;
         for idx in 0..P::k {
             let s2_i = self.compute_s2_row(idx);
-            bit_pack_eta::<P>(
-                &s2_i,
-                &mut s2_packed.as_mut()[idx * bitlen_eta(P::ETA)..(idx + 1) * bitlen_eta(P::ETA)],
-            );
+            bit_pack_eta::<P>(&s2_i, &mut s2_packed.as_mut()[idx * width..(idx + 1) * width]);
         }
         s2_packed
     }

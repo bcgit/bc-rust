@@ -153,7 +153,7 @@ impl Polynomial {
         let mut out = <P::PolyW1Packed as ZeroizablePrimitive>::ZEROED;
         let r = out.as_mut();
 
-        match P::GAMMA2 {
+        match P::gamma2 {
             // ML-DSA-44: (𝑞 − 1)/(2𝛾2) − 1 = 43, so four 6-bit coefficients pack into three bytes.
             GAMMA2_Q_MINUS_1_OVER_88 => {
                 for i in 0..N / 4 {

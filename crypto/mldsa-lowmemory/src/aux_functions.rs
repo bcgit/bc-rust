@@ -35,7 +35,7 @@ pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
 /// Output: An integer between −𝜂 and 𝜂, or ⊥.
 #[inline(always)]
 pub(crate) fn coeff_from_half_byte<P: MLDSAParams>(b: u8) -> Result<i32, ()> {
-    if P::ETA == 2 && b < 15 {
+    if P::eta == 2 && b < 15 {
         // Original code is bad because '%' is not constant-time.
         // Ok(2 - (b % 5) as i32)
         // TODO: Verify whether this function is constant time and whether it can be further optimized
@@ -46,7 +46,7 @@ pub(crate) fn coeff_from_half_byte<P: MLDSAParams>(b: u8) -> Result<i32, ()> {
         };
         Ok(2 - b as i32)
     } else {
-        if P::ETA == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
+        if P::eta == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
     }
 }
 
@@ -66,16 +66,6 @@ pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
     output
 }
 
-/// As defined in Algorithm 17, this gives the length of a packed bitstring representing a polynomial
-/// whose coefficients have been rounded to \[-eta, eta], which is 32*bitlen(2*eta).
-pub const fn bitlen_eta(eta: usize) -> usize {
-    match eta {
-        2 => 32 * 3,
-        4 => 32 * 4,
-        _ => panic!("Invalid eta value"),
-    }
-}
-
 /// A variant of Algorithm 17 BitPack specific to a=eta, b=eta
 /// Encodes a polynomial 𝑤 into a byte string.
 /// Input: 𝑎, 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in \[−eta, eta].
@@ -84,12 +74,12 @@ pub const fn bitlen_eta(eta: usize) -> usize {
 // and ETA = 4 each compile to just their own arm, leaving no dispatch at runtime.
 #[inline(always)]
 pub(crate) fn bit_pack_eta<P: MLDSAParams>(w: &Polynomial, r: &mut [u8]) {
-    debug_assert_eq!(r.len(), bitlen_eta(P::ETA));
+    debug_assert_eq!(r.len(), P::POLY_ETA_PACKED_LEN);
 
     // temp swap space
     let mut t: [u8; 8] = [0; 8];
 
-    match P::ETA {
+    match P::eta {
         // MLDSA-44 and MLDSA-87
         2 => {
             let eta: i32 = 2;
@@ -173,14 +163,14 @@ pub(crate) fn bitpack_gamma1<P: MLDSAParams>(z: &Polynomial, out: &mut [u8]) {
     out.fill(0);
 
     let mut t: [u32; 4] = [0; 4];
-    match P::GAMMA1 {
+    match P::gamma1 {
         // MLDSA-44
         GAMMA1_2_POW_17 => {
             for i in 0..N / 4 {
-                t[0] = (P::GAMMA1 - z[4 * i]) as u32;
-                t[1] = (P::GAMMA1 - z[4 * i + 1]) as u32;
-                t[2] = (P::GAMMA1 - z[4 * i + 2]) as u32;
-                t[3] = (P::GAMMA1 - z[4 * i + 3]) as u32;
+                t[0] = (P::gamma1 - z[4 * i]) as u32;
+                t[1] = (P::gamma1 - z[4 * i + 1]) as u32;
+                t[2] = (P::gamma1 - z[4 * i + 2]) as u32;
+                t[3] = (P::gamma1 - z[4 * i + 3]) as u32;
 
                 out[9 * i] = t[0] as u8;
                 out[9 * i + 1] = (t[0] >> 8) as u8;
@@ -196,8 +186,8 @@ pub(crate) fn bitpack_gamma1<P: MLDSAParams>(z: &Polynomial, out: &mut [u8]) {
         // MLDSA-65 and -87 have the same GAMMA1 value
         GAMMA1_2_POW_19 => {
             for i in 0..N / 2 {
-                t[0] = (P::GAMMA1 - z[2 * i]) as u32;
-                t[1] = (P::GAMMA1 - z[2 * i + 1]) as u32;
+                t[0] = (P::gamma1 - z[2 * i]) as u32;
+                t[1] = (P::gamma1 - z[2 * i + 1]) as u32;
 
                 out[5 * i] = t[0] as u8;
                 out[5 * i + 1] = (t[0] >> 8) as u8;
@@ -219,8 +209,6 @@ pub(crate) fn bitpack_gamma1<P: MLDSAParams>(z: &Polynomial, out: &mut [u8]) {
 ///
 /// Note: caller is responsible for ensuring correct input array size
 pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
-    // debug_assert_eq!(v.len(), POLY_T1PACKED_LEN);
-
     let mut w = Polynomial::new();
 
     for i in 0..N / 4 {
@@ -244,9 +232,9 @@ pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
 // and ETA = 4 each compile to just their own arm, leaving no dispatch at runtime.
 #[inline(always)]
 pub(crate) fn bit_unpack_eta_out<P: MLDSAParams>(v: &[u8], w: &mut Polynomial) {
-    debug_assert_eq!(v.len(), bitlen_eta(P::ETA));
+    debug_assert_eq!(v.len(), P::POLY_ETA_PACKED_LEN);
 
-    match P::ETA {
+    match P::eta {
         // MLDSA44 and MLDSA87
         2 => {
             let eta: i32 = 2;
@@ -298,7 +286,7 @@ pub(crate) fn bit_unpack_eta_out<P: MLDSAParams>(v: &[u8], w: &mut Polynomial) {
 pub(crate) fn bit_unpack_gamma1<P: MLDSAParams>(v: &[u8]) -> Polynomial {
     let mut w = Polynomial::new();
 
-    match P::GAMMA1 {
+    match P::gamma1 {
         // MLDSA-44
         GAMMA1_2_POW_17 => {
             // const gamma1: i32 = 1<<17;
@@ -316,10 +304,10 @@ pub(crate) fn bit_unpack_gamma1<P: MLDSAParams>(v: &[u8]) -> Polynomial {
                     | ((v[9 * i + 8] as i32) << 10))
                     & 0x3FFFF;
 
-                w[4 * i] = P::GAMMA1 - w[4 * i];
-                w[4 * i + 1] = P::GAMMA1 - w[4 * i + 1];
-                w[4 * i + 2] = P::GAMMA1 - w[4 * i + 2];
-                w[4 * i + 3] = P::GAMMA1 - w[4 * i + 3];
+                w[4 * i] = P::gamma1 - w[4 * i];
+                w[4 * i + 1] = P::gamma1 - w[4 * i + 1];
+                w[4 * i + 2] = P::gamma1 - w[4 * i + 2];
+                w[4 * i + 3] = P::gamma1 - w[4 * i + 3];
             }
         }
         // MLDSA-65 and -87 have the same GAMMA1 value
@@ -333,8 +321,8 @@ pub(crate) fn bit_unpack_gamma1<P: MLDSAParams>(v: &[u8]) -> Polynomial {
                     | ((v[5 * i + 4] as i32) << 12))
                     & 0xFFFFF;
 
-                w[2 * i] = P::GAMMA1 - w[2 * i];
-                w[2 * i + 1] = P::GAMMA1 - w[2 * i + 1];
+                w[2 * i] = P::gamma1 - w[2 * i];
+                w[2 * i + 1] = P::gamma1 - w[2 * i + 1];
             }
         }
         _ => {
@@ -366,7 +354,7 @@ pub(crate) fn unpack_z_row<P: MLDSAParams, const SIG_LEN: usize>(
 
     // Perform the norm check from
     // Alg 8; Line 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
-    if z.check_norm(P::GAMMA1_MINUS_BETA) { Err(()) } else { Ok(z) }
+    if z.check_norm(P::gamma1_minus_beta) { Err(()) } else { Ok(z) }
 }
 /// Part of unpacking the sig value
 pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
@@ -387,15 +375,15 @@ pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
     // let mut idx = 0usize;
     // This row calc is a bit weird because technically it's supposed to be done at the end
     // of the previous loop
-    let idx = if row == 0 { 0 } else { sig[pos + P::OMEGA as usize + row - 1] as usize };
+    let idx = if row == 0 { 0 } else { sig[pos + P::omega as usize + row - 1] as usize };
 
     // 3: for 𝑖 from 0 to 𝑘 − 1 do
     //  ▷ reconstruct 𝐡[𝑖]
     // for i in 0..k {
     // 4: if 𝑦[𝜔 + 𝑖] < Index or 𝑦[𝜔 + 𝑖] > 𝜔 then return ⊥
     // mutants note: don't have test vectors that exercise this condition
-    if sig[pos + (P::OMEGA as usize) + row] < (idx as u8)
-        || sig[pos + (P::OMEGA as usize) + row] > P::OMEGA as u8
+    if sig[pos + (P::omega as usize) + row] < (idx as u8)
+        || sig[pos + (P::omega as usize) + row] > P::omega as u8
     {
         return None;
     }
@@ -403,7 +391,7 @@ pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
     // 6: First ← Index
     // 7: while Index < 𝑦[𝜔 + 𝑖] do
     //   ▷ 𝑦[𝜔 + 𝑖] says how far one can advance Index
-    for j in idx..sig[pos + P::OMEGA as usize + row] as usize {
+    for j in idx..sig[pos + P::omega as usize + row] as usize {
         // 8: if Index > First then
         // 9:   if 𝑦[Index − 1] ≥ 𝑦[Index] then return ⊥
         //       ▷ malformed input
@@ -421,8 +409,8 @@ pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
     // ▷ read any leftover bytes in the first 𝜔 bytes of 𝑦 for malformed (nonzero) bytes
     // mutants note:
     if row == P::k - 1 {
-        let idx = sig[pos + P::OMEGA as usize + row] as usize;
-        for j in idx..P::OMEGA as usize {
+        let idx = sig[pos + P::omega as usize + row] as usize;
+        for j in idx..P::omega as usize {
             if sig[pos + j] != 0 {
                 return None;
             }
@@ -460,7 +448,7 @@ pub(crate) fn sample_in_ball<P: MLDSAParams>(rho: &P::SigCTilde) -> Polynomial {
     // let mut pos = 8;
     // let mut b;
     let mut j = [0u8];
-    for i in (N - P::TAU as usize)..N {
+    for i in (N - P::tau as usize)..N {
         // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
         // Note: At first, it might seem to be faster to pre-squeeze a buffer outside the loop.
         // However, after experimentation and testing, the difference is not noticeable.
@@ -661,13 +649,14 @@ pub(crate) fn decompose<P: MLDSAParams>(r: i32) -> (i32, i32) {
     let mut r1: i32;
     let mut r0 = (r + 127) >> 7;
 
-    match P::GAMMA2 {
+    match P::gamma2 {
+        // MLDSO-44
         GAMMA2_Q_MINUS_1_OVER_88 => {
             // (q - 1) / 88
             r0 = (r0 * 11275 + (1 << 23)) >> 24;
             r0 ^= ((43 - r0) >> 31) & r0;
         }
-        // ML-DSA65 and 87 have the same GAMMA2
+        // ML-DSA-65 and -87 have the same GAMMA2
         GAMMA2_Q_MINUS_1_OVER_32 => {
             // (q - 1) / 32;
             r0 = (r0 * 1025 + (1 << 21)) >> 22;
@@ -679,7 +668,7 @@ pub(crate) fn decompose<P: MLDSAParams>(r: i32) -> (i32, i32) {
         }
     }
 
-    r1 = r - r0 * 2 * P::GAMMA2;
+    r1 = r - r0 * 2 * P::gamma2;
 
     // mutants note: the choice of (q - 1) is a bit arbitrary in that after doing the bit-shifting,
     // this seems to work out mathematically equivalent to doing q/2, or (q+3)/2, but here it is left as (q-1)/2
@@ -728,7 +717,7 @@ pub(crate) fn make_hint<P: MLDSAParams>(z: i32, r: i32) -> i32 {
 
     // By the powers of someone much more clever than me, this is equivalent.
     // mutants note: we do not have KATs that exercise all branches of this if
-    if z <= P::GAMMA2 || z > q - P::GAMMA2 || (z == q - P::GAMMA2 && r == 0) { 0 } else { 1 }
+    if z <= P::gamma2 || z > q - P::gamma2 || (z == q - P::gamma2 && r == 0) { 0 } else { 1 }
 }
 
 /// Algorithm 40 UseHint(ℎ, 𝑟)
@@ -744,7 +733,7 @@ pub(super) fn use_hint<P: MLDSAParams>(a: i32, hint: i32) -> i32 {
 
     debug_assert!(hint == 1);
 
-    match P::GAMMA2 {
+    match P::gamma2 {
         // MLDSA-44
         GAMMA2_Q_MINUS_1_OVER_88 => {
             // mutants note: this passes unit tests if it's a1 >= 0

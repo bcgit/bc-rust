@@ -676,7 +676,7 @@ impl<
             ));
         }
 
-        if seed.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
+        if seed.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(SignatureError::KeyGenError(
                 "Seed SecurityStrength must match algorithm security strength",
             ));
@@ -870,7 +870,7 @@ impl<
             //  ▷ validity checks
             // This is done out-of-order on purpose for performance reasons:
             // rejection sampling check is done before any extra heavy computation
-            if sig_val_z.check_norm(P::GAMMA1_MINUS_BETA) {
+            if sig_val_z.check_norm(P::gamma1_minus_beta) {
                 kappa += P::l as u16;
                 continue;
             };
@@ -890,7 +890,7 @@ impl<
             //      and checking whether ‖r0‖∞ < γ2 − β and r1 = w1, it is equivalent to just check that
             //      ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part of w. If this check passes, w0 − cs2
             //      is the low part of w − cs2."
-            if r0.check_norm(P::GAMMA2_MINUS_BETA) {
+            if r0.check_norm(P::gamma2_minus_beta) {
                 kappa += P::l as u16;
                 continue;
             };
@@ -903,7 +903,7 @@ impl<
             // This is done out-of-order on purpose for performance reasons:
             // rejection sampling check is done before any extra heavy computation
             // mutants note: there is currently no unit test that triggers this branch
-            if ct0.check_norm(P::GAMMA2) {
+            if ct0.check_norm(P::gamma2) {
                 kappa += P::l as u16;
                 continue;
             };
@@ -922,7 +922,7 @@ impl<
 
             // 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             // mutants note: there is no test KAT that triggers this branch
-            if hint_hamming_weight > P::OMEGA {
+            if hint_hamming_weight > P::omega {
                 kappa += P::l as u16;
                 continue;
             };
@@ -963,7 +963,7 @@ impl<
             .map_err(|_| SignatureError::SignatureVerificationFailed)?;
 
         // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
-        if z.check_norm(P::GAMMA1_MINUS_BETA) {
+        if z.check_norm(P::gamma1_minus_beta) {
             return Err(SignatureError::SignatureVerificationFailed);
         }
 
@@ -1226,7 +1226,7 @@ impl<
             ));
         }
 
-        if seed.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
+        if seed.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(SignatureError::KeyGenError(
                 "Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87).",
             ));
@@ -1381,7 +1381,7 @@ impl<
             //  ▷ validity checks
             // This is done out-of-order on purpose for performance reasons:
             // rejection sampling check is done before any extra heavy computation
-            if sig_val_z.check_norm(P::GAMMA1_MINUS_BETA) {
+            if sig_val_z.check_norm(P::gamma1_minus_beta) {
                 kappa += P::l as u16;
                 continue;
             };
@@ -1417,7 +1417,7 @@ impl<
 
             // Alg 7; 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
-            if r0.check_norm(P::GAMMA2_MINUS_BETA) {
+            if r0.check_norm(P::gamma2_minus_beta) {
                 // mutants note: mutants thinks this can be replaced with -=, but in practice that makes
                 //               the rejection sampling loop go forever, so is a false positive.
                 kappa += P::l as u16;
@@ -1440,7 +1440,7 @@ impl<
             // out-of-order on purpose for performance reasons:
             //   might as well do the rejection sampling check before any extra heavy computation
             // mutants note: there is currently no unit test that triggers this branch
-            if ct0.check_norm(P::GAMMA2) {
+            if ct0.check_norm(P::gamma2) {
                 kappa += P::l as u16;
                 continue;
             };
@@ -1459,7 +1459,7 @@ impl<
 
             // Alg 7; 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             // mutants note: there is currently no unit test that triggers this branch
-            if hint_hamming_weight > P::OMEGA {
+            if hint_hamming_weight > P::omega {
                 kappa += P::l as u16;
                 continue;
             };
@@ -1546,7 +1546,7 @@ pub trait MLDSATrait<
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
         // Source the seed from the provided RNG
-        if rng.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut seed = KeyMaterial256::new();

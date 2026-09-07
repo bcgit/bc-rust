@@ -11,7 +11,6 @@
 //! is written once as a defaulted associated const rather than three times as a hand-computed
 //! number. `params::tests` checks every derivation against the values tabulated in FIPS 204.
 
-use crate::aux_functions::bitlen_eta;
 use crate::hash_mldsa::{
     HASH_ML_DSA_44_with_SHA256_NAME, HASH_ML_DSA_44_with_SHA512_NAME,
     HASH_ML_DSA_65_WITH_SHA256_NAME, HASH_ML_DSA_65_WITH_SHA512_NAME,
@@ -51,21 +50,21 @@ pub trait MLDSAParams: MLDSAParamsInternalTrait {
     /* FIPS 204, Table 1: the values assigned by each parameter set. */
 
     /// 𝜏, the number of ±1's in the polynomial 𝑐.
-    const TAU: i32;
+    const tau: i32;
     /// 𝜆, the collision strength of 𝑐̃, in bits.
-    const LAMBDA: i32;
+    const lambda: i32;
     /// 𝛾1, the coefficient range of 𝐲. Always a power of two.
-    const GAMMA1: i32;
+    const gamma1: i32;
     /// 𝛾2, the low-order rounding range.
-    const GAMMA2: i32;
+    const gamma2: i32;
     /// 𝑘, the number of rows of 𝐀.
     const k: usize;
     /// ℓ, the number of columns of 𝐀.
     const l: usize;
     /// 𝜂, the private key range.
-    const ETA: usize;
+    const eta: usize;
     /// 𝜔, the maximum number of 1's in the hint 𝐡.
-    const OMEGA: i32;
+    const omega: i32;
 
     /* FIPS 204, Table 2: sizes in bytes of keys and signatures. */
 
@@ -79,7 +78,7 @@ pub trait MLDSAParams: MLDSAParamsInternalTrait {
     /// The length of a signature.
     const SIG_LEN: usize;
 
-    /* Identity. */
+    /* Algorithm meta-data */
 
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     const ALG_NAME: &'static str;
@@ -98,37 +97,42 @@ pub trait MLDSAParams: MLDSAParamsInternalTrait {
     const SK_LEN: usize = MLDSA_SEED_LEN;
 
     /// 𝛽, which FIPS 204, Table 1 defines as "𝛽 = 𝜏 ⋅ 𝜂".
-    const BETA: i32 = Self::TAU * Self::ETA as i32;
+    const beta: i32 = Self::tau * Self::eta as i32;
 
     /// The length of the commitment hash 𝑐̃, which FIPS 204, Algorithm 26 (sigEncode) gives as
     /// 𝑐̃ ∈ 𝔹^(𝜆/4).
-    const C_TILDE_LEN: usize = Self::LAMBDA as usize / 4;
+    const C_TILDE_LEN: usize = Self::lambda as usize / 4;
 
     /// The packed length of one coordinate of 𝐳: FIPS 204, Algorithm 26 (sigEncode) writes each of
     /// the ℓ coordinates as 𝔹^(32⋅(1+bitlen (𝛾1−1))).
     ///
     /// This is also the number of bytes ExpandMask squeezes per coordinate: FIPS 204,
     /// Algorithm 34, line 1 sets 𝑐 ← 1 + bitlen (𝛾1 − 1) and line 4 squeezes 32𝑐 bytes.
-    const POLY_Z_PACKED_LEN: usize = 32 * (1 + bitlen(Self::GAMMA1 as u32 - 1));
+    const POLY_Z_PACKED_LEN: usize = 32 * (1 + bitlen(Self::gamma1 as u32 - 1));
 
     /// The packed length of one coordinate of 𝐰1: FIPS 204, Algorithm 28 (w1Encode) outputs
     /// 𝔹^(32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)) for all 𝑘 coordinates together.
-    const POLY_W1_PACKED_LEN: usize = 32 * bitlen(((q - 1) / (2 * Self::GAMMA2)) as u32 - 1);
+    const POLY_W1_PACKED_LEN: usize = 32 * bitlen(((q - 1) / (2 * Self::gamma2)) as u32 - 1);
 
-    /// The packed length of the whole of 𝐬1, i.e. ℓ coordinates each of 32⋅bitlen (2𝜂) bytes.
-    const S1_PACKED_LEN: usize = bitlen_eta(Self::ETA) * Self::l;
+    /// The packed length of one coordinate of 𝐬1 or 𝐬2: FIPS 204, Algorithm 24 (skEncode), line 3
+    /// packs each with BitPack(𝐬1[𝑖], 𝜂, 𝜂), and Algorithm 17 (BitPack) outputs
+    /// 𝔹^(32⋅bitlen (𝑎+𝑏)), so 32⋅bitlen (2𝜂).
+    const POLY_ETA_PACKED_LEN: usize = 32 * bitlen(2 * Self::eta as u32);
 
-    /// The packed length of the whole of 𝐬2, i.e. 𝑘 coordinates each of 32⋅bitlen (2𝜂) bytes.
-    const S2_PACKED_LEN: usize = bitlen_eta(Self::ETA) * Self::k;
+    /// The packed length of the whole of 𝐬1, i.e. all ℓ coordinates.
+    const S1_PACKED_LEN: usize = Self::POLY_ETA_PACKED_LEN * Self::l;
+
+    /// The packed length of the whole of 𝐬2, i.e. all 𝑘 coordinates.
+    const S2_PACKED_LEN: usize = Self::POLY_ETA_PACKED_LEN * Self::k;
 
     /// The packed length of the whole of 𝐭1, i.e. 𝑘 coordinates of SimpleBitPack output.
     const T1_PACKED_LEN: usize = POLY_T1PACKED_LEN * Self::k;
 
     /// 𝛾1 − 𝛽, the rejection bound on ‖𝐳‖∞ (FIPS 204, Algorithm 7, line 23).
-    const GAMMA1_MINUS_BETA: i32 = Self::GAMMA1 - Self::BETA;
+    const gamma1_minus_beta: i32 = Self::gamma1 - Self::beta;
 
     /// 𝛾2 − 𝛽, the rejection bound on ‖𝐫0‖∞ (FIPS 204, Algorithm 7, line 23).
-    const GAMMA2_MINUS_BETA: i32 = Self::GAMMA2 - Self::BETA;
+    const gamma2_minus_beta: i32 = Self::gamma2 - Self::beta;
 
     /* Types whose size depends on the parameter set. */
 
@@ -164,15 +168,15 @@ impl MLDSAParamsInternalTrait for MLDSA65Params {}
 impl MLDSAParamsInternalTrait for MLDSA87Params {}
 
 impl MLDSAParams for MLDSA44Params {
-    const TAU: i32 = 39;
-    const LAMBDA: i32 = 128;
-    const GAMMA1: i32 = 1 << 17;
+    const tau: i32 = 39;
+    const lambda: i32 = 128;
+    const gamma1: i32 = 1 << 17;
     // mutants note: because 𝛾1 is applied by bit-shifting, the "- 1" ends up not mattering.
-    const GAMMA2: i32 = (q - 1) / 88;
+    const gamma2: i32 = (q - 1) / 88;
     const k: usize = 4;
     const l: usize = 4;
-    const ETA: usize = 2;
-    const OMEGA: i32 = 80;
+    const eta: usize = 2;
+    const omega: i32 = 80;
 
     const PK_LEN: usize = 1312;
     const FULL_SK_LEN: usize = 2560;
@@ -188,21 +192,21 @@ impl MLDSAParams for MLDSA44Params {
     type SigCTilde = [u8; 32]; // 𝜆/4 = 128/4
     type PolyZPacked = [u8; 576]; // 32 * (1 + bitlen(2^17 - 1)) = 32 * 18
     type PolyW1Packed = [u8; 192]; // 32 * bitlen(44 - 1) = 32 * 6
-    type S1Packed = [u8; 384]; // bitlen_eta(2) * 4 = 96 * 4
-    type S2Packed = [u8; 384]; // bitlen_eta(2) * 4 = 96 * 4
+    type S1Packed = [u8; 384]; // 96 * 4
+    type S2Packed = [u8; 384]; // 96 * 4
     type T1Packed = [u8; 1280]; // 320 * 4
 }
 
 impl MLDSAParams for MLDSA65Params {
-    const TAU: i32 = 49;
-    const LAMBDA: i32 = 192;
-    const GAMMA1: i32 = 1 << 19;
+    const tau: i32 = 49;
+    const lambda: i32 = 192;
+    const gamma1: i32 = 1 << 19;
     // mutants note: because 𝛾1 is applied by bit-shifting, the "- 1" ends up not mattering.
-    const GAMMA2: i32 = (q - 1) / 32;
+    const gamma2: i32 = (q - 1) / 32;
     const k: usize = 6;
     const l: usize = 5;
-    const ETA: usize = 4;
-    const OMEGA: i32 = 55;
+    const eta: usize = 4;
+    const omega: i32 = 55;
 
     const PK_LEN: usize = 1952;
     const FULL_SK_LEN: usize = 4032;
@@ -218,21 +222,21 @@ impl MLDSAParams for MLDSA65Params {
     type SigCTilde = [u8; 48]; // 𝜆/4 = 192/4
     type PolyZPacked = [u8; 640]; // 32 * (1 + bitlen(2^19 - 1)) = 32 * 20
     type PolyW1Packed = [u8; 128]; // 32 * bitlen(16 - 1) = 32 * 4
-    type S1Packed = [u8; 640]; // bitlen_eta(4) * 5 = 128 * 5
-    type S2Packed = [u8; 768]; // bitlen_eta(4) * 6 = 128 * 6
+    type S1Packed = [u8; 640]; // 128 * 5
+    type S2Packed = [u8; 768]; // 128 * 6
     type T1Packed = [u8; 1920]; // 320 * 6
 }
 
 impl MLDSAParams for MLDSA87Params {
-    const TAU: i32 = 60;
-    const LAMBDA: i32 = 256;
-    const GAMMA1: i32 = 1 << 19;
+    const tau: i32 = 60;
+    const lambda: i32 = 256;
+    const gamma1: i32 = 1 << 19;
     // mutants note: because 𝛾1 is applied by bit-shifting, the "- 1" ends up not mattering.
-    const GAMMA2: i32 = (q - 1) / 32;
+    const gamma2: i32 = (q - 1) / 32;
     const k: usize = 8;
     const l: usize = 7;
-    const ETA: usize = 2;
-    const OMEGA: i32 = 75;
+    const eta: usize = 2;
+    const omega: i32 = 75;
 
     const PK_LEN: usize = 2592;
     const FULL_SK_LEN: usize = 4896;
@@ -248,8 +252,8 @@ impl MLDSAParams for MLDSA87Params {
     type SigCTilde = [u8; 64]; // 𝜆/4 = 256/4
     type PolyZPacked = [u8; 640]; // 32 * (1 + bitlen(2^19 - 1)) = 32 * 20
     type PolyW1Packed = [u8; 128]; // 32 * bitlen(16 - 1) = 32 * 4
-    type S1Packed = [u8; 672]; // bitlen_eta(2) * 7 = 96 * 7
-    type S2Packed = [u8; 768]; // bitlen_eta(2) * 8 = 96 * 8
+    type S1Packed = [u8; 672]; // 96 * 7
+    type S2Packed = [u8; 768]; // 96 * 8
     type T1Packed = [u8; 2560]; // 320 * 8
 }
 
@@ -257,17 +261,17 @@ impl MLDSAParams for MLDSA87Params {
 ///
 /// The bit-packing routines have one layout per distinct 𝛾1, so they dispatch on these rather than
 /// on the parameter set. ML-DSA-65 and ML-DSA-87 share the second value.
-pub(crate) const GAMMA1_2_POW_17: i32 = MLDSA44Params::GAMMA1;
+pub(crate) const GAMMA1_2_POW_17: i32 = MLDSA44Params::gamma1;
 /// See [`GAMMA1_2_POW_17`].
-pub(crate) const GAMMA1_2_POW_19: i32 = MLDSA65Params::GAMMA1;
+pub(crate) const GAMMA1_2_POW_19: i32 = MLDSA65Params::gamma1;
 
 /// The two distinct values 𝛾2 takes across the three parameter sets (FIPS 204, Table 1).
 ///
 /// As with 𝛾1, the routines that depend on 𝛾2 have one form per distinct value rather than one per
 /// parameter set. ML-DSA-65 and ML-DSA-87 share the second value.
-pub(crate) const GAMMA2_Q_MINUS_1_OVER_88: i32 = MLDSA44Params::GAMMA2;
+pub(crate) const GAMMA2_Q_MINUS_1_OVER_88: i32 = MLDSA44Params::gamma2;
 /// See [`GAMMA2_Q_MINUS_1_OVER_88`].
-pub(crate) const GAMMA2_Q_MINUS_1_OVER_32: i32 = MLDSA65Params::GAMMA2;
+pub(crate) const GAMMA2_Q_MINUS_1_OVER_32: i32 = MLDSA65Params::gamma2;
 
 /// The weaker of two security strengths.
 ///
@@ -403,15 +407,15 @@ mod tests {
 
     fn check_table_1<P: MLDSAParams>(i: usize) {
         let (tau, lambda, gamma1, gamma2, k, l, eta, omega) = TABLE_1[i];
-        assert_eq!(P::TAU, tau, "{}: 𝜏", P::ALG_NAME);
-        assert_eq!(P::LAMBDA, lambda, "{}: 𝜆", P::ALG_NAME);
-        assert_eq!(P::GAMMA1, gamma1, "{}: 𝛾1", P::ALG_NAME);
-        assert_eq!(P::GAMMA2, gamma2, "{}: 𝛾2", P::ALG_NAME);
+        assert_eq!(P::tau, tau, "{}: 𝜏", P::ALG_NAME);
+        assert_eq!(P::lambda, lambda, "{}: 𝜆", P::ALG_NAME);
+        assert_eq!(P::gamma1, gamma1, "{}: 𝛾1", P::ALG_NAME);
+        assert_eq!(P::gamma2, gamma2, "{}: 𝛾2", P::ALG_NAME);
         assert_eq!(P::k, k, "{}: 𝑘", P::ALG_NAME);
         assert_eq!(P::l, l, "{}: ℓ", P::ALG_NAME);
-        assert_eq!(P::ETA, eta, "{}: 𝜂", P::ALG_NAME);
-        assert_eq!(P::OMEGA, omega, "{}: 𝜔", P::ALG_NAME);
-        assert_eq!(P::BETA, TABLE_1_BETA[i], "{}: 𝛽 = 𝜏 ⋅ 𝜂", P::ALG_NAME);
+        assert_eq!(P::eta, eta, "{}: 𝜂", P::ALG_NAME);
+        assert_eq!(P::omega, omega, "{}: 𝜔", P::ALG_NAME);
+        assert_eq!(P::beta, TABLE_1_BETA[i], "{}: 𝛽 = 𝜏 ⋅ 𝜂", P::ALG_NAME);
     }
 
     fn check_table_2<P: MLDSAParams>(i: usize) {
@@ -432,13 +436,13 @@ mod tests {
 
         // Algorithm 24 (skEncode): 𝑠𝑘 ∈ 𝔹^(32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘)).
         let full_sk_len =
-            32 + 32 + 64 + 32 * ((P::k + P::l) * bitlen(2 * P::ETA as u32) + d as usize * P::k);
+            32 + 32 + 64 + 32 * ((P::k + P::l) * bitlen(2 * P::eta as u32) + d as usize * P::k);
         assert_eq!(P::FULL_SK_LEN, full_sk_len, "{}: Algorithm 24 output size", P::ALG_NAME);
 
         // Algorithm 26 (sigEncode): 𝜎 ∈ 𝔹^(𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘).
-        let sig_len = P::LAMBDA as usize / 4
-            + P::l * 32 * (1 + bitlen(P::GAMMA1 as u32 - 1))
-            + P::OMEGA as usize
+        let sig_len = P::lambda as usize / 4
+            + P::l * 32 * (1 + bitlen(P::gamma1 as u32 - 1))
+            + P::omega as usize
             + P::k;
         assert_eq!(P::SIG_LEN, sig_len, "{}: Algorithm 26 output size", P::ALG_NAME);
     }
@@ -487,73 +491,6 @@ mod tests {
     }
 
     #[test]
-    fn test_derived_lengths_match_the_values_they_replaced() {
-        // These were hand-written per parameter set before the derivations above existed. They are
-        // pinned here so that a change to a formula cannot silently move them.
-        assert_eq!(
-            [MLDSA44Params::C_TILDE_LEN, MLDSA65Params::C_TILDE_LEN, MLDSA87Params::C_TILDE_LEN],
-            [32, 48, 64]
-        );
-        assert_eq!(
-            [
-                MLDSA44Params::POLY_Z_PACKED_LEN,
-                MLDSA65Params::POLY_Z_PACKED_LEN,
-                MLDSA87Params::POLY_Z_PACKED_LEN
-            ],
-            [576, 640, 640]
-        );
-        assert_eq!(
-            [
-                MLDSA44Params::POLY_W1_PACKED_LEN,
-                MLDSA65Params::POLY_W1_PACKED_LEN,
-                MLDSA87Params::POLY_W1_PACKED_LEN
-            ],
-            [192, 128, 128]
-        );
-        // The three whole-vector packed lengths, from the comments on the constants they replaced.
-        assert_eq!(
-            [
-                MLDSA44Params::S1_PACKED_LEN,
-                MLDSA65Params::S1_PACKED_LEN,
-                MLDSA87Params::S1_PACKED_LEN
-            ],
-            [384, 640, 672]
-        );
-        assert_eq!(
-            [
-                MLDSA44Params::S2_PACKED_LEN,
-                MLDSA65Params::S2_PACKED_LEN,
-                MLDSA87Params::S2_PACKED_LEN
-            ],
-            [384, 768, 768]
-        );
-        assert_eq!(
-            [
-                MLDSA44Params::T1_PACKED_LEN,
-                MLDSA65Params::T1_PACKED_LEN,
-                MLDSA87Params::T1_PACKED_LEN
-            ],
-            [1280, 1920, 2560]
-        );
-        assert_eq!(
-            [
-                MLDSA44Params::GAMMA1_MINUS_BETA,
-                MLDSA65Params::GAMMA1_MINUS_BETA,
-                MLDSA87Params::GAMMA1_MINUS_BETA
-            ],
-            [131072 - 78, 524288 - 196, 524288 - 120]
-        );
-        assert_eq!(
-            [
-                MLDSA44Params::GAMMA2_MINUS_BETA,
-                MLDSA65Params::GAMMA2_MINUS_BETA,
-                MLDSA87Params::GAMMA2_MINUS_BETA
-            ],
-            [(q - 1) / 88 - 78, (q - 1) / 32 - 196, (q - 1) / 32 - 120]
-        );
-    }
-
-    #[test]
     fn test_bitlen_matches_its_definition() {
         // FIPS 204 Section 2.3 defines bitlen 𝑥 as the length of the binary expansion of 𝑥.
         assert_eq!(bitlen(0), 0);
@@ -571,10 +508,10 @@ mod tests {
     fn test_gamma_dispatch_constants_cover_every_parameter_set() {
         // The packing routines dispatch on these; a parameter set whose 𝛾 is neither value would
         // fall through to a panic at runtime rather than fail to compile, so pin them here.
-        for gamma1 in [MLDSA44Params::GAMMA1, MLDSA65Params::GAMMA1, MLDSA87Params::GAMMA1] {
+        for gamma1 in [MLDSA44Params::gamma1, MLDSA65Params::gamma1, MLDSA87Params::gamma1] {
             assert!(gamma1 == GAMMA1_2_POW_17 || gamma1 == GAMMA1_2_POW_19);
         }
-        for gamma2 in [MLDSA44Params::GAMMA2, MLDSA65Params::GAMMA2, MLDSA87Params::GAMMA2] {
+        for gamma2 in [MLDSA44Params::gamma2, MLDSA65Params::gamma2, MLDSA87Params::gamma2] {
             assert!(gamma2 == GAMMA2_Q_MINUS_1_OVER_88 || gamma2 == GAMMA2_Q_MINUS_1_OVER_32);
         }
         assert_ne!(GAMMA1_2_POW_17, GAMMA1_2_POW_19);

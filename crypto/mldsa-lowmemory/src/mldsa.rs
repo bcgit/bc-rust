@@ -915,7 +915,7 @@ impl<
 
                 // mutants note: don't have a test vector that exercises this condition,
                 //  not even in bc-test-data
-                if next_hint_count > P::OMEGA as usize {
+                if next_hint_count > P::omega as usize {
                     rejected = true;
                     break;
                 }
@@ -927,7 +927,7 @@ impl<
                     }
                 }
                 debug_assert_eq!(hint_count, next_hint_count);
-                output[hint_offset + P::OMEGA as usize + row] = hint_count as u8;
+                output[hint_offset + P::omega as usize + row] = hint_count as u8;
             }
 
             if rejected {
@@ -1080,7 +1080,7 @@ pub trait MLDSATrait<
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
         // Source the seed from the provided RNG
-        if rng.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut seed = KeyMaterial::<32>::new();
