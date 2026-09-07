@@ -512,7 +512,7 @@ pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
 ///
 pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
 
-// From FIPS 204 Table 1 and Table 2
+/*** From FIPS 204 Table 1 and Table 2 ***/
 
 // Constants that are the same for all parameter sets
 pub(crate) const N: usize = 256;
@@ -532,25 +532,25 @@ pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 
 /*** Re-exporting length constants that a caller will need instead of the entire Params objects which contains a bunch of internal algorithm detail ***/
 
-/// Length of the \[u8] holding a ML-DSA-44 public key.
+/// Length of the \[u8] holding an ML-DSA-44 public key.
 pub const MLDSA44_PK_LEN: usize = MLDSA44Params::PK_LEN;
-/// Length of the \[u8] holding a ML-DSA-44 private key.
+/// Length of the \[u8] holding an ML-DSA-44 private key.
 pub const MLDSA44_SK_LEN: usize = MLDSA44Params::SK_LEN;
-/// Length of the \[u8] holding a ML-DSA-44 signature value.
+/// Length of the \[u8] holding an ML-DSA-44 signature value.
 pub const MLDSA44_SIG_LEN: usize = MLDSA44Params::SIG_LEN;
 
-/// Length of the \[u8] holding a ML-DSA-65 public key.
+/// Length of the \[u8] holding an ML-DSA-65 public key.
 pub const MLDSA65_PK_LEN: usize = MLDSA65Params::PK_LEN;
-/// Length of the \[u8] holding a ML-DSA-65 private key.
+/// Length of the \[u8] holding an ML-DSA-65 private key.
 pub const MLDSA65_SK_LEN: usize = MLDSA65Params::SK_LEN;
-/// Length of the \[u8] holding a ML-DSA-65 signature value.
+/// Length of the \[u8] holding an ML-DSA-65 signature value.
 pub const MLDSA65_SIG_LEN: usize = MLDSA65Params::SIG_LEN;
 
-/// Length of the \[u8] holding a ML-DSA-87 public key.
+/// Length of the \[u8] holding an ML-DSA-87 public key.
 pub const MLDSA87_PK_LEN: usize = MLDSA87Params::PK_LEN;
-/// Length of the \[u8] holding a ML-DSA-87 private key.
+/// Length of the \[u8] holding an ML-DSA-87 private key.
 pub const MLDSA87_SK_LEN: usize = MLDSA87Params::SK_LEN;
-/// Length of the \[u8] holding a ML-DSA-87 signature value.
+/// Length of the \[u8] holding an ML-DSA-87 signature value.
 pub const MLDSA87_SIG_LEN: usize = MLDSA87Params::SIG_LEN;
 
 // Typedefs just to make the algorithms look more like the FIPS 204 sample code.

@@ -181,29 +181,29 @@ pub(crate) const POLY_BYTES: usize = 384;
 
 /* ML-KEM-512 sizes (FIPS 203, Table 3) */
 
-/// Length of the \[u8] holding a ML-KEM-512 public key.
+/// Length of the \[u8] holding an ML-KEM-512 public key.
 pub const MLKEM512_PK_LEN: usize = MLKEM512Params::PK_LEN;
-/// Length of the \[u8] holding a ML-KEM-512 private key.
+/// Length of the \[u8] holding an ML-KEM-512 private key.
 pub const MLKEM512_SK_LEN: usize = MLKEM512Params::SK_LEN;
-/// Length of the \[u8] holding a ML-KEM-512 ciphertext.
+/// Length of the \[u8] holding an ML-KEM-512 ciphertext.
 pub const MLKEM512_CT_LEN: usize = MLKEM512Params::CT_LEN;
 
 /* ML-KEM-768 sizes (FIPS 203, Table 3) */
 
-/// Length of the \[u8] holding a ML-KEM-768 public key.
+/// Length of the \[u8] holding an ML-KEM-768 public key.
 pub const MLKEM768_PK_LEN: usize = MLKEM768Params::PK_LEN;
-/// Length of the \[u8] holding a ML-KEM-768 private key.
+/// Length of the \[u8] holding an ML-KEM-768 private key.
 pub const MLKEM768_SK_LEN: usize = MLKEM768Params::SK_LEN;
-/// Length of the \[u8] holding a ML-KEM-768 ciphertext.
+/// Length of the \[u8] holding an ML-KEM-768 ciphertext.
 pub const MLKEM768_CT_LEN: usize = MLKEM768Params::CT_LEN;
 
 /* ML-KEM-1024 sizes (FIPS 203, Table 3) */
 
-/// Length of the \[u8] holding a ML-KEM-1024 public key.
+/// Length of the \[u8] holding an ML-KEM-1024 public key.
 pub const MLKEM1024_PK_LEN: usize = MLKEM1024Params::PK_LEN;
-/// Length of the \[u8] holding a ML-KEM-1024 private key.
+/// Length of the \[u8] holding an ML-KEM-1024 private key.
 pub const MLKEM1024_SK_LEN: usize = MLKEM1024Params::SK_LEN;
-/// Length of the \[u8] holding a ML-KEM-1024 ciphertext.
+/// Length of the \[u8] holding an ML-KEM-1024 ciphertext.
 pub const MLKEM1024_CT_LEN: usize = MLKEM1024Params::CT_LEN;
 
 // Typedefs just to make the algorithms look more like the FIPS 204 sample code.

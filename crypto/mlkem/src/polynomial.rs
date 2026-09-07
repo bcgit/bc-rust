@@ -320,7 +320,6 @@ impl Polynomial {
 ///
 /// Borrowed from:
 /// <https://github.com/pq-crystals/kyber/blob/main/ref/poly.c#L290>
-/// Note: this is exposed publicly only for testing purposes and there is no good reason to use it in production code.
 pub(crate) fn base_mult_montgomery(a: &Polynomial, b: &Polynomial) -> Polynomial {
     let mut r = Polynomial::new();
 

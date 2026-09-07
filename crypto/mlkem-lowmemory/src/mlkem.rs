@@ -50,44 +50,40 @@ pub(crate) const POLY_BYTES: usize = 384;
 
 /* ML-KEM-512 params */
 
-/// Length of the \[u8] holding a ML-KEM-512 public key.
+/// Length of the \[u8] holding an ML-KEM-512 public key.
 pub const MLKEM512_PK_LEN: usize = MLKEM512Params::PK_LEN;
-/// Length of the \[u8] holding a ML-KEM-512 seed-based private key.
+/// Length of the \[u8] holding an ML-KEM-512 seed-based private key.
 pub const MLKEM512_SK_LEN: usize = MLKEM_SEED_LEN;
 /// Length of the \[u8] holding a full ML-KEM-512 private key in the NIST encoding.
 pub const MLKEM512_FULL_SK_LEN: usize = MLKEM512Params::FULL_SK_LEN;
-/// Length of the \[u8] holding a ML-KEM-512 ciphertext.
+/// Length of the \[u8] holding an ML-KEM-512 ciphertext.
 pub const MLKEM512_CT_LEN: usize = MLKEM512Params::CT_LEN;
 
-// internal derived values
+/*** internal derived values ***/
 
 /* ML-KEM-768 params */
 
-/// Length of the \[u8] holding a ML-KEM-768 public key.
+/// Length of the \[u8] holding an ML-KEM-768 public key.
 pub const MLKEM768_PK_LEN: usize = MLKEM768Params::PK_LEN;
-/// Length of the \[u8] holding a ML-KEM-768 seed-based private key.
+/// Length of the \[u8] holding an ML-KEM-768 seed-based private key.
 pub const MLKEM768_SK_LEN: usize = MLKEM_SEED_LEN;
 /// Length of the \[u8] holding a full ML-KEM-768 private key in the NIST encoding.
 pub const MLKEM768_FULL_SK_LEN: usize = MLKEM768Params::FULL_SK_LEN;
-/// Length of the \[u8] holding a ML-KEM-768 ciphertext.
+/// Length of the \[u8] holding an ML-KEM-768 ciphertext.
 pub const MLKEM768_CT_LEN: usize = MLKEM768Params::CT_LEN;
-
-// internal derived values
 
 /* ML-KEM-1024 params */
 
-/// Length of the \[u8] holding a ML-KEM-1024 public key.
+/// Length of the \[u8] holding an ML-KEM-1024 public key.
 pub const MLKEM1024_PK_LEN: usize = MLKEM1024Params::PK_LEN;
-/// Length of the \[u8] holding a ML-KEM-512 seed-based private key.
+/// Length of the \[u8] holding an ML-KEM-1024 seed-based private key.
 pub const MLKEM1024_SK_LEN: usize = MLKEM_SEED_LEN;
-/// Length of the \[u8] holding a full ML-KEM-512 private key in the NIST encoding.
+/// Length of the \[u8] holding a full ML-KEM-1024 private key in the NIST encoding.
 pub const MLKEM1024_FULL_SK_LEN: usize = MLKEM1024Params::FULL_SK_LEN;
-/// Length of the \[u8] holding a ML-KEM-1024 ciphertext.
+/// Length of the \[u8] holding an ML-KEM-1024 ciphertext.
 pub const MLKEM1024_CT_LEN: usize = MLKEM1024Params::CT_LEN;
 
-// internal derived values
-
-// Typedefs just to make the algorithms look more like the FIPS 204 sample code.
+/*** Typedefs just to make the algorithms look more like the FIPS 204 sample code. ***/
 pub(crate) type G = SHA3_512;
 pub(crate) type H = SHA3_256;
 pub(crate) type J = SHAKE256;

@@ -442,31 +442,31 @@ pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 
 /*** Re-exporting length constants that a caller will need instead of the entire Params objects which contains a bunch of internal algorithm detail ***/
 
-/// Length of the \[u8] holding a ML-DSA-44 public key.
+/// Length of the \[u8] holding an ML-DSA-44 public key.
 pub const MLDSA44_PK_LEN: usize = MLDSA44Params::PK_LEN;
-/// Length of the \[u8] holding a ML-DSA-44 private key, which in this implementation is just a 32-byte seed.
+/// Length of the \[u8] holding an ML-DSA-44 private key, which in this implementation is just a 32-byte seed.
 pub const MLDSA44_SK_LEN: usize = MLDSA44Params::SK_LEN;
 /// The length of the FIPS representation of the private key, which can be produced by [`MLDSAPrivateKeyTrait::encode_full_sk`]
 pub const MLDSA44_FULL_SK_LEN: usize = MLDSA44Params::FULL_SK_LEN;
-/// Length of the \[u8] holding a ML-DSA-44 signature value.
+/// Length of the \[u8] holding an ML-DSA-44 signature value.
 pub const MLDSA44_SIG_LEN: usize = MLDSA44Params::SIG_LEN;
 
-/// Length of the \[u8] holding a ML-DSA-65 public key.
+/// Length of the \[u8] holding an ML-DSA-65 public key.
 pub const MLDSA65_PK_LEN: usize = MLDSA65Params::PK_LEN;
-/// Length of the \[u8] holding a ML-DSA-65 private key, which in this implementation is just a 32-byte seed.
+/// Length of the \[u8] holding an ML-DSA-65 private key, which in this implementation is just a 32-byte seed.
 pub const MLDSA65_SK_LEN: usize = MLDSA65Params::SK_LEN;
 /// The length of the FIPS representation of the private key, which can be produced by [`MLDSAPrivateKeyTrait::encode_full_sk`]
 pub const MLDSA65_FULL_SK_LEN: usize = MLDSA65Params::FULL_SK_LEN;
-/// Length of the \[u8] holding a ML-DSA-65 signature value.
+/// Length of the \[u8] holding an ML-DSA-65 signature value.
 pub const MLDSA65_SIG_LEN: usize = MLDSA65Params::SIG_LEN;
 
-/// Length of the \[u8] holding a ML-DSA-87 public key.
+/// Length of the \[u8] holding an ML-DSA-87 public key.
 pub const MLDSA87_PK_LEN: usize = MLDSA87Params::PK_LEN;
-/// Length of the \[u8] holding a ML-DSA-87 private key, which in this implementation is just a 32-byte seed.
+/// Length of the \[u8] holding an ML-DSA-87 private key, which in this implementation is just a 32-byte seed.
 pub const MLDSA87_SK_LEN: usize = MLDSA87Params::SK_LEN;
 /// The length of the FIPS representation of the private key, which can be produced by [`MLDSAPrivateKeyTrait::encode_full_sk`]
 pub const MLDSA87_FULL_SK_LEN: usize = MLDSA87Params::FULL_SK_LEN;
-/// Length of the \[u8] holding a ML-DSA-87 signature value.
+/// Length of the \[u8] holding an ML-DSA-87 signature value.
 pub const MLDSA87_SIG_LEN: usize = MLDSA87Params::SIG_LEN;
 
 // Typedefs just to make the algorithms look more like the FIPS 204 sample code.
