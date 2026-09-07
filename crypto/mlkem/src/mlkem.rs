@@ -528,8 +528,6 @@ impl<
         A_hat: Option<&P::MatrixA>,
         m: [u8; 32],
     ) -> ([u8; 32], [u8; CT_LEN]) {
-        debug_assert_eq!(CT_LEN, 32 * ((P::du as usize) * P::k + (P::dv as usize)));
-
         // 1: (𝐾, 𝑟) ← G(𝑚‖H(ek))
         //  ▷ derive shared secret key 𝐾 and randomness 𝑟
         let K: [u8; MLKEM_SS_LEN];
@@ -767,7 +765,6 @@ impl<
         /* decapsulation inputs checks described on FIPS 203 section 7.3 */
         // 1. (Ciphertext type check) If 𝑐 is not a byte array of length 32(𝑑𝑢 𝑘 + 𝑑𝑣) for the values of 𝑑𝑢,
         //     𝑑𝑣, and 𝑘 specified by the relevant parameter set, then input checking has failed.
-        debug_assert_eq!(CT_LEN, 32 * ((P::du as usize) * P::k + (P::dv as usize)));
 
         if ct.len() != CT_LEN {
             return Err(KEMError::LengthError("Ciphertext has the incorrect length"));

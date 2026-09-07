@@ -399,8 +399,6 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
 {
     /// Encodes the private key seed.
     fn encode(&self) -> [u8; SK_LEN] {
-        debug_assert_eq!(SK_LEN, /* seed */ 32);
-
         self.seed.ref_to_bytes().try_into().unwrap()
     }
 

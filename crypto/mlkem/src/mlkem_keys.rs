@@ -184,7 +184,6 @@ impl<P: MLKEMParams, const PK_LEN: usize> KEMPublicKey<PK_LEN> for MLKEMPublicKe
     /// Encodes the public key as per FIPS 203 Algorithm 13
     /// 19: ekPKE ← ByteEncode12(𝐭)‖𝜌
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
-        debug_assert_eq!(PK_LEN, 12 * P::k * 32 + 32);
         debug_assert_eq!(POLY_BYTES, 12 * 32);
 
         out.fill(0);

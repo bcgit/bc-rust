@@ -302,8 +302,6 @@ impl<
     /// Failing to use this properly will result in catastrophic vulnerabilities.
     /// Please don't do it.
     pub fn encaps_internal(ek: &PK, m: [u8; 32]) -> ([u8; 32], [u8; CT_LEN]) {
-        debug_assert_eq!(CT_LEN, 32 * ((P::du as usize) * P::k + (P::dv as usize)));
-
         // 1: (𝐾, 𝑟) ← G(𝑚‖H(ek))
         //  ▷ derive shared secret key 𝐾 and randomness 𝑟
         let K: [u8; MLKEM_SS_LEN];

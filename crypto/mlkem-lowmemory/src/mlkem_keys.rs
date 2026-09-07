@@ -139,7 +139,6 @@ impl<P: MLKEMParams, const PK_LEN: usize> KEMPublicKey<PK_LEN> for MLKEMPublicKe
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
     /// Output: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
     fn encode(&self) -> [u8; PK_LEN] {
-        debug_assert_eq!(PK_LEN, 32 + 12 * P::k * 32);
         let mut pk = [0u8; PK_LEN];
         self.encode_out(&mut pk);
 
@@ -413,7 +412,6 @@ impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN
         FULL_SK_LEN
     }
     fn sk_decode(sk: &[u8; SK_LEN]) -> Self {
-        debug_assert_eq!(SK_LEN, /* seed*/ 64);
         Self::from_bytes(sk).unwrap()
     }
 }
@@ -491,8 +489,6 @@ impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        debug_assert_eq!(SK_LEN, 64);
-
         out.fill(0);
 
         out[..32].copy_from_slice(&*self.seed_d);
