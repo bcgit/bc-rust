@@ -158,6 +158,83 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform TupleHash128 (NIST SP 800-185 Sec 5) over a tuple of strings. The tuple is given
+    /// by repeated --element flags, each in hex; with none, stdin is hashed as a single element.
+    /// The boundaries between elements are part of the hash.
+    TUPLEHASH128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'e', long = "element")]
+        /// A tuple element, in hex. Repeat for each element, in order.
+        elements: Vec<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform TupleHash256 (NIST SP 800-185 Sec 5). See tuplehash128.
+    TUPLEHASH256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'e', long = "element")]
+        /// A tuple element, in hex. Repeat for each element, in order.
+        elements: Vec<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform ParallelHash128 (NIST SP 800-185 Sec 6) of the content provided on stdin.
+    /// The block size is part of the function: the same input under a different block size gives
+    /// an unrelated hash, so both sides must use the same value.
+    /// Supports streaming update for low memory footprint.
+    PARALLELHASH128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'b', long)]
+        /// Block size B in bytes, for the parallel split.
+        block_size: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform ParallelHash256 (NIST SP 800-185 Sec 6). See parallelhash128.
+    PARALLELHASH256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'b', long)]
+        /// Block size B in bytes, for the parallel split.
+        block_size: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
     /// Compute or verify a KMAC128 (NIST SP 800-185 Sec 4) over the content provided on stdin.
     /// The tag length and customization string are bound into the computation, so the verifier
     /// must use the same values.
@@ -1150,6 +1227,18 @@ fn main() {
         }
         Some(Subcommands::CSHAKE128 { length, customization, function_name, x }) => {
             sha3_cmd::cshake_cmd(128, *length, function_name, customization, *x);
+        }
+        Some(Subcommands::TUPLEHASH128 { length, elements, customization, x }) => {
+            sha3_cmd::tuplehash_cmd(128, *length, elements, customization, *x);
+        }
+        Some(Subcommands::TUPLEHASH256 { length, elements, customization, x }) => {
+            sha3_cmd::tuplehash_cmd(256, *length, elements, customization, *x);
+        }
+        Some(Subcommands::PARALLELHASH128 { length, block_size, customization, x }) => {
+            sha3_cmd::parallelhash_cmd(128, *length, *block_size, customization, *x);
+        }
+        Some(Subcommands::PARALLELHASH256 { length, block_size, customization, x }) => {
+            sha3_cmd::parallelhash_cmd(256, *length, *block_size, customization, *x);
         }
         Some(Subcommands::KMAC128 { length, customization, key, key_file, verify, x }) => {
             mac_cmd::kmac_cmd(128, *length, customization, key, key_file, verify, *x)

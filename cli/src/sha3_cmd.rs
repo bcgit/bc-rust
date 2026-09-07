@@ -2,9 +2,12 @@ use bouncycastle::core::traits::{Hash, XOF, XofOutput};
 use std::io;
 use std::io::{Read, Write};
 
+use bouncycastle::hex;
 use bouncycastle::sha3::{
-    CSHAKE128, CSHAKE256, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256,
+    CSHAKE128, CSHAKE256, PARALLELHASH128, PARALLELHASH256, SHA3_224, SHA3_256, SHA3_384, SHA3_512,
+    SHAKE128, SHAKE256, TUPLEHASH128, TUPLEHASH256,
 };
+use std::process::exit;
 
 pub(crate) fn sha3_cmd(bit_len: usize, output_hex: bool) {
     match bit_len {
@@ -64,6 +67,112 @@ pub(crate) fn cshake_cmd(
         256 => do_shake(CSHAKE256::new(n, s), output_len, output_hex),
         _ => panic!("Unsupported algorithm: cSHAKE-{}", bit_len),
     }
+}
+
+/// TupleHash (NIST SP 800-185 Sec 5): hashes a *tuple* of strings unambiguously.
+///
+/// The tuple comes from repeated `--element` flags, each a hex string. With none given, stdin is
+/// hashed as a single-element tuple -- which is not the same as hashing those bytes with SHAKE,
+/// because the element is length-prefixed.
+pub(crate) fn tuplehash_cmd(
+    bit_len: usize,
+    output_len: usize,
+    elements: &[String],
+    customization: &Option<String>,
+    output_hex: bool,
+) {
+    let s = customization.as_deref().unwrap_or("").as_bytes();
+
+    // Either the tuple came from flags, or stdin is the single element.
+    let tuple: Vec<Vec<u8>> = if elements.is_empty() {
+        vec![read_stdin()]
+    } else {
+        elements
+            .iter()
+            .map(|e| {
+                hex::decode(e).unwrap_or_else(|_| {
+                    eprintln!("Error: --element must be hex.");
+                    exit(-1);
+                })
+            })
+            .collect()
+    };
+    let refs: Vec<&[u8]> = tuple.iter().map(|v| v.as_slice()).collect();
+
+    let out = match bit_len {
+        128 => TUPLEHASH128::new(s, output_len).hash_tuple(&refs),
+        256 => TUPLEHASH256::new(s, output_len).hash_tuple(&refs),
+        _ => panic!("Unsupported algorithm: TupleHash-{bit_len}"),
+    };
+    write_out(&out, output_hex);
+}
+
+/// ParallelHash (NIST SP 800-185 Sec 6): hashes stdin in `block_size`-byte blocks.
+///
+/// The block size is part of the function, not a tuning knob -- the same input under a different
+/// block size gives an unrelated hash, so it must match on both sides.
+pub(crate) fn parallelhash_cmd(
+    bit_len: usize,
+    output_len: usize,
+    block_size: usize,
+    customization: &Option<String>,
+    output_hex: bool,
+) {
+    if block_size == 0 {
+        eprintln!("Error: --block-size must be greater than zero (SP 800-185 Sec 6.2).");
+        exit(-1);
+    }
+    let s = customization.as_deref().unwrap_or("").as_bytes();
+    match bit_len {
+        128 => {
+            let mut p = PARALLELHASH128::new(block_size, s, output_len);
+            stream_stdin(|chunk| p.do_update(chunk));
+            write_out(&p.do_final(), output_hex);
+        }
+        256 => {
+            let mut p = PARALLELHASH256::new(block_size, s, output_len);
+            stream_stdin(|chunk| p.do_update(chunk));
+            write_out(&p.do_final(), output_hex);
+        }
+        _ => panic!("Unsupported algorithm: ParallelHash-{bit_len}"),
+    }
+}
+
+/// Reads all of stdin. Used where the whole input must be held anyway (a tuple element).
+fn read_stdin() -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+        if n == 0 {
+            return out;
+        }
+        out.extend_from_slice(&buf[..n]);
+    }
+}
+
+/// Feeds stdin to `sink` in 1 KiB pieces, so a long input is never held in memory.
+fn stream_stdin(mut sink: impl FnMut(&[u8])) {
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+        if n == 0 {
+            return;
+        }
+        sink(&buf[..n]);
+    }
+}
+
+/// Writes the digest as raw bytes or hex, with the trailing newline the other commands emit.
+fn write_out(out: &[u8], output_hex: bool) {
+    if output_hex {
+        for b in out {
+            print!("{b:02x}");
+        }
+    } else {
+        io::stdout().write_all(out).expect("Failed to write to stdout");
+    }
+    println!();
 }
 
 fn do_shake(mut shake: impl XOF, output_len: usize, output_hex: bool) {
