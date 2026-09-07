@@ -12,7 +12,7 @@
 
 mod common;
 
-use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, Block};
+use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::ElectronicCodeBook;
 use common::{SB1, SB2, bytes, sb3, sb4};
@@ -56,8 +56,8 @@ fn check_test_vector<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(
     ciphertext: &str,
 ) {
     let c: P = engine(&bytes::<KEY_LEN>(key));
-    let plaintext: Block = bytes(plaintext);
-    let ciphertext: Block = bytes(ciphertext);
+    let plaintext: [u8; BLOCK_LEN] = bytes(plaintext);
+    let ciphertext: [u8; BLOCK_LEN] = bytes(ciphertext);
     let mut actual = plaintext;
     c.encrypt_block(&mut actual);
     assert_eq!(actual, ciphertext, "Incorrect ciphertext computed for '{name}'");
@@ -79,7 +79,7 @@ fn check_test_vectors_rfc5794() {
 fn random_roundtrips<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(seed: &mut u32) {
     let key: [u8; KEY_LEN] = common::pseudo_random(seed);
     let ce: P = engine(&key);
-    let mut txt: Block = common::pseudo_random(seed);
+    let mut txt: [u8; BLOCK_LEN] = common::pseudo_random(seed);
     for _ in 0..100 {
         let mut enc = txt;
         ce.encrypt_block(&mut enc);

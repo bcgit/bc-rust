@@ -8,8 +8,9 @@
 
 mod common;
 
-use bouncycastle_aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, ARIAParams, Block, LANES};
+use bouncycastle_aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, ARIAParams, BLOCK_LEN, LANES};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::ElectronicCodeBook;
 use common::bytes;
 
 /// The plaintext shared by all three examples.
@@ -33,7 +34,14 @@ fn key<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 }
 
 /// Every entry point, both directions, for one vector.
-fn check<P: ARIAParams>(name: &str, perm: &ARIA<P>, plaintext: &Block, ciphertext: &Block) {
+fn check<const KEY_LEN: usize, P: ARIAParams>(
+    name: &str,
+    perm: &ARIA<P>,
+    plaintext: &[u8; BLOCK_LEN],
+    ciphertext: &[u8; BLOCK_LEN],
+) where
+    ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     // Single block.
     let mut b = *plaintext;
     perm.encrypt_block(&mut b);
@@ -43,7 +51,7 @@ fn check<P: ARIAParams>(name: &str, perm: &ARIA<P>, plaintext: &Block, ciphertex
 
     // Four lanes: the vector in each lane in turn, with unrelated blocks in the others, which
     // must come out as they do on their own.
-    let others: [Block; LANES] = core::array::from_fn(|i| [i as u8 * 17 + 1; 16]);
+    let others: [[u8; BLOCK_LEN]; LANES] = core::array::from_fn(|i| [i as u8 * 17 + 1; 16]);
     let mut alone = others;
     for b in alone.iter_mut() {
         perm.encrypt_block(b);
@@ -77,19 +85,19 @@ fn check<P: ARIAParams>(name: &str, perm: &ARIA<P>, plaintext: &Block, ciphertex
 #[test]
 fn appendix_a_1_128_bit_key() {
     let perm = ARIA_128::new(&key::<16>(KEY_128)).unwrap();
-    check("Appendix A.1", &perm, &bytes(PLAINTEXT), &bytes(CT_128));
+    check::<16, _>("Appendix A.1", &perm, &bytes(PLAINTEXT), &bytes(CT_128));
 }
 
 #[test]
 fn appendix_a_2_192_bit_key() {
     let perm = ARIA_192::new(&key::<24>(KEY_192)).unwrap();
-    check("Appendix A.2", &perm, &bytes(PLAINTEXT), &bytes(CT_192));
+    check::<24, _>("Appendix A.2", &perm, &bytes(PLAINTEXT), &bytes(CT_192));
 }
 
 #[test]
 fn appendix_a_3_256_bit_key() {
     let perm = ARIA_256::new(&key::<32>(KEY_256)).unwrap();
-    check("Appendix A.3", &perm, &bytes(PLAINTEXT), &bytes(CT_256));
+    check::<32, _>("Appendix A.3", &perm, &bytes(PLAINTEXT), &bytes(CT_256));
 }
 
 /// The three key lengths are different ciphers: the same 16 key bytes extended to 24 or 32 must

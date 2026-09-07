@@ -11,7 +11,7 @@
 
 mod common;
 
-use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, Block, LANES};
+use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN, LANES};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::ElectronicCodeBook;
 
@@ -26,7 +26,7 @@ fn engine<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(key: &[u8; K
 /// The reference itself reproduces RFC 5794 Appendix A, so it can be trusted to judge.
 #[test]
 fn reference_sanity() {
-    let pt: Block = common::bytes("00112233445566778899aabbccddeeff");
+    let pt: [u8; BLOCK_LEN] = common::bytes("00112233445566778899aabbccddeeff");
     let key32 =
         common::bytes::<32>("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
     for (key, ct) in [
@@ -48,7 +48,7 @@ fn single_block_agrees<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>
         let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);
         let perm: P = engine(&key);
         for _ in 0..8 {
-            let block: Block = common::pseudo_random(&mut seed);
+            let block: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
 
             let mut ours = block;
             let mut theirs = block;
@@ -70,8 +70,8 @@ fn two_block_override_matches<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LE
     for _ in 0..64 {
         let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);
         let perm: P = engine(&key);
-        let a: Block = common::pseudo_random(&mut seed);
-        let b: Block = common::pseudo_random(&mut seed);
+        let a: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
+        let b: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
 
         let mut singly = [a, b];
         perm.encrypt_block(&mut singly[0]);
@@ -103,11 +103,14 @@ fn four_lanes_agree_with_the_reference() {
     fn run<const KEY_LEN: usize, P: bouncycastle_aria::ARIAParams>(
         mut seed: u32,
         new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_aria::ARIA<P>,
-    ) {
+    ) where
+        bouncycastle_aria::ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    {
         for _ in 0..128 {
             let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);
             let perm = new(&key);
-            let blocks: [Block; LANES] = core::array::from_fn(|_| common::pseudo_random(&mut seed));
+            let blocks: [[u8; BLOCK_LEN]; LANES] =
+                core::array::from_fn(|_| common::pseudo_random(&mut seed));
 
             let mut ours = blocks;
             perm.encrypt_4blocks(&mut ours);

@@ -12,7 +12,7 @@
 
 mod common;
 
-use bouncycastle_aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, ARIAParams, BLOCK_LEN, Block};
+use bouncycastle_aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, ARIAParams, BLOCK_LEN};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -53,14 +53,17 @@ fn key<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
         .expect("a valid symmetric cipher key")
 }
 
-fn blocks10(hex_str: &str) -> [Block; 10] {
+fn blocks10(hex_str: &str) -> [[u8; BLOCK_LEN]; 10] {
     let flat: [u8; 160] = bytes(hex_str);
     let (chunks, _) = flat.as_chunks::<BLOCK_LEN>();
     chunks.try_into().unwrap()
 }
 
 /// ECB: 10 independent blocks through every batching, both directions.
-fn check_ecb<P: ARIAParams>(name: &str, perm: &ARIA<P>, ct_hex: &str) {
+fn check_ecb<const KEY_LEN: usize, P: ARIAParams>(name: &str, perm: &ARIA<P>, ct_hex: &str)
+where
+    ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     let pt = blocks10(PLAINTEXT);
     let ct = blocks10(ct_hex);
 
@@ -141,17 +144,17 @@ fn check_cbc<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
 
 #[test]
 fn aria_128_ecb() {
-    check_ecb("ARIA-128-ECB", &ARIA_128::new(&key::<16>(KEY_128)).unwrap(), ECB_128);
+    check_ecb::<16, _>("ARIA-128-ECB", &ARIA_128::new(&key::<16>(KEY_128)).unwrap(), ECB_128);
 }
 
 #[test]
 fn aria_192_ecb() {
-    check_ecb("ARIA-192-ECB", &ARIA_192::new(&key::<24>(KEY_192)).unwrap(), ECB_192);
+    check_ecb::<24, _>("ARIA-192-ECB", &ARIA_192::new(&key::<24>(KEY_192)).unwrap(), ECB_192);
 }
 
 #[test]
 fn aria_256_ecb() {
-    check_ecb("ARIA-256-ECB", &ARIA_256::new(&key::<32>(KEY_256)).unwrap(), ECB_256);
+    check_ecb::<32, _>("ARIA-256-ECB", &ARIA_256::new(&key::<32>(KEY_256)).unwrap(), ECB_256);
 }
 
 #[test]
