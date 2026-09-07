@@ -339,6 +339,7 @@ pub(crate) fn unpack_c_tilde<P: MLDSAParams>(sig: &[u8]) -> P::SigCTilde {
     c_tilde.as_mut().copy_from_slice(&sig[..P::C_TILDE_LEN]);
     c_tilde
 }
+
 /// Part of unpacking the sig value
 pub(crate) fn unpack_z_row<P: MLDSAParams, const SIG_LEN: usize>(
     idx: usize,

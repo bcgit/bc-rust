@@ -914,9 +914,7 @@ pub(crate) fn use_hint_polys<P: MLDSAParams>(
 pub(crate) fn use_hint_vecs<P: MLDSAParams>(h: &P::VecK, wp_approx: &P::VecK) -> P::VecK {
     let mut out = P::VecK::new();
     for i in 0..P::k {
-        let hint = h.elems()[i];
-        let approx = wp_approx.elems()[i];
-        use_hint_polys::<P>(&approx, &hint, &mut out.elems_mut()[i]);
+        use_hint_polys::<P>(&wp_approx.elems()[i], &h.elems()[i], &mut out.elems_mut()[i]);
     }
 
     out
