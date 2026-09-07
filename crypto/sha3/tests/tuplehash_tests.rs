@@ -207,3 +207,145 @@ fn algorithm_names() {
     assert_eq!(TUPLEHASHXOF128::ALG_NAME, "TupleHashXOF128");
     assert_eq!(TUPLEHASHXOF256::ALG_NAME, "TupleHashXOF256");
 }
+
+/// Sponge rates from FIPS 202 Table 3, the nominal lengths of the XOF forms, and the constructed
+/// length of the fixed forms. The generic checks elsewhere only require these to be positive.
+#[test]
+fn metadata() {
+    assert_eq!(TUPLEHASH128::new(b"", 32).block_bitlen(), 1344, "cSHAKE128 rate");
+    assert_eq!(TUPLEHASH256::new(b"", 64).block_bitlen(), 1088, "cSHAKE256 rate");
+    assert_eq!(TUPLEHASHXOF128::new(b"").block_bitlen(), 1344);
+    assert_eq!(TUPLEHASHXOF256::new(b"").block_bitlen(), 1088);
+
+    assert_eq!(TUPLEHASH128::new(b"", 17).output_len(), 17, "whatever was asked for");
+    assert_eq!(TUPLEHASH256::new(b"", 100).output_len(), 100);
+    assert_eq!(TUPLEHASHXOF128::new(b"").output_len(), 32, "the nominal length");
+    assert_eq!(TUPLEHASHXOF256::new(b"").output_len(), 64);
+}
+
+/// Every `Hash` entry point of the fixed-length form, against one sample value.
+///
+/// The sample-value test above goes through `hash_tuple` only, which left `hash`, `hash_out` and
+/// `do_final_out` unexercised: `cargo mutants` could replace each with a constant, and change the
+/// `* 8` in the `right_encode(L)` that `do_final_out` absorbs, without a test noticing.
+fn check_fixed_view<H: Hash>(make: impl Fn() -> H, tuple: &[&[u8]], expected: &[u8], ctx: &str) {
+    let n = expected.len();
+    assert_eq!(make().output_len(), n, "{ctx}: output_len");
+
+    // do_final_out into an exact buffer
+    let mut h = make();
+    tuple.iter().for_each(|e| h.do_update(e));
+    let mut out = vec![0u8; n];
+    assert_eq!(h.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
+    assert_eq!(out, expected, "{ctx}: do_final_out");
+
+    // ... and into a longer one, which is only written up to the output length
+    let mut h = make();
+    tuple.iter().for_each(|e| h.do_update(e));
+    let mut out = vec![0xFFu8; n + 7];
+    assert_eq!(h.do_final_out(&mut out), n);
+    assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
+    assert_eq!(&out[n..], &[0xFFu8; 7], "{ctx}: bytes past the output length are untouched");
+
+    // hash and hash_out take one element: the last, after the rest have been fed in
+    let Some((last, rest)) = tuple.split_last() else { return };
+    let mut h = make();
+    rest.iter().for_each(|e| h.do_update(e));
+    assert_eq!(h.hash(last), expected, "{ctx}: hash as the final element");
+
+    let mut h = make();
+    rest.iter().for_each(|e| h.do_update(e));
+    let mut out = vec![0u8; n];
+    assert_eq!(h.hash_out(last, &mut out), n, "{ctx}: hash_out returns the length");
+    assert_eq!(out, expected, "{ctx}: hash_out");
+}
+
+/// Every `Hash` and `XOF` entry point of the XOF form, against one sample value. The samples ask
+/// for the nominal length, so `do_final` and `hash` must reproduce them exactly.
+fn check_xof_view<X: XOF>(make: impl Fn() -> X, tuple: &[&[u8]], expected: &[u8], ctx: &str) {
+    let n = expected.len();
+    assert_eq!(make().output_len(), n, "{ctx}: the samples ask for the nominal length");
+
+    let mut x = make();
+    tuple.iter().for_each(|e| x.do_update(e));
+    assert_eq!(x.do_final(), expected, "{ctx}: do_final");
+
+    let mut x = make();
+    tuple.iter().for_each(|e| x.do_update(e));
+    let mut out = vec![0u8; n];
+    assert_eq!(x.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
+    assert_eq!(out, expected, "{ctx}: do_final_out");
+
+    // zero partial bits is the byte-aligned case and must be accepted; any other count refused
+    let mut x = make();
+    tuple.iter().for_each(|e| x.do_update(e));
+    assert_eq!(x.do_final_partial_bits(0, 0).unwrap(), expected, "{ctx}: do_final_partial_bits(0)");
+
+    let mut x = make();
+    tuple.iter().for_each(|e| x.do_update(e));
+    let mut out = vec![0u8; n];
+    assert_eq!(x.do_final_partial_bits_out(0, 0, &mut out).unwrap(), n, "{ctx}: ..._out length");
+    assert_eq!(out, expected, "{ctx}: do_final_partial_bits_out(0)");
+
+    assert!(matches!(make().do_final_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
+    let mut out = vec![0u8; n];
+    assert!(matches!(
+        make().do_final_partial_bits_out(0xF0, 4, &mut out),
+        Err(HashError::InvalidLength(_))
+    ));
+
+    // the one-shots take one element: the last, after the rest have been fed in
+    let Some((last, rest)) = tuple.split_last() else { return };
+    let mut x = make();
+    rest.iter().for_each(|e| x.do_update(e));
+    assert_eq!(x.hash(last), expected, "{ctx}: hash");
+
+    let mut x = make();
+    rest.iter().for_each(|e| x.do_update(e));
+    let mut out = vec![0u8; n];
+    assert_eq!(x.hash_out(last, &mut out), n, "{ctx}: hash_out returns the length");
+    assert_eq!(out, expected, "{ctx}: hash_out");
+
+    let mut x = make();
+    rest.iter().for_each(|e| x.do_update(e));
+    assert_eq!(x.hash_xof(last, n), expected, "{ctx}: hash_xof");
+
+    let mut x = make();
+    rest.iter().for_each(|e| x.do_update(e));
+    assert_eq!(x.hash_xof(last, n / 2), &expected[..n / 2], "{ctx}: hash_xof, shorter");
+
+    let mut x = make();
+    rest.iter().for_each(|e| x.do_update(e));
+    let mut out = vec![0u8; n];
+    assert_eq!(x.hash_xof_out(last, &mut out), n, "{ctx}: hash_xof_out returns the length");
+    assert_eq!(out, expected, "{ctx}: hash_xof_out");
+}
+
+#[test]
+fn hash_trait_view_agrees_with_the_sample_values() {
+    let Some(vectors) = read_vectors("TupleHash.rsp") else { return };
+    for (i, v) in vectors.iter().enumerate() {
+        let n = v.output_len / 8;
+        let t = as_slices(&v.tuple);
+        let ctx = format!("COUNT {i}: TupleHash{}", v.strength);
+        match v.strength {
+            128 => check_fixed_view(|| TUPLEHASH128::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
+            256 => check_fixed_view(|| TUPLEHASH256::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
+            other => panic!("COUNT {i}: unexpected strength {other}"),
+        }
+    }
+}
+
+#[test]
+fn xof_trait_view_agrees_with_the_sample_values() {
+    let Some(vectors) = read_vectors("TupleHashXOF.rsp") else { return };
+    for (i, v) in vectors.iter().enumerate() {
+        let t = as_slices(&v.tuple);
+        let ctx = format!("COUNT {i}: TupleHashXOF{}", v.strength);
+        match v.strength {
+            128 => check_xof_view(|| TUPLEHASHXOF128::new(v.s.as_bytes()), &t, &v.output, &ctx),
+            256 => check_xof_view(|| TUPLEHASHXOF256::new(v.s.as_bytes()), &t, &v.output, &ctx),
+            other => panic!("COUNT {i}: unexpected strength {other}"),
+        }
+    }
+}
