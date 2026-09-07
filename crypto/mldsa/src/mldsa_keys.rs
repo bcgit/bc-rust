@@ -581,7 +581,7 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
         {
             // Deviation from the FIPS:
             // Because s2 is in ntt form, it is necessary to reverse that here before adding it to t
-            let mut s2 = *self.s2_hat;
+            let mut s2: Secret<P::VecK> = self.s2_hat.clone();
             s2.reduce();
             s2.inv_ntt();
 
