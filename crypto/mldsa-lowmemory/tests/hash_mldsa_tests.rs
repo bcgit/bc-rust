@@ -264,6 +264,19 @@ mod hash_mldsa_tests {
         assert_eq!(HashMLDSA44_with_SHA512::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 32]);
         assert_eq!(HashMLDSA65_with_SHA512::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 33]);
         assert_eq!(HashMLDSA87_with_SHA512::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 34]);
+
+        for (oid, der) in [
+            (HashMLDSA44_with_SHA512::OID, HashMLDSA44_with_SHA512::OID_DER),
+            (HashMLDSA65_with_SHA512::OID, HashMLDSA65_with_SHA512::OID_DER),
+            (HashMLDSA87_with_SHA512::OID, HashMLDSA87_with_SHA512::OID_DER),
+        ] {
+            assert_eq!(der[0], 0x06, "DER tag must be OBJECT IDENTIFIER");
+            assert_eq!(der[1] as usize, der.len() - 2, "DER length must match the content");
+            assert_eq!(
+                &der[2..],
+                &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, *oid.last().unwrap() as u8]
+            );
+        }
     }
 
     #[test]
