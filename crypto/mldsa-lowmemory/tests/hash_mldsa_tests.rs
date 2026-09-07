@@ -6,7 +6,7 @@ mod hash_mldsa_tests {
     use super::*;
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-    use bouncycastle_core::traits::{Hash, PHSignatureVerifier};
+    use bouncycastle_core::traits::{Hash, PHSignatureVerifier, PHSigner};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_mldsa_lowmemory::{
         HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA256,
@@ -233,5 +233,54 @@ mod hash_mldsa_tests {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error"),
         }
+    }
+
+    #[test]
+    fn algorithm_names_strengths_and_oids() {
+        use bouncycastle_core::traits::{Algorithm, AlgorithmOID, SecurityStrength};
+
+        // `Algorithm` is implemented once, generically over the pairing, so nothing else states
+        // these per algorithm.
+        assert_eq!(HashMLDSA44_with_SHA256::ALG_NAME, "HashML-DSA-44_with_SHA256");
+        assert_eq!(HashMLDSA65_with_SHA256::ALG_NAME, "HashML-DSA-65_with_SHA256");
+        assert_eq!(HashMLDSA87_with_SHA256::ALG_NAME, "HashML-DSA-87_with_SHA256");
+        assert_eq!(HashMLDSA44_with_SHA512::ALG_NAME, "HashML-DSA-44_with_SHA512");
+        assert_eq!(HashMLDSA65_with_SHA512::ALG_NAME, "HashML-DSA-65_with_SHA512");
+        assert_eq!(HashMLDSA87_with_SHA512::ALG_NAME, "HashML-DSA-87_with_SHA512");
+
+        // Derived as the weaker of the two components: SHA-256 caps every pairing it appears in at
+        // 128 bits; with SHA-512 the ML-DSA parameter set is what binds.
+        assert_eq!(HashMLDSA44_with_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(HashMLDSA65_with_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(HashMLDSA87_with_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(HashMLDSA44_with_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(HashMLDSA65_with_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+        assert_eq!(HashMLDSA87_with_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+
+        // NIST's Computer Security Objects Register: id-hash-ml-dsa-44-with-sha512 { sigAlgs 32 },
+        // -65- { sigAlgs 33 }, -87- { sigAlgs 34 }. The three SHA-256 pairings carry no OID in
+        // this implementation, which is why `AlgorithmOID` is still written out per alias rather
+        // than derived from the pairing like the name and strength above.
+        assert_eq!(HashMLDSA44_with_SHA512::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 32]);
+        assert_eq!(HashMLDSA65_with_SHA512::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 33]);
+        assert_eq!(HashMLDSA87_with_SHA512::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 34]);
+    }
+
+    #[test]
+    fn prehash_lengths_match_the_hash_functions() {
+        // `PH_LEN` is still a const generic on `HashMLDSA` -- `PHSigner` takes it as one -- but it
+        // is derived on the pairing from the pre-hash's own `OUTPUT_LEN`, and the two are checked
+        // against each other at build time. This confirms both agree with the actual digest.
+        let msg = b"The quick brown fox";
+        let ph256: [u8; 32] = SHA256::default().hash(msg).try_into().unwrap();
+        let ph512: [u8; 64] = SHA512::default().hash(msg).try_into().unwrap();
+
+        let (pk, sk) = HashMLDSA65_with_SHA256::keygen().unwrap();
+        let sig = HashMLDSA65_with_SHA256::sign_ph(&sk, &ph256, None).unwrap();
+        HashMLDSA65_with_SHA256::verify_ph(&pk, &ph256, None, &sig).unwrap();
+
+        let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
+        let sig = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph512, None).unwrap();
+        HashMLDSA65_with_SHA512::verify_ph(&pk, &ph512, None, &sig).unwrap();
     }
 }

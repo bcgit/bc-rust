@@ -907,6 +907,62 @@ mod mldsa_tests {
         MLDSA44::sign_mu_deterministic_out(&sk, &mu, [1u8; 32], &mut sig_buf).unwrap();
         MLDSA44::verify(&pk, msg, None, &sig_buf).unwrap();
     }
+
+    #[test]
+    fn algorithm_names_and_oids() {
+        use bouncycastle_core::traits::{Algorithm, AlgorithmOID};
+
+        // `Algorithm` and `AlgorithmOID` are implemented once, generically over the parameter set,
+        // so nothing else states these per algorithm. Pinned here so that a wrong wiring of the
+        // blanket impls, or a typo in a parameter set, is a test failure rather than a silently
+        // mislabelled algorithm or an unparseable OID.
+        assert_eq!(MLDSA44::ALG_NAME, "ML-DSA-44");
+        assert_eq!(MLDSA65::ALG_NAME, "ML-DSA-65");
+        assert_eq!(MLDSA87::ALG_NAME, "ML-DSA-87");
+
+        assert_eq!(MLDSA44::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(MLDSA65::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+        assert_eq!(MLDSA87::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+
+        // NIST's Computer Security Objects Register: id-ml-dsa-44 { sigAlgs 17 },
+        // id-ml-dsa-65 { sigAlgs 18 }, id-ml-dsa-87 { sigAlgs 19 }.
+        assert_eq!(MLDSA44::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 17]);
+        assert_eq!(MLDSA65::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 18]);
+        assert_eq!(MLDSA87::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 19]);
+
+        for (oid, der) in [
+            (MLDSA44::OID, MLDSA44::OID_DER),
+            (MLDSA65::OID, MLDSA65::OID_DER),
+            (MLDSA87::OID, MLDSA87::OID_DER),
+        ] {
+            assert_eq!(der[0], 0x06, "DER tag must be OBJECT IDENTIFIER");
+            assert_eq!(der[1] as usize, der.len() - 2, "DER length must match the content");
+            assert_eq!(
+                &der[2..],
+                &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, *oid.last().unwrap() as u8]
+            );
+        }
+    }
+
+    #[test]
+    fn stored_private_key_is_the_seed_but_the_full_encoding_is_the_fips_one() {
+        // This crate is the seed-holding implementation, so `SK_LEN` is 32 for every parameter
+        // set while the parameter set's `FULL_SK_LEN` is FIPS 204, Table 2's private key column.
+        // The two are separate consts; this pins that they have not been conflated.
+        assert_eq!([MLDSA44_SK_LEN, MLDSA65_SK_LEN, MLDSA87_SK_LEN], [32, 32, 32]);
+        assert_eq!([MLDSA44_PK_LEN, MLDSA65_PK_LEN, MLDSA87_PK_LEN], [1312, 1952, 2592]);
+        assert_eq!([MLDSA44_SIG_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN], [2420, 3309, 4627]);
+
+        // `FULL_SK_LEN` is not a public constant, so it is checked through the encoding it sizes.
+        let seed = KeyMaterial256::from_bytes_as_type(&[7u8; 32], KeyType::Seed).unwrap();
+        let (_, sk44) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        let (_, sk65) = MLDSA65::keygen_from_seed(&seed).unwrap();
+        let (_, sk87) = MLDSA87::keygen_from_seed(&seed).unwrap();
+        assert_eq!(sk44.encode().len(), 32, "the stored private key is the seed");
+        assert_eq!(sk44.encode_full_sk().len(), 2560);
+        assert_eq!(sk65.encode_full_sk().len(), 4032);
+        assert_eq!(sk87.encode_full_sk().len(), 4896);
+    }
 }
 
 struct Kat {

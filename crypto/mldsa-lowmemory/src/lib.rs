@@ -234,6 +234,7 @@ pub mod hash_mldsa;
 mod low_memory_helpers;
 pub mod mldsa;
 mod mldsa_keys;
+mod params;
 mod polynomial;
 
 /*** Exported types ***/
@@ -266,3 +267,10 @@ pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
 pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
 
 pub use mldsa::SUSPENDED_MU_BUILDER_STATE_LEN;
+
+/*** Parameter sets ***/
+pub use params::{
+    HashMLDSA44_with_SHA256Params, HashMLDSA44_with_SHA512Params, HashMLDSA65_with_SHA256Params,
+    HashMLDSA65_with_SHA512Params, HashMLDSA87_with_SHA256Params, HashMLDSA87_with_SHA512Params,
+};
+pub use params::{MLDSA44Params, MLDSA65Params, MLDSA87Params};

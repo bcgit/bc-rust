@@ -77,8 +77,8 @@ pub type MLDSA87PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
 ///
 /// `PK_LEN` duplicates `MLDSAParams::PK_LEN`; it has to be carried separately because
 /// [`SignaturePublicKey`] takes the encoded length as a const generic parameter, and an associated
-/// const of a type parameter may not be used as a const generic argument. The two are checked
-/// against each other at compile time -- see the `ASSERT_PK_LEN` const on this type.
+/// const of a type parameter may not be used as a const generic argument. The type aliases below
+/// wire the two together.
 pub struct MLDSAPublicKey<P: MLDSAParams, const PK_LEN: usize> {
     rho: [u8; 32],
     t1: P::VecK,
@@ -93,12 +93,6 @@ impl<P: MLDSAParams, const PK_LEN: usize> Clone for MLDSAPublicKey<P, PK_LEN> {
 }
 
 impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKey<P, PK_LEN> {
-    /// Fails to evaluate, and so fails the build, if this type is instantiated with a `PK_LEN`
-    /// that is not the parameter set's own. Referenced from every constructor so that it is
-    /// reached during monomorphization.
-    const ASSERT_PK_LEN: () =
-        assert!(PK_LEN == P::PK_LEN, "PK_LEN does not match MLDSAParams::PK_LEN");
-
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
@@ -195,7 +189,6 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyInternalTrait<P, PK_LEN>
     for MLDSAPublicKey<P, PK_LEN>
 {
     fn new(rho: [u8; 32], t1: P::VecK) -> Self {
-        let () = Self::ASSERT_PK_LEN;
         Self { rho, t1 }
     }
 

@@ -66,29 +66,15 @@
 //! But a simple [`HashMLDSA::keygen`] is provided.
 
 use crate::mldsa::{H, MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSATrait};
-use crate::mldsa::{
-    MLDSA44_BETA, MLDSA44_C_TILDE, MLDSA44_ETA, MLDSA44_FULL_SK_LEN, MLDSA44_GAMMA1,
-    MLDSA44_GAMMA1_MASK_LEN, MLDSA44_GAMMA1_MINUS_BETA, MLDSA44_GAMMA2, MLDSA44_GAMMA2_MINUS_BETA,
-    MLDSA44_LAMBDA, MLDSA44_LAMBDA_over_4, MLDSA44_OMEGA, MLDSA44_PK_LEN,
-    MLDSA44_POLY_W1_PACKED_LEN, MLDSA44_POLY_Z_PACKED_LEN, MLDSA44_S1_PACKED_LEN,
-    MLDSA44_S2_PACKED_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44_TAU, MLDSA44_k, MLDSA44_l,
-};
-use crate::mldsa::{MLDSA44_T1_PACKED_LEN, MLDSA65_T1_PACKED_LEN, MLDSA87_T1_PACKED_LEN};
-use crate::mldsa::{
-    MLDSA65_BETA, MLDSA65_C_TILDE, MLDSA65_ETA, MLDSA65_FULL_SK_LEN, MLDSA65_GAMMA1,
-    MLDSA65_GAMMA1_MASK_LEN, MLDSA65_GAMMA1_MINUS_BETA, MLDSA65_GAMMA2, MLDSA65_GAMMA2_MINUS_BETA,
-    MLDSA65_LAMBDA, MLDSA65_LAMBDA_over_4, MLDSA65_OMEGA, MLDSA65_PK_LEN,
-    MLDSA65_POLY_W1_PACKED_LEN, MLDSA65_POLY_Z_PACKED_LEN, MLDSA65_S1_PACKED_LEN,
-    MLDSA65_S2_PACKED_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65_TAU, MLDSA65_k, MLDSA65_l,
-};
-use crate::mldsa::{
-    MLDSA87_BETA, MLDSA87_C_TILDE, MLDSA87_ETA, MLDSA87_FULL_SK_LEN, MLDSA87_GAMMA1,
-    MLDSA87_GAMMA1_MASK_LEN, MLDSA87_GAMMA1_MINUS_BETA, MLDSA87_GAMMA2, MLDSA87_GAMMA2_MINUS_BETA,
-    MLDSA87_LAMBDA, MLDSA87_LAMBDA_over_4, MLDSA87_OMEGA, MLDSA87_PK_LEN,
-    MLDSA87_POLY_W1_PACKED_LEN, MLDSA87_POLY_Z_PACKED_LEN, MLDSA87_S1_PACKED_LEN,
-    MLDSA87_S2_PACKED_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87_TAU, MLDSA87_k, MLDSA87_l,
-};
+use crate::mldsa::{MLDSA44_FULL_SK_LEN, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
+use crate::mldsa::{MLDSA65_FULL_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
+use crate::mldsa::{MLDSA87_FULL_SK_LEN, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPublicKeyInternalTrait};
+use crate::params::{
+    HashMLDSA44_with_SHA256Params, HashMLDSA44_with_SHA512Params, HashMLDSA65_with_SHA256Params,
+    HashMLDSA65_with_SHA512Params, HashMLDSA87_with_SHA256Params, HashMLDSA87_with_SHA512Params,
+    HashMLDSAParams,
+};
 use crate::{
     MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey,
     MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait,
@@ -100,7 +86,6 @@ use bouncycastle_core::traits::{
     SignatureVerifier, Signer, XOF,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::{SHA256, SHA512};
 use core::marker::PhantomData;
 
 // Imports needed only for docs
@@ -124,153 +109,73 @@ pub const HASH_ML_DSA_87_WITH_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
 
 /*** Pub Types ***/
 
+impl<
+    HP: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<HP::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, PK_LEN, SK_LEN>,
+    const PH_LEN: usize,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
+    const SIG_LEN: usize,
+> Algorithm for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+{
+    const ALG_NAME: &'static str = HP::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = HP::MAX_SECURITY_STRENGTH;
+}
+
 /// The HashML-DSA-44_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA44_with_SHA256 = HashMLDSA<
-    SHA256,
+    HashMLDSA44_with_SHA256Params,
+    MLDSA44PublicKey,
+    MLDSA44PrivateKey,
     32,
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
     MLDSA44_FULL_SK_LEN,
     MLDSA44_SIG_LEN,
-    MLDSA44PublicKey,
-    MLDSA44PrivateKey,
-    MLDSA44_TAU,
-    MLDSA44_LAMBDA,
-    MLDSA44_GAMMA1,
-    MLDSA44_GAMMA2,
-    MLDSA44_k,
-    MLDSA44_l,
-    MLDSA44_ETA,
-    MLDSA44_BETA,
-    MLDSA44_OMEGA,
-    MLDSA44_C_TILDE,
-    MLDSA44_POLY_Z_PACKED_LEN,
-    MLDSA44_POLY_W1_PACKED_LEN,
-    MLDSA44_S1_PACKED_LEN,
-    MLDSA44_S2_PACKED_LEN,
-    MLDSA44_T1_PACKED_LEN,
-    MLDSA44_LAMBDA_over_4,
-    MLDSA44_GAMMA1_MINUS_BETA,
-    MLDSA44_GAMMA2_MINUS_BETA,
-    MLDSA44_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for HashMLDSA44_with_SHA256 {
-    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA256_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
 
 /// The HashML-DSA-65_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA65_with_SHA256 = HashMLDSA<
-    SHA256,
+    HashMLDSA65_with_SHA256Params,
+    MLDSA65PublicKey,
+    MLDSA65PrivateKey,
     32,
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
     MLDSA65_FULL_SK_LEN,
     MLDSA65_SIG_LEN,
-    MLDSA65PublicKey,
-    MLDSA65PrivateKey,
-    MLDSA65_TAU,
-    MLDSA65_LAMBDA,
-    MLDSA65_GAMMA1,
-    MLDSA65_GAMMA2,
-    MLDSA65_k,
-    MLDSA65_l,
-    MLDSA65_ETA,
-    MLDSA65_BETA,
-    MLDSA65_OMEGA,
-    MLDSA65_C_TILDE,
-    MLDSA65_POLY_Z_PACKED_LEN,
-    MLDSA65_POLY_W1_PACKED_LEN,
-    MLDSA65_S1_PACKED_LEN,
-    MLDSA65_S2_PACKED_LEN,
-    MLDSA65_T1_PACKED_LEN,
-    MLDSA65_LAMBDA_over_4,
-    MLDSA65_GAMMA1_MINUS_BETA,
-    MLDSA65_GAMMA2_MINUS_BETA,
-    MLDSA65_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for HashMLDSA65_with_SHA256 {
-    const ALG_NAME: &'static str = HASH_ML_DSA_65_WITH_SHA256_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
 
 /// The HashML-DSA-87_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA87_with_SHA256 = HashMLDSA<
-    SHA256,
+    HashMLDSA87_with_SHA256Params,
+    MLDSA87PublicKey,
+    MLDSA87PrivateKey,
     32,
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
     MLDSA87_FULL_SK_LEN,
     MLDSA87_SIG_LEN,
-    MLDSA87PublicKey,
-    MLDSA87PrivateKey,
-    MLDSA87_TAU,
-    MLDSA87_LAMBDA,
-    MLDSA87_GAMMA1,
-    MLDSA87_GAMMA2,
-    MLDSA87_k,
-    MLDSA87_l,
-    MLDSA87_ETA,
-    MLDSA87_BETA,
-    MLDSA87_OMEGA,
-    MLDSA87_C_TILDE,
-    MLDSA87_POLY_Z_PACKED_LEN,
-    MLDSA87_POLY_W1_PACKED_LEN,
-    MLDSA87_S1_PACKED_LEN,
-    MLDSA87_S2_PACKED_LEN,
-    MLDSA87_T1_PACKED_LEN,
-    MLDSA87_LAMBDA_over_4,
-    MLDSA87_GAMMA1_MINUS_BETA,
-    MLDSA87_GAMMA2_MINUS_BETA,
-    MLDSA87_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for HashMLDSA87_with_SHA256 {
-    const ALG_NAME: &'static str = HASH_ML_DSA_87_with_SHA256_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
 
 /// The HashML-DSA-44_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA44_with_SHA512 = HashMLDSA<
-    SHA512,
+    HashMLDSA44_with_SHA512Params,
+    MLDSA44PublicKey,
+    MLDSA44PrivateKey,
     64,
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
     MLDSA44_FULL_SK_LEN,
     MLDSA44_SIG_LEN,
-    MLDSA44PublicKey,
-    MLDSA44PrivateKey,
-    MLDSA44_TAU,
-    MLDSA44_LAMBDA,
-    MLDSA44_GAMMA1,
-    MLDSA44_GAMMA2,
-    MLDSA44_k,
-    MLDSA44_l,
-    MLDSA44_ETA,
-    MLDSA44_BETA,
-    MLDSA44_OMEGA,
-    MLDSA44_C_TILDE,
-    MLDSA44_POLY_Z_PACKED_LEN,
-    MLDSA44_POLY_W1_PACKED_LEN,
-    MLDSA44_S1_PACKED_LEN,
-    MLDSA44_S2_PACKED_LEN,
-    MLDSA44_T1_PACKED_LEN,
-    MLDSA44_LAMBDA_over_4,
-    MLDSA44_GAMMA1_MINUS_BETA,
-    MLDSA44_GAMMA2_MINUS_BETA,
-    MLDSA44_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for HashMLDSA44_with_SHA512 {
-    const ALG_NAME: &'static str = HASH_ML_DSA_44_with_SHA512_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
 /// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-44-with-sha512 { sigAlgs 32 }
 impl AlgorithmOID for HashMLDSA44_with_SHA512 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 32];
@@ -281,39 +186,15 @@ impl AlgorithmOID for HashMLDSA44_with_SHA512 {
 /// The HashML-DSA-65_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA65_with_SHA512 = HashMLDSA<
-    SHA512,
+    HashMLDSA65_with_SHA512Params,
+    MLDSA65PublicKey,
+    MLDSA65PrivateKey,
     64,
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
     MLDSA65_FULL_SK_LEN,
     MLDSA65_SIG_LEN,
-    MLDSA65PublicKey,
-    MLDSA65PrivateKey,
-    MLDSA65_TAU,
-    MLDSA65_LAMBDA,
-    MLDSA65_GAMMA1,
-    MLDSA65_GAMMA2,
-    MLDSA65_k,
-    MLDSA65_l,
-    MLDSA65_ETA,
-    MLDSA65_BETA,
-    MLDSA65_OMEGA,
-    MLDSA65_C_TILDE,
-    MLDSA65_POLY_Z_PACKED_LEN,
-    MLDSA65_POLY_W1_PACKED_LEN,
-    MLDSA65_S1_PACKED_LEN,
-    MLDSA65_S2_PACKED_LEN,
-    MLDSA65_T1_PACKED_LEN,
-    MLDSA65_LAMBDA_over_4,
-    MLDSA65_GAMMA1_MINUS_BETA,
-    MLDSA65_GAMMA2_MINUS_BETA,
-    MLDSA65_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for HashMLDSA65_with_SHA512 {
-    const ALG_NAME: &'static str = HASH_ML_DSA_65_WITH_SHA512_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
-}
 /// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-65-with-sha512 { sigAlgs 33 }
 impl AlgorithmOID for HashMLDSA65_with_SHA512 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 33];
@@ -324,39 +205,15 @@ impl AlgorithmOID for HashMLDSA65_with_SHA512 {
 /// The HashML-DSA-87_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA87_with_SHA512 = HashMLDSA<
-    SHA512,
+    HashMLDSA87_with_SHA512Params,
+    MLDSA87PublicKey,
+    MLDSA87PrivateKey,
     64,
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
     MLDSA87_FULL_SK_LEN,
     MLDSA87_SIG_LEN,
-    MLDSA87PublicKey,
-    MLDSA87PrivateKey,
-    MLDSA87_TAU,
-    MLDSA87_LAMBDA,
-    MLDSA87_GAMMA1,
-    MLDSA87_GAMMA2,
-    MLDSA87_k,
-    MLDSA87_l,
-    MLDSA87_ETA,
-    MLDSA87_BETA,
-    MLDSA87_OMEGA,
-    MLDSA87_C_TILDE,
-    MLDSA87_POLY_Z_PACKED_LEN,
-    MLDSA87_POLY_W1_PACKED_LEN,
-    MLDSA87_S1_PACKED_LEN,
-    MLDSA87_S2_PACKED_LEN,
-    MLDSA87_T1_PACKED_LEN,
-    MLDSA87_LAMBDA_over_4,
-    MLDSA87_GAMMA1_MINUS_BETA,
-    MLDSA87_GAMMA2_MINUS_BETA,
-    MLDSA87_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for HashMLDSA87_with_SHA512 {
-    const ALG_NAME: &'static str = HASH_ML_DSA_87_WITH_SHA512_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-}
 /// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-87-with-sha512 { sigAlgs 34 }
 impl AlgorithmOID for HashMLDSA87_with_SHA512 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 34];
@@ -371,55 +228,17 @@ impl AlgorithmOID for HashMLDSA87_with_SHA512 {
 /// by specifying the hash function to use (in the verifier), and specifying the bytes of the OID to
 /// to use as its domain separator in constructing the message representative M'.
 pub struct HashMLDSA<
-    HASH: Hash + AlgorithmOID + Default,
-    const HASH_LEN: usize,
+    HP: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<HP::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, PK_LEN, SK_LEN>,
+    const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
-        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<
-            k,
-            l,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-        > + MLDSAPrivateKeyInternalTrait<
-            LAMBDA,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-        >,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
 > {
-    _phantom: PhantomData<(PK, SK)>,
+    _phantom: PhantomData<(HP, PK, SK)>,
 
     signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
@@ -433,7 +252,7 @@ pub struct HashMLDSA<
     pk: Option<PK>,
 
     /// Hash function instance for streaming message hashing
-    hash: HASH,
+    hash: HP::PreHash,
 
     /// Since HashML-DSA does message buffering in the external pre-hash, not in mu,
     /// this needs to be saved for later
@@ -442,83 +261,16 @@ pub struct HashMLDSA<
 }
 
 impl<
-    HASH: Hash + AlgorithmOID + Default,
+    HP: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<HP::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, PK_LEN, SK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
-        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<
-            k,
-            l,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-        > + MLDSAPrivateKeyInternalTrait<
-            LAMBDA,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-        >,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
->
-    HashMLDSA<
-        HASH,
-        PH_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+> HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
     ///
@@ -527,64 +279,12 @@ impl<
     /// Keys are interchangeable between MLDSA and HashMLDSA.
     /// Error condition: basically only on RNG failures.
     pub fn keygen() -> Result<(PK, SK), SignatureError> {
-        MLDSA::<
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-            SIG_LEN,
-            PK,
-            SK,
-            TAU,
-            LAMBDA,
-            GAMMA1,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            BETA,
-            OMEGA,
-            C_TILDE,
-            POLY_Z_PACKED_LEN,
-            POLY_W1_PACKED_LEN,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            LAMBDA_over_4,
-            GAMMA1_MINUS_BETA,
-            GAMMA2_MINUS_BETA,
-            GAMMA1_MASK_LEN,
-        >::keygen()
+        MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>::keygen()
     }
 
     /// Imports a secret key from a seed.
     pub fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
-        MLDSA::<
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-            SIG_LEN,
-            PK,
-            SK,
-            TAU,
-            LAMBDA,
-            GAMMA1,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            BETA,
-            OMEGA,
-            C_TILDE,
-            POLY_Z_PACKED_LEN,
-            POLY_W1_PACKED_LEN,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            LAMBDA_over_4,
-            GAMMA1_MINUS_BETA,
-            GAMMA2_MINUS_BETA,
-            GAMMA1_MASK_LEN,
-        >::keygen_internal(seed)
+        MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>::keygen_internal(seed)
     }
 
     /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
@@ -651,40 +351,15 @@ impl<
         h.absorb(&[1u8]).expect("absorb before squeeze is infallible");
         h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
         h.absorb(ctx).expect("absorb before squeeze is infallible");
-        h.absorb(HASH::OID_DER).expect("absorb before squeeze is infallible");
+        h.absorb(<HP::PreHash as AlgorithmOID>::OID_DER)
+            .expect("absorb before squeeze is infallible");
         h.absorb(ph).expect("absorb before squeeze is infallible");
         let mut mu = [0u8; MLDSA_MU_LEN];
         let bytes_written = h.squeeze_out(&mut mu);
         debug_assert_eq!(bytes_written, MLDSA_MU_LEN);
 
         // 24: 𝜎 ← ML-DSA.Sign_internal(𝑠𝑘, 𝑀', 𝑟𝑛𝑑)
-        let bytes_written = MLDSA::<
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-            SIG_LEN,
-            PK,
-            SK,
-            TAU,
-            LAMBDA,
-            GAMMA1,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            BETA,
-            OMEGA,
-            C_TILDE,
-            POLY_Z_PACKED_LEN,
-            POLY_W1_PACKED_LEN,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            LAMBDA_over_4,
-            GAMMA1_MINUS_BETA,
-            GAMMA2_MINUS_BETA,
-            GAMMA1_MASK_LEN,
-        >::sign_mu_deterministic_out(sk, &mu, rnd, output)?;
+        let bytes_written = MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>::sign_mu_deterministic_out(sk, &mu, rnd, output)?;
 
         Ok(bytes_written)
     }
@@ -725,7 +400,7 @@ impl<
             sk: None,
             seed: Some(seed.clone()),
             pk: None,
-            hash: HASH::default(),
+            hash: <HP::PreHash as Default>::default(),
             ctx,
             ctx_len,
         })
@@ -733,83 +408,17 @@ impl<
 }
 
 impl<
-    HASH: Hash + AlgorithmOID + Default,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
-        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<
-            k,
-            l,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-        > + MLDSAPrivateKeyInternalTrait<
-            LAMBDA,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-        >,
+    HP: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<HP::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, PK_LEN, SK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
 > Signer<SK, SK_LEN, SIG_LEN>
-    for HashMLDSA<
-        HASH,
-        PH_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+    for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     /// Algorithm 4 HashML-DSA.Sign(𝑠𝑘, 𝑀 , 𝑐𝑡𝑥, PH)
     /// Generate a “pre-hash” ML-DSA signature.
@@ -829,7 +438,7 @@ impl<
         output.fill(0);
 
         let mut ph_m = [0u8; PH_LEN];
-        _ = HASH::default().hash_out(msg, &mut ph_m);
+        _ = <HP::PreHash as Default>::default().hash_out(msg, &mut ph_m);
         Self::sign_ph_out(sk, &ph_m, ctx, output)
     }
 
@@ -841,7 +450,7 @@ impl<
             sk: Some(sk.clone()),
             seed: None,
             pk: None,
-            hash: HASH::default(),
+            hash: <HP::PreHash as Default>::default(),
             ctx,
             ctx_len,
         })
@@ -899,87 +508,21 @@ impl<
 }
 
 impl<
-    HASH: Hash + AlgorithmOID + Default,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
-        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<
-            k,
-            l,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-        > + MLDSAPrivateKeyInternalTrait<
-            LAMBDA,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-        >,
+    HP: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<HP::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, PK_LEN, SK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
 > SignatureVerifier<PK, PK_LEN, SIG_LEN>
-    for HashMLDSA<
-        HASH,
-        PH_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+    for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mut ph_m = [0u8; PH_LEN];
-        _ = HASH::default().hash_out(msg, &mut ph_m);
+        _ = <HP::PreHash as Default>::default().hash_out(msg, &mut ph_m);
 
         Self::verify_ph(pk, &ph_m, ctx, sig)
     }
@@ -992,7 +535,7 @@ impl<
             sk: None,
             seed: None,
             pk: Some(pk.clone()),
-            hash: HASH::default(),
+            hash: <HP::PreHash as Default>::default(),
             ctx,
             ctx_len,
         })
@@ -1013,83 +556,17 @@ impl<
 }
 
 impl<
-    HASH: Hash + AlgorithmOID + Default,
+    HP: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<HP::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, PK_LEN, SK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
-        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<
-            k,
-            l,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-        > + MLDSAPrivateKeyInternalTrait<
-            LAMBDA,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-        >,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
 > PHSigner<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<
-        HASH,
-        PH_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+    for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     fn sign_ph(
         sk: &SK,
@@ -1121,83 +598,17 @@ impl<
 }
 
 impl<
-    HASH: Hash + AlgorithmOID + Default,
+    HP: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<HP::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
+        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, PK_LEN, SK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, T1_PACKED_LEN, PK_LEN>
-        + MLDSAPublicKeyInternalTrait<k, T1_PACKED_LEN, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<
-            k,
-            l,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-        > + MLDSAPrivateKeyInternalTrait<
-            LAMBDA,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            PK_LEN,
-            SK_LEN,
-        >,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const S1_PACKED_LEN: usize,
-    const S2_PACKED_LEN: usize,
-    const T1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
 > PHSignatureVerifier<PK, PK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<
-        HASH,
-        PH_LEN,
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        S1_PACKED_LEN,
-        S2_PACKED_LEN,
-        T1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+    for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     fn verify_ph(
         pk: &PK,
@@ -1229,37 +640,14 @@ impl<
         h.absorb(&[1u8]).expect("absorb before squeeze is infallible");
         h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
         h.absorb(ctx).expect("absorb before squeeze is infallible");
-        h.absorb(HASH::OID_DER).expect("absorb before squeeze is infallible");
+        h.absorb(<HP::PreHash as AlgorithmOID>::OID_DER)
+            .expect("absorb before squeeze is infallible");
         h.absorb(ph).expect("absorb before squeeze is infallible");
         let mut mu = [0u8; MLDSA_MU_LEN];
         _ = h.squeeze_out(&mut mu);
 
-        MLDSA::<
-            PK_LEN,
-            SK_LEN,
-            FULL_SK_LEN,
-            SIG_LEN,
-            PK,
-            SK,
-            TAU,
-            LAMBDA,
-            GAMMA1,
-            GAMMA2,
-            k,
-            l,
-            ETA,
-            BETA,
-            OMEGA,
-            C_TILDE,
-            POLY_Z_PACKED_LEN,
-            POLY_W1_PACKED_LEN,
-            S1_PACKED_LEN,
-            S2_PACKED_LEN,
-            T1_PACKED_LEN,
-            LAMBDA_over_4,
-            GAMMA1_MINUS_BETA,
-            GAMMA2_MINUS_BETA,
-            GAMMA1_MASK_LEN,
-        >::verify_mu(pk, &mu, sig_sized)
+        MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>::verify_mu(
+            pk, &mu, sig_sized,
+        )
     }
 }
