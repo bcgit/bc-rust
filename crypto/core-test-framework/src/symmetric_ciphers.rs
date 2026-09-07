@@ -7,7 +7,7 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{
     AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipher, SymmetricCipherDecryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 
@@ -27,95 +27,6 @@ impl TestFrameworkSymmetricCipher {
         Self { required_alignment: 1 }
     }
 
-    /// Test all the members of trait SymmetricCipher against the given input-output pair.
-    /// This gives good baseline test coverage, but is not exhaustive.
-    pub fn test<
-        const KEY_LEN: usize,
-        const INIT_DATA_LEN: usize,
-        C: SymmetricCipher<KEY_LEN, INIT_DATA_LEN>,
-    >(
-        &self,
-    ) {
-        let msg = b"The quick brown fox jumps over the lazy dog";
-
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
-
-        // one-shot API
-        let mut ct = [0u8; 1024];
-        let (iv, ct_bytes_written) = C::encrypt_out(&key, msg, &mut ct).unwrap();
-        assert_ne!(ct_bytes_written, 0);
-
-        let mut pt = [0u8; 1024];
-        let pt_bytes_written = C::decrypt_out(&key, iv, &ct[..ct_bytes_written], &mut pt).unwrap();
-        assert_ne!(pt_bytes_written, 0);
-        assert_eq!(msg, &pt[..pt_bytes_written]);
-
-        // todo -- add tests for encrypt() / decrypt() wrapped in a #[cfg(std)]
-
-        // messing with the ciphertext does not give back the same plaintext (or failing to decrypt is also ok)
-        ct[17] ^= 0xFF;
-        match C::decrypt_out(&key, iv, &ct[..ct_bytes_written], &mut pt) {
-            Ok(bytes_written) => {
-                // so it decrypted something, but it had better not match the original plaintext
-                assert_eq!(bytes_written, pt_bytes_written);
-                assert_ne!(&pt[..bytes_written], msg);
-            }
-            Err(SymmetricCipherError::DecryptionFailed) => { /* also ok */ }
-            _ => panic!("Unexpected error"),
-        };
-
-        // error case: KeyMaterial of wrong type
-        let mac_key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
-                .unwrap();
-        match C::encrypt_out(&mac_key, msg, &mut ct) {
-            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
-            _ => panic!("Unexpected error"),
-        };
-
-        // error case: security strengths too weak and too strong
-        let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
-        let security_strengths = [
-            SecurityStrength::None,
-            SecurityStrength::_112bit,
-            SecurityStrength::_128bit,
-            SecurityStrength::_192bit,
-            SecurityStrength::_256bit,
-        ];
-        for ss in security_strengths.iter() {
-            // Tag the key at an arbitrary strength for the purpose of this test. Inside a
-            // do_hazardous_operations() closure, set_security_strength() raises the strength
-            // (and bypasses the key-length guard) without complaining.
-            do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
-
-            match C::encrypt_out(&key, msg, &mut ct) {
-                Ok(_) => {
-                    if ss >= &C::MAX_SECURITY_STRENGTH { /* good */
-                    } else {
-                        panic!("Should have been a strong enough key");
-                    }
-                }
-                Err(SymmetricCipherError::KeyMaterialError(_)) => {
-                    if ss < &C::MAX_SECURITY_STRENGTH { /* good */
-                    } else {
-                        panic!("Should not have accepted a key weaker than algorithm");
-                    }
-                }
-                _ => panic!("Unexpected error"),
-            };
-        }
-    }
-}
-
-impl TestFrameworkSymmetricCipher {
     /// Exercises the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] contract for a
     /// paired implementor.
     ///
@@ -542,6 +453,107 @@ impl TestFrameworkAEADCipher {
         Self {}
     }
 
+    /// Tests the plain one-shots -- [`AEADCipher::encrypt_out`] and
+    /// [`AEADCipher::decrypt_out`], which take no additional authenticated data.
+    ///
+    /// These four methods were the former `SymmetricCipher` trait, and this was its suite; they now
+    /// belong to `AEADCipher`, so the suite comes with them. Called by
+    /// [`test`](Self::test), so an implementor gets it without asking, and public so it can be run
+    /// on its own.
+    pub fn test_plain_one_shots<
+        const KEY_LEN: usize,
+        const NONCE_LEN: usize,
+        const TAG_LEN: usize,
+        C: AEADCipher<KEY_LEN, NONCE_LEN, TAG_LEN>,
+    >(
+        &self,
+    ) {
+        let msg = b"The quick brown fox jumps over the lazy dog";
+
+        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
+            &DUMMY_SEED[..KEY_LEN],
+            KeyType::SymmetricCipherKey,
+        )
+        .unwrap();
+
+        // one-shot API
+        let mut ct = [0u8; 1024];
+        let (iv, ct_bytes_written) = C::encrypt_out(&key, msg, &mut ct).unwrap();
+        assert_ne!(ct_bytes_written, 0);
+
+        let mut pt = [0u8; 1024];
+        let pt_bytes_written = C::decrypt_out(&key, iv, &ct[..ct_bytes_written], &mut pt).unwrap();
+        assert_ne!(pt_bytes_written, 0);
+        assert_eq!(msg, &pt[..pt_bytes_written]);
+
+        // todo -- add tests for encrypt() / decrypt() wrapped in a #[cfg(std)]
+
+        // messing with the ciphertext does not give back the same plaintext (or failing to decrypt is also ok)
+        ct[17] ^= 0xFF;
+        match C::decrypt_out(&key, iv, &ct[..ct_bytes_written], &mut pt) {
+            Ok(bytes_written) => {
+                // so it decrypted something, but it had better not match the original plaintext
+                assert_eq!(bytes_written, pt_bytes_written);
+                assert_ne!(&pt[..bytes_written], msg);
+            }
+            Err(SymmetricCipherError::DecryptionFailed) => { /* also ok */ }
+            _ => panic!("Unexpected error"),
+        };
+
+        // error case: KeyMaterial of wrong type
+        let mac_key =
+            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
+                .unwrap();
+        match C::encrypt_out(&mac_key, msg, &mut ct) {
+            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
+            _ => panic!("Unexpected error"),
+        };
+
+        // error case: security strengths too weak and too strong
+        let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
+            &DUMMY_SEED[..KEY_LEN],
+            KeyType::SymmetricCipherKey,
+        )
+        .unwrap();
+        let security_strengths = [
+            SecurityStrength::None,
+            SecurityStrength::_112bit,
+            SecurityStrength::_128bit,
+            SecurityStrength::_192bit,
+            SecurityStrength::_256bit,
+        ];
+        for ss in security_strengths.iter() {
+            // `set_security_strength` enforces its key-length guard even inside a
+            // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
+            // strength above `from_bytes(KEY_LEN)` -- so skip the strengths this key cannot carry
+            // rather than unwrapping an error. (A 16-byte key can reach 128-bit and no higher.)
+            // Do NOT "fix" this by relaxing that guard in `KeyMaterial`: core's
+            // `test_hazardous_ops_error_handling` requires it to stay enforced.
+            if ss > &SecurityStrength::from_bytes(KEY_LEN) {
+                continue;
+            }
+
+            // Tag the key at an arbitrary strength for the purpose of this test.
+            do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+
+            match C::encrypt_out(&key, msg, &mut ct) {
+                Ok(_) => {
+                    if ss >= &C::MAX_SECURITY_STRENGTH { /* good */
+                    } else {
+                        panic!("Should have been a strong enough key");
+                    }
+                }
+                Err(SymmetricCipherError::KeyMaterialError(_)) => {
+                    if ss < &C::MAX_SECURITY_STRENGTH { /* good */
+                    } else {
+                        panic!("Should not have accepted a key weaker than algorithm");
+                    }
+                }
+                _ => panic!("Unexpected error"),
+            };
+        }
+    }
+
     /// Test all the members of trait AEADCipher against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive.
     pub fn test<
@@ -552,6 +564,9 @@ impl TestFrameworkAEADCipher {
     >(
         &self,
     ) {
+        // The plain one-shots this trait absorbed from the former `SymmetricCipher`.
+        self.test_plain_one_shots::<KEY_LEN, NONCE_LEN, TAG_LEN, C>();
+
         let msg = b"The quick brown fox jumps over the lazy dog";
         let aad = b"some associated data";
 
@@ -645,13 +660,21 @@ impl TestFrameworkAEADCipher {
             SecurityStrength::_256bit,
         ];
         for ss in security_strengths.iter() {
-            // Tag the key at an arbitrary strength for the purpose of this test. Inside a
-            // do_hazardous_operations() closure, set_security_strength() raises the strength
-            // (and bypasses the key-length guard) without complaining.
+            // `set_security_strength` enforces its key-length guard even inside a
+            // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
+            // strength above `from_bytes(KEY_LEN)` -- so skip the strengths this key cannot carry
+            // rather than unwrapping an error. (A 16-byte key can reach 128-bit and no higher.)
+            // Do NOT "fix" this by relaxing that guard in `KeyMaterial`: core's
+            // `test_hazardous_ops_error_handling` requires it to stay enforced.
+            if ss > &SecurityStrength::from_bytes(KEY_LEN) {
+                continue;
+            }
+
+            // Tag the key at an arbitrary strength for the purpose of this test.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
 
             // The key-strength requirement must be enforced both by the AEAD one-shot and by the
-            // inherited SymmetricCipher one-shot (encrypt_out), so exercise both.
+            // plain one (encrypt_out), so exercise both.
             let check_strength = |result: Result<(), SymmetricCipherError>| match result {
                 Ok(_) => {
                     if ss >= &C::MAX_SECURITY_STRENGTH { /* good */

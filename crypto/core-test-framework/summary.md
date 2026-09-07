@@ -124,15 +124,15 @@ The identical loop appears in two other suites in
 
 | Suite | Loop at | Implementors in tree | Status |
 |---|---|---|---|
-| `TestFrameworkSymmetricCipher` | line 87 | 0 | latent, unfixed |
+| `TestFrameworkSymmetricCipher::test` | line 87 | 0 | **gone**: the `SymmetricCipher` trait was deleted and its suite moved to `TestFrameworkAEADCipher::test_plain_one_shots`, guarded on the way |
 | `TestFrameworkBlockCipher` | line 240 | 1 (`crypto/modes`) | **fixed** |
-| `TestFrameworkAEADCipher` | line 386 | 0 | latent, unfixed |
+| `TestFrameworkAEADCipher` | line 386 | 0 | **fixed** |
 | `TestFrameworkStreamCipher` | in `test` | 2 (`crypto/modes`: `Cfb`, `Cfb8`) | **fixed** (written later, with the guard) |
 
-Both unfixed suites will panic the first time anything implements their trait with a key shorter
-than 32 bytes — which for `AEADCipher` includes ASCON-128 and AES-128-GCM. They were left alone to
-keep this change scoped to what CBC needed; the fix is the same three lines in each. Worth doing
-before the next implementor arrives rather than after.
+Both were later fixed, when `SymmetricCipher` was deleted and its suite moved onto `AEADCipher`.
+Until then they would have panicked the first time anything implemented their trait with a key
+shorter than 32 bytes — which for `AEADCipher` includes ASCON-128 and AES-128-GCM. Every
+security-strength loop in the file now carries the same key-length guard.
 
 Note that `TestFrameworkStreamCipher` was a different case when this was written: its `test` was a
 `todo!()` with no security-strength handling at all, so there was nothing to fix and nothing being
@@ -180,7 +180,7 @@ new suites are exercised by:
 
 ## 6. Open items
 
-1. **Fix the same loop in `TestFrameworkSymmetricCipher` and `TestFrameworkAEADCipher`** (§3).
+1. ~~**Fix the same loop in `TestFrameworkSymmetricCipher` and `TestFrameworkAEADCipher`** (§3).~~ Done.
    Three lines each, and the next implementor of either trait will otherwise hit the panic.
 2. **Decide whether the `Default` impl added to `TestFrameworkElectronicCodeBook` should be added to
    the other suites** for consistency — they all have `new()` and no `Default`, which clippy

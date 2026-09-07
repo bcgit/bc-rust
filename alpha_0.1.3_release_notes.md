@@ -383,8 +383,25 @@ bytes are output -- always `FINAL_LEN` except for a padding scheme that adds not
 and, for the decryptor, how many of them are data. `do_final_out`, the `_out` one-shots
 (`encrypt_out[_rng]`, `decrypt_out`, with `encrypt_out_len` exact and `decrypt_out_max_len` an upper
 bound, checked before any work is done) and the `std` `Vec` one-shots are provided over the streaming
-methods, so an implementor writes six methods. The older one-shot-only `SymmetricCipher` trait is
-unchanged for now; `AEADCipher` still builds on it and is the next to migrate.
+methods, so an implementor writes six methods.
+
+The older one-shot-only `SymmetricCipher` trait is **deleted**, and its four methods -- `encrypt`,
+`encrypt_out`, `decrypt`, `decrypt_out` -- move onto `AEADCipher`, which was its only remaining
+user. Every other kind of cipher now reaches an arbitrary-length one-shot some other way: a block
+mode through `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor` and the padding adapters, a
+stream mode through those same traits directly. `AEADCipher` therefore drops the supertrait and
+declares the four itself, against `NONCE_LEN`, with the documentation saying what they mean for an
+AEAD: no additional authenticated data, and a ciphertext layout that is the implementation's
+business because the tag has to go somewhere. `TestFrameworkSymmetricCipher::test`, which was that
+trait's suite, moves to `TestFrameworkAEADCipher::test_plain_one_shots` and is called from
+`TestFrameworkAEADCipher::test`, so an AEAD implementor keeps the coverage without asking for it.
+
+That move also closed the last of a latent bug recorded in `core-test-framework/summary.md`: two
+security-strength loops unwrapped `set_security_strength` at all five strengths, which a key shorter
+than 32 bytes cannot carry, so they would have panicked for the first AEAD implementor — ASCON-128
+and AES-128-GCM among them. Relocating one of them into a method the AEAD suite calls would have
+made that worse, so both now carry the same key-length guard the block and stream suites already
+had. Every strength loop in the file is guarded.
 
 Stream ciphers also reach the arbitrary-length API: `StreamCipherEncryptor` and
 `StreamCipherDecryptor` get blanket impls of `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor`
@@ -568,7 +585,7 @@ Block cipher traits (PR #96):
 * The single `BlockCipher` streaming trait is split into `BlockCipherEncryptor` and `BlockCipherDecryptor` (mirroring
   `KEMEncapsulator` / `KEMDecapsulator`) so the direction is encoded in the implementing type. Both, and
   `ElectronicCodeBook`, are bounded on `Algorithm`, whose `MAX_SECURITY_STRENGTH` is the strength the `_init`
-  constructors enforce (a mode reports its permutation's name and strength); the `SymmetricCipher` one-shot API is no
+  constructors enforce (a mode reports its permutation's name and strength); the one-shot API is no
   longer a supertrait.
 * The single-block `do_{en,de}crypt_block[_out]` methods are replaced by multi-block
   `do_{en,de}crypt_blocks[_out]<const N>`, taking `&[[u8; BLOCK_LEN]; N]` so the block count is compile-time and

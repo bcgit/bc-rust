@@ -22,7 +22,7 @@ Consistent with the earlier scoping decision for the AES engine, the crate delib
 
 * **no CLI subcommand** — a bare permutation can only offer ECB,
 * **no factory registration**,
-* **no `core` cipher-trait implementations** (`SymmetricCipher` / `BlockCipherEncryptor` /
+* **no `core` cipher-trait implementations** (`BlockCipherEncryptor` /
   `BlockCipherDecryptor`) — those traits are about encrypting *data* and generating initialisation
   data, which are mode-of-operation concerns,
 * **no `AlgorithmOID`** — NIST CSOR assigns AES OIDs per mode, never to the bare cipher.
