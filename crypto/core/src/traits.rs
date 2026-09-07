@@ -1094,7 +1094,8 @@ pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG
 }
 
 /// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose
-/// notes on in-place operation, arbitrary lengths and the `Result` all apply here too.
+/// notes on in-place operation, arbitrary lengths, the `Result` and the free
+/// [`SymmetricCipherDecryptor`] impl all apply here too.
 pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     Algorithm + Sized
 {
@@ -1129,6 +1130,14 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// Encryption and decryption are separate traits for the same reasons as
 /// [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]: the direction is encoded in the type, and a
 /// policy can permit decryption of an algorithm while forbidding new encryptions.
+///
+/// # You also get the arbitrary-length API for free
+///
+/// Every implementor is automatically a [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`, by a
+/// blanket impl written in terms of [`do_encrypt`](Self::do_encrypt). So an implementor writes the
+/// three methods below and a caller may still use `encrypt_out`, `do_update_out` and the rest --
+/// the separate-output view that the padding adapters present -- and hold a stream mode through the
+/// same trait as a padded block mode.
 ///
 /// Init data (a nonce or IV) is generated securely by the implementation in the constructor and
 /// returned for transmission alongside the ciphertext; there is no API for the user to supply it,
@@ -1582,6 +1591,146 @@ pub trait SymmetricCipherEncryptor<
         let (init_data, written) = Self::encrypt_out(key, plaintext, &mut ciphertext)?;
         ciphertext.truncate(written);
         Ok((init_data, ciphertext))
+    }
+}
+
+/// Every stream cipher is also a [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`.
+///
+/// The two traits describe the same operation at different granularities. [`StreamCipherEncryptor`]
+/// is the in-place view -- one buffer, transformed where it lies -- and
+/// [`SymmetricCipherEncryptor`] is the separate-output view that the padding adapters and the AEAD
+/// ciphers share. A stream cipher can offer the second in terms of the first, because it changes
+/// neither the length of its data nor anything at the end of the message: `update_out_len` is the
+/// identity, `encrypt_out_len` is the identity, and `do_final` has nothing to produce, which is
+/// exactly what `FINAL_LEN = 0` says.
+///
+/// The point of the blanket impl is that a caller can hold a CFB, CFB8 or CTR value through the
+/// same trait as a padded CBC one, and write code that does not care which mode it was handed. It
+/// applies to every present and future implementor, so a new stream mode gets the arbitrary-length
+/// API by writing one method.
+///
+/// Note that both traits then offer `do_encrypt_init` and `do_encrypt_init_rng` with identical
+/// signatures. Where both are in scope, a call needs qualifying --
+/// `<Cfb<..> as StreamCipherEncryptor<..>>::do_encrypt_init(&key)` -- though either resolves to the
+/// same function.
+impl<T, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
+    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
+where
+    T: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+{
+    fn do_encrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        <T as StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>>::do_encrypt_init(key)
+    }
+
+    fn do_encrypt_init_rng(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        <T as StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>>::do_encrypt_init_rng(key, rng)
+    }
+
+    /// A stream cipher buffers nothing, so every input byte produces exactly one output byte.
+    fn update_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// Copies the plaintext into the output buffer and encrypts it there, so the caller's input is
+    /// left untouched -- the one thing the in-place [`StreamCipherEncryptor::do_encrypt`] cannot
+    /// offer.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is shorter than
+    /// `plaintext`, checked before anything is consumed; otherwise whatever `do_encrypt` returns.
+    fn do_update_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
+                "ciphertext",
+                plaintext.len(),
+            ));
+        }
+        let out = &mut ciphertext[..plaintext.len()];
+        out.copy_from_slice(plaintext);
+        self.do_encrypt(out)?;
+        Ok(plaintext.len())
+    }
+
+    /// Nothing is held back, so there is nothing to finish: an empty buffer, none of it output.
+    ///
+    /// `cargo mutants` reports the `[]` here as a surviving mutant against `[0; 0]` and `[1; 0]`.
+    /// Those are the same value: a zero-length array has no element to differ in, so the three
+    /// spellings are indistinguishable and no test can separate them. The mutants that *do* change
+    /// behaviour -- returning 1 rather than 0 for the data length -- are caught.
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        Ok(([], 0))
+    }
+
+    /// A stream cipher never changes the length of its data.
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        plaintext_len
+    }
+}
+
+/// Every stream cipher is also a [`SymmetricCipherDecryptor`] with `FINAL_LEN = 0`. The mirror of
+/// the [`StreamCipherEncryptor`] blanket impl above; see it for why this exists.
+impl<T, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
+    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
+where
+    T: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+{
+    fn do_decrypt_init(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Result<Self, SymmetricCipherError> {
+        <T as StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>>::do_decrypt_init(key, init_data)
+    }
+
+    /// A stream cipher holds nothing back, so every input byte can be released immediately.
+    fn update_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// Copies the ciphertext into the output buffer and decrypts it there, leaving the caller's
+    /// input untouched.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is shorter than
+    /// `ciphertext`, checked before anything is consumed; otherwise whatever `do_decrypt` returns.
+    fn do_update_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        if plaintext.len() < ciphertext.len() {
+            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
+                "plaintext",
+                ciphertext.len(),
+            ));
+        }
+        let out = &mut plaintext[..ciphertext.len()];
+        out.copy_from_slice(ciphertext);
+        self.do_decrypt(out)?;
+        Ok(ciphertext.len())
+    }
+
+    /// Nothing is held back, and there is no padding or tag to check.
+    ///
+    /// `cargo mutants` reports the `[]` here as a surviving mutant against `[0; 0]` and `[1; 0]`.
+    /// Those are the same value: a zero-length array has no element to differ in, so the three
+    /// spellings are indistinguishable and no test can separate them. The mutants that *do* change
+    /// behaviour -- returning 1 rather than 0 for the data length -- are caught.
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        Ok(([], 0))
+    }
+
+    /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+        ciphertext_len
     }
 }
 

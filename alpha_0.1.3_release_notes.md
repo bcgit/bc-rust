@@ -386,6 +386,26 @@ bound, checked before any work is done) and the `std` `Vec` one-shots are provid
 methods, so an implementor writes six methods. The older one-shot-only `SymmetricCipher` trait is
 unchanged for now; `AEADCipher` still builds on it and is the next to migrate.
 
+Stream ciphers also reach the arbitrary-length API: `StreamCipherEncryptor` and
+`StreamCipherDecryptor` get blanket impls of `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor`
+with `FINAL_LEN = 0`, written in terms of the in-place `do_encrypt` / `do_decrypt`. An implementor
+still writes only the in-place methods, but a caller can use `encrypt_out`, `do_update_out` and the
+`std` one-shots, and can hold a stream mode through the same trait as a padded block mode -- which
+is what makes "any of the five modes behind one trait" true rather than aspirational. For a stream
+cipher the length predictions are exact rather than upper bounds, and `do_final` has nothing to
+produce. The one cost is that both traits then spell `do_encrypt_init` identically, so code with
+both in scope must qualify the call; `crypto/modes/tests/symmetric_cipher_api_tests.rs` is written
+that way deliberately, to show it is workable. That file also runs all three stream modes through
+`TestFrameworkSymmetricCipher::test_encryptor_decryptor`, the same conformance suite the padded
+adapters run, and checks the separate-output API against the in-place one byte for byte.
+
+Mutation-tested with `--test-workspace`, which is what these blanket impls need: run against core's
+own tests alone they look untested, because core has no implementors of its own traits. Scoped to
+the change, 45 mutants, 22 caught, 19 unviable, 4 missed -- all four the same equivalent mutant,
+`[]` against `[0; 0]` and `[1; 0]` for a zero-length array, which no test can distinguish because
+they are the same value; both sites carry a comment saying so. The one genuinely uncovered mutant
+the run found, the decryptor's output-buffer length comparison, is now covered.
+
 `StreamCipher` is **replaced** by the split pair `StreamCipherEncryptor` / `StreamCipherDecryptor`,
 shaped like `BlockCipherEncryptor` / `BlockCipherDecryptor` and for the same reasons: the direction
 is encoded in the type, and a policy can permit decryption of an algorithm while forbidding new

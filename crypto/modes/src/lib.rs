@@ -18,6 +18,14 @@
 //! [`StreamCipherDecryptor`]): any length in, the same length out, no padding, no finalization --
 //! see [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
 //!
+//! **All five reach the same arbitrary-length API**, so code can be written against one trait and
+//! handed any mode. A block mode gets there by being wrapped in `bouncycastle-padding`'s adapters,
+//! which are [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with the padded block as
+//! their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0` because
+//! it has no final output at all. The `bouncycastle-aes-lowmemory` aliases show the difference in
+//! one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme, `AES_CTR_128<Encrypting>`
+//! has nothing to name.
+//!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block -- see
@@ -525,7 +533,7 @@ pub use ecb::Ecb;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor,
-    StreamCipherEncryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
 
