@@ -267,4 +267,3 @@ pub use mlkem::{MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN};
 pub use mlkem::{MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
 
 /*** Parameter sets ***/
-pub use params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params};

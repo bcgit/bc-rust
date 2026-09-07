@@ -185,7 +185,3 @@ pub use mlkem::{MLKEM_RND_LEN, MLKEM_SEED_LEN, MLKEM_SS_LEN};
 pub use mlkem::{MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN};
 pub use mlkem::{MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN};
 pub use mlkem::{MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
-pub use params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params};
-
-pub use matrix::{Matrix, MatrixTrait, Vector, VectorTrait};
-pub use polynomial::Polynomial;

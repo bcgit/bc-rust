@@ -180,9 +180,17 @@ mod tests {
     /// The associated types must be as long as `k` says; they are written out by hand per
     /// parameter set, so this guards against a typo in one of them.
     fn check_associated_type_sizes<P: MLKEMParams>() {
-        assert_eq!(<P::VecK as VectorTrait>::LEN, P::k, "{}: VecK vs 𝑘", P::ALG_NAME);
-        assert_eq!(<P::MatrixA as MatrixTrait>::ROWS, P::k, "{}: MatrixA rows vs 𝑘", P::ALG_NAME);
-        assert_eq!(<P::MatrixA as MatrixTrait>::COLS, P::k, "{}: MatrixA cols vs 𝑘", P::ALG_NAME);
+        // Measured rather than read off a const: `MatrixTrait<Vec = Self::VecK>` already ties the
+        // matrix to the vector at the type level, so the only thing left to check is that both
+        // are 𝑘 polynomials long.
+        let poly = size_of::<crate::polynomial::Polynomial>();
+        assert_eq!(size_of::<P::VecK>(), P::k * poly, "{}: VecK vs 𝑘", P::ALG_NAME);
+        assert_eq!(
+            size_of::<P::MatrixA>(),
+            P::k * P::k * poly,
+            "{}: MatrixA vs 𝑘 × 𝑘",
+            P::ALG_NAME
+        );
     }
 
     #[test]

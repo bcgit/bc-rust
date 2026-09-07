@@ -180,15 +180,9 @@ pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
 
 pub use mldsa::SUSPENDED_MU_BUILDER_STATE_LEN;
 
-pub use params::{MLDSA44Params, MLDSA65Params, MLDSA87Params};
-
 pub use hash_mldsa::HASH_ML_DSA_44_with_SHA256_NAME;
 pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA256_NAME;
 pub use hash_mldsa::HASH_ML_DSA_87_with_SHA256_NAME;
-pub use params::{
-    HashMLDSA44_with_SHA256Params, HashMLDSA44_with_SHA512Params, HashMLDSA65_with_SHA256Params,
-    HashMLDSA65_with_SHA512Params, HashMLDSA87_with_SHA256Params, HashMLDSA87_with_SHA512Params,
-};
 
 pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
 pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA512_NAME;

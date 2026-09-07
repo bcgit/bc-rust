@@ -16,9 +16,6 @@ use bouncycastle_utils::secret::ZeroizablePrimitive;
 pub trait VectorTrait:
     Sized + Copy + ZeroizablePrimitive + Index<usize, Output = Polynomial> + IndexMut<usize>
 {
-    /// The number of polynomial coordinates, i.e. 𝑘.
-    const LEN: usize;
-
     /// A vector with every coefficient set to zero.
     fn new() -> Self;
 
@@ -49,11 +46,6 @@ pub trait VectorTrait:
 ///
 /// [`Matrix`] is the only implementation; see [`VectorTrait`] for why the trait exists.
 pub trait MatrixTrait: Sized + Clone {
-    /// 𝑘, the number of rows.
-    const ROWS: usize;
-    /// 𝑘, the number of columns. ML-KEM's 𝐀̂ is square.
-    const COLS: usize;
-
     /// The vector this matrix maps between: an element of 𝑅^𝑘.
     type Vec: VectorTrait;
 
@@ -124,9 +116,6 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
 /// ML-KEM's 𝐀̂ is always 𝑘 × 𝑘, so the trait is implemented only for the square case; that is what
 /// lets [`MatrixTrait::Vec`] be one vector type rather than an input and an output type.
 impl<const k: usize> MatrixTrait for Matrix<k, k> {
-    const ROWS: usize = k;
-    const COLS: usize = k;
-
     type Vec = Vector<k>;
 
     fn new() -> Self {
@@ -177,8 +166,6 @@ impl<const k: usize> Vector<k> {
 }
 
 impl<const k: usize> VectorTrait for Vector<k> {
-    const LEN: usize = k;
-
     fn new() -> Self {
         Vector::new()
     }
