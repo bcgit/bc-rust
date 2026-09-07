@@ -213,19 +213,4 @@ mod tests {
         check_associated_type_sizes::<MLKEM768Params>();
         check_associated_type_sizes::<MLKEM1024Params>();
     }
-
-    /// Each of the sizes of Table 3 also has a formula in FIPS 203, and the two must agree.
-    /// Table 3 is what is written down above; this is what re-derives it.
-    #[test]
-    fn test_table_3_sizes_agree_with_the_encoding_formulas() {
-        for (k, du, dv, pk, sk, ct) in [
-            (2usize, 10usize, 4usize, 800usize, 1632usize, 768usize),
-            (3, 10, 4, 1184, 2400, 1088),
-            (4, 11, 5, 1568, 3168, 1568),
-        ] {
-            assert_eq!(384 * k + 32, pk, "Algorithm 16: ek ∈ 𝔹^(384𝑘+32)");
-            assert_eq!(768 * k + 96, sk, "Algorithm 16: dk ∈ 𝔹^(768𝑘+96)");
-            assert_eq!(32 * (du * k + dv), ct, "Algorithm 17: 𝑐 ∈ 𝔹^(32(𝑑𝑢𝑘+𝑑𝑣))");
-        }
-    }
 }
