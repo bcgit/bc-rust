@@ -67,6 +67,35 @@ impl TestFrameworkXOF {
             "successive reads must continue one stream"
         );
 
+        /*** fn do_final(self, num_bytes: usize) -> Vec<u8> ***/
+        // do_final reads what do_output would read at the same point; it only ends the stream.
+        let mut xof = X::default();
+        xof.do_update(input);
+        assert_eq!(
+            xof.into_output().do_final(expected_output.len()),
+            expected_output,
+            "do_final must read what do_output reads"
+        );
+
+        // ... including part-way through a stream, not just at the start.
+        let mut xof = X::default();
+        xof.do_update(input);
+        let mut out = xof.into_output();
+        let head = out.do_output(split);
+        let tail = out.do_final(expected_output.len() - split);
+        assert_eq!(
+            [head, tail].concat(),
+            expected_output,
+            "do_final must continue the stream, not restart it"
+        );
+
+        let mut buf = vec![0xFFu8; expected_output.len()];
+        let mut xof = X::default();
+        xof.do_update(input);
+        let n = xof.into_output().do_final_out(&mut buf);
+        assert_eq!(n, expected_output.len());
+        assert_eq!(buf, expected_output, "do_final_out must agree with do_final");
+
         /*** fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> ***/
         assert_eq!(
             X::default().hash_xof(input, expected_output.len()),

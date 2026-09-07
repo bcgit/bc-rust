@@ -1761,6 +1761,32 @@ pub trait XofOutput {
     /// As [`do_output`](Self::do_output), filling the caller's buffer, which is zeroized first.
     /// Returns the number of bytes written.
     fn do_output_out(&mut self, output: &mut [u8]) -> usize;
+
+    /// The last output: produces `num_bytes` bytes and ends the stream.
+    ///
+    /// This is BC Java's `Xof.doFinal(out, outOff, outLen)` called after `doOutput`, which is
+    /// `doOutput` followed by `reset()` (`SHAKEDigest.java`). Here the reset is taking `self` by
+    /// value: the handle is gone afterwards, and dropping it zeroizes the sponge. So this is
+    /// exactly [`do_output`](Self::do_output) plus the end of the value's life, provided as a
+    /// separate name so a call site can say which read is its last.
+    ///
+    /// It reads the same bytes [`do_output`](Self::do_output) would at the same point in the
+    /// stream; the difference is only that nothing can follow it.
+    fn do_final(mut self, num_bytes: usize) -> Vec<u8>
+    where
+        Self: Sized,
+    {
+        self.do_output(num_bytes)
+    }
+
+    /// As [`do_final`](Self::do_final), filling the caller's buffer, which is zeroized first.
+    /// Returns the number of bytes written.
+    fn do_final_out(mut self, output: &mut [u8]) -> usize
+    where
+        Self: Sized,
+    {
+        self.do_output_out(output)
+    }
 }
 
 /// Extendable-Output Functions (XOFs): hashes whose output length is chosen by the caller.
