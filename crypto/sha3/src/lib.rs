@@ -191,9 +191,11 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{Hash, KDF, Suspendable, XOF};
 // end of doc-only imports
 
+mod cshake;
 mod keccak;
 mod sha3;
 mod shake;
+mod xof_utils;
 
 /*** String constants ***/
 /// Algorithm name string for SHA3-224, as used by the factories and CLI.
@@ -208,10 +210,26 @@ pub const SHA3_512_NAME: &str = "SHA3-512";
 pub const SHAKE128_NAME: &str = "SHAKE128";
 /// Algorithm name string for SHAKE256, as used by the factories and CLI.
 pub const SHAKE256_NAME: &str = "SHAKE256";
+/// The name of the cSHAKE128 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE128_NAME: &str = "CSHAKE128";
+/// The name of the cSHAKE256 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE256_NAME: &str = "CSHAKE256";
 
 /*** pub types ***/
+pub use cshake::CSHAKEInternal;
 pub use sha3::SHA3Internal;
-pub use shake::SHAKEInternal;
+
+/// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
+///
+/// Construct with [`CSHAKEInternal::new`], passing the function-name string `N` (reserved for
+/// NIST, normally empty) and the customization string `S`. With both empty this is exactly
+/// [`SHAKE128`].
+pub type CSHAKE128 = CSHAKEInternal<SHAKE128Params>;
+/// cSHAKE256: the customizable SHAKE256 of NIST SP 800-185 Sec 3, at a 256-bit security strength.
+///
+/// See [`CSHAKE128`].
+pub type CSHAKE256 = CSHAKEInternal<SHAKE256Params>;
+pub use shake::{SHAKEInternal, SHAKEOutput};
 
 pub use keccak::SUSPENDED_SHA3_STATE_LEN;
 
@@ -338,6 +356,11 @@ trait SHAKEParams: Algorithm {
     const SIZE: KeccakSize;
     /// See [`SHA3Params::STATE_TAG`]. Must be distinct from every SHA3 *and* SHAKE variant's tag.
     const STATE_TAG: u8;
+    /// The sponge rate in bytes: `(1600 - 2c) / 8`, 168 for SHAKE128 and 136 for SHAKE256.
+    /// SP 800-185 Sec 3.3 pads cSHAKE's encoded strings to a multiple of it.
+    const RATE_BYTES: usize = (1600 - ((Self::SIZE as usize) << 1)) / 8;
+    /// The name of the cSHAKE built on this parameter set.
+    const CSHAKE_ALG_NAME: &'static str;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -349,6 +372,7 @@ impl Algorithm for SHAKE128Params {
 impl SHAKEParams for SHAKE128Params {
     const SIZE: KeccakSize = KeccakSize::_128;
     const STATE_TAG: u8 = 5;
+    const CSHAKE_ALG_NAME: &'static str = CSHAKE128_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake128 { hashAlgs 11 }
 impl AlgorithmOID for SHAKE128 {
@@ -366,6 +390,7 @@ impl Algorithm for SHAKE256Params {
 impl SHAKEParams for SHAKE256Params {
     const SIZE: KeccakSize = KeccakSize::_256;
     const STATE_TAG: u8 = 6;
+    const CSHAKE_ALG_NAME: &'static str = CSHAKE256_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake256 { hashAlgs 12 }
 impl AlgorithmOID for SHAKE256 {

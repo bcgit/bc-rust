@@ -65,6 +65,25 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.into_output().do_output_out(output)
     }
 
+    /// Ends absorbing with a caller-chosen domain separator and returns the squeezing half.
+    ///
+    /// SHAKE uses "1111" (FIPS 202 s. 6.2), but cSHAKE uses "00" (SP 800-185 s. 3.3, the `00` in
+    /// the `KECCAK[c](... || X || 00, L)` branch), so the suffix cannot be baked in here. Crate
+    /// internal: callers outside pick a function, and the function picks its own separator.
+    ///
+    /// Infallible for the same reason [`Hash::do_update`] is: a `SHAKEInternal` a caller can name
+    /// has never squeezed, so the queue is byte-aligned and `absorb_bits` cannot reject it.
+    pub(crate) fn into_output_with_suffix(
+        mut self,
+        suffix: u8,
+        num_bits: usize,
+    ) -> SHAKEOutput<PARAMS> {
+        self.keccak
+            .absorb_bits(suffix, num_bits)
+            .expect("a sponge that has not squeezed can absorb a domain separator");
+        SHAKEOutput { shake: self }
+    }
+
     /// Produces the next bytes of the output stream, applying the SHAKE "1111" domain separator
     /// (FIPS 202 s. 6.2) on the first call. Reached only through [`SHAKEOutput`], so the caller
     /// cannot interleave this with absorbing.
@@ -445,19 +464,43 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
     type Output = SHAKEOutput<PARAMS>;
 
-    fn into_output(mut self) -> Self::Output {
-        // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2), applied as the sponge switches to
-        // squeezing. Infallible: this value has never squeezed (see `do_update`), so the queue is
-        // byte-aligned and `absorb_bits` cannot reject it.
-        self.keccak.absorb_bits(0x0F, 4).expect("a SHAKE that has not squeezed can absorb bits");
-        SHAKEOutput { shake: self }
+    fn into_output(self) -> Self::Output {
+        // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
+        self.into_output_with_suffix(0x0F, 4)
     }
 
     fn into_output_partial_bits(
-        mut self,
+        self,
         partial_byte: u8,
         num_bits: usize,
     ) -> Result<Self::Output, HashError> {
+        // The SHAKE domain separator, "1111" (FIPS 202 s. 6.2).
+        self.into_output_partial_bits_with_suffix(partial_byte, num_bits, 0x0F, 4)
+    }
+
+    fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
+        self.hash_internal(data, result_len)
+    }
+
+    fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        // hash_internal_out zeroizes `output` before writing.
+        self.hash_internal_out(data, output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
+    /// [`XOF::into_output_partial_bits`] with a caller-chosen domain separator, for cSHAKE.
+    ///
+    /// The message's trailing bits and the separator are absorbed together, so the separator
+    /// cannot simply be applied afterwards -- hence the suffix travels in rather than being
+    /// hardcoded. See [`Self::into_output_with_suffix`].
+    pub(crate) fn into_output_partial_bits_with_suffix(
+        mut self,
+        partial_byte: u8,
+        num_bits: usize,
+        suffix: u8,
+        suffix_bits: usize,
+    ) -> Result<SHAKEOutput<PARAMS>, HashError> {
         // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
         // Checked before any state change, so a rejected call leaves the sponge untouched.
         if num_bits > 7 {
@@ -469,8 +512,8 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         // LSB-first: FIPS 202 Algorithm 10 (h2b) step 3 sets message bit T[8i + j] = b_ij, the bit
         // of weight 2^j in byte i. So reverse the bit order and keep the low num_bits bits.
         let message_bits = (partial_byte.reverse_bits() as u16) & ((1 << num_bits) - 1);
-        let mut final_input: u16 = message_bits | (0x0F << num_bits);
-        let mut final_bits = num_bits + 4;
+        let mut final_input: u16 = message_bits | ((suffix as u16) << num_bits);
+        let mut final_bits = num_bits + suffix_bits;
 
         if final_bits >= 8 {
             self.keccak.absorb(&[final_input as u8]);
@@ -482,17 +525,8 @@ impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
         // is in 0..=7 by construction.
         self.keccak.absorb_bits(final_input as u8, final_bits).expect("Absorb failed.");
 
-        // The "1111" suffix is already folded into final_input above, so the sponge is finished
+        // The suffix is already folded into final_input above, so the sponge is finished
         // absorbing; wrap it without applying the suffix a second time.
         Ok(SHAKEOutput { shake: self })
-    }
-
-    fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.hash_internal(data, result_len)
-    }
-
-    fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        // hash_internal_out zeroizes `output` before writing.
-        self.hash_internal_out(data, output)
     }
 }

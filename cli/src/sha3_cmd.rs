@@ -2,7 +2,9 @@ use bouncycastle::core::traits::{Hash, XOF, XofOutput};
 use std::io;
 use std::io::{Read, Write};
 
-use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
+use bouncycastle::sha3::{
+    CSHAKE128, CSHAKE256, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256,
+};
 
 pub(crate) fn sha3_cmd(bit_len: usize, output_hex: bool) {
     match bit_len {
@@ -41,6 +43,26 @@ pub(crate) fn shake_cmd(bit_len: usize, output_len: usize, output_hex: bool) {
         128 => do_shake(SHAKE128::new(), output_len, output_hex),
         256 => do_shake(SHAKE256::new(), output_len, output_hex),
         _ => panic!("Unsupported algorithm: SHAKE-{}", bit_len),
+    }
+}
+
+/// cSHAKE (NIST SP 800-185 Sec 3): SHAKE bound to a function name and a customization string.
+///
+/// Both strings default to empty, and with both empty cSHAKE is defined to be plain SHAKE
+/// (Sec 3.3 step 1), so `cshake128 32` and `shake128 32` agree.
+pub(crate) fn cshake_cmd(
+    bit_len: usize,
+    output_len: usize,
+    function_name: &Option<String>,
+    customization: &Option<String>,
+    output_hex: bool,
+) {
+    let n = function_name.as_deref().unwrap_or("").as_bytes();
+    let s = customization.as_deref().unwrap_or("").as_bytes();
+    match bit_len {
+        128 => do_shake(CSHAKE128::new(n, s), output_len, output_hex),
+        256 => do_shake(CSHAKE256::new(n, s), output_len, output_hex),
+        _ => panic!("Unsupported algorithm: cSHAKE-{}", bit_len),
     }
 }
 
