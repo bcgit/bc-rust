@@ -5,6 +5,7 @@
 //! present these tests print a warning and pass vacuously.
 
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XofOutput};
+use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{CSHAKE128, CSHAKE256, SHAKE128, SHAKE256};
 use std::fs;
@@ -189,4 +190,18 @@ fn cshake_is_a_hash() {
 fn algorithm_names() {
     assert_eq!(CSHAKE128::ALG_NAME, "CSHAKE128");
     assert_eq!(CSHAKE256::ALG_NAME, "CSHAKE256");
+}
+
+/// cSHAKE through the shared `XOF` conformance suite, with a published sample value as the
+/// expected output -- conformance and a NIST vector in one.
+#[test]
+fn test_framework_xof() {
+    let Some(vectors) = read_vectors("cSHAKE.rsp") else { return };
+    let v = vectors.first().expect("at least one sample");
+    // The partial-byte input path is cSHAKE's own (it inherits SHAKE's), so leave it enabled.
+    TestFrameworkXOF::new().test_xof(
+        || CSHAKE128::new(v.n.as_bytes(), v.s.as_bytes()),
+        &v.msg,
+        &v.output,
+    );
 }

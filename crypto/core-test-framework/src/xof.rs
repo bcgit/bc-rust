@@ -22,10 +22,10 @@ impl TestFrameworkXOF {
     /// `input`. There is deliberately no absorb-after-squeeze test: [`XOF::into_output`] consumes
     /// the XOF, so absorbing afterwards is not expressible and there is no runtime rule left to
     /// check. That guarantee is asserted instead by `compile_fail` doctests on the implementors.
-    pub fn test_xof<X: XOF + Default>(&self, input: &[u8], expected_output: &[u8]) {
+    pub fn test_xof<X: XOF>(&self, make: impl Fn() -> X, input: &[u8], expected_output: &[u8]) {
         /*** fn do_update(&mut self, data: &[u8]) ***/
         // Feeding the input in pieces must equal feeding it in one go.
-        let mut xof = X::default();
+        let mut xof = make();
         for chunk in input.chunks(16) {
             xof.do_update(chunk);
         }
@@ -36,7 +36,7 @@ impl TestFrameworkXOF {
         );
 
         /*** fn do_output(&mut self, num_bytes: usize) -> Vec<u8> ***/
-        let mut xof = X::default();
+        let mut xof = make();
         xof.do_update(input);
         assert_eq!(
             xof.into_output().do_output(expected_output.len()),
@@ -47,7 +47,7 @@ impl TestFrameworkXOF {
         /*** fn do_output_out(&mut self, output: &mut [u8]) -> usize ***/
         // Pre-filled so that the documented zeroization is observable.
         let mut output = vec![0xFFu8; expected_output.len()];
-        let mut xof = X::default();
+        let mut xof = make();
         xof.do_update(input);
         let n = xof.into_output().do_output_out(&mut output);
         assert_eq!(n, expected_output.len(), "do_output_out must report what it wrote");
@@ -55,7 +55,7 @@ impl TestFrameworkXOF {
 
         // One output stream: reading it in two goes equals reading it in one.
         let split = expected_output.len() / 2;
-        let mut xof = X::default();
+        let mut xof = make();
         xof.do_update(input);
         let mut out = xof.into_output();
         let first = out.do_output(split);
@@ -69,7 +69,7 @@ impl TestFrameworkXOF {
 
         /*** fn do_final(self, num_bytes: usize) -> Vec<u8> ***/
         // do_final reads what do_output would read at the same point; it only ends the stream.
-        let mut xof = X::default();
+        let mut xof = make();
         xof.do_update(input);
         assert_eq!(
             xof.into_output().do_final(expected_output.len()),
@@ -78,7 +78,7 @@ impl TestFrameworkXOF {
         );
 
         // ... including part-way through a stream, not just at the start.
-        let mut xof = X::default();
+        let mut xof = make();
         xof.do_update(input);
         let mut out = xof.into_output();
         let head = out.do_output(split);
@@ -90,7 +90,7 @@ impl TestFrameworkXOF {
         );
 
         let mut buf = vec![0xFFu8; expected_output.len()];
-        let mut xof = X::default();
+        let mut xof = make();
         xof.do_update(input);
         let n = xof.into_output().do_final_out(&mut buf);
         assert_eq!(n, expected_output.len());
@@ -98,28 +98,28 @@ impl TestFrameworkXOF {
 
         /*** fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> ***/
         assert_eq!(
-            X::default().hash_xof(input, expected_output.len()),
+            make().hash_xof(input, expected_output.len()),
             expected_output,
             "the one-shot must equal update-then-output"
         );
 
         let mut output = vec![0xFFu8; expected_output.len()];
-        let n = X::default().hash_xof_out(input, &mut output);
+        let n = make().hash_xof_out(input, &mut output);
         assert_eq!(n, expected_output.len());
         assert_eq!(output, expected_output, "hash_xof_out must agree with hash_xof");
 
         /*** the Hash half: a XOF is a hash ***/
-        self.test_xof_as_hash::<X>(input, expected_output);
+        self.test_xof_as_hash(&make, input, expected_output);
 
         if self.enable_partial_byte_tests {
-            self.test_xof_partial_bits::<X>(input, expected_output);
+            self.test_xof_partial_bits(&make, input, expected_output);
         }
     }
 
     /// The inherited [`Hash`] surface. `XOF: Hash`, so SHAKE can be used wherever a hash is wanted;
     /// these checks pin that the inherited methods agree with the XOF ones.
-    fn test_xof_as_hash<X: XOF + Default>(&self, input: &[u8], expected_output: &[u8]) {
-        let xof = X::default();
+    fn test_xof_as_hash<X: XOF>(&self, make: impl Fn() -> X, input: &[u8], expected_output: &[u8]) {
+        let xof = make();
         let output_len = xof.output_len();
         assert!(output_len > 0, "output_len must be positive");
         assert!(xof.block_bitlen() > 0, "block_bitlen must be positive");
@@ -129,12 +129,12 @@ impl TestFrameworkXOF {
         );
 
         // do_final is do_output at the nominal length: the same stream, truncated.
-        let mut a = X::default();
+        let mut a = make();
         a.do_update(input);
         let via_hash = a.do_final();
         assert_eq!(via_hash.len(), output_len, "do_final must produce output_len bytes");
 
-        let mut b = X::default();
+        let mut b = make();
         b.do_update(input);
         assert_eq!(
             via_hash,
@@ -153,23 +153,28 @@ impl TestFrameworkXOF {
 
         // do_final_out fills the caller's buffer, zeroizing it first.
         let mut buf = vec![0xFFu8; output_len];
-        let mut c = X::default();
+        let mut c = make();
         c.do_update(input);
         let n = c.do_final_out(&mut buf);
         assert_eq!(n, output_len);
         assert_eq!(buf, via_hash, "do_final_out must agree with do_final");
 
         // The one-shot Hash entry points.
-        assert_eq!(X::default().hash(input), via_hash, "hash must equal update-then-do_final");
+        assert_eq!(make().hash(input), via_hash, "hash must equal update-then-do_final");
         let mut buf = vec![0xFFu8; output_len];
-        assert_eq!(X::default().hash_out(input, &mut buf), output_len);
+        assert_eq!(make().hash_out(input, &mut buf), output_len);
         assert_eq!(buf, via_hash, "hash_out must agree with hash");
     }
 
     /// A partial final byte of input, in both the XOF and the Hash spelling.
-    fn test_xof_partial_bits<X: XOF + Default>(&self, input: &[u8], expected_output: &[u8]) {
+    fn test_xof_partial_bits<X: XOF>(
+        &self,
+        make: impl Fn() -> X,
+        input: &[u8],
+        expected_output: &[u8],
+    ) {
         // num_bits = 0 means the message ended on a byte boundary, so it must match plain input.
-        let mut xof = X::default();
+        let mut xof = make();
         xof.do_update(input);
         assert_eq!(
             xof.into_output_partial_bits(0, 0)
@@ -181,7 +186,7 @@ impl TestFrameworkXOF {
 
         // A real partial byte must change the output, and both spellings must agree.
         for num_bits in 1..=7usize {
-            let mut a = X::default();
+            let mut a = make();
             a.do_update(input);
             let with_bits = a
                 .into_output_partial_bits(0xFE, num_bits)
@@ -192,7 +197,7 @@ impl TestFrameworkXOF {
                 "a partial byte must change the output / num_bits: {num_bits}"
             );
 
-            let mut b = X::default();
+            let mut b = make();
             b.do_update(input);
             let via_hash = b.do_final_partial_bits(0xFE, num_bits).expect("num_bits is in 1..=7");
             assert_eq!(
@@ -202,7 +207,7 @@ impl TestFrameworkXOF {
             );
 
             let mut buf = vec![0xFFu8; via_hash.len()];
-            let mut c = X::default();
+            let mut c = make();
             c.do_update(input);
             let n = c
                 .do_final_partial_bits_out(0xFE, num_bits, &mut buf)
@@ -213,7 +218,7 @@ impl TestFrameworkXOF {
 
         // "num_bits must be in 0..=7; larger values return HashError::InvalidLength."
         for num_bits in [8usize, 9, 15, 16, 64, usize::MAX] {
-            let mut xof = X::default();
+            let mut xof = make();
             xof.do_update(input);
             assert!(
                 matches!(
@@ -223,7 +228,7 @@ impl TestFrameworkXOF {
                 "into_output_partial_bits must reject num_bits = {num_bits}"
             );
 
-            let mut xof = X::default();
+            let mut xof = make();
             xof.do_update(input);
             assert!(
                 matches!(
