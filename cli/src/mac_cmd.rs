@@ -8,6 +8,7 @@ use bouncycastle::core::key_material::{
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
 use bouncycastle::hmac::{HMAC_SHA256, HMAC_SHA512, HMAC_SHA512_224, HMAC_SHA512_256, HMAC_SM3};
+use bouncycastle::sha3::{KMAC128, KMAC256};
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HMACVariant {
@@ -18,14 +19,8 @@ pub(crate) enum HMACVariant {
     SM3,
 }
 
-pub(crate) fn mac_cmd(
-    hmac_variant: HMACVariant,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    verify_val: &Option<String>,
-    output_hex: bool,
-) {
-    // load the key
+/// Loads a MAC key from `--key` (hex) or `--key-file` (raw), tagged as a MAC key.
+fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> KeyMaterial512 {
     let key_bytes: Vec<u8> = if key.is_some() {
         hex::decode(key.as_ref().unwrap()).unwrap()
     } else if key_file.is_some() {
@@ -41,6 +36,17 @@ pub(crate) fn mac_cmd(
     }
     let mut key = KeyMaterial512::from_bytes(&key_bytes).unwrap();
     do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
+    key
+}
+
+pub(crate) fn mac_cmd(
+    hmac_variant: HMACVariant,
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_mac_key(key, key_file);
 
     // instantiate the MAC object and call do_mac()
     match hmac_variant {
@@ -64,6 +70,36 @@ pub(crate) fn mac_cmd(
             let mac = HMAC_SM3::new_allow_weak_key(&key).unwrap();
             do_mac(mac, verify_val, output_hex);
         }
+    }
+}
+
+/// KMAC (NIST SP 800-185 Sec 4), which unlike HMAC takes a customization string and a caller-
+/// chosen tag length -- both are bound into the computation, so the verifier must use the same.
+pub(crate) fn kmac_cmd(
+    bit_len: usize,
+    length: usize,
+    customization: &Option<String>,
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_mac_key(key, key_file);
+    let s = customization.as_deref().unwrap_or("").as_bytes();
+    // new_allow_weak_key, as the HMAC commands do: a CLI is used for test vectors and scripting,
+    // where a short or all-zero key is a legitimate thing to want.
+    match bit_len {
+        128 => do_mac(
+            KMAC128::new_with_params(&key, s, length, true).expect("a valid MAC key"),
+            verify_val,
+            output_hex,
+        ),
+        256 => do_mac(
+            KMAC256::new_with_params(&key, s, length, true).expect("a valid MAC key"),
+            verify_val,
+            output_hex,
+        ),
+        _ => panic!("Unsupported algorithm: KMAC-{bit_len}"),
     }
 }
 

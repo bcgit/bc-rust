@@ -193,6 +193,7 @@ use bouncycastle_core::traits::{Hash, KDF, Suspendable, XOF};
 
 mod cshake;
 mod keccak;
+mod kmac;
 mod sha3;
 mod shake;
 mod xof_utils;
@@ -214,9 +215,14 @@ pub const SHAKE256_NAME: &str = "SHAKE256";
 pub const CSHAKE128_NAME: &str = "CSHAKE128";
 /// The name of the cSHAKE256 algorithm (NIST SP 800-185 Sec 3).
 pub const CSHAKE256_NAME: &str = "CSHAKE256";
+/// The name of the KMAC128 algorithm (NIST SP 800-185 Sec 4).
+pub const KMAC128_NAME: &str = "KMAC128";
+/// The name of the KMAC256 algorithm (NIST SP 800-185 Sec 4).
+pub const KMAC256_NAME: &str = "KMAC256";
 
 /*** pub types ***/
 pub use cshake::CSHAKEInternal;
+pub use kmac::KMACInternal;
 pub use sha3::SHA3Internal;
 
 /// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
@@ -229,6 +235,17 @@ pub type CSHAKE128 = CSHAKEInternal<SHAKE128Params>;
 ///
 /// See [`CSHAKE128`].
 pub type CSHAKE256 = CSHAKEInternal<SHAKE256Params>;
+
+/// KMAC128: the Keccak MAC of NIST SP 800-185 Sec 4, at a 128-bit security strength.
+///
+/// [`bouncycastle_core::traits::MAC::new`] gives the common case -- no customization, 32-byte
+/// output. [`KMACInternal::new_with_params`] chooses the customization string and output length,
+/// and [`KMACInternal::into_output`] is KMACXOF (Sec 4.3.1).
+pub type KMAC128 = KMACInternal<SHAKE128Params>;
+/// KMAC256: the Keccak MAC of NIST SP 800-185 Sec 4, at a 256-bit security strength.
+///
+/// See [`KMAC128`]. The nominal output length is 64 bytes.
+pub type KMAC256 = KMACInternal<SHAKE256Params>;
 pub use shake::{SHAKEInternal, SHAKEOutput};
 
 pub use keccak::SUSPENDED_SHA3_STATE_LEN;
@@ -361,6 +378,8 @@ trait SHAKEParams: Algorithm {
     const RATE_BYTES: usize = (1600 - ((Self::SIZE as usize) << 1)) / 8;
     /// The name of the cSHAKE built on this parameter set.
     const CSHAKE_ALG_NAME: &'static str;
+    /// The name of the KMAC built on this parameter set.
+    const KMAC_ALG_NAME: &'static str;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -373,6 +392,7 @@ impl SHAKEParams for SHAKE128Params {
     const SIZE: KeccakSize = KeccakSize::_128;
     const STATE_TAG: u8 = 5;
     const CSHAKE_ALG_NAME: &'static str = CSHAKE128_NAME;
+    const KMAC_ALG_NAME: &'static str = KMAC128_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake128 { hashAlgs 11 }
 impl AlgorithmOID for SHAKE128 {
@@ -391,6 +411,7 @@ impl SHAKEParams for SHAKE256Params {
     const SIZE: KeccakSize = KeccakSize::_256;
     const STATE_TAG: u8 = 6;
     const CSHAKE_ALG_NAME: &'static str = CSHAKE256_NAME;
+    const KMAC_ALG_NAME: &'static str = KMAC256_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake256 { hashAlgs 12 }
 impl AlgorithmOID for SHAKE256 {

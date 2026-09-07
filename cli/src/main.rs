@@ -158,6 +158,61 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Compute or verify a KMAC128 (NIST SP 800-185 Sec 4) over the content provided on stdin.
+    /// The tag length and customization string are bound into the computation, so the verifier
+    /// must use the same values.
+    KMAC128 {
+        /// Length of the tag in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string, domain-separating this use of KMAC from another.
+        customization: Option<String>,
+
+        #[arg(short, long)]
+        /// The key, in hex.
+        key: Option<String>,
+
+        #[arg(long)]
+        /// File containing the key, as raw bytes.
+        key_file: Option<String>,
+
+        #[arg(short, long)]
+        /// Verify against this tag (hex) instead of computing one.
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify a KMAC256 (NIST SP 800-185 Sec 4) over the content provided on stdin.
+    /// See kmac128.
+    KMAC256 {
+        /// Length of the tag in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string, domain-separating this use of KMAC from another.
+        customization: Option<String>,
+
+        #[arg(short, long)]
+        /// The key, in hex.
+        key: Option<String>,
+
+        #[arg(long)]
+        /// File containing the key, as raw bytes.
+        key_file: Option<String>,
+
+        #[arg(short, long)]
+        /// Verify against this tag (hex) instead of computing one.
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
     /// Perform cSHAKE128 (NIST SP 800-185) of the content provided on stdin. Requires the output
     /// length in bytes. With no customization string this is exactly SHAKE128.
     /// Supports streaming update for low memory footprint.
@@ -1095,6 +1150,12 @@ fn main() {
         }
         Some(Subcommands::CSHAKE128 { length, customization, function_name, x }) => {
             sha3_cmd::cshake_cmd(128, *length, function_name, customization, *x);
+        }
+        Some(Subcommands::KMAC128 { length, customization, key, key_file, verify, x }) => {
+            mac_cmd::kmac_cmd(128, *length, customization, key, key_file, verify, *x)
+        }
+        Some(Subcommands::KMAC256 { length, customization, key, key_file, verify, x }) => {
+            mac_cmd::kmac_cmd(256, *length, customization, key, key_file, verify, *x)
         }
         Some(Subcommands::CSHAKE256 { length, customization, function_name, x }) => {
             sha3_cmd::cshake_cmd(256, *length, function_name, customization, *x);

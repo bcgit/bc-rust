@@ -46,17 +46,36 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
         let mut shake = SHAKEInternal::<PARAMS>::new();
         let customized = !n.is_empty() || !s.is_empty();
         if customized {
-            // Sec 3.3: bytepad(encode_string(N) || encode_string(S), rate). Absorbed rather than
-            // built in a buffer, so no allocation and no bound on the length of N or S.
-            let rate = PARAMS::RATE_BYTES;
-            let mut written = absorb_left_encode(&mut shake, rate as u64);
-            written += absorb_encoded_string(&mut shake, n);
-            written += absorb_encoded_string(&mut shake, s);
-            // ... then zero bytes up to a whole number of rate-sized blocks.
-            absorb_zeros(&mut shake, written.next_multiple_of(rate) - written);
+            // Sec 3.3: bytepad(encode_string(N) || encode_string(S), rate).
+            absorb_bytepad(&mut shake, &[n, s]);
         }
         Self { shake, customized }
     }
+}
+
+/// Absorbs `bytepad(encode_string(s[0]) || ... || encode_string(s[n]), rate)`, the padding of
+/// SP 800-185 Sec 2.3.3 over the string encodings of Sec 2.3.2.
+///
+/// Absorbed straight into the sponge rather than built in a buffer, so there is no allocation and
+/// no bound on the length of the strings.
+fn absorb_bytepad<PARAMS: SHAKEParams>(shake: &mut SHAKEInternal<PARAMS>, strings: &[&[u8]]) {
+    let rate = PARAMS::RATE_BYTES;
+    // Step 1: the encoding of the block size comes first.
+    let mut written = absorb_left_encode(shake, rate as u64);
+    for s in strings {
+        written += absorb_encoded_string(shake, s);
+    }
+    // Step 3: zero bytes up to a whole number of rate-sized blocks.
+    absorb_zeros(shake, written.next_multiple_of(rate) - written);
+}
+
+/// [`absorb_bytepad`] against a cSHAKE, for the functions layered on top of it: KMAC binds its key
+/// this way (Sec 4.3 step 1) as a second bytepad block inside cSHAKE's message.
+pub(crate) fn absorb_bytepad_strings<PARAMS: SHAKEParams>(
+    cshake: &mut CSHAKEInternal<PARAMS>,
+    strings: &[&[u8]],
+) {
+    absorb_bytepad(&mut cshake.shake, strings);
 }
 
 /// Absorbs `left_encode(value)`, returning how many bytes went in.

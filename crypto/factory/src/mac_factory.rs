@@ -85,6 +85,7 @@ use bouncycastle_hmac::{
 };
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha3 as sha3;
+use bouncycastle_sha3::{KMAC128, KMAC128_NAME, KMAC256, KMAC256_NAME};
 use bouncycastle_sm3 as sm3;
 
 /*** Defaults ***/
@@ -102,6 +103,13 @@ pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
 /// instead they have a constructor that takes a [`KeyMaterialTrait`] and can return an error.
 #[non_exhaustive]
 pub enum MACFactory {
+    /// KMAC128 with no customization string and a 32-byte tag (NIST SP 800-185 Sec 4).
+    /// For a customization string or a different output length, construct
+    /// `bouncycastle_sha3::KMAC128` directly -- the factory selects by name alone and has no
+    /// channel for those parameters.
+    KMAC128(KMAC128),
+    /// KMAC256 with no customization string and a 64-byte tag. See [`MACFactory::KMAC128`].
+    KMAC256(KMAC256),
     ///
     HMAC_SHA224(hmac::HMAC<sha2::SHA224>),
     ///
@@ -145,6 +153,8 @@ impl MACFactory {
             DEFAULT => Self::default(key),
             DEFAULT_128_BIT => Self::default_128_bit(key),
             DEFAULT_256_BIT => Self::default_256_bit(key),
+            KMAC128_NAME => Ok(Self::KMAC128(KMAC128::new(key)?)),
+            KMAC256_NAME => Ok(Self::KMAC256(KMAC256::new(key)?)),
             HMAC_SHA224_NAME => Ok(Self::HMAC_SHA224(hmac::HMAC::<sha2::SHA224>::new(key)?)),
             HMAC_SHA256_NAME => Ok(Self::HMAC_SHA256(hmac::HMAC::<sha2::SHA256>::new(key)?)),
             HMAC_SHA384_NAME => Ok(Self::HMAC_SHA384(hmac::HMAC::<sha2::SHA384>::new(key)?)),
@@ -181,6 +191,8 @@ impl MAC for MACFactory {
 
     fn output_len(&self) -> usize {
         match self {
+            Self::KMAC128(h) => h.output_len(),
+            Self::KMAC256(h) => h.output_len(),
             Self::HMAC_SHA224(h) => h.output_len(),
             Self::HMAC_SHA256(h) => h.output_len(),
             Self::HMAC_SHA384(h) => h.output_len(),
@@ -197,6 +209,8 @@ impl MAC for MACFactory {
 
     fn mac(self, data: &[u8]) -> Vec<u8> {
         match self {
+            Self::KMAC128(h) => h.mac(data),
+            Self::KMAC256(h) => h.mac(data),
             Self::HMAC_SHA224(h) => h.mac(data),
             Self::HMAC_SHA256(h) => h.mac(data),
             Self::HMAC_SHA384(h) => h.mac(data),
@@ -215,6 +229,8 @@ impl MAC for MACFactory {
         out.fill(0);
 
         match self {
+            Self::KMAC128(h) => h.mac_out(data, out),
+            Self::KMAC256(h) => h.mac_out(data, out),
             Self::HMAC_SHA224(h) => h.mac_out(data, out),
             Self::HMAC_SHA256(h) => h.mac_out(data, out),
             Self::HMAC_SHA384(h) => h.mac_out(data, out),
@@ -231,6 +247,8 @@ impl MAC for MACFactory {
 
     fn verify(self, data: &[u8], mac: &[u8]) -> bool {
         match self {
+            Self::KMAC128(h) => h.verify(data, mac),
+            Self::KMAC256(h) => h.verify(data, mac),
             Self::HMAC_SHA224(h) => h.verify(data, mac),
             Self::HMAC_SHA256(h) => h.verify(data, mac),
             Self::HMAC_SHA384(h) => h.verify(data, mac),
@@ -247,6 +265,8 @@ impl MAC for MACFactory {
 
     fn do_update(&mut self, data: &[u8]) {
         match self {
+            Self::KMAC128(h) => h.do_update(data),
+            Self::KMAC256(h) => h.do_update(data),
             Self::HMAC_SHA224(h) => h.do_update(data),
             Self::HMAC_SHA256(h) => h.do_update(data),
             Self::HMAC_SHA384(h) => h.do_update(data),
@@ -263,6 +283,8 @@ impl MAC for MACFactory {
 
     fn do_final(self) -> Vec<u8> {
         match self {
+            Self::KMAC128(h) => h.do_final(),
+            Self::KMAC256(h) => h.do_final(),
             Self::HMAC_SHA224(h) => h.do_final(),
             Self::HMAC_SHA256(h) => h.do_final(),
             Self::HMAC_SHA384(h) => h.do_final(),
@@ -281,6 +303,8 @@ impl MAC for MACFactory {
         out.fill(0);
 
         match self {
+            Self::KMAC128(h) => h.do_final_out(&mut out),
+            Self::KMAC256(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA224(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA256(h) => h.do_final_out(&mut out),
             Self::HMAC_SHA384(h) => h.do_final_out(&mut out),
@@ -297,6 +321,8 @@ impl MAC for MACFactory {
 
     fn do_verify_final(self, mac: &[u8]) -> bool {
         match self {
+            Self::KMAC128(h) => h.do_verify_final(mac),
+            Self::KMAC256(h) => h.do_verify_final(mac),
             Self::HMAC_SHA224(h) => h.do_verify_final(mac),
             Self::HMAC_SHA256(h) => h.do_verify_final(mac),
             Self::HMAC_SHA384(h) => h.do_verify_final(mac),
@@ -313,6 +339,8 @@ impl MAC for MACFactory {
 
     fn max_security_strength(&self) -> SecurityStrength {
         match self {
+            Self::KMAC128(h) => h.max_security_strength(),
+            Self::KMAC256(h) => h.max_security_strength(),
             Self::HMAC_SHA224(h) => h.max_security_strength(),
             Self::HMAC_SHA256(h) => h.max_security_strength(),
             Self::HMAC_SHA384(h) => h.max_security_strength(),
