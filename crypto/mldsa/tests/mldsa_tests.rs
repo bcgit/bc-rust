@@ -1071,6 +1071,46 @@ mod mldsa_tests {
             _ => panic!("Expected an error when loading a SHAKE128 state into a MuBuilder"),
         }
     }
+
+    #[test]
+    fn algorithm_names_and_oids() {
+        use bouncycastle_core::traits::{Algorithm, AlgorithmOID};
+
+        // `Algorithm` and `AlgorithmOID` are implemented once, generically over the parameter set,
+        // so nothing else states these per algorithm. Pinned here so that a wrong wiring of the
+        // blanket impls, or a typo in a parameter set, is a test failure rather than a silently
+        // mislabelled algorithm or an unparseable OID.
+        assert_eq!(MLDSA44::ALG_NAME, "ML-DSA-44");
+        assert_eq!(MLDSA65::ALG_NAME, "ML-DSA-65");
+        assert_eq!(MLDSA87::ALG_NAME, "ML-DSA-87");
+
+        assert_eq!(MLDSA44::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(MLDSA65::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+        assert_eq!(MLDSA87::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+
+        // NIST's Computer Security Objects Register: id-ml-dsa-44 { sigAlgs 17 },
+        // id-ml-dsa-65 { sigAlgs 18 }, id-ml-dsa-87 { sigAlgs 19 }, under
+        // joint-iso-itu-t(2) country(16) us(840) organization(1) gov(101) csor(3) nistAlgorithm(4)
+        // sigAlgs(3).
+        assert_eq!(MLDSA44::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 17]);
+        assert_eq!(MLDSA65::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 18]);
+        assert_eq!(MLDSA87::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 19]);
+
+        // The DER encodings must be the OBJECT IDENTIFIER (tag 0x06) encodings of those arcs:
+        // 9 content bytes, the first being 40*2 + 16 = 0x60, then 840 as the two-byte 0x86 0x48.
+        for (oid, der) in [
+            (MLDSA44::OID, MLDSA44::OID_DER),
+            (MLDSA65::OID, MLDSA65::OID_DER),
+            (MLDSA87::OID, MLDSA87::OID_DER),
+        ] {
+            assert_eq!(der[0], 0x06, "DER tag must be OBJECT IDENTIFIER");
+            assert_eq!(der[1] as usize, der.len() - 2, "DER length must match the content");
+            assert_eq!(
+                &der[2..],
+                &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, *oid.last().unwrap() as u8]
+            );
+        }
+    }
 }
 
 struct Kat {

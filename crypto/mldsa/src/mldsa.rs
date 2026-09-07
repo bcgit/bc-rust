@@ -479,9 +479,10 @@ use crate::aux_functions::{
     expand_mask, expandA, expandS, make_hint_vecs, power_2_round_vec, sample_in_ball, sig_decode,
     sig_encode, use_hint_vecs,
 };
-use crate::matrix::{Matrix, Vector};
+use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPrivateKeyTrait};
 use crate::mldsa_keys::{MLDSAPublicKeyInternalTrait, MLDSAPublicKeyTrait};
+use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use crate::{
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey,
     MLDSA87PublicKey, MLDSAPrivateKeyExpanded, MLDSAPublicKeyExpanded,
@@ -493,7 +494,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::marker::PhantomData;
 
 // imports needed just for docs
@@ -529,95 +530,28 @@ pub const MLDSA_MU_LEN: usize = 64;
 pub(crate) const POLY_T0PACKED_LEN: usize = 416;
 pub(crate) const POLY_T1PACKED_LEN: usize = 320;
 
-/* ML-DSA-44 params */
+/*** Re-exporting length constants that a caller will need instead of the entire Params objects which contains a bunch of internal algorithm detail ***/
 
 /// Length of the \[u8] holding a ML-DSA-44 public key.
-pub const MLDSA44_PK_LEN: usize = 1312;
+pub const MLDSA44_PK_LEN: usize = MLDSA44Params::PK_LEN;
 /// Length of the \[u8] holding a ML-DSA-44 private key.
-pub const MLDSA44_SK_LEN: usize = 2560;
+pub const MLDSA44_SK_LEN: usize = MLDSA44Params::SK_LEN;
 /// Length of the \[u8] holding a ML-DSA-44 signature value.
-pub const MLDSA44_SIG_LEN: usize = 2420;
-pub(crate) const MLDSA44_TAU: i32 = 39;
-pub(crate) const MLDSA44_LAMBDA: i32 = 128;
-pub(crate) const MLDSA44_GAMMA1: i32 = 1 << 17;
-pub(crate) const MLDSA44_GAMMA2: i32 = (q - 1) / 88; // mutants note: because of the bitshifting, the "- 1" ends up not mattering
-pub(crate) const MLDSA44_k: usize = 4;
-pub(crate) const MLDSA44_l: usize = 4;
-pub(crate) const MLDSA44_ETA: usize = 2;
-pub(crate) const MLDSA44_BETA: i32 = 78;
-pub(crate) const MLDSA44_OMEGA: i32 = 80;
-
-// Useful derived values
-pub(crate) const MLDSA44_C_TILDE: usize = 32;
-pub(crate) const MLDSA44_POLY_Z_PACKED_LEN: usize = 576;
-pub(crate) const MLDSA44_POLY_W1_PACKED_LEN: usize = 192;
-pub(crate) const MLDSA44_LAMBDA_over_4: usize = 128 / 4;
-pub(crate) const MLDSA44_GAMMA1_MINUS_BETA: i32 = MLDSA44_GAMMA1 - MLDSA44_BETA;
-pub(crate) const MLDSA44_GAMMA2_MINUS_BETA: i32 = MLDSA44_GAMMA2 - MLDSA44_BETA;
-
-// Alg 32
-// 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
-pub(crate) const MLDSA44_GAMMA1_MASK_LEN: usize = 576; // 32*(1 + bitlen (𝛾1 − 1) )
-
-/* ML-DSA-65 params */
+pub const MLDSA44_SIG_LEN: usize = MLDSA44Params::SIG_LEN;
 
 /// Length of the \[u8] holding a ML-DSA-65 public key.
-pub const MLDSA65_PK_LEN: usize = 1952;
+pub const MLDSA65_PK_LEN: usize = MLDSA65Params::PK_LEN;
 /// Length of the \[u8] holding a ML-DSA-65 private key.
-pub const MLDSA65_SK_LEN: usize = 4032;
+pub const MLDSA65_SK_LEN: usize = MLDSA65Params::SK_LEN;
 /// Length of the \[u8] holding a ML-DSA-65 signature value.
-pub const MLDSA65_SIG_LEN: usize = 3309;
-pub(crate) const MLDSA65_TAU: i32 = 49;
-pub(crate) const MLDSA65_LAMBDA: i32 = 192;
-pub(crate) const MLDSA65_GAMMA1: i32 = 1 << 19;
-pub(crate) const MLDSA65_GAMMA2: i32 = (q - 1) / 32; // mutants note: because of the bitshifting, the "- 1" ends up not mattering
-pub(crate) const MLDSA65_k: usize = 6;
-pub(crate) const MLDSA65_l: usize = 5;
-pub(crate) const MLDSA65_ETA: usize = 4;
-pub(crate) const MLDSA65_BETA: i32 = 196;
-pub(crate) const MLDSA65_OMEGA: i32 = 55;
-
-// Useful derived values
-pub(crate) const MLDSA65_C_TILDE: usize = 48;
-pub(crate) const MLDSA65_POLY_Z_PACKED_LEN: usize = 640;
-pub(crate) const MLDSA65_POLY_W1_PACKED_LEN: usize = 128;
-pub(crate) const MLDSA65_LAMBDA_over_4: usize = 192 / 4;
-pub(crate) const MLDSA65_GAMMA1_MINUS_BETA: i32 = MLDSA65_GAMMA1 - MLDSA65_BETA;
-pub(crate) const MLDSA65_GAMMA2_MINUS_BETA: i32 = MLDSA65_GAMMA2 - MLDSA65_BETA;
-
-// Alg 32
-// 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
-pub(crate) const MLDSA65_GAMMA1_MASK_LEN: usize = 640;
-
-/* ML-DSA-87 params */
+pub const MLDSA65_SIG_LEN: usize = MLDSA65Params::SIG_LEN;
 
 /// Length of the \[u8] holding a ML-DSA-87 public key.
-pub const MLDSA87_PK_LEN: usize = 2592;
+pub const MLDSA87_PK_LEN: usize = MLDSA87Params::PK_LEN;
 /// Length of the \[u8] holding a ML-DSA-87 private key.
-pub const MLDSA87_SK_LEN: usize = 4896;
+pub const MLDSA87_SK_LEN: usize = MLDSA87Params::SK_LEN;
 /// Length of the \[u8] holding a ML-DSA-87 signature value.
-pub const MLDSA87_SIG_LEN: usize = 4627;
-pub(crate) const MLDSA87_TAU: i32 = 60;
-pub(crate) const MLDSA87_LAMBDA: i32 = 256;
-pub(crate) const MLDSA87_GAMMA1: i32 = 1 << 19;
-pub(crate) const MLDSA87_GAMMA2: i32 = (q - 1) / 32; // mutants note: because of the bitshifting, the "- 1" ends up not mattering
-pub(crate) const MLDSA87_k: usize = 8;
-pub(crate) const MLDSA87_l: usize = 7;
-pub(crate) const MLDSA87_ETA: usize = 2;
-pub(crate) const MLDSA87_BETA: i32 = 120;
-pub(crate) const MLDSA87_OMEGA: i32 = 75;
-
-// Useful derived values
-pub(crate) const MLDSA87_C_TILDE: usize = 64;
-pub(crate) const MLDSA87_POLY_Z_PACKED_LEN: usize = 640;
-pub(crate) const MLDSA87_POLY_W1_PACKED_LEN: usize = 128;
-pub(crate) const MLDSA87_LAMBDA_over_4: usize = 256 / 4;
-pub(crate) const MLDSA87_GAMMA1_MINUS_BETA: i32 = MLDSA87_GAMMA1 - MLDSA87_BETA;
-pub(crate) const MLDSA87_GAMMA2_MINUS_BETA: i32 = MLDSA87_GAMMA2 - MLDSA87_BETA;
-
-// Alg 32
-// 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
-pub(crate) const MLDSA87_GAMMA1_MASK_LEN: usize = 640;
+pub const MLDSA87_SIG_LEN: usize = MLDSA87Params::SIG_LEN;
 
 // Typedefs just to make the algorithms look more like the FIPS 204 sample code.
 pub(crate) type H = SHAKE256;
@@ -627,110 +561,63 @@ pub(crate) type G = SHAKE128;
 
 /// The ML-DSA-44 algorithm.
 pub type MLDSA44 = MLDSA<
+    MLDSA44Params,
+    MLDSA44PublicKey,
+    MLDSA44PrivateKey,
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
     MLDSA44_SIG_LEN,
-    MLDSA44PublicKey,
-    MLDSA44PrivateKey,
-    MLDSA44_TAU,
-    MLDSA44_LAMBDA,
-    MLDSA44_GAMMA1,
-    MLDSA44_GAMMA2,
-    MLDSA44_k,
-    MLDSA44_l,
-    MLDSA44_ETA,
-    MLDSA44_BETA,
-    MLDSA44_OMEGA,
-    MLDSA44_C_TILDE,
-    MLDSA44_POLY_Z_PACKED_LEN,
-    MLDSA44_POLY_W1_PACKED_LEN,
-    MLDSA44_LAMBDA_over_4,
-    MLDSA44_GAMMA1_MINUS_BETA,
-    MLDSA44_GAMMA2_MINUS_BETA,
-    MLDSA44_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for MLDSA44 {
-    const ALG_NAME: &'static str = ML_DSA_44_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-ml-dsa-44 { sigAlgs 17 }
-impl AlgorithmOID for MLDSA44 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 17];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x11];
-}
 
 /// The ML-DSA-65 algorithm.
 pub type MLDSA65 = MLDSA<
+    MLDSA65Params,
+    MLDSA65PublicKey,
+    MLDSA65PrivateKey,
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
     MLDSA65_SIG_LEN,
-    MLDSA65PublicKey,
-    MLDSA65PrivateKey,
-    MLDSA65_TAU,
-    MLDSA65_LAMBDA,
-    MLDSA65_GAMMA1,
-    MLDSA65_GAMMA2,
-    MLDSA65_k,
-    MLDSA65_l,
-    MLDSA65_ETA,
-    MLDSA65_BETA,
-    MLDSA65_OMEGA,
-    MLDSA65_C_TILDE,
-    MLDSA65_POLY_Z_PACKED_LEN,
-    MLDSA65_POLY_W1_PACKED_LEN,
-    MLDSA65_LAMBDA_over_4,
-    MLDSA65_GAMMA1_MINUS_BETA,
-    MLDSA65_GAMMA2_MINUS_BETA,
-    MLDSA65_GAMMA1_MASK_LEN,
 >;
-
-impl Algorithm for MLDSA65 {
-    const ALG_NAME: &'static str = ML_DSA_65_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-ml-dsa-65 { sigAlgs 18 }
-impl AlgorithmOID for MLDSA65 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 18];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x12];
-}
 
 /// The ML-DSA-87 algorithm.
 pub type MLDSA87 = MLDSA<
+    MLDSA87Params,
+    MLDSA87PublicKey,
+    MLDSA87PrivateKey,
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
     MLDSA87_SIG_LEN,
-    MLDSA87PublicKey,
-    MLDSA87PrivateKey,
-    MLDSA87_TAU,
-    MLDSA87_LAMBDA,
-    MLDSA87_GAMMA1,
-    MLDSA87_GAMMA2,
-    MLDSA87_k,
-    MLDSA87_l,
-    MLDSA87_ETA,
-    MLDSA87_BETA,
-    MLDSA87_OMEGA,
-    MLDSA87_C_TILDE,
-    MLDSA87_POLY_Z_PACKED_LEN,
-    MLDSA87_POLY_W1_PACKED_LEN,
-    MLDSA87_LAMBDA_over_4,
-    MLDSA87_GAMMA1_MINUS_BETA,
-    MLDSA87_GAMMA2_MINUS_BETA,
-    MLDSA87_GAMMA1_MASK_LEN,
 >;
 
-impl Algorithm for MLDSA87 {
-    const ALG_NAME: &'static str = ML_DSA_87_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+/// The name and claimed strength of an ML-DSA algorithm are properties of its parameter set, so
+/// one impl covers all three; `MLDSAParams` is sealed, so those are the only three that exist.
+impl<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+> Algorithm for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+{
+    const ALG_NAME: &'static str = P::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
-/// Assigned by NIST in the Computer Security Objects Register: id-ml-dsa-87 { sigAlgs 19 }
-impl AlgorithmOID for MLDSA87 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 19];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x13];
+
+/// The OIDs NIST assigned in the Computer Security Objects Register: id-ml-dsa-44 { sigAlgs 17 },
+/// id-ml-dsa-65 { sigAlgs 18 } and id-ml-dsa-87 { sigAlgs 19 }. As with [`Algorithm`], the values
+/// belong to the parameter set, so one impl covers all three.
+impl<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+> AlgorithmOID for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+{
+    const OID: &'static [u32] = P::OID;
+    const OID_DER: &'static [u8] = P::OID_DER;
 }
 
 /// The core internal implementation of the ML-DSA algorithm.
@@ -738,30 +625,14 @@ impl AlgorithmOID for MLDSA87 {
 /// but it shouldn't ever need to be used directly.
 /// Please use the named public types [`MLDSA44`], [`MLDSA65`], [`MLDSA87`] instead.
 pub struct MLDSA<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_VEC_H_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
 > {
-    _phantom: PhantomData<(PK, SK)>,
+    _phantom: PhantomData<(P, PK, SK)>,
 
     /// used for streaming the message for both signing and verifying
     mu_builder: MuBuilder,
@@ -779,52 +650,13 @@ pub struct MLDSA<
 }
 
 impl<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
->
-    MLDSA<
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+> MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     /// Implements Algorithm 6 of FIPS 204
     /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
@@ -844,7 +676,7 @@ impl<
             ));
         }
 
-        if seed.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+        if seed.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
             return Err(SignatureError::KeyGenError(
                 "Seed SecurityStrength must match algorithm security strength",
             ));
@@ -859,8 +691,8 @@ impl<
             // scope for h
             let mut h = H::default();
             h.absorb(seed.ref_to_bytes()).expect("absorb before squeeze is infallible");
-            h.absorb(&(k as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
-            h.absorb(&(l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
+            h.absorb(&(P::k as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
+            h.absorb(&(P::l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
             let bytes_written = h.squeeze_out(&mut rho);
             debug_assert_eq!(bytes_written, 32);
             let mut rho_prime: [u8; 64] = [0u8; 64];
@@ -870,7 +702,7 @@ impl<
             debug_assert_eq!(bytes_written, 32);
 
             // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-            let (mut s1, s2) = expandS::<k, l, ETA>(&rho_prime);
+            let (mut s1, s2) = expandS::<P>(&rho_prime);
 
             s1.ntt();
             (s1, s2)
@@ -879,7 +711,7 @@ impl<
         let t_hat = {
             // scope for s1_hat
             // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<k, l>(&rho);
+            let A_hat = expandA::<P>(&rho);
 
             // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
             //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
@@ -896,7 +728,7 @@ impl<
             // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
             //   ▷ compress 𝐭
             //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-            power_2_round_vec::<k>(&t)
+            power_2_round_vec(&t)
         };
 
         // 8: 𝑝𝑘 ← pkEncode(𝜌, 𝐭1)
@@ -928,7 +760,7 @@ impl<
     /// modified to take an externally-computed mu instead of M', and to take the public matrix A_hat
     fn sign_internal(
         sk: &SK,
-        A_hat: &Matrix<k, l>,
+        A_hat: &P::MatrixA,
         mu: &[u8; 64],
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
@@ -972,22 +804,22 @@ impl<
         //  ▷ rejection sampling loop
 
         // these need to be outside the loop because they form the encoded signature value
-        let mut sig_val_c_tilde = [0u8; LAMBDA_over_4];
-        let mut sig_val_z: Vector<l>;
-        let mut sig_val_h: Vector<k>;
+        let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
+        let mut sig_val_z: P::VecL;
+        let mut sig_val_h: P::VecK;
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
             // mutants note: there is no test for this because, at this point,
             // we don't know of a KAT that will exceed this limit.
-            if kappa > 1000 * k as u16 {
+            if kappa > 1000 * P::k as u16 {
                 return Err(SignatureError::GenericError(
                     "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
                 ));
             }
 
             // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
-            let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
+            let mut y = expand_mask::<P>(&rho_p_p, kappa);
 
             let w = {
                 // scope for y_hat
@@ -1002,7 +834,7 @@ impl<
 
             // 13: 𝐰1 ← HighBits(𝐰)
             //  ▷ signer’s commitment
-            let w1 = w.high_bits::<GAMMA2>();
+            let w1 = w.high_bits::<P>();
 
             {
                 // scope for h
@@ -1010,15 +842,15 @@ impl<
                 //  ▷ commitment hash
                 let mut hash = H::new();
                 hash.absorb(mu).expect("absorb before squeeze is infallible");
-                w1.w1_encode_and_hash::<POLY_W1_PACKED_LEN>(&mut hash);
-                hash.squeeze_out(&mut sig_val_c_tilde);
+                w1.w1_encode_and_hash::<P>(&mut hash);
+                hash.squeeze_out(sig_val_c_tilde.as_mut());
             }
 
             // 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
             //  ▷ verifier’s challenge
             let c_hat = {
                 // scope for c
-                let mut c = sample_in_ball::<LAMBDA_over_4, TAU>(&sig_val_c_tilde);
+                let mut c = sample_in_ball::<P>(&sig_val_c_tilde);
 
                 // 17: 𝑐_hat ← NTT(𝑐)
                 c.ntt();
@@ -1038,8 +870,8 @@ impl<
             //  ▷ validity checks
             // This is done out-of-order on purpose for performance reasons:
             // rejection sampling check is done before any extra heavy computation
-            if sig_val_z.check_norm::<GAMMA1_MINUS_BETA>() {
-                kappa += l as u16;
+            if sig_val_z.check_norm(P::GAMMA1_MINUS_BETA) {
+                kappa += P::l as u16;
                 continue;
             };
 
@@ -1048,7 +880,7 @@ impl<
             cs2.inv_ntt();
 
             // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-            let mut r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
+            let mut r0 = w.sub_vector(&cs2).low_bits::<P>();
 
             // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
@@ -1058,8 +890,8 @@ impl<
             //      and checking whether ‖r0‖∞ < γ2 − β and r1 = w1, it is equivalent to just check that
             //      ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part of w. If this check passes, w0 − cs2
             //      is the low part of w − cs2."
-            if r0.check_norm::<GAMMA2_MINUS_BETA>() {
-                kappa += l as u16;
+            if r0.check_norm(P::GAMMA2_MINUS_BETA) {
+                kappa += P::l as u16;
                 continue;
             };
 
@@ -1071,8 +903,8 @@ impl<
             // This is done out-of-order on purpose for performance reasons:
             // rejection sampling check is done before any extra heavy computation
             // mutants note: there is currently no unit test that triggers this branch
-            if ct0.check_norm::<GAMMA2>() {
-                kappa += l as u16;
+            if ct0.check_norm(P::GAMMA2) {
+                kappa += P::l as u16;
                 continue;
             };
 
@@ -1083,15 +915,15 @@ impl<
             let hint_hamming_weight: i32;
             sig_val_h = {
                 // scope for hint
-                let (hint, inner_hint_hamming_weight) = make_hint_vecs::<k, GAMMA2>(&r0, &w1);
+                let (hint, inner_hint_hamming_weight) = make_hint_vecs::<P>(&r0, &w1);
                 hint_hamming_weight = inner_hint_hamming_weight;
                 hint
             };
 
             // 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             // mutants note: there is no test KAT that triggers this branch
-            if hint_hamming_weight > OMEGA {
-                kappa += l as u16;
+            if hint_hamming_weight > P::OMEGA {
+                kappa += P::l as u16;
                 continue;
             };
 
@@ -1106,9 +938,7 @@ impl<
 
         // 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
         let bytes_written =
-            sig_encode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>(
-                &sig_val_c_tilde, &sig_val_z, &sig_val_h, output,
-            );
+            sig_encode::<P, SIG_LEN>(&sig_val_c_tilde, &sig_val_z, &sig_val_h, output);
 
         Ok(bytes_written)
     }
@@ -1119,7 +949,7 @@ impl<
     /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
     fn verify_internal(
         pk: &PK,
-        A_hat: &Matrix<k, l>,
+        A_hat: &P::MatrixA,
         mu: &[u8; 64],
         sig: &[u8; SIG_LEN],
     ) -> Result<(), SignatureError> {
@@ -1129,12 +959,11 @@ impl<
         // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
         //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
         // 3: if 𝐡 = ⊥ then return false
-        let (c_tilde, z, h) =
-            sig_decode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>(&sig)
-                .map_err(|_| SignatureError::SignatureVerificationFailed)?;
+        let (c_tilde, z, h) = sig_decode::<P, SIG_LEN>(&sig)
+            .map_err(|_| SignatureError::SignatureVerificationFailed)?;
 
         // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
-        if z.check_norm::<GAMMA1_MINUS_BETA>() {
+        if z.check_norm(P::GAMMA1_MINUS_BETA) {
             return Err(SignatureError::SignatureVerificationFailed);
         }
 
@@ -1151,7 +980,7 @@ impl<
 
         // 8: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
         let c_hat = {
-            let mut c = sample_in_ball::<LAMBDA_over_4, TAU>(&c_tilde);
+            let mut c = sample_in_ball::<P>(&c_tilde);
             c.ntt();
 
             c
@@ -1173,7 +1002,7 @@ impl<
             };
             let ct1 = {
                 // potential optimization -- pre-compute this on key load?
-                let mut t1_shift_hat = pk.t1().shift_left::<d>();
+                let mut t1_shift_hat = pk.t1().shift_left_d();
                 t1_shift_hat.ntt();
                 t1_shift_hat.scalar_vector_ntt(&c_hat)
             };
@@ -1183,23 +1012,23 @@ impl<
 
             // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
             // ▷ reconstruction of signer’s commitment
-            use_hint_vecs::<k, GAMMA2>(&h, &wp_approx)
+            use_hint_vecs::<P>(&h, &wp_approx)
         };
         // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
         // ▷ hash it; this should match 𝑐_tilde
         let c_tilde_p = {
-            let mut c_tilde_p = [0u8; LAMBDA_over_4];
+            let mut c_tilde_p = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
             let mut hash = H::new();
             hash.absorb(mu).expect("absorb before squeeze is infallible");
-            w1p.w1_encode_and_hash::<POLY_W1_PACKED_LEN>(&mut hash);
-            hash.squeeze_out(&mut c_tilde_p);
+            w1p.w1_encode_and_hash::<P>(&mut hash);
+            hash.squeeze_out(c_tilde_p.as_mut());
 
             c_tilde_p
         };
 
         // verification probably doesn't technically need to be constant-time, but why not?
         // 13 (second half): return [[ ||𝐳||∞ < 𝛾1 − 𝛽]] and [[𝑐 ̃ = 𝑐′ ]]
-        if bouncycastle_utils::ct::ct_eq_bytes(&c_tilde, &c_tilde_p) {
+        if bouncycastle_utils::ct::ct_eq_bytes(c_tilde.as_ref(), c_tilde_p.as_ref()) {
             Ok(())
         } else {
             Err(SignatureError::SignatureVerificationFailed)
@@ -1208,52 +1037,13 @@ impl<
 }
 
 impl<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
-> MLDSATrait<PK_LEN, SK_LEN, SIG_LEN, PK, SK, LAMBDA, k, l, ETA>
-    for MLDSA<
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+> MLDSATrait<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN> for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
         Self::keygen_internal(seed)
@@ -1290,21 +1080,21 @@ impl<
         MuBuilder::compute_mu(tr, msg, ctx)
     }
     fn compute_mu_from_pk(
-        pk: &impl MLDSAPublicKeyTrait<k, l, PK_LEN>,
+        pk: &impl MLDSAPublicKeyTrait<P, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)
     }
     fn compute_mu_from_sk(
-        sk: &impl MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
+        sk: &impl MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; 64], SignatureError> {
         MuBuilder::compute_mu(&sk.tr(), msg, ctx)
     }
     fn sign_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
@@ -1313,7 +1103,7 @@ impl<
     }
 
     fn sign_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
         out: &mut [u8; SIG_LEN],
@@ -1326,7 +1116,7 @@ impl<
 
     fn sign_mu(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
@@ -1336,7 +1126,7 @@ impl<
     }
     fn sign_mu_out(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
@@ -1348,8 +1138,8 @@ impl<
         Self::sign_mu_deterministic_out(sk, A_hat, mu, rnd, output)
     }
     fn sign_mu_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
-        A_hat: Option<&Matrix<k, l>>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
@@ -1358,8 +1148,8 @@ impl<
         Ok(out)
     }
     fn sign_mu_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
-        A_hat: Option<&Matrix<k, l>>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         out: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
@@ -1370,7 +1160,7 @@ impl<
 
     fn sign_mu_deterministic(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; SIG_LEN], SignatureError> {
@@ -1381,7 +1171,7 @@ impl<
     }
     fn sign_mu_deterministic_out(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
@@ -1409,7 +1199,7 @@ impl<
     /// This is a middle ground between keygen_from_seed()+sign_mu() and
     /// the fully streamed low-memory implementation.
     // TODO: benchmark peak memory + runtime against
-    // keygen_from_seed() + sign_mu_deterministic() to confirm the separate path earns being kept.
+    //       keygen_from_seed() + sign_mu_deterministic() to confirm the separate path earns being kept.
     // Note: this path intentionally avoids the public key entirely
     // (no pkEncode / tr = H(pk)) since μ is supplied externally.
     fn sign_mu_deterministic_from_seed_out(
@@ -1436,7 +1226,7 @@ impl<
             ));
         }
 
-        if seed.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+        if seed.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
             return Err(SignatureError::KeyGenError(
                 "Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87).",
             ));
@@ -1453,8 +1243,8 @@ impl<
             let (rho, rho_prime, K) = {
                 let mut h = H::default();
                 h.absorb(seed.ref_to_bytes()).expect("absorb before squeeze is infallible");
-                h.absorb(&(k as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
-                h.absorb(&(l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
+                h.absorb(&(P::k as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
+                h.absorb(&(P::l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
                 let mut rho = [0u8; 32];
                 let bytes_written = h.squeeze_out(&mut rho);
                 debug_assert_eq!(bytes_written, 32);
@@ -1481,7 +1271,7 @@ impl<
             };
 
             // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-            let (s1, s2) = expandS::<k, l, ETA>(&rho_prime);
+            let (s1, s2) = expandS::<P>(&rho_prime);
 
             (rho, rho_p_p, s1, s2)
         };
@@ -1494,7 +1284,7 @@ impl<
         // as 20 or even 80 times. So moving expandA() inside the loop would be a pretty drastic speed-for-memory tradeoff
         // whose generality falls out of the scope of this implementation.
         // It is left as an optimization that can be made by users that require further reduction of memory usage
-        let A_hat = expandA::<k, l>(&rho);
+        let A_hat = expandA::<P>(&rho);
 
         // Alg 7; 8: 𝜅 ← 0
         //  ▷ initialize counter 𝜅
@@ -1507,21 +1297,21 @@ impl<
         //  ▷ rejection sampling loop
 
         // these need to be outside the loop because they form the encoded signature value
-        let mut sig_val_c_tilde = [0u8; LAMBDA_over_4];
-        let mut sig_val_z: Vector<l>;
-        let mut sig_val_h: Vector<k>;
+        let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
+        let mut sig_val_z: P::VecL;
+        let mut sig_val_h: P::VecK;
         loop {
             // FIPS 204 s. 6.2 allows:
             //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
             // mutants note: there is no test for this because we don't know of a KAT that will exceed this limit.
-            if kappa > 1000 * k as u16 {
+            if kappa > 1000 * P::k as u16 {
                 return Err(SignatureError::GenericError(
                     "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
                 ));
             }
 
             // Alg 7; 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
-            let mut y = expand_mask::<l, GAMMA1, GAMMA1_MASK_LEN>(&rho_p_p, kappa);
+            let mut y = expand_mask::<P>(&rho_p_p, kappa);
 
             let w = {
                 // scope for y_hat
@@ -1536,7 +1326,7 @@ impl<
 
             // Alg 7; 13: 𝐰1 ← HighBits(𝐰)
             //  ▷ signer’s commitment
-            let w1 = w.high_bits::<GAMMA2>();
+            let w1 = w.high_bits::<P>();
 
             {
                 // scope for h
@@ -1544,22 +1334,22 @@ impl<
                 //  ▷ commitment hash
                 let mut hash = H::new();
                 hash.absorb(mu).expect("absorb before squeeze is infallible");
-                w1.w1_encode_and_hash::<POLY_W1_PACKED_LEN>(&mut hash);
-                hash.squeeze_out(&mut sig_val_c_tilde);
+                w1.w1_encode_and_hash::<P>(&mut hash);
+                hash.squeeze_out(sig_val_c_tilde.as_mut());
             }
 
             // Alg 7; 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
             //  ▷ verifier’s challenge
             let c_hat = {
                 // scope for c
-                let mut c = sample_in_ball::<LAMBDA_over_4, TAU>(&sig_val_c_tilde);
+                let mut c = sample_in_ball::<P>(&sig_val_c_tilde);
 
                 // 17: 𝑐_hat ← NTT(𝑐)
                 c.ntt();
                 c
             };
 
-            let t_hat: Vector<k>;
+            let t_hat: P::VecK;
             sig_val_z = {
                 // scope for s1_hat, cs1
                 // Alg 7; 2: 𝐬1̂_hat ← NTT(𝐬1)
@@ -1591,13 +1381,13 @@ impl<
             //  ▷ validity checks
             // This is done out-of-order on purpose for performance reasons:
             // rejection sampling check is done before any extra heavy computation
-            if sig_val_z.check_norm::<GAMMA1_MINUS_BETA>() {
-                kappa += l as u16;
+            if sig_val_z.check_norm(P::GAMMA1_MINUS_BETA) {
+                kappa += P::l as u16;
                 continue;
             };
 
-            let t0: Vector<k>;
-            let mut r0: Vector<k> = {
+            let t0: P::VecK;
+            let mut r0: P::VecK = {
                 // scope for s2_hat and cs2
                 // 3: 𝐬2̂_hat ← NTT(𝐬2)
                 let mut s2_hat = s2.clone();
@@ -1608,7 +1398,7 @@ impl<
                 cs2.inv_ntt();
 
                 // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-                let r0 = w.sub_vector(&cs2).low_bits::<GAMMA2>();
+                let r0 = w.sub_vector(&cs2).low_bits::<P>();
 
                 // while s2_hat is in scope, derive t0
                 let mut t = t_hat;
@@ -1619,7 +1409,7 @@ impl<
                 // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
                 //   ▷ compress 𝐭
                 //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-                let (_t1tmp, t0tmp) = power_2_round_vec::<k>(&t);
+                let (_t1tmp, t0tmp) = power_2_round_vec(&t);
                 t0 = t0tmp;
 
                 r0
@@ -1627,14 +1417,14 @@ impl<
 
             // Alg 7; 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
-            if r0.check_norm::<GAMMA2_MINUS_BETA>() {
+            if r0.check_norm(P::GAMMA2_MINUS_BETA) {
                 // mutants note: mutants thinks this can be replaced with -=, but in practice that makes
                 //               the rejection sampling loop go forever, so is a false positive.
-                kappa += l as u16;
+                kappa += P::l as u16;
                 continue;
             };
 
-            let ct0: Vector<k> = {
+            let ct0: P::VecK = {
                 // scope for t0_hat
                 // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
                 let mut t0_hat = t0.clone();
@@ -1650,8 +1440,8 @@ impl<
             // out-of-order on purpose for performance reasons:
             //   might as well do the rejection sampling check before any extra heavy computation
             // mutants note: there is currently no unit test that triggers this branch
-            if ct0.check_norm::<GAMMA2>() {
-                kappa += l as u16;
+            if ct0.check_norm(P::GAMMA2) {
+                kappa += P::l as u16;
                 continue;
             };
 
@@ -1662,15 +1452,15 @@ impl<
             let hint_hamming_weight: i32;
             sig_val_h = {
                 // scope for hint
-                let (hint, inner_hint_hamming_weight) = make_hint_vecs::<k, GAMMA2>(&r0, &w1);
+                let (hint, inner_hint_hamming_weight) = make_hint_vecs::<P>(&r0, &w1);
                 hint_hamming_weight = inner_hint_hamming_weight;
                 hint
             };
 
             // Alg 7; 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
             // mutants note: there is currently no unit test that triggers this branch
-            if hint_hamming_weight > OMEGA {
-                kappa += l as u16;
+            if hint_hamming_weight > P::OMEGA {
+                kappa += P::l as u16;
                 continue;
             };
 
@@ -1686,9 +1476,7 @@ impl<
 
         // Alg 7; 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
         let bytes_written =
-            sig_encode::<GAMMA1, k, l, LAMBDA_over_4, OMEGA, POLY_Z_PACKED_LEN, SIG_LEN>(
-                &sig_val_c_tilde, &sig_val_z, &sig_val_h, output,
-            );
+            sig_encode::<P, SIG_LEN>(&sig_val_c_tilde, &sig_val_z, &sig_val_h, output);
 
         Ok(bytes_written)
     }
@@ -1711,7 +1499,7 @@ impl<
     }
 
     fn verify_with_expanded_key(
-        pk: &MLDSAPublicKeyExpanded<k, l, PK, PK_LEN>,
+        pk: &MLDSAPublicKeyExpanded<P, PK, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
         sig: &[u8],
@@ -1725,7 +1513,7 @@ impl<
 
     fn verify_mu(
         pk: &PK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         sig: &[u8; SIG_LEN],
     ) -> Result<(), SignatureError> {
@@ -1738,16 +1526,12 @@ impl<
 
 /// Trait for all three of the ML-DSA algorithm variants.
 pub trait MLDSATrait<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
-    const LAMBDA: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
 >: Sized
 {
     /// Runs a key generation using the library's default RNG, seeded from the OS.
@@ -1762,7 +1546,7 @@ pub trait MLDSATrait<
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
         // Source the seed from the provided RNG
-        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+        if rng.security_strength() < SecurityStrength::from_bits(P::LAMBDA as usize) {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut seed = KeyMaterial256::new();
@@ -1829,26 +1613,26 @@ pub trait MLDSATrait<
     ) -> Result<[u8; 64], SignatureError>;
     /// Same as [`MLDSATrait::compute_mu_from_tr`], but extracts tr from the public key.
     fn compute_mu_from_pk(
-        pk: &impl MLDSAPublicKeyTrait<k, l, PK_LEN>,
+        pk: &impl MLDSAPublicKeyTrait<P, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; 64], SignatureError>;
     /// Same as [`MLDSATrait::compute_mu_from_tr`], but extracts tr from the private key.
     // dev note: defined sk this way so that it accepts either MLDSAPrivateKey or MLDSAPRivateKeyExpanded
     fn compute_mu_from_sk(
-        sk: &impl MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>,
+        sk: &impl MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; 64], SignatureError>;
     /// Same as [`Signer::sign`], but signs from an [`MLDSAPrivateKeyExpanded`].
     fn sign_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError>;
     /// Same as [`MLDSATrait::sign_with_expanded_key`], but takes an output array.
     fn sign_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
         out: &mut [u8; SIG_LEN],
@@ -1861,7 +1645,7 @@ pub trait MLDSATrait<
     /// Optionally, takes a pre-expanded public matrix `A_hat`.
     fn sign_mu(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError>;
     /// Performs an ML-DSA signature using the provided external message representative `mu`.
@@ -1876,20 +1660,20 @@ pub trait MLDSATrait<
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_mu_out(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
     /// Same as [`MLDSATrait::sign_mu`], but signs from an [`MLDSAPrivateKeyExpanded`].
     fn sign_mu_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
-        A_hat: Option<&Matrix<k, l>>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
     ) -> Result<[u8; SIG_LEN], SignatureError>;
     /// Same as [`MLDSATrait::sign_mu_out`], but signs from an [`MLDSAPrivateKeyExpanded`].
     fn sign_mu_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<k, l, ETA, PK, SK, SK_LEN, PK_LEN>,
-        A_hat: Option<&Matrix<k, l>>,
+        sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
@@ -1916,7 +1700,7 @@ pub trait MLDSATrait<
     /// prevent accidental nonce reuse, this function moves `rnd`.
     fn sign_mu_deterministic(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; SIG_LEN], SignatureError>;
@@ -1945,7 +1729,7 @@ pub trait MLDSATrait<
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_mu_deterministic_out(
         sk: &SK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
@@ -1978,7 +1762,7 @@ pub trait MLDSATrait<
     ) -> Result<Self, SignatureError>;
     /// Same as [`SignatureVerifier::verify`], but signs from an expanded key object.
     fn verify_with_expanded_key(
-        pk: &MLDSAPublicKeyExpanded<k, l, PK, PK_LEN>,
+        pk: &MLDSAPublicKeyExpanded<P, PK, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
         sig: &[u8],
@@ -1989,59 +1773,20 @@ pub trait MLDSATrait<
     /// Optionally, takes a pre-expanded public matrix `A_hat`.
     fn verify_mu(
         pk: &PK,
-        A_hat: Option<&Matrix<k, l>>,
+        A_hat: Option<&P::MatrixA>,
         mu: &[u8; 64],
         sig: &[u8; SIG_LEN],
     ) -> Result<(), SignatureError>;
 }
 
 impl<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
-> Signer<SK, SK_LEN, SIG_LEN>
-    for MLDSA<
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+> Signer<SK, SK_LEN, SIG_LEN> for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
@@ -2125,52 +1870,13 @@ impl<
 }
 
 impl<
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-    PK: MLDSAPublicKeyTrait<k, l, PK_LEN> + MLDSAPublicKeyInternalTrait<k, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<k, l, ETA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<k, l, ETA, SK_LEN, PK_LEN>,
-    const TAU: i32,
-    const LAMBDA: i32,
-    const GAMMA1: i32,
-    const GAMMA2: i32,
-    const k: usize,
-    const l: usize,
-    const ETA: usize,
-    const BETA: i32,
-    const OMEGA: i32,
-    const C_TILDE: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const POLY_W1_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const GAMMA1_MINUS_BETA: i32,
-    const GAMMA2_MINUS_BETA: i32,
-    const GAMMA1_MASK_LEN: usize,
-> SignatureVerifier<PK, PK_LEN, SIG_LEN>
-    for MLDSA<
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-        PK,
-        SK,
-        TAU,
-        LAMBDA,
-        GAMMA1,
-        GAMMA2,
-        k,
-        l,
-        ETA,
-        BETA,
-        OMEGA,
-        C_TILDE,
-        POLY_Z_PACKED_LEN,
-        POLY_W1_PACKED_LEN,
-        LAMBDA_over_4,
-        GAMMA1_MINUS_BETA,
-        GAMMA2_MINUS_BETA,
-        GAMMA1_MASK_LEN,
-    >
+> SignatureVerifier<PK, PK_LEN, SIG_LEN> for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)?;

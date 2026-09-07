@@ -148,6 +148,7 @@ pub mod hash_mldsa;
 mod matrix;
 pub mod mldsa;
 mod mldsa_keys;
+mod params;
 mod polynomial;
 
 /*** Exported types ***/
@@ -187,4 +188,4 @@ pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
 
 pub use mldsa::SUSPENDED_MU_BUILDER_STATE_LEN;
 
-pub use matrix::Matrix;
+pub use params::{MLDSA44Params, MLDSA65Params, MLDSA87Params};
