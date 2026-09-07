@@ -10,7 +10,7 @@
 
 mod common;
 
-use bouncycastle_camellia::{Block, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::ElectronicCodeBook;
 use common::bytes;
@@ -80,8 +80,8 @@ const TESTS: [(usize, &str, &str, &str); 9] = [
 fn block_cipher_vector_test<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(
     id: usize,
     key: &str,
-    input: &Block,
-    output: &Block,
+    input: &[u8; BLOCK_LEN],
+    output: &[u8; BLOCK_LEN],
 ) {
     // The Java `KeyParameter` takes any bytes; an all-zero key would be tagged `Zeroized` by
     // `from_bytes_as_type`, so the tag and strength are set explicitly, as the CLI does.
@@ -107,8 +107,8 @@ fn block_cipher_vector_test<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN,
 #[test]
 fn camellia_test_vectors() {
     for (id, key, input, output) in TESTS {
-        let input: Block = bytes(input);
-        let output: Block = bytes(output);
+        let input: [u8; BLOCK_LEN] = bytes(input);
+        let output: [u8; BLOCK_LEN] = bytes(output);
         match key.len() / 2 {
             16 => block_cipher_vector_test::<16, Camellia_128>(id, key, &input, &output),
             24 => block_cipher_vector_test::<24, Camellia_192>(id, key, &input, &output),
