@@ -63,7 +63,7 @@ pub trait MLKEMParams: MLKEMParamsInternalTrait {
 
     /* Derived. Never written out per parameter set -- see the module docs. */
 
-    /// The length of an encapsulation key: FIPS 203, Algorithm 16 (ML-KEM.KeyGen) gives
+    /// The length of an encapsulation key: FIPS 203, Algorithm 16 (ML-KEM.KeyGen_internal) gives
     /// ek ∈ 𝔹^(384𝑘+32).
     const PK_LEN: usize = 384 * Self::k + 32;
 
@@ -74,7 +74,7 @@ pub trait MLKEMParams: MLKEMParamsInternalTrait {
     /// 64-byte seed and expanded on demand; see [`MLKEMParams::SK_LEN`].
     const FULL_SK_LEN: usize = 768 * Self::k + 96;
 
-    /// The length of a ciphertext: FIPS 203, Algorithm 17 (ML-KEM.Encaps) gives
+    /// The length of a ciphertext: FIPS 203, Algorithm 17 (ML-KEM.Encaps_internal) gives
     /// 𝑐 ∈ 𝔹^(32(𝑑𝑢𝑘+𝑑𝑣)).
     const CT_LEN: usize = 32 * (Self::du as usize * Self::k + Self::dv as usize);
 

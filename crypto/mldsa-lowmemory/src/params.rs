@@ -171,7 +171,7 @@ impl MLDSAParams for MLDSA44Params {
     const tau: i32 = 39;
     const lambda: i32 = 128;
     const gamma1: i32 = 1 << 17;
-    // mutants note: because 𝛾1 is applied by bit-shifting, the "- 1" ends up not mattering.
+    // mutants note: because of the bitshifting, the "- 1" ends up not mattering.
     const gamma2: i32 = (q - 1) / 88;
     const k: usize = 4;
     const l: usize = 4;
@@ -201,7 +201,7 @@ impl MLDSAParams for MLDSA65Params {
     const tau: i32 = 49;
     const lambda: i32 = 192;
     const gamma1: i32 = 1 << 19;
-    // mutants note: because 𝛾1 is applied by bit-shifting, the "- 1" ends up not mattering.
+    // mutants note: because of the bitshifting, the "- 1" ends up not mattering.
     const gamma2: i32 = (q - 1) / 32;
     const k: usize = 6;
     const l: usize = 5;
@@ -231,7 +231,7 @@ impl MLDSAParams for MLDSA87Params {
     const tau: i32 = 60;
     const lambda: i32 = 256;
     const gamma1: i32 = 1 << 19;
-    // mutants note: because 𝛾1 is applied by bit-shifting, the "- 1" ends up not mattering.
+    // mutants note: because of the bitshifting, the "- 1" ends up not mattering.
     const gamma2: i32 = (q - 1) / 32;
     const k: usize = 8;
     const l: usize = 7;
