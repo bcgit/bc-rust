@@ -410,7 +410,18 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
 /// * Collision resistance: finding two inputs that yield the same output is computationally difficult.
 /// * Preimage resistance: from a given output, finding an input that generates it is computationally difficult.
 /// * Second preimage resistance: given an input, finding another input that yields the same output is computationally difficult.
-pub trait Hash: Algorithm + Default {
+///
+/// # Construction is not part of this trait
+///
+/// There is deliberately no `Default` supertrait. Feeding bytes in and finalising is one concern;
+/// making an instance is another, and not every implementor has a canonical zero-argument one --
+/// a keyed construction such as KMAC (SP 800-185 Sec 4) has no meaningful default, and requiring
+/// one would exclude it from this trait and from [`XOF`] with it.
+///
+/// Generic code that needs to *build* a hasher asks for it: `fn digest<H: Hash + Default>(..)`.
+/// That is what `HMAC` and the shared test framework already do, so the bound sits where the
+/// requirement actually is rather than on every implementor.
+pub trait Hash: Algorithm {
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
 
