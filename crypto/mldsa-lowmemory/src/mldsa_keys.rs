@@ -269,10 +269,13 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
     for MLDSASeedPrivateKey<P, PK_LEN, SK_LEN, FULL_SK_LEN>
 {
     fn eq(&self, other: &Self) -> bool {
-        self.seed == other.seed
-            && self.rho == other.rho
-            && *self.rho_prime == *other.rho_prime
-            && *self.K == *other.K
+        // Compared through `KeyMaterial`/`Secret`'s own `PartialEq`, which is constant-time: do
+        // not deref to the inner arrays, as that would select the array's variable-time `==`.
+        let seed = self.seed == other.seed;
+        let rho = self.rho == other.rho;
+        let rho_prime = self.rho_prime == other.rho_prime;
+        let K = self.K == other.K;
+        seed & rho & rho_prime & K
     }
 }
 
