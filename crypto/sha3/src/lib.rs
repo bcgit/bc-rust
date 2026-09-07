@@ -194,6 +194,7 @@ use bouncycastle_core::traits::{Hash, KDF, Suspendable, XOF};
 mod cshake;
 mod keccak;
 mod kmac;
+mod parallelhash;
 mod sha3;
 mod shake;
 mod tuplehash;
@@ -232,10 +233,19 @@ pub const TUPLEHASH256_NAME: &str = "TupleHash256";
 pub const TUPLEHASHXOF128_NAME: &str = "TupleHashXOF128";
 /// The name of the TupleHashXOF256 algorithm (NIST SP 800-185 Sec 5.3.1).
 pub const TUPLEHASHXOF256_NAME: &str = "TupleHashXOF256";
+/// The name of the ParallelHash128 algorithm (NIST SP 800-185 Sec 6).
+pub const PARALLELHASH128_NAME: &str = "ParallelHash128";
+/// The name of the ParallelHash256 algorithm (NIST SP 800-185 Sec 6).
+pub const PARALLELHASH256_NAME: &str = "ParallelHash256";
+/// The name of the ParallelHashXOF128 algorithm (NIST SP 800-185 Sec 6.3.1).
+pub const PARALLELHASHXOF128_NAME: &str = "ParallelHashXOF128";
+/// The name of the ParallelHashXOF256 algorithm (NIST SP 800-185 Sec 6.3.1).
+pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 
 /*** pub types ***/
 pub use cshake::CSHAKEInternal;
 pub use kmac::{KMACInternal, KMACXOFInternal};
+pub use parallelhash::{ParallelHashInternal, ParallelHashXOFInternal};
 pub use sha3::SHA3Internal;
 pub use tuplehash::{TupleHashInternal, TupleHashXOFInternal};
 
@@ -283,6 +293,18 @@ pub type TUPLEHASH256 = TupleHashInternal<SHAKE256Params>;
 pub type TUPLEHASHXOF128 = TupleHashXOFInternal<SHAKE128Params>;
 /// TupleHashXOF256: see [`TUPLEHASHXOF128`].
 pub type TUPLEHASHXOF256 = TupleHashXOFInternal<SHAKE256Params>;
+
+/// ParallelHash128: the parallelisable hash of NIST SP 800-185 Sec 6, 128-bit strength.
+///
+/// The block size `B` is part of the function, not a tuning knob: the same message under a
+/// different `B` hashes differently. See [`ParallelHashInternal`].
+pub type PARALLELHASH128 = ParallelHashInternal<SHAKE128Params>;
+/// ParallelHash256: see [`PARALLELHASH128`].
+pub type PARALLELHASH256 = ParallelHashInternal<SHAKE256Params>;
+/// ParallelHashXOF128: the arbitrary-output-length ParallelHash of Sec 6.3.1.
+pub type PARALLELHASHXOF128 = ParallelHashXOFInternal<SHAKE128Params>;
+/// ParallelHashXOF256: see [`PARALLELHASHXOF128`].
+pub type PARALLELHASHXOF256 = ParallelHashXOFInternal<SHAKE256Params>;
 pub use shake::{SHAKEInternal, SHAKEOutput};
 
 pub use keccak::SUSPENDED_SHA3_STATE_LEN;
@@ -423,6 +445,10 @@ trait SHAKEParams: Algorithm {
     const TUPLEHASH_ALG_NAME: &'static str;
     /// The name of the TupleHashXOF built on this parameter set.
     const TUPLEHASHXOF_ALG_NAME: &'static str;
+    /// The name of the ParallelHash built on this parameter set.
+    const PARALLELHASH_ALG_NAME: &'static str;
+    /// The name of the ParallelHashXOF built on this parameter set.
+    const PARALLELHASHXOF_ALG_NAME: &'static str;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -439,6 +465,8 @@ impl SHAKEParams for SHAKE128Params {
     const KMACXOF_ALG_NAME: &'static str = KMACXOF128_NAME;
     const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH128_NAME;
     const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF128_NAME;
+    const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH128_NAME;
+    const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF128_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake128 { hashAlgs 11 }
 impl AlgorithmOID for SHAKE128 {
@@ -461,6 +489,8 @@ impl SHAKEParams for SHAKE256Params {
     const KMACXOF_ALG_NAME: &'static str = KMACXOF256_NAME;
     const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH256_NAME;
     const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF256_NAME;
+    const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH256_NAME;
+    const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF256_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake256 { hashAlgs 12 }
 impl AlgorithmOID for SHAKE256 {

@@ -88,6 +88,15 @@ pub(crate) fn absorb_encoded_string_into<PARAMS: SHAKEParams>(
     absorb_encoded_string(&mut cshake.shake, s);
 }
 
+/// Absorbs `left_encode(value)` into a cSHAKE, for the functions layered on top: ParallelHash
+/// binds its block size this way (Sec 6.3 step 2).
+pub(crate) fn absorb_left_encode_into<PARAMS: SHAKEParams>(
+    cshake: &mut CSHAKEInternal<PARAMS>,
+    value: u64,
+) {
+    absorb_left_encode(&mut cshake.shake, value);
+}
+
 /// Absorbs `left_encode(value)`, returning how many bytes went in.
 fn absorb_left_encode<PARAMS: SHAKEParams>(shake: &mut SHAKEInternal<PARAMS>, value: u64) -> usize {
     let (buf, len) = left_encode(value);
