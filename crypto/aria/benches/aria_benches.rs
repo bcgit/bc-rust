@@ -9,7 +9,7 @@
 
 use bouncycastle_aria::{ARIA_128, ARIA_256, BLOCK_LEN, LANES};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
 use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;

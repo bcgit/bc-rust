@@ -18,6 +18,7 @@
 //!
 //! ```
 //! use bouncycastle_aria::ARIA_128;
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // RFC 5794 Appendix A.1, "128-Bit Key".
@@ -49,11 +50,12 @@
 //! Each S-box circuit substitutes 16 bytes per pass and a substitution layer sends four bytes of
 //! every block through each of the four S-boxes, so four independent blocks cost the same as one.
 //! Where a caller has four, [`ARIA::encrypt_4blocks`] is four times the throughput of four
-//! [`ARIA::encrypt_block`] calls, and it is also the four-block batch the `ElectronicCodeBook`
-//! trait offers to modes:
+//! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls, and it is also the
+//! four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_4blocks) offers to modes:
 //!
 //! ```
 //! use bouncycastle_aria::{ARIA_256, LANES};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -75,6 +77,7 @@
 //!
 //! ```
 //! use bouncycastle_aria::ARIA_CBC_256;
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
@@ -246,6 +249,6 @@ mod round;
 mod sbox;
 mod schedule;
 
-pub use aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN, Block, LANES};
+pub use aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN, LANES};
 pub use cbc::{ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
-pub use schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
+pub use schedule::ARIAParams;

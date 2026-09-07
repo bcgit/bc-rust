@@ -32,7 +32,7 @@ pub(crate) use sealed::ARIAParamsInternalTrait;
 
 /// The parameters that distinguish ARIA-128 from ARIA-192 and ARIA-256 (RFC 5794 Sec 2.2).
 ///
-/// Sealed: implemented by [`ARIA128Params`], [`ARIA192Params`] and [`ARIA256Params`] only, so
+/// Sealed: implemented by `ARIA128Params`, `ARIA192Params` and `ARIA256Params` only, so
 /// there is no fourth instantiation.
 pub trait ARIAParams: ARIAParamsInternalTrait {
     /// Key length in bytes: 16, 24 or 32.
