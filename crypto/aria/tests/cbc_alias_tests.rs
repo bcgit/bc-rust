@@ -5,7 +5,7 @@
 //! and the padding scheme changes behaviour rather than being decorative. The cipher and the
 //! padding layer are tested in their own right elsewhere; this checks the wiring between them.
 
-use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
+use bouncycastle_aria::{ARIA_128, ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
