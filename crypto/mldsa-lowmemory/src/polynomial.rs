@@ -1,7 +1,9 @@
 //! Represents a polynomial over the ML-DSA ring.
 
 use crate::aux_functions::{high_bits, low_bits, make_hint, use_hint};
-use crate::mldsa::{MLDSA44_POLY_W1_PACKED_LEN, MLDSA65_POLY_W1_PACKED_LEN, N, q, q_inv};
+use crate::mldsa::{N, d, q, q_inv};
+use crate::params::{GAMMA2_Q_MINUS_1_OVER_32, GAMMA2_Q_MINUS_1_OVER_88, MLDSAParams};
+use bouncycastle_utils::secret::ZeroizablePrimitive;
 use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-DSA ring.
@@ -75,19 +77,25 @@ impl Polynomial {
         }
     }
 
-    pub(crate) fn high_bits<const GAMMA2: i32>(&mut self) {
+    pub(crate) fn high_bits<P: MLDSAParams>(&mut self) {
         for i in 0..N {
-            self[i] = high_bits::<GAMMA2>(self[i]);
+            self[i] = high_bits::<P>(self[i]);
         }
     }
 
-    pub(crate) fn low_bits<const GAMMA2: i32>(&mut self) {
+    pub(crate) fn low_bits<P: MLDSAParams>(&mut self) {
         for i in 0..N {
-            self[i] = low_bits::<GAMMA2>(self[i]);
+            self[i] = low_bits::<P>(self[i]);
         }
     }
 
-    pub(crate) fn check_norm<const BOUND: i32>(&self) -> bool {
+    /// Tests whether any coefficient has absolute value at least `bound`.
+    ///
+    /// `bound` is a runtime argument rather than a const generic because every call site passes a
+    /// value derived from the parameter set (𝛾1 − 𝛽, 𝛾2 − 𝛽, or 𝛾2), and an associated const of a
+    /// type parameter cannot be used as a const generic argument. It is still a constant after
+    /// monomorphization, so this costs nothing.
+    pub(crate) fn check_norm(&self, bound: i32) -> bool {
         // Fine that this is not constant-time (returns true early) because it is used in a rejection loop.
         // IE the early quit here leads to rejection and continuing to the top of the rejection loop, or failing
         // the signature validation.
@@ -97,33 +105,38 @@ impl Polynomial {
         //  if bound > (q - 1) / 8 {
         //     return true;
         //  }
-        // but since BOUND is a constant here, a debug_assert is done to ensure the value is what is expected.
-        debug_assert!(BOUND <= (q - 1) / 8);
+        // but since every caller passes a parameter-set constant, a debug_assert is done instead
+        // to ensure the value is what is expected.
+        debug_assert!(bound <= (q - 1) / 8);
 
         let mut t: i32;
         for x in self.coeffs.iter() {
             t = *x >> 31;
             t = *x - (t & (2 * *x));
 
-            if t >= BOUND {
+            if t >= bound {
                 return true;
             }
         }
         false
     }
 
-    pub(crate) fn shift_left<const d: i32>(&mut self) {
+    /// Multiplies every coefficient by 2^𝑑.
+    ///
+    /// 𝑑 is 13 for all three parameter sets (FIPS 204, Table 1), so it is read from the global
+    /// constant rather than being passed in.
+    pub(crate) fn shift_left_d(&mut self) {
         for x in self.coeffs.iter_mut() {
             *x <<= d;
         }
     }
 
     /// Creates the hint vector, and also returns its hamming weight (ie the number of 1's).
-    pub(crate) fn make_hint_row<const GAMMA2: i32>(&self, r: &Self) -> (Self, i32) {
+    pub(crate) fn make_hint_row<P: MLDSAParams>(&self, r: &Self) -> (Self, i32) {
         let mut out = Polynomial::new();
         let mut count = 0i32;
         for i in 0..N {
-            let x = make_hint::<GAMMA2>(self[i], r[i]);
+            let x = make_hint::<P>(self[i], r[i]);
             out[i] = x;
             count += x;
         }
@@ -131,7 +144,14 @@ impl Polynomial {
         (out, count)
     }
 
-    pub(crate) fn w1_encode<const POLY_W1_PACKED_LEN: usize>(&self) -> [u8; POLY_W1_PACKED_LEN] {
+    /// SimpleBitPack(𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1), the per-coordinate body of
+    /// FIPS 204, Algorithm 28 (w1Encode), line 3.
+    ///
+    /// The coefficient width is bitlen ((𝑞 − 1)/(2𝛾2) − 1), which is 6 bits for 𝛾2 = (𝑞 − 1)/88 and
+    /// 4 bits for 𝛾2 = (𝑞 − 1)/32, so there is one packing layout per distinct 𝛾2 rather than one
+    /// per parameter set. `P::gamma2` is a constant after monomorphization, so only the matching
+    /// arm survives.
+    pub(crate) fn w1_encode<P: MLDSAParams>(&self) -> P::PolyW1Packed {
         // It might seem counter-intuitive for a low-memory implementation to create a tmp buffer
         // rather than work in the provided buffer, but experimentation shows that
         // rust is roughly an order of magnitude faster working in a scope-local array than
@@ -141,18 +161,21 @@ impl Polynomial {
         // several hundred physical memory writes.
         // So while it looks odd to use a scope variable in a low-memory implementation, it's way faster
         // while seemingly maintaining the same physical memory footprint.
-        let mut r = [0u8; POLY_W1_PACKED_LEN];
+        let mut out = <P::PolyW1Packed as ZeroizablePrimitive>::ZEROED;
+        let r = out.as_mut();
 
-        match POLY_W1_PACKED_LEN {
-            MLDSA44_POLY_W1_PACKED_LEN => {
+        match P::gamma2 {
+            // ML-DSA-44: (𝑞 − 1)/(2𝛾2) − 1 = 43, so four 6-bit coefficients pack into three bytes.
+            GAMMA2_Q_MINUS_1_OVER_88 => {
                 for i in 0..N / 4 {
                     r[3 * i] = ((self[4 * i]) as u8) | ((self[4 * i + 1] << 6) as u8);
                     r[3 * i + 1] = ((self[4 * i + 1] >> 2) as u8) | ((self[4 * i + 2] << 4) as u8);
                     r[3 * i + 2] = ((self[4 * i + 2] >> 4) as u8) | ((self[4 * i + 3] << 2) as u8);
                 }
             }
-            // ML-DSA65 and 87 share a POLY_W1_PACKED_LEN value
-            MLDSA65_POLY_W1_PACKED_LEN => {
+            // ML-DSA-65 and ML-DSA-87 share this 𝛾2: (𝑞 − 1)/(2𝛾2) − 1 = 15, so two 4-bit
+            // coefficients pack into one byte.
+            GAMMA2_Q_MINUS_1_OVER_32 => {
                 for i in 0..N / 2 {
                     r[i] = ((self[2 * i]) | (self[2 * i + 1] << 4)) as u8;
                 }
@@ -162,7 +185,7 @@ impl Polynomial {
             }
         }
 
-        r
+        out
     }
 
     /// Algorithm 41 NTT(𝑤)
@@ -244,9 +267,9 @@ impl Polynomial {
         }
     }
 
-    pub(crate) fn use_hint<const GAMMA2: i32>(&mut self, h: &Polynomial) {
+    pub(crate) fn use_hint<P: MLDSAParams>(&mut self, h: &Polynomial) {
         for i in 0..N {
-            self[i] = use_hint::<GAMMA2>(self[i], h[i]);
+            self[i] = use_hint::<P>(self[i], h[i]);
         }
     }
 }

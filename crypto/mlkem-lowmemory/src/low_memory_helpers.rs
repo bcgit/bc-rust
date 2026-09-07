@@ -4,6 +4,7 @@
 
 use crate::aux_functions::{byte_decode, byte_encode, sample_ntt, sample_poly_CBD};
 use crate::mlkem::{N, POLY_BYTES, q};
+use crate::params::MLKEMParams;
 use crate::polynomial::Polynomial;
 
 /// Computes the element [i,j] of the A_hat public matrix
@@ -13,23 +14,23 @@ pub(crate) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
 
 /// Computes a single row of the core keygen operation
 /// Alg 13: line 18: 𝐀_hat ∘ 𝐬_hat
-pub(crate) fn compute_A_hat_dot_s_hat<const k: usize, const eta1: i16>(
+pub(crate) fn compute_A_hat_dot_s_hat<P: MLKEMParams>(
     rho: &[u8; 32],
     sigma: &[u8; 32],
     row: usize,
 ) -> Polynomial {
     let mut t_hat_i: Polynomial = {
         let mut A_i0 = expandA_elem(rho, row, 0);
-        let mut s_0 = sample_poly_CBD::<eta1>(sigma, 0 as u8);
+        let mut s_0 = sample_poly_CBD(sigma, 0 as u8, P::eta1);
         s_0.ntt(); // now s_hat_0
         A_i0.base_mult_montgomery(&s_0);
 
         A_i0
     };
 
-    for j in 1..k {
+    for j in 1..P::k {
         let mut A_ij = expandA_elem(rho, row, j);
-        let mut s_j = sample_poly_CBD::<eta1>(sigma, j as u8);
+        let mut s_j = sample_poly_CBD(sigma, j as u8, P::eta1);
         s_j.ntt(); // now s_hat_j
         A_ij.base_mult_montgomery(&s_j);
         t_hat_i.add(&A_ij);
@@ -43,7 +44,7 @@ pub(crate) fn compute_A_hat_dot_s_hat<const k: usize, const eta1: i16>(
 
 /// Compute a single row of the core encaps operation
 /// Alg 14: line 19: NTT−1(𝐀_hat_T ∘ 𝐲_hat)
-pub(crate) fn compute_A_hat_dot_y_hat<const k: usize, const eta1: i16>(
+pub(crate) fn compute_A_hat_dot_y_hat<P: MLKEMParams>(
     rho: &[u8; 32],
     r: &[u8; 32],
     row: usize,
@@ -52,7 +53,7 @@ pub(crate) fn compute_A_hat_dot_y_hat<const k: usize, const eta1: i16>(
     //   ▷ re-generate matrix 𝐀 ∈ (ℤ256_𝑞 )𝑘×𝑘 sampled in Alg. 13
 
     // 9: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
-    //  ▷ generate 𝐲 ∈ (ℤ256_𝑞)k
+    //  ▷ generate 𝐲 ∈ (ℤ256_𝑞)^𝑘
     // 10: 𝐲[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝑟, 𝑁))
     //   ▷ 𝐲[𝑖] ∈ ℤ256 sampled from CBD
     // 11: 𝑁 ← 𝑁 + 1
@@ -61,16 +62,16 @@ pub(crate) fn compute_A_hat_dot_y_hat<const k: usize, const eta1: i16>(
 
     let mut u_i: Polynomial = {
         let mut A_0i = expandA_elem(rho, 0, row);
-        let mut y_0 = sample_poly_CBD::<eta1>(r, /*N*/ 0);
+        let mut y_0 = sample_poly_CBD(r, /*N*/ 0, P::eta1);
         y_0.ntt();
         A_0i.base_mult_montgomery(&y_0);
 
         A_0i
     };
 
-    for j in 1..k {
+    for j in 1..P::k {
         let mut A_ji = expandA_elem(&rho, j, row);
-        let mut y_j = sample_poly_CBD::<eta1>(r, /*N*/ j as u8);
+        let mut y_j = sample_poly_CBD(r, /*N*/ j as u8, P::eta1);
         y_j.ntt();
         A_ji.base_mult_montgomery(&y_j);
         u_i.add(&A_ji);
@@ -82,12 +83,12 @@ pub(crate) fn compute_A_hat_dot_y_hat<const k: usize, const eta1: i16>(
 
 /// Compute a term of the output polynomial v of the core encaps operation based on a single row of t_hat_i and y_hat.
 /// Alg 14: line 21: 𝑣 ← NTT−1(𝐭_hat_T ∘ 𝐲_hat)
-pub(crate) fn compute_t_hat_dot_y_hat_row<const k: usize, const eta1: i16>(
+pub(crate) fn compute_t_hat_dot_y_hat_row<P: MLKEMParams>(
     r: &[u8; 32],
     t_hat_i: &Polynomial,
     row: usize,
 ) -> Polynomial {
-    let mut y_i = sample_poly_CBD::<eta1>(r, /*N*/ row as u8);
+    let mut y_i = sample_poly_CBD(r, /*N*/ row as u8, P::eta1);
     y_i.ntt();
     y_i.base_mult_montgomery(&t_hat_i);
     y_i.inv_ntt();
@@ -95,32 +96,29 @@ pub(crate) fn compute_t_hat_dot_y_hat_row<const k: usize, const eta1: i16>(
     y_i
 }
 
-pub(crate) fn pack_t_hat_row<const T_PACKED_LEN: usize>(
+pub(crate) fn pack_t_hat_row<P: MLKEMParams>(
     t_hat_i: &Polynomial,
     row: usize,
-    t_hat_packed: &mut [u8; T_PACKED_LEN],
+    t_hat_packed: &mut P::TPacked,
 ) {
     byte_encode::<12, POLY_BYTES>(
         &t_hat_i,
-        t_hat_packed[row * POLY_BYTES..(row + 1) * POLY_BYTES].as_mut().try_into().unwrap(),
+        (&mut t_hat_packed.as_mut()[row * POLY_BYTES..(row + 1) * POLY_BYTES]).try_into().unwrap(),
     );
 }
 
-pub(crate) fn unpack_t_hat_row<const T_PACKED_LEN: usize>(
-    t_hat_packed: &[u8; T_PACKED_LEN],
-    row: usize,
-) -> Polynomial {
+pub(crate) fn unpack_t_hat_row(t_hat_packed: &[u8], row: usize) -> Polynomial {
     byte_decode::<12, POLY_BYTES>(
         t_hat_packed[row * POLY_BYTES..(row + 1) * POLY_BYTES].try_into().unwrap(),
     )
 }
 
-pub(crate) fn pack_s_hat_row<const k: usize>(
+pub(crate) fn pack_s_hat_row<P: MLKEMParams>(
     s_hat_i: &Polynomial,
     row: usize,
     s_hat_packed: &mut [u8],
 ) {
-    debug_assert!(s_hat_packed.len() >= k * POLY_BYTES);
+    debug_assert!(s_hat_packed.len() >= P::k * POLY_BYTES);
 
     byte_encode::<12, POLY_BYTES>(
         s_hat_i,
@@ -130,28 +128,28 @@ pub(crate) fn pack_s_hat_row<const k: usize>(
 
 /// This is an optimized version of
 ///   ByteEncode_𝑑𝑢( Compress_𝑑𝑢(𝐮) )
-/// which packs a single row of the polynomial vector u according to the packing coefficient dv
+/// which packs a single row of the polynomial vector u according to the packing coefficient 𝑑𝑢
 /// into the correct location within the ciphertext
-pub(crate) fn compress_u_row<const du: i16, const CT_LEN: usize>(
+pub(crate) fn compress_u_row<P: MLKEMParams, const CT_LEN: usize>(
     u_i: Polynomial,
     row: usize,
     ct: &mut [u8; CT_LEN],
 ) {
-    // make sure we have received a dv
-    assert!(du == 10 || du == 11);
+    // make sure we received a supported 𝑑𝑢
+    assert!(P::du == 10 || P::du == 11);
 
     // bc-java has a conditional_sub_q() here, but I pass all unit tests without it, so I'm taking it out for performance.
     // let mut u_i = u_i.clone();
     // u_i.conditional_sub_q();
 
     // figure out where in the ct array we're going to write to
-    // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let start: usize = row * (N * (du as usize) / 8);
-    let end: usize = (row + 1) * (N * (du as usize) / 8);
+    // each of the N i16's will take 𝑑𝑢 bits, so a polynomial takes N * 𝑑𝑢 bits, then we have 𝑘 of them
+    let start: usize = row * (N * (P::du as usize) / 8);
+    let end: usize = (row + 1) * (N * (P::du as usize) / 8);
     let out = &mut ct[start..end];
 
     let mut idx = 0;
-    match du {
+    match P::du {
         10 => {
             // MLKEM512 and MLKEM 768
             let mut t = [0i16; 4];
@@ -196,24 +194,24 @@ pub(crate) fn compress_u_row<const du: i16, const CT_LEN: usize>(
     }
 }
 
-pub(crate) fn unpack_ciphertext_u_row<const du: i16, const CT_LEN: usize>(
+pub(crate) fn unpack_ciphertext_u_row<P: MLKEMParams, const CT_LEN: usize>(
     row: usize,
     ct: &[u8; CT_LEN],
 ) -> Polynomial {
     let mut u_i = Polynomial::new();
 
-    // make sure to received a dv
-    assert!(du == 10 || du == 11);
+    // make sure we received a supported 𝑑𝑢
+    assert!(P::du == 10 || P::du == 11);
 
     // figure out where in the ct array we're going to write to
-    // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let start: usize = row * (N * (du as usize) / 8);
-    let end: usize = (row + 1) * (N * (du as usize) / 8);
+    // each of the N i16's will take 𝑑𝑢 bits, so a polynomial takes N * 𝑑𝑢 bits, then we have 𝑘 of them
+    let start: usize = row * (N * (P::du as usize) / 8);
+    let end: usize = (row + 1) * (N * (P::du as usize) / 8);
     let compressed_u_i = &ct[start..end];
 
     let mut idx = 0;
 
-    match du {
+    match P::du {
         10 => {
             // MLKEM512 and MLKEM768
             let mut t = [0i16; 4];
@@ -269,18 +267,13 @@ pub(crate) fn unpack_ciphertext_u_row<const du: i16, const CT_LEN: usize>(
     u_i
 }
 
-pub(crate) fn unpack_ciphertext_v<
-    const k: usize,
-    const CT_LEN: usize,
-    const du: i16,
-    const dv: i16,
->(
+pub(crate) fn unpack_ciphertext_v<P: MLKEMParams, const CT_LEN: usize>(
     c: &[u8; CT_LEN],
 ) -> Polynomial {
-    // each of the N i16's will take du bits, so a polynomial takes N * du bits, then we have k of them
-    let lim: usize = k * (N * (du as usize) / 8);
+    // each of the N i16's will take 𝑑𝑢 bits, so a polynomial takes N * 𝑑𝑢 bits, then we have 𝑘 of them
+    let lim: usize = P::k * (N * (P::du as usize) / 8);
 
-    let v = Polynomial::decompress_poly::<dv>(&c[lim..]);
+    let v = Polynomial::decompress_poly::<P>(&c[lim..]);
 
     v
 }

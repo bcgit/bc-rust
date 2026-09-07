@@ -4,9 +4,58 @@
 use core::ops::{Index, IndexMut};
 
 use crate::mlkem::{N, q};
+use crate::params::MLKEMParams;
 use crate::polynomial;
 use crate::polynomial::Polynomial;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
+
+/// The operations this crate performs on a vector of polynomials, i.e. on an element of 𝑅^LEN.
+///
+/// [`Vector`] is the only implementation; the trait exists so that code generic over a parameter
+/// set can operate on `MLKEMParams::VecK` without knowing its length.
+pub trait VectorTrait:
+    Sized + Copy + ZeroizablePrimitive + Index<usize, Output = Polynomial> + IndexMut<usize>
+{
+    /// A vector with every coefficient set to zero.
+    fn new() -> Self;
+
+    /// The coordinates, for iteration and chunking.
+    fn elems(&self) -> &[Polynomial];
+    /// The coordinates, for iteration and chunking.
+    fn elems_mut(&mut self) -> &mut [Polynomial];
+
+    /// Adds another vector to this one, coordinatewise, in the NTT domain.
+    fn add_vector_ntt(&mut self, s: &Self);
+    /// The dot product of two vectors in the NTT domain.
+    fn dot_product(&self, v: &Self) -> Polynomial;
+    /// Barrett-reduces every coefficient.
+    fn reduce(&mut self);
+    /// Applies the NTT to every coordinate.
+    fn ntt(&mut self);
+    /// Applies the inverse NTT to every coordinate.
+    fn inv_ntt(&mut self);
+    /// Converts every coefficient into the Montgomery domain.
+    fn convert_to_mont(&mut self);
+    /// FIPS 203, Algorithm 5 (ByteEncode) applied to the compressed vector.
+    fn compress_pol_vec<P: MLKEMParams>(&self, out: &mut [u8]);
+    /// The inverse of [`VectorTrait::compress_pol_vec`].
+    fn decompress_pol_vec<P: MLKEMParams>(compressed_u: &[u8]) -> Self;
+}
+
+/// The operations this crate performs on the public matrix 𝐀̂.
+///
+/// [`Matrix`] is the only implementation; see [`VectorTrait`] for why the trait exists.
+pub trait MatrixTrait: Sized + Clone {
+    /// The vector this matrix maps between: an element of 𝑅^𝑘.
+    type Vec: VectorTrait;
+
+    /// A matrix with every coefficient set to zero.
+    fn new() -> Self;
+    /// Overwrites the polynomial at `elems[row][col]`.
+    fn set_elem(&mut self, row: usize, col: usize, p: Polynomial);
+    /// Computes 𝐀̂ ∘ 𝐯̂, transposing 𝐀̂ first when `transpose` is set.
+    fn matrix_vector_ntt<const transpose: bool>(&self, v: &Self::Vec) -> Self::Vec;
+}
 
 #[derive(Clone)]
 /// A matrix over the ML-KEM ring.
@@ -64,8 +113,30 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
     }
 }
 
+/// ML-KEM's 𝐀̂ is always 𝑘 × 𝑘, so the trait is implemented only for the square case; that is what
+/// lets [`MatrixTrait::Vec`] be one vector type rather than an input and an output type.
+impl<const k: usize> MatrixTrait for Matrix<k, k> {
+    type Vec = Vector<k>;
+
+    fn new() -> Self {
+        Matrix::new()
+    }
+
+    fn set_elem(&mut self, row: usize, col: usize, p: Polynomial) {
+        self.elems[row][col] = p;
+    }
+
+    fn matrix_vector_ntt<const transpose: bool>(&self, v: &Vector<k>) -> Vector<k> {
+        Matrix::matrix_vector_ntt::<transpose>(self, v)
+    }
+}
+
 #[derive(Clone, Copy)]
-pub(crate) struct Vector<const k: usize> {
+/// A vector of `k` polynomials, i.e. an element of 𝑅^𝑘.
+///
+/// Public only because it is the value of `MLKEMParams::VecK`; its fields and operations are
+/// crate-private, so from outside it is an opaque handle. Reach it through [`VectorTrait`].
+pub struct Vector<const k: usize> {
     pub(crate) elems: [Polynomial; k],
 }
 
@@ -92,20 +163,28 @@ impl<const k: usize> Vector<k> {
     pub(crate) const fn new() -> Self {
         Self { elems: [Polynomial::new(); k] }
     }
+}
 
-    /// Algorithm 46 AddVectorNTT(𝐯, 𝐰)̂
-    /// Computes the sum 𝐯_hat + 𝐰_hat of two vectors 𝐯_hat, 𝐰_hat over 𝑇𝑞.
-    /// Input: ℓ ∈ ℕ, v_hat ∈ T^ℓ, w_hat ∈ 𝑇^ℓ
-    /// Output: u_hat ∈ T^ℓ_𝑞.
-    /// Add another vector to this vector
-    pub(crate) fn add_vector_ntt(&mut self, s: &Self) {
+impl<const k: usize> VectorTrait for Vector<k> {
+    fn new() -> Self {
+        Vector::new()
+    }
+
+    fn elems(&self) -> &[Polynomial] {
+        &self.elems
+    }
+
+    fn elems_mut(&mut self) -> &mut [Polynomial] {
+        &mut self.elems
+    }
+    fn add_vector_ntt(&mut self, s: &Self) {
         for i in 0..k {
             // perform Montgomery addition of each polynomial in the vector
             self[i].add(&s[i]);
         }
     }
 
-    pub(crate) fn dot_product(&self, v: &Self) -> Polynomial {
+    fn dot_product(&self, v: &Self) -> Polynomial {
         // split out the 0 case to skip a no-op add_ntt()
         let mut w = polynomial::base_mult_montgomery(&self[0], &v[0]);
 
@@ -120,25 +199,25 @@ impl<const k: usize> Vector<k> {
         w
     }
 
-    pub(crate) fn reduce(&mut self) {
+    fn reduce(&mut self) {
         for i in 0..k {
             self[i].poly_reduce();
         }
     }
 
-    pub(crate) fn ntt(&mut self) {
+    fn ntt(&mut self) {
         for i in 0..k {
             self[i].ntt();
         }
     }
 
-    pub(crate) fn inv_ntt(&mut self) {
+    fn inv_ntt(&mut self) {
         for i in 0..k {
             self[i].inv_ntt();
         }
     }
 
-    pub(crate) fn convert_to_mont(&mut self) {
+    fn convert_to_mont(&mut self) {
         for i in 0..k {
             self[i].convert_to_mont();
         }
@@ -147,13 +226,13 @@ impl<const k: usize> Vector<k> {
     /// This is an optimized version of
     ///   ByteEncode_𝑑𝑢( Compress_𝑑𝑢(𝐮) )
     /// which packs a polynomial vector according to the packing coefficient dv
-    pub(crate) fn compress_pol_vec<const du: i16>(&self, out: &mut [u8]) {
+    fn compress_pol_vec<P: MLKEMParams>(&self, out: &mut [u8]) {
         // make sure we have received a dv
-        assert!(du == 10 || du == 11);
+        assert!(P::du == 10 || P::du == 11);
 
         // make sure we were given the right size output buffer
         // each of the N i16's will take dv bits
-        debug_assert_eq!(out.len(), k * (N * (du as usize) / 8));
+        debug_assert_eq!(out.len(), k * (N * (P::du as usize) / 8));
 
         // No conditional_sub_q needed (as done in bc-java): callers must reduce() first,
         // so coefficients are in [0, q) (barrett_reduce, floor variant). The Compress mask `& (2^du - 1)` folds
@@ -165,7 +244,7 @@ impl<const k: usize> Vector<k> {
         // s.conditional_sub_q();
 
         let mut idx = 0;
-        match du {
+        match P::du {
             10 => {
                 // MLKEM512 and MLKEM 768
                 let mut t = [0i16; 4];
@@ -218,19 +297,19 @@ impl<const k: usize> Vector<k> {
         }
     }
 
-    pub(crate) fn decompress_pol_vec<const du: i16>(compressed_u: &[u8]) -> Vector<k> {
+    fn decompress_pol_vec<P: MLKEMParams>(compressed_u: &[u8]) -> Self {
         let mut u = Vector::<k>::new();
 
         // make sure we have received a dv
-        assert!(du == 10 || du == 11);
+        assert!(P::du == 10 || P::du == 11);
 
         // make sure we were given the right size output buffer
         // each of the N i16's will take dv bits
-        debug_assert_eq!(compressed_u.len(), k * (N * (du as usize) / 8));
+        debug_assert_eq!(compressed_u.len(), k * (N * (P::du as usize) / 8));
 
         let mut idx = 0;
 
-        match du {
+        match P::du {
             10 => {
                 // MLKEM512 and MLKEM768
                 let mut t = [0i16; 4];

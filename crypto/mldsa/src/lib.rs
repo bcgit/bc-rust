@@ -148,6 +148,7 @@ pub mod hash_mldsa;
 mod matrix;
 pub mod mldsa;
 mod mldsa_keys;
+mod params;
 mod polynomial;
 
 /*** Exported types ***/
@@ -172,14 +173,6 @@ pub use mldsa::ML_DSA_44_NAME;
 pub use mldsa::ML_DSA_65_NAME;
 pub use mldsa::ML_DSA_87_NAME;
 
-pub use hash_mldsa::HASH_ML_DSA_44_with_SHA256_NAME;
-pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA256_NAME;
-pub use hash_mldsa::HASH_ML_DSA_87_with_SHA256_NAME;
-
-pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
-pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA512_NAME;
-pub use hash_mldsa::HASH_ML_DSA_87_WITH_SHA512_NAME;
-
 pub use mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSA_SEED_LEN, MLDSA_TR_LEN};
 pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
 pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
@@ -187,4 +180,10 @@ pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
 
 pub use mldsa::SUSPENDED_MU_BUILDER_STATE_LEN;
 
-pub use matrix::Matrix;
+pub use hash_mldsa::HASH_ML_DSA_44_with_SHA256_NAME;
+pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA256_NAME;
+pub use hash_mldsa::HASH_ML_DSA_87_with_SHA256_NAME;
+
+pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_87_WITH_SHA512_NAME;
