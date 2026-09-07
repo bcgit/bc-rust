@@ -7,7 +7,7 @@
 //! costs the same as encryption (the same loop with the round keys read backwards).
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
 use bouncycastle_rng as rng;
 use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN, LANES, SM4};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
