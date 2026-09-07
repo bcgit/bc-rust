@@ -218,3 +218,122 @@ fn algorithm_names() {
     assert_eq!(PARALLELHASHXOF128::ALG_NAME, "ParallelHashXOF128");
     assert_eq!(PARALLELHASHXOF256::ALG_NAME, "ParallelHashXOF256");
 }
+
+/// Sponge rates from FIPS 202 Table 3, the nominal lengths of the XOF forms, and the constructed
+/// length of the fixed forms. The generic checks elsewhere only require these to be positive.
+#[test]
+fn metadata() {
+    assert_eq!(PARALLELHASH128::new(8, b"", 32).block_bitlen(), 1344, "cSHAKE128 rate");
+    assert_eq!(PARALLELHASH256::new(8, b"", 64).block_bitlen(), 1088, "cSHAKE256 rate");
+    assert_eq!(PARALLELHASHXOF128::new(8, b"").block_bitlen(), 1344);
+    assert_eq!(PARALLELHASHXOF256::new(8, b"").block_bitlen(), 1088);
+
+    assert_eq!(PARALLELHASH128::new(8, b"", 17).output_len(), 17, "whatever was asked for");
+    assert_eq!(PARALLELHASH256::new(8, b"", 100).output_len(), 100);
+    assert_eq!(PARALLELHASHXOF128::new(8, b"").output_len(), 32, "the nominal length");
+    assert_eq!(PARALLELHASHXOF256::new(8, b"").output_len(), 64);
+}
+
+/// Every `Hash` entry point of the fixed-length form, against one sample value.
+///
+/// The sample-value test above goes through `hash` only, which left `hash_out` and
+/// `do_final_out` unexercised: `cargo mutants` could replace each with a constant, and change the
+/// `* 8` in the `right_encode(L)` that `do_final_out` binds, without a test noticing.
+fn check_fixed_view<H: Hash>(make: impl Fn() -> H, msg: &[u8], expected: &[u8], ctx: &str) {
+    let n = expected.len();
+    assert_eq!(make().output_len(), n, "{ctx}: output_len");
+
+    let mut out = vec![0u8; n];
+    assert_eq!(make().hash_out(msg, &mut out), n, "{ctx}: hash_out returns the length");
+    assert_eq!(out, expected, "{ctx}: hash_out");
+
+    let mut h = make();
+    msg.chunks(5).for_each(|c| h.do_update(c));
+    let mut out = vec![0u8; n];
+    assert_eq!(h.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
+    assert_eq!(out, expected, "{ctx}: do_final_out");
+
+    // a longer buffer is only written up to the output length
+    let mut h = make();
+    h.do_update(msg);
+    let mut out = vec![0xFFu8; n + 7];
+    assert_eq!(h.do_final_out(&mut out), n);
+    assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
+    assert_eq!(&out[n..], &[0xFFu8; 7], "{ctx}: bytes past the output length are untouched");
+}
+
+/// Every `Hash` and `XOF` entry point of the XOF form, against one sample value. The samples ask
+/// for the nominal length, so `do_final` and `hash` must reproduce them exactly.
+fn check_xof_view<X: XOF>(make: impl Fn() -> X, msg: &[u8], expected: &[u8], ctx: &str) {
+    let n = expected.len();
+    assert_eq!(make().output_len(), n, "{ctx}: the samples ask for the nominal length");
+
+    assert_eq!(make().hash(msg), expected, "{ctx}: hash");
+
+    let mut out = vec![0u8; n];
+    assert_eq!(make().hash_out(msg, &mut out), n, "{ctx}: hash_out returns the length");
+    assert_eq!(out, expected, "{ctx}: hash_out");
+
+    let mut x = make();
+    msg.chunks(5).for_each(|c| x.do_update(c));
+    assert_eq!(x.do_final(), expected, "{ctx}: do_final");
+
+    let mut x = make();
+    x.do_update(msg);
+    let mut out = vec![0u8; n];
+    assert_eq!(x.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
+    assert_eq!(out, expected, "{ctx}: do_final_out");
+
+    // zero partial bits is the byte-aligned case and must be accepted; any other count refused
+    let mut x = make();
+    x.do_update(msg);
+    assert_eq!(x.do_final_partial_bits(0, 0).unwrap(), expected, "{ctx}: do_final_partial_bits(0)");
+
+    let mut x = make();
+    x.do_update(msg);
+    let mut out = vec![0u8; n];
+    assert_eq!(x.do_final_partial_bits_out(0, 0, &mut out).unwrap(), n, "{ctx}: ..._out length");
+    assert_eq!(out, expected, "{ctx}: do_final_partial_bits_out(0)");
+
+    assert!(matches!(make().do_final_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
+    let mut out = vec![0u8; n];
+    assert!(matches!(
+        make().do_final_partial_bits_out(0xF0, 4, &mut out),
+        Err(HashError::InvalidLength(_))
+    ));
+
+    assert_eq!(make().hash_xof(msg, n / 2), &expected[..n / 2], "{ctx}: hash_xof, shorter");
+
+    let mut out = vec![0u8; n];
+    assert_eq!(make().hash_xof_out(msg, &mut out), n, "{ctx}: hash_xof_out returns the length");
+    assert_eq!(out, expected, "{ctx}: hash_xof_out");
+}
+
+#[test]
+fn hash_trait_view_agrees_with_the_sample_values() {
+    let Some(vectors) = read_vectors("ParallelHash.rsp") else { return };
+    for (i, v) in vectors.iter().enumerate() {
+        let n = v.output_len / 8;
+        let (b, s) = (v.block_size, v.s.as_bytes());
+        let ctx = format!("COUNT {i}: ParallelHash{} B={b}", v.strength);
+        match v.strength {
+            128 => check_fixed_view(|| PARALLELHASH128::new(b, s, n), &v.msg, &v.output, &ctx),
+            256 => check_fixed_view(|| PARALLELHASH256::new(b, s, n), &v.msg, &v.output, &ctx),
+            other => panic!("COUNT {i}: unexpected strength {other}"),
+        }
+    }
+}
+
+#[test]
+fn xof_trait_view_agrees_with_the_sample_values() {
+    let Some(vectors) = read_vectors("ParallelHashXOF.rsp") else { return };
+    for (i, v) in vectors.iter().enumerate() {
+        let (b, s) = (v.block_size, v.s.as_bytes());
+        let ctx = format!("COUNT {i}: ParallelHashXOF{} B={b}", v.strength);
+        match v.strength {
+            128 => check_xof_view(|| PARALLELHASHXOF128::new(b, s), &v.msg, &v.output, &ctx),
+            256 => check_xof_view(|| PARALLELHASHXOF256::new(b, s), &v.msg, &v.output, &ctx),
+            other => panic!("COUNT {i}: unexpected strength {other}"),
+        }
+    }
+}

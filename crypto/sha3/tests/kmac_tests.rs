@@ -2,6 +2,7 @@
 //!
 //! Vectors come from the `bc-test-data` repo cloned alongside this one; see `cshake_tests.rs`.
 
+use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -294,4 +295,144 @@ fn test_framework_xof() {
         &v.msg,
         &v.output,
     );
+}
+
+/// `mac_out` and `do_final_out` against one sample value. The sample-value test above goes through
+/// `mac` only, so these two, their returned lengths, and the buffer-length check in `do_final_out`
+/// were all invisible to `cargo mutants`.
+fn check_out_variants<M: MAC>(make: impl Fn() -> M, msg: &[u8], expected: &[u8], ctx: &str) {
+    let n = expected.len();
+
+    let mut out = vec![0xFFu8; n];
+    assert_eq!(make().mac_out(msg, &mut out).unwrap(), n, "{ctx}: mac_out returns the length");
+    assert_eq!(out, expected, "{ctx}: mac_out");
+
+    // mac_out zero-fills the whole buffer first, so a longer one ends in zeros
+    let mut out = vec![0xFFu8; n + 5];
+    assert_eq!(make().mac_out(msg, &mut out).unwrap(), n);
+    assert_eq!(&out[..n], expected, "{ctx}: mac_out, oversized buffer");
+    assert_eq!(&out[n..], &[0u8; 5], "{ctx}: mac_out zeroizes past the tag");
+
+    let mut m = make();
+    msg.chunks(7).for_each(|c| m.do_update(c));
+    let mut out = vec![0xFFu8; n];
+    assert_eq!(m.do_final_out(&mut out).unwrap(), n, "{ctx}: do_final_out returns the length");
+    assert_eq!(out, expected, "{ctx}: do_final_out");
+
+    // do_final_out writes exactly output_len bytes and leaves the rest alone
+    let mut m = make();
+    m.do_update(msg);
+    let mut out = vec![0xFFu8; n + 5];
+    assert_eq!(m.do_final_out(&mut out).unwrap(), n);
+    assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
+    assert_eq!(&out[n..], &[0xFFu8; 5], "{ctx}: do_final_out leaves bytes past the tag");
+
+    // a buffer one byte short is refused, by both
+    let mut out = vec![0u8; n - 1];
+    assert!(
+        matches!(make().do_final_out(&mut out), Err(MACError::InvalidLength(_))),
+        "{ctx}: do_final_out must refuse a short buffer"
+    );
+    assert!(
+        matches!(make().mac_out(msg, &mut out), Err(MACError::InvalidLength(_))),
+        "{ctx}: mac_out must refuse a short buffer"
+    );
+}
+
+#[test]
+fn mac_out_and_do_final_out_agree_with_the_sample_values() {
+    let Some(vectors) = read_vectors("KMAC.rsp") else { return };
+    for (i, v) in vectors.iter().enumerate() {
+        let n = v.output_len / 8;
+        let key = key_material(&v.key);
+        let s = v.s.as_bytes();
+        let ctx = format!("COUNT {i}: KMAC{} S={:?}", v.strength, v.s);
+        match v.strength {
+            128 => check_out_variants(
+                || KMAC128::new_with_params(&key, s, n, false).unwrap(),
+                &v.msg,
+                &v.output,
+                &ctx,
+            ),
+            256 => check_out_variants(
+                || KMAC256::new_with_params(&key, s, n, false).unwrap(),
+                &v.msg,
+                &v.output,
+                &ctx,
+            ),
+            other => panic!("COUNT {i}: unexpected strength {other}"),
+        }
+    }
+}
+
+/// `new_allow_weak_key` is `new` without the strength check: same customization, same nominal
+/// length, same tag.
+#[test]
+fn new_allow_weak_key_uses_the_nominal_length() {
+    let key = key_material(&[0x42u8; 32]);
+
+    let k = KMAC128::new_allow_weak_key(&key).unwrap();
+    assert_eq!(k.output_len(), 32);
+    assert_eq!(k.mac(b"abc"), KMAC128::new(&key).unwrap().mac(b"abc"));
+
+    let k = KMAC256::new_allow_weak_key(&key).unwrap();
+    assert_eq!(k.output_len(), 64);
+    assert_eq!(k.mac(b"abc"), KMAC256::new(&key).unwrap().mac(b"abc"));
+}
+
+/// The same stance as HMAC: a key tagged `MACKey` or `Zeroized` is accepted, anything else is
+/// refused as the wrong type. A zeroized key carries no security strength, so it also needs
+/// `allow_weak_key`.
+#[test]
+fn key_type_is_checked() {
+    let cipher_key =
+        KeyMaterial::<32>::from_bytes_as_type(&[0x42u8; 32], KeyType::SymmetricCipherKey).unwrap();
+    assert!(matches!(
+        KMAC128::new(&cipher_key),
+        Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+    ));
+    assert!(matches!(
+        KMAC128::new_with_params(&cipher_key, b"", 32, true),
+        Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+    ));
+    assert!(matches!(
+        KMACXOF128::new(&cipher_key, b"", true),
+        Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+    ));
+
+    let zero = KeyMaterial::<32>::new();
+    assert_eq!(zero.key_type(), KeyType::Zeroized);
+    assert!(KMAC128::new(&zero).is_err(), "a zeroized key has no security strength");
+    assert!(KMAC128::new_with_params(&zero, b"", 32, true).is_ok(), "... but is the right type");
+    assert!(KMAC128::new_allow_weak_key(&zero).is_ok());
+    assert!(KMACXOF128::new(&zero, b"", true).is_ok());
+}
+
+/// The `Hash` view of the partial-byte entry points on KMACXOF: zero bits is the byte-aligned case
+/// and yields the same bytes as `do_final`; anything else is refused. The test above only covers
+/// the `XOF` entry point, `into_output_partial_bits`.
+#[test]
+fn kmacxof_hash_view_partial_bits() {
+    let key = key_material(&[0x42u8; 32]);
+    let fresh = || {
+        let mut k = KMACXOF128::new(&key, b"", false).unwrap();
+        k.do_update(b"abc");
+        k
+    };
+    let expected = fresh().do_final();
+    assert_eq!(expected.len(), 32);
+
+    assert_eq!(fresh().do_final_partial_bits(0, 0).unwrap(), expected);
+    let mut out = vec![0u8; 32];
+    assert_eq!(fresh().do_final_partial_bits_out(0, 0, &mut out).unwrap(), 32);
+    assert_eq!(out, expected);
+
+    assert!(matches!(
+        fresh().do_final_partial_bits(0xF0, 4),
+        Err(bouncycastle_core::errors::HashError::InvalidLength(_))
+    ));
+    assert!(matches!(
+        fresh().do_final_partial_bits_out(0xF0, 4, &mut out),
+        Err(bouncycastle_core::errors::HashError::InvalidLength(_))
+    ));
 }
