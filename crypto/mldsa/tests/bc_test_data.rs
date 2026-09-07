@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::XOF;
+use bouncycastle_core::traits::{Hash, XOF, XofOutput};
 use bouncycastle_sha3::SHAKE256;
 
 #[cfg(test)]
@@ -966,14 +966,14 @@ impl BustedMuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
         let mut mb = Self { h: SHAKE256::new() };
-        mb.h.absorb(tr).expect("absorb before squeeze is infallible");
+        mb.h.do_update(tr);
 
         // Algorithm 2
         // 10: 𝑀′ ← BytesToBits(IntegerToBytes(0, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥) ∥ 𝑀
         // all done together
-        // mb.h.absorb(&[0u8]);   // these are the busted lines -- bc-java just doesn't do these in the test code
-        // mb.h.absorb(&[ctx.len() as u8]);
-        // mb.h.absorb(ctx);
+        // mb.h.do_update(&[0u8]);   // these are the busted lines -- bc-java just doesn't do these in the test code
+        // mb.h.do_update(&[ctx.len() as u8]);
+        // mb.h.do_update(ctx);
 
         // now ready to absorb M
         Ok(mb)
@@ -981,16 +981,16 @@ impl BustedMuBuilder {
 
     /// Stream a chunk of the message.
     pub fn do_update(&mut self, msg_chunk: &[u8]) {
-        self.h.absorb(msg_chunk).expect("absorb before squeeze is infallible");
+        self.h.do_update(msg_chunk);
     }
 
     /// Finalize and return the mu value.
-    pub fn do_final(mut self) -> [u8; 64] {
+    pub fn do_final(self) -> [u8; 64] {
         // Completion of
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.squeeze_out(&mut mu);
+        self.h.into_output().do_output_out(&mut mu);
 
         mu
     }

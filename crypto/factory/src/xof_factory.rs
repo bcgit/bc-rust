@@ -5,7 +5,7 @@
 //!
 //! Example usage:
 //! ```
-//! use bouncycastle_core::traits::XOF;
+//! use bouncycastle_core::traits::{Hash, XOF, XofOutput};
 //! use bouncycastle_factory::AlgorithmFactory;
 //! use bouncycastle_factory::xof_factory::XOFFactory;
 //! use bouncycastle_sha3 as sha3;
@@ -13,9 +13,11 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! let mut h = XOFFactory::new(sha3::SHAKE128_NAME).unwrap();
-//! h.absorb(data);
-//! let output: Vec<u8> = h.squeeze(16);
+//! h.do_update(data);
+//! let output: Vec<u8> = h.into_output().do_output(16);
 //! ```
+//! `XOFFactory` implements [`Hash`] too, so it can be used wherever a hash is wanted; `do_final`
+//! then produces the nominal 32 or 64 bytes.
 //! Equivalently, it may be invoked by passing a string instead of using the constant:
 //!
 //! ```
@@ -35,7 +37,7 @@
 
 use crate::{AlgorithmFactory, FactoryError};
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XofOutput};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 
@@ -82,7 +84,148 @@ impl AlgorithmFactory for XOFFactory {
         }
     }
 }
+/// `Hash` requires it, and the factory does not know which algorithm it holds until it is
+/// constructed, so the constants are placeholders -- the same stance `HashFactory` takes. The
+/// per-value answers come from [`Hash::output_len`] and [`Hash::max_security_strength`], which
+/// dispatch on the variant.
+impl Algorithm for XOFFactory {
+    const ALG_NAME: &'static str = "TODO";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
+}
+
+/// The squeezing phase of whichever XOF the factory selected.
+///
+/// [`XOF::into_output`] consumes the factory value, so this enum is what remains; like
+/// [`XOFFactory`] itself it dispatches on the variant.
+pub enum XOFFactoryOutput {
+    /// SHAKE128 output.
+    SHAKE128(<sha3::SHAKE128 as XOF>::Output),
+    /// SHAKE256 output.
+    SHAKE256(<sha3::SHAKE256 as XOF>::Output),
+}
+
+impl XofOutput for XOFFactoryOutput {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        match self {
+            Self::SHAKE128(o) => o.do_output(num_bytes),
+            Self::SHAKE256(o) => o.do_output(num_bytes),
+        }
+    }
+
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        match self {
+            Self::SHAKE128(o) => o.do_output_out(output),
+            Self::SHAKE256(o) => o.do_output_out(output),
+        }
+    }
+}
+
+impl Hash for XOFFactory {
+    fn block_bitlen(&self) -> usize {
+        match self {
+            Self::SHAKE128(h) => h.block_bitlen(),
+            Self::SHAKE256(h) => h.block_bitlen(),
+        }
+    }
+
+    fn output_len(&self) -> usize {
+        match self {
+            Self::SHAKE128(h) => h.output_len(),
+            Self::SHAKE256(h) => h.output_len(),
+        }
+    }
+
+    fn hash(self, data: &[u8]) -> Vec<u8> {
+        match self {
+            Self::SHAKE128(h) => h.hash(data),
+            Self::SHAKE256(h) => h.hash(data),
+        }
+    }
+
+    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        match self {
+            Self::SHAKE128(h) => h.hash_out(data, output),
+            Self::SHAKE256(h) => h.hash_out(data, output),
+        }
+    }
+
+    fn do_update(&mut self, data: &[u8]) {
+        match self {
+            Self::SHAKE128(h) => h.do_update(data),
+            Self::SHAKE256(h) => h.do_update(data),
+        }
+    }
+
+    fn do_final(self) -> Vec<u8> {
+        match self {
+            Self::SHAKE128(h) => h.do_final(),
+            Self::SHAKE256(h) => h.do_final(),
+        }
+    }
+
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        match self {
+            Self::SHAKE128(h) => h.do_final_out(output),
+            Self::SHAKE256(h) => h.do_final_out(output),
+        }
+    }
+
+    fn do_final_partial_bits(
+        self,
+        partial_byte: u8,
+        num_bits: usize,
+    ) -> Result<Vec<u8>, HashError> {
+        match self {
+            Self::SHAKE128(h) => h.do_final_partial_bits(partial_byte, num_bits),
+            Self::SHAKE256(h) => h.do_final_partial_bits(partial_byte, num_bits),
+        }
+    }
+
+    fn do_final_partial_bits_out(
+        self,
+        partial_byte: u8,
+        num_bits: usize,
+        output: &mut [u8],
+    ) -> Result<usize, HashError> {
+        match self {
+            Self::SHAKE128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
+            Self::SHAKE256(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
+        }
+    }
+
+    fn max_security_strength(&self) -> SecurityStrength {
+        match self {
+            Self::SHAKE128(h) => Hash::max_security_strength(h),
+            Self::SHAKE256(h) => Hash::max_security_strength(h),
+        }
+    }
+}
+
 impl XOF for XOFFactory {
+    type Output = XOFFactoryOutput;
+
+    fn into_output(self) -> Self::Output {
+        match self {
+            Self::SHAKE128(h) => XOFFactoryOutput::SHAKE128(h.into_output()),
+            Self::SHAKE256(h) => XOFFactoryOutput::SHAKE256(h.into_output()),
+        }
+    }
+
+    fn into_output_partial_bits(
+        self,
+        partial_byte: u8,
+        num_bits: usize,
+    ) -> Result<Self::Output, HashError> {
+        Ok(match self {
+            Self::SHAKE128(h) => {
+                XOFFactoryOutput::SHAKE128(h.into_output_partial_bits(partial_byte, num_bits)?)
+            }
+            Self::SHAKE256(h) => {
+                XOFFactoryOutput::SHAKE256(h.into_output_partial_bits(partial_byte, num_bits)?)
+            }
+        })
+    }
+
     fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
         match self {
             Self::SHAKE128(h) => h.hash_xof(data, result_len),
@@ -96,67 +239,6 @@ impl XOF for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.hash_xof_out(data, output),
             Self::SHAKE256(h) => h.hash_xof_out(data, output),
-        }
-    }
-
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
-        match self {
-            Self::SHAKE128(h) => h.absorb(data),
-            Self::SHAKE256(h) => h.absorb(data),
-        }
-    }
-
-    fn absorb_last_partial_byte(
-        &mut self,
-        partial_byte: u8,
-        num_partial_bits: usize,
-    ) -> Result<(), HashError> {
-        match self {
-            Self::SHAKE128(h) => h.absorb_last_partial_byte(partial_byte, num_partial_bits),
-            Self::SHAKE256(h) => h.absorb_last_partial_byte(partial_byte, num_partial_bits),
-        }
-    }
-
-    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
-        match self {
-            Self::SHAKE128(h) => h.squeeze(num_bytes),
-            Self::SHAKE256(h) => h.squeeze(num_bytes),
-        }
-    }
-
-    fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        match self {
-            Self::SHAKE128(h) => h.squeeze_out(output),
-            Self::SHAKE256(h) => h.squeeze_out(output),
-        }
-    }
-
-    fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError> {
-        match self {
-            Self::SHAKE128(h) => h.squeeze_partial_byte_final(num_bits),
-            Self::SHAKE256(h) => h.squeeze_partial_byte_final(num_bits),
-        }
-    }
-
-    fn squeeze_partial_byte_final_out(
-        self,
-        num_bits: usize,
-        output: &mut u8,
-    ) -> Result<(), HashError> {
-        *output = 0;
-
-        match self {
-            Self::SHAKE128(h) => h.squeeze_partial_byte_final_out(num_bits, output),
-            Self::SHAKE256(h) => h.squeeze_partial_byte_final_out(num_bits, output),
-        }
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        match self {
-            Self::SHAKE128(h) => KDF::max_security_strength(h),
-            Self::SHAKE256(h) => XOF::max_security_strength(h),
         }
     }
 }

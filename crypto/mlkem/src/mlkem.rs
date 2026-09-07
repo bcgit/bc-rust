@@ -151,6 +151,7 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, SecurityStrength, XOF,
+    XofOutput,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
@@ -635,10 +636,11 @@ impl<
         let K_bar: [u8; MLKEM_SS_LEN];
         K_bar = {
             let mut j = J::new();
-            j.absorb(dk.z().as_ref()).expect("absorb before squeeze is infallible");
-            j.absorb(&c).expect("absorb before squeeze is infallible");
+            j.do_update(dk.z().as_ref());
+            j.do_update(&c);
             let mut buf = [0u8; MLKEM_SS_LEN];
-            let bytes_written = j.squeeze_out(&mut buf);
+            let mut j = j.into_output();
+            let bytes_written = j.do_output_out(&mut buf);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
 
             buf

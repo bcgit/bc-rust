@@ -1,4 +1,4 @@
-use bouncycastle::core::traits::{Hash, XOF};
+use bouncycastle::core::traits::{Hash, XOF, XofOutput};
 use std::io;
 use std::io::{Read, Write};
 
@@ -49,11 +49,12 @@ fn do_shake(mut shake: impl XOF, output_len: usize, output_hex: bool) {
     // read from stdin
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     while bytes_read != 0 {
-        shake.absorb(&buf[..bytes_read]).expect("absorb before squeeze is infallible");
+        shake.do_update(&buf[..bytes_read]);
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
-    let out = shake.squeeze(output_len);
+    let mut shake = shake.into_output();
+    let out = shake.do_output(output_len);
     if output_hex {
         for b in out.iter() {
             print!("{b:02x}");
