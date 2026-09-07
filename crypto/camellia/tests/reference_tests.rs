@@ -10,7 +10,7 @@
 
 mod common;
 
-use bouncycastle_camellia::{Block, Camellia_128, Camellia_192, Camellia_256, LANES};
+use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256, LANES};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::ElectronicCodeBook;
 
@@ -25,7 +25,7 @@ fn engine<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(key: &[u8; K
 /// The reference itself reproduces RFC 3713 Appendix A, so it can be trusted to judge.
 #[test]
 fn reference_sanity() {
-    let pt: Block = common::bytes("0123456789abcdeffedcba9876543210");
+    let pt: [u8; BLOCK_LEN] = common::bytes("0123456789abcdeffedcba9876543210");
     for (key, ct) in [
         (
             &common::bytes::<32>(
@@ -60,7 +60,7 @@ fn single_block_agrees<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>
         let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);
         let perm: P = engine(&key);
         for _ in 0..8 {
-            let block: Block = common::pseudo_random(&mut seed);
+            let block: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
 
             let mut ours = block;
             let mut theirs = block;
@@ -82,8 +82,8 @@ fn two_block_override_matches<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LE
     for _ in 0..64 {
         let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);
         let perm: P = engine(&key);
-        let a: Block = common::pseudo_random(&mut seed);
-        let b: Block = common::pseudo_random(&mut seed);
+        let a: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
+        let b: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
 
         let mut singly = [a, b];
         perm.encrypt_block(&mut singly[0]);
@@ -115,11 +115,14 @@ fn four_lanes_agree_with_the_reference() {
     fn run<const KEY_LEN: usize, P: bouncycastle_camellia::CamelliaParams>(
         mut seed: u32,
         new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_camellia::Camellia<P>,
-    ) {
+    ) where
+        bouncycastle_camellia::Camellia<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    {
         for _ in 0..128 {
             let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);
             let perm = new(&key);
-            let blocks: [Block; LANES] = core::array::from_fn(|_| common::pseudo_random(&mut seed));
+            let blocks: [[u8; BLOCK_LEN]; LANES] =
+                core::array::from_fn(|_| common::pseudo_random(&mut seed));
 
             let mut ours = blocks;
             perm.encrypt_4blocks(&mut ours);
