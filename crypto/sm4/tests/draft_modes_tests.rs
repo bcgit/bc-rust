@@ -16,11 +16,11 @@
 //! transcribed from the downloaded text of the draft.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_sm4::{BLOCK_LEN, Block, KEY_LEN, SM4};
+use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN, SM4};
 
 /// CBC over SM4, block-aligned and in place -- what `SM4_CBC` wraps.
 ///
@@ -53,7 +53,7 @@ fn bytes<const N: usize>(hex_str: &str) -> [u8; N] {
     hex::decode(hex_str).expect("valid hex").try_into().expect("expected length")
 }
 
-fn blocks(hex_str: &str) -> [Block; 2] {
+fn blocks(hex_str: &str) -> [[u8; BLOCK_LEN]; 2] {
     let flat: [u8; 32] = bytes(hex_str);
     let (chunks, _) = flat.as_chunks::<BLOCK_LEN>();
     [chunks[0], chunks[1]]

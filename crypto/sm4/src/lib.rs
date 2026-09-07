@@ -18,6 +18,7 @@
 //!
 //! ```
 //! use bouncycastle_sm4::SM4;
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // GB/T 32907-2016 Example 1 (draft-ribose-cfrg-sm4-10 Appendix A.1.1).
@@ -45,11 +46,12 @@
 //!
 //! The bit-sliced S-box substitutes 16 bytes per pass, and a round substitutes four bytes per
 //! block, so four independent blocks cost the same as one. Where a caller has four,
-//! [`SM4::encrypt_4blocks`] is four times the throughput of four [`SM4::encrypt_block`] calls, and it
-//! is also the four-block batch the `ElectronicCodeBook` trait offers to modes:
+//! [`SM4::encrypt_4blocks`] is four times the throughput of four [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls, and it
+//! is also the four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_4blocks) offers to modes:
 //!
 //! ```
 //! use bouncycastle_sm4::{SM4, LANES};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -71,6 +73,7 @@
 //!
 //! ```
 //! use bouncycastle_sm4::SM4_CBC;
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
@@ -140,7 +143,7 @@
 //! Beyond the S-box, the port differs from the Java engine in three ways: one stored schedule
 //! serves both directions (Java expands the key in reverse when initialised for decryption); the
 //! block methods are infallible (the run-time buffer and initialisation checks are compile-time
-//! facts here); and [`SM4::new`] requires a key tagged as a symmetric cipher key of at least
+//! facts here); and [`ElectronicCodeBook::new`](bouncycastle_core::traits::ElectronicCodeBook::new) requires a key tagged as a symmetric cipher key of at least
 //! 128-bit strength, as every cipher in this workspace does.
 //!
 //! ## Why "lowmemory"
@@ -237,4 +240,4 @@ mod schedule;
 mod sm4;
 
 pub use cbc::SM4_CBC;
-pub use sm4::{BLOCK_LEN, Block, KEY_LEN, LANES, SM4};
+pub use sm4::{BLOCK_LEN, KEY_LEN, LANES, SM4};
