@@ -57,6 +57,27 @@ mod shake_tests {
         assert_ne!(b.do_output(32), SHAKE128::new().hash_xof(b"abc", 32));
     }
 
+    /// The two `Hash` metadata methods, pinned to their actual values.
+    ///
+    /// The generic framework can only check that these are positive and byte-aligned, which every
+    /// plausible mis-derivation also satisfies -- `cargo mutants` survived three separate mutations
+    /// of them until this test existed.
+    ///
+    /// `block_bitlen` is the sponge rate, `1600 - 2c`: FIPS 202 Table 3 gives 1344 bits for
+    /// SHAKE128 and 1088 for SHAKE256. `output_len` is the nominal digest size, which BC Java's
+    /// `SHAKEDigest.getDigestSize()` defines as `fixedOutputLength / 4`: 32 and 64 bytes.
+    #[test]
+    fn metadata_matches_fips202_and_bc_java() {
+        assert_eq!(SHAKE128::new().block_bitlen(), 1344, "SHAKE128 rate, FIPS 202 Table 3");
+        assert_eq!(SHAKE256::new().block_bitlen(), 1088, "SHAKE256 rate, FIPS 202 Table 3");
+        assert_eq!(SHAKE128::new().output_len(), 32, "SHAKEDigest.getDigestSize() for SHAKE128");
+        assert_eq!(SHAKE256::new().output_len(), 64, "SHAKEDigest.getDigestSize() for SHAKE256");
+
+        // and do_final actually produces that many bytes
+        assert_eq!(SHAKE128::new().hash(b"abc").len(), 32);
+        assert_eq!(SHAKE256::new().hash(b"abc").len(), 64);
+    }
+
     #[test]
     fn test_update_bytes() {
         for tc in read_test_vectors("SHAKETestVectors.txt") {
