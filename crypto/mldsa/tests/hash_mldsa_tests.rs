@@ -414,9 +414,11 @@ mod hash_mldsa_tests {
 
     #[test]
     fn prehash_lengths_match_the_hash_functions() {
-        // `PH_LEN` is still a const generic on `HashMLDSA` -- `PHSigner` takes it as one -- but it
-        // is derived on the pairing from the pre-hash's own `OUTPUT_LEN`, and the two are checked
-        // against each other at build time. This confirms both agree with the actual digest.
+        // `PH_LEN` is still a const generic on `HashMLDSA` -- `PHSigner` takes it as one -- but
+        // no alias hard-codes it: each passes `{ ...Params::PH_LEN }`, which is the pre-hash's own
+        // `HashAlgParams::OUTPUT_LEN`. So there is only one value, and nothing in the chain can
+        // disagree with itself. What is left to check is whether that value matches the digest
+        // the hash actually produces, which is what this test does.
         assert_eq!(SHA256::new().hash(b"").len(), 32);
         assert_eq!(SHA512::new().hash(b"").len(), 64);
 
