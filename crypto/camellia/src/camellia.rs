@@ -116,15 +116,15 @@ impl<P: CamelliaParams> Camellia<P> {
     /// Filling the spare lanes with copies costs exactly what zeros would, and buys a free
     /// self-check: all four lanes must agree, which `debug_assert` verifies. It is not a security
     /// property; the spare lanes are never returned either way.
-    pub fn encrypt_block(&self, block: &mut Block) {
+    pub(crate) fn encrypt_block(&self, block: &mut Block) {
         let mut lanes = [*block; LANES];
         self.encrypt_4blocks(&mut lanes);
         debug_assert!(lanes.iter().all(|b| *b == lanes[0]), "all lanes must agree");
         *block = lanes[0];
     }
 
-    /// Decrypts one block in place. See [`Camellia::encrypt_block`] for the four-lane caveat.
-    pub fn decrypt_block(&self, block: &mut Block) {
+    /// Decrypts one block in place. See [`ElectronicCodeBook::encrypt_block`] for the four-lane caveat.
+    pub(crate) fn decrypt_block(&self, block: &mut Block) {
         let mut lanes = [*block; LANES];
         self.decrypt_4blocks(&mut lanes);
         debug_assert!(lanes.iter().all(|b| *b == lanes[0]), "all lanes must agree");
@@ -133,16 +133,16 @@ impl<P: CamelliaParams> Camellia<P> {
 
     /// Encrypts two blocks in place, in lanes 0 and 1; the other two lanes carry copies of the
     /// first and are discarded. Two blocks for the price of four, but twice as good as two
-    /// [`Camellia::encrypt_block`] calls, which is why the trait method is overridden.
-    pub fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method is overridden.
+    pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
         self.encrypt_4blocks(&mut lanes);
         *blocks = [lanes[0], lanes[1]];
     }
 
-    /// Decrypts two blocks in place. See [`Camellia::encrypt_2blocks`].
-    pub fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_2blocks`].
+    pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
         self.decrypt_4blocks(&mut lanes);
@@ -157,25 +157,25 @@ impl Camellia_128 {
     /// * [`KeyMaterialError::InvalidKeyType`] if the key is not [`KeyType::SymmetricCipherKey`].
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
-    pub fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+    pub(crate) fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Camellia128Params>(key.ref_to_bytes()) })
     }
 }
 
 impl Camellia_192 {
-    /// Expands a 24-byte key into the Camellia-192 subkeys. See [`Camellia_128::new`] for the
+    /// Expands a 24-byte key into the Camellia-192 subkeys. See [`ElectronicCodeBook::new`] for the
     /// error cases.
-    pub fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
+    pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Camellia192Params>(key.ref_to_bytes()) })
     }
 }
 
 impl Camellia_256 {
-    /// Expands a 32-byte key into the Camellia-256 subkeys. See [`Camellia_128::new`] for the
+    /// Expands a 32-byte key into the Camellia-256 subkeys. See [`ElectronicCodeBook::new`] for the
     /// error cases.
-    pub fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
+    pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Camellia256Params>(key.ref_to_bytes()) })
     }

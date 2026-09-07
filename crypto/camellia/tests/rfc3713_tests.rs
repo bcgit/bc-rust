@@ -6,8 +6,9 @@
 
 mod common;
 
-use bouncycastle_camellia::{Block, Camellia, Camellia_128, Camellia_192, Camellia_256, LANES};
+use bouncycastle_camellia::{BLOCK_LEN, Camellia, Camellia_128, Camellia_192, Camellia_256, LANES};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::ElectronicCodeBook;
 use common::bytes;
 
 /// The plaintext shared by all three examples.
@@ -31,12 +32,14 @@ fn key<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 }
 
 /// Every entry point, both directions, for one vector.
-fn check<P: bouncycastle_camellia::CamelliaParams>(
+fn check<const KEY_LEN: usize, P: bouncycastle_camellia::CamelliaParams>(
     name: &str,
     perm: &Camellia<P>,
-    plaintext: &Block,
-    ciphertext: &Block,
-) {
+    plaintext: &[u8; BLOCK_LEN],
+    ciphertext: &[u8; BLOCK_LEN],
+) where
+    Camellia<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     // Single block.
     let mut b = *plaintext;
     perm.encrypt_block(&mut b);
@@ -46,7 +49,7 @@ fn check<P: bouncycastle_camellia::CamelliaParams>(
 
     // Four lanes: the vector in each lane in turn, with unrelated blocks in the others, which
     // must come out as they do on their own.
-    let others: [Block; LANES] = core::array::from_fn(|i| [i as u8 * 17 + 1; 16]);
+    let others: [[u8; BLOCK_LEN]; LANES] = core::array::from_fn(|i| [i as u8 * 17 + 1; 16]);
     let mut alone = others;
     for b in alone.iter_mut() {
         perm.encrypt_block(b);
@@ -80,19 +83,19 @@ fn check<P: bouncycastle_camellia::CamelliaParams>(
 #[test]
 fn appendix_a_128_bit_key() {
     let perm = Camellia_128::new(&key::<16>(KEY_128)).unwrap();
-    check("Appendix A, 128-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_128));
+    check::<16, _>("Appendix A, 128-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_128));
 }
 
 #[test]
 fn appendix_a_192_bit_key() {
     let perm = Camellia_192::new(&key::<24>(KEY_192)).unwrap();
-    check("Appendix A, 192-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_192));
+    check::<24, _>("Appendix A, 192-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_192));
 }
 
 #[test]
 fn appendix_a_256_bit_key() {
     let perm = Camellia_256::new(&key::<32>(KEY_256)).unwrap();
-    check("Appendix A, 256-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_256));
+    check::<32, _>("Appendix A, 256-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_256));
 }
 
 /// The three key lengths are different ciphers: the same 16 key bytes extended to 24 or 32 must

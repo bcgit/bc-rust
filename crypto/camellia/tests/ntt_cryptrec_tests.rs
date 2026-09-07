@@ -12,7 +12,7 @@
 mod common;
 mod ntt_cryptrec_data;
 
-use bouncycastle_camellia::{Block, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -21,7 +21,7 @@ use common::bytes;
 use ntt_cryptrec_data::{CAMELLIA_128, CAMELLIA_192, CAMELLIA_256, KeySet};
 
 /// `P No.i`: the block with only bit `128 - i` set (bit 0 least significant), `i` in `1..=128`.
-fn plaintext(i: usize) -> Block {
+fn plaintext(i: usize) -> [u8; BLOCK_LEN] {
     (1u128 << (128 - i)).to_be_bytes()
 }
 
@@ -45,12 +45,12 @@ fn check_key_set<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(
     set: &KeySet,
 ) -> usize {
     let perm: P = engine::<KEY_LEN, P>(set.key);
-    let expected: Vec<Block> = set.ciphertexts.iter().map(|c| bytes(c)).collect();
-    let plaintexts: Vec<Block> = (1..=128).map(plaintext).collect();
+    let expected: Vec<[u8; BLOCK_LEN]> = set.ciphertexts.iter().map(|c| bytes(c)).collect();
+    let plaintexts: Vec<[u8; BLOCK_LEN]> = (1..=128).map(plaintext).collect();
 
     // Thirty-two batches of four, both directions.
     for (batch, (pts, cts)) in plaintexts.chunks(4).zip(expected.chunks(4)).enumerate() {
-        let mut blocks: [Block; 4] = pts.try_into().unwrap();
+        let mut blocks: [[u8; BLOCK_LEN]; 4] = pts.try_into().unwrap();
         perm.encrypt_4blocks(&mut blocks);
         for (lane, (got, want)) in blocks.iter().zip(cts.iter()).enumerate() {
             assert_eq!(

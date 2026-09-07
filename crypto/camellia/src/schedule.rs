@@ -35,7 +35,7 @@ pub(crate) use sealed::CamelliaParamsInternalTrait;
 /// The parameters that distinguish Camellia-128 from Camellia-192 and Camellia-256
 /// (RFC 3713 Sec 2.2 and Sec 2.3).
 ///
-/// Sealed: implemented by [`Camellia128Params`], [`Camellia192Params`] and [`Camellia256Params`]
+/// Sealed: implemented by `Camellia128Params`, `Camellia192Params` and `Camellia256Params`
 /// only, so there is no fourth instantiation.
 pub trait CamelliaParams: CamelliaParamsInternalTrait {
     /// Key length in bytes: 16, 24 or 32.

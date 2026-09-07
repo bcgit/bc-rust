@@ -5,9 +5,7 @@
 //! and the padding scheme changes behaviour rather than being decorative. The cipher and the
 //! padding layer are tested in their own right elsewhere; this checks the wiring between them.
 
-use bouncycastle_camellia::{
-    Camellia_128, Camellia_192, Camellia_256, Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256,
-};
+use bouncycastle_camellia::{Camellia_128, Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};

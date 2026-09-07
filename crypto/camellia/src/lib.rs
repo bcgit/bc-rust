@@ -18,6 +18,7 @@
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia_128;
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // RFC 3713 Appendix A, "128-bit key".
@@ -48,11 +49,13 @@
 //!
 //! The bit-sliced S-box layer substitutes 32 bytes per pass, and a round substitutes eight bytes
 //! per block, so four independent blocks cost the same as one. Where a caller has four,
-//! [`Camellia::encrypt_4blocks`] is four times the throughput of four [`Camellia::encrypt_block`]
-//! calls, and it is also the four-block batch the `ElectronicCodeBook` trait offers to modes:
+//! [`Camellia::encrypt_4blocks`] is four times the throughput of four [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block)
+//! calls, and it is also the four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_4blocks)
+//! offers to modes:
 //!
 //! ```
 //! use bouncycastle_camellia::{Camellia_256, LANES};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -74,6 +77,7 @@
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia_CBC_256;
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
@@ -255,6 +259,6 @@ mod round;
 mod sbox;
 mod schedule;
 
-pub use camellia::{BLOCK_LEN, Block, Camellia, Camellia_128, Camellia_192, Camellia_256, LANES};
+pub use camellia::{BLOCK_LEN, Camellia, Camellia_128, Camellia_192, Camellia_256, LANES};
 pub use cbc::{Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
-pub use schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
+pub use schedule::CamelliaParams;
