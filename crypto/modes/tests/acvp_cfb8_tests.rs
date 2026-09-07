@@ -2,11 +2,11 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA, `aes-lowmemory` and AES-CBC suites --
+//! matching the convention used by the ML-KEM, ML-DSA, `aes` and AES-CBC suites --
 //! `cargo test` must stay green for someone who has only cloned this repository.
 //!
 //! This is the CFB8 counterpart to `acvp_cfb_tests.rs` (AES-CFB128), `acvp_tests.rs` (AES-CBC) and
-//! `crypto/aes-lowmemory/tests/acvp_tests.rs` (AES-ECB, the raw permutation). `ACVP-AES-CFB1` is
+//! `crypto/aes/tests/acvp_tests.rs` (AES-ECB, the raw permutation). `ACVP-AES-CFB1` is
 //! the one remaining segment size, which this crate does not implement, and is not read.
 //!
 //! # Joining the request and response files
@@ -33,7 +33,7 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };

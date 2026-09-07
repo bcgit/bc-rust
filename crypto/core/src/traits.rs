@@ -349,7 +349,7 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     ///
     /// Provided as two [`ElectronicCodeBook::encrypt_block`] calls. Bit-sliced implementations
     /// override it, because a pair of blocks is their natural unit of work and costs barely more
-    /// than one; see `bouncycastle-aes-lowmemory`.
+    /// than one; see `bouncycastle-aes`.
     ///
     /// Overrides must be indistinguishable from the default, including the order of the two
     /// results. `TestFrameworkElectronicCodeBook` pins that.

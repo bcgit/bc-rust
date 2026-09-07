@@ -135,7 +135,7 @@ use core::marker::PhantomData;
 /// A nonce as long as the block would leave no counter at all, and could not count:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes_lowmemory::Aes128;
+/// use bouncycastle_aes::Aes128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
@@ -149,7 +149,7 @@ use core::marker::PhantomData;
 /// supports:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes_lowmemory::Aes128;
+/// use bouncycastle_aes::Aes128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
@@ -162,7 +162,7 @@ use core::marker::PhantomData;
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::Aes128;
+/// use bouncycastle_aes::Aes128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};

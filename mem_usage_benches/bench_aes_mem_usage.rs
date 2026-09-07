@@ -31,7 +31,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle::aes::{Aes128, Aes192, Aes256};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.

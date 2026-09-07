@@ -6,7 +6,7 @@
 //! properties matters here specifically: this crate overrides `encrypt_blocks2` and
 //! `decrypt_blocks2`, so the default implementation is not what runs.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use bouncycastle_aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]

@@ -27,7 +27,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// supplied. Encryption and decryption work in place, and are the same operation.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CTR_128;
+/// use bouncycastle_aes::AES_CTR_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -60,7 +60,7 @@ pub type AES_CTR_128<Dir> = Ctr<Aes128, Dir, 16, BLOCK_LEN, CTR_NONCE_LEN>;
 /// AES-192 in CTR mode with a 12-byte nonce. See [`AES_CTR_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CTR_192;
+/// use bouncycastle_aes::AES_CTR_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -77,7 +77,7 @@ pub type AES_CTR_192<Dir> = Ctr<Aes192, Dir, 24, BLOCK_LEN, CTR_NONCE_LEN>;
 /// AES-256 in CTR mode with a 12-byte nonce. See [`AES_CTR_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CTR_256;
+/// use bouncycastle_aes::AES_CTR_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};

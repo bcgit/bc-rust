@@ -6,7 +6,7 @@
 //! argument for modes of operation using the two-block entry points wherever their blocks are
 //! independent (CTR, and the decrypt direction of CBC and CFB).
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use bouncycastle_aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
@@ -33,7 +33,7 @@ fn key<const N: usize>() -> KeyMaterial<N> {
 }
 
 fn bench_key_expansion(c: &mut Criterion) {
-    let mut group = c.benchmark_group("aes_lowmemory::key expansion");
+    let mut group = c.benchmark_group("aes::key expansion");
 
     let key128 = key::<16>();
     group.bench_function("Aes128::new()", |b| {
@@ -57,7 +57,7 @@ fn bench_aes128(c: &mut Criterion) {
     let aes = Aes128::new(&key::<16>()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("aes_lowmemory::Aes128");
+    let mut group = c.benchmark_group("aes::Aes128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {
@@ -110,7 +110,7 @@ fn bench_aes192(c: &mut Criterion) {
     let aes = Aes192::new(&key::<24>()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("aes_lowmemory::Aes192");
+    let mut group = c.benchmark_group("aes::Aes192");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {
@@ -141,7 +141,7 @@ fn bench_aes256(c: &mut Criterion) {
     let aes = Aes256::new(&key::<32>()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("aes_lowmemory::Aes256");
+    let mut group = c.benchmark_group("aes::Aes256");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {

@@ -12,7 +12,7 @@
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
@@ -43,7 +43,7 @@
 //! [`Aes::encrypt_block`] calls:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes256;
+//! use bouncycastle_aes::Aes256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -77,7 +77,7 @@
 //! [`AES_CBC_128`] for why the scheme is named in the type.
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::AES_CBC_256;
+//! use bouncycastle_aes::AES_CBC_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};

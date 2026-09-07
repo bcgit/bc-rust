@@ -1,4 +1,4 @@
-# `crypto/aes-lowmemory` — implementation summary
+# `crypto/aes` — implementation summary
 
 A constant-time, table-free AES block cipher engine (NIST FIPS 197), added on branch
 `feature/officialfrancismendoza/100-AES-lightengine-CBC-mode`.
@@ -206,9 +206,9 @@ half is never returned either way.
 
 ### Changed elsewhere
 
-* `Cargo.toml` — `bouncycastle-aes-lowmemory` in `workspace.dependencies` and in the umbrella
+* `Cargo.toml` — `bouncycastle-aes` in `workspace.dependencies` and in the umbrella
   `[dependencies]`.
-* `src/lib.rs` — `pub use bouncycastle_aes_lowmemory as aes_lowmemory;`.
+* `src/lib.rs` — `pub use bouncycastle_aes as aes;`.
 * `mem_usage_benches/bench_aes_mem_usage.rs` (new, 131 lines), plus its `[[bin]]` entry in
   `mem_usage_benches/Cargo.toml` and a `mod` line in `mem_usage_benches/lib.rs`.
 * `alpha_0.1.3_release_notes.md` — a "Major features" entry.
@@ -293,16 +293,16 @@ schedule is `Secret`); and constant-time execution says nothing about power or E
 
 * `cargo fmt --all -- --check` — clean.
 * `cargo build --workspace`, `cargo test --workspace` — clean, no failures.
-* `cargo doc -p bouncycastle-aes-lowmemory --no-deps` — **zero warnings**.
-* `cargo clippy -p bouncycastle-aes-lowmemory --all-targets` — **zero warnings** for this crate.
-* `./dev_scripts/quality_stats.sh ./crypto/aes-lowmemory` — `Err()` in core code: **3**, exactly the
+* `cargo doc -p bouncycastle-aes --no-deps` — **zero warnings**.
+* `cargo clippy -p bouncycastle-aes --all-targets` — **zero warnings** for this crate.
+* `./dev_scripts/quality_stats.sh ./crypto/aes` — `Err()` in core code: **3**, exactly the
   three key rejections in `validate`. `unwrap()` in core code: 4, each a
   `try_into()` on a fixed-size window of a fixed-size array with a preceding justification comment.
   (Note: `cloc` and `bc` are not installed locally, so the line-count and ratio fields print 0.)
 
 ### Mutation testing
 
-`cargo mutants -p bouncycastle-aes-lowmemory` — complete run, 32 minutes:
+`cargo mutants -p bouncycastle-aes` — complete run, 32 minutes:
 
 ```
 791 mutants tested: 762 caught, 19 missed, 10 unviable, 0 timeouts
@@ -453,15 +453,15 @@ file, or both. This is a licensing/policy call rather than a technical one.
 ## 8. Reproducing the checks
 
 ```sh
-cargo build -p bouncycastle-aes-lowmemory
-cargo test  -p bouncycastle-aes-lowmemory              # 58 tests
-cargo test  -p bouncycastle-aes-lowmemory --test acvp_tests -- --nocapture   # prints the ACVP count
-cargo doc   -p bouncycastle-aes-lowmemory --no-deps    # expect zero warnings
-cargo clippy -p bouncycastle-aes-lowmemory --all-targets
+cargo build -p bouncycastle-aes
+cargo test  -p bouncycastle-aes              # 58 tests
+cargo test  -p bouncycastle-aes --test acvp_tests -- --nocapture   # prints the ACVP count
+cargo doc   -p bouncycastle-aes --no-deps    # expect zero warnings
+cargo clippy -p bouncycastle-aes --all-targets
 cargo fmt --all -- --check
-cargo bench -p bouncycastle-aes-lowmemory
-cargo mutants -p bouncycastle-aes-lowmemory
-./dev_scripts/quality_stats.sh ./crypto/aes-lowmemory
+cargo bench -p bouncycastle-aes
+cargo mutants -p bouncycastle-aes
+./dev_scripts/quality_stats.sh ./crypto/aes
 
 # struct sizes; add the massif recipe in the file header for stack measurement
 cargo run --release -p mem_usage_benches --bin bench_aes_mem_usage

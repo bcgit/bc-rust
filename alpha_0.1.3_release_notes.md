@@ -11,7 +11,7 @@
     * Test vectors are the GB/T 32905-2016 Appendix A examples plus the bc-java `SM3DigestTest` / `HMac` vectors, with
       additional digests cross-checked against OpenSSL and bc-java.
 
-New crate `bouncycastle-aes-lowmemory` (`bouncycastle::aes_lowmemory`): AES-128/192/256 as a raw keyed block
+New crate `bouncycastle-aes` (`bouncycastle::aes`): AES-128/192/256 as a raw keyed block
 permutation (NIST FIPS 197), re-exported from the umbrella crate.
 
 * **Constant-time and table-free.** The S-box is evaluated as a Boolean circuit -- the 113-gate Boyar-Peralta
@@ -358,7 +358,7 @@ ECB (`Ecb`), SP 800-38A Sec 6.1:
 * Verified against all six SP 800-38A **Appendix F.1** vectors (ECB-AES128/192/256, Encrypt and Decrypt) in five
   groupings each -- and, since there is no IV, `encrypt` is checked against the published ciphertext too, through the
   streaming API and the one-shot. Each tabulated ciphertext block is also checked to be `CIPH_K` of its plaintext block
-  through the raw permutation. The **NIST ACVP `ACVP-AES-ECB`** set (2138 AFT cases) already used by `aes-lowmemory`
+  through the raw permutation. The **NIST ACVP `ACVP-AES-ECB`** set (2138 AFT cases) already used by `aes`
   is run again through the mode API, both directions, in three groupings including one that reaches the eight-block
   path. Structural tests pin the Sec 6.1 equations against a reference over the toy permutation, determinism and the
   codebook property, Appendix D error propagation (a corrupted block randomises itself and nothing else, checked over
@@ -369,7 +369,7 @@ keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode
 `new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_blocks2` / `decrypt_blocks2` that
 default to two single-block calls and `encrypt_blocks8` / `decrypt_blocks8` that default to four pair
 calls, all of which bit-sliced implementations override (AES the pair form, SM4 both). The block methods
-are infallible; only `new` can fail, and only on the key. `bouncycastle-aes-lowmemory` implements
+are infallible; only `new` can fail, and only on the key. `bouncycastle-aes` implements
 it for all three key lengths (the data-encryption traits are still deliberately not implemented
 there).
 

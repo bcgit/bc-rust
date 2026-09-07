@@ -20,7 +20,7 @@ use bouncycastle_modes::Cfb;
 /// Encryption and decryption work in place.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB_128;
+/// use bouncycastle_aes::AES_CFB_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -54,7 +54,7 @@ pub type AES_CFB_128<Dir> = Cfb<Aes128, Dir, 16, BLOCK_LEN>;
 /// AES-192 in CFB128 mode. See [`AES_CFB_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB_192;
+/// use bouncycastle_aes::AES_CFB_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -71,7 +71,7 @@ pub type AES_CFB_192<Dir> = Cfb<Aes192, Dir, 24, BLOCK_LEN>;
 /// AES-256 in CFB128 mode. See [`AES_CFB_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB_256;
+/// use bouncycastle_aes::AES_CFB_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};

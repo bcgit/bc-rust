@@ -14,7 +14,7 @@
 //!
 //! All values here are transcribed from the published FIPS 197 (Update 1) PDF.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::SecurityStrength;
 

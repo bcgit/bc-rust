@@ -64,7 +64,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// returned; it is never supplied.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CBC_128;
+/// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -91,7 +91,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// error at `do_final` rather than something silently padded:
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CBC_128;
+/// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
@@ -115,7 +115,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// interchanged. A value built with one will not satisfy a binding annotated with the other:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes_lowmemory::AES_CBC_128;
+/// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
@@ -132,7 +132,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// meaningful rather than incidental:
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CBC_128;
+/// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
@@ -155,7 +155,7 @@ pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
 /// AES-192 in CBC mode with a padding scheme. See [`AES_CBC_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CBC_192;
+/// use bouncycastle_aes::AES_CBC_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -182,7 +182,7 @@ pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
 /// AES-256 in CBC mode with a padding scheme. See [`AES_CBC_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CBC_256;
+/// use bouncycastle_aes::AES_CBC_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};

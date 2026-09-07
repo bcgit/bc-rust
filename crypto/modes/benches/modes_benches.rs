@@ -37,7 +37,7 @@
 //! never calls the inverse cipher, so on an engine whose inverse is slower than its forward
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes256};
+use bouncycastle_aes::{Aes128, Aes256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{

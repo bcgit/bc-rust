@@ -1,7 +1,7 @@
 # `crypto/core-test-framework` — changes for `ElectronicCodeBook` and CBC
 
 Changes made on branch `feature/officialfrancismendoza/100-AES-lightengine-CBC-mode` while adding
-`crypto/aes-lowmemory` and `crypto/modes`. Two things: a **new** per-trait suite for
+`crypto/aes` and `crypto/modes`. Two things: a **new** per-trait suite for
 `core::traits::ElectronicCodeBook`, and a **bug fix** to the existing `TestFrameworkBlockCipher`.
 
 For what this crate is for in general, see its [`src/lib.rs`](src/lib.rs) docs: one KAT-style
@@ -40,7 +40,7 @@ TestFrameworkElectronicCodeBook::new().test::<KEY_LEN, BLOCK_LEN, P>();
 ### The order check is the load-bearing one
 
 `ElectronicCodeBook::encrypt_blocks2` and `decrypt_blocks2` are *provided* methods: the default is
-two single-block calls, and implementations are free to override them. `bouncycastle-aes-lowmemory`
+two single-block calls, and implementations are free to override them. `bouncycastle-aes`
 does, because a pair of blocks is exactly what its bit-sliced state holds, so the pair form costs
 barely more than one block.
 
@@ -56,7 +56,7 @@ takes the pair path.
 
 ### Current implementors
 
-* `crypto/aes-lowmemory/tests/electronic_code_book_tests.rs` — AES-128, AES-192, AES-256.
+* `crypto/aes/tests/electronic_code_book_tests.rs` — AES-128, AES-192, AES-256.
 * `crypto/modes/tests/cbc_tests.rs` — the toy permutation, checked before anything is concluded
   from it.
 
@@ -171,7 +171,7 @@ cargo fmt --all -- --check
 This crate has no tests of its own — it *is* tests — so it is verified by its consumers. The two
 new suites are exercised by:
 
-* `cargo test -p bouncycastle-aes-lowmemory --test electronic_code_book_tests` (3 tests)
+* `cargo test -p bouncycastle-aes --test electronic_code_book_tests` (3 tests)
 * `cargo test -p bouncycastle-modes --test cbc_tests` (11 tests, including
   `cbc_conforms_to_the_block_cipher_framework`, which is what the §2 fix unblocked, and
   `the_toy_permutation_conforms_to_the_trait`)

@@ -2,10 +2,10 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA and `aes-lowmemory` suites -- `cargo test`
+//! matching the convention used by the ML-KEM, ML-DSA and `aes` suites -- `cargo test`
 //! must stay green for someone who has only cloned this repository.
 //!
-//! These are the counterpart to `crypto/aes-lowmemory/tests/acvp_tests.rs`, which consumes the
+//! These are the counterpart to `crypto/aes/tests/acvp_tests.rs`, which consumes the
 //! `ACVP-AES-ECB` file to test the raw permutation. CBC is a mode, so its vectors belong here.
 //!
 //! # Joining the request and response files
@@ -29,7 +29,7 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };

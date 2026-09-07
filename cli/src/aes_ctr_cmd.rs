@@ -35,7 +35,7 @@
 
 use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
 use crate::stream_mode_cmd::run_stream_mode;
-use bouncycastle::aes_lowmemory::{Aes128, Aes192, Aes256, CTR_NONCE_LEN};
+use bouncycastle::aes::{Aes128, Aes192, Aes256, CTR_NONCE_LEN};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Ctr, Decrypting, Encrypting};

@@ -1,5 +1,5 @@
 [package]
-name = "bouncycastle-aes-lowmemory"
+name = "bouncycastle-aes"
 version.workspace = true
 edition.workspace = true
 
