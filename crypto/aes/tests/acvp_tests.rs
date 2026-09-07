@@ -48,7 +48,7 @@ use bouncycastle_aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
 use bouncycastle_hex as hex;
 use serde_json::Value;
 use std::fs;

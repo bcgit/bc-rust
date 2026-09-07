@@ -16,7 +16,7 @@
 
 use bouncycastle_aes::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
 
 /// Appendix A.1 / Appendix B key: `2b7e151628aed2a6abf7158809cf4f3c`.
 const KEY_128: [u8; 16] = [

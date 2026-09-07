@@ -17,6 +17,7 @@
 
 use bouncycastle_aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_hex as hex;
 
 /// The four plaintext blocks shared by every F.1 subsection.

@@ -14,6 +14,7 @@
 //! ```
 //! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -39,12 +40,13 @@
 //! ## Two blocks at a time
 //!
 //! The bit-sliced state holds two blocks, so two independent blocks cost barely more than one.
-//! Where a caller has two, [`Aes::encrypt_blocks2`] is roughly twice the throughput of two
-//! [`Aes::encrypt_block`] calls:
+//! Where a caller has two, [`ElectronicCodeBook::encrypt_blocks2`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_blocks2) is roughly twice the throughput of two
+//! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls:
 //!
 //! ```
 //! use bouncycastle_aes::Aes256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -137,7 +139,7 @@
 //! Decryption follows FIPS 197 Algorithm 3, the straight inverse cipher, rather than the
 //! equivalent inverse cipher of Sec 5.3.5. Algorithm 3 puts INVMIXCOLUMNS() after ADDROUNDKEY(),
 //! so it uses the *unmodified* key schedule; the equivalent inverse cipher would need a second
-//! schedule with each round key transformed. One [`Aes`] value therefore encrypts and decrypts
+//! schedule with each round key transformed. One [`Aes128`] value therefore encrypts and decrypts
 //! from one stored schedule.
 //!
 //! # Memory Usage
@@ -227,7 +229,7 @@ mod round;
 mod sbox;
 mod schedule;
 
-pub use aes::{Aes, Aes128, Aes192, Aes256, BLOCK_LEN};
+pub use aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
