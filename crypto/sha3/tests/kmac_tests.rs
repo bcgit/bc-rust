@@ -3,9 +3,9 @@
 //! Vectors come from the `bc-test-data` repo cloned alongside this one; see `cshake_tests.rs`.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, MAC, XofOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF};
 use bouncycastle_hex as hex;
-use bouncycastle_sha3::{KMAC128, KMAC256};
+use bouncycastle_sha3::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
 use std::fs;
 use std::path::Path;
 
@@ -108,18 +108,12 @@ fn nist_sp800_185_kmacxof_sample_values() {
         let key = key_material(&v.key);
 
         let got = match v.strength {
-            128 => {
-                let mut k = KMAC128::new_with_params(&key, v.s.as_bytes(), want, false)
-                    .expect("a valid key");
-                k.do_update(&v.msg);
-                k.into_output().do_output(want)
-            }
-            256 => {
-                let mut k = KMAC256::new_with_params(&key, v.s.as_bytes(), want, false)
-                    .expect("a valid key");
-                k.do_update(&v.msg);
-                k.into_output().do_output(want)
-            }
+            128 => KMACXOF128::new(&key, v.s.as_bytes(), false)
+                .expect("a valid key")
+                .hash_xof(&v.msg, want),
+            256 => KMACXOF256::new(&key, v.s.as_bytes(), false)
+                .expect("a valid key")
+                .hash_xof(&v.msg, want),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(got, v.output, "COUNT {i}: KMACXOF{} S={:?}", v.strength, v.s);
@@ -235,4 +229,46 @@ fn default_constructor_uses_the_nominal_length() {
 fn algorithm_names() {
     assert_eq!(KMAC128::ALG_NAME, "KMAC128");
     assert_eq!(KMAC256::ALG_NAME, "KMAC256");
+}
+
+/// The counterpart to `output_length_changes_the_function`: because KMACXOF binds
+/// `right_encode(0)` rather than the length, output at one length *is* a prefix of output at a
+/// longer one, and `do_final` is simply the first `output_len` bytes of that same stream.
+#[test]
+fn kmacxof_output_is_one_stream() {
+    let key = key_material(&[0x42u8; 32]);
+    let long = KMACXOF128::new(&key, b"", false).unwrap().hash_xof(b"abc", 64);
+
+    let short = KMACXOF128::new(&key, b"", false).unwrap().hash_xof(b"abc", 16);
+    assert_eq!(&long[..16], &short[..], "KMACXOF at a shorter length must be a prefix");
+
+    let mut k = KMACXOF128::new(&key, b"", false).unwrap();
+    k.do_update(b"abc");
+    let via_hash = k.do_final();
+    assert_eq!(via_hash.len(), 32, "the nominal output length");
+    assert_eq!(&long[..32], &via_hash[..], "do_final must be a prefix of the stream");
+}
+
+/// A partial final byte cannot be expressed: `right_encode(0)` has to follow the message, and the
+/// sponge cannot absorb byte-aligned data after a partial byte.
+#[test]
+fn kmacxof_rejects_a_partial_final_byte() {
+    let key = key_material(&[0x42u8; 32]);
+    let mut k = KMACXOF128::new(&key, b"", false).unwrap();
+    k.do_update(b"abc");
+    assert!(matches!(
+        k.into_output_partial_bits(0xF0, 4),
+        Err(bouncycastle_core::errors::HashError::InvalidLength(_))
+    ));
+
+    // ... but zero bits means the message ended on a byte boundary, which is fine.
+    let mut k = KMACXOF128::new(&key, b"", false).unwrap();
+    k.do_update(b"abc");
+    assert!(k.into_output_partial_bits(0, 0).is_ok());
+}
+
+#[test]
+fn kmacxof_algorithm_names() {
+    assert_eq!(KMACXOF128::ALG_NAME, "KMACXOF128");
+    assert_eq!(KMACXOF256::ALG_NAME, "KMACXOF256");
 }
