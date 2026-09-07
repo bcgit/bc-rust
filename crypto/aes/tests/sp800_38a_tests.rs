@@ -15,7 +15,7 @@
 //!
 //! Transcribed from the published SP 800-38A PDF, sections F.1.1 through F.1.6.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use bouncycastle_aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_hex as hex;
 

@@ -44,7 +44,7 @@
 //! implementing it from anything other than that specification would be guesswork. The test
 //! reports how many it skipped so the gap is visible rather than silent.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use bouncycastle_aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };

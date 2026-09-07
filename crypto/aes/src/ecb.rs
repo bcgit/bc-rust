@@ -59,7 +59,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// does not make it safe.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_ECB_128;
+/// use bouncycastle_aes::AES_ECB_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -84,7 +84,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// plaintext blocks still give two identical ciphertext blocks.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_ECB_128;
+/// use bouncycastle_aes::AES_ECB_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
@@ -110,7 +110,7 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
 /// AES-192 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_ECB_192;
+/// use bouncycastle_aes::AES_ECB_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -137,7 +137,7 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
 /// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_ECB_256;
+/// use bouncycastle_aes::AES_ECB_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};

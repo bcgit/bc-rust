@@ -11,7 +11,7 @@ bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-aes-lowmemory.workspace = true
+bouncycastle-aes.workspace = true
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 # Only to prove the modes compose with the padding layer for arbitrary-length data; no runtime dep.

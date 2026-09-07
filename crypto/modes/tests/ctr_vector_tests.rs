@@ -25,7 +25,7 @@
 //! the counter starting at zero, so the two line up exactly when the IV's low four bytes are zero,
 //! which is why the IV above ends in `00000000`. See the [`Ctr`] module docs.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;

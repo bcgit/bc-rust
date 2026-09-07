@@ -6,7 +6,7 @@
 //! matching the convention used by the other ACVP suites -- `cargo test` must stay green for someone
 //! who has only cloned this repository.
 //!
-//! `crypto/aes-lowmemory/tests/acvp_tests.rs` runs the same file against the permutation's block
+//! `crypto/aes/tests/acvp_tests.rs` runs the same file against the permutation's block
 //! methods; this file is what pins that the mode adds nothing and loses nothing on the way: every
 //! case is run through the `BlockCipherEncryptor` / `BlockCipherDecryptor` API in three groupings
 //! -- block by block, in pairs with a remainder, and the whole payload in one hook call (which for
@@ -17,7 +17,7 @@
 //! declared direction. The MCT (Monte Carlo) groups carry a `resultsArray` defined by the ACVP AES
 //! specification rather than SP 800-38A and are skipped, with the count reported.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{Aes128, Aes192, Aes256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };

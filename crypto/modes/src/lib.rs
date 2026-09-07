@@ -1,6 +1,6 @@
 //! Block cipher modes of operation (NIST SP 800-38A).
 //!
-//! A mode turns a keyed block permutation -- `bouncycastle-aes-lowmemory`'s `Aes128` and friends,
+//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `Aes128` and friends,
 //! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
 //! one block. This crate provides:
 //!
@@ -22,7 +22,7 @@
 //! handed any mode. A block mode gets there by being wrapped in `bouncycastle-padding`'s adapters,
 //! which are [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with the padded block as
 //! their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0` because
-//! it has no final output at all. The `bouncycastle-aes-lowmemory` aliases show the difference in
+//! it has no final output at all. The `bouncycastle-aes` aliases show the difference in
 //! one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme, `AES_CTR_128<Encrypting>`
 //! has nothing to name.
 //!
@@ -39,12 +39,12 @@
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait. Define a one-line alias for the combination you use -- or use the ready-made
 //! `AES_CBC_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` and friends from
-//! `bouncycastle-aes-lowmemory`. Those aliases are not all the same shape: the two block modes take
+//! `bouncycastle-aes`. Those aliases are not all the same shape: the two block modes take
 //! a padding scheme as well as a direction, since neither is usable on data of arbitrary length
 //! without one, while the three stream modes take only the direction:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+//! use bouncycastle_aes::{Aes128, Aes192, Aes256};
 //! use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ctr, Ecb};
 //!
 //! type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, 16>;
@@ -74,7 +74,7 @@
 //! [Security Considerations](#security-considerations)).
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
@@ -100,7 +100,7 @@
 //! the concatenation:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes256;
+//! use bouncycastle_aes::Aes256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
@@ -129,7 +129,7 @@
 //! exactly as long as the plaintext:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
@@ -160,7 +160,7 @@
 //! Streaming works at any byte boundary, and the chunking is not visible in the output:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
@@ -193,7 +193,7 @@
 //! The codebook property that makes it unsuitable for data is visible in the ciphertext:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
@@ -215,7 +215,7 @@
 //! Using the wrong direction does not compile:
 //!
 //! ```compile_fail
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::BlockCipherDecryptor;
 //! use bouncycastle_modes::{Cbc, Encrypting};
@@ -242,7 +242,7 @@
 //!   directly, in the segment they targeted. All are malleable; authenticate the ciphertext.
 //! * **CFB and CFB8 need only the forward cipher function**, in both directions (Sec 6.3). That
 //!   halves what a permutation has to provide, and where the inverse costs more than the forward
-//!   direction it makes CFB decryption faster: with `bouncycastle-aes-lowmemory` this crate's
+//!   direction it makes CFB decryption faster: with `bouncycastle-aes` this crate's
 //!   benches measure CFB decryption at about 1.37x CBC decryption (AES-128, 16 KiB, `N = 8`).
 //!   Encryption is the same speed in CBC and CFB, since both are serial and both use only the
 //!   forward function.
@@ -293,7 +293,7 @@
 //! an error at `do_final` rather than something padded -- for formats defined on whole blocks.
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::Aes128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};

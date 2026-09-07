@@ -36,7 +36,7 @@
 //! three key lengths -- and it is exact. Those cases are covered there and by the ACVP suite, so
 //! what is pinned here is specifically the part neither of them reaches: the narrow counters.
 
-use bouncycastle_aes_lowmemory::Aes128;
+use bouncycastle_aes::Aes128;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::StreamCipherEncryptor;
 use bouncycastle_core_test_framework::FixedSeedRNG;
