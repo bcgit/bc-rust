@@ -20,7 +20,7 @@ pub const BLOCK_LEN: usize = 16;
 ///
 /// The only state is the key schedule, held in a [`Secret`] so that it is zeroized on drop and
 /// redacted from `Debug`. There is no direction flag and no initialisation state: both directions
-/// work from the same schedule (see [`Aes::decrypt_blocks2`]), and a constructed value is always
+/// work from the same schedule (see [`ElectronicCodeBook::decrypt_blocks2`]), and a constructed value is always
 /// ready to use, so there is no `init()` or `reset()`.
 pub struct Aes<P: AesParams> {
     schedule: Secret<P::Schedule>,
@@ -122,21 +122,21 @@ impl<P: AesParams> Aes<P> {
     /// Encrypts two blocks in place.
     ///
     /// This is the natural unit of work: the bit-sliced state holds two blocks, so two blocks cost
-    /// almost exactly what one does. Prefer this over two [`Aes::encrypt_block`] calls whenever
+    /// almost exactly what one does. Prefer this over two [`ElectronicCodeBook::encrypt_block`] calls whenever
     /// two blocks are available and independent -- which, for a mode of operation, means CTR, or
     /// the decryption direction of CBC and CFB, but *not* CBC encryption, whose blocks are
     /// serially dependent.
     ///
     /// Infallible: a constructed [`Aes`] is always usable and every input length is fixed.
-    pub fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+    pub(crate) fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
         self.encrypt2(&mut q);
         let (a, b) = blocks.split_at_mut(1);
         unpack(&q, &mut a[0], &mut b[0]);
     }
 
-    /// Decrypts two blocks in place. See [`Aes::encrypt_blocks2`].
-    pub fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_blocks2`].
+    pub(crate) fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
         self.decrypt2(&mut q);
         let (a, b) = blocks.split_at_mut(1);
@@ -147,13 +147,13 @@ impl<P: AesParams> Aes<P> {
     ///
     /// The bit-sliced state always holds two blocks, so a single-block call duplicates the block
     /// into both halves and discards one result: it does twice the necessary work. Use
-    /// [`Aes::encrypt_blocks2`] where two blocks are available.
+    /// [`ElectronicCodeBook::encrypt_blocks2`] where two blocks are available.
     ///
     /// Duplicating the block costs exactly what filling the unused half with zeros would, and it
     /// buys a free self-check: the two halves must come out equal, which `debug_assert` verifies.
     /// That is the whole reason for the choice -- it is not a security property, since the unused
     /// half is never returned either way.
-    pub fn encrypt_block(&self, block: &mut Block) {
+    pub(crate) fn encrypt_block(&self, block: &mut Block) {
         let mut q = pack(block, block);
         self.encrypt2(&mut q);
         let mut discard = [0u8; BLOCK_LEN];
@@ -161,8 +161,8 @@ impl<P: AesParams> Aes<P> {
         debug_assert_eq!(*block, discard, "the two interleaved halves must agree");
     }
 
-    /// Decrypts one block in place. See [`Aes::encrypt_block`] for the two-blocks-at-once caveat.
-    pub fn decrypt_block(&self, block: &mut Block) {
+    /// Decrypts one block in place. See [`ElectronicCodeBook::encrypt_block`] for the two-blocks-at-once caveat.
+    pub(crate) fn decrypt_block(&self, block: &mut Block) {
         let mut q = pack(block, block);
         self.decrypt2(&mut q);
         let mut discard = [0u8; BLOCK_LEN];
@@ -184,7 +184,7 @@ impl Aes128 {
     /// * [`KeyMaterialError::InvalidKeyType`] if the key is not [`KeyType::SymmetricCipherKey`].
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
-    pub fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+    pub(crate) fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Aes128Params>(key.ref_to_bytes()) })
     }
@@ -192,7 +192,7 @@ impl Aes128 {
 
 impl Aes192 {
     /// Expands a 24-byte key into an AES-192 schedule. See [`Aes128::new`] for the error cases.
-    pub fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
+    pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Aes192Params>(key.ref_to_bytes()) })
     }
@@ -200,7 +200,7 @@ impl Aes192 {
 
 impl Aes256 {
     /// Expands a 32-byte key into an AES-256 schedule. See [`Aes128::new`] for the error cases.
-    pub fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
+    pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Aes256Params>(key.ref_to_bytes()) })
     }

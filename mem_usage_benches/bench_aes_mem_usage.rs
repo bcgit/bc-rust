@@ -33,6 +33,7 @@
 
 use bouncycastle::aes::{Aes128, Aes192, Aes256};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+use bouncycastle::core::traits::ElectronicCodeBook;
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {
