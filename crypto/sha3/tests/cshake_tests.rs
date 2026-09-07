@@ -20,15 +20,20 @@ struct Vector {
     output: Vec<u8>,
 }
 
+/// Two candidates, as in `cavp_tests.rs`: the first is relative to the crate directory (where cargo
+/// runs an integration test), the second to the workspace root.
+const DATA_DIRS: [&str; 2] =
+    ["../../../bc-test-data/crypto/sp800-185", "../bc-test-data/crypto/sp800-185"];
+
 fn read_vectors(filename: &str) -> Option<Vec<Vector>> {
-    let path = Path::new("../../../bc-test-data/crypto/sp800-185").join(filename);
-    let Ok(content) = fs::read_to_string(&path) else {
-        println!(
-            "warning: {} not found; skipping. Clone bc-test-data alongside this repo.",
-            path.display()
-        );
+    let Some(dir) = DATA_DIRS.into_iter().find(|d| Path::new(d).exists()) else {
+        println!("WARNING: bc-test-data not found; cSHAKE sample-value tests skipped");
         return None;
     };
+    let path = Path::new(dir).join(filename);
+    let content = fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!("bc-test-data is present but {} is unreadable: {e}", path.display())
+    });
 
     let mut out = Vec::new();
     let mut cur: Vec<(String, String)> = Vec::new();
