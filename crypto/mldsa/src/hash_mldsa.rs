@@ -110,13 +110,13 @@ pub const HASH_ML_DSA_87_WITH_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
 
 /*** Pub Types ***/
 
-/// The HashML-DSA-44_with_SHA512 signature algorithm.
+/// The HashML-DSA-44_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
 pub type HashMLDSA44_with_SHA256 = HashMLDSA<
     HashMLDSA44_with_SHA256Params,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
-    32,
+    { HashMLDSA44_with_SHA256Params::PH_LEN },
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
     MLDSA44_SIG_LEN,
@@ -128,7 +128,7 @@ pub type HashMLDSA65_with_SHA256 = HashMLDSA<
     HashMLDSA65_with_SHA256Params,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
-    32,
+    { HashMLDSA65_with_SHA256Params::PH_LEN },
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
     MLDSA65_SIG_LEN,
@@ -140,7 +140,7 @@ pub type HashMLDSA87_with_SHA256 = HashMLDSA<
     HashMLDSA87_with_SHA256Params,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
-    32,
+    { HashMLDSA87_with_SHA256Params::PH_LEN },
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
     MLDSA87_SIG_LEN,
@@ -152,7 +152,7 @@ pub type HashMLDSA44_with_SHA512 = HashMLDSA<
     HashMLDSA44_with_SHA512Params,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
-    64,
+    { HashMLDSA44_with_SHA512Params::PH_LEN },
     MLDSA44_PK_LEN,
     MLDSA44_SK_LEN,
     MLDSA44_SIG_LEN,
@@ -170,7 +170,7 @@ pub type HashMLDSA65_with_SHA512 = HashMLDSA<
     HashMLDSA65_with_SHA512Params,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
-    64,
+    { HashMLDSA65_with_SHA512Params::PH_LEN },
     MLDSA65_PK_LEN,
     MLDSA65_SK_LEN,
     MLDSA65_SIG_LEN,
@@ -188,7 +188,7 @@ pub type HashMLDSA87_with_SHA512 = HashMLDSA<
     HashMLDSA87_with_SHA512Params,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
-    64,
+    { HashMLDSA87_with_SHA512Params::PH_LEN },
     MLDSA87_PK_LEN,
     MLDSA87_SK_LEN,
     MLDSA87_SIG_LEN,
@@ -201,18 +201,18 @@ impl AlgorithmOID for HashMLDSA87_with_SHA512 {
 }
 
 impl<
-    HP: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<HP::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, SK_LEN, PK_LEN>,
+    P: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> Algorithm for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+> Algorithm for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
 {
-    const ALG_NAME: &'static str = HP::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = HP::MAX_SECURITY_STRENGTH;
+    const ALG_NAME: &'static str = P::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
 /// An instance of the HashML-DSA algorithm.
@@ -222,16 +222,16 @@ impl<
 /// by specifying the hash function to use (in the verifier), and specifying the bytes of the OID to
 /// to use as its domain separator in constructing the message representative M'.
 pub struct HashMLDSA<
-    HP: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<HP::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, SK_LEN, PK_LEN>,
+    P: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
 > {
-    _phantom: PhantomData<(HP, PK, SK)>,
+    _phantom: PhantomData<(P, PK, SK)>,
 
     signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
@@ -245,7 +245,7 @@ pub struct HashMLDSA<
     pk: Option<PK>,
 
     /// Hash function instance for streaming message hashing
-    hash: HP::PreHash,
+    hash: P::PreHash,
 
     /// Since HashML-DSA does message buffering in the external pre-hash, not in mu,
     /// this needs to be saved for later
@@ -254,15 +254,15 @@ pub struct HashMLDSA<
 }
 
 impl<
-    HP: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<HP::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, SK_LEN, PK_LEN>,
+    P: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+> HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
 {
     /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
     ///
@@ -271,16 +271,16 @@ impl<
     /// Keygen, and keys in general, are interchangeable between MLDSA and HashMLDSA.
     /// Error condition: basically only on RNG failures.
     pub fn keygen() -> Result<(PK, SK), SignatureError> {
-        MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::keygen()
+        MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::keygen()
     }
 
     /// Imports a secret key from a seed.
     pub fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
-        MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::keygen_internal(seed)
+        MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::keygen_internal(seed)
     }
     /// Same as [`Signer::sign`], but signs from an [`MLDSAPrivateKeyExpanded`].
     pub fn sign_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<HP::MLDSA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
@@ -291,7 +291,7 @@ impl<
     }
     /// Same as [`Signer::sign_out`], but signs from an [`MLDSAPrivateKeyExpanded`].
     pub fn sign_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<HP::MLDSA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
@@ -299,12 +299,12 @@ impl<
         output.fill(0);
 
         let mut ph_m = [0u8; PH_LEN];
-        _ = <HP::PreHash as Default>::default().hash_out(msg, &mut ph_m);
+        _ = <P::PreHash as Default>::default().hash_out(msg, &mut ph_m);
         Self::sign_ph_with_expanded_key_out(sk, &ph_m, ctx, output)
     }
     /// Same as [`PHSigner::sign_ph`], but signs from an [`MLDSAPrivateKeyExpanded`].
     pub fn sign_ph_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<HP::MLDSA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
         ph: &[u8; PH_LEN],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
@@ -315,7 +315,7 @@ impl<
     }
     /// Same as [`PHSigner::sign_ph_out`], but signs from an [`MLDSAPrivateKeyExpanded`].
     pub fn sign_ph_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<HP::MLDSA, PK, SK, SK_LEN, PK_LEN>,
+        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
         ph: &[u8; PH_LEN],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
@@ -341,7 +341,7 @@ impl<
     /// prevent accidental nonce reuse, this function moves `rnd`.
     pub fn sign_ph_deterministic(
         sk: &SK,
-        A_hat: Option<&<HP::MLDSA as MLDSAParams>::MatrixA>,
+        A_hat: Option<&<P::MLDSA as MLDSAParams>::MatrixA>,
         ctx: Option<&[u8]>,
         ph: &[u8; PH_LEN],
         rnd: [u8; 32],
@@ -364,7 +364,7 @@ impl<
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     pub fn sign_ph_deterministic_out(
         sk: &SK,
-        A_hat: Option<&<HP::MLDSA as MLDSAParams>::MatrixA>,
+        A_hat: Option<&<P::MLDSA as MLDSAParams>::MatrixA>,
         ctx: Option<&[u8]>,
         ph: &[u8; PH_LEN],
         rnd: [u8; 32],
@@ -392,7 +392,7 @@ impl<
             h.absorb(&[1u8]).expect("absorb before squeeze is infallible");
             h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
             h.absorb(ctx).expect("absorb before squeeze is infallible");
-            h.absorb(<HP::PreHash as AlgorithmOID>::OID_DER)
+            h.absorb(<P::PreHash as AlgorithmOID>::OID_DER)
                 .expect("absorb before squeeze is infallible");
             h.absorb(ph).expect("absorb before squeeze is infallible");
             let mut mu = [0u8; MLDSA_MU_LEN];
@@ -404,7 +404,7 @@ impl<
 
         // 24: 𝜎 ← ML-DSA.Sign_internal(𝑠𝑘, 𝑀', 𝑟𝑛𝑑)
         let bytes_written =
-            MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::sign_mu_deterministic_out(
+            MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::sign_mu_deterministic_out(
                 sk, A_hat, &mu, rnd, output,
             )?;
 
@@ -447,27 +447,27 @@ impl<
             sk: None,
             seed: Some(seed.clone()),
             pk: None,
-            hash: <HP::PreHash as Default>::default(),
+            hash: <P::PreHash as Default>::default(),
             ctx,
             ctx_len,
         })
     }
     /// Same as [`SignatureVerifier::verify`], but verifies from an [`MLDSAPublicKeyExpanded`].
     pub fn verify_with_expanded_key(
-        pk: &MLDSAPublicKeyExpanded<HP::MLDSA, PK, PK_LEN>,
+        pk: &MLDSAPublicKeyExpanded<P::MLDSA, PK, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
         let mut ph_m = [0u8; PH_LEN];
-        _ = <HP::PreHash as Default>::default().hash_out(msg, &mut ph_m);
+        _ = <P::PreHash as Default>::default().hash_out(msg, &mut ph_m);
 
         Self::verify_ph_internal(&pk.pk, Some(&pk.A_hat()), &ph_m, ctx, sig)
     }
 
     fn verify_ph_internal(
         pk: &PK,
-        A_hat: Option<&<HP::MLDSA as MLDSAParams>::MatrixA>,
+        A_hat: Option<&<P::MLDSA as MLDSAParams>::MatrixA>,
         ph: &[u8; PH_LEN],
         ctx: Option<&[u8]>,
         sig: &[u8],
@@ -497,7 +497,7 @@ impl<
             h.absorb(&[1u8]).expect("absorb before squeeze is infallible");
             h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
             h.absorb(ctx).expect("absorb before squeeze is infallible");
-            h.absorb(<HP::PreHash as AlgorithmOID>::OID_DER)
+            h.absorb(<P::PreHash as AlgorithmOID>::OID_DER)
                 .expect("absorb before squeeze is infallible");
             h.absorb(ph).expect("absorb before squeeze is infallible");
             let mut mu = [0u8; MLDSA_MU_LEN];
@@ -507,13 +507,13 @@ impl<
         };
 
         match A_hat {
-            Some(A_hat) => MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::verify_mu(
+            Some(A_hat) => MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::verify_mu(
                 pk,
                 Some(A_hat),
                 &mu,
                 sig_sized,
             ),
-            None => MLDSA::<HP::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::verify_mu(
+            None => MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::verify_mu(
                 pk,
                 Some(&pk.A_hat()),
                 &mu,
@@ -524,15 +524,15 @@ impl<
 }
 
 impl<
-    HP: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<HP::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, SK_LEN, PK_LEN>,
+    P: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> Signer<SK, SK_LEN, SIG_LEN> for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+> Signer<SK, SK_LEN, SIG_LEN> for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
 {
     /// Algorithm 4 HashML-DSA.Sign(𝑠𝑘, 𝑀 , 𝑐𝑡𝑥, PH)
     /// Generate a “pre-hash” ML-DSA signature.
@@ -552,7 +552,7 @@ impl<
         output.fill(0);
 
         let mut ph_m = [0u8; PH_LEN];
-        _ = <HP::PreHash as Default>::default().hash_out(msg, &mut ph_m);
+        _ = <P::PreHash as Default>::default().hash_out(msg, &mut ph_m);
         Self::sign_ph_out(sk, &ph_m, ctx, output)
     }
 
@@ -564,7 +564,7 @@ impl<
             sk: Some(sk.clone()),
             seed: None,
             pk: None,
-            hash: <HP::PreHash as Default>::default(),
+            hash: <P::PreHash as Default>::default(),
             ctx,
             ctx_len,
         })
@@ -631,20 +631,19 @@ impl<
 }
 
 impl<
-    HP: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<HP::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, SK_LEN, PK_LEN>,
+    P: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> SignatureVerifier<PK, PK_LEN, SIG_LEN>
-    for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+> SignatureVerifier<PK, PK_LEN, SIG_LEN> for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mut ph_m = [0u8; PH_LEN];
-        _ = <HP::PreHash as Default>::default().hash_out(msg, &mut ph_m);
+        _ = <P::PreHash as Default>::default().hash_out(msg, &mut ph_m);
 
         Self::verify_ph(pk, &ph_m, ctx, sig)
     }
@@ -657,7 +656,7 @@ impl<
             sk: None,
             seed: None,
             pk: Some(pk.clone()),
-            hash: <HP::PreHash as Default>::default(),
+            hash: <P::PreHash as Default>::default(),
             ctx,
             ctx_len,
         })
@@ -678,16 +677,16 @@ impl<
 }
 
 impl<
-    HP: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<HP::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, SK_LEN, PK_LEN>,
+    P: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
 > PHSigner<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn sign_ph(
         sk: &SK,
@@ -719,16 +718,16 @@ impl<
 }
 
 impl<
-    HP: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<HP::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<HP::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<HP::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<HP::MLDSA, SK_LEN, PK_LEN>,
+    P: HashMLDSAParams,
+    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
+    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
+        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
     const PH_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
 > PHSignatureVerifier<PK, PK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<HP, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn verify_ph(
         pk: &PK,
