@@ -228,11 +228,8 @@ mod sbox;
 mod schedule;
 
 pub use aes::{Aes, Aes128, Aes192, Aes256, BLOCK_LEN};
-pub use bitslice::Block;
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
-pub use padded_mode::PaddedMode;
-pub use schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams};

@@ -44,7 +44,7 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   a padding scheme as well -- `AES_CBC_128<Encrypting, PKCS7>` -- because neither is defined on data
   that is not a whole number of blocks, so the scheme is a choice the caller has to make and one
   both ends must agree on. Naming it in the type makes a mismatched pair a compile error instead of
-  a decryption that returns plausible rubbish. `PaddedMode` is the projection that lets a single
+  a decryption that returns plausible rubbish. `PaddedMode` is the crate-internal projection that lets a single
   alias carry both parameters, `PaddedEncryptor` and `PaddedDecryptor` being distinct types. They are aliases only -- no new engine
   code, and each one's doctest round-trips and shows that a misaligned length fails to compile.
 
