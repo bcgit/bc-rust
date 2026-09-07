@@ -9,7 +9,8 @@
 mod common;
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_sm4::{Block, LANES, SM4};
+use bouncycastle_core::traits::ElectronicCodeBook;
+use bouncycastle_sm4::{BLOCK_LEN, LANES, SM4};
 
 fn engine(key: &[u8; 16]) -> SM4 {
     SM4::new(
@@ -47,7 +48,7 @@ fn single_block_agrees_with_the_reference() {
         let key: [u8; 16] = common::pseudo_random(&mut seed);
         let sm4 = engine(&key);
         for _ in 0..8 {
-            let block: Block = common::pseudo_random(&mut seed);
+            let block: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
 
             let mut ours = block;
             let mut theirs = block;
@@ -72,7 +73,8 @@ fn four_lanes_agree_with_the_reference() {
     for _ in 0..128 {
         let key: [u8; 16] = common::pseudo_random(&mut seed);
         let sm4 = engine(&key);
-        let blocks: [Block; LANES] = core::array::from_fn(|_| common::pseudo_random(&mut seed));
+        let blocks: [[u8; BLOCK_LEN]; LANES] =
+            core::array::from_fn(|_| common::pseudo_random(&mut seed));
 
         let mut ours = blocks;
         sm4.encrypt_4blocks(&mut ours);
@@ -102,8 +104,8 @@ fn two_block_override_matches_two_single_calls() {
     for _ in 0..64 {
         let key: [u8; 16] = common::pseudo_random(&mut seed);
         let sm4 = engine(&key);
-        let a: Block = common::pseudo_random(&mut seed);
-        let b: Block = common::pseudo_random(&mut seed);
+        let a: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
+        let b: [u8; BLOCK_LEN] = common::pseudo_random(&mut seed);
 
         let mut singly = [a, b];
         sm4.encrypt_block(&mut singly[0]);

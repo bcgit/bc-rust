@@ -20,8 +20,9 @@
 //! unoptimised builds (see its attribute) and runs under `cargo test --release`.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_hex as hex;
-use bouncycastle_sm4::{Block, SM4};
+use bouncycastle_sm4::{BLOCK_LEN, SM4};
 
 /// `SM4Test.tests[0]` and the provider `cipherTests`: `KeyParameter(Hex.decode(..))`.
 const KEY: &str = "0123456789abcdeffedcba9876543210";
@@ -32,7 +33,7 @@ const CIPHERTEXT: &str = "681edf34d206965e86b3e94f536e4246";
 /// `test1000000()`: `cipher`.
 const CIPHERTEXT_1000000: &str = "595298c7c6fd271f0402f804c33d3f66";
 
-fn block(hex_str: &str) -> Block {
+fn block(hex_str: &str) -> [u8; BLOCK_LEN] {
     hex::decode(hex_str).expect("valid hex").try_into().expect("16 bytes")
 }
 
