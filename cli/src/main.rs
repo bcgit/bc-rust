@@ -158,6 +158,48 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform cSHAKE128 (NIST SP 800-185) of the content provided on stdin. Requires the output
+    /// length in bytes. With no customization string this is exactly SHAKE128.
+    /// Supports streaming update for low memory footprint.
+    CSHAKE128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string. Two cSHAKEs with different customization strings produce
+        /// unrelated output, so this domain-separates one use of the function from another.
+        customization: Option<String>,
+
+        #[arg(short = 'n', long)]
+        /// Function-name string. Reserved by NIST for functions it defines (SP 800-185 Sec 3.4);
+        /// use --customization for your own domain separation.
+        function_name: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform cSHAKE256 (NIST SP 800-185) of the content provided on stdin. Requires the output
+    /// length in bytes. With no customization string this is exactly SHAKE256.
+    /// Supports streaming update for low memory footprint.
+    CSHAKE256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string. See cshake128.
+        customization: Option<String>,
+
+        #[arg(short = 'n', long)]
+        /// Function-name string, reserved by NIST. See cshake128.
+        function_name: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
     /// Perform HMAC-SHA256 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     /// Note: in production uses, secrets should not be passed on the command-line because they get
@@ -1050,6 +1092,12 @@ fn main() {
         }
         Some(Subcommands::SHAKE256 { length, x }) => {
             sha3_cmd::shake_cmd(256, *length, *x);
+        }
+        Some(Subcommands::CSHAKE128 { length, customization, function_name, x }) => {
+            sha3_cmd::cshake_cmd(128, *length, function_name, customization, *x);
+        }
+        Some(Subcommands::CSHAKE256 { length, customization, function_name, x }) => {
+            sha3_cmd::cshake_cmd(256, *length, function_name, customization, *x);
         }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
