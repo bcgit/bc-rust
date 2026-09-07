@@ -157,6 +157,7 @@ mod aux_functions;
 mod matrix;
 pub mod mlkem;
 mod mlkem_keys;
+mod params;
 mod polynomial;
 
 /*** Exported types ***/
@@ -181,9 +182,6 @@ pub use mlkem::ML_KEM_768_NAME;
 pub use mlkem::ML_KEM_1024_NAME;
 
 pub use mlkem::{MLKEM_RND_LEN, MLKEM_SEED_LEN, MLKEM_SS_LEN};
-
 pub use mlkem::{MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN};
 pub use mlkem::{MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN};
 pub use mlkem::{MLKEM1024_CT_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
-
-pub use matrix::Matrix;

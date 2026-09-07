@@ -2,13 +2,11 @@
 //! and other intermediate values by never holding the whole thing in memory at once, but re-constructing
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
-use crate::aux_functions::{
-    bit_unpack_eta_out, bitlen_eta, expand_mask_poly, rej_ntt_poly, unpack_z_row,
-};
-use crate::mldsa::d;
+use crate::aux_functions::{bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly, unpack_z_row};
+use crate::params::MLDSAParams;
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 #[inline(always)]
 pub(crate) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
@@ -17,19 +15,19 @@ pub(crate) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
 
 /// Compute a row of the core signing operation
 /// Alg 7: 12: 𝐰 ← NTT−1(𝐀_hat ∘ NTT(𝐲))
-pub(crate) fn compute_w_row<const l: usize, const GAMMA1: i32, const GAMMA1_MASK_LEN: usize>(
+pub(crate) fn compute_w_row<P: MLDSAParams>(
     rho: &[u8; 32],
     rho_p_p: &[u8; 64],
     kappa: u16,
     row: usize,
 ) -> Polynomial {
-    let mut y_hat = expand_mask_poly::<GAMMA1, GAMMA1_MASK_LEN>(rho_p_p, kappa);
+    let mut y_hat = expand_mask_poly::<P>(rho_p_p, kappa);
     y_hat.ntt();
     let mut acc = rej_ntt_poly(rho, &[0u8, row as u8]);
     acc.multiply_ntt(&y_hat);
 
-    for col in 1..l {
-        y_hat = expand_mask_poly::<GAMMA1, GAMMA1_MASK_LEN>(rho_p_p, kappa + col as u16);
+    for col in 1..P::l {
+        y_hat = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
         y_hat.ntt();
         let mut tmp = rej_ntt_poly(rho, &[col as u8, row as u8]);
         tmp.multiply_ntt(&y_hat);
@@ -42,14 +40,7 @@ pub(crate) fn compute_w_row<const l: usize, const GAMMA1: i32, const GAMMA1_MASK
 }
 
 /// Algorithm 8 Line 9
-pub(crate) fn compute_wp_approx_row<
-    const GAMMA1: i32,
-    const GAMMA1_MINUS_BETA: i32,
-    const l: usize,
-    const POLY_Z_PACKED_LEN: usize,
-    const LAMBDA_over_4: usize,
-    const SIG_LEN: usize,
->(
+pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     rho: &[u8; 32],
     sig: &[u8; SIG_LEN],
     t1: &Polynomial,
@@ -64,18 +55,13 @@ pub(crate) fn compute_wp_approx_row<
     //   )
     // ▷ 𝐰'_approx = 𝐀𝐳 − 𝑐𝐭1 ⋅ 2^𝑑
 
-    let mut z_i =
-        unpack_z_row::<GAMMA1, GAMMA1_MINUS_BETA, LAMBDA_over_4, POLY_Z_PACKED_LEN, SIG_LEN>(
-            0, sig,
-        )?;
+    let mut z_i = unpack_z_row::<P, SIG_LEN>(0, sig)?;
     z_i.ntt();
     let mut Az_acc = rej_ntt_poly(rho, &[0u8, idx as u8]);
     Az_acc.multiply_ntt(&z_i);
 
-    for col in 1..l {
-        z_i = unpack_z_row::<GAMMA1, GAMMA1_MINUS_BETA, LAMBDA_over_4, POLY_Z_PACKED_LEN, SIG_LEN>(
-            col, sig,
-        )?;
+    for col in 1..P::l {
+        z_i = unpack_z_row::<P, SIG_LEN>(col, sig)?;
         z_i.ntt();
 
         // [Optimization Note]:
@@ -88,7 +74,7 @@ pub(crate) fn compute_wp_approx_row<
 
     let ct1 = compute_ct1(t1.clone(), c.clone());
     fn compute_ct1(mut t1_i: Polynomial, mut c: Polynomial) -> Polynomial {
-        t1_i.shift_left::<d>();
+        t1_i.shift_left_d();
         t1_i.ntt();
         c.ntt();
         t1_i.multiply_ntt(&c);
@@ -103,18 +89,14 @@ pub(crate) fn compute_wp_approx_row<
     Ok(Az_acc)
 }
 
-pub(crate) fn compute_z_component<
-    const GAMMA1: i32,
-    const GAMMA1_MASK_LEN: usize,
-    const GAMMA1_MINUS_BETA: i32,
->(
+pub(crate) fn compute_z_component<P: MLDSAParams>(
     s1: &Polynomial,
     rho_p_p: &[u8; 64],
     c_hat: &Polynomial,
     kappa: u16,
     col: usize,
 ) -> Result<Option<Polynomial>, SignatureError> {
-    let y = expand_mask_poly::<GAMMA1, GAMMA1_MASK_LEN>(rho_p_p, kappa + col as u16);
+    let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
     let mut s1_hat = s1.clone();
     s1_hat.ntt();
     s1_hat.multiply_ntt(c_hat);
@@ -123,10 +105,10 @@ pub(crate) fn compute_z_component<
     let mut z = cs1;
     z.add_ntt(&y);
 
-    if z.check_norm::<GAMMA1_MINUS_BETA>() { Ok(None) } else { Ok(Some(z)) }
+    if z.check_norm(P::gamma1_minus_beta) { Ok(None) } else { Ok(Some(z)) }
 }
 
-pub(crate) fn compute_w0cs2_component<const GAMMA2: i32, const GAMMA2_MINUS_BETA: i32>(
+pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
     s2: &Polynomial,
     w: &Polynomial,
     c_hat: &Polynomial,
@@ -144,12 +126,12 @@ pub(crate) fn compute_w0cs2_component<const GAMMA2: i32, const GAMMA2_MINUS_BETA
     //      ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part of w. If this check passes, w0 − cs2
     //      is the low part of w − cs2."
     let mut w0cs2 = w.clone();
-    w0cs2.low_bits::<GAMMA2>();
+    w0cs2.low_bits::<P>();
     w0cs2.sub(&cs2);
-    if w0cs2.check_norm::<GAMMA2_MINUS_BETA>() { None } else { Some(w0cs2) }
+    if w0cs2.check_norm(P::gamma2_minus_beta) { None } else { Some(w0cs2) }
 }
 
-pub(crate) fn compute_ct0_component<const GAMMA2: i32>(
+pub(crate) fn compute_ct0_component<P: MLDSAParams>(
     t0_row: &Polynomial,
     c_hat: &Polynomial,
 ) -> Option<Polynomial> {
@@ -159,18 +141,20 @@ pub(crate) fn compute_ct0_component<const GAMMA2: i32>(
     let mut ct0 = t0_hat; // rename
     ct0.inv_ntt();
 
-    if ct0.check_norm::<GAMMA2>() { None } else { Some(ct0) }
+    if ct0.check_norm(P::gamma2) { None } else { Some(ct0) }
 }
 
 /// Unpack a single s value from the packed representation.
-pub(crate) fn s_unpack<const eta: usize, const S_PACKED_LEN: usize>(
-    s_packed: &Secret<[u8; S_PACKED_LEN]>,
+///
+/// `B` is the packed buffer type, which is `P::S1Packed` or `P::S2Packed` depending on which of
+/// the two secret vectors is being unpacked.
+pub(crate) fn s_unpack<P: MLDSAParams, B: ZeroizablePrimitive + AsRef<[u8]>>(
+    s_packed: &Secret<B>,
     idx: usize,
 ) -> Polynomial {
     let mut s = Polynomial::new();
-    bit_unpack_eta_out::<eta>(
-        &s_packed[idx * bitlen_eta(eta)..(idx + 1) * bitlen_eta(eta)],
-        &mut s,
-    );
+    let packed = (**s_packed).as_ref();
+    let width = P::POLY_ETA_PACKED_LEN;
+    bit_unpack_eta_out::<P>(&packed[idx * width..(idx + 1) * width], &mut s);
     s
 }

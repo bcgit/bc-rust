@@ -11,6 +11,7 @@ use crate::mlkem_keys::{
 };
 use crate::mlkem_keys::{MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait};
 use crate::mlkem_keys::{MLKEMPublicKeyInternalTrait, MLKEMPublicKeyTrait};
+use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams};
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::{KEMError, RNGError};
 use bouncycastle_core::key_material::{
@@ -45,70 +46,44 @@ pub const MLKEM_SS_LEN: usize = 32;
 pub(crate) const N: usize = 256;
 pub(crate) const q: i16 = 3329;
 pub(crate) const q_inv: i32 = 62209;
-pub(crate) const ETA2: i16 = 2;
 pub(crate) const POLY_BYTES: usize = 384;
 
 /* ML-KEM-512 params */
 
-/// Length of the \[u8] holding a ML-KEM-512 public key.
-pub const MLKEM512_PK_LEN: usize = 800;
-/// Length of the \[u8] holding a ML-KEM-512 seed-based private key.
+/// Length of the \[u8] holding an ML-KEM-512 public key.
+pub const MLKEM512_PK_LEN: usize = MLKEM512Params::PK_LEN;
+/// Length of the \[u8] holding an ML-KEM-512 seed-based private key.
 pub const MLKEM512_SK_LEN: usize = MLKEM_SEED_LEN;
 /// Length of the \[u8] holding a full ML-KEM-512 private key in the NIST encoding.
-pub const MLKEM512_FULL_SK_LEN: usize = 1632;
-/// Length of the \[u8] holding a ML-KEM-512 ciphertext.
-pub const MLKEM512_CT_LEN: usize = 768;
-pub(crate) const MLKEM512_k: usize = 2;
-pub(crate) const MLKEM512_ETA1: i16 = 3;
-pub(crate) const MLKEM512_DU: i16 = 10;
-pub(crate) const MLKEM512_DV: i16 = 4;
-/// Maps to "required RBG strength (bits)" in FIPS 203 Table 2
-pub(crate) const MLKEM512_LAMBDA: i16 = 128;
+pub const MLKEM512_FULL_SK_LEN: usize = MLKEM512Params::FULL_SK_LEN;
+/// Length of the \[u8] holding an ML-KEM-512 ciphertext.
+pub const MLKEM512_CT_LEN: usize = MLKEM512Params::CT_LEN;
 
-// internal derived values
-pub(crate) const MLKEM512_T_PACKED_LEN: usize = 12 * MLKEM512_k * 32;
+/*** internal derived values ***/
 
 /* ML-KEM-768 params */
 
-/// Length of the \[u8] holding a ML-KEM-768 public key.
-pub const MLKEM768_PK_LEN: usize = 1184;
-/// Length of the \[u8] holding a ML-KEM-768 seed-based private key.
+/// Length of the \[u8] holding an ML-KEM-768 public key.
+pub const MLKEM768_PK_LEN: usize = MLKEM768Params::PK_LEN;
+/// Length of the \[u8] holding an ML-KEM-768 seed-based private key.
 pub const MLKEM768_SK_LEN: usize = MLKEM_SEED_LEN;
 /// Length of the \[u8] holding a full ML-KEM-768 private key in the NIST encoding.
-pub const MLKEM768_FULL_SK_LEN: usize = 2400;
-/// Length of the \[u8] holding a ML-KEM-768 ciphertext.
-pub const MLKEM768_CT_LEN: usize = 1088;
-pub(crate) const MLKEM768_k: usize = 3;
-pub(crate) const MLKEM768_ETA1: i16 = 2;
-pub(crate) const MLKEM768_DU: i16 = 10;
-pub(crate) const MLKEM768_DV: i16 = 4;
-/// Maps to "required RBG strength (bits)" in FIPS 203 Table 2
-pub(crate) const MLKEM768_LAMBDA: i16 = 192;
-
-// internal derived values
-pub(crate) const MLKEM768_T_PACKED_LEN: usize = 12 * MLKEM768_k * 32;
+pub const MLKEM768_FULL_SK_LEN: usize = MLKEM768Params::FULL_SK_LEN;
+/// Length of the \[u8] holding an ML-KEM-768 ciphertext.
+pub const MLKEM768_CT_LEN: usize = MLKEM768Params::CT_LEN;
 
 /* ML-KEM-1024 params */
 
-/// Length of the \[u8] holding a ML-KEM-1024 public key.
-pub const MLKEM1024_PK_LEN: usize = 1568;
-/// Length of the \[u8] holding a ML-KEM-512 seed-based private key.
+/// Length of the \[u8] holding an ML-KEM-1024 public key.
+pub const MLKEM1024_PK_LEN: usize = MLKEM1024Params::PK_LEN;
+/// Length of the \[u8] holding an ML-KEM-1024 seed-based private key.
 pub const MLKEM1024_SK_LEN: usize = MLKEM_SEED_LEN;
-/// Length of the \[u8] holding a full ML-KEM-512 private key in the NIST encoding.
-pub const MLKEM1024_FULL_SK_LEN: usize = 3168;
-/// Length of the \[u8] holding a ML-KEM-1024 ciphertext.
-pub const MLKEM1024_CT_LEN: usize = 1568;
-pub(crate) const MLKEM1024_k: usize = 4;
-pub(crate) const MLKEM1024_ETA1: i16 = 2;
-pub(crate) const MLKEM1024_DU: i16 = 11;
-pub(crate) const MLKEM1024_DV: i16 = 5;
-/// Maps to "required RBG strength (bits)" in FIPS 203 Table 2
-pub(crate) const MLKEM1024_LAMBDA: i16 = 256;
+/// Length of the \[u8] holding a full ML-KEM-1024 private key in the NIST encoding.
+pub const MLKEM1024_FULL_SK_LEN: usize = MLKEM1024Params::FULL_SK_LEN;
+/// Length of the \[u8] holding an ML-KEM-1024 ciphertext.
+pub const MLKEM1024_CT_LEN: usize = MLKEM1024Params::CT_LEN;
 
-// internal derived values
-pub(crate) const MLKEM1024_T_PACKED_LEN: usize = 12 * MLKEM1024_k * 32;
-
-// Typedefs just to make the algorithms look more like the FIPS 204 sample code.
+/*** Typedefs just to make the algorithms look more like the FIPS 204 sample code. ***/
 pub(crate) type G = SHA3_512;
 pub(crate) type H = SHA3_256;
 pub(crate) type J = SHAKE256;
@@ -117,86 +92,73 @@ pub(crate) type J = SHAKE256;
 
 /// The ML-KEM-512 algorithm.
 pub type MLKEM512 = MLKEM<
+    MLKEM512Params,
+    MLKEM512PublicKey,
+    MLKEM512PrivateKey,
     MLKEM512_PK_LEN,
     MLKEM512_SK_LEN,
     MLKEM512_FULL_SK_LEN,
     MLKEM512_CT_LEN,
     MLKEM_SS_LEN,
-    MLKEM512PublicKey,
-    MLKEM512PrivateKey,
-    MLKEM512_k,
-    MLKEM512_ETA1,
-    MLKEM512_DU,
-    MLKEM512_DV,
-    MLKEM512_LAMBDA,
-    MLKEM512_T_PACKED_LEN,
 >;
-
-impl Algorithm for MLKEM512 {
-    const ALG_NAME: &'static str = ML_KEM_512_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-alg-ml-kem-512 { kems 1 }
-impl AlgorithmOID for MLKEM512 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 4, 1];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x04, 0x01];
-}
 
 /// The ML-KEM-768 algorithm.
 pub type MLKEM768 = MLKEM<
+    MLKEM768Params,
+    MLKEM768PublicKey,
+    MLKEM768PrivateKey,
     MLKEM768_PK_LEN,
     MLKEM768_SK_LEN,
     MLKEM768_FULL_SK_LEN,
     MLKEM768_CT_LEN,
     MLKEM_SS_LEN,
-    MLKEM768PublicKey,
-    MLKEM768PrivateKey,
-    MLKEM768_k,
-    MLKEM768_ETA1,
-    MLKEM768_DU,
-    MLKEM768_DV,
-    MLKEM768_LAMBDA,
-    MLKEM768_T_PACKED_LEN,
 >;
-
-impl Algorithm for MLKEM768 {
-    const ALG_NAME: &'static str = ML_KEM_768_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-alg-ml-kem-768 { kems 2 }
-impl AlgorithmOID for MLKEM768 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 4, 2];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x04, 0x02];
-}
 
 /// The ML-KEM-1024 algorithm.
 pub type MLKEM1024 = MLKEM<
+    MLKEM1024Params,
+    MLKEM1024PublicKey,
+    MLKEM1024PrivateKey,
     MLKEM1024_PK_LEN,
     MLKEM1024_SK_LEN,
     MLKEM1024_FULL_SK_LEN,
     MLKEM1024_CT_LEN,
     MLKEM_SS_LEN,
-    MLKEM1024PublicKey,
-    MLKEM1024PrivateKey,
-    MLKEM1024_k,
-    MLKEM1024_ETA1,
-    MLKEM1024_DU,
-    MLKEM1024_DV,
-    MLKEM1024_LAMBDA,
-    MLKEM1024_T_PACKED_LEN,
 >;
 
-impl Algorithm for MLKEM1024 {
-    const ALG_NAME: &'static str = ML_KEM_1024_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+> Algorithm for MLKEM<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
+{
+    const ALG_NAME: &'static str = P::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
-/// Assigned by NIST in the Computer Security Objects Register: id-alg-ml-kem-1024 { kems 3 }
-impl AlgorithmOID for MLKEM1024 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 4, 3];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x04, 0x03];
+
+/// The OIDs NIST assigned in the Computer Security Objects Register: id-alg-ml-kem-512
+/// { kems 1 }, id-alg-ml-kem-768 { kems 2 } and id-alg-ml-kem-1024 { kems 3 }. As with
+/// [`Algorithm`], the values belong to the parameter set, so one impl covers all three.
+impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+> AlgorithmOID for MLKEM<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
+{
+    const OID: &'static [u32] = P::OID;
+    const OID_DER: &'static [u8] = P::OID_DER;
 }
 
 /// The core internal implementation of the ML-KEM algorithm.
@@ -204,57 +166,30 @@ impl AlgorithmOID for MLKEM1024 {
 /// but is shouldn't ever need to be used directly.
 /// Please use the named public types.
 pub struct MLKEM<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
-    PK: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
-        + MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>,
-    const k: usize,
-    const eta1: i16,
-    const du: i16,
-    const dv: i16,
-    const LAMBDA: i16,
-    const T_PACKED_LEN: usize,
 > {
-    _phantom: PhantomData<(PK, SK)>,
+    _phantom: PhantomData<(P, PK, SK)>,
 }
 
 impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
-    PK: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
-        + MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>,
-    const k: usize,
-    const eta1: i16,
-    const du: i16,
-    const dv: i16,
-    const LAMBDA: i16,
-    const T_PACKED_LEN: usize,
->
-    MLKEM<
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        CT_LEN,
-        SS_LEN,
-        PK,
-        SK,
-        k,
-        eta1,
-        du,
-        dv,
-        LAMBDA,
-        T_PACKED_LEN,
-    >
+> MLKEM<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
 {
     /// Performs the first step of key generation to transform the single provided seed into a set of internal intermediate seeds.
     ///
@@ -278,7 +213,7 @@ impl<
     /// Input: randomness 𝑟 ∈ 𝔹32 .
     /// Output: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     fn pke_encrypt(
-        t_hat_packed: &[u8; T_PACKED_LEN],
+        t_hat_packed: &P::TPacked,
         rho: &[u8; 32],
         m: [u8; 32],
         r: &[u8; 32],
@@ -297,14 +232,14 @@ impl<
 
         // Note: y_hat is needed twice: once here at line 19, and again at line 21.
         // Here it is generated each time it is needed in order to save memory.
-        for i in 0..k {
-            let mut u_i = compute_A_hat_dot_y_hat::<k, eta1>(rho, &r, i);
+        for i in 0..P::k {
+            let mut u_i = compute_A_hat_dot_y_hat::<P>(rho, &r, i);
 
-            let e1_i = sample_poly_CBD::<ETA2>(&r, (k + i) as u8);
+            let e1_i = sample_poly_CBD(&r, (P::k + i) as u8, P::eta2);
             u_i.add(&e1_i);
             u_i.poly_reduce();
 
-            compress_u_row::<du, CT_LEN>(u_i, i, &mut ct);
+            compress_u_row::<P, CT_LEN>(u_i, i, &mut ct);
         }
 
         // 17: 𝑒2 ← SamplePolyCBD_𝜂2(PRF𝜂2 (𝑟, 𝑁))
@@ -313,23 +248,23 @@ impl<
         // 23: 𝑐2 ← ByteEncode_𝑑𝑣(Compress_𝑑𝑣(𝑣))
         {
             // compute v, which is a single polynomial, but requires iterating over the vectors t_hat and y_hat
-            let mut v = compute_t_hat_dot_y_hat_row::<k, eta1>(
+            let mut v = compute_t_hat_dot_y_hat_row::<P>(
                 &r,
-                &unpack_t_hat_row(t_hat_packed, 0),
+                &unpack_t_hat_row(t_hat_packed.as_ref(), 0),
                 /*row*/ 0,
             );
 
-            for i in 1..k {
-                let v_i = compute_t_hat_dot_y_hat_row::<k, eta1>(
+            for i in 1..P::k {
+                let v_i = compute_t_hat_dot_y_hat_row::<P>(
                     &r,
-                    &unpack_t_hat_row(t_hat_packed, i),
+                    &unpack_t_hat_row(t_hat_packed.as_ref(), i),
                     /*row*/ i,
                 );
                 v.add(&v_i);
             }
 
             // perform polynomial addition
-            let e2 = sample_poly_CBD::<ETA2>(&r, 2 * k as u8);
+            let e2 = sample_poly_CBD(&r, 2 * P::k as u8, P::eta2);
             v.add(&e2);
 
             let mu = Polynomial::from_msg(m);
@@ -337,7 +272,7 @@ impl<
 
             v.poly_reduce();
 
-            v.compress_poly::<dv>(&mut ct[CT_LEN - (N * (dv as usize) / 8)..]);
+            v.compress_poly::<P>(&mut ct[CT_LEN - (N * (P::dv as usize) / 8)..]);
         }
 
         ct
@@ -367,8 +302,6 @@ impl<
     /// Failing to use this properly will result in catastrophic vulnerabilities.
     /// Please don't do it.
     pub fn encaps_internal(ek: &PK, m: [u8; 32]) -> ([u8; 32], [u8; CT_LEN]) {
-        debug_assert_eq!(CT_LEN, 32 * ((du as usize) * k + (dv as usize)));
-
         // 1: (𝐾, 𝑟) ← G(𝑚‖H(ek))
         //  ▷ derive shared secret key 𝐾 and randomness 𝑟
         let K: [u8; MLKEM_SS_LEN];
@@ -411,7 +344,7 @@ impl<
             let mut v1 = {
                 let mut s_hat_i = dk.compute_s_hat_row(0);
                 {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<du, CT_LEN>(0, &ct);
+                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(0, &ct);
                     u_prime_i.ntt();
                     s_hat_i.base_mult_montgomery(&u_prime_i);
                 }
@@ -420,10 +353,10 @@ impl<
                 s_hat_i
             };
 
-            for i in 1..k {
+            for i in 1..P::k {
                 let mut s_hat_i = dk.compute_s_hat_row(i);
                 {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<du, CT_LEN>(i, &ct);
+                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(i, &ct);
                     u_prime_i.ntt();
                     s_hat_i.base_mult_montgomery(&u_prime_i);
                 }
@@ -439,7 +372,7 @@ impl<
         let w = {
             // second half of
             // 6: 𝑤 ← 𝑣′ − NTT−1(𝐬_hat^T ∘ NTT(𝐮′))
-            let mut v_prime = unpack_ciphertext_v::<k, CT_LEN, du, dv>(&ct);
+            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(&ct);
 
             v_prime.sub(&v1);
             v_prime.poly_reduce();
@@ -532,52 +465,17 @@ impl<
 }
 
 impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
-    PK: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
-        + MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>,
-    const k: usize,
-    const eta1: i16,
-    const du: i16,
-    const dv: i16,
-    const LAMBDA: i16,
-    const T_PACKED_LEN: usize,
->
-    MLKEMTrait<
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        CT_LEN,
-        SS_LEN,
-        PK,
-        SK,
-        k,
-        eta1,
-        du,
-        dv,
-        LAMBDA,
-        T_PACKED_LEN,
-    >
-    for MLKEM<
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        CT_LEN,
-        SS_LEN,
-        PK,
-        SK,
-        k,
-        eta1,
-        du,
-        dv,
-        LAMBDA,
-        T_PACKED_LEN,
-    >
+> MLKEMTrait<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
+    for MLKEM<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
 {
     /// Imports a secret key from a seed.
     fn keygen_from_seed(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError> {
@@ -624,21 +522,15 @@ impl<
 
 /// Trait for all three of the ML-DSA algorithm variants.
 pub trait MLKEMTrait<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
-    PK: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
-        + MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>,
-    const k: usize,
-    const eta: i16,
-    const du: i16,
-    const dv: i16,
-    const LAMBDA: i16,
-    const T_PACKED_LEN: usize,
 >: Sized
 {
     /// Generates a fresh key pair.
@@ -650,7 +542,7 @@ pub trait MLKEMTrait<
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
         // Source the seed from the provided RNG
-        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut seed = KeyMaterial::<64>::new();
@@ -681,37 +573,17 @@ pub trait MLKEMTrait<
 }
 
 impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
-    PK: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
-        + MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>,
-    const k: usize,
-    const eta: i16,
-    const du: i16,
-    const dv: i16,
-    const LAMBDA: i16,
-    const T_PACKED_LEN: usize,
 > KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN>
-    for MLKEM<
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        CT_LEN,
-        SS_LEN,
-        PK,
-        SK,
-        k,
-        eta,
-        du,
-        dv,
-        LAMBDA,
-        T_PACKED_LEN,
-    >
+    for MLKEM<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
 {
     fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         let mut os_rng = HashDRBG_SHA512::new_from_os();
@@ -723,7 +595,7 @@ impl<
         rng: &mut dyn RNG,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         // Source the random message m from the provided RNG
-        if rng.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut m = [0u8; 32];
@@ -734,7 +606,7 @@ impl<
         let mut ss_keymaterial =
             KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
-            ss_keymaterial.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
+            ss_keymaterial.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;
 
         Ok((ss_keymaterial, ct))
@@ -742,37 +614,17 @@ impl<
 }
 
 impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const CT_LEN: usize,
     const SS_LEN: usize,
-    PK: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
-        + MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>,
-    SK: MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-        + MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>,
-    const k: usize,
-    const eta: i16,
-    const du: i16,
-    const dv: i16,
-    const LAMBDA: i16,
-    const T_PACKED_LEN: usize,
 > KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>
-    for MLKEM<
-        PK_LEN,
-        SK_LEN,
-        FULL_SK_LEN,
-        CT_LEN,
-        SS_LEN,
-        PK,
-        SK,
-        k,
-        eta,
-        du,
-        dv,
-        LAMBDA,
-        T_PACKED_LEN,
-    >
+    for MLKEM<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
 {
     /// Performs a decapsulation of the given ciphertext.
     /// Returns the shared secret key.
@@ -789,7 +641,7 @@ impl<
         let mut ss_keymaterial =
             KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
-            ss_keymaterial.set_security_strength(SecurityStrength::from_bits(LAMBDA as usize))
+            ss_keymaterial.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;
 
         Ok(ss_keymaterial)

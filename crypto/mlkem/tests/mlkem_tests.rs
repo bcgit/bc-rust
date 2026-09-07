@@ -813,6 +813,42 @@ mod mlkem_tests {
         fake_rng.set_security_strength(SecurityStrength::_256bit);
         _ = MLKEM1024::encaps_rng(&pk1024, &mut fake_rng).unwrap();
     }
+
+    #[test]
+    fn algorithm_names_and_oids() {
+        use bouncycastle_core::traits::{Algorithm, AlgorithmOID, SecurityStrength};
+
+        // `Algorithm` and `AlgorithmOID` are implemented once, generically over the parameter set,
+        // so nothing else states these per algorithm. Pinned here so that a wrong wiring of the
+        // blanket impls, or a typo in a parameter set, is a test failure rather than a silently
+        // mislabelled algorithm or an unparseable OID.
+        assert_eq!(MLKEM512::ALG_NAME, "ML-KEM-512");
+        assert_eq!(MLKEM768::ALG_NAME, "ML-KEM-768");
+        assert_eq!(MLKEM1024::ALG_NAME, "ML-KEM-1024");
+
+        assert_eq!(MLKEM512::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(MLKEM768::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+        assert_eq!(MLKEM1024::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+
+        // NIST's Computer Security Objects Register: id-alg-ml-kem-512 { kems 1 },
+        // id-alg-ml-kem-768 { kems 2 }, id-alg-ml-kem-1024 { kems 3 }.
+        assert_eq!(MLKEM512::OID, &[2, 16, 840, 1, 101, 3, 4, 4, 1]);
+        assert_eq!(MLKEM768::OID, &[2, 16, 840, 1, 101, 3, 4, 4, 2]);
+        assert_eq!(MLKEM1024::OID, &[2, 16, 840, 1, 101, 3, 4, 4, 3]);
+
+        for (oid, der) in [
+            (MLKEM512::OID, MLKEM512::OID_DER),
+            (MLKEM768::OID, MLKEM768::OID_DER),
+            (MLKEM1024::OID, MLKEM1024::OID_DER),
+        ] {
+            assert_eq!(der[0], 0x06, "DER tag must be OBJECT IDENTIFIER");
+            assert_eq!(der[1] as usize, der.len() - 2, "DER length must match the content");
+            assert_eq!(
+                &der[2..],
+                &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x04, *oid.last().unwrap() as u8]
+            );
+        }
+    }
 }
 
 // struct Kat {

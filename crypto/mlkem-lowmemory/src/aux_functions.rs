@@ -146,7 +146,7 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 /// Takes a seed as input and outputs a pseudorandom sample from the distribution D𝜂(𝑅𝑞).
 /// Input: byte array 𝐵 ∈ 𝔹64𝜂 .
 /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the sampled polynomial
-pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
+pub(crate) fn sample_poly_cbd(bytes: &[u8], eta: i16) -> Polynomial {
     debug_assert_eq!(bytes.len(), 64 * eta as usize);
 
     let mut f = Polynomial::new();
@@ -193,7 +193,7 @@ pub(crate) fn sample_poly_cbd<const eta: i16>(bytes: &[u8]) -> Polynomial {
 
 /// SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
 /// Performs both the PRF and SamplePolyCBD steps
-pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial {
+pub(crate) fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
     // Alg 13: 9: 𝐬[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
     //  ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
     match eta {
@@ -208,7 +208,7 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
                 buf
             };
 
-            sample_poly_cbd::<eta>(&buf)
+            sample_poly_cbd(&buf, eta)
         }
         3 => {
             let buf = {
@@ -220,7 +220,7 @@ pub(crate) fn sample_poly_CBD<const eta: i16>(b: &[u8; 32], n: u8) -> Polynomial
                 buf
             };
 
-            sample_poly_cbd::<eta>(&buf)
+            sample_poly_cbd(&buf, eta)
         }
         _ => unreachable!(),
     }

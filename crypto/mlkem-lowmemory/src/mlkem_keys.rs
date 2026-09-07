@@ -3,27 +3,18 @@ use crate::low_memory_helpers::{
     compute_A_hat_dot_s_hat, pack_s_hat_row, pack_t_hat_row, unpack_t_hat_row,
 };
 use crate::mlkem::{G, H, POLY_BYTES, q};
-use crate::mlkem::{
-    MLKEM512_ETA1, MLKEM512_FULL_SK_LEN, MLKEM512_LAMBDA, MLKEM512_PK_LEN, MLKEM512_SK_LEN,
-    MLKEM512_T_PACKED_LEN, MLKEM512_k,
-};
-use crate::mlkem::{
-    MLKEM768_ETA1, MLKEM768_FULL_SK_LEN, MLKEM768_LAMBDA, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
-    MLKEM768_T_PACKED_LEN, MLKEM768_k,
-};
-use crate::mlkem::{
-    MLKEM1024_ETA1, MLKEM1024_FULL_SK_LEN, MLKEM1024_LAMBDA, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN,
-    MLKEM1024_T_PACKED_LEN, MLKEM1024_k,
-};
+use crate::mlkem::{MLKEM512_FULL_SK_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN};
+use crate::mlkem::{MLKEM768_FULL_SK_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN};
+use crate::mlkem::{MLKEM1024_FULL_SK_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
+use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams};
 use crate::polynomial::Polynomial;
-use crate::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME};
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, SecurityStrength};
 use bouncycastle_sha3::SHA3_256;
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 // imports just for docs
@@ -31,53 +22,37 @@ use core::fmt::{Debug, Display, Formatter};
 /* Pub Types */
 
 /// ML-KEM-512 Public Key
-pub type MLKEM512PublicKey = MLKEMPublicKey<MLKEM512_k, MLKEM512_PK_LEN, MLKEM512_T_PACKED_LEN>;
+pub type MLKEM512PublicKey = MLKEMPublicKey<MLKEM512Params, MLKEM512_PK_LEN>;
 /// ML-KEM-512 Private Key
-pub type MLKEM512PrivateKey = MLKEMSeedPrivateKey<
-    MLKEM512_k,
-    MLKEM512_ETA1,
-    MLKEM512_LAMBDA,
-    MLKEM512_SK_LEN,
-    MLKEM512_FULL_SK_LEN,
-    MLKEM512_PK_LEN,
-    MLKEM512_T_PACKED_LEN,
->;
+pub type MLKEM512PrivateKey =
+    MLKEMSeedPrivateKey<MLKEM512Params, MLKEM512_SK_LEN, MLKEM512_FULL_SK_LEN, MLKEM512_PK_LEN>;
 /// ML-KEM-768 Public Key
-pub type MLKEM768PublicKey = MLKEMPublicKey<MLKEM768_k, MLKEM768_PK_LEN, MLKEM768_T_PACKED_LEN>;
+pub type MLKEM768PublicKey = MLKEMPublicKey<MLKEM768Params, MLKEM768_PK_LEN>;
 /// ML-KEM-768 Private Key
-pub type MLKEM768PrivateKey = MLKEMSeedPrivateKey<
-    MLKEM768_k,
-    MLKEM768_ETA1,
-    MLKEM768_LAMBDA,
-    MLKEM768_SK_LEN,
-    MLKEM768_FULL_SK_LEN,
-    MLKEM768_PK_LEN,
-    MLKEM768_T_PACKED_LEN,
->;
+pub type MLKEM768PrivateKey =
+    MLKEMSeedPrivateKey<MLKEM768Params, MLKEM768_SK_LEN, MLKEM768_FULL_SK_LEN, MLKEM768_PK_LEN>;
 /// ML-KEM-1024 Public Key
-pub type MLKEM1024PublicKey = MLKEMPublicKey<MLKEM1024_k, MLKEM1024_PK_LEN, MLKEM1024_T_PACKED_LEN>;
+pub type MLKEM1024PublicKey = MLKEMPublicKey<MLKEM1024Params, MLKEM1024_PK_LEN>;
 /// ML-KEM-1024 Private Key
-pub type MLKEM1024PrivateKey = MLKEMSeedPrivateKey<
-    MLKEM1024_k,
-    MLKEM1024_ETA1,
-    MLKEM1024_LAMBDA,
-    MLKEM1024_SK_LEN,
-    MLKEM1024_FULL_SK_LEN,
-    MLKEM1024_PK_LEN,
-    MLKEM1024_T_PACKED_LEN,
->;
+pub type MLKEM1024PrivateKey =
+    MLKEMSeedPrivateKey<MLKEM1024Params, MLKEM1024_SK_LEN, MLKEM1024_FULL_SK_LEN, MLKEM1024_PK_LEN>;
 
 /// An ML-KEM public key.
-#[derive(Clone)]
-pub struct MLKEMPublicKey<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> {
-    pub(crate) t_hat_packed: [u8; T_PACKED_LEN],
+pub struct MLKEMPublicKey<P: MLKEMParams, const PK_LEN: usize> {
+    pub(crate) t_hat_packed: P::TPacked,
     pub(crate) rho: [u8; 32],
 }
 
+// Written out rather than derived: `#[derive(Clone)]` would demand `P: Clone`, and `P` is a
+// marker for the parameter set that is never stored, only used to name the field types.
+impl<P: MLKEMParams, const PK_LEN: usize> Clone for MLKEMPublicKey<P, PK_LEN> {
+    fn clone(&self) -> Self {
+        Self { t_hat_packed: self.t_hat_packed, rho: self.rho }
+    }
+}
+
 /// General trait for all ML-KEM public keys types.
-pub trait MLKEMPublicKeyTrait<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize>:
-    KEMPublicKey<PK_LEN>
-{
+pub trait MLKEMPublicKeyTrait<P: MLKEMParams, const PK_LEN: usize>: KEMPublicKey<PK_LEN> {
     /// Algorithm 23 pkDecode(𝑝𝑘)
     /// Reverses the procedure pkEncode.
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
@@ -86,7 +61,7 @@ pub trait MLKEMPublicKeyTrait<const k: usize, const PK_LEN: usize, const T_PACKE
     fn pk_decode(pk: &[u8; PK_LEN]) -> Result<Self, KEMError>;
 
     /// Get a ref to t_hat_packed byte array
-    fn t_hat_packed(&self) -> &[u8; T_PACKED_LEN];
+    fn t_hat_packed(&self) -> &P::TPacked;
 
     /// Get a ref to rho
     fn rho(&self) -> &[u8; 32];
@@ -95,29 +70,30 @@ pub trait MLKEMPublicKeyTrait<const k: usize, const PK_LEN: usize, const T_PACKE
     fn compute_hash(&self) -> [u8; 32];
 }
 
-pub(crate) trait MLKEMPublicKeyInternalTrait<
-    const k: usize,
-    const T_PACKED_LEN: usize,
-    const PK_LEN: usize,
->: MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN>
+pub(crate) trait MLKEMPublicKeyInternalTrait<P: MLKEMParams, const PK_LEN: usize>:
+    MLKEMPublicKeyTrait<P, PK_LEN>
 {
     /// Not exposing a constructor publicly because you should have to get an instance either by
     /// running a keygen, or by decoding an existing key.
-    fn new(t_hat: [u8; T_PACKED_LEN], rho: [u8; 32]) -> Self;
+    fn new(t_hat: P::TPacked, rho: [u8; 32]) -> Self;
 }
 
-impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize>
-    MLKEMPublicKeyTrait<k, PK_LEN, T_PACKED_LEN> for MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const PK_LEN: usize> MLKEMPublicKeyTrait<P, PK_LEN>
+    for MLKEMPublicKey<P, PK_LEN>
 {
     fn pk_decode(pk: &[u8; PK_LEN]) -> Result<Self, KEMError> {
         let pk = Self::new(
-            pk[..T_PACKED_LEN].try_into().unwrap(),
-            pk[T_PACKED_LEN..].try_into().unwrap(),
+            {
+                let mut t = <P::TPacked as ZeroizablePrimitive>::ZEROED;
+                t.as_mut().copy_from_slice(&pk[..P::T_PACKED_LEN]);
+                t
+            },
+            pk[P::T_PACKED_LEN..].try_into().unwrap(),
         );
 
         // check that all entries are in range
-        for i in 0..k {
-            let p = unpack_t_hat_row(&pk.t_hat_packed, i);
+        for i in 0..P::k {
+            let p = unpack_t_hat_row(pk.t_hat_packed.as_ref(), i);
             for w in p.coeffs.iter() {
                 if *w >= q {
                     return Err(KEMError::DecodingError("Invalid public key"));
@@ -128,7 +104,7 @@ impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize>
         Ok(pk)
     }
 
-    fn t_hat_packed(&self) -> &[u8; T_PACKED_LEN] {
+    fn t_hat_packed(&self) -> &P::TPacked {
         &self.t_hat_packed
     }
 
@@ -141,7 +117,7 @@ impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize>
 
         let mut out = [0u8; 32];
         let mut h = H::default();
-        h.do_update(&self.t_hat_packed);
+        h.do_update(self.t_hat_packed.as_ref());
         h.do_update(&self.rho);
         let bytes_written = h.do_final_out(&mut out);
         debug_assert_eq!(bytes_written, 32);
@@ -149,24 +125,20 @@ impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize>
     }
 }
 
-impl<const k: usize, const T_PACKED_LEN: usize, const PK_LEN: usize>
-    MLKEMPublicKeyInternalTrait<k, T_PACKED_LEN, PK_LEN>
-    for MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const PK_LEN: usize> MLKEMPublicKeyInternalTrait<P, PK_LEN>
+    for MLKEMPublicKey<P, PK_LEN>
 {
-    fn new(t_hat_packed: [u8; T_PACKED_LEN], rho: [u8; 32]) -> Self {
+    fn new(t_hat_packed: P::TPacked, rho: [u8; 32]) -> Self {
         Self { rho, t_hat_packed }
     }
 }
 
-impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> KEMPublicKey<PK_LEN>
-    for MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>
-{
+impl<P: MLKEMParams, const PK_LEN: usize> KEMPublicKey<PK_LEN> for MLKEMPublicKey<P, PK_LEN> {
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
     /// Output: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
     fn encode(&self) -> [u8; PK_LEN] {
-        debug_assert_eq!(PK_LEN, 32 + 12 * k * 32);
         let mut pk = [0u8; PK_LEN];
         self.encode_out(&mut pk);
 
@@ -174,13 +146,14 @@ impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> KEMPublicKe
     }
 
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
-        debug_assert_eq!(self.t_hat_packed.len(), T_PACKED_LEN);
+        // Check length
+        debug_assert_eq!(self.t_hat_packed.as_ref().len(), P::T_PACKED_LEN);
 
         out.fill(0);
 
-        out[..T_PACKED_LEN].copy_from_slice(&self.t_hat_packed);
-        debug_assert_eq!(out[T_PACKED_LEN..].len(), 32);
-        out[T_PACKED_LEN..].copy_from_slice(&self.rho);
+        out[..P::T_PACKED_LEN].copy_from_slice(self.t_hat_packed.as_ref());
+        debug_assert_eq!(out[P::T_PACKED_LEN..].len(), 32);
+        out[P::T_PACKED_LEN..].copy_from_slice(&self.rho);
 
         PK_LEN
     }
@@ -194,60 +167,36 @@ impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> KEMPublicKe
     }
 }
 
-impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> Eq
-    for MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>
-{
-}
+impl<P: MLKEMParams, const PK_LEN: usize> Eq for MLKEMPublicKey<P, PK_LEN> {}
 
-impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> PartialEq
-    for MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>
-{
+impl<P: MLKEMParams, const PK_LEN: usize> PartialEq for MLKEMPublicKey<P, PK_LEN> {
     fn eq(&self, other: &Self) -> bool {
         bouncycastle_utils::ct::ct_eq_bytes(&self.encode(), &other.encode())
     }
 }
 
-impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> Debug
-    for MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>
-{
+impl<P: MLKEMParams, const PK_LEN: usize> Debug for MLKEMPublicKey<P, PK_LEN> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let alg = match k {
-            2 => ML_KEM_512_NAME,
-            3 => ML_KEM_768_NAME,
-            4 => ML_KEM_1024_NAME,
-            _ => panic!("Unsupported key length"),
-        };
         let hash = SHA3_256::new().hash(&self.encode());
-        write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", alg, hash)
+        write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }
 
-impl<const k: usize, const PK_LEN: usize, const T_PACKED_LEN: usize> Display
-    for MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>
-{
+impl<P: MLKEMParams, const PK_LEN: usize> Display for MLKEMPublicKey<P, PK_LEN> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let alg = match k {
-            2 => ML_KEM_512_NAME,
-            3 => ML_KEM_768_NAME,
-            4 => ML_KEM_1024_NAME,
-            _ => panic!("Unsupported key length"),
-        };
         let hash = SHA3_256::new().hash(&self.encode());
-        write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", alg, hash)
+        write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }
 
 /// An ML-KEM private key.
-#[derive(Clone)]
 pub struct MLKEMSeedPrivateKey<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
+    P: MLKEMParams,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
 > {
+    _phantom: core::marker::PhantomData<P>,
     rho: [u8; 32],
     sigma: Secret<[u8; 32]>,
     pk_hash: Option<[u8; 32]>,
@@ -255,15 +204,24 @@ pub struct MLKEMSeedPrivateKey<
     seed_d: Secret<[u8; 32]>,
 }
 
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+/// See the note on [`MLKEMPublicKey`]'s `Clone` for why this is not derived.
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize> Clone
+    for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+{
+    fn clone(&self) -> Self {
+        Self {
+            _phantom: core::marker::PhantomData,
+            rho: self.rho,
+            sigma: self.sigma.clone(),
+            pk_hash: self.pk_hash,
+            z: self.z.clone(),
+            seed_d: self.seed_d.clone(),
+        }
+    }
+}
+
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize>
+    MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     /// Create a new MLKEMSeedPrivateKey from a 64-byte KeyMaterial.
     /// Seed SecurityStrength must match algorithm security strength: 128-bit (ML-KEM-512), 192-bit (ML-KEM-768), or 256-bit (ML-KEM-1024).
@@ -276,7 +234,7 @@ impl<
             ));
         }
 
-        if seed.security_strength() < SecurityStrength::from_bits(LAMBDA as usize) {
+        if seed.security_strength() < P::MAX_SECURITY_STRENGTH {
             return Err(KEMError::KeyGenError("SecurityStrength"));
         }
 
@@ -291,7 +249,7 @@ impl<
 
         // Deviation from the FIPS: The implementation does not persist the hash of the public key H(ek) in the
         // in-memory representation because it can be re-computed as needed.
-        Ok(Self { rho, sigma, pk_hash: None, z, seed_d })
+        Ok(Self { _phantom: core::marker::PhantomData, rho, sigma, pk_hash: None, z, seed_d })
     }
     /// Algorithm 13 K-PKE.KeyGen(𝑑)
     /// 1: (𝜌, 𝜎) ← G(𝑑‖𝑘)
@@ -305,7 +263,7 @@ impl<
 
         let mut g = G::new();
         g.do_update(seed_d);
-        g.do_update(&[k as u8]);
+        g.do_update(&[P::k as u8]);
         let bytes_written = g.do_final_out(buf.as_mut());
         debug_assert_eq!(bytes_written, 64);
 
@@ -318,11 +276,10 @@ impl<
 
 /// General trait for all ML-KEM private keys types.
 pub trait MLKEMPrivateKeyTrait<
-    const k: usize,
+    P: MLKEMParams,
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
 >: KEMPrivateKey<SK_LEN>
 {
     /// New from KeyMaterial. Can throw a KEMError if the KeyMaterial does not contain sufficient entropy.
@@ -332,7 +289,7 @@ pub trait MLKEMPrivateKeyTrait<
     fn seed(&self) -> Option<KeyMaterial<64>>;
     /// Runs essentially a full keygen according to Algorithm 13.
     // Dev note: This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
-    fn pk(&self) -> MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN>;
+    fn pk(&self) -> MLKEMPublicKey<P, PK_LEN>;
     /// Get a ref to the stored public key hash.
     /// Since in this implementation, this requires running the full keygen, this is a lazy evaluation and
     /// will only be computationally heavy the first time it is called for a given key.
@@ -362,10 +319,9 @@ pub trait MLKEMPrivateKeyTrait<
 }
 
 pub(crate) trait MLKEMPrivateKeyInternalTrait<
-    const k: usize,
+    P: MLKEMParams,
     const SK_LEN: usize,
     const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
 >
 {
     fn z(&self) -> &[u8; 32];
@@ -375,19 +331,12 @@ pub(crate) trait MLKEMPrivateKeyInternalTrait<
     fn rho(&self) -> &[u8; 32];
 
     /// Note: this one is not a ref because the data does not exist in the private key.
-    fn t_hat_packed(&self) -> [u8; T_PACKED_LEN];
+    fn t_hat_packed(&self) -> P::TPacked;
 }
 
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> MLKEMPrivateKeyTrait<k, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
-    for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize>
+    MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+    for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     fn from_keymaterial(seed: &KeyMaterial<64>) -> Result<Self, KEMError> {
         Self::new(seed)
@@ -398,19 +347,14 @@ impl<
         tmp[32..].as_mut().copy_from_slice(&*self.z);
         let mut seed = KeyMaterial::<64>::from_bytes_as_type(&*tmp, KeyType::Seed).unwrap();
         do_hazardous_operations(&mut seed, |seed| {
-            seed.set_security_strength(match k {
-                2 => SecurityStrength::_128bit,
-                3 => SecurityStrength::_192bit,
-                4 => SecurityStrength::_256bit,
-                _ => unreachable!("Invalid mlkem param set"),
-            })
+            seed.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })
         .unwrap();
 
         Some(seed)
     }
-    fn pk(&self) -> MLKEMPublicKey<k, PK_LEN, T_PACKED_LEN> {
-        MLKEMPublicKey::<k, PK_LEN, T_PACKED_LEN>::new(self.t_hat_packed(), self.rho)
+    fn pk(&self) -> MLKEMPublicKey<P, PK_LEN> {
+        MLKEMPublicKey::<P, PK_LEN>::new(self.t_hat_packed(), self.rho)
     }
     fn pk_hash(&mut self) -> &[u8; 32] {
         if self.pk_hash.is_none() {
@@ -447,10 +391,10 @@ impl<
 
         /* dk_pke */
         // Alg 13; line 20: dkPKE ← ByteEncode12(𝐬)
-        for i in 0..k {
-            pack_s_hat_row::<k>(&self.compute_s_hat_row(i), i, out);
+        for i in 0..P::k {
+            pack_s_hat_row::<P>(&self.compute_s_hat_row(i), i, out);
         }
-        pos += k * POLY_BYTES;
+        pos += P::k * POLY_BYTES;
 
         /* ek */
         // Alg 13; line 19: ekPKE ← ByteEncode12(𝐭)‖𝜌
@@ -468,37 +412,29 @@ impl<
         FULL_SK_LEN
     }
     fn sk_decode(sk: &[u8; SK_LEN]) -> Self {
-        debug_assert_eq!(SK_LEN, /* seed*/ 64);
         Self::from_bytes(sk).unwrap()
     }
 }
 
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> MLKEMPrivateKeyInternalTrait<k, SK_LEN, PK_LEN, T_PACKED_LEN>
-    for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize>
+    MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>
+    for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     fn z(&self) -> &[u8; 32] {
         &self.z
     }
 
     fn compute_s_hat_row(&self, idx: usize) -> Polynomial {
-        debug_assert!(idx < k);
+        debug_assert!(idx < P::k);
 
         // We're doing just one row of this:
         // 8: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
-        //  ▷ generate 𝐬 ∈ (ℤ256)^k
+        //  ▷ generate 𝐬 ∈ (ℤ256)^P::k
         // 9: 𝐬[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
         //   ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
         // 10: 𝑁 ← 𝑁 + 1
         // Note: here n = 0
-        let mut s_i = sample_poly_CBD::<eta1>(&self.sigma, idx as u8);
+        let mut s_i = sample_poly_CBD(&self.sigma, idx as u8, P::eta1);
 
         // 16: 𝐬_hat ← NTT(𝐬)̂
         s_i.ntt();
@@ -510,47 +446,39 @@ impl<
     }
     /// Runs essentially a full keygen according to Algorithm 13
     /// Outputs t_hat in the packed encoding specified in FIPS 203
-    fn t_hat_packed(&self) -> [u8; T_PACKED_LEN] {
-        let mut t_hat_packed = [0u8; T_PACKED_LEN];
+    fn t_hat_packed(&self) -> P::TPacked {
+        let mut t_hat_packed = <P::TPacked as ZeroizablePrimitive>::ZEROED;
 
-        for i in 0..k {
+        for i in 0..P::k {
             // first half of
             // 18: 𝐭_hat ← 𝐀_hat ∘ 𝐬_hat + 𝐞_hat
-            let mut t_hat_i = compute_A_hat_dot_s_hat::<k, eta1>(&self.rho, &self.sigma, i);
+            let mut t_hat_i = compute_A_hat_dot_s_hat::<P>(&self.rho, &self.sigma, i);
 
             // second half of
             // 18: 𝐭_hat ← 𝐀_hat ∘ 𝐬_hat + 𝐞_hat
             {
                 // 12: for (𝑖 ← 0; 𝑖 < 𝑘; 𝑖++)
-                //  ▷ generate 𝐞 ∈ (ℤ256)^k
+                //  ▷ generate 𝐞 ∈ (ℤ256)^P::k
                 // 13: 𝐞[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁))
                 //   ▷ 𝐞[𝑖] ∈ ℤ256 sampled from CBD
                 // 14: 𝑁 ← 𝑁 + 1
-                // Note: here n = k
-                let mut e_i = sample_poly_CBD::<eta1>(&self.sigma, (k + i) as u8);
+                // Note: here n = P::k
+                let mut e_i = sample_poly_CBD(&self.sigma, (P::k + i) as u8, P::eta1);
 
                 e_i.ntt(); // technically now e_hat_i
                 t_hat_i.add(&e_i);
             }
             t_hat_i.poly_reduce();
 
-            pack_t_hat_row::<T_PACKED_LEN>(&t_hat_i, i, &mut t_hat_packed);
+            pack_t_hat_row::<P>(&t_hat_i, i, &mut t_hat_packed);
         }
 
         t_hat_packed
     }
 }
 
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> KEMPrivateKey<SK_LEN>
-    for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize>
+    KEMPrivateKey<SK_LEN> for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     /// Encode the private key as a 64-byte seed (d || z)
     fn encode(&self) -> [u8; SK_LEN] {
@@ -561,8 +489,6 @@ impl<
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        debug_assert_eq!(SK_LEN, 64);
-
         out.fill(0);
 
         out[..32].copy_from_slice(&*self.seed_d);
@@ -585,27 +511,13 @@ impl<
     }
 }
 
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> Eq for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize> Eq
+    for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
 }
 
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> PartialEq for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize> PartialEq
+    for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     fn eq(&self, other: &Self) -> bool {
         let self_encoded = self.encode();
@@ -615,47 +527,21 @@ impl<
 }
 
 /// Debug impl mainly to prevent the secret key from being printed in logs.
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> fmt::Debug for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize> fmt::Debug
+    for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let alg = match k {
-            2 => ML_KEM_512_NAME,
-            3 => ML_KEM_768_NAME,
-            4 => ML_KEM_1024_NAME,
-            _ => panic!("Unsupported key length"),
-        };
         let pk_hash = self.pk().compute_hash();
-        write!(f, "MLKEMSeedPrivateKey {{ alg: {}, pub_key_hash: {:x?} }}", alg, &pk_hash,)
+        write!(f, "MLKEMSeedPrivateKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, &pk_hash,)
     }
 }
 
 /// Display impl mainly to prevent the secret key from being printed in logs.
-impl<
-    const k: usize,
-    const eta1: i16,
-    const LAMBDA: i16,
-    const SK_LEN: usize,
-    const FULL_SK_LEN: usize,
-    const PK_LEN: usize,
-    const T_PACKED_LEN: usize,
-> Display for MLKEMSeedPrivateKey<k, eta1, LAMBDA, SK_LEN, FULL_SK_LEN, PK_LEN, T_PACKED_LEN>
+impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN: usize> Display
+    for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let alg = match k {
-            2 => ML_KEM_512_NAME,
-            3 => ML_KEM_768_NAME,
-            4 => ML_KEM_1024_NAME,
-            _ => panic!("Unsupported key length"),
-        };
         let pk_hash = self.pk().compute_hash();
-        write!(f, "MLKEMSeedPrivateKey {{ alg: {}, pub_key_hash: {:x?} }}", alg, &pk_hash,)
+        write!(f, "MLKEMSeedPrivateKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, &pk_hash,)
     }
 }

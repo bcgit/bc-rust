@@ -234,6 +234,7 @@ pub mod hash_mldsa;
 mod low_memory_helpers;
 pub mod mldsa;
 mod mldsa_keys;
+mod params;
 mod polynomial;
 
 /*** Exported types ***/
