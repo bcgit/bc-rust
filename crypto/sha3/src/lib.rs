@@ -196,6 +196,7 @@ mod keccak;
 mod kmac;
 mod sha3;
 mod shake;
+mod tuplehash;
 mod xof_utils;
 
 /*** String constants ***/
@@ -223,11 +224,20 @@ pub const KMAC256_NAME: &str = "KMAC256";
 pub const KMACXOF128_NAME: &str = "KMACXOF128";
 /// The name of the KMACXOF256 algorithm (NIST SP 800-185 Sec 4.3.1).
 pub const KMACXOF256_NAME: &str = "KMACXOF256";
+/// The name of the TupleHash128 algorithm (NIST SP 800-185 Sec 5).
+pub const TUPLEHASH128_NAME: &str = "TupleHash128";
+/// The name of the TupleHash256 algorithm (NIST SP 800-185 Sec 5).
+pub const TUPLEHASH256_NAME: &str = "TupleHash256";
+/// The name of the TupleHashXOF128 algorithm (NIST SP 800-185 Sec 5.3.1).
+pub const TUPLEHASHXOF128_NAME: &str = "TupleHashXOF128";
+/// The name of the TupleHashXOF256 algorithm (NIST SP 800-185 Sec 5.3.1).
+pub const TUPLEHASHXOF256_NAME: &str = "TupleHashXOF256";
 
 /*** pub types ***/
 pub use cshake::CSHAKEInternal;
 pub use kmac::{KMACInternal, KMACXOFInternal};
 pub use sha3::SHA3Internal;
+pub use tuplehash::{TupleHashInternal, TupleHashXOFInternal};
 
 /// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
 ///
@@ -260,6 +270,19 @@ pub type KMACXOF128 = KMACXOFInternal<SHAKE128Params>;
 ///
 /// See [`KMACXOF128`].
 pub type KMACXOF256 = KMACXOFInternal<SHAKE256Params>;
+
+/// TupleHash128: the unambiguous tuple hash of NIST SP 800-185 Sec 5, 128-bit strength.
+///
+/// Each [`Hash::do_update`] call appends one *tuple
+/// element*, not a run of bytes -- so unlike every other hash here, the chunking is part of the
+/// input. See [`TupleHashInternal`].
+pub type TUPLEHASH128 = TupleHashInternal<SHAKE128Params>;
+/// TupleHash256: see [`TUPLEHASH128`].
+pub type TUPLEHASH256 = TupleHashInternal<SHAKE256Params>;
+/// TupleHashXOF128: the arbitrary-output-length TupleHash of Sec 5.3.1.
+pub type TUPLEHASHXOF128 = TupleHashXOFInternal<SHAKE128Params>;
+/// TupleHashXOF256: see [`TUPLEHASHXOF128`].
+pub type TUPLEHASHXOF256 = TupleHashXOFInternal<SHAKE256Params>;
 pub use shake::{SHAKEInternal, SHAKEOutput};
 
 pub use keccak::SUSPENDED_SHA3_STATE_LEN;
@@ -396,6 +419,10 @@ trait SHAKEParams: Algorithm {
     const KMAC_ALG_NAME: &'static str;
     /// The name of the KMACXOF built on this parameter set.
     const KMACXOF_ALG_NAME: &'static str;
+    /// The name of the TupleHash built on this parameter set.
+    const TUPLEHASH_ALG_NAME: &'static str;
+    /// The name of the TupleHashXOF built on this parameter set.
+    const TUPLEHASHXOF_ALG_NAME: &'static str;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -410,6 +437,8 @@ impl SHAKEParams for SHAKE128Params {
     const CSHAKE_ALG_NAME: &'static str = CSHAKE128_NAME;
     const KMAC_ALG_NAME: &'static str = KMAC128_NAME;
     const KMACXOF_ALG_NAME: &'static str = KMACXOF128_NAME;
+    const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH128_NAME;
+    const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF128_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake128 { hashAlgs 11 }
 impl AlgorithmOID for SHAKE128 {
@@ -430,6 +459,8 @@ impl SHAKEParams for SHAKE256Params {
     const CSHAKE_ALG_NAME: &'static str = CSHAKE256_NAME;
     const KMAC_ALG_NAME: &'static str = KMAC256_NAME;
     const KMACXOF_ALG_NAME: &'static str = KMACXOF256_NAME;
+    const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH256_NAME;
+    const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF256_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake256 { hashAlgs 12 }
 impl AlgorithmOID for SHAKE256 {

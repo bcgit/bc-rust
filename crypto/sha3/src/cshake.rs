@@ -78,6 +78,16 @@ pub(crate) fn absorb_bytepad_strings<PARAMS: SHAKEParams>(
     absorb_bytepad(&mut cshake.shake, strings);
 }
 
+/// Absorbs `encode_string(s)` into a cSHAKE, for the functions layered on top: TupleHash encodes
+/// each tuple element this way (Sec 5.3 step 3), which is what makes the tuple boundaries part of
+/// the hash.
+pub(crate) fn absorb_encoded_string_into<PARAMS: SHAKEParams>(
+    cshake: &mut CSHAKEInternal<PARAMS>,
+    s: &[u8],
+) {
+    absorb_encoded_string(&mut cshake.shake, s);
+}
+
 /// Absorbs `left_encode(value)`, returning how many bytes went in.
 fn absorb_left_encode<PARAMS: SHAKEParams>(shake: &mut SHAKEInternal<PARAMS>, value: u64) -> usize {
     let (buf, len) = left_encode(value);
