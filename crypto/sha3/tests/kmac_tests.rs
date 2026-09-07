@@ -4,6 +4,7 @@
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF};
+use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
 use std::fs;
@@ -271,4 +272,26 @@ fn kmacxof_rejects_a_partial_final_byte() {
 fn kmacxof_algorithm_names() {
     assert_eq!(KMACXOF128::ALG_NAME, "KMACXOF128");
     assert_eq!(KMACXOF256::ALG_NAME, "KMACXOF256");
+}
+
+/// KMACXOF through the shared `XOF` conformance suite.
+///
+/// This is what the constructor-closure form of the framework buys: a keyed XOF has no `Default`,
+/// so before it the suite could only be pointed at unkeyed functions. The expected output is taken
+/// from a published sample value, so this checks conformance and a NIST vector at once.
+#[test]
+fn test_framework_xof() {
+    let Some(vectors) = read_vectors("KMACXOF.rsp") else { return };
+    let v = vectors.first().expect("at least one sample");
+    let key = key_material(&v.key);
+
+    // Partial-byte input is not expressible for KMACXOF -- right_encode(0) has to follow the
+    // message -- so that part of the suite is switched off.
+    let mut framework = TestFrameworkXOF::new();
+    framework.enable_partial_byte_tests = false;
+    framework.test_xof(
+        || KMACXOF128::new(&key, v.s.as_bytes(), false).expect("a valid key"),
+        &v.msg,
+        &v.output,
+    );
 }
