@@ -25,7 +25,7 @@
 //!    `Outputlen = minoutbytes + (rightmost 16 bits of Output as big-endian integer) mod
 //!    (maxoutbytes - minoutbytes + 1)` bytes; report `Output`/`Outputlen` per COUNT.
 
-use bouncycastle_core::traits::{Hash, XOF};
+use bouncycastle_core::traits::{Hash, XOF, XofOutput};
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 use std::fs;
@@ -168,19 +168,19 @@ fn run_sha3_monte_file<H: Hash + Default>(orientation: &str, filename: &str) {
 fn shake_bits<X: XOF + Default>(msg: &[u8], len_bits: usize, out_bits: usize) -> Vec<u8> {
     let mut x = X::default();
     let (whole, partial) = (len_bits / 8, len_bits % 8);
-    x.absorb(&msg[..whole]).expect("absorb before squeeze is infallible");
-    if partial != 0 {
-        x.absorb_last_partial_byte(msg[whole].reverse_bits(), partial)
-            .expect("partial is in 1..=7");
-    }
+    x.do_update(&msg[..whole]);
+    let mut out_stream = if partial != 0 {
+        x.into_output_partial_bits(msg[whole].reverse_bits(), partial).expect("partial is in 1..=7")
+    } else {
+        x.into_output()
+    };
     let (out_whole, out_partial) = (out_bits / 8, out_bits % 8);
-    let mut out = x.squeeze(out_whole);
+    let mut out = out_stream.do_output(out_whole + usize::from(out_partial != 0));
     if out_partial != 0 {
-        out.push(
-            x.squeeze_partial_byte_final(out_partial)
-                .expect("out_partial is in 1..=7")
-                .reverse_bits(),
-        );
+        // FIPS 202 B.1: an output of `out_bits` bits occupies the low `out_partial` bits of its
+        // final octet, so the unused high bits of the byte the sponge gave us are dropped.
+        let last = out.len() - 1;
+        out[last] &= (1u8 << out_partial) - 1;
     }
     out
 }

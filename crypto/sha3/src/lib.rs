@@ -53,7 +53,7 @@
 //! ## XOF
 //! SHA3 offers Extendable-Output Functions in the form of SHAKE, which is accessed through the [`XOF`] trait,
 //! which is implemented by [`SHAKE128`] and [`SHAKE256`].
-//! The difference from [`Hash`] is that SHAKE can produce output of any length.
+//! [`XOF`] extends [`Hash`] -- SHAKE *is* a hash -- and adds the ability to choose the output length.
 //!
 //! The simplest usage is via the static functions. The following example produces a 16 byte (128-bit) and 16KiB output:
 //!```
@@ -65,26 +65,34 @@
 //! let output_16KiB: Vec<u8> = sha3::SHAKE128::new().hash_xof(data, 16 * 1024);
 //! ```
 //!
-//! As with [`Hash`] above, the [`XOF`] trait has streaming APIs in the form of [`XOF::absorb`] and [`XOF::squeeze`].
-//! Unlike [`Hash::do_final`], [`XOF::squeeze`] can be called multiple times.
-//! Note, however, that once you start squeezing, you can no longer absorb more input -- [`XOF::absorb`]
-//! will throw a [`HashError::InvalidState`], but the SHAKE object will still be usable for squeezing
-//! as if the erroneous `absorb` call never happened.
+//! [`XOF`] extends [`Hash`], so SHAKE takes input through [`Hash::do_update`] like any other hash.
+//! Output is where they differ: [`XOF::into_output`] ends the input phase and returns an
+//! [`XofOutput`](bouncycastle_core::traits::XofOutput), whose
+//! [`do_output`](bouncycastle_core::traits::XofOutput::do_output) can be called as many times as you
+//! like, each call continuing one stream.
+//!
+//! Absorbing after output has begun is not an error you can make: `into_output` consumes the
+//! SHAKE, so there is no value left to call [`Hash::do_update`] on.
 //!
 //! The following code produces the same output as the previous example:
 //!```
-//! use bouncycastle_core::traits::XOF;
+//! use bouncycastle_core::traits::{Hash, XOF, XofOutput};
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let mut shake = sha3::SHAKE128::new();
-//! shake.absorb(data).expect("infallible before squeeze");
-//! let output_16byte: Vec<u8> = shake.squeeze(16);
+//! shake.do_update(data);
+//! let output_16byte: Vec<u8> = shake.into_output().do_output(16);
 //!
-//! let mut shake = sha3::SHAKE128::new();
+//! let mut shake = sha3::SHAKE128::new().into_output();
 //! let mut output_16KiB: Vec<u8> = vec![];
-//! for i in 0..16 { output_16KiB.extend_from_slice(&shake.squeeze(1024)) }
+//! for i in 0..16 { output_16KiB.extend_from_slice(&shake.do_output(1024)) }
 //! ```
+//!
+//! Because [`XOF`] extends [`Hash`], SHAKE can also be used wherever a hash is wanted:
+//! [`Hash::do_final`] produces the nominal digest size, 32 bytes for SHAKE128 and 64 for SHAKE256
+//! (the length at which the output carries the full security level), and the one-shot
+//! [`Hash::hash`] does the same.
 //!
 //! ## KDF
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,

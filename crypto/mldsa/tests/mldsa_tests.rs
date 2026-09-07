@@ -7,8 +7,8 @@ mod mldsa_tests {
         KeyMaterial256, KeyMaterialTrait, KeyType, do_hazardous_operations,
     };
     use bouncycastle_core::traits::{
-        RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-        Suspendable,
+        Hash, RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier,
+        Signer, Suspendable,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -1053,7 +1053,6 @@ mod mldsa_tests {
 
     #[test]
     fn serializable_state_mubuilder_rejects_wrong_variant() {
-        use bouncycastle_core::traits::XOF;
         use bouncycastle_sha3::SHAKE128;
 
         // A MuBuilder is always backed by SHAKE256. A serialized SHAKE128 state has the same length
@@ -1061,9 +1060,7 @@ mod mldsa_tests {
         // variant tag weren't checked -- SHAKE128 (tag 5) must be rejected by MuBuilder (SHAKE256,
         // tag 6).
         let mut shake128 = SHAKE128::new();
-        shake128
-            .absorb(b"Colorless green ideas sleep furiously")
-            .expect("absorb before squeeze is infallible");
+        shake128.do_update(b"Colorless green ideas sleep furiously");
         let serialized_128 = shake128.suspend();
 
         match MuBuilder::from_suspended(serialized_128) {

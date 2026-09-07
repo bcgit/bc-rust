@@ -11,7 +11,9 @@ use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_core::traits::{
+    Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF, XofOutput,
+};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -337,14 +339,15 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
         let mut K: Secret<[u8; 32]> = Secret::new();
 
         let mut h = H::default();
-        h.absorb(seed.ref_to_bytes()).expect("absorb before squeeze is infallible");
-        h.absorb(&(P::k as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
-        h.absorb(&(P::l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
-        let bytes_written = h.squeeze_out(&mut rho);
+        h.do_update(seed.ref_to_bytes());
+        h.do_update(&(P::k as u8).to_le_bytes());
+        h.do_update(&(P::l as u8).to_le_bytes());
+        let mut h = h.into_output();
+        let bytes_written = h.do_output_out(&mut rho);
         debug_assert_eq!(bytes_written, 32);
-        let bytes_written = h.squeeze_out(rho_prime.deref_mut());
+        let bytes_written = h.do_output_out(rho_prime.deref_mut());
         debug_assert_eq!(bytes_written, 64);
-        let bytes_written = h.squeeze_out(K.deref_mut());
+        let bytes_written = h.do_output_out(K.deref_mut());
         debug_assert_eq!(bytes_written, 32);
 
         (rho, rho_prime, K)

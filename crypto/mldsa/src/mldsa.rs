@@ -490,7 +490,8 @@ use crate::{
 use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable, XOF,
+    Algorithm, AlgorithmOID, Hash, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable,
+    XOF, XofOutput,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
@@ -690,15 +691,16 @@ impl<
         let (s1_hat, mut s2) = {
             // scope for h
             let mut h = H::default();
-            h.absorb(seed.ref_to_bytes()).expect("absorb before squeeze is infallible");
-            h.absorb(&(P::k as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
-            h.absorb(&(P::l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
-            let bytes_written = h.squeeze_out(&mut rho);
+            h.do_update(seed.ref_to_bytes());
+            h.do_update(&(P::k as u8).to_le_bytes());
+            h.do_update(&(P::l as u8).to_le_bytes());
+            let mut h = h.into_output();
+            let bytes_written = h.do_output_out(&mut rho);
             debug_assert_eq!(bytes_written, 32);
             let mut rho_prime: [u8; 64] = [0u8; 64];
-            let bytes_written = h.squeeze_out(&mut rho_prime);
+            let bytes_written = h.do_output_out(&mut rho_prime);
             debug_assert_eq!(bytes_written, 64);
-            let bytes_written = h.squeeze_out(&mut *K);
+            let bytes_written = h.do_output_out(&mut *K);
             debug_assert_eq!(bytes_written, 32);
 
             // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
@@ -784,11 +786,12 @@ impl<
             // scope for h
             // 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
             let mut h = H::new();
-            h.absorb(&**sk.K()).expect("absorb before squeeze is infallible");
-            h.absorb(&rnd).expect("absorb before squeeze is infallible");
-            h.absorb(mu).expect("absorb before squeeze is infallible");
+            h.do_update(&**sk.K());
+            h.do_update(&rnd);
+            h.do_update(mu);
             let mut rho_p_p = [0u8; 64];
-            h.squeeze_out(&mut rho_p_p);
+            let mut h = h.into_output();
+            h.do_output_out(&mut rho_p_p);
 
             rho_p_p
         };
@@ -841,9 +844,10 @@ impl<
                 // 15: 𝑐_tilde ← H(𝜇||w1Encode(𝐰1), 𝜆/4)
                 //  ▷ commitment hash
                 let mut hash = H::new();
-                hash.absorb(mu).expect("absorb before squeeze is infallible");
+                hash.do_update(mu);
                 w1.w1_encode_and_hash::<P>(&mut hash);
-                hash.squeeze_out(sig_val_c_tilde.as_mut());
+                let mut hash = hash.into_output();
+                hash.do_output_out(sig_val_c_tilde.as_mut());
             }
 
             // 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
@@ -1019,9 +1023,10 @@ impl<
         let c_tilde_p = {
             let mut c_tilde_p = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
             let mut hash = H::new();
-            hash.absorb(mu).expect("absorb before squeeze is infallible");
+            hash.do_update(mu);
             w1p.w1_encode_and_hash::<P>(&mut hash);
-            hash.squeeze_out(c_tilde_p.as_mut());
+            let mut hash = hash.into_output();
+            hash.do_output_out(c_tilde_p.as_mut());
 
             c_tilde_p
         };
@@ -1242,17 +1247,18 @@ impl<
             //   ▷ expand seed
             let (rho, rho_prime, K) = {
                 let mut h = H::default();
-                h.absorb(seed.ref_to_bytes()).expect("absorb before squeeze is infallible");
-                h.absorb(&(P::k as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
-                h.absorb(&(P::l as u8).to_le_bytes()).expect("absorb before squeeze is infallible");
+                h.do_update(seed.ref_to_bytes());
+                h.do_update(&(P::k as u8).to_le_bytes());
+                h.do_update(&(P::l as u8).to_le_bytes());
                 let mut rho = [0u8; 32];
-                let bytes_written = h.squeeze_out(&mut rho);
+                let mut h = h.into_output();
+                let bytes_written = h.do_output_out(&mut rho);
                 debug_assert_eq!(bytes_written, 32);
                 let mut rho_prime = [0u8; 64];
-                let bytes_written = h.squeeze_out(&mut rho_prime);
+                let bytes_written = h.do_output_out(&mut rho_prime);
                 debug_assert_eq!(bytes_written, 64);
                 let mut K: [u8; 32] = [0u8; 32];
-                let bytes_written = h.squeeze_out(&mut K);
+                let bytes_written = h.do_output_out(&mut K);
                 debug_assert_eq!(bytes_written, 32);
 
                 (rho, rho_prime, K)
@@ -1261,11 +1267,12 @@ impl<
             // Alg 7; 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
             let rho_p_p = {
                 let mut h = H::new();
-                h.absorb(&K).expect("absorb before squeeze is infallible");
-                h.absorb(&rnd).expect("absorb before squeeze is infallible");
-                h.absorb(mu).expect("absorb before squeeze is infallible");
+                h.do_update(&K);
+                h.do_update(&rnd);
+                h.do_update(mu);
                 let mut rho_p_p = [0u8; 64];
-                h.squeeze_out(&mut rho_p_p);
+                let mut h = h.into_output();
+                h.do_output_out(&mut rho_p_p);
 
                 rho_p_p
             };
@@ -1333,9 +1340,10 @@ impl<
                 // 15: 𝑐_tilde ← H(𝜇||w1Encode(𝐰1), 𝜆/4)
                 //  ▷ commitment hash
                 let mut hash = H::new();
-                hash.absorb(mu).expect("absorb before squeeze is infallible");
+                hash.do_update(mu);
                 w1.w1_encode_and_hash::<P>(&mut hash);
-                hash.squeeze_out(sig_val_c_tilde.as_mut());
+                let mut hash = hash.into_output();
+                hash.do_output_out(sig_val_c_tilde.as_mut());
             }
 
             // Alg 7; 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
@@ -1961,14 +1969,14 @@ impl MuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
         let mut mb = Self { h: H::new() };
-        mb.h.absorb(tr).expect("absorb before squeeze is infallible");
+        mb.h.do_update(tr);
 
         // Algorithm 2
         // 10: 𝑀′ ← BytesToBits(IntegerToBytes(0, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥) ∥ 𝑀
         // all done together
-        mb.h.absorb(&[0u8]).expect("absorb before squeeze is infallible");
-        mb.h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
-        mb.h.absorb(ctx).expect("absorb before squeeze is infallible");
+        mb.h.do_update(&[0u8]);
+        mb.h.do_update(&[ctx.len() as u8]);
+        mb.h.do_update(ctx);
 
         // now ready to absorb M
         Ok(mb)
@@ -1976,16 +1984,16 @@ impl MuBuilder {
 
     /// Stream a chunk of the message.
     pub fn do_update(&mut self, msg_chunk: &[u8]) {
-        self.h.absorb(msg_chunk).expect("absorb before squeeze is infallible");
+        self.h.do_update(msg_chunk);
     }
 
     /// Finalize and return the mu value.
-    pub fn do_final(mut self) -> [u8; 64] {
+    pub fn do_final(self) -> [u8; 64] {
         // Completion of
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.squeeze_out(&mut mu);
+        self.h.into_output().do_output_out(&mut mu);
 
         mu
     }
