@@ -17,21 +17,21 @@
 //! and run under `cargo test --release`.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::SecurityStrength;
-use bouncycastle_sm4::{Block, SM4};
+use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
+use bouncycastle_sm4::{BLOCK_LEN, SM4};
 
 /// Examples 1-3 key (and plaintext): `0123456789ABCDEFFEDCBA9876543210`.
 const KEY_1: [u8; 16] = [
     0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
 ];
 /// Examples 1-3 plaintext, which happens to equal the key.
-const PT_1: Block = KEY_1;
+const PT_1: [u8; BLOCK_LEN] = KEY_1;
 /// A.1.1 ciphertext.
-const CT_1: Block = [
+const CT_1: [u8; BLOCK_LEN] = [
     0x68, 0x1E, 0xDF, 0x34, 0xD2, 0x06, 0x96, 0x5E, 0x86, 0xB3, 0xE9, 0x4F, 0x53, 0x6E, 0x42, 0x46,
 ];
 /// A.1.3 ciphertext after 1,000,000 encryptions.
-const CT_1_ITERATED: Block = [
+const CT_1_ITERATED: [u8; BLOCK_LEN] = [
     0x59, 0x52, 0x98, 0xC7, 0xC6, 0xFD, 0x27, 0x1F, 0x04, 0x02, 0xF8, 0x04, 0xC3, 0x3D, 0x3F, 0x66,
 ];
 
@@ -40,15 +40,15 @@ const KEY_4: [u8; 16] = [
     0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
 ];
 /// Examples 4-6 plaintext: `000102030405060708090A0B0C0D0E0F`.
-const PT_4: Block = [
+const PT_4: [u8; BLOCK_LEN] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
 ];
 /// A.1.4 ciphertext.
-const CT_4: Block = [
+const CT_4: [u8; BLOCK_LEN] = [
     0xF7, 0x66, 0x67, 0x8F, 0x13, 0xF0, 0x1A, 0xDE, 0xAC, 0x1B, 0x3E, 0xA9, 0x55, 0xAD, 0xB5, 0x94,
 ];
 /// A.1.6 ciphertext after 1,000,000 encryptions.
-const CT_4_ITERATED: Block = [
+const CT_4_ITERATED: [u8; BLOCK_LEN] = [
     0x37, 0x9A, 0x96, 0xD0, 0xA6, 0xA5, 0xA5, 0x06, 0x0F, 0xB4, 0x60, 0xC7, 0x5D, 0x18, 0x79, 0xED,
 ];
 
@@ -120,7 +120,6 @@ fn a_1_6_example_6_one_million_encryptions() {
 /// The two-block trait defaults must agree with the single-block known answers, in both slots.
 #[test]
 fn pair_methods_reproduce_the_appendix_ciphertexts() {
-    use bouncycastle_core::traits::ElectronicCodeBook;
     let sm4 = SM4::new(&key_material(&KEY_1)).unwrap();
 
     let other = [0xAAu8; 16];
