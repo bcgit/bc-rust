@@ -32,6 +32,7 @@
 
 use bouncycastle::aria::{ARIA_128, ARIA_192, ARIA_256, LANES};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+use bouncycastle::core::traits::ElectronicCodeBook;
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {
