@@ -118,11 +118,35 @@
 //! ## HMAC
 //! See [hmac].
 //!
+//! # Cloning mid-stream
+//!
+//! Sometimes it is necessary to clone the state of the hash function after absorbing some input, for
+//! example, if you have absorbed a large file and need to hash it with two different trailer suffixes.
+//!
+//! The [`SHA3Internal`] struct impls [`Clone`] for this purpose.
+//!
+//! ```rust
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha3 as sha3;
+//!
+//! let mut sha3 = sha3::SHA3_256::new();
+//! sha3.do_update(b"Some input");
+//! // Clone it so that we can finish this instance, and then continue feeding in more input.
+//! let mut sha3_2 = sha3.clone();
+//!
+//! // Finish the first instance
+//! let output: Vec<u8> = sha3.do_final();
+//!
+//! // Feed more into the second instance then squeeze it
+//! sha3_2.do_update(b"Some more input");
+//! let output2 = sha3_2.do_final();
+//! ```
+//!
 //! # Suspending and resuming execution
 //!
-//! When hashing a large message, it can be advantageous to be able to suspend the operation
-//! to a cache and resume it later; for example if waiting for the message to stream over a slow network
-//! connection.
+//! Suspending is similar to cloning, but compresses the hash function's state into a byte array that can be
+//! cached and then resumed at a later time, potentially from a different machine. The typical usage for this
+//! is when waiting for a slow IO operation.
 //!
 //! For this reason, all SHA3 algorithms impl [`Suspendable`].
 //!
