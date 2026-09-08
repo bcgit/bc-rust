@@ -12,15 +12,23 @@
 
 mod common;
 
-use bouncycastle_aria::{
-    ARIA, ARIA_128, ARIA_192, ARIA_256, ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256, ARIAParams,
-    BLOCK_LEN, Block,
-};
+use bouncycastle_aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, ARIAParams, BLOCK_LEN, Block};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::bytes;
+
+/// The published CBC vectors are whole blocks, so they are checked against the mode
+/// itself rather than through the `ARIA_CBC_*` aliases: those carry a padding scheme and
+/// are the arbitrary-length API, which would append a padding block to an already-aligned
+/// message. `cbc_alias_tests.rs` covers the aliases.
+/// ARIA-128 in CBC mode, block-aligned and in place -- what `ARIA_CBC_128` wraps.
+type Aria128Cbc<Dir> = Cbc<ARIA_128, Dir, 16, 16>;
+/// ARIA-192 in CBC mode, block-aligned and in place -- what `ARIA_CBC_192` wraps.
+type Aria192Cbc<Dir> = Cbc<ARIA_192, Dir, 24, 16>;
+/// ARIA-256 in CBC mode, block-aligned and in place -- what `ARIA_CBC_256` wraps.
+type Aria256Cbc<Dir> = Cbc<ARIA_256, Dir, 32, 16>;
 
 /// The 160-byte plaintext shared by all six vectors.
 const PLAINTEXT: &str = "11111111aaaaaaaa11111111bbbbbbbb11111111cccccccc11111111dddddddd22222222aaaaaaaa22222222bbbbbbbb22222222cccccccc22222222dddddddd33333333aaaaaaaa33333333bbbbbbbb33333333cccccccc33333333dddddddd44444444aaaaaaaa44444444bbbbbbbb44444444cccccccc44444444dddddddd55555555aaaaaaaa55555555bbbbbbbb55555555cccccccc55555555dddddddd";
@@ -151,7 +159,7 @@ fn aria_128_cbc() {
     let key = key::<16>(KEY_128);
     check_cbc::<16, ARIA_128>("ARIA-128-CBC", &key, CBC_128);
     let mut data: [u8; 160] = bytes(CBC_128);
-    ARIA_CBC_128::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Aria128Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, bytes::<160>(PLAINTEXT));
 }
 
@@ -160,7 +168,7 @@ fn aria_192_cbc() {
     let key = key::<24>(KEY_192);
     check_cbc::<24, ARIA_192>("ARIA-192-CBC", &key, CBC_192);
     let mut data: [u8; 160] = bytes(CBC_192);
-    ARIA_CBC_192::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Aria192Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, bytes::<160>(PLAINTEXT));
 }
 
@@ -169,6 +177,6 @@ fn aria_256_cbc() {
     let key = key::<32>(KEY_256);
     check_cbc::<32, ARIA_256>("ARIA-256-CBC", &key, CBC_256);
     let mut data: [u8; 160] = bytes(CBC_256);
-    ARIA_CBC_256::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Aria256Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, bytes::<160>(PLAINTEXT));
 }
