@@ -212,6 +212,12 @@ where
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         let perm = P::new(key)?;
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
