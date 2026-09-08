@@ -71,11 +71,8 @@ use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
 
-/// The AES block length in bytes.
-pub(crate) const BLOCK_LEN: usize = 16;
-
 /// Bytes read from stdin per call: 1 KiB = 64 blocks, shared with the stream-mode commands.
-pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
+pub(crate) const CHUNK_LEN: usize = 1024;
 
 /// Which direction to run. Shared by cipher subcommands, -- see the specific subcommand's
 /// own `--help` (`bc-rust aes128-ccm --help` and friends) for what `encrypt`/`decrypt` actually do
@@ -271,7 +268,7 @@ pub(crate) fn start_encryptor<E, const INIT_DATA_LEN: usize>(
 /// the ciphertext; see [`start_encryptor`]. `aligned_mode` names a mode whose input must be a
 /// whole number of blocks, for the error that reports a partial one (ECB under `NoPadding`); it is
 /// `None` for a padded mode, which takes any length.
-pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize>(
+pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>(
     mut enc: E,
     generated_iv: Option<&[u8; INIT_DATA_LEN]>,
     output_hex: bool,
@@ -285,6 +282,7 @@ pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize>(
         write_bytes_or_hex(iv, output_hex);
     }
 
+    const { assert!(CHUNK_LEN.is_multiple_of(BLOCK_LEN), "the chunk must be whole blocks") };
     let mut out = [0u8; CHUNK_LEN];
     let total = stream_chunks(|data| {
         // Cannot fail: `out` has room for every whole block of `data` plus the fewer than
@@ -295,7 +293,7 @@ pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize>(
     });
 
     if let Some(mode) = aligned_mode {
-        check_aligned(mode, total);
+        check_aligned::<BLOCK_LEN>(mode, total);
     }
     // The padded final block; under `NoPadding` an aligned message has none, and this reports 0.
     let (last, last_len) = enc.do_encrypt_final().unwrap_or_else(|e| {
@@ -310,7 +308,7 @@ pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize>(
 /// Decrypts stdin to stdout through the worker `make_decryptor` gives for the init data (the IV):
 /// `iv` if it was supplied, else the first `INIT_DATA_LEN` bytes of input -- one block for CBC,
 /// nothing for ECB. `aligned_mode` is as for [`encrypt_stream`].
-pub(crate) fn decrypt_stream<D, const INIT_DATA_LEN: usize>(
+pub(crate) fn decrypt_stream<D, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>(
     iv: Option<[u8; INIT_DATA_LEN]>,
     make_decryptor: impl FnOnce(&[u8; INIT_DATA_LEN]) -> D,
     output_hex: bool,
@@ -345,7 +343,7 @@ pub(crate) fn decrypt_stream<D, const INIT_DATA_LEN: usize>(
     });
 
     if let Some(mode) = aligned_mode {
-        check_aligned(mode, total);
+        check_aligned::<BLOCK_LEN>(mode, total);
     }
     // Releases the block held back above, unpadded; under `NoPadding` all of it is data. A
     // padded ciphertext that is unaligned or has malformed padding fails here.
@@ -382,7 +380,7 @@ fn stream_chunks(mut process: impl FnMut(&[u8])) -> usize {
 /// Exits with an error if `total` is not a whole number of blocks, for a mode that is defined only
 /// on whole blocks and pads nothing. `NoPadding` would also refuse it at `do_*_final`, but without
 /// saying how many bytes were left over.
-fn check_aligned(mode: &str, total: usize) {
+fn check_aligned<const BLOCK_LEN: usize>(mode: &str, total: usize) {
     if !total.is_multiple_of(BLOCK_LEN) {
         // Everything before the misaligned tail has already been written (bar the one block a
         // decryptor holds back until `do_decrypt_final`), and in hex mode is

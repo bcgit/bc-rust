@@ -16,9 +16,9 @@
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::aes::{AES_BLOCK_LEN, AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::hazmat::ecb::ECB;
 use bouncycastle::cipher::padding::NoPadding;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
@@ -69,16 +69,16 @@ pub(crate) fn aes256_ecb_cmd(
 /// the loops write and read no IV, and `NoPadding` makes them refuse a partial final block.
 fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
 where
-    K: SymmetricEncryptionKey<KEY_LEN, 0, BLOCK_LEN>
-        + SymmetricDecryptionKey<KEY_LEN, 0, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, 0, AES_BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, 0, AES_BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
             // ECB has no IV: the constructor's RNG draws nothing, and nothing is written.
             let (enc, _) = start_encryptor(None, |rng| key.create_encryptor(rng));
-            encrypt_stream::<_, 0>(enc, None, output_hex, Some(MODE))
+            encrypt_stream::<_, 0, AES_BLOCK_LEN>(enc, None, output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => decrypt_stream::<_, 0>(
+        CipherDirection::Decrypt => decrypt_stream::<_, 0, AES_BLOCK_LEN>(
             None,
             |no_iv| key.create_decryptor(no_iv),
             output_hex,
