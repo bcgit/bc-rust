@@ -8,6 +8,8 @@ bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
 # Only for the SM4-CBC type alias in `cbc.rs`; the engine itself does not use it.
 bouncycastle-modes.workspace = true
+# Only for the padded CBC aliases in `cbc.rs`; the engine itself does not use it.
+bouncycastle-padding.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
