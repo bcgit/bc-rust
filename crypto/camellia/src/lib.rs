@@ -75,22 +75,27 @@
 //! ```
 //! use bouncycastle_camellia::Camellia_CBC_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_padding::PKCS7;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
-//! let plaintext = [0x5Au8; 48];
+//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
+//! let plaintext = [0x5Au8; 50];
 //!
-//! // Encryption is in place. The IV is generated for you and returned; there is no API for
-//! // supplying one.
-//! let mut data = plaintext;
-//! let iv = Camellia_CBC_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
-//! assert_ne!(data, plaintext);
-//! Camellia_CBC_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
-//! assert_eq!(data, plaintext);
+//! // The IV is generated for you and returned; there is no API for supplying one.
+//! let (iv, ciphertext) =
+//!     Camellia_CBC_256::<Encrypting, PKCS7>::encrypt(&key, &plaintext).expect("encryption");
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! let recovered =
+//!     Camellia_CBC_256::<Decrypting, PKCS7>::decrypt(&key, &iv, &ciphertext).expect("decryption");
+//! assert_eq!(recovered, plaintext);
 //! ```
+//!
+//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
+//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
 //!
 //! There is no one-shot static on the permutation, because `Camellia_128::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
