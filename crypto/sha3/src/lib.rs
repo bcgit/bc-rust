@@ -180,6 +180,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{Hash, KDF, Suspendable, XOF};
 // end of doc-only imports
 
+pub mod hmac;
 mod keccak;
 mod sha3;
 mod shake;

@@ -69,8 +69,12 @@
 #![forbid(missing_docs)]
 #![allow(private_bounds)]
 
+
 mod sha256;
 mod sha512;
+
+pub mod hkdf;
+pub mod hmac;
 
 pub use self::sha256::SHA256Internal;
 pub use self::sha512::SHA512Internal;

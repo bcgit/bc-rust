@@ -4,6 +4,8 @@
 //!
 //! # Usage
 //!
+//! This crate is not intended to be used directly, but rather to be instantiated with a hash function.
+//!
 //! The HMAC object (and the [`MAC`] trait in general) is designed in three phases:
 //!
 //! * The initialization phase where you specify the underlying hash function and the key material.
@@ -22,14 +24,21 @@
 //!
 //! # Examples
 //!
+//! todo -- crate docs need to be refactored:
+//!           * most of this should be moved to the SHA2 / SHA3 crates
+//!           * the docs here should be re-written to focus on how to construct an HMAC with a custom struct that impls [Hash] from outside the bc-rust lib.
+//!
 //! Instantiation of an HMAC object is straightforward:
 //!
 //! ```
-//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //! use bouncycastle_core::traits::MAC;
 //! use bouncycastle_core::key_material::{KeyMaterial256};
+//! use bouncycastle_rng::HashDRBG_SHA256;
 //!
-//! let key: KeyMaterial256 = HMAC_SHA256::keygen().expect("Will only fail if the system RNG can't start up.");
+//! let mut rng = HashDRBG_SHA256::new_from_os();
+//! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
+//!         .expect("Will only fail if the system RNG can't start up.");
 //!
 //! let hmac = HMAC_SHA256::new(&key).expect(
 //!         "Should succeed because key is long enough and tagged KeyType::MACKey");
@@ -37,7 +46,7 @@
 //!
 //! Alternatively, if you have key material from somewhere else, you can create the key manually, like so:
 //! ```
-//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //! use bouncycastle_core::traits::MAC;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //!
@@ -54,11 +63,14 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //! use bouncycastle_core::traits::MAC;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_rng::HashDRBG_SHA256;
 //!
-//! let key: KeyMaterial256 = HMAC_SHA256::keygen().expect("Will only fail if the system RNG can't start up.");
+//! let mut rng = HashDRBG_SHA256::new_from_os();
+//! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
+//!         .expect("Will only fail if the system RNG can't start up.");
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let hmac = HMAC_SHA256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
@@ -70,10 +82,13 @@
 //!
 //! ```
 //! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_rng::HashDRBG_SHA256;
 //!
-//! let key: KeyMaterial256 = HMAC_SHA256::keygen().expect("Will only fail if the system RNG can't start up.");
+//! let mut rng = HashDRBG_SHA256::new_from_os();
+//! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
+//!         .expect("Will only fail if the system RNG can't start up.");
 //!
 //! let mut hmac = HMAC_SHA256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
 //! hmac.do_update(b"Hello,");
@@ -100,7 +115,7 @@
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! // .verify() returns a bool: true if the MAC is valid, false otherwise.
-//! if bouncycastle_hmac::HMAC_SHA256::new(&key).unwrap()
+//! if bouncycastle_sha2::hmac::HMAC_SHA256::new(&key).unwrap()
 //!                 .verify(data,
 //!                         b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90
 //!                            \x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9"
@@ -118,7 +133,7 @@
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //!
 //! // For this example to work, we are hard-coding both the key and the MAC value that it generates
 //! // for this data.
@@ -151,7 +166,7 @@
 //! computed with different keys in the inner and outer pad. So make sure you resume with the same key!
 //!
 //!```rust
-//! use bouncycastle_hmac::HMAC_SHA256;
+//! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //! use bouncycastle_core::key_material::KeyMaterial256;
 //! use bouncycastle_core::traits::{MAC, SuspendableKeyed};
 //! use bouncycastle_core::key_material::KeyType;
@@ -184,150 +199,64 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError, SuspendableError};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, MAC, RNG, SecurityStrength, Suspendable, SuspendableKeyed,
+    Algorithm, AlgorithmOID, Hash, HashAlgParams, MAC, RNG, SecurityStrength, Suspendable,
+    SuspendableKeyed,
 };
-use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
-use bouncycastle_sha2::{
-    SHA224, SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
-};
-use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SUSPENDED_SHA3_STATE_LEN};
 use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 
-/*** String constants ***/
-///
-pub const HMAC_SHA224_NAME: &str = "HMAC-SHA224";
-///
-pub const HMAC_SHA256_NAME: &str = "HMAC-SHA256";
-///
-pub const HMAC_SHA384_NAME: &str = "HMAC-SHA384";
-///
-pub const HMAC_SHA512_NAME: &str = "HMAC-SHA512";
-///
-pub const HMAC_SHA3_224_NAME: &str = "HMAC-SHA3-224";
-///
-pub const HMAC_SHA3_256_NAME: &str = "HMAC-SHA3-256";
-///
-pub const HMAC_SHA3_384_NAME: &str = "HMAC-SHA3-384";
-///
-pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
+/*** Parameters ***/
 
-/*** Type aliases ***/
-/// Public type for HMAC using SHA224.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA224 = HMAC<SHA224, 64>;
-impl Algorithm for HMAC_SHA224 {
-    const ALG_NAME: &'static str = HMAC_SHA224_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
-}
-/// Defined in RFC 4231: id-hmacWithSHA224 { digestAlgorithm 8 }
-impl AlgorithmOID for HMAC_SHA224 {
-    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 8];
-    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x08];
-}
+/// The HMAC-specific parameters for one underlying hash function.
+///
+/// [`HMAC`] itself is fully generic: it works with any [`Hash`], including hashes supplied by crates
+/// outside this library. What HMAC cannot derive on its own is the *metadata* of the resulting
+/// construction -- this trait supplies exactly that metadata, so the blanket [`Algorithm`], [`AlgorithmOID`] and
+/// [`HMAC::keygen_from_rng`] can be impl'd generically rather than being written out once
+/// per hash.
+///
+/// Each hash crate is expected to implement this trait for its own hash types and publishes the resulting type
+/// alias. For example,`HMAC_SHA256` lives in `bouncycastle_sha2::hmac` and `HMAC_SHA3_256` in
+/// `bouncycastle_sha3::hmac`.
+///
+/// The block length and the generated-key length do not need to be restated here since they are already
+/// carried by the hash itself as [`HashAlgParams::BLOCK_LEN`] and [`HashAlgParams::OUTPUT_LEN`].
+pub trait HMACParams: Hash + HashAlgParams + Default {
+    /// The key type produced by [`HMAC::keygen_from_rng`], sized to this hash's output length.
+    ///
+    /// Implementors should set this to `KeyMaterial<{Self::OUTPUT_LEN}>`.
+    ///
+    // todo: once rust stabilizes generic_const_exprs, delete this and return
+    //     `KeyMaterial<{Self::OUTPUT_LEN}>` from `keygen_from_rng` instead.
+    type MACKey: KeyMaterialTrait + Default;
 
-/// Public type for HKDF using SHA256.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA256 = HMAC<SHA256, 64>;
-impl Algorithm for HMAC_SHA256 {
-    const ALG_NAME: &'static str = HMAC_SHA256_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
-/// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
-impl AlgorithmOID for HMAC_SHA256 {
-    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 9];
-    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x09];
+    /// The name of the HMAC over this hash, as reported by [`Algorithm::ALG_NAME`].
+    const HMAC_ALG_NAME: &'static str;
+    /// The strength claimed by the HMAC over this hash, as reported by
+    /// [`Algorithm::MAX_SECURITY_STRENGTH`].
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength;
+    /// The OID of the HMAC over this hash in component form, as reported by [`AlgorithmOID::OID`].
+    const HMAC_OID: &'static [u32];
+    /// The DER encoding of [`HMACParams::HMAC_OID`], as reported by [`AlgorithmOID::OID_DER`].
+    const HMAC_OID_DER: &'static [u8];
 }
 
-/// Public type for HKDF using SHA384.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA384 = HMAC<SHA384, 128>;
-impl Algorithm for HMAC_SHA384 {
-    const ALG_NAME: &'static str = HMAC_SHA384_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
-}
-/// Defined in RFC 4231: id-hmacWithSHA384 { digestAlgorithm 10 }
-impl AlgorithmOID for HMAC_SHA384 {
-    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 10];
-    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0a];
+impl<HASH: HMACParams, const KEY_BUF_LEN: usize> Algorithm for HMAC<HASH, KEY_BUF_LEN> {
+    const ALG_NAME: &'static str = HASH::HMAC_ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = HASH::HMAC_MAX_SECURITY_STRENGTH;
 }
 
-/// Public type for HKDF using SHA512.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA512 = HMAC<SHA512, 128>;
-impl Algorithm for HMAC_SHA512 {
-    const ALG_NAME: &'static str = HMAC_SHA512_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-}
-/// Defined in RFC 4231: id-hmacWithSHA512 { digestAlgorithm 11 }
-impl AlgorithmOID for HMAC_SHA512 {
-    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 11];
-    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0b];
-}
-
-/// Public type for HKDF using SHA3_224.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA3_224 = HMAC<SHA3_224, 144>;
-impl Algorithm for HMAC_SHA3_224 {
-    const ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
-impl AlgorithmOID for HMAC_SHA3_224 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0d];
-}
-
-/// Public type for HKDF using SHA3_256.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA3_256 = HMAC<SHA3_256, 136>;
-impl Algorithm for HMAC_SHA3_256 {
-    const ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
-impl AlgorithmOID for HMAC_SHA3_256 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0e];
-}
-
-/// Public type for HKDF using SHA3_384.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA3_384 = HMAC<SHA3_384, 104>;
-impl Algorithm for HMAC_SHA3_384 {
-    const ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
-impl AlgorithmOID for HMAC_SHA3_384 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0f];
-}
-
-/// Public type for HKDF using SHA3_512.
-#[allow(non_camel_case_types)]
-pub type HMAC_SHA3_512 = HMAC<SHA3_512, 72>;
-impl Algorithm for HMAC_SHA3_512 {
-    const ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-}
-/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
-impl AlgorithmOID for HMAC_SHA3_512 {
-    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
-    const OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
+impl<HASH: HMACParams, const KEY_BUF_LEN: usize> AlgorithmOID for HMAC<HASH, KEY_BUF_LEN> {
+    const OID: &'static [u32] = HASH::HMAC_OID;
+    const OID_DER: &'static [u8] = HASH::HMAC_OID_DER;
 }
 
 // The internal key buffer must be able to hold a key up to the *block length* of the underlying hash:
 // per RFC 2104, a key no longer than the block is used verbatim (only longer keys are pre-hashed down
 // to the output length). So the buffer size is a const parameter of the struct, set per hash to its
-// block length by the type aliases below. Block lengths (bytes): SHA-224/256 = 64, SHA-384/512 = 128,
-// SHA3-224 = 144, SHA3-256 = 136, SHA3-384 = 104, SHA3-512 = 72.
+// block length by the type aliases.
 //
 // The default is used only when `HMAC<HASH>` is written without an explicit buffer size; it is the
 // largest block length across all supported hashes, so it is always large enough.
@@ -545,24 +474,6 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
 
 /* SerializedState */
 
-/*** Serialized-state length constants ***/
-/// Length in bytes of the serialized state of [`HMAC_SHA224`].
-pub const SUSPENDED_HMAC_SHA224_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA256`].
-pub const SUSPENDED_HMAC_SHA256_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA384`].
-pub const SUSPENDED_HMAC_SHA384_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA512`].
-pub const SUSPENDED_HMAC_SHA512_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA3_224`].
-pub const SUSPENDED_HMAC_SHA3_224_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA3_256`].
-pub const SUSPENDED_HMAC_SHA3_256_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA3_384`].
-pub const SUSPENDED_HMAC_SHA3_384_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA3_512`].
-pub const SUSPENDED_HMAC_SHA3_512_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-
 /// HMAC is a keyed algorithm, so it implements [`SuspendableKeyed`] (rather than
 /// [`Suspendable`]) for suspending and resuming in-progress operations.
 /// The key is deliberately NOT written into the serialized
@@ -614,31 +525,26 @@ impl<
 
 /* KeyGen functions */
 
-// These need to be separate intrinsic impl's because there isn't a way to statically-type the
-// KeyMaterial<N> based on the HASH type.
-// Using a macro to cut down on code duplication.
-// todo: once rust supports const generics, we can remove the need for this macro and impl this directly
-//      on HMAC as `-> KeyMetarial<H::OUTPUT_LEN>`
-macro_rules! impl_hmac_keygen {
-    ($hash:ty, $block_len:literal, $n:literal, $drbg:ty) => {
-        impl HMAC<$hash, $block_len> {
-            /// Generate a key of the appropriate length for the given HMAC
-            pub fn keygen() -> Result<KeyMaterial<$n>, RNGError> {
-                let mut key = KeyMaterial::<$n>::new();
-                let mut os_rng = <$drbg>::new_from_os();
-                os_rng.fill_keymaterial_out(&mut key)?;
-                key.set_key_type(KeyType::MACKey)?;
-                Ok(key)
-            }
+impl<HASH: HMACParams, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
+    /// Generates a key of the appropriate length for this HMAC from the provided RNG, tagged
+    /// [`KeyType::MACKey`] and ready to hand to [`MAC::new`].
+    ///
+    /// The key length is the underlying hash's output length ([`HashAlgParams::OUTPUT_LEN`], carried
+    /// as [`HMACParams::MACKey`]); see that associated type for why.
+    ///
+    // Dev note: done this way to avoid this crate needing a dependency on the `bouncycastle-rng` crate,
+    //           which itself has a dependency on `bouncycastle-sha2` which depends on this hmac crate,
+    //           which creates a circular cargo dependency.
+    pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<HASH::MACKey, RNGError> {
+        // Refuse to generate a key from an RNG that cannot back the strength this HMAC claims;
+        // otherwise the key's tagged security strength would overstate its true entropy.
+        if rng.security_strength() < HASH::HMAC_MAX_SECURITY_STRENGTH {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm);
         }
-    };
-}
 
-impl_hmac_keygen!(SHA224, 64, 28, HashDRBG_SHA256);
-impl_hmac_keygen!(SHA256, 64, 32, HashDRBG_SHA256);
-impl_hmac_keygen!(SHA384, 128, 48, HashDRBG_SHA512);
-impl_hmac_keygen!(SHA512, 128, 64, HashDRBG_SHA512);
-impl_hmac_keygen!(SHA3_224, 144, 28, HashDRBG_SHA256);
-impl_hmac_keygen!(SHA3_256, 136, 32, HashDRBG_SHA256);
-impl_hmac_keygen!(SHA3_384, 104, 48, HashDRBG_SHA512);
-impl_hmac_keygen!(SHA3_512, 72, 64, HashDRBG_SHA512);
+        let mut key = HASH::MACKey::default();
+        rng.fill_keymaterial_out(&mut key)?;
+        key.set_key_type(KeyType::MACKey)?;
+        Ok(key)
+    }
+}
