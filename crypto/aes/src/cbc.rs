@@ -72,9 +72,9 @@
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
 //! arbitrary-length input and generate their own initialisation data.
 
-use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
-use crate::padded_mode::PaddedMode;
+use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_padding::PaddedMode;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -178,6 +178,7 @@ pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     16,
     BLOCK_LEN,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-192 in CBC mode with a padding scheme. See [`AES_CBC_128`].
@@ -205,6 +206,7 @@ pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     24,
     BLOCK_LEN,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-256 in CBC mode with a padding scheme. See [`AES_CBC_128`].
@@ -231,5 +233,6 @@ pub type AES_CBC_256<Dir, Pad> = <Dir as PaddedMode<
     Cbc<AES256Internal, Decrypting, 32, BLOCK_LEN>,
     Pad,
     32,
+    BLOCK_LEN,
     BLOCK_LEN,
 >>::Mode;
