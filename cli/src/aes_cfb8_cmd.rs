@@ -25,9 +25,9 @@
 //! plaintext byte, corrupts the following 16 bytes, and then decryption resynchronises. Do not
 //! decrypt data you have not authenticated separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::block_mode_cmd::{BlockModeAction, load_key};
 use crate::stream_mode_cmd::run_stream_mode;
-use bouncycastle::aes::{AES_128, AES_192, AES_256};
+use bouncycastle::aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cfb8, Decrypting, Encrypting};
