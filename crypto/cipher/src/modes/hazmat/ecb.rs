@@ -129,6 +129,12 @@ where
         P: 'k;
 
     fn encrypt_init<'k>(state: &'k Self::KeyState) -> Self::Encryptor<'k> {
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         Ecb::from_perm(state)
     }
 }
@@ -165,6 +171,12 @@ where
         state: &'k Self::KeyState,
         _rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; 0]), SymmetricCipherError> {
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         Ok((PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state)), []))
     }
 }
