@@ -36,15 +36,9 @@
 //! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
 
-use crate::aes_internal::AESInternal;
-use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
-use crate::bitslice::Block;
-use crate::padded_mode::PaddedMode;
-use crate::schedule::AESParams;
-use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::ElectronicCodeBook;
+use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle_padding::PaddedMode;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -109,6 +103,7 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     16,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-192 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
@@ -136,6 +131,7 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     24,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
@@ -163,6 +159,7 @@ pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     32,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {
