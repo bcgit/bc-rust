@@ -224,7 +224,6 @@ mod cfb;
 mod cfb8;
 mod ctr;
 mod ecb;
-mod padded_mode;
 mod round;
 mod sbox;
 mod schedule;
