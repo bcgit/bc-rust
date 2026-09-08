@@ -17,15 +17,23 @@
 
 mod common;
 
-use bouncycastle_camellia::{
-    BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256, Camellia_CBC_128, Camellia_CBC_192,
-    Camellia_CBC_256,
-};
+use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::bytes;
+
+/// The published CBC vectors are whole blocks, so they are checked against the mode
+/// itself rather than through the `Camellia_CBC_*` aliases: those carry a padding scheme and
+/// are the arbitrary-length API, which would append a padding block to an already-aligned
+/// message. `cbc_alias_tests.rs` covers the aliases.
+/// Camellia-128 in CBC mode, block-aligned and in place -- what `Camellia_CBC_128` wraps.
+type Camellia128Cbc<Dir> = Cbc<Camellia_128, Dir, 16, 16>;
+/// Camellia-192 in CBC mode, block-aligned and in place -- what `Camellia_CBC_192` wraps.
+type Camellia192Cbc<Dir> = Cbc<Camellia_192, Dir, 24, 16>;
+/// Camellia-256 in CBC mode, block-aligned and in place -- what `Camellia_CBC_256` wraps.
+type Camellia256Cbc<Dir> = Cbc<Camellia_256, Dir, 32, 16>;
 
 /// The IV of the first entry of every chain.
 const IV: &str = "000102030405060708090A0B0C0D0E0F";
@@ -134,12 +142,12 @@ fn camellia_128_cbc_chain() {
     let iv: [u8; 16] = bytes(IV_128_4);
     let mut data: [u8; 16] = bytes(PT[3]);
     let (mut enc, got_iv) =
-        Camellia_CBC_128::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv))
+        Camellia128Cbc::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv))
             .unwrap();
     assert_eq!(got_iv, iv);
     enc.do_encrypt(&mut data).unwrap();
     assert_eq!(data, bytes::<16>(CT_128_4), "CAMELLIA-128-CBC entry 4");
-    Camellia_CBC_128::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+    Camellia128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
     assert_eq!(data, bytes::<16>(PT[3]));
 }
 
@@ -154,7 +162,7 @@ fn camellia_192_cbc_chain() {
     );
     // And through the alias, one shot.
     let mut data = concat::<64>(&CT_192);
-    Camellia_CBC_192::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Camellia192Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, concat::<64>(&PT));
 }
 
@@ -168,6 +176,6 @@ fn camellia_256_cbc_chain() {
         &concat::<64>(&CT_256),
     );
     let mut data = concat::<64>(&CT_256);
-    Camellia_CBC_256::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Camellia256Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, concat::<64>(&PT));
 }
