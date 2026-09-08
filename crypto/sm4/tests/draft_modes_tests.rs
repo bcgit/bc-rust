@@ -6,7 +6,7 @@
 //! pair methods against published answers. (That is the only reason ECB appears in this crate;
 //! see the crate docs on why you must not use it to encrypt anything.)
 //!
-//! The CBC vectors go through [`SM4_CBC`], i.e. `bouncycastle-modes` over this permutation. There
+//! The CBC vectors go through `bouncycastle-modes`' `Cbc` over this permutation. There
 //! is no API for supplying an IV, so encryption is driven through
 //! [`BlockCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is the
 //! vector's IV, and the test asserts the returned init data really is that IV before comparing
@@ -19,8 +19,16 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_sm4::{BLOCK_LEN, Block, SM4, SM4_CBC};
+use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_sm4::{BLOCK_LEN, Block, KEY_LEN, SM4};
+
+/// CBC over SM4, block-aligned and in place -- what `SM4_CBC` wraps.
+///
+/// The A.2.2 vectors are whole blocks and are checked against the mode itself, not through the
+/// `SM4_CBC` alias: that alias carries a padding scheme, so it is the arbitrary-length API and
+/// would append a padding block to this already-aligned message. `cbc_alias_tests.rs` covers the
+/// alias.
+type Sm4Cbc<Dir> = Cbc<SM4, Dir, KEY_LEN, BLOCK_LEN>;
 
 /// The two plaintext blocks shared by every A.2 example.
 const PLAINTEXT: &str = "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffffaaaaaaaabbbbbbbb";
@@ -102,7 +110,7 @@ fn check_cbc(section: &str, key: &str, expected: &str) {
 
     // Encrypt, both blocks in one call, under the vector's IV.
     let (mut enc, got_iv) =
-        SM4_CBC::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv)).unwrap();
+        Sm4Cbc::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
     let mut data = pt;
     enc.do_encrypt(&mut data).unwrap();
@@ -110,7 +118,7 @@ fn check_cbc(section: &str, key: &str, expected: &str) {
 
     // Encrypt one block at a time.
     let (mut enc, _) =
-        SM4_CBC::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv)).unwrap();
+        Sm4Cbc::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv)).unwrap();
     let mut data = pt;
     let (chunks, _) = data.as_chunks_mut::<BLOCK_LEN>();
     for block in chunks.iter_mut() {
@@ -120,10 +128,10 @@ fn check_cbc(section: &str, key: &str, expected: &str) {
 
     // Decrypt with the IV as init data: one shot, and streaming.
     let mut data = ct;
-    SM4_CBC::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+    Sm4Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
     assert_eq!(data, pt, "{section} decrypt, one shot");
 
-    let mut dec = SM4_CBC::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = Sm4Cbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     let mut data = ct;
     let (chunks, _) = data.as_chunks_mut::<BLOCK_LEN>();
     for block in chunks.iter_mut() {
