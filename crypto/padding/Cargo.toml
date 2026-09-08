@@ -6,6 +6,8 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
+# Only for the `Encrypting` / `Decrypting` direction markers that `PaddedMode` projects from.
+bouncycastle-modes.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

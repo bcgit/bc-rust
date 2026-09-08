@@ -75,8 +75,11 @@
 #![forbid(missing_docs)]
 #![no_std]
 
-mod padded_block_cipher;
-pub use padded_block_cipher::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+mod padded;
+mod padded_mode;
+
+pub use padded::{PaddedDecryptor, PaddedEncryptor};
+pub use padded_mode::PaddedMode;
 
 use bouncycastle_core::errors::PaddingError;
 use bouncycastle_core::traits::BlockCipherPadding;
