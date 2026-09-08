@@ -38,9 +38,9 @@
 //! See [`PaddedMode`], which is the projection that lets `Dir` select between the encryptor and the
 //! decryptor adapter. `Dir` must be [`Encrypting`] or [`Decrypting`], as before.
 
-use crate::padded_mode::PaddedMode;
 use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle_padding::PaddedMode;
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -105,6 +105,7 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     16,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-192 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
@@ -132,6 +133,7 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     24,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
@@ -159,4 +161,5 @@ pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     32,
     0,
+    BLOCK_LEN,
 >>::Mode;
