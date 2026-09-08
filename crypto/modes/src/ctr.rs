@@ -416,6 +416,12 @@ where
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         Self::check_shape();
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         let perm = P::new(key)?;
         let nonce = random_iv::<INIT_DATA_LEN>(rng)?;
         Ok((Self::start(perm, nonce), nonce))
