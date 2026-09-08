@@ -158,6 +158,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, iv)), iv))
     }
@@ -196,6 +202,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Cbc::from_perm(state, iv), iv))
     }
