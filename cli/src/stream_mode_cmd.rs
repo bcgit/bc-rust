@@ -1,4 +1,5 @@
-//! Shared plumbing for the stream-cipher-mode subcommands: `aes{128,192,256}-{cfb,cfb8,ctr}`.
+//! Shared plumbing for the stream-cipher-mode subcommands: `aes{128,192,256}-{cfb,cfb8,ctr}` and
+//! `tdes-{cfb,cfb8,ctr}`.
 //!
 //! The stream-cipher counterpart of [`crate::block_mode_cmd`], and deliberately parallel to it:
 //! same key loading (reused directly from there), same IV convention, same `-x` hex output, same

@@ -1,10 +1,12 @@
-//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,ecb}`.
+//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,ecb}` and
+//! `tdes-{cbc,ecb}`.
 //!
 //! Everything here is mode-independent -- key loading, stdin framing, block-alignment enforcement,
 //! output formatting -- and is generic over the mode via [`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it, so the
-//! commands cannot drift apart on the parts that matter for correctness. The block length is a const
-//! parameter rather than a fixed 16, so the framing below serves any block cipher.
+//! [`BlockCipherDecryptor`]. `aes_cbc_cmd`, `aes_ecb_cmd`, `tdes_cbc_cmd` and `tdes_ecb_cmd` are thin
+//! dispatchers over it, so the commands cannot drift apart on the parts that matter for correctness.
+//! The block length is a const parameter -- 16 for AES, 8 for TDES -- so the framing below is
+//! written once for both.
 //!
 //! The CFB and CTR commands are stream ciphers and live in [`crate::stream_mode_cmd`] instead;
 //! they share
@@ -32,7 +34,8 @@
 //! # Input must be block-aligned
 //!
 //! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
-//! commands apply no padding, so input that is not a multiple of the block length (16 bytes for AES) is rejected rather than silently padded. (The CFB commands have no such requirement; see [`crate::stream_mode_cmd`].)
+//! commands apply no padding, so input that is not a multiple of the block length (16 bytes for AES,
+//! 8 for TDES) is rejected rather than silently padded. (The CFB commands have no such requirement; see [`crate::stream_mode_cmd`].)
 //! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
 //!
@@ -56,8 +59,8 @@ use std::io::{Read, Write};
 use std::process::exit;
 use std::{fs, io};
 
-/// Bytes processed per call: 1 KiB, matching the other streaming commands. That is 64 AES blocks;
-/// any block length the commands use must divide it, which `do_*` checks at
+/// Bytes processed per call: 1 KiB, matching the other streaming commands. That is 64 AES blocks
+/// or 128 TDES blocks; every block length the commands use divides it, which `do_*` checks at
 /// compile time.
 ///
 /// A full chunk goes through `do_*::<CHUNK_LEN>` in one call, in place, which for decryption means
@@ -69,7 +72,9 @@ pub(crate) const CHUNK_LEN: usize = 1024;
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum BlockModeAction {
     /// Encrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 a freshly generated IV, one block long (16 bytes for AES), is written as the first bytes of the output, and for CTR a nonce (12 bytes for AES), so that `decrypt` can read it back; ECB has neither and writes none. The
+    /// For CBC, CFB and CFB8 a freshly generated IV, one block long (16 bytes for AES, 8 for
+    /// TDES), is written as the first bytes of the output, and for CTR a nonce (12 bytes for AES,
+    /// 6 for TDES), so that `decrypt` can read it back; ECB has neither and writes none. The
     /// `-cbc` and `-ecb` commands need the input to be a multiple of the block length; `-cfb`,
     /// `-cfb8` and `-ctr` take any length. See the individual subcommand's help.
     Encrypt,
@@ -80,9 +85,20 @@ pub(crate) enum BlockModeAction {
     Decrypt,
 }
 
+/// The only action the `tdes2-*` commands offer. Two-key TDEA is disallowed for encryption (NIST
+/// SP 800-131A Rev 2 Table 1) and the library will not compile an encrypting mode over it, so the
+/// command line does not have the word: `tdes2-cbc encrypt` is rejected by the argument parser.
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum DecryptOnlyAction {
+    /// Decrypt stdin to stdout, exactly as the corresponding `tdes-*` command's `decrypt` does:
+    /// the IV or nonce is read from the leading bytes of the input, as written by whatever
+    /// legacy system produced the ciphertext.
+    Decrypt,
+}
+
 /// Loads the key from `--key` (hex) or `--key-file` (binary or hex), and checks its length.
 ///
-/// `KEY_LEN` is exact: each command selects one key length (AES has three), so a key of
+/// `KEY_LEN` is exact: each command selects one key length (AES has three, TDES one), so a key of
 /// the wrong length is a mistake rather than something to truncate or pad.
 pub(crate) fn load_key<const KEY_LEN: usize>(
     key: &Option<String>,
