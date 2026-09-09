@@ -48,11 +48,14 @@ pub(crate) const SHA512_H0: [u64; 8] = [
 /// Quoting the procedure:
 ///
 /// > Denote H(0)' to be the initial hash value of SHA-512 as specified in Section 5.3.5 above.
-/// > Denote H(0)'' to be the initial hash value computed below. H(0)'' is the IV for SHA-512/t.
 /// >
-/// > For i = 0 to 7 { Hi(0)' = Hi(0)' xor a5a5a5a5a5a5a5a5 (in hex). }
+/// > Denote H(0)'' to be the initial hash value computed below.
 /// >
-/// > H(0)'' = SHA-512("SHA-512/t") using H(0)' as the IV, where t is the specific truncation value.
+/// > H(0) is the IV for SHA-512/t.
+/// >
+/// > For i = 0 to 7 { Hi(0)'' = Hi(0)' xor a5a5a5a5a5a5a5a5(in hex). }
+/// >
+/// > H(0) = SHA-512 ("SHA-512/t") using H(0)'' as the IV, where t is the specific truncation value.
 ///
 /// where, per the same section, "t is any positive integer without a leading zero such that t < 512,
 /// and t is not 384", and "SHA-512/t" is the ASCII string with t written in decimal (so for t = 256
@@ -67,7 +70,7 @@ pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
     // FIPS 180-4 s. 5.3.6: "t is any positive integer without a leading zero such that t < 512, and t is not 384".
     assert!(t > 0 && t < 512 && t != 384, "FIPS 180-4 s. 5.3.6: 0 < t < 512 and t != 384");
 
-    // FIPS 180-4 s. 5.3.6: H(0)' = the SHA-512 initial hash value (s. 5.3.5), each word XOR a5a5a5a5a5a5a5a5.
+    // FIPS 180-4 s. 5.3.6: H(0)'' = H(0)', the SHA-512 initial hash value (s. 5.3.5), with each word XOR a5a5a5a5a5a5a5a5.
     let mut h = SHA512_H0;
     let mut i = 0;
     while i < 8 {
@@ -107,7 +110,7 @@ pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
         i += 1;
     }
 
-    // FIPS 180-4 s. 5.3.6: H(0)'' = SHA-512("SHA-512/t") using H(0)' as the IV, i.e. one pass of s. 6.4.2.
+    // FIPS 180-4 s. 5.3.6: H(0) = SHA-512("SHA-512/t") using H(0)'' as the IV, i.e. one pass of s. 6.4.2.
     compress_block(&mut h, &block);
     h
 }
