@@ -1,4 +1,4 @@
-use crate::Sha512Family;
+use crate::SHA512InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
@@ -225,12 +225,12 @@ const fn compress_block(s: &mut [u64; 8], block: &[u8; 128]) {
 }
 
 #[derive(Clone)]
-pub(crate) struct Sha512State<PARAMS: Sha512Family> {
+pub(crate) struct Sha512State<PARAMS: SHA512InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u64; 8]>,
 }
 
-impl<PARAMS: Sha512Family> Sha512State<PARAMS> {
+impl<PARAMS: SHA512InitValue> Sha512State<PARAMS> {
     pub(crate) fn new() -> Self {
         let mut h = Secret::<[u64; 8]>::new();
         // FIPS 180-4 s. 6.4.1 step 1: set the initial hash value H(0) (s. 5.3.4 / 5.3.5 / 5.3.6 per variant).
@@ -250,7 +250,7 @@ impl<PARAMS: Sha512Family> Sha512State<PARAMS> {
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
-pub struct SHA512Internal<PARAMS: Sha512Family> {
+pub struct SHA512Internal<PARAMS: SHA512InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     state: Sha512State<PARAMS>,
     // NOTE: FIPS 180-4 allows messages up to 2^128 bits; this counter supports 2^67 bits (2^64 bytes).
@@ -259,7 +259,7 @@ pub struct SHA512Internal<PARAMS: Sha512Family> {
     x_buf_off: usize,
 }
 
-impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     /// Creates a new SHA512 instance, ready for use.
     pub fn new() -> Self {
         Self {
@@ -272,7 +272,7 @@ impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.2, then writes the digest.
     ///
     /// The `num_partial_bits` (0..=7, validated by the caller) trailing message bits are the most
@@ -337,18 +337,18 @@ impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: Sha512Family> Default for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Default for SHA512Internal<PARAMS> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<PARAMS: Sha512Family> Algorithm for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Algorithm for SHA512Internal<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
-impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
         1024
@@ -449,7 +449,7 @@ impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
 /// Length in bytes of the serialized state of SHA384, SHA512, SHA512/224 and SHA512/256.
 pub const SUSPENDED_SHA512_STATE_LEN: usize = 204;
 
-impl<PARAMS: Sha512Family> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_SHA512_STATE_LEN] {
         debug_assert_eq!(SUSPENDED_SHA512_STATE_LEN, 204);
 

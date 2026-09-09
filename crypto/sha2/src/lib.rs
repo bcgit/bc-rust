@@ -150,9 +150,9 @@ pub type SHA256 = SHA256Internal<SHA256Params>;
 pub type SHA384 = SHA512Internal<SHA384Params>;
 /// Public type for SHA512.
 pub type SHA512 = SHA512Internal<SHA512Params>;
-/// Public type for the SHA-512/t family (FIPS 180-4 s. 5.3.6): SHA-512 with a t-specific initial
+/// Public type for the SHA-512/t truncating family (FIPS 180-4 s. 5.3.6): SHA-512 with a t-specific initial
 /// hash value, truncated to `T` bits. Only the NIST-approved truncations `T = 224` and `T = 256`
-/// can be instantiated; see [`SHA512_224`] and [`SHA512_256`].
+/// can be instantiated, enforced by the sealing trait `SHA512Family`; see [`SHA512_224`] and [`SHA512_256`].
 pub type SHA512t<const T: usize> = SHA512Internal<SHA512tParams<T>>;
 /// Public type for SHA512/224 (FIPS 180-4 s. 6.6).
 pub type SHA512_224 = SHA512t<224>;
@@ -160,32 +160,32 @@ pub type SHA512_224 = SHA512t<224>;
 pub type SHA512_256 = SHA512t<256>;
 
 /*** Param traits ***/
-/// Private trait on purpose so that only the NIST-approved params can be used.
-trait SHA2Params: HashAlgParams {}
-
 /// The SHA-256 family (SHA-224, SHA-256) shares one compression function and differs only in the
 /// initial hash value and the output truncation, so each member supplies its H(0) here.
-/// Private for the same reason as [`SHA2Params`].
-trait Sha256Family: SHA2Params {
+///
+/// Crate-private (aka "sealed") on purpose: it cannot be implemented outside this crate, so the
+/// only parameter sets that exist are the NIST-approved ones below.
+trait SHA256InitValue: HashAlgParams {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.2 / 5.3.3.
     const H0: [u32; 8];
 }
 
 /// The SHA-512 family (SHA-384, SHA-512, SHA-512/t) shares one compression function and differs
 /// only in the initial hash value and the output truncation, so each member supplies its H(0) here.
-/// Private for the same reason as [`SHA2Params`].
-trait Sha512Family: SHA2Params {
+///
+/// Crate-private for the same reason as [`SHA256InitValue`].
+trait SHA512InitValue: HashAlgParams {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.4 / 5.3.5 / 5.3.6.
     const H0: [u64; 8];
 }
 
 /// The public hash types expose the same parameters as their `*Params` marker, so the constants
 /// are defined exactly once (on the params struct) and forwarded here.
-impl<PARAMS: Sha256Family> HashAlgParams for SHA256Internal<PARAMS> {
+impl<PARAMS: SHA256InitValue> HashAlgParams for SHA256Internal<PARAMS> {
     const OUTPUT_LEN: usize = PARAMS::OUTPUT_LEN;
     const BLOCK_LEN: usize = PARAMS::BLOCK_LEN;
 }
-impl<PARAMS: Sha512Family> HashAlgParams for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> HashAlgParams for SHA512Internal<PARAMS> {
     const OUTPUT_LEN: usize = PARAMS::OUTPUT_LEN;
     const BLOCK_LEN: usize = PARAMS::BLOCK_LEN;
 }
@@ -208,8 +208,7 @@ impl AlgorithmOID for SHA224 {
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x04];
 }
-impl SHA2Params for SHA224Params {}
-impl Sha256Family for SHA224Params {
+impl SHA256InitValue for SHA224Params {
     // FIPS 180-4 s. 6.3 exception 1: H(0) as specified in s. 5.3.2.
     const H0: [u32; 8] = SHA224_H0;
 }
@@ -232,8 +231,7 @@ impl HashAlgParams for SHA256Params {
     const OUTPUT_LEN: usize = 32;
     const BLOCK_LEN: usize = 64;
 }
-impl SHA2Params for SHA256Params {}
-impl Sha256Family for SHA256Params {
+impl SHA256InitValue for SHA256Params {
     // FIPS 180-4 s. 6.2.1 step 1: H(0) as specified in s. 5.3.3.
     const H0: [u32; 8] = SHA256_H0;
 }
@@ -256,8 +254,7 @@ impl HashAlgParams for SHA384Params {
     const OUTPUT_LEN: usize = 48;
     const BLOCK_LEN: usize = 128;
 }
-impl SHA2Params for SHA384Params {}
-impl Sha512Family for SHA384Params {
+impl SHA512InitValue for SHA384Params {
     // FIPS 180-4 s. 6.5 exception 1: H(0) as specified in s. 5.3.4.
     const H0: [u64; 8] = SHA384_H0;
 }
@@ -280,8 +277,7 @@ impl AlgorithmOID for SHA512 {
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03];
 }
-impl SHA2Params for SHA512Params {}
-impl Sha512Family for SHA512Params {
+impl SHA512InitValue for SHA512Params {
     // FIPS 180-4 s. 6.4.1 step 1: H(0) as specified in s. 5.3.5.
     const H0: [u64; 8] = SHA512_H0;
 }
@@ -310,8 +306,7 @@ impl AlgorithmOID for SHA512_224 {
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x05];
 }
-impl SHA2Params for SHA512tParams<224> {}
-impl Sha512Family for SHA512tParams<224> {
+impl SHA512InitValue for SHA512tParams<224> {
     // FIPS 180-4 s. 6.6 exception 1: H(0) as specified in s. 5.3.6.1 (pinned against the words
     // listed there by tests/sha512t_h0_tests.rs).
     const H0: [u64; 8] = sha512t_h0(224);
@@ -332,8 +327,7 @@ impl AlgorithmOID for SHA512_256 {
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x06];
 }
-impl SHA2Params for SHA512tParams<256> {}
-impl Sha512Family for SHA512tParams<256> {
+impl SHA512InitValue for SHA512tParams<256> {
     // FIPS 180-4 s. 6.7 exception 1: H(0) as specified in s. 5.3.6.2 (pinned against the words
     // listed there by tests/sha512t_h0_tests.rs).
     const H0: [u64; 8] = sha512t_h0(256);

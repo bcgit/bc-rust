@@ -11,7 +11,7 @@
 //! `bouncycastle_core::suspendable_state::add_lib_ver`) followed by the eight 64-bit chaining
 //! words, little-endian.
 //!
-//! Note that a wrong H(0) is also caught end-to-end by the CAVP vectors in `cavp_tests.rs`, since
+//! Note that a wrong H(0) is also caught end-to-end by the CAVP vectors in `bc-test-data.rs`, since
 //! every SHA-512/224 and SHA-512/256 digest would then differ. These tests localize such a failure
 //! to the IV Generation Function itself.
 
