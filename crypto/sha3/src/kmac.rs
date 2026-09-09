@@ -184,6 +184,7 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
 /// Because the length is *not* bound here, output at one length really is a prefix of output at a
 /// longer one -- the opposite of fixed-length KMAC -- so [`Hash::do_final`] is the first
 /// [`Hash::output_len`] bytes of the same stream [`XOF::into_output`] produces.
+#[derive(Clone)]
 pub struct KMACXOFInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
     strength: SecurityStrength,

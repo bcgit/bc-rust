@@ -51,6 +51,7 @@ pub const DEFAULT_256BIT_XOF_NAME: &str = SHAKE256_NAME;
 
 /// Wrapper object for all algorithms that impl [`XOF`].
 #[non_exhaustive]
+#[derive(Clone)]
 pub enum XOFFactory {
     ///
     SHAKE128(sha3::SHAKE128),

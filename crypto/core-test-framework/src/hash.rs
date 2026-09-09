@@ -205,6 +205,40 @@ impl TestFrameworkHash {
             );
         }
 
+        /*** Clone: a hash mid-stream can be forked ***/
+        // A clone continues from the same absorbed prefix, so finishing the two on the same tail
+        // must give the same digest, and finishing them on different tails must not.
+        let (prefix, tail) = input.split_at(input.len() / 2);
+        let mut original = H::default();
+        original.do_update(prefix);
+        let mut forked = original.clone();
+        original.do_update(tail);
+        forked.do_update(tail);
+        assert_eq!(
+            original.do_final(),
+            expected_output,
+            "the original must be unaffected by cloning"
+        );
+        assert_eq!(
+            forked.do_final(),
+            expected_output,
+            "a clone must continue from the same absorbed prefix"
+        );
+
+        let mut original = H::default();
+        original.do_update(prefix);
+        let mut forked = original.clone();
+        original.do_update(tail);
+        forked.do_update(&[0xA5]);
+        forked.do_update(tail);
+        let original_out = original.do_final();
+        assert_eq!(original_out, expected_output);
+        assert_ne!(
+            forked.do_final(),
+            original_out,
+            "a clone must have its own state, not share the original's"
+        );
+
         // check that if you feed it an output slice that's bigger than it needs, that it doesn't touch the extra bytes.
         let mut message_digest = H::default();
         let mut buf = vec![0u8; 2 * H::OUTPUT_LEN];

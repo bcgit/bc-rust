@@ -198,7 +198,7 @@ trait SHA2Params: HashAlgParams {}
 /// The SHA-256 family (SHA-224, SHA-256) shares one compression function and differs only in the
 /// initial hash value and the output truncation, so each member supplies its H(0) here.
 /// Private for the same reason as [`SHA2Params`].
-trait Sha256Family: SHA2Params {
+trait Sha256Family: SHA2Params + Clone {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.2 / 5.3.3.
     const H0: [u32; 8];
 }
@@ -206,7 +206,7 @@ trait Sha256Family: SHA2Params {
 /// The SHA-512 family (SHA-384, SHA-512, SHA-512/t) shares one compression function and differs
 /// only in the initial hash value and the output truncation, so each member supplies its H(0) here.
 /// Private for the same reason as [`SHA2Params`].
-trait Sha512Family: SHA2Params {
+trait Sha512Family: SHA2Params + Clone {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.4 / 5.3.5 / 5.3.6.
     const H0: [u64; 8];
 }

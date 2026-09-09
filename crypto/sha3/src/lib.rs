@@ -325,7 +325,7 @@ pub type SHAKE256 = SHAKEInternal<SHAKE256Params>;
 /*** Param traits ***/
 
 /// Private trait on purpose so that only the NIST-approved params can be used.
-trait SHA3Params: HashAlgParams {
+trait SHA3Params: HashAlgParams + Clone {
     const SIZE: KeccakSize;
     /// A tag, unique across all SHA3 *and* SHAKE variants, identifying which variant produced a
     /// serialized state. Distinguishing same-rate variants (e.g. SHA3-256 vs SHAKE256) requires
@@ -428,7 +428,7 @@ impl AlgorithmOID for SHA3_512 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0a];
 }
 
-trait SHAKEParams: Algorithm {
+trait SHAKEParams: Algorithm + Clone {
     const SIZE: KeccakSize;
     /// See [`SHA3Params::STATE_TAG`]. Must be distinct from every SHA3 *and* SHAKE variant's tag.
     const STATE_TAG: u8;

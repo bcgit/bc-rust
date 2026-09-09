@@ -32,6 +32,7 @@ const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
 /// interchangeable `Hash` and re-chunks its input will silently compute something else.
 ///
 /// [`TupleHashXOFInternal`] is the arbitrary-output-length function of Sec 5.3.1.
+#[derive(Clone)]
 pub struct TupleHashInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
     output_len: usize,
@@ -140,6 +141,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
 /// output at one length really is a prefix of output at a longer one.
 ///
 /// [`Hash::do_update`] appends one tuple element, exactly as for [`TupleHashInternal`].
+#[derive(Clone)]
 pub struct TupleHashXOFInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
 }
