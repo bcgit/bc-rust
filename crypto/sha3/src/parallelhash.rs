@@ -12,6 +12,7 @@ const PARALLELHASH_FUNCTION_NAME: &[u8] = b"ParallelHash";
 
 /// The shared machinery of [`ParallelHashInternal`] and [`ParallelHashXOFInternal`]: the outer
 /// cSHAKE, the block buffer, and the count of blocks hashed so far.
+#[derive(Clone)]
 struct ParallelState<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
     block_size: usize,
@@ -102,6 +103,7 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
 ///
 /// Unlike [`crate::TUPLEHASH128`], `do_update` here *is* ordinary byte-wise streaming: the block
 /// boundaries come from `B`, not from how the caller chunks its calls.
+#[derive(Clone)]
 pub struct ParallelHashInternal<PARAMS: SHAKEParams> {
     state: ParallelState<PARAMS>,
     output_len: usize,
@@ -193,6 +195,7 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
 /// Binds `right_encode(0)` in place of the output length, so -- as for KMACXOF and TupleHashXOF --
 /// it is a different function from the fixed-length one, and its output at one length is a prefix
 /// of its output at a longer one.
+#[derive(Clone)]
 pub struct ParallelHashXOFInternal<PARAMS: SHAKEParams> {
     state: ParallelState<PARAMS>,
 }

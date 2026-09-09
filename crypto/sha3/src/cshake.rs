@@ -24,6 +24,7 @@ const CSHAKE_SUFFIX: (u8, usize) = (0x00, 2);
 /// general construction -- feeding empty strings through the `bytepad` branch would absorb a
 /// non-empty prefix and use a different separator, giving a different function. [`Self::new`]
 /// branches on it, and there is a test that the two agree.
+#[derive(Clone)]
 pub struct CSHAKEInternal<PARAMS: SHAKEParams> {
     shake: SHAKEInternal<PARAMS>,
     /// False when `N` and `S` are both empty, in which case this is plain SHAKE.

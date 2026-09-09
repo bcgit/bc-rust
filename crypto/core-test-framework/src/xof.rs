@@ -108,6 +108,37 @@ impl TestFrameworkXOF {
         assert_eq!(n, expected_output.len());
         assert_eq!(output, expected_output, "hash_xof_out must agree with hash_xof");
 
+        /*** Clone: a XOF mid-absorb can be forked ***/
+        // The clone continues from the same absorbed prefix and owns its own sponge.
+        let (prefix, tail) = input.split_at(input.len() / 2);
+        let mut original = make();
+        original.do_update(prefix);
+        let mut forked = original.clone();
+        original.do_update(tail);
+        forked.do_update(tail);
+        assert_eq!(
+            original.into_output().do_output(expected_output.len()),
+            expected_output,
+            "the original must be unaffected by cloning"
+        );
+        assert_eq!(
+            forked.into_output().do_output(expected_output.len()),
+            expected_output,
+            "a clone must continue from the same absorbed prefix"
+        );
+
+        let mut original = make();
+        original.do_update(prefix);
+        let mut forked = original.clone();
+        original.do_update(tail);
+        forked.do_update(&[0xA5]);
+        forked.do_update(tail);
+        assert_ne!(
+            forked.into_output().do_output(expected_output.len()),
+            original.into_output().do_output(expected_output.len()),
+            "a clone must have its own state, not share the original's"
+        );
+
         /*** the Hash half: a XOF is a hash ***/
         self.test_xof_as_hash(&make, input, expected_output);
 
