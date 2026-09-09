@@ -101,7 +101,7 @@
 //! applied to each input block to produce the output blocks."
 //!
 //! So [`Cfb<P, Decrypting, ..>`](Cfb) never calls [`ElectronicCodeBook::decrypt_block`],
-//! [`ElectronicCodeBook::decrypt_blocks2`] or [`ElectronicCodeBook::decrypt_blocks8`]. A
+//! [`ElectronicCodeBook::decrypt_2blocks`] or [`ElectronicCodeBook::decrypt_blocks8`]. A
 //! permutation could implement only the forward direction and still work here; `cfb_tests.rs` pins
 //! that with a toy whose inverse panics. The mode XORs a keystream in both directions, and the two
 //! directions differ only in which of the two values -- the byte that came in, or the byte that
@@ -118,7 +118,7 @@
 //! Constructing them "in series" is trivial here: with `s = b` the input blocks *are* the IV
 //! followed by the ciphertext blocks, already in hand. Decryption therefore walks the
 //! block-aligned part of the data in eights through [`ElectronicCodeBook::encrypt_blocks8`] and
-//! pairs through [`ElectronicCodeBook::encrypt_blocks2`], which a bit-sliced engine computes for
+//! pairs through [`ElectronicCodeBook::encrypt_2blocks`], which a bit-sliced engine computes for
 //! barely more than the cost of one block. Encryption cannot, and does not. Only the bytes that
 //! complete an open segment, and the bytes that open the final short one, go singly.
 
@@ -251,7 +251,7 @@ where
         self.buf = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::encrypt_blocks2`] call.
+    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::encrypt_2blocks`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Ij` the incoming input block, the `s = b` equations
     /// give
@@ -273,7 +273,7 @@ where
         debug_assert_eq!(self.used, BLOCK_LEN, "the block path needs a segment boundary");
         // The two input blocks, constructed in series: Ij (already held) and Ij+1 (= Cj).
         let mut o = [self.buf, blocks[0]];
-        self.perm.encrypt_blocks2(&mut o);
+        self.perm.encrypt_2blocks(&mut o);
 
         // I_{j+2} = Cj+1, read before the XOR below turns it into Pj+1.
         self.buf = blocks[1];

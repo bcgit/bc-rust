@@ -21,7 +21,7 @@
 //! 2150 AFT (Algorithm Functional Test) cases across all three key lengths and both directions,
 //! including 60 whose payload spans 2 to 10 blocks. Every case is run **twice**: once block by
 //! block, and once in pairs with a one-block remainder for odd lengths. The second pass is what
-//! puts the multi-block cases through `ElectronicCodeBook::decrypt_blocks2`, so the pair path is
+//! puts the multi-block cases through `ElectronicCodeBook::decrypt_2blocks`, so the pair path is
 //! exercised against real vectors and not only against the toy in `cbc_tests.rs`.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a

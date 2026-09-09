@@ -28,7 +28,7 @@
 //!
 //! This implementation uses that: decryption walks the ciphertext eight blocks at a time through
 //! [`ElectronicCodeBook::decrypt_blocks8`], then any remaining pair through
-//! [`ElectronicCodeBook::decrypt_blocks2`], then the last block singly. A bit-sliced engine
+//! [`ElectronicCodeBook::decrypt_2blocks`], then the last block singly. A bit-sliced engine
 //! computes a pair (AES) or eight blocks (SM4) for barely more than the cost of one. Encryption
 //! cannot, and does not.
 
@@ -94,7 +94,7 @@ where
         self.chain = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::decrypt_blocks2`] call.
+    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::decrypt_2blocks`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Cj-1` the incoming chaining value, Sec 6.2 gives
     ///
@@ -110,7 +110,7 @@ where
     #[inline]
     fn decrypt_pair(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         let [cj, cj1] = *blocks;
-        self.perm.decrypt_blocks2(blocks);
+        self.perm.decrypt_2blocks(blocks);
 
         let [pj, pj1] = blocks;
         for (b, chain) in pj.iter_mut().zip(self.chain.iter()) {
@@ -213,7 +213,7 @@ where
 
     /// The implementor hook (the flat `do_decrypt` is provided over it).
     ///
-    /// Walks the input in eights through `decrypt_blocks8`, then pairs through `decrypt_blocks2`,
+    /// Walks the input in eights through `decrypt_blocks8`, then pairs through `decrypt_2blocks`,
     /// then the at-most-one block left over: Sec 6.2's parallelism, in the units the permutation
     /// offers. `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
     /// indexing arithmetic. Never fails: CBC has no per-IV data limit.

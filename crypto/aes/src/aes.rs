@@ -20,7 +20,7 @@ pub const BLOCK_LEN: usize = 16;
 ///
 /// The only state is the key schedule, held in a [`Secret`] so that it is zeroized on drop and
 /// redacted from `Debug`. There is no direction flag and no initialisation state: both directions
-/// work from the same schedule (see [`ElectronicCodeBook::decrypt_blocks2`]), and a constructed value is always
+/// work from the same schedule (see [`ElectronicCodeBook::decrypt_2blocks`]), and a constructed value is always
 /// ready to use, so there is no `init()` or `reset()`.
 pub struct AES<P: AESParams> {
     schedule: Secret<P::Schedule>,
@@ -131,15 +131,15 @@ impl<P: AESParams> AES<P> {
     /// serially dependent.
     ///
     /// Infallible: a constructed [`AES`] is always usable and every input length is fixed.
-    pub(crate) fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+    pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
         self.encrypt2(&mut q);
         let (a, b) = blocks.split_at_mut(1);
         unpack(&q, &mut a[0], &mut b[0]);
     }
 
-    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_blocks2`].
-    pub(crate) fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
+    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_2blocks`].
+    pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
         self.decrypt2(&mut q);
         let (a, b) = blocks.split_at_mut(1);
@@ -150,7 +150,7 @@ impl<P: AESParams> AES<P> {
     ///
     /// The bit-sliced state always holds two blocks, so a single-block call duplicates the block
     /// into both halves and discards one result: it does twice the necessary work. Use
-    /// [`ElectronicCodeBook::encrypt_blocks2`] where two blocks are available.
+    /// [`ElectronicCodeBook::encrypt_2blocks`] where two blocks are available.
     ///
     /// Duplicating the block costs exactly what filling the unused half with zeros would, and it
     /// buys a free self-check: the two halves must come out equal, which `debug_assert` verifies.
@@ -227,7 +227,7 @@ impl Algorithm for AES_256 {
 // The three `ElectronicCodeBook` impls are one-line delegations to the inherent methods above. They
 // are written out longhand rather than generated, for the `cargo mutants` reason given above.
 //
-// Each overrides `encrypt_blocks2` / `decrypt_blocks2`, because a pair of blocks is exactly what
+// Each overrides `encrypt_2blocks` / `decrypt_2blocks`, because a pair of blocks is exactly what
 // the bit-sliced state holds: the pair form costs barely more than one block, where the default
 // (two single-block calls) would do four blocks' worth of work.
 
@@ -241,11 +241,11 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for AES_128 {
     fn decrypt_block(&self, block: &mut Block) {
         AES::decrypt_block(self, block)
     }
-    fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        AES::encrypt_blocks2(self, blocks)
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AES::encrypt_2blocks(self, blocks)
     }
-    fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        AES::decrypt_blocks2(self, blocks)
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AES::decrypt_2blocks(self, blocks)
     }
 }
 
@@ -259,11 +259,11 @@ impl ElectronicCodeBook<24, BLOCK_LEN> for AES_192 {
     fn decrypt_block(&self, block: &mut Block) {
         AES::decrypt_block(self, block)
     }
-    fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        AES::encrypt_blocks2(self, blocks)
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AES::encrypt_2blocks(self, blocks)
     }
-    fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        AES::decrypt_blocks2(self, blocks)
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AES::decrypt_2blocks(self, blocks)
     }
 }
 
@@ -277,11 +277,11 @@ impl ElectronicCodeBook<32, BLOCK_LEN> for AES_256 {
     fn decrypt_block(&self, block: &mut Block) {
         AES::decrypt_block(self, block)
     }
-    fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        AES::encrypt_blocks2(self, blocks)
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AES::encrypt_2blocks(self, blocks)
     }
-    fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        AES::decrypt_blocks2(self, blocks)
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AES::decrypt_2blocks(self, blocks)
     }
 }
 

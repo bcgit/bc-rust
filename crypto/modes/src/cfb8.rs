@@ -77,7 +77,7 @@
 //! successive states in series -- byte shuffling, no cipher calls -- and then run the forward
 //! ciphers together. This implementation does exactly that, in eights through
 //! [`ElectronicCodeBook::encrypt_blocks8`] and then pairs through
-//! [`ElectronicCodeBook::encrypt_blocks2`], which is where a bit-sliced engine earns back a large
+//! [`ElectronicCodeBook::encrypt_2blocks`], which is where a bit-sliced engine earns back a large
 //! part of what the mode costs. Encryption cannot: `Ij` needs `C_{j-1}`, which is the output of the
 //! previous cipher call.
 
@@ -263,7 +263,7 @@ where
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
-            self.decrypt_batch(pair, P::encrypt_blocks2);
+            self.decrypt_batch(pair, P::encrypt_2blocks);
         }
         for byte in tail.iter_mut() {
             let c = *byte;

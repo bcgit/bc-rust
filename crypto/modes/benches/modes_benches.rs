@@ -5,7 +5,7 @@
 //! depends on the previous output), so it can only ever use the single-block path. *Decryption* in
 //! both is parallel, and this implementation hands blocks to the permutation's batch methods --
 //! eights first, then pairs, then the remainder singly: for CBC that is `decrypt_blocks8` /
-//! `decrypt_blocks2`, for CFB it is `encrypt_blocks8` / `encrypt_blocks2`, since CFB uses the
+//! `decrypt_2blocks`, for CFB it is `encrypt_blocks8` / `encrypt_2blocks`, since CFB uses the
 //! forward function in both directions. AES overrides only the pair form, so its eights are four
 //! pairs. With the bit-sliced AES, whose two-block path costs barely more than one block,
 //! decryption should therefore run at roughly twice the throughput of encryption. That gap is the
@@ -68,7 +68,7 @@ type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, BLOCK_LEN>;
 /// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES_128, ..>` against
 /// `Cbc<UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
 /// call granularity, same amount of data movement -- so the difference is attributable to
-/// `decrypt_blocks2` and nothing else.
+/// `decrypt_2blocks` and nothing else.
 ///
 /// Comparing `N = 1` against `N = 8` does *not* isolate it: encryption, which can never pair, also
 /// speeds up substantially between those two, so call granularity dominates that comparison.
@@ -89,7 +89,7 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
         <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
-    // encrypt_blocks2 / decrypt_blocks2 deliberately left as the trait defaults.
+    // encrypt_2blocks / decrypt_2blocks deliberately left as the trait defaults.
 }
 
 type UnpairedAes128Cbc<Dir> = Cbc<UnpairedAes128, Dir, 16, BLOCK_LEN>;
@@ -145,7 +145,7 @@ fn bench_aes128(c: &mut Criterion) {
         )
     });
 
-    // ---- decryption: parallel, uses decrypt_blocks2 for every pair ----
+    // ---- decryption: parallel, uses decrypt_2blocks for every pair ----
     let (mut enc, iv) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
@@ -169,7 +169,7 @@ fn bench_aes128(c: &mut Criterion) {
     });
 
     // N=2 is one pair and N=8 one eight (four pairs, for AES), so every block goes through
-    // decrypt_blocks2.
+    // decrypt_2blocks.
     group.bench_function("16KiB decrypt -- N=2 (all pairs)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
@@ -220,8 +220,8 @@ fn bench_aes128(c: &mut Criterion) {
     });
 
     // The controlled comparison: identical N, identical cipher, pair methods overridden vs not.
-    // This pair of numbers -- and only this pair -- measures what `decrypt_blocks2` buys.
-    group.bench_function("16KiB decrypt -- N=8, pair path (blocks2 overridden)", |b| {
+    // This pair of numbers -- and only this pair -- measures what `decrypt_2blocks` buys.
+    group.bench_function("16KiB decrypt -- N=8, pair path (2blocks overridden)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -368,7 +368,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         });
     }
 
-    // ---- decryption: parallel, and uses `encrypt_blocks8` / `encrypt_blocks2` -- the FORWARD
+    // ---- decryption: parallel, and uses `encrypt_blocks8` / `encrypt_2blocks` -- the FORWARD
     // batch methods ----
     let (mut enc, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = flat.clone();
@@ -401,8 +401,8 @@ fn bench_cfb_aes128(c: &mut Criterion) {
     }
 
     // The controlled comparison: identical N, identical cipher, pair methods overridden vs not.
-    // This pair of numbers -- and only this pair -- measures what `encrypt_blocks2` buys CFB.
-    group.bench_function("16KiB decrypt -- N=8, pair path (blocks2 overridden)", |b| {
+    // This pair of numbers -- and only this pair -- measures what `encrypt_2blocks` buys CFB.
+    group.bench_function("16KiB decrypt -- N=8, pair path (2blocks overridden)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -485,7 +485,7 @@ fn bench_cfb_aes256(c: &mut Criterion) {
 /// CFB8: one forward cipher per byte, so ~1/16 of CFB's throughput on a 16-byte block.
 ///
 /// Encryption is strictly serial. Decryption builds its input blocks in series and then runs them
-/// through `encrypt_blocks8` / `encrypt_blocks2` (SP 800-38A Sec 6.3's parallel decryption), so it
+/// through `encrypt_blocks8` / `encrypt_2blocks` (SP 800-38A Sec 6.3's parallel decryption), so it
 /// should be substantially faster than encryption -- the same batch effect CBC and CFB show, at
 /// byte granularity.
 fn bench_cfb8_aes128(c: &mut Criterion) {

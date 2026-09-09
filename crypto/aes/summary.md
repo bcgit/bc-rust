@@ -166,8 +166,8 @@ Per-call stack usage is independent of key length: 32 B of bit-sliced state for 
 AES_128::new(&KeyMaterial<16>) -> Result<Self, SymmetricCipherError>   // and 24 / 32
 aes.encrypt_block(&mut [u8; 16])          // infallible
 aes.decrypt_block(&mut [u8; 16])
-aes.encrypt_blocks2(&mut [[u8; 16]; 2])   // the natural unit of work
-aes.decrypt_blocks2(&mut [[u8; 16]; 2])
+aes.encrypt_2blocks(&mut [[u8; 16]; 2])   // the natural unit of work
+aes.decrypt_2blocks(&mut [[u8; 16]; 2])
 ```
 
 No `init()`, no `reset()`, no direction flag: constructors set up state and a constructed value is
@@ -175,7 +175,7 @@ always ready. There are no one-shot statics on the permutation because
 `AES_128::new(&key)?.encrypt_block(..)` already *is* the one shot; data-level one-shots belong to the
 modes, which take arbitrary-length input and generate their own initialisation data.
 
-`encrypt_blocks2` / `decrypt_blocks2` are the pair form and roughly double throughput. A
+`encrypt_2blocks` / `decrypt_2blocks` are the pair form and roughly double throughput. A
 single-block call duplicates the block into both halves and discards one result, so it does twice
 the necessary work — modes whose blocks are independent (CTR, and the decrypt direction of CBC and
 CFB) should prefer the pair form; CBC *encryption* cannot, since its blocks are serially dependent.
@@ -410,7 +410,7 @@ files (see the ML-KEM and ML-DSA suites).
 
 | Item | Why |
 |---|---|
-| `ElectronicCodeBook` trait impls, and `encrypt_blocks2`/`decrypt_blocks2` as trait methods | The trait does not exist in `crypto/core`, which has the mode-level `BlockCipher` / `BlockCipherEncryptor` / `BlockCipherDecryptor`. Introducing it is the plan's separate "PR A". The two-block entry points are inherent methods for now; promoting them to provided trait methods is a one-line delegation once the trait lands. |
+| `ElectronicCodeBook` trait impls, and `encrypt_2blocks`/`decrypt_2blocks` as trait methods | The trait does not exist in `crypto/core`, which has the mode-level `BlockCipher` / `BlockCipherEncryptor` / `BlockCipherDecryptor`. Introducing it is the plan's separate "PR A". The two-block entry points are inherent methods for now; promoting them to provided trait methods is a one-line delegation once the trait lands. |
 | `core-test-framework` conformance test | Follows from the above — there is no test suite for a raw permutation yet. |
 | ACVP MCT (Monte Carlo) groups — 6 cases | Their expected `resultsArray` comes from a chained key/plaintext update rule defined in the ACVP AES specification, not in FIPS 197. Implementing it from anything other than that specification would be guesswork. The test reports the skip count so the gap is visible rather than silent. |
 | CLI subcommand | A bare permutation only does ECB. `aes128-cbc-*` / `-cfb-*` belong with the modes crate. |

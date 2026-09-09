@@ -160,21 +160,21 @@ fn ecb_pairwise(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
             let km = cipher_key::<16>(key);
             let aes = AES_128::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
+                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
             });
         }
         24 => {
             let km = cipher_key::<24>(key);
             let aes = AES_192::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
+                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
             });
         }
         32 => {
             let km = cipher_key::<32>(key);
             let aes = AES_256::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
+                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
             });
         }
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
@@ -253,13 +253,13 @@ fn acvp_aes_ecb_known_answer_tests() {
             assert_eq!(
                 ecb_pairwise(&key, &pt, true),
                 ct,
-                "tcId {tc_id}: AES-{} encrypt via encrypt_blocks2",
+                "tcId {tc_id}: AES-{} encrypt via encrypt_2blocks",
                 key.len() * 8
             );
             assert_eq!(
                 ecb_pairwise(&key, &ct, false),
                 pt,
-                "tcId {tc_id}: AES-{} decrypt via decrypt_blocks2",
+                "tcId {tc_id}: AES-{} decrypt via decrypt_2blocks",
                 key.len() * 8
             );
 

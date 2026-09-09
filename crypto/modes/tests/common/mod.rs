@@ -80,7 +80,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
 /// A deliberately broken toy whose pair methods **swap** their two results.
 ///
 /// Used to prove that the mode really does take the pair path: with this permutation, a CBC
-/// decryptor that uses `decrypt_blocks2` must produce something other than the correct plaintext.
+/// decryptor that uses `decrypt_2blocks` must produce something other than the correct plaintext.
 /// If a test using this still round-trips, the pair path is dead code and the coverage claimed for
 /// it is false.
 ///
@@ -107,13 +107,13 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
         self.inner.decrypt_block(block);
     }
 
-    fn encrypt_blocks2(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
         self.inner.encrypt_block(&mut blocks[0]);
         self.inner.encrypt_block(&mut blocks[1]);
         blocks.swap(0, 1);
     }
 
-    fn decrypt_blocks2(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
         self.inner.decrypt_block(&mut blocks[0]);
         self.inner.decrypt_block(&mut blocks[1]);
         blocks.swap(0, 1);
@@ -123,7 +123,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
 /// A toy whose **inverse cipher function panics**.
 ///
 /// SP 800-38A Sec 6.3 applies the forward cipher function in both directions of CFB, so a correct
-/// `Cfb` never touches `decrypt_block`, `decrypt_blocks2` or `decrypt_blocks8`. Running a full CFB round trip over this
+/// `Cfb` never touches `decrypt_block`, `decrypt_2blocks` or `decrypt_blocks8`. Running a full CFB round trip over this
 /// permutation turns that claim into a test: if either decryption entry point is ever reached, the
 /// test panics with the message below rather than quietly producing a right answer for the wrong
 /// reason.
@@ -154,11 +154,11 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
         panic!("CFB must never call the inverse cipher function (SP 800-38A Sec 6.3)");
     }
 
-    fn encrypt_blocks2(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
-        self.inner.encrypt_blocks2(blocks);
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+        self.inner.encrypt_2blocks(blocks);
     }
 
-    fn decrypt_blocks2(&self, _blocks: &mut [[u8; TOY_LEN]; 2]) {
+    fn decrypt_2blocks(&self, _blocks: &mut [[u8; TOY_LEN]; 2]) {
         panic!("CFB must never call the inverse cipher pair function (SP 800-38A Sec 6.3)");
     }
 
