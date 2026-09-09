@@ -6,7 +6,7 @@
 
 mod common;
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
@@ -370,20 +370,20 @@ fn a_key_of_the_wrong_type_is_rejected() {
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<Cbc<Aes128, Encrypting, 16, 16>>(), 176 + 16);
-    assert_eq!(size_of::<Cbc<Aes192, Encrypting, 24, 16>>(), 208 + 16);
-    assert_eq!(size_of::<Cbc<Aes256, Encrypting, 32, 16>>(), 240 + 16);
+    assert_eq!(size_of::<Cbc<AES_128, Encrypting, 16, 16>>(), 176 + 16);
+    assert_eq!(size_of::<Cbc<AES_192, Encrypting, 24, 16>>(), 208 + 16);
+    assert_eq!(size_of::<Cbc<AES_256, Encrypting, 32, 16>>(), 240 + 16);
 
     // The direction marker is free, and does not change the layout.
     assert_eq!(
-        size_of::<Cbc<Aes128, Encrypting, 16, 16>>(),
-        size_of::<Cbc<Aes128, Decrypting, 16, 16>>()
+        size_of::<Cbc<AES_128, Encrypting, 16, 16>>(),
+        size_of::<Cbc<AES_128, Decrypting, 16, 16>>()
     );
     assert_eq!(size_of::<Encrypting>(), 0);
     assert_eq!(size_of::<Decrypting>(), 0);
 
     // ...and the general rule the docs state.
-    assert_eq!(size_of::<Cbc<Aes256, Encrypting, 32, 16>>(), size_of::<Aes256>() + 16);
+    assert_eq!(size_of::<Cbc<AES_256, Encrypting, 32, 16>>(), size_of::<AES_256>() + 16);
 }
 
 /// The one-shots (`encrypt` / `decrypt` on a `[u8; LEN]`, in place) must produce exactly what the

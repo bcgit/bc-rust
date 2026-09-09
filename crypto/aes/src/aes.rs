@@ -3,7 +3,7 @@
 use crate::bitslice::{Block, Planes, pack, unpack};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
 use crate::sbox::{inv_sbox, sbox};
-use crate::schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams, expand, round_key};
+use crate::schedule::{AES128Params, AES192Params, AES256Params, AESParams, expand, round_key};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
@@ -14,7 +14,7 @@ pub const BLOCK_LEN: usize = 16;
 
 /// The AES keyed permutation, parameterised by key length.
 ///
-/// Use the aliases [`Aes128`], [`Aes192`] and [`Aes256`] rather than naming this directly.
+/// Use the aliases [`AES_128`], [`AES_192`] and [`AES_256`] rather than naming this directly.
 /// `P` is sealed to the three parameter sets of FIPS 197 Sec 6.1, so no fourth instantiation
 /// exists.
 ///
@@ -22,18 +22,21 @@ pub const BLOCK_LEN: usize = 16;
 /// redacted from `Debug`. There is no direction flag and no initialisation state: both directions
 /// work from the same schedule (see [`ElectronicCodeBook::decrypt_blocks2`]), and a constructed value is always
 /// ready to use, so there is no `init()` or `reset()`.
-pub struct Aes<P: AesParams> {
+pub struct AES<P: AESParams> {
     schedule: Secret<P::Schedule>,
 }
 
 /// AES-128: 16-byte key, 10 rounds (FIPS 197 Sec 6.1).
-pub type Aes128 = Aes<Aes128Params>;
+#[allow(non_camel_case_types)]
+pub type AES_128 = AES<AES128Params>;
 /// AES-192: 24-byte key, 12 rounds (FIPS 197 Sec 6.1).
-pub type Aes192 = Aes<Aes192Params>;
+#[allow(non_camel_case_types)]
+pub type AES_192 = AES<AES192Params>;
 /// AES-256: 32-byte key, 14 rounds (FIPS 197 Sec 6.1).
-pub type Aes256 = Aes<Aes256Params>;
+#[allow(non_camel_case_types)]
+pub type AES_256 = AES<AES256Params>;
 
-impl<P: AesParams> Aes<P> {
+impl<P: AESParams> AES<P> {
     /// Checks a key is fit to use before it is expanded.
     ///
     /// The key must be tagged [`KeyType::SymmetricCipherKey`], must be exactly `P::KEY_LEN` bytes
@@ -94,7 +97,7 @@ impl<P: AesParams> Aes<P> {
     /// the two the other way round and needs a separate schedule with INVMIXCOLUMNS() applied to
     /// each round key (Algorithm 5, KEYEXPANSIONEIC()).
     ///
-    /// Following Algorithm 3 is therefore what allows one [`Aes`] value to encrypt *and* decrypt
+    /// Following Algorithm 3 is therefore what allows one [`AES`] value to encrypt *and* decrypt
     /// from a single stored schedule, with no second copy and no transformation at construction
     /// time -- which is the whole reason this crate can offer both directions at 176-240 bytes of
     /// state.
@@ -127,7 +130,7 @@ impl<P: AesParams> Aes<P> {
     /// the decryption direction of CBC and CFB, but *not* CBC encryption, whose blocks are
     /// serially dependent.
     ///
-    /// Infallible: a constructed [`Aes`] is always usable and every input length is fixed.
+    /// Infallible: a constructed [`AES`] is always usable and every input length is fixed.
     pub(crate) fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
         self.encrypt2(&mut q);
@@ -177,7 +180,7 @@ impl<P: AesParams> Aes<P> {
 // Each `new` differs only in the `KeyMaterial<N>` capacity it accepts, which is what makes a
 // wrong-length key a compile error at the call site rather than a runtime error.
 
-impl Aes128 {
+impl AES_128 {
     /// Expands a 16-byte key into an AES-128 schedule.
     ///
     /// # Errors
@@ -186,38 +189,38 @@ impl Aes128 {
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     pub(crate) fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<Aes128Params>(key.ref_to_bytes()) })
+        Ok(Self { schedule: expand::<AES128Params>(key.ref_to_bytes()) })
     }
 }
 
-impl Aes192 {
-    /// Expands a 24-byte key into an AES-192 schedule. See [`Aes128::new`] for the error cases.
+impl AES_192 {
+    /// Expands a 24-byte key into an AES-192 schedule. See [`AES_128::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<Aes192Params>(key.ref_to_bytes()) })
+        Ok(Self { schedule: expand::<AES192Params>(key.ref_to_bytes()) })
     }
 }
 
-impl Aes256 {
-    /// Expands a 32-byte key into an AES-256 schedule. See [`Aes128::new`] for the error cases.
+impl AES_256 {
+    /// Expands a 32-byte key into an AES-256 schedule. See [`AES_128::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<Aes256Params>(key.ref_to_bytes()) })
+        Ok(Self { schedule: expand::<AES256Params>(key.ref_to_bytes()) })
     }
 }
 
-impl Algorithm for Aes128 {
-    const ALG_NAME: &'static str = Aes128Params::ALG_NAME;
+impl Algorithm for AES_128 {
+    const ALG_NAME: &'static str = AES128Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl Algorithm for Aes192 {
-    const ALG_NAME: &'static str = Aes192Params::ALG_NAME;
+impl Algorithm for AES_192 {
+    const ALG_NAME: &'static str = AES192Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
-impl Algorithm for Aes256 {
-    const ALG_NAME: &'static str = Aes256Params::ALG_NAME;
+impl Algorithm for AES_256 {
+    const ALG_NAME: &'static str = AES256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
@@ -228,61 +231,61 @@ impl Algorithm for Aes256 {
 // the bit-sliced state holds: the pair form costs barely more than one block, where the default
 // (two single-block calls) would do four blocks' worth of work.
 
-impl ElectronicCodeBook<16, BLOCK_LEN> for Aes128 {
+impl ElectronicCodeBook<16, BLOCK_LEN> for AES_128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        Aes128::new(key)
+        AES_128::new(key)
     }
     fn encrypt_block(&self, block: &mut Block) {
-        Aes::encrypt_block(self, block)
+        AES::encrypt_block(self, block)
     }
     fn decrypt_block(&self, block: &mut Block) {
-        Aes::decrypt_block(self, block)
+        AES::decrypt_block(self, block)
     }
     fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        Aes::encrypt_blocks2(self, blocks)
+        AES::encrypt_blocks2(self, blocks)
     }
     fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        Aes::decrypt_blocks2(self, blocks)
+        AES::decrypt_blocks2(self, blocks)
     }
 }
 
-impl ElectronicCodeBook<24, BLOCK_LEN> for Aes192 {
+impl ElectronicCodeBook<24, BLOCK_LEN> for AES_192 {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
-        Aes192::new(key)
+        AES_192::new(key)
     }
     fn encrypt_block(&self, block: &mut Block) {
-        Aes::encrypt_block(self, block)
+        AES::encrypt_block(self, block)
     }
     fn decrypt_block(&self, block: &mut Block) {
-        Aes::decrypt_block(self, block)
+        AES::decrypt_block(self, block)
     }
     fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        Aes::encrypt_blocks2(self, blocks)
+        AES::encrypt_blocks2(self, blocks)
     }
     fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        Aes::decrypt_blocks2(self, blocks)
+        AES::decrypt_blocks2(self, blocks)
     }
 }
 
-impl ElectronicCodeBook<32, BLOCK_LEN> for Aes256 {
+impl ElectronicCodeBook<32, BLOCK_LEN> for AES_256 {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
-        Aes256::new(key)
+        AES_256::new(key)
     }
     fn encrypt_block(&self, block: &mut Block) {
-        Aes::encrypt_block(self, block)
+        AES::encrypt_block(self, block)
     }
     fn decrypt_block(&self, block: &mut Block) {
-        Aes::decrypt_block(self, block)
+        AES::decrypt_block(self, block)
     }
     fn encrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        Aes::encrypt_blocks2(self, blocks)
+        AES::encrypt_blocks2(self, blocks)
     }
     fn decrypt_blocks2(&self, blocks: &mut [Block; 2]) {
-        Aes::decrypt_blocks2(self, blocks)
+        AES::decrypt_blocks2(self, blocks)
     }
 }
 
-impl<P: AesParams> core::fmt::Debug for Aes<P> {
+impl<P: AESParams> core::fmt::Debug for AES<P> {
     /// Prints the algorithm name only. The key schedule is secret and is never formatted.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(P::ALG_NAME)
@@ -298,40 +301,40 @@ mod tests {
         // The "Memory Usage" table in the crate docs quotes these, and the whole point of the
         // crate is that they are this small: 4 * (Nr + 1) words of schedule, nothing else, and no
         // tables anywhere. If the representation grows, the docs are wrong -- fix both.
-        assert_eq!(size_of::<Aes128>(), 176, "AES-128: 4 * (10 + 1) words");
-        assert_eq!(size_of::<Aes192>(), 208, "AES-192: 4 * (12 + 1) words");
-        assert_eq!(size_of::<Aes256>(), 240, "AES-256: 4 * (14 + 1) words");
+        assert_eq!(size_of::<AES_128>(), 176, "AES-128: 4 * (10 + 1) words");
+        assert_eq!(size_of::<AES_192>(), 208, "AES-192: 4 * (12 + 1) words");
+        assert_eq!(size_of::<AES_256>(), 240, "AES-256: 4 * (14 + 1) words");
     }
 
     #[test]
     fn test_engine_size_is_exactly_the_schedule() {
         // No round counter, no direction flag, no initialised marker: the schedule is all there
         // is, which is what makes both directions available from one value at no extra cost.
-        assert_eq!(size_of::<Aes128>(), size_of::<<Aes128Params as AesParams>::Schedule>());
-        assert_eq!(size_of::<Aes192>(), size_of::<<Aes192Params as AesParams>::Schedule>());
-        assert_eq!(size_of::<Aes256>(), size_of::<<Aes256Params as AesParams>::Schedule>());
+        assert_eq!(size_of::<AES_128>(), size_of::<<AES128Params as AESParams>::Schedule>());
+        assert_eq!(size_of::<AES_192>(), size_of::<<AES192Params as AESParams>::Schedule>());
+        assert_eq!(size_of::<AES_256>(), size_of::<<AES256Params as AESParams>::Schedule>());
     }
 
     #[test]
     fn test_alg_names() {
-        assert_eq!(<Aes128 as Algorithm>::ALG_NAME, "AES-128");
-        assert_eq!(<Aes192 as Algorithm>::ALG_NAME, "AES-192");
-        assert_eq!(<Aes256 as Algorithm>::ALG_NAME, "AES-256");
+        assert_eq!(<AES_128 as Algorithm>::ALG_NAME, "AES-128");
+        assert_eq!(<AES_192 as Algorithm>::ALG_NAME, "AES-192");
+        assert_eq!(<AES_256 as Algorithm>::ALG_NAME, "AES-256");
     }
 
     #[test]
     fn test_max_security_strength_matches_the_key_length() {
         assert_eq!(
-            <Aes128 as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(Aes128Params::KEY_LEN)
+            <AES_128 as Algorithm>::MAX_SECURITY_STRENGTH,
+            SecurityStrength::from_bytes(AES128Params::KEY_LEN)
         );
         assert_eq!(
-            <Aes192 as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(Aes192Params::KEY_LEN)
+            <AES_192 as Algorithm>::MAX_SECURITY_STRENGTH,
+            SecurityStrength::from_bytes(AES192Params::KEY_LEN)
         );
         assert_eq!(
-            <Aes256 as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(Aes256Params::KEY_LEN)
+            <AES_256 as Algorithm>::MAX_SECURITY_STRENGTH,
+            SecurityStrength::from_bytes(AES256Params::KEY_LEN)
         );
     }
 }

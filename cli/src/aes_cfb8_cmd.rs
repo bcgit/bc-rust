@@ -27,7 +27,7 @@
 
 use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
 use crate::stream_mode_cmd::run_stream_mode;
-use bouncycastle::aes::{Aes128, Aes192, Aes256};
+use bouncycastle::aes::{AES_128, AES_192, AES_256};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cfb8, Decrypting, Encrypting};
@@ -38,7 +38,7 @@ pub(crate) fn aes128_cfb8_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Aes128, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
+    run::<AES_128, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
 }
 
 pub(crate) fn aes192_cfb8_cmd(
@@ -47,7 +47,7 @@ pub(crate) fn aes192_cfb8_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Aes192, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
+    run::<AES_192, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
 }
 
 pub(crate) fn aes256_cfb8_cmd(
@@ -56,7 +56,7 @@ pub(crate) fn aes256_cfb8_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Aes256, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
+    run::<AES_256, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
 }
 
 /// Dispatches to the shared streaming loops with `Cfb8` filled in as the mode.

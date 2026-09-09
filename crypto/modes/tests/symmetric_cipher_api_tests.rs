@@ -24,7 +24,7 @@
 
 mod common;
 
-use bouncycastle_aes::Aes128;
+use bouncycastle_aes::AES_128;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
@@ -252,12 +252,12 @@ fn the_one_shots_round_trip_with_real_aes() {
 
     // CFB128
     let (iv, ct) =
-        <Cfb<Aes128, Encrypting, 16, 16> as SymmetricCipherEncryptor<16, 16, 0>>::encrypt(
+        <Cfb<AES_128, Encrypting, 16, 16> as SymmetricCipherEncryptor<16, 16, 0>>::encrypt(
             &key, message,
         )
         .unwrap();
     assert_eq!(ct.len(), message.len(), "a stream cipher does not change the length");
-    let back = <Cfb<Aes128, Decrypting, 16, 16> as SymmetricCipherDecryptor<16, 16, 0>>::decrypt(
+    let back = <Cfb<AES_128, Decrypting, 16, 16> as SymmetricCipherDecryptor<16, 16, 0>>::decrypt(
         &key, &iv, &ct,
     )
     .unwrap();
@@ -265,11 +265,11 @@ fn the_one_shots_round_trip_with_real_aes() {
 
     // CFB8
     let (iv, ct) =
-        <Cfb8<Aes128, Encrypting, 16, 16> as SymmetricCipherEncryptor<16, 16, 0>>::encrypt(
+        <Cfb8<AES_128, Encrypting, 16, 16> as SymmetricCipherEncryptor<16, 16, 0>>::encrypt(
             &key, message,
         )
         .unwrap();
-    let back = <Cfb8<Aes128, Decrypting, 16, 16> as SymmetricCipherDecryptor<16, 16, 0>>::decrypt(
+    let back = <Cfb8<AES_128, Decrypting, 16, 16> as SymmetricCipherDecryptor<16, 16, 0>>::decrypt(
         &key, &iv, &ct,
     )
     .unwrap();
@@ -277,13 +277,13 @@ fn the_one_shots_round_trip_with_real_aes() {
 
     // CTR
     let (nonce, ct) =
-        <Ctr<Aes128, Encrypting, 16, 16, 12> as SymmetricCipherEncryptor<16, 12, 0>>::encrypt(
+        <Ctr<AES_128, Encrypting, 16, 16, 12> as SymmetricCipherEncryptor<16, 12, 0>>::encrypt(
             &key, message,
         )
         .unwrap();
     assert_eq!(nonce.len(), 12, "CTR's init data is its 12-byte nonce");
     let back =
-        <Ctr<Aes128, Decrypting, 16, 16, 12> as SymmetricCipherDecryptor<16, 12, 0>>::decrypt(
+        <Ctr<AES_128, Decrypting, 16, 16, 12> as SymmetricCipherDecryptor<16, 12, 0>>::decrypt(
             &key, &nonce, &ct,
         )
         .unwrap();

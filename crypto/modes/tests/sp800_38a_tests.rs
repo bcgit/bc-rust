@@ -15,7 +15,7 @@
 //! the vector's IV, and the test asserts the returned init data really is that IV before comparing
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -179,32 +179,32 @@ where
 
 #[test]
 fn f_2_1_cbc_aes128_encrypt() {
-    check_encrypt::<Aes128, 16>("F.2.1", KEY_128, &CIPHERTEXTS_128);
+    check_encrypt::<AES_128, 16>("F.2.1", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_2_2_cbc_aes128_decrypt() {
-    check_decrypt::<Aes128, 16>("F.2.2", KEY_128, &CIPHERTEXTS_128);
+    check_decrypt::<AES_128, 16>("F.2.2", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_2_3_cbc_aes192_encrypt() {
-    check_encrypt::<Aes192, 24>("F.2.3", KEY_192, &CIPHERTEXTS_192);
+    check_encrypt::<AES_192, 24>("F.2.3", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_2_4_cbc_aes192_decrypt() {
-    check_decrypt::<Aes192, 24>("F.2.4", KEY_192, &CIPHERTEXTS_192);
+    check_decrypt::<AES_192, 24>("F.2.4", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_2_5_cbc_aes256_encrypt() {
-    check_encrypt::<Aes256, 32>("F.2.5", KEY_256, &CIPHERTEXTS_256);
+    check_encrypt::<AES_256, 32>("F.2.5", KEY_256, &CIPHERTEXTS_256);
 }
 
 #[test]
 fn f_2_6_cbc_aes256_decrypt() {
-    check_decrypt::<Aes256, 32>("F.2.6", KEY_256, &CIPHERTEXTS_256);
+    check_decrypt::<AES_256, 32>("F.2.6", KEY_256, &CIPHERTEXTS_256);
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
@@ -216,17 +216,17 @@ fn the_one_shot_api_matches_the_vectors() {
     let pt = flat(&PLAINTEXTS);
 
     let mut data = flat(&CIPHERTEXTS_128);
-    Cbc::<Aes128, Decrypting, 16, 16>::decrypt(&key_material::<16>(KEY_128), &iv, &mut data)
+    Cbc::<AES_128, Decrypting, 16, 16>::decrypt(&key_material::<16>(KEY_128), &iv, &mut data)
         .unwrap();
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_192);
-    Cbc::<Aes192, Decrypting, 24, 16>::decrypt(&key_material::<24>(KEY_192), &iv, &mut data)
+    Cbc::<AES_192, Decrypting, 24, 16>::decrypt(&key_material::<24>(KEY_192), &iv, &mut data)
         .unwrap();
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_256);
-    Cbc::<Aes256, Decrypting, 32, 16>::decrypt(&key_material::<32>(KEY_256), &iv, &mut data)
+    Cbc::<AES_256, Decrypting, 32, 16>::decrypt(&key_material::<32>(KEY_256), &iv, &mut data)
         .unwrap();
     assert_eq!(data, pt);
 }
@@ -243,14 +243,14 @@ fn cbc_differs_from_ecb_by_the_iv() {
 
     // The raw permutation on P1 alone is the ECB answer from F.1.1.
     let mut ecb = block(PLAINTEXTS[0]);
-    <Aes128 as ElectronicCodeBook<16, 16>>::encrypt_block(
-        &<Aes128 as ElectronicCodeBook<16, 16>>::new(&key).unwrap(),
+    <AES_128 as ElectronicCodeBook<16, 16>>::encrypt_block(
+        &<AES_128 as ElectronicCodeBook<16, 16>>::new(&key).unwrap(),
         &mut ecb,
     );
     assert_eq!(ecb, block("3ad77bb40d7a3660a89ecaf32466ef97"), "F.1.1 block #1");
 
     // CBC's C1 = CIPH_K(P1 XOR IV) is the F.2.1 answer, and differs.
-    let (mut enc, _) = Cbc::<Aes128, Encrypting, 16, 16>::do_encrypt_init_rng(
+    let (mut enc, _) = Cbc::<AES_128, Encrypting, 16, 16>::do_encrypt_init_rng(
         &key,
         &mut FixedSeedRNG::<16>::new(iv),
     )

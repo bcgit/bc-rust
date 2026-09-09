@@ -1,6 +1,6 @@
 //! A constant-time, table-free AES block cipher engine (NIST FIPS 197).
 //!
-//! This crate provides the raw AES keyed permutation -- [`Aes128`], [`Aes192`] and [`Aes256`] --
+//! This crate provides the raw AES keyed permutation -- [`AES_128`], [`AES_192`] and [`AES_256`] --
 //! implemented as a Boolean circuit over bit-planes rather than as byte substitutions through a
 //! lookup table. That makes it both smaller and constant-time; see [Design](#design).
 //!
@@ -12,7 +12,7 @@
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_aes::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
@@ -22,7 +22,7 @@
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
 //!
-//! let aes = Aes128::new(&key).expect("a valid AES-128 key");
+//! let aes = AES_128::new(&key).expect("a valid AES-128 key");
 //!
 //! // FIPS 197 Appendix B.
 //! let mut block = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
@@ -44,13 +44,13 @@
 //! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls:
 //!
 //! ```
-//! use bouncycastle_aes::Aes256;
+//! use bouncycastle_aes::AES_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let aes = Aes256::new(&key).expect("a valid AES-256 key");
+//! let aes = AES_256::new(&key).expect("a valid AES-256 key");
 //!
 //! let mut blocks = [[0u8; 16], [1u8; 16]];
 //! aes.encrypt_blocks2(&mut blocks);
@@ -103,7 +103,7 @@
 //! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
 //! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
 //!
-//! There is no one-shot static on the permutation, because `Aes128::new(&key)?.encrypt_block(..)`
+//! There is no one-shot static on the permutation, because `AES_128::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
 //! arbitrary-length input and generate their own initialisation data.
 //!
@@ -139,7 +139,7 @@
 //! Decryption follows FIPS 197 Algorithm 3, the straight inverse cipher, rather than the
 //! equivalent inverse cipher of Sec 5.3.5. Algorithm 3 puts INVMIXCOLUMNS() after ADDROUNDKEY(),
 //! so it uses the *unmodified* key schedule; the equivalent inverse cipher would need a second
-//! schedule with each round key transformed. One [`Aes128`] value therefore encrypts and decrypts
+//! schedule with each round key transformed. One [`AES_128`] value therefore encrypts and decrypts
 //! from one stored schedule.
 //!
 //! # Memory Usage
@@ -150,9 +150,9 @@
 //!
 //! | Type | Key | `Nr` | Schedule (persistent) | Tables |
 //! |---|---|---|---|---|
-//! | [`Aes128`] | 16 B | 10 | 176 B | 0 B |
-//! | [`Aes192`] | 24 B | 12 | 208 B | 0 B |
-//! | [`Aes256`] | 32 B | 14 | 240 B | 0 B |
+//! | [`AES_128`] | 16 B | 10 | 176 B | 0 B |
+//! | [`AES_192`] | 24 B | 12 | 208 B | 0 B |
+//! | [`AES_256`] | 32 B | 14 | 240 B | 0 B |
 //!
 //! Per-call stack usage is independent of key length: 32 bytes of bit-sliced state for the two
 //! blocks, 32 bytes for the round key expanded from its compressed form, plus the S-box circuit's
@@ -167,7 +167,7 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`Aes128`] and friends transform exactly 16 bytes. Using them directly on data means ECB,
+//! [`AES_128`] and friends transform exactly 16 bytes. Using them directly on data means ECB,
 //! which is not confidential: identical plaintext blocks produce identical ciphertext blocks, so
 //! structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation, and
 //! prefer an authenticated one so that ciphertext tampering is detected.
@@ -213,7 +213,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
-// `AesParams` is deliberately sealed with a private supertrait so that no fourth parameter set can
+// `AESParams` is deliberately sealed with a private supertrait so that no fourth parameter set can
 // be added outside this crate; that is what triggers this lint.
 #![allow(private_bounds)]
 
@@ -229,7 +229,7 @@ mod round;
 mod sbox;
 mod schedule;
 
-pub use aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
+pub use aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};

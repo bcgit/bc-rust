@@ -32,7 +32,7 @@
 //! the vector's IV, and the test asserts the returned init data really is that IV before comparing
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -226,32 +226,32 @@ where
 
 #[test]
 fn f_3_13_cfb128_aes128_encrypt() {
-    check_encrypt::<Aes128, 16>("F.3.13", KEY_128, &CIPHERTEXTS_128);
+    check_encrypt::<AES_128, 16>("F.3.13", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_3_14_cfb128_aes128_decrypt() {
-    check_decrypt::<Aes128, 16>("F.3.14", KEY_128, &CIPHERTEXTS_128);
+    check_decrypt::<AES_128, 16>("F.3.14", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_3_15_cfb128_aes192_encrypt() {
-    check_encrypt::<Aes192, 24>("F.3.15", KEY_192, &CIPHERTEXTS_192);
+    check_encrypt::<AES_192, 24>("F.3.15", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_3_16_cfb128_aes192_decrypt() {
-    check_decrypt::<Aes192, 24>("F.3.16", KEY_192, &CIPHERTEXTS_192);
+    check_decrypt::<AES_192, 24>("F.3.16", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_3_17_cfb128_aes256_encrypt() {
-    check_encrypt::<Aes256, 32>("F.3.17", KEY_256, &CIPHERTEXTS_256);
+    check_encrypt::<AES_256, 32>("F.3.17", KEY_256, &CIPHERTEXTS_256);
 }
 
 #[test]
 fn f_3_18_cfb128_aes256_decrypt() {
-    check_decrypt::<Aes256, 32>("F.3.18", KEY_256, &CIPHERTEXTS_256);
+    check_decrypt::<AES_256, 32>("F.3.18", KEY_256, &CIPHERTEXTS_256);
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
@@ -263,17 +263,17 @@ fn the_one_shot_api_matches_the_vectors() {
     let pt = flat(&PLAINTEXTS);
 
     let mut data = flat(&CIPHERTEXTS_128);
-    Cfb::<Aes128, Decrypting, 16, 16>::decrypt(&key_material::<16>(KEY_128), &iv, &mut data)
+    Cfb::<AES_128, Decrypting, 16, 16>::decrypt(&key_material::<16>(KEY_128), &iv, &mut data)
         .unwrap();
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_192);
-    Cfb::<Aes192, Decrypting, 24, 16>::decrypt(&key_material::<24>(KEY_192), &iv, &mut data)
+    Cfb::<AES_192, Decrypting, 24, 16>::decrypt(&key_material::<24>(KEY_192), &iv, &mut data)
         .unwrap();
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_256);
-    Cfb::<Aes256, Decrypting, 32, 16>::decrypt(&key_material::<32>(KEY_256), &iv, &mut data)
+    Cfb::<AES_256, Decrypting, 32, 16>::decrypt(&key_material::<32>(KEY_256), &iv, &mut data)
         .unwrap();
     assert_eq!(data, pt);
 }
@@ -329,9 +329,9 @@ fn check_output_blocks<P, const KEY_LEN: usize>(
 
 #[test]
 fn the_tabulated_output_blocks_are_the_keystream() {
-    check_output_blocks::<Aes128, 16>("F.3.13", KEY_128, &CIPHERTEXTS_128, &OUTPUT_BLOCKS_128);
-    check_output_blocks::<Aes192, 24>("F.3.15", KEY_192, &CIPHERTEXTS_192, &OUTPUT_BLOCKS_192);
-    check_output_blocks::<Aes256, 32>("F.3.17", KEY_256, &CIPHERTEXTS_256, &OUTPUT_BLOCKS_256);
+    check_output_blocks::<AES_128, 16>("F.3.13", KEY_128, &CIPHERTEXTS_128, &OUTPUT_BLOCKS_128);
+    check_output_blocks::<AES_192, 24>("F.3.15", KEY_192, &CIPHERTEXTS_192, &OUTPUT_BLOCKS_192);
+    check_output_blocks::<AES_256, 32>("F.3.17", KEY_256, &CIPHERTEXTS_256, &OUTPUT_BLOCKS_256);
 }
 
 /// CFB128 and OFB must agree on the **first** block and on nothing after it.
@@ -359,7 +359,7 @@ fn cfb128_agrees_with_ofb_on_the_first_block_only() {
 
     let key = key_material::<16>(KEY_128);
     let iv = block(IV);
-    let (mut enc, got_iv) = Cfb::<Aes128, Encrypting, 16, 16>::do_encrypt_init_rng(
+    let (mut enc, got_iv) = Cfb::<AES_128, Encrypting, 16, 16>::do_encrypt_init_rng(
         &key,
         &mut FixedSeedRNG::<16>::new(iv),
     )

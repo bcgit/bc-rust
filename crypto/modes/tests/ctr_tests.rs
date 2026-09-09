@@ -23,7 +23,7 @@
 
 mod common;
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
@@ -550,9 +550,9 @@ fn aes_chunking_matches_a_single_call() {
         }
     }
 
-    check::<Aes128, 16>("AES-128");
-    check::<Aes192, 24>("AES-192");
-    check::<Aes256, 32>("AES-256");
+    check::<AES_128, 16>("AES-128");
+    check::<AES_192, 24>("AES-192");
+    check::<AES_256, 32>("AES-256");
 }
 
 /// The pair path must be taken, **in both directions** -- unlike CBC and CFB, CTR encryption
@@ -720,19 +720,19 @@ fn sizes_match_the_documented_memory_table() {
     // permutation + nonce + counter (u64) + keystream block + the used offset, rounded up to the
     // u64's alignment. For a 12-byte nonce on AES that is 176/208/240 + 12 + 8 + 16 + 8 = 220/252/284,
     // padded to 224/256/288.
-    assert_eq!(size_of::<Ctr<Aes128, Encrypting, 16, 16, 12>>(), 224);
-    assert_eq!(size_of::<Ctr<Aes192, Encrypting, 24, 16, 12>>(), 256);
-    assert_eq!(size_of::<Ctr<Aes256, Encrypting, 32, 16, 12>>(), 288);
+    assert_eq!(size_of::<Ctr<AES_128, Encrypting, 16, 16, 12>>(), 224);
+    assert_eq!(size_of::<Ctr<AES_192, Encrypting, 24, 16, 12>>(), 256);
+    assert_eq!(size_of::<Ctr<AES_256, Encrypting, 32, 16, 12>>(), 288);
 
     // The direction marker is free, and the nonce length does not change the layout: the counter
     // block is always a whole block.
     assert_eq!(
-        size_of::<Ctr<Aes128, Encrypting, 16, 16, 12>>(),
-        size_of::<Ctr<Aes128, Decrypting, 16, 16, 12>>()
+        size_of::<Ctr<AES_128, Encrypting, 16, 16, 12>>(),
+        size_of::<Ctr<AES_128, Decrypting, 16, 16, 12>>()
     );
     // A longer nonce fits in the same padding, so the total is unchanged.
     assert_eq!(
-        size_of::<Ctr<Aes128, Encrypting, 16, 16, 12>>(),
-        size_of::<Ctr<Aes128, Encrypting, 16, 16, 15>>()
+        size_of::<Ctr<AES_128, Encrypting, 16, 16, 12>>(),
+        size_of::<Ctr<AES_128, Encrypting, 16, 16, 15>>()
     );
 }

@@ -20,7 +20,7 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   AES that removes the tables only from the cipher still leaks through `SUBWORD()` in the expansion.
 * **Low memory.** No lookup tables at all (0 bytes, against 512 bytes for BC Java's `AESLightEngine` and 2-8 KiB
   for T-table engines) and no heap allocation. The only persistent state is the key schedule, stored bit-sliced
-  in a compressed form that is exactly the FIPS 197 Sec 5.2 size: `Aes128` 176 B, `Aes192` 208 B, `Aes256` 240 B.
+  in a compressed form that is exactly the FIPS 197 Sec 5.2 size: `AES_128` 176 B, `AES_192` 208 B, `AES_256` 240 B.
 * **Both directions from one value.** Decryption follows FIPS 197 Algorithm 3 (the straight inverse cipher) rather
   than the equivalent inverse cipher of Sec 5.3.5, so it uses the unmodified key schedule -- one stored schedule
   encrypts and decrypts, with no second copy and no transformation at construction time.

@@ -33,7 +33,7 @@
 //! its in-place data methods, is `bouncycastle_modes::Cbc` itself, which these wrap:
 //!
 //! ```text
-//! bouncycastle_modes::Cbc<Aes128, Encrypting, 16, 16>   // block-aligned, in place
+//! bouncycastle_modes::Cbc<AES_128, Encrypting, 16, 16>   // block-aligned, in place
 //! AES_CBC_128<Encrypting, PKCS7>                        // any length, padded
 //! ```
 //!
@@ -47,7 +47,7 @@
 //! [`Decrypting`](bouncycastle_modes::Decrypting), which was already true.
 
 use crate::padded_mode::PaddedMode;
-use crate::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 
 // Imports needed for docs
@@ -145,8 +145,8 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<Aes128, Encrypting, 16, BLOCK_LEN>,
-    Cbc<Aes128, Decrypting, 16, BLOCK_LEN>,
+    Cbc<AES_128, Encrypting, 16, BLOCK_LEN>,
+    Cbc<AES_128, Decrypting, 16, BLOCK_LEN>,
     Pad,
     16,
     BLOCK_LEN,
@@ -172,8 +172,8 @@ pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<Aes192, Encrypting, 24, BLOCK_LEN>,
-    Cbc<Aes192, Decrypting, 24, BLOCK_LEN>,
+    Cbc<AES_192, Encrypting, 24, BLOCK_LEN>,
+    Cbc<AES_192, Decrypting, 24, BLOCK_LEN>,
     Pad,
     24,
     BLOCK_LEN,
@@ -199,8 +199,8 @@ pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_256<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<Aes256, Encrypting, 32, BLOCK_LEN>,
-    Cbc<Aes256, Decrypting, 32, BLOCK_LEN>,
+    Cbc<AES_256, Encrypting, 32, BLOCK_LEN>,
+    Cbc<AES_256, Decrypting, 32, BLOCK_LEN>,
     Pad,
     32,
     BLOCK_LEN,

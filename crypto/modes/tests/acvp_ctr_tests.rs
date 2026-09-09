@@ -36,7 +36,7 @@
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
 //! than in SP 800-38A, and implementing it from anything else would be guesswork.
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -173,9 +173,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<u8> {
     match key_bytes.len() {
-        16 => run_case::<Aes128, 16>(key_bytes, nonce, input, encrypt, grouping),
-        24 => run_case::<Aes192, 24>(key_bytes, nonce, input, encrypt, grouping),
-        32 => run_case::<Aes256, 32>(key_bytes, nonce, input, encrypt, grouping),
+        16 => run_case::<AES_128, 16>(key_bytes, nonce, input, encrypt, grouping),
+        24 => run_case::<AES_192, 24>(key_bytes, nonce, input, encrypt, grouping),
+        32 => run_case::<AES_256, 32>(key_bytes, nonce, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }
