@@ -1,7 +1,9 @@
-//! `XOFFactory` is a pass-through to the SHAKE types in `bouncycastle-sha3`, so the oracle for
+//! `XOFFactory` is a pass-through to the concrete XOF implementations, so the oracle for
 //! every method is the same call on the underlying type. Each check below runs the factory and the
 //! direct type side by side on the same input; nothing here is an expected value written by hand.
 
+use bouncycastle_ascon::ASCON_XOF128_NAME;
+use bouncycastle_ascon::ascon_xof128::AsconXof128;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -51,18 +53,29 @@ fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
 
     let mut f = make();
     f.do_update(MSG);
-    assert_eq!(f.do_final_partial_bits(0x05, 3).unwrap(), expected_bits, "{ctx}: partial bits");
+    assert_eq!(
+        f.do_final_partial_bits(0x05, 3).unwrap(),
+        expected_bits,
+        "{ctx}: partial bits"
+    );
 
     let mut f = make();
     f.do_update(MSG);
     let mut out = vec![0u8; n];
-    assert_eq!(f.do_final_partial_bits_out(0x05, 3, &mut out).unwrap(), n, "{ctx}: ..._out length");
+    assert_eq!(
+        f.do_final_partial_bits_out(0x05, 3, &mut out).unwrap(),
+        n,
+        "{ctx}: ..._out length"
+    );
     assert_eq!(out, expected_bits, "{ctx}: do_final_partial_bits_out");
 
     let mut f = make();
     f.do_update(MSG);
     assert!(
-        matches!(f.do_final_partial_bits(0xFF, 8), Err(HashError::InvalidLength(_))),
+        matches!(
+            f.do_final_partial_bits(0xFF, 8),
+            Err(HashError::InvalidLength(_))
+        ),
         "{ctx}: eight partial bits is not a partial byte"
     );
 
@@ -70,47 +83,104 @@ fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
     let mut s = S::default();
     s.do_update(MSG);
     let long = s.into_squeezer().do_output(3 * n);
-    assert_eq!(&long[..n], &expected[..], "the direct type's hash is a prefix of its stream");
+    assert_eq!(
+        &long[..n],
+        &expected[..],
+        "the direct type's hash is a prefix of its stream"
+    );
 
     let mut f = make();
     f.do_update(MSG);
     let mut fo = f.into_squeezer();
     assert_eq!(fo.do_output(n), &long[..n], "{ctx}: do_output");
+
     let mut buf = vec![0u8; 2 * n];
-    assert_eq!(fo.do_output_out(&mut buf), 2 * n, "{ctx}: do_output_out returns the length");
+    assert_eq!(
+        fo.do_output_out(&mut buf),
+        2 * n,
+        "{ctx}: do_output_out returns the length"
+    );
     assert_eq!(buf, &long[n..], "{ctx}: do_output_out continues the stream");
 
     let mut s = S::default();
     s.do_update(MSG);
-    let want = s.into_squeezer_partial_bits(0x05, 3).unwrap().do_output(n);
+    let want = s
+        .into_squeezer_partial_bits(0x05, 3)
+        .unwrap()
+        .do_output(n);
+
     let mut f = make();
     f.do_update(MSG);
     assert_eq!(
-        f.into_squeezer_partial_bits(0x05, 3).unwrap().do_output(n),
+        f.into_squeezer_partial_bits(0x05, 3)
+            .unwrap()
+            .do_output(n),
         want,
         "{ctx}: into_squeezer_partial_bits"
     );
+
     let mut f = make();
     f.do_update(MSG);
-    assert!(matches!(f.into_squeezer_partial_bits(0xFF, 8), Err(HashError::InvalidLength(_))));
+    assert!(matches!(
+        f.into_squeezer_partial_bits(0xFF, 8),
+        Err(HashError::InvalidLength(_))
+    ));
 
     // the one-shots
     assert_eq!(make().xof(MSG, 3 * n), long, "{ctx}: xof");
+
     let mut out = vec![0xFFu8; 3 * n];
-    assert_eq!(make().xof_out(MSG, &mut out), 3 * n, "{ctx}: xof_out returns the length");
+    assert_eq!(
+        make().xof_out(MSG, &mut out),
+        3 * n,
+        "{ctx}: xof_out returns the length"
+    );
     assert_eq!(out, long, "{ctx}: xof_out");
 }
 
 #[test]
 fn shake128_by_name_matches_the_direct_type() {
-    check_against::<SHAKE128>(|| XOFFactory::new(SHAKE128_NAME).unwrap(), "SHAKE128 by constant");
-    check_against::<SHAKE128>(|| XOFFactory::new("SHAKE128").unwrap(), "SHAKE128 by string");
+    check_against::<SHAKE128>(
+        || XOFFactory::new(SHAKE128_NAME).unwrap(),
+        "SHAKE128 by constant",
+    );
+    check_against::<SHAKE128>(
+        || XOFFactory::new("SHAKE128").unwrap(),
+        "SHAKE128 by string",
+    );
 }
 
 #[test]
 fn shake256_by_name_matches_the_direct_type() {
-    check_against::<SHAKE256>(|| XOFFactory::new(SHAKE256_NAME).unwrap(), "SHAKE256 by constant");
-    check_against::<SHAKE256>(|| XOFFactory::new("SHAKE256").unwrap(), "SHAKE256 by string");
+    check_against::<SHAKE256>(
+        || XOFFactory::new(SHAKE256_NAME).unwrap(),
+        "SHAKE256 by constant",
+    );
+    check_against::<SHAKE256>(
+        || XOFFactory::new("SHAKE256").unwrap(),
+        "SHAKE256 by string",
+    );
+}
+
+/// Verify that the Ascon-XOF128 factory registration resolves to the same implementation
+/// as constructing Ascon-XOF128 directly.
+#[test]
+fn ascon_xof128_by_name_matches_the_direct_type() {
+    let direct = AsconXof128::new().xof(MSG, 64);
+
+    // Construct using the crate constant.
+    assert_eq!(
+        XOFFactory::new(ASCON_XOF128_NAME).unwrap().xof(MSG, 64),
+        direct,
+        "Ascon-XOF128 by constant"
+    );
+
+    // Construct using the literal algorithm name.
+    assert_eq!(
+        XOFFactory::new("Ascon-XOF128").unwrap().xof(MSG, 64),
+        direct,
+        "Ascon-XOF128 by string"
+    );
 }
 
 /// The configured defaults: SHAKE128 for the general and 128-bit defaults, SHAKE256 for 256-bit.
@@ -123,9 +193,18 @@ fn defaults() {
 
 #[test]
 fn unknown_names_are_refused() {
-    for name in ["SHAKE512", "shake128", "", "cSHAKE128"] {
+    for name in [
+        "SHAKE512",
+        "shake128",
+        "",
+        "cSHAKE128",
+        "Ascon-XOF999",
+    ] {
         assert!(
-            matches!(XOFFactory::new(name), Err(FactoryError::UnsupportedAlgorithm(_))),
+            matches!(
+                XOFFactory::new(name),
+                Err(FactoryError::UnsupportedAlgorithm(_))
+            ),
             "{name:?} must not construct a XOF"
         );
     }
@@ -135,11 +214,13 @@ fn unknown_names_are_refused() {
 #[test]
 fn test_framework_xof() {
     let framework = TestFrameworkXOF::new();
+
     framework.test_xof(
         || XOFFactory::new(SHAKE128_NAME).unwrap(),
         MSG,
         &SHAKE128::new().xof(MSG, 100),
     );
+
     framework.test_xof(
         || XOFFactory::new(SHAKE256_NAME).unwrap(),
         MSG,

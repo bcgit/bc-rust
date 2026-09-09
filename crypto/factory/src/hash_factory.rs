@@ -28,6 +28,8 @@
 
 use crate::{AlgorithmFactory, FactoryError};
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
+use bouncycastle_ascon as ascon;
+use bouncycastle_ascon::ASCON_HASH256_NAME;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength};
 use bouncycastle_sha2 as sha2;
@@ -66,6 +68,8 @@ pub enum HashFactory {
     SHA3_512(sha3::SHA3_512),
     ///
     SM3(sm3::SM3),
+    ///
+    AsconHash256(ascon::ascon_hash256::AsconHash256),
 }
 
 impl Default for HashFactory {
@@ -98,6 +102,7 @@ impl AlgorithmFactory for HashFactory {
             SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),
             SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
             SM3_NAME => Ok(Self::SM3(sm3::SM3::new())),
+            ASCON_HASH256_NAME => Ok(Self::AsconHash256(ascon::ascon_hash256::AsconHash256::new())),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known Hash",
                 alg_name
@@ -129,6 +134,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.block_bitlen(),
             Self::SHA3_512(h) => h.block_bitlen(),
             Self::SM3(h) => h.block_bitlen(),
+            Self::AsconHash256(h) => h.block_bitlen(),
         }
     }
 
@@ -145,6 +151,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.output_len(),
             Self::SHA3_512(h) => h.output_len(),
             Self::SM3(h) => h.output_len(),
+            Self::AsconHash256(h) => h.output_len(),
         }
     }
 
@@ -161,6 +168,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.hash(data),
             Self::SHA3_512(h) => h.hash(data),
             Self::SM3(h) => h.hash(data),
+            Self::AsconHash256(h) => h.hash(data),
         }
     }
 
@@ -179,6 +187,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.hash_out(data, output),
             Self::SHA3_512(h) => h.hash_out(data, output),
             Self::SM3(h) => h.hash_out(data, output),
+            Self::AsconHash256(h) => h.hash_out(data, output),
         }
     }
 
@@ -195,6 +204,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.do_update(data),
             Self::SHA3_512(h) => h.do_update(data),
             Self::SM3(h) => h.do_update(data),
+            Self::AsconHash256(h) => h.do_update(data),
         }
     }
 
@@ -211,6 +221,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.do_final(),
             Self::SHA3_512(h) => h.do_final(),
             Self::SM3(h) => h.do_final(),
+            Self::AsconHash256(h) => h.do_final(),
         }
     }
 
@@ -229,6 +240,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.do_final_out(output),
             Self::SHA3_512(h) => h.do_final_out(output),
             Self::SM3(h) => h.do_final_out(output),
+            Self::AsconHash256(h) => h.do_final_out(output),
         }
     }
 
@@ -249,6 +261,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA3_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SM3(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
+            Self::AsconHash256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
         }
     }
 
@@ -282,6 +295,9 @@ impl Hash for HashFactory {
                 h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
             }
             Self::SM3(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
+            Self::AsconHash256(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
         }
     }
 
@@ -298,6 +314,7 @@ impl Hash for HashFactory {
             Self::SHA3_384(h) => h.max_security_strength(),
             Self::SHA3_512(h) => h.max_security_strength(),
             Self::SM3(h) => h.max_security_strength(),
+            Self::AsconHash256(h) => h.max_security_strength(),
         }
     }
 }
