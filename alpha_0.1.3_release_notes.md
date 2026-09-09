@@ -74,7 +74,7 @@ only OFB outstanding. Re-exported from the umbrella crate.
   `P1 XOR P1'` outright rather than merely whether the blocks were equal.
 * **Parallel decryption.** Sec 6.2 notes CBC decryption's inverse cipher calls can run in
   parallel, so `do_decrypt_blocks` walks the ciphertext in eights through
-  `ElectronicCodeBook::decrypt_blocks8`, then pairs through `decrypt_2blocks`, then a one-block
+  `ElectronicCodeBook::decrypt_8blocks`, then pairs through `decrypt_2blocks`, then a one-block
   remainder. A toy permutation that rotates its eight results proves the eight path is taken, and
   only for full eights. Measured against an
   otherwise identical permutation that does not override the pair methods, this is **1.83x** the
@@ -123,7 +123,7 @@ CFB128 (`Cfb`), SP 800-38A Sec 6.3 with `s = b`:
   `Cfb<_, Decrypting, _, _>` never calls `decrypt_block` or `decrypt_2blocks`. This is pinned by a
   test permutation whose inverse methods panic, run over both the pair and single-block paths -- so
   the claim is enforced rather than merely documented.
-* **Parallel decryption**, via `encrypt_blocks8` / `encrypt_2blocks` (eights, then pairs, then a single block, like CBC): Sec 6.3 notes CFB decryption's forward cipher
+* **Parallel decryption**, via `encrypt_8blocks` / `encrypt_2blocks` (eights, then pairs, then a single block, like CBC): Sec 6.3 notes CFB decryption's forward cipher
   calls "can be performed in parallel if the input blocks are first constructed (in series) from the
   IV and the ciphertext", and with `s = b` those input blocks simply *are* the IV followed by the
   ciphertext. Re-measured after the stream-cipher rewrite: against an otherwise identical
@@ -193,7 +193,7 @@ CFB8 (`Cfb8`), SP 800-38A Sec 6.3 with `s = 8`:
   CFB8.
 * **Decryption still batches.** Sec 6.3's parallel decryption applies: the successive register
   states depend only on the IV and the ciphertext, so they are built in series -- byte shuffling,
-  no cipher calls -- and the forward ciphers then run eight at a time through `encrypt_blocks8`,
+  no cipher calls -- and the forward ciphers then run eight at a time through `encrypt_8blocks`,
   then in pairs. Measured **1.94x** the throughput of the same decryption in 1-byte calls, which
   never batch (6.61 vs 3.40 MiB/s). Encryption cannot batch and does not.
 * **Decryption never calls the inverse cipher**, as in CFB128, pinned by the same test permutation
@@ -247,7 +247,7 @@ CTR (`Ctr`), SP 800-38A Sec 6.5:
 * **Both directions are parallel**, the only mode here of which that is true. Sec 6.5: "In both CTR
   encryption and CTR decryption, the forward cipher functions can be performed in parallel."
   Counter blocks depend on nothing but the nonce and the index, so encryption batches through
-  `encrypt_blocks8` / `encrypt_2blocks` exactly as decryption does, and encryption and decryption are
+  `encrypt_8blocks` / `encrypt_2blocks` exactly as decryption does, and encryption and decryption are
   the same operation. Only the forward cipher function is ever used, as in the CFB modes.
 * The keystream block is the one buffer in this crate wrapped in `Secret`: a call may end part-way
   through a block and the remainder is kept for the next one, and unlike a chaining value that
@@ -367,7 +367,7 @@ ECB (`Ecb`), SP 800-38A Sec 6.1:
 `core`: new `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
 `new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_2blocks` / `decrypt_2blocks` that
-default to two single-block calls and `encrypt_blocks8` / `decrypt_blocks8` that default to four pair
+default to two single-block calls and `encrypt_8blocks` / `decrypt_8blocks` that default to four pair
 calls, all of which bit-sliced implementations override (AES the pair form, SM4 both). The block methods
 are infallible; only `new` can fail, and only on the key. `bouncycastle-aes` implements
 it for all three key lengths (the data-encryption traits are still deliberately not implemented

@@ -4,8 +4,8 @@
 //! CBC and CFB is serial by construction (SP 800-38A Sec 6.2 and Sec 6.3: each forward cipher input
 //! depends on the previous output), so it can only ever use the single-block path. *Decryption* in
 //! both is parallel, and this implementation hands blocks to the permutation's batch methods --
-//! eights first, then pairs, then the remainder singly: for CBC that is `decrypt_blocks8` /
-//! `decrypt_2blocks`, for CFB it is `encrypt_blocks8` / `encrypt_2blocks`, since CFB uses the
+//! eights first, then pairs, then the remainder singly: for CBC that is `decrypt_8blocks` /
+//! `decrypt_2blocks`, for CFB it is `encrypt_8blocks` / `encrypt_2blocks`, since CFB uses the
 //! forward function in both directions. AES overrides only the pair form, so its eights are four
 //! pairs. With the bit-sliced AES, whose two-block path costs barely more than one block,
 //! decryption should therefore run at roughly twice the throughput of encryption. That gap is the
@@ -368,7 +368,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         });
     }
 
-    // ---- decryption: parallel, and uses `encrypt_blocks8` / `encrypt_2blocks` -- the FORWARD
+    // ---- decryption: parallel, and uses `encrypt_8blocks` / `encrypt_2blocks` -- the FORWARD
     // batch methods ----
     let (mut enc, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = flat.clone();
@@ -485,7 +485,7 @@ fn bench_cfb_aes256(c: &mut Criterion) {
 /// CFB8: one forward cipher per byte, so ~1/16 of CFB's throughput on a 16-byte block.
 ///
 /// Encryption is strictly serial. Decryption builds its input blocks in series and then runs them
-/// through `encrypt_blocks8` / `encrypt_2blocks` (SP 800-38A Sec 6.3's parallel decryption), so it
+/// through `encrypt_8blocks` / `encrypt_2blocks` (SP 800-38A Sec 6.3's parallel decryption), so it
 /// should be substantially faster than encryption -- the same batch effect CBC and CFB show, at
 /// byte granularity.
 fn bench_cfb8_aes128(c: &mut Criterion) {

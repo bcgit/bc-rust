@@ -602,7 +602,7 @@ fn the_eight_block_path_is_really_used_in_both_directions() {
         SwappedEightCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
     e.do_encrypt(&mut swapped).unwrap();
-    assert_ne!(swapped, ct, "nine blocks must go through encrypt_blocks8");
+    assert_ne!(swapped, ct, "nine blocks must go through encrypt_8blocks");
 
     // Four blocks at a time uses pairs only, so the rotated-eight toy is correct there.
     let (mut e, _) =

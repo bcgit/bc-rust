@@ -92,7 +92,7 @@
 //! Sec 6.5: "In both CTR encryption and CTR decryption, the forward cipher functions can be
 //! performed in parallel". Counter blocks depend on nothing but the nonce and the index, so unlike
 //! CBC and CFB there is no serial direction at all: **both** directions walk the block-aligned part
-//! of the data in eights through [`ElectronicCodeBook::encrypt_blocks8`], then in pairs through
+//! of the data in eights through [`ElectronicCodeBook::encrypt_8blocks`], then in pairs through
 //! [`ElectronicCodeBook::encrypt_2blocks`]. Only the bytes that finish a partially-used keystream
 //! block, and the short tail at the end, go one block at a time.
 //!
@@ -369,7 +369,7 @@ where
         let (blocks, tail) = rest.as_chunks_mut::<BLOCK_LEN>();
         let (eights, rest_blocks) = blocks.as_chunks_mut::<8>();
         for eight in eights.iter_mut() {
-            self.apply_batch(eight, P::encrypt_blocks8);
+            self.apply_batch(eight, P::encrypt_8blocks);
         }
         let (pairs, single) = rest_blocks.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {

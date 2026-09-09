@@ -25,7 +25,7 @@
 //! block, in pairs with a one-block remainder for odd lengths, as one call over the whole payload,
 //! and in 5-byte calls that never line up with a block. The second and third passes are what put
 //! the multi-block cases through the pair and eight-block paths -- which for CFB are
-//! [`ElectronicCodeBook::encrypt_2blocks`] and [`ElectronicCodeBook::encrypt_blocks8`], the
+//! [`ElectronicCodeBook::encrypt_2blocks`] and [`ElectronicCodeBook::encrypt_8blocks`], the
 //! *forward* function, even on the decrypt side -- and the fourth is what puts them through the
 //! byte path with segments left open between calls. So all of that is exercised against real
 //! vectors and not only against the toys in `cfb_tests.rs`. Every ACVP CFB128 payload is a whole
@@ -105,7 +105,7 @@ enum Grouping {
     /// Two blocks per call, with a one-block remainder for odd lengths. Uses the pair path.
     Pairs,
     /// The whole payload in one call: eights, then pairs, then the remaining block. The cases
-    /// spanning 8 to 10 blocks are the ones that reach `encrypt_blocks8`.
+    /// spanning 8 to 10 blocks are the ones that reach `encrypt_8blocks`.
     Whole,
     /// Five bytes per call, so every call but the first starts mid-segment and none is a whole
     /// block: the byte path, with the unused keystream carried between calls.

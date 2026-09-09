@@ -101,7 +101,7 @@
 //! applied to each input block to produce the output blocks."
 //!
 //! So [`Cfb<P, Decrypting, ..>`](Cfb) never calls [`ElectronicCodeBook::decrypt_block`],
-//! [`ElectronicCodeBook::decrypt_2blocks`] or [`ElectronicCodeBook::decrypt_blocks8`]. A
+//! [`ElectronicCodeBook::decrypt_2blocks`] or [`ElectronicCodeBook::decrypt_8blocks`]. A
 //! permutation could implement only the forward direction and still work here; `cfb_tests.rs` pins
 //! that with a toy whose inverse panics. The mode XORs a keystream in both directions, and the two
 //! directions differ only in which of the two values -- the byte that came in, or the byte that
@@ -117,7 +117,7 @@
 //!
 //! Constructing them "in series" is trivial here: with `s = b` the input blocks *are* the IV
 //! followed by the ciphertext blocks, already in hand. Decryption therefore walks the
-//! block-aligned part of the data in eights through [`ElectronicCodeBook::encrypt_blocks8`] and
+//! block-aligned part of the data in eights through [`ElectronicCodeBook::encrypt_8blocks`] and
 //! pairs through [`ElectronicCodeBook::encrypt_2blocks`], which a bit-sliced engine computes for
 //! barely more than the cost of one block. Encryption cannot, and does not. Only the bytes that
 //! complete an open segment, and the bytes that open the final short one, go singly.
@@ -285,7 +285,7 @@ where
         }
     }
 
-    /// Decrypts eight consecutive blocks with one [`ElectronicCodeBook::encrypt_blocks8`] call.
+    /// Decrypts eight consecutive blocks with one [`ElectronicCodeBook::encrypt_8blocks`] call.
     ///
     /// The same construction as [`Self::decrypt_pair`] widened to eight: the input blocks are the
     /// incoming input block followed by the first seven ciphertext blocks, all known before any
@@ -296,7 +296,7 @@ where
         debug_assert_eq!(self.used, BLOCK_LEN, "the block path needs a segment boundary");
         let mut o =
             [self.buf, blocks[0], blocks[1], blocks[2], blocks[3], blocks[4], blocks[5], blocks[6]];
-        self.perm.encrypt_blocks8(&mut o);
+        self.perm.encrypt_8blocks(&mut o);
         self.buf = blocks[7];
         for (block, o) in blocks.iter_mut().zip(o.iter()) {
             for (b, o) in block.iter_mut().zip(o.iter()) {

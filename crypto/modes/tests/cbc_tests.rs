@@ -189,7 +189,7 @@ fn the_pair_path_is_really_used() {
 /// The eight-block path in `do_decrypt_blocks` must actually be taken, and only for full eights.
 ///
 /// [`SwappedEightToy`] returns its eight results rotated while its pair and single-block methods
-/// are correct. So a CBC decryptor that uses `decrypt_blocks8` gives the wrong answer for eight
+/// are correct. So a CBC decryptor that uses `decrypt_8blocks` gives the wrong answer for eight
 /// blocks handed over together, and the right answer for the same eight blocks handed over as
 /// two fours (pairs) or one at a time. Nine blocks are wrong too: eight, then one.
 #[test]
@@ -212,7 +212,7 @@ fn the_eight_block_path_is_really_used() {
     assert_ne!(
         dec_blocks(&mut dec, &ct),
         plaintext,
-        "eight blocks must go through decrypt_blocks8"
+        "eight blocks must go through decrypt_8blocks"
     );
 
     // Exactly eight together is wrong for the same reason.

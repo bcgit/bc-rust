@@ -34,7 +34,7 @@ impl TestFrameworkElectronicCodeBook {
     ///   likewise for `decrypt_2blocks` -- this is what pins an override to the default's
     ///   semantics, and it is the reason the pair methods are worth having in the trait at all;
     /// * the pair methods round-trip each other;
-    /// * `encrypt_blocks8` / `decrypt_blocks8` likewise agree with eight single-block calls in
+    /// * `encrypt_8blocks` / `decrypt_8blocks` likewise agree with eight single-block calls in
     ///   order, and round-trip each other;
     /// * a key of the wrong [`KeyType`] is rejected;
     /// * the security-strength policy matches [`Algorithm::MAX_SECURITY_STRENGTH`].
@@ -123,21 +123,21 @@ impl TestFrameworkElectronicCodeBook {
                 perm.encrypt_block(block);
             }
             let mut batched = *eight;
-            perm.encrypt_blocks8(&mut batched);
-            assert_eq!(batched, singly, "encrypt_blocks8 must match eight encrypt_block calls");
+            perm.encrypt_8blocks(&mut batched);
+            assert_eq!(batched, singly, "encrypt_8blocks must match eight encrypt_block calls");
 
             let mut singly = *eight;
             for block in singly.iter_mut() {
                 perm.decrypt_block(block);
             }
             let mut batched = *eight;
-            perm.decrypt_blocks8(&mut batched);
-            assert_eq!(batched, singly, "decrypt_blocks8 must match eight decrypt_block calls");
+            perm.decrypt_8blocks(&mut batched);
+            assert_eq!(batched, singly, "decrypt_8blocks must match eight decrypt_block calls");
 
             let mut buf = *eight;
-            perm.encrypt_blocks8(&mut buf);
-            perm.decrypt_blocks8(&mut buf);
-            assert_eq!(buf, *eight, "decrypt_blocks8 must invert encrypt_blocks8");
+            perm.encrypt_8blocks(&mut buf);
+            perm.decrypt_8blocks(&mut buf);
+            assert_eq!(buf, *eight, "decrypt_8blocks must invert encrypt_8blocks");
         }
 
         // A pair of *identical* blocks must give a pair of identical outputs. This catches an

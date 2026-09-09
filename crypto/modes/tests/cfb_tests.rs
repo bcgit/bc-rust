@@ -264,7 +264,7 @@ fn the_ciphertext_of_a_prefix_is_a_prefix_of_the_ciphertext() {
 /// SP 800-38A Sec 6.3: "The *forward cipher* function is applied to each input block to produce the
 /// output blocks" -- in CFB *decryption* as well as encryption.
 ///
-/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_2blocks` and `decrypt_blocks8`, so this
+/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_2blocks` and `decrypt_8blocks`, so this
 /// test fails loudly if either direction of the mode ever reaches the inverse cipher. Every
 /// decrypt path is exercised -- the eight-block, pair, single-block and byte paths -- and the result
 /// is required to agree with the plain [`Toy`], otherwise the test could pass by not really
@@ -488,9 +488,9 @@ fn the_pair_path_is_really_used() {
 
 /// The eight-block path in `do_decrypt` must actually be taken, and only for full eights.
 ///
-/// [`SwappedEightToy`] returns its eight `encrypt_blocks8` results rotated while its pair and
+/// [`SwappedEightToy`] returns its eight `encrypt_8blocks` results rotated while its pair and
 /// single-block methods are correct. CFB decryption batches eights through the *forward*
-/// `encrypt_blocks8`, so with this permutation nine blocks handed over together decrypt wrongly
+/// `encrypt_8blocks`, so with this permutation nine blocks handed over together decrypt wrongly
 /// (eight rotated, then one), while the same blocks handed over as two fours (pairs) or one at a
 /// time decrypt correctly. Encryption is serial and never batches, so it is unaffected.
 #[test]
@@ -509,9 +509,9 @@ fn the_eight_block_path_is_really_used() {
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB encryption must not use the eight path");
 
     // ...but nine blocks together must now be wrong, because the first eight go through
-    // encrypt_blocks8.
+    // encrypt_8blocks.
     let mut d = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(dec(&mut d, &ct), plaintext, "nine blocks must go through encrypt_blocks8");
+    assert_ne!(dec(&mut d, &ct), plaintext, "nine blocks must go through encrypt_8blocks");
 
     // Two fours use the pair path only, so they are correct even for this toy...
     let mut d = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();

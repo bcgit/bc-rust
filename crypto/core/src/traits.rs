@@ -384,7 +384,7 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     ///
     /// Modes with parallel structure chunk their data into eights first, then pairs, then single
     /// blocks; see CBC decryption in `bouncycastle-modes`.
-    fn encrypt_blocks8(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+    fn encrypt_8blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
         // Eight is a multiple of two, so the remainder is empty.
         let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
         for pair in pairs {
@@ -393,8 +393,8 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     }
 
     /// The inverse cipher function on eight *independent* blocks, in place.
-    /// See [`ElectronicCodeBook::encrypt_blocks8`].
-    fn decrypt_blocks8(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+    /// See [`ElectronicCodeBook::encrypt_8blocks`].
+    fn decrypt_8blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
         let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
         for pair in pairs {
             self.decrypt_2blocks(pair);
