@@ -357,15 +357,15 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     /// Modes whose structure is parallel -- CBC decryption, CFB decryption, CTR -- should prefer
     /// this. CBC and CFB *encryption* cannot use it: each input block depends on the previous
     /// output.
-    fn encrypt_blocks2(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         let [a, b] = blocks;
         self.encrypt_block(a);
         self.encrypt_block(b);
     }
 
     /// The inverse cipher function on two *independent* blocks, in place.
-    /// See [`ElectronicCodeBook::encrypt_blocks2`].
-    fn decrypt_blocks2(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
+    /// See [`ElectronicCodeBook::encrypt_2blocks`].
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         let [a, b] = blocks;
         self.decrypt_block(a);
         self.decrypt_block(b);
@@ -373,7 +373,7 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
 
     /// The forward cipher function on eight *independent* blocks, in place.
     ///
-    /// Provided as four [`ElectronicCodeBook::encrypt_blocks2`] calls, so an implementation that
+    /// Provided as four [`ElectronicCodeBook::encrypt_2blocks`] calls, so an implementation that
     /// overrides only the pair form gets its benefit here too. An engine whose natural unit is
     /// larger than a pair overrides this directly: a bit-sliced engine whose S-box circuit
     /// substitutes four blocks per pass runs eight blocks as two full passes rather than four
@@ -388,7 +388,7 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
         // Eight is a multiple of two, so the remainder is empty.
         let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
         for pair in pairs {
-            self.encrypt_blocks2(pair);
+            self.encrypt_2blocks(pair);
         }
     }
 
@@ -397,7 +397,7 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     fn decrypt_blocks8(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
         let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
         for pair in pairs {
-            self.decrypt_blocks2(pair);
+            self.decrypt_2blocks(pair);
         }
     }
 }

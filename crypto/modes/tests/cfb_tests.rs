@@ -264,7 +264,7 @@ fn the_ciphertext_of_a_prefix_is_a_prefix_of_the_ciphertext() {
 /// SP 800-38A Sec 6.3: "The *forward cipher* function is applied to each input block to produce the
 /// output blocks" -- in CFB *decryption* as well as encryption.
 ///
-/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_blocks2` and `decrypt_blocks8`, so this
+/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_2blocks` and `decrypt_blocks8`, so this
 /// test fails loudly if either direction of the mode ever reaches the inverse cipher. Every
 /// decrypt path is exercised -- the eight-block, pair, single-block and byte paths -- and the result
 /// is required to agree with the plain [`Toy`], otherwise the test could pass by not really
@@ -449,7 +449,7 @@ fn aes_chunking_matches_a_single_call() {
 /// at a segment boundary.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block methods
-/// are correct. CFB decryption pairs through `encrypt_blocks2`, so with this permutation two blocks
+/// are correct. CFB decryption pairs through `encrypt_2blocks`, so with this permutation two blocks
 /// handed over together come out wrong, while the same bytes handed over one block at a time, or
 /// offset by a partial segment so that no two whole blocks line up, come out right. If everything
 /// came out right, the pair path would be dead code and every claim about it would be untested.
@@ -464,14 +464,14 @@ fn the_pair_path_is_really_used() {
     assert_eq!(dec(&mut pinned_decryptor(iv), &ct), plaintext);
 
     // The swapped-pair toy encrypts identically -- CFB encryption is serial and never pairs, so its
-    // `encrypt_blocks2` override is not reached from the encryptor at all.
+    // `encrypt_2blocks` override is not reached from the encryptor at all.
     let (mut e, _) =
         SwappedCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB encryption must not use the pair path");
 
     // ...but decrypting the pair together must now be wrong, because the pair path is used.
     let mut d = SwappedCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(dec(&mut d, &ct), plaintext, "decrypting a pair must go through encrypt_blocks2");
+    assert_ne!(dec(&mut d, &ct), plaintext, "decrypting a pair must go through encrypt_2blocks");
 
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
     let mut d = SwappedCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();

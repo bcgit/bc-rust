@@ -150,11 +150,11 @@ fn two_block_path_matches_the_f_1_vectors() {
     for chunk in 0..2 {
         let (i, j) = (chunk * 2, chunk * 2 + 1);
         let mut pair = [block(PLAINTEXTS[i]), block(PLAINTEXTS[j])];
-        aes.encrypt_blocks2(&mut pair);
+        aes.encrypt_2blocks(&mut pair);
         assert_eq!(pair[0], block(CIPHERTEXTS_128[i]), "pair {chunk} slot 0");
         assert_eq!(pair[1], block(CIPHERTEXTS_128[j]), "pair {chunk} slot 1");
 
-        aes.decrypt_blocks2(&mut pair);
+        aes.decrypt_2blocks(&mut pair);
         assert_eq!(pair[0], block(PLAINTEXTS[i]));
         assert_eq!(pair[1], block(PLAINTEXTS[j]));
     }
@@ -167,8 +167,8 @@ fn two_block_path_is_slot_symmetric() {
 
     let mut forward = [block(PLAINTEXTS[0]), block(PLAINTEXTS[1])];
     let mut reversed = [block(PLAINTEXTS[1]), block(PLAINTEXTS[0])];
-    aes.encrypt_blocks2(&mut forward);
-    aes.encrypt_blocks2(&mut reversed);
+    aes.encrypt_2blocks(&mut forward);
+    aes.encrypt_2blocks(&mut reversed);
 
     assert_eq!(forward[0], reversed[1]);
     assert_eq!(forward[1], reversed[0]);

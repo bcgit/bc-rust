@@ -99,13 +99,13 @@ fn appendix_b_two_block_path_agrees_with_the_single_block_path() {
     aes.encrypt_block(&mut other_alone);
 
     let mut pair = [input, other];
-    aes.encrypt_blocks2(&mut pair);
+    aes.encrypt_2blocks(&mut pair);
     assert_eq!(pair[0], expected);
     assert_eq!(pair[1], other_alone);
 
     // ...and in the other slot, which is a different bit position in the interleave.
     let mut pair = [other, input];
-    aes.encrypt_blocks2(&mut pair);
+    aes.encrypt_2blocks(&mut pair);
     assert_eq!(pair[0], other_alone);
     assert_eq!(pair[1], expected);
 }

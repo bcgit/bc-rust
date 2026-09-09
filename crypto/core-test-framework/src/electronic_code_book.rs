@@ -30,8 +30,8 @@ impl TestFrameworkElectronicCodeBook {
     /// * `decrypt_block` inverts `encrypt_block` on every block of [`DUMMY_SEED`];
     /// * the permutation actually permutes (a block is not left unchanged);
     /// * distinct inputs give distinct outputs, i.e. it is injective on the blocks tested;
-    /// * `encrypt_blocks2` agrees with two `encrypt_block` calls **including their order**, and
-    ///   likewise for `decrypt_blocks2` -- this is what pins an override to the default's
+    /// * `encrypt_2blocks` agrees with two `encrypt_block` calls **including their order**, and
+    ///   likewise for `decrypt_2blocks` -- this is what pins an override to the default's
     ///   semantics, and it is the reason the pair methods are worth having in the trait at all;
     /// * the pair methods round-trip each other;
     /// * `encrypt_blocks8` / `decrypt_blocks8` likewise agree with eight single-block calls in
@@ -93,21 +93,21 @@ impl TestFrameworkElectronicCodeBook {
             perm.encrypt_block(&mut singly[0]);
             perm.encrypt_block(&mut singly[1]);
             let mut paired = [*a, *b];
-            perm.encrypt_blocks2(&mut paired);
-            assert_eq!(paired, singly, "encrypt_blocks2 must match two encrypt_block calls");
+            perm.encrypt_2blocks(&mut paired);
+            assert_eq!(paired, singly, "encrypt_2blocks must match two encrypt_block calls");
 
             let mut singly = [*a, *b];
             perm.decrypt_block(&mut singly[0]);
             perm.decrypt_block(&mut singly[1]);
             let mut paired = [*a, *b];
-            perm.decrypt_blocks2(&mut paired);
-            assert_eq!(paired, singly, "decrypt_blocks2 must match two decrypt_block calls");
+            perm.decrypt_2blocks(&mut paired);
+            assert_eq!(paired, singly, "decrypt_2blocks must match two decrypt_block calls");
 
             // Round-trip through the pair methods alone.
             let mut buf = [*a, *b];
-            perm.encrypt_blocks2(&mut buf);
-            perm.decrypt_blocks2(&mut buf);
-            assert_eq!(buf, [*a, *b], "decrypt_blocks2 must invert encrypt_blocks2");
+            perm.encrypt_2blocks(&mut buf);
+            perm.decrypt_2blocks(&mut buf);
+            assert_eq!(buf, [*a, *b], "decrypt_2blocks must invert encrypt_2blocks");
         }
 
         // The eight-block methods must be indistinguishable from eight single-block calls, in every
@@ -144,7 +144,7 @@ impl TestFrameworkElectronicCodeBook {
         // implementation whose two lanes are not actually independent.
         let block = blocks[0];
         let mut buf = [block, block];
-        perm.encrypt_blocks2(&mut buf);
+        perm.encrypt_2blocks(&mut buf);
         assert_eq!(buf[0], buf[1], "identical inputs must give identical outputs");
         let mut single = block;
         perm.encrypt_block(&mut single);

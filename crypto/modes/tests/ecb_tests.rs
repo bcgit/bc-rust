@@ -217,10 +217,10 @@ fn the_pair_path_is_used_in_both_directions() {
     let plaintext = [[0xA5u8; TOY_LEN], [0x5Au8; TOY_LEN]];
     let ct = enc_blocks(&mut encryptor(), &plaintext);
 
-    // Encryption: a pair goes through encrypt_blocks2, so the swapped toy returns them swapped.
+    // Encryption: a pair goes through encrypt_2blocks, so the swapped toy returns them swapped.
     let (mut enc, _) = SwappedEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
     let swapped_ct = enc_blocks(&mut enc, &plaintext);
-    assert_eq!(swapped_ct, [ct[1], ct[0]], "encrypting a pair must go through encrypt_blocks2");
+    assert_eq!(swapped_ct, [ct[1], ct[0]], "encrypting a pair must go through encrypt_2blocks");
 
     // ...and one block at a time avoids the pair path.
     let (mut enc, _) = SwappedEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
@@ -231,7 +231,7 @@ fn the_pair_path_is_used_in_both_directions() {
     assert_eq!(
         dec_blocks(&mut dec, &ct),
         [plaintext[1], plaintext[0]],
-        "decrypting a pair must go through decrypt_blocks2"
+        "decrypting a pair must go through decrypt_2blocks"
     );
     let mut dec = SwappedEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
     assert_eq!([dec_flat(&mut dec, &ct[0]), dec_flat(&mut dec, &ct[1])], plaintext);

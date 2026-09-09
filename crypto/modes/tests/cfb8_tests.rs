@@ -249,7 +249,7 @@ fn the_ciphertext_of_a_prefix_is_a_prefix_of_the_ciphertext() {
 /// SP 800-38A Sec 6.3: "The *forward cipher* function is applied to each input block to produce the
 /// output blocks" -- in CFB *decryption* as well as encryption.
 ///
-/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_blocks2` and `decrypt_blocks8`, so this
+/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_2blocks` and `decrypt_blocks8`, so this
 /// test fails loudly if either direction of the mode ever reaches the inverse cipher. Every decrypt
 /// path is exercised -- eights, pairs and single bytes -- and the result is required to agree with
 /// the plain [`Toy`], otherwise the test could pass by not really encrypting anything.
@@ -419,10 +419,10 @@ fn aes_chunking_matches_a_single_call() {
 /// The pair path in `do_decrypt` must actually be taken.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block method
-/// is correct. CFB8 decryption batches through `encrypt_blocks2`, so with this permutation six
+/// is correct. CFB8 decryption batches through `encrypt_2blocks`, so with this permutation six
 /// bytes handed over together come out wrong while the same bytes one at a time come out right.
 ///
-/// Six, not eight: the trait's default `encrypt_blocks8` is four `encrypt_blocks2` calls, so eight
+/// Six, not eight: the trait's default `encrypt_blocks8` is four `encrypt_2blocks` calls, so eight
 /// bytes would also be wrong and would not distinguish the two paths.
 #[test]
 fn the_pair_path_is_really_used() {
@@ -441,7 +441,7 @@ fn the_pair_path_is_really_used() {
 
     // ...but decrypting six bytes together must now be wrong, because the pair path is used.
     let mut d = SwappedCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(dec(&mut d, &ct), plaintext, "three pairs must go through encrypt_blocks2");
+    assert_ne!(dec(&mut d, &ct), plaintext, "three pairs must go through encrypt_2blocks");
 
     // One byte at a time avoids the pair path, so it is correct even for this toy.
     let mut d = SwappedCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();

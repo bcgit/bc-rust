@@ -31,15 +31,15 @@ TestFrameworkElectronicCodeBook::new().test::<KEY_LEN, BLOCK_LEN, P>();
 | `decrypt_block` inverts `encrypt_block`, **and vice versa** | A direction implemented only one way round. A mode may call either direction first, so both orders are exercised. |
 | Neither direction is the identity | A stub, or a key schedule that never got applied. |
 | Distinct blocks give distinct outputs | An implementation that is not injective — e.g. one masking part of the block away. A permutation must be. |
-| `encrypt_blocks2` == two `encrypt_block` calls, **including their order**; same for decrypt | The whole reason the pair methods are safe to override. See below. |
+| `encrypt_2blocks` == two `encrypt_block` calls, **including their order**; same for decrypt | The whole reason the pair methods are safe to override. See below. |
 | The pair methods round-trip each other | A pair path correct in one direction only. |
-| Identical inputs give identical outputs from `*_blocks2` | Lanes that are not actually independent — a real hazard for a bit-sliced implementation that interleaves two blocks in one word. |
+| Identical inputs give identical outputs from `*_2blocks` | Lanes that are not actually independent — a real hazard for a bit-sliced implementation that interleaves two blocks in one word. |
 | A key of the wrong `KeyType` is rejected | A seed or MAC key being reused as a cipher key. |
 | The security-strength policy matches `BlockCipher::MAX_SECURITY_STRENGTH` | A `new()` that accepts a key weaker than the algorithm, or rejects one strong enough. |
 
 ### The order check is the load-bearing one
 
-`ElectronicCodeBook::encrypt_blocks2` and `decrypt_blocks2` are *provided* methods: the default is
+`ElectronicCodeBook::encrypt_2blocks` and `decrypt_2blocks` are *provided* methods: the default is
 two single-block calls, and implementations are free to override them. `bouncycastle-aes`
 does, because a pair of blocks is exactly what its bit-sliced state holds, so the pair form costs
 barely more than one block.

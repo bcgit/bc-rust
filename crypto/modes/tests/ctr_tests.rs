@@ -566,7 +566,7 @@ fn the_pair_path_is_really_used_in_both_directions() {
     let ct = enc(&mut pinned_encryptor(nonce), &plaintext);
     assert_eq!(dec(&mut pinned_decryptor(nonce), &ct), plaintext);
 
-    // Encryption: two blocks together must go through encrypt_blocks2, so the swapped toy differs.
+    // Encryption: two blocks together must go through encrypt_2blocks, so the swapped toy differs.
     let (mut e, _) =
         SwappedCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();

@@ -1,6 +1,6 @@
 //! Criterion benchmarks for the bit-sliced AES engine.
 //!
-//! The comparison that matters here is `encrypt_block` against `encrypt_blocks2` over the same
+//! The comparison that matters here is `encrypt_block` against `encrypt_2blocks` over the same
 //! number of bytes. The bit-sliced state holds two blocks, so a single-block call does twice the
 //! necessary work; the two-block path should be close to twice the throughput. That ratio is the
 //! argument for modes of operation using the two-block entry points wherever their blocks are
@@ -70,13 +70,13 @@ fn bench_aes128(c: &mut Criterion) {
         })
     });
 
-    group.bench_function("16KiB -- .encrypt_blocks2() x512", |b| {
+    group.bench_function("16KiB -- .encrypt_2blocks() x512", |b| {
         b.iter(|| {
             let mut buf = blocks.clone();
             for pair in buf.chunks_exact_mut(2) {
                 // `try_into` cannot fail: `chunks_exact_mut(2)` yields slices of length 2.
                 let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
-                aes.encrypt_blocks2(black_box(pair));
+                aes.encrypt_2blocks(black_box(pair));
             }
             black_box(&buf);
         })
@@ -92,12 +92,12 @@ fn bench_aes128(c: &mut Criterion) {
         })
     });
 
-    group.bench_function("16KiB -- .decrypt_blocks2() x512", |b| {
+    group.bench_function("16KiB -- .decrypt_2blocks() x512", |b| {
         b.iter(|| {
             let mut buf = blocks.clone();
             for pair in buf.chunks_exact_mut(2) {
                 let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
-                aes.decrypt_blocks2(black_box(pair));
+                aes.decrypt_2blocks(black_box(pair));
             }
             black_box(&buf);
         })
@@ -123,12 +123,12 @@ fn bench_aes192(c: &mut Criterion) {
         })
     });
 
-    group.bench_function("16KiB -- .encrypt_blocks2() x512", |b| {
+    group.bench_function("16KiB -- .encrypt_2blocks() x512", |b| {
         b.iter(|| {
             let mut buf = blocks.clone();
             for pair in buf.chunks_exact_mut(2) {
                 let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
-                aes.encrypt_blocks2(black_box(pair));
+                aes.encrypt_2blocks(black_box(pair));
             }
             black_box(&buf);
         })
@@ -154,23 +154,23 @@ fn bench_aes256(c: &mut Criterion) {
         })
     });
 
-    group.bench_function("16KiB -- .encrypt_blocks2() x512", |b| {
+    group.bench_function("16KiB -- .encrypt_2blocks() x512", |b| {
         b.iter(|| {
             let mut buf = blocks.clone();
             for pair in buf.chunks_exact_mut(2) {
                 let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
-                aes.encrypt_blocks2(black_box(pair));
+                aes.encrypt_2blocks(black_box(pair));
             }
             black_box(&buf);
         })
     });
 
-    group.bench_function("16KiB -- .decrypt_blocks2() x512", |b| {
+    group.bench_function("16KiB -- .decrypt_2blocks() x512", |b| {
         b.iter(|| {
             let mut buf = blocks.clone();
             for pair in buf.chunks_exact_mut(2) {
                 let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
-                aes.decrypt_blocks2(black_box(pair));
+                aes.decrypt_2blocks(black_box(pair));
             }
             black_box(&buf);
         })

@@ -110,12 +110,12 @@ fn bench_aes256_decrypt_block() {
     print!("{block:x?}");
 }
 
-fn bench_aes256_encrypt_blocks2() {
-    eprintln!("AES_256::encrypt_blocks2");
+fn bench_aes256_encrypt_2blocks() {
+    eprintln!("AES_256::encrypt_2blocks");
 
     let aes = AES_256::new(&key::<32>()).unwrap();
     let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-    aes.encrypt_blocks2(&mut blocks);
+    aes.encrypt_2blocks(&mut blocks);
     print!("{blocks:x?}");
 }
 
@@ -128,5 +128,5 @@ fn main() {
     // bench_aes128_encrypt_block()
     // bench_aes256_encrypt_block()
     // bench_aes256_decrypt_block()
-    // bench_aes256_encrypt_blocks2()
+    // bench_aes256_encrypt_2blocks()
 }

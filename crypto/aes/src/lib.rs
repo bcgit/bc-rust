@@ -40,7 +40,7 @@
 //! ## Two blocks at a time
 //!
 //! The bit-sliced state holds two blocks, so two independent blocks cost barely more than one.
-//! Where a caller has two, [`ElectronicCodeBook::encrypt_blocks2`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_blocks2) is roughly twice the throughput of two
+//! Where a caller has two, [`ElectronicCodeBook::encrypt_2blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_2blocks) is roughly twice the throughput of two
 //! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls:
 //!
 //! ```
@@ -53,8 +53,8 @@
 //! let aes = AES_256::new(&key).expect("a valid AES-256 key");
 //!
 //! let mut blocks = [[0u8; 16], [1u8; 16]];
-//! aes.encrypt_blocks2(&mut blocks);
-//! aes.decrypt_blocks2(&mut blocks);
+//! aes.encrypt_2blocks(&mut blocks);
+//! aes.decrypt_2blocks(&mut blocks);
 //! assert_eq!(blocks, [[0u8; 16], [1u8; 16]]);
 //! ```
 //!

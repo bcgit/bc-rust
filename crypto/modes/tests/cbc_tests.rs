@@ -153,7 +153,7 @@ fn call_grouping_does_not_change_the_result() {
 /// The pair path in `do_decrypt_blocks` must actually be taken.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block
-/// methods are correct. So a CBC decryptor that uses `decrypt_blocks2` gives the wrong answer for
+/// methods are correct. So a CBC decryptor that uses `decrypt_2blocks` gives the wrong answer for
 /// even-length input, and the right answer for a single block. If both came out right, the pair
 /// path would be dead code and every claim about it would be untested.
 #[test]
@@ -176,7 +176,7 @@ fn the_pair_path_is_really_used() {
     assert_ne!(
         dec_blocks(&mut dec, &ct),
         plaintext,
-        "decrypting a pair must go through decrypt_blocks2"
+        "decrypting a pair must go through decrypt_2blocks"
     );
 
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
