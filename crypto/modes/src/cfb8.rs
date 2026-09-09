@@ -76,7 +76,7 @@
 //! Decryption knows every ciphertext byte before it starts, so it can build the shift register's
 //! successive states in series -- byte shuffling, no cipher calls -- and then run the forward
 //! ciphers together. This implementation does exactly that, in eights through
-//! [`ElectronicCodeBook::encrypt_blocks8`] and then pairs through
+//! [`ElectronicCodeBook::encrypt_8blocks`] and then pairs through
 //! [`ElectronicCodeBook::encrypt_2blocks`], which is where a bit-sliced engine earns back a large
 //! part of what the mode costs. Encryption cannot: `Ij` needs `C_{j-1}`, which is the output of the
 //! previous cipher call.
@@ -259,7 +259,7 @@ where
     fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         let (eights, rest) = data.as_chunks_mut::<8>();
         for eight in eights.iter_mut() {
-            self.decrypt_batch(eight, P::encrypt_blocks8);
+            self.decrypt_batch(eight, P::encrypt_8blocks);
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {

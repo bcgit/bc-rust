@@ -123,7 +123,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
 /// A toy whose **inverse cipher function panics**.
 ///
 /// SP 800-38A Sec 6.3 applies the forward cipher function in both directions of CFB, so a correct
-/// `Cfb` never touches `decrypt_block`, `decrypt_2blocks` or `decrypt_blocks8`. Running a full CFB round trip over this
+/// `Cfb` never touches `decrypt_block`, `decrypt_2blocks` or `decrypt_8blocks`. Running a full CFB round trip over this
 /// permutation turns that claim into a test: if either decryption entry point is ever reached, the
 /// test panics with the message below rather than quietly producing a right answer for the wrong
 /// reason.
@@ -162,19 +162,19 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
         panic!("CFB must never call the inverse cipher pair function (SP 800-38A Sec 6.3)");
     }
 
-    fn encrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
-        self.inner.encrypt_blocks8(blocks);
+    fn encrypt_8blocks(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+        self.inner.encrypt_8blocks(blocks);
     }
 
-    fn decrypt_blocks8(&self, _blocks: &mut [[u8; TOY_LEN]; 8]) {
+    fn decrypt_8blocks(&self, _blocks: &mut [[u8; TOY_LEN]; 8]) {
         panic!("CFB must never call the inverse cipher eight-block function (SP 800-38A Sec 6.3)");
     }
 }
 
-/// A [`Toy`] whose `encrypt_blocks8` / `decrypt_blocks8` return their eight results rotated by one
+/// A [`Toy`] whose `encrypt_8blocks` / `decrypt_8blocks` return their eight results rotated by one
 /// slot, while every other method -- single block and pair -- is correct.
 ///
-/// The eight-block analogue of [`SwappedPairToy`]: a CBC decryptor that uses `decrypt_blocks8`
+/// The eight-block analogue of [`SwappedPairToy`]: a CBC decryptor that uses `decrypt_8blocks`
 /// must produce something other than the correct plaintext for eight or more blocks, while fewer
 /// than eight, which go through the pair and single paths, still round-trip.
 pub struct SwappedEightToy {
@@ -199,14 +199,14 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedEightToy {
         self.inner.decrypt_block(block);
     }
 
-    fn encrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+    fn encrypt_8blocks(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
         for block in blocks.iter_mut() {
             self.inner.encrypt_block(block);
         }
         blocks.rotate_left(1);
     }
 
-    fn decrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+    fn decrypt_8blocks(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
         for block in blocks.iter_mut() {
             self.inner.decrypt_block(block);
         }

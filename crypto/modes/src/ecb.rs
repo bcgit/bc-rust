@@ -41,7 +41,7 @@
 //! Sec 6.1: "In ECB encryption and ECB decryption, multiple forward cipher functions and inverse
 //! cipher functions can be computed in parallel." Unlike CBC and CFB, whose encryption is serial,
 //! both directions here batch through the permutation's eight-block and pair methods
-//! ([`ElectronicCodeBook::encrypt_blocks8`] / [`ElectronicCodeBook::encrypt_2blocks`] and their
+//! ([`ElectronicCodeBook::encrypt_8blocks`] / [`ElectronicCodeBook::encrypt_2blocks`] and their
 //! inverses), then finish the remaining block singly.
 
 use crate::{Decrypting, Encrypting};
@@ -136,7 +136,7 @@ where
     ) -> Result<(), SymmetricCipherError> {
         let (eights, rest) = blocks.as_chunks_mut::<8>();
         for eight in eights.iter_mut() {
-            self.perm.encrypt_blocks8(eight);
+            self.perm.encrypt_8blocks(eight);
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
@@ -172,7 +172,7 @@ where
     ) -> Result<(), SymmetricCipherError> {
         let (eights, rest) = blocks.as_chunks_mut::<8>();
         for eight in eights.iter_mut() {
-            self.perm.decrypt_blocks8(eight);
+            self.perm.decrypt_8blocks(eight);
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {

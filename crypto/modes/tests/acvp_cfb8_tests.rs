@@ -23,7 +23,7 @@
 //! that reach the batch paths. Every case is run **four times**: as one call over the whole
 //! payload, byte by byte, in 8-byte calls, and in 3-byte calls that never line up with the
 //! 8-byte batch. Between them those put the multi-byte cases through
-//! [`ElectronicCodeBook::encrypt_blocks8`] and [`ElectronicCodeBook::encrypt_2blocks`] -- the
+//! [`ElectronicCodeBook::encrypt_8blocks`] and [`ElectronicCodeBook::encrypt_2blocks`] -- the
 //! *forward* function, even on the decrypt side -- and through the single-byte path, with the
 //! shift register carried across calls at every alignment. So all of that is exercised against real
 //! vectors and not only against the toys in `cfb8_tests.rs`.
@@ -100,7 +100,7 @@ enum Grouping {
     Whole,
     /// One byte per call. Never batches.
     Bytes,
-    /// Eight bytes per call: every call is exactly one `encrypt_blocks8` batch.
+    /// Eight bytes per call: every call is exactly one `encrypt_8blocks` batch.
     Eights,
     /// Three bytes per call, so no call lines up with the 8-byte batch and the shift register has
     /// to carry across calls at every alignment.

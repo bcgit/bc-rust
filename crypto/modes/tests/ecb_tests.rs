@@ -250,7 +250,7 @@ fn the_eight_block_path_is_used_in_both_directions() {
 
     let (mut enc, _) = SwappedEightEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
     let rotated = enc_blocks(&mut enc, &plaintext);
-    assert_ne!(rotated, ct, "nine blocks must go through encrypt_blocks8");
+    assert_ne!(rotated, ct, "nine blocks must go through encrypt_8blocks");
     assert_eq!(rotated[8], ct[8], "the ninth block goes through the single path and is right");
     assert_eq!(
         &rotated[..8],
@@ -264,7 +264,7 @@ fn the_eight_block_path_is_used_in_both_directions() {
     assert_eq!([a, b].as_flattened(), &ct[..8], "fours use the pair path only");
 
     let mut dec = SwappedEightEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
-    assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "nine blocks must go through decrypt_blocks8");
+    assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "nine blocks must go through decrypt_8blocks");
     let mut dec = SwappedEightEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
     for (c, p) in ct.iter().zip(plaintext.iter()) {
         assert_eq!(&dec_flat(&mut dec, c), p, "the single-block path must not batch");
