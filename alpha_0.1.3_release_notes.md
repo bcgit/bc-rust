@@ -73,10 +73,10 @@ only OFB outstanding. Re-exported from the umbrella crate.
   This matters more for CFB than for CBC: CFB XORs a keystream, so a repeated key-and-IV pair leaks
   `P1 XOR P1'` outright rather than merely whether the blocks were equal.
 * **Parallel decryption.** Sec 6.2 notes CBC decryption's inverse cipher calls can run in
-  parallel, so `do_decrypt_blocks` walks the ciphertext in eights through
-  `ElectronicCodeBook::decrypt_8blocks`, then pairs through `decrypt_2blocks`, then a one-block
-  remainder. A toy permutation that rotates its eight results proves the eight path is taken, and
-  only for full eights. Measured against an
+  parallel, so `do_decrypt_blocks` walks the ciphertext in fours through
+  `ElectronicCodeBook::decrypt_4blocks`, then pairs through `decrypt_2blocks`, then a one-block
+  remainder. A toy permutation that rotates its four results proves the four path is taken, and
+  only for full fours. Measured against an
   otherwise identical permutation that does not override the pair methods, this is **1.83x** the
   decryption throughput (67.9 vs 37.1 MiB/s, AES-128, 16 KiB, N=8). CBC encryption is serial by
   construction and does not use it.
@@ -123,7 +123,7 @@ CFB128 (`Cfb`), SP 800-38A Sec 6.3 with `s = b`:
   `Cfb<_, Decrypting, _, _>` never calls `decrypt_block` or `decrypt_2blocks`. This is pinned by a
   test permutation whose inverse methods panic, run over both the pair and single-block paths -- so
   the claim is enforced rather than merely documented.
-* **Parallel decryption**, via `encrypt_8blocks` / `encrypt_2blocks` (eights, then pairs, then a single block, like CBC): Sec 6.3 notes CFB decryption's forward cipher
+* **Parallel decryption**, via `encrypt_4blocks` / `encrypt_2blocks` (fours, then pairs, then a single block, like CBC): Sec 6.3 notes CFB decryption's forward cipher
   calls "can be performed in parallel if the input blocks are first constructed (in series) from the
   IV and the ciphertext", and with `s = b` those input blocks simply *are* the IV followed by the
   ciphertext. Re-measured after the stream-cipher rewrite: against an otherwise identical
@@ -137,7 +137,7 @@ CFB128 (`Cfb`), SP 800-38A Sec 6.3 with `s = b`:
   whole number of blocks end mid-segment and the next call finishes that segment byte by byte. At
   125-byte calls (7 blocks and 13 bytes) encryption measured 51.1 MiB/s against 51.4 for
   block-aligned calls, and decryption 90.6 against 106.8 -- the decrypt side pays because a partial
-  segment at each end of a call breaks the eight-block batch.
+  segment at each end of a call breaks the four-block batch.
 * Verified against all six SP 800-38A **Appendix F.3.13-F.3.18** vectors (CFB128-AES128/192/256,
   Encrypt and Decrypt) in the same four groupings as CBC. F.3 additionally tabulates the *output
   blocks* -- the keystream -- so those are checked against the raw permutation too
@@ -193,11 +193,11 @@ CFB8 (`Cfb8`), SP 800-38A Sec 6.3 with `s = 8`:
   CFB8.
 * **Decryption still batches.** Sec 6.3's parallel decryption applies: the successive register
   states depend only on the IV and the ciphertext, so they are built in series -- byte shuffling,
-  no cipher calls -- and the forward ciphers then run eight at a time through `encrypt_8blocks`,
+  no cipher calls -- and the forward ciphers then run four at a time through `encrypt_4blocks`,
   then in pairs. Measured **1.94x** the throughput of the same decryption in 1-byte calls, which
   never batch (6.61 vs 3.40 MiB/s). Encryption cannot batch and does not.
 * **Decryption never calls the inverse cipher**, as in CFB128, pinned by the same test permutation
-  whose inverse methods panic, run over the eight-block, pair and single-byte paths.
+  whose inverse methods panic, run over the four-block, pair and single-byte paths.
 * Verified against all six SP 800-38A **Appendix F.3.7-F.3.12** vectors (CFB8-AES128/192/256,
   Encrypt and Decrypt), each in seven groupings from one byte per call up to the whole message.
   F.3.7's tabulated **input and output blocks** -- all 18 of each -- are checked three ways: that
@@ -247,7 +247,7 @@ CTR (`Ctr`), SP 800-38A Sec 6.5:
 * **Both directions are parallel**, the only mode here of which that is true. Sec 6.5: "In both CTR
   encryption and CTR decryption, the forward cipher functions can be performed in parallel."
   Counter blocks depend on nothing but the nonce and the index, so encryption batches through
-  `encrypt_8blocks` / `encrypt_2blocks` exactly as decryption does, and encryption and decryption are
+  `encrypt_4blocks` / `encrypt_2blocks` exactly as decryption does, and encryption and decryption are
   the same operation. Only the forward cipher function is ever used, as in the CFB modes.
 * The keystream block is the one buffer in this crate wrapped in `Secret`: a call may end part-way
   through a block and the remainder is kept for the next one, and unlike a chaining value that
@@ -351,7 +351,7 @@ ECB (`Ecb`), SP 800-38A Sec 6.1:
   (176 / 208 / 240 B for AES-128/192/256).
 * **Both directions batch.** Sec 6.1 allows forward and inverse cipher calls "to be computed in parallel", so encryption
   as well as decryption walks the blocks through `ElectronicCodeBook::{en,de}crypt_blocks8`, then the pair methods, then
-  a single block. The swapped-pair and rotated-eight test permutations prove both paths are taken in both directions.
+  a single block. The swapped-pair and rotated-four test permutations prove both paths are taken in both directions.
 * `aes128-ecb` / `aes192-ecb` / `aes256-ecb` CLI subcommands over the shared block-mode plumbing, which is now generic
   over `INIT_DATA_LEN`: nothing is prepended on `encrypt` or consumed on `decrypt`, so output is exactly as long as
   input. The per-command help carries the warning.
@@ -359,7 +359,7 @@ ECB (`Ecb`), SP 800-38A Sec 6.1:
   groupings each -- and, since there is no IV, `encrypt` is checked against the published ciphertext too, through the
   streaming API and the one-shot. Each tabulated ciphertext block is also checked to be `CIPH_K` of its plaintext block
   through the raw permutation. The **NIST ACVP `ACVP-AES-ECB`** set (2138 AFT cases) already used by `aes`
-  is run again through the mode API, both directions, in three groupings including one that reaches the eight-block
+  is run again through the mode API, both directions, in three groupings including one that reaches the four-block
   path. Structural tests pin the Sec 6.1 equations against a reference over the toy permutation, determinism and the
   codebook property, Appendix D error propagation (a corrupted block randomises itself and nothing else, checked over
   all 128 bit positions with real AES), the empty init data, and composition with `bouncycastle-padding`.
@@ -367,7 +367,7 @@ ECB (`Ecb`), SP 800-38A Sec 6.1:
 `core`: new `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` trait (`crypto/core/src/traits.rs`), the raw
 keyed permutation -- `CIPH_K` / `CIPH^-1_K` of SP 800-38A Sec 5.1 -- that a mode is built on.
 `new`, `encrypt_block`, `decrypt_block`, plus provided `encrypt_2blocks` / `decrypt_2blocks` that
-default to two single-block calls and `encrypt_8blocks` / `decrypt_8blocks` that default to four pair
+default to two single-block calls and `encrypt_4blocks` / `decrypt_4blocks` that default to two pair
 calls, all of which bit-sliced implementations override (AES the pair form, SM4 both). The block methods
 are infallible; only `new` can fail, and only on the key. `bouncycastle-aes` implements
 it for all three key lengths (the data-encryption traits are still deliberately not implemented
@@ -607,7 +607,7 @@ Block cipher traits (PR #96):
   `do_{en,de}crypt_blocks(&mut [[u8; BLOCK_LEN]])`, which is what guarantees an implementation never sees a
   partial block; an implementor writes only `do_{en,de}crypt_init[_rng]` and that hook. The hook takes a *slice* of
   blocks rather than a `[[u8; BLOCK_LEN]; N]` array (it did at first): every whole number of blocks is valid, so
-  there is no length invariant for a const parameter to carry, and batching -- singly, in pairs, in eights -- is the
+  there is no length invariant for a const parameter to carry, and batching -- singly, in pairs, in fours -- is the
   mode's decision. `do_{en,de}crypt<LEN>` therefore hands the whole buffer to the hook in one call, and CBC
   decryption chunks it into pairs for `decrypt_2blocks` itself. The data methods keep a
   `Result` only for modes with a per-initialization data limit (counter-based modes); CBC never fails them.

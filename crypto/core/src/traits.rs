@@ -263,7 +263,7 @@ pub trait BlockCipherEncryptor<
     /// block shape is what guarantees it never sees a partial block. It takes a slice rather than
     /// a `[[u8; BLOCK_LEN]; N]` array because every whole number of blocks is valid, so there is
     /// no length invariant for a const parameter to carry, and because how to batch the blocks --
-    /// singly, in pairs, in eights -- is the mode's decision, not the caller's: a mode whose
+    /// singly, in pairs, in fours -- is the mode's decision, not the caller's: a mode whose
     /// permutation processes several blocks at once (CBC decryption, CTR) chunks the slice itself.
     /// Callers should normally use the flat [`BlockCipherEncryptor::do_encrypt`] instead.
     fn do_encrypt_blocks(
@@ -371,30 +371,32 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
         self.decrypt_block(b);
     }
 
-    /// The forward cipher function on eight *independent* blocks, in place.
+    /// The forward cipher function on four *independent* blocks, in place.
     ///
-    /// Provided as four [`ElectronicCodeBook::encrypt_2blocks`] calls, so an implementation that
+    /// Provided as two [`ElectronicCodeBook::encrypt_2blocks`] calls, so an implementation that
     /// overrides only the pair form gets its benefit here too. An engine whose natural unit is
     /// larger than a pair overrides this directly: a bit-sliced engine whose S-box circuit
-    /// substitutes four blocks per pass runs eight blocks as two full passes rather than four
-    /// half-empty pair calls.
+    /// substitutes four blocks per pass runs the four as one full pass rather than two half-empty
+    /// pair calls. Four is the unit because it is the widest any engine in this library fills:
+    /// AES fills a pair, and the `u16`- and `u32`-plane engines (SM4, Camellia, ARIA) fill four.
     ///
-    /// Overrides must be indistinguishable from the default, including the order of the eight
+    /// Overrides must be indistinguishable from the default, including the order of the four
     /// results. `TestFrameworkElectronicCodeBook` pins that.
     ///
-    /// Modes with parallel structure chunk their data into eights first, then pairs, then single
+    /// Modes with parallel structure chunk their data into fours first, then pairs, then single
     /// blocks; see CBC decryption in `bouncycastle-modes`.
-    fn encrypt_8blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
-        // Eight is a multiple of two, so the remainder is empty.
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
+        // Four is a multiple of two, so the remainder is empty.
         let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
         for pair in pairs {
             self.encrypt_2blocks(pair);
         }
     }
 
-    /// The inverse cipher function on eight *independent* blocks, in place.
-    /// See [`ElectronicCodeBook::encrypt_8blocks`].
-    fn decrypt_8blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+    /// The inverse cipher function on four *independent* blocks, in place.
+    /// See [`ElectronicCodeBook::encrypt_4blocks`].
+    fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
+        // Four is a multiple of two, so the remainder is empty.
         let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
         for pair in pairs {
             self.decrypt_2blocks(pair);

@@ -121,9 +121,9 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
         .expect("a valid symmetric cipher key")
 }
 
-/// Chunk sizes that cut across the eight-byte batch and the 16-byte block: 1 is the single-byte
-/// path only, 8 is exactly the batch, and the rest leave a different remainder each call.
-const CHUNKINGS: [usize; 6] = [1, 3, 8, 9, 17, 18];
+/// Chunk sizes that cut across the four-byte batch and the 16-byte block: 1 is the single-byte
+/// path only, 4 is exactly the batch, 8 is two, and the rest leave a different remainder each call.
+const CHUNKINGS: [usize; 7] = [1, 3, 4, 8, 9, 17, 18];
 
 /// Runs one Appendix F.3 CFB8 encrypt subsection.
 ///

@@ -12,11 +12,11 @@ use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use common::{SwappedEightToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyCbc<Dir> = Cbc<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedCbc<Dir> = Cbc<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedEightCbc<Dir> = Cbc<SwappedEightToy, Dir, TOY_LEN, TOY_LEN>;
+type SwappedFourCbc<Dir> = Cbc<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
 
 /// The implementor hook `do_encrypt_blocks`, by value, for tests whose data is block-shaped.
 fn enc_blocks<const N: usize>(
@@ -92,7 +92,7 @@ fn call_grouping_does_not_change_the_result() {
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
     let pinned_rng = || bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(iv);
 
-    // Reference: all eight blocks in one call.
+    // Reference: all eight blocks in one call (two fours).
     let (mut enc, got_iv) =
         ToyCbc::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng()).unwrap();
     assert_eq!(got_iv, iv, "the pinned RNG should reproduce the IV");
@@ -186,51 +186,47 @@ fn the_pair_path_is_really_used() {
     assert_eq!([p0, p1], plaintext, "the single-block path must not pair");
 }
 
-/// The eight-block path in `do_decrypt_blocks` must actually be taken, and only for full eights.
+/// The four-block path in `do_decrypt_blocks` must actually be taken, and only for full fours.
 ///
-/// [`SwappedEightToy`] returns its eight results rotated while its pair and single-block methods
-/// are correct. So a CBC decryptor that uses `decrypt_8blocks` gives the wrong answer for eight
-/// blocks handed over together, and the right answer for the same eight blocks handed over as
-/// two fours (pairs) or one at a time. Nine blocks are wrong too: eight, then one.
+/// [`SwappedFourToy`] returns its four results rotated while its pair and single-block methods
+/// are correct. So a CBC decryptor that uses `decrypt_4blocks` gives the wrong answer for four
+/// blocks handed over together, and the right answer for the same four blocks handed over as
+/// two pairs or one at a time. Five blocks are wrong too: four, then one.
 #[test]
-fn the_eight_block_path_is_really_used() {
+fn the_four_block_path_is_really_used() {
     let key = toy_key();
-    let plaintext: [[u8; TOY_LEN]; 9] = core::array::from_fn(|i| [0x10 * i as u8 + 1; TOY_LEN]);
+    let plaintext: [[u8; TOY_LEN]; 5] = core::array::from_fn(|i| [0x10 * i as u8 + 1; TOY_LEN]);
 
-    // The correct toy round-trips nine blocks.
+    // The correct toy round-trips five blocks.
     let (mut enc, iv) = ToyCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
     let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_eq!(dec_blocks(&mut dec, &ct), plaintext);
 
-    // The rotated-eight toy encrypts identically (encryption is serial and never batches)...
-    let (mut enc, iv) = SwappedEightCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
+    // The rotated-four toy encrypts identically (encryption is serial and never batches)...
+    let (mut enc, iv) = SwappedFourCbc::<Encrypting>::do_encrypt_init(&key).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
 
-    // ...but decrypting nine together must be wrong, because the first eight take the eight path.
-    let mut dec = SwappedEightCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(
-        dec_blocks(&mut dec, &ct),
-        plaintext,
-        "eight blocks must go through decrypt_8blocks"
-    );
+    // ...but decrypting five together must be wrong, because the first four take the four path.
+    let mut dec = SwappedFourCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "four blocks must go through decrypt_4blocks");
 
-    // Exactly eight together is wrong for the same reason.
-    let eight: [[u8; TOY_LEN]; 8] = ct[..8].try_into().unwrap();
-    let mut dec = SwappedEightCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(&dec_blocks(&mut dec, &eight)[..], &plaintext[..8]);
+    // Exactly four together is wrong for the same reason.
+    let four: [[u8; TOY_LEN]; 4] = ct[..4].try_into().unwrap();
+    let mut dec = SwappedFourCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_ne!(&dec_blocks(&mut dec, &four)[..], &plaintext[..4]);
 
-    // Two fours go through the pair path and are correct; so is the ninth block on its own.
-    let mut dec = SwappedEightCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    let first: [[u8; TOY_LEN]; 4] = ct[..4].try_into().unwrap();
-    let second: [[u8; TOY_LEN]; 4] = ct[4..8].try_into().unwrap();
+    // Two pairs go through the pair path and are correct; so is the fifth block on its own.
+    let mut dec = SwappedFourCbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    let first: [[u8; TOY_LEN]; 2] = ct[..2].try_into().unwrap();
+    let second: [[u8; TOY_LEN]; 2] = ct[2..4].try_into().unwrap();
     assert_eq!(
         &dec_blocks(&mut dec, &first)[..],
-        &plaintext[..4],
-        "fewer than eight must not batch"
+        &plaintext[..2],
+        "fewer than four must not batch"
     );
-    assert_eq!(&dec_blocks(&mut dec, &second)[..], &plaintext[4..8]);
-    assert_eq!(dec_flat(&mut dec, &ct[8]), plaintext[8]);
+    assert_eq!(&dec_blocks(&mut dec, &second)[..], &plaintext[2..4]);
+    assert_eq!(dec_flat(&mut dec, &ct[4]), plaintext[4]);
 }
 
 /// The flat streaming method must agree with the block-shaped implementor hook.
