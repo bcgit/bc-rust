@@ -71,7 +71,7 @@ impl<P: AESParams> AES<P> {
     ///
     /// Algorithm 1 line by line: line 3 is the initial ADDROUNDKEY() with `w[0..3]`; lines 4-9 are
     /// the `Nr - 1` full rounds; lines 10-13 are the final round, which omits MIXCOLUMNS().
-    fn encrypt2(&self, q: &mut Planes) {
+    fn cipher2(&self, q: &mut Planes) {
         // line 3: state = state XOR w[0..3]
         add_round_key(q, &round_key::<P>(&self.schedule, 0));
 
@@ -104,7 +104,7 @@ impl<P: AESParams> AES<P> {
     ///
     /// Line by line: line 3 is ADDROUNDKEY() with the last round key; lines 4-9 are the
     /// `Nr - 1` full inverse rounds; lines 10-13 are the final one, which omits INVMIXCOLUMNS().
-    fn decrypt2(&self, q: &mut Planes) {
+    fn inv_cipher2(&self, q: &mut Planes) {
         // line 3: state = state XOR w[4*Nr .. 4*Nr+3]
         add_round_key(q, &round_key::<P>(&self.schedule, P::NR));
 
@@ -133,7 +133,7 @@ impl<P: AESParams> AES<P> {
     /// Infallible: a constructed [`AES`] is always usable and every input length is fixed.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
-        self.encrypt2(&mut q);
+        self.cipher2(&mut q);
         let (a, b) = blocks.split_at_mut(1);
         unpack(&q, &mut a[0], &mut b[0]);
     }
@@ -141,7 +141,7 @@ impl<P: AESParams> AES<P> {
     /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_2blocks`].
     pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
-        self.decrypt2(&mut q);
+        self.inv_cipher2(&mut q);
         let (a, b) = blocks.split_at_mut(1);
         unpack(&q, &mut a[0], &mut b[0]);
     }
@@ -158,7 +158,7 @@ impl<P: AESParams> AES<P> {
     /// half is never returned either way.
     pub(crate) fn encrypt_block(&self, block: &mut Block) {
         let mut q = pack(block, block);
-        self.encrypt2(&mut q);
+        self.cipher2(&mut q);
         let mut discard = [0u8; BLOCK_LEN];
         unpack(&q, block, &mut discard);
         debug_assert_eq!(*block, discard, "the two interleaved halves must agree");
@@ -167,7 +167,7 @@ impl<P: AESParams> AES<P> {
     /// Decrypts one block in place. See [`ElectronicCodeBook::encrypt_block`] for the two-blocks-at-once caveat.
     pub(crate) fn decrypt_block(&self, block: &mut Block) {
         let mut q = pack(block, block);
-        self.decrypt2(&mut q);
+        self.inv_cipher2(&mut q);
         let mut discard = [0u8; BLOCK_LEN];
         unpack(&q, block, &mut discard);
         debug_assert_eq!(*block, discard, "the two interleaved halves must agree");
