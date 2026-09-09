@@ -42,7 +42,7 @@
 //! It is also possible to provide input where the final byte contains fewer than 8 bits of data
 //! (a bit-oriented message, FIPS 180-4 s. 5.1). The partial byte is taken as the most significant bits,
 //! leading bit first, and the low "unused" bits are ignored. The following hashes 16 bytes plus the
-//! 3 padding bits `101`:
+//! 3 message bits `101`:
 //! ```
 //! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sha2 as sha2;
@@ -152,7 +152,7 @@ pub type SHA384 = SHA512Internal<SHA384Params>;
 pub type SHA512 = SHA512Internal<SHA512Params>;
 /// Public type for the SHA-512/t truncating family (FIPS 180-4 s. 5.3.6): SHA-512 with a t-specific initial
 /// hash value, truncated to `T` bits. Only the NIST-approved truncations `T = 224` and `T = 256`
-/// can be instantiated, enforced by the sealing trait `SHA512Family`; see [`SHA512_224`] and [`SHA512_256`].
+/// can be instantiated, enforced by the sealing trait `SHA512InitValue`; see [`SHA512_224`] and [`SHA512_256`].
 pub type SHA512t<const T: usize> = SHA512Internal<SHA512tParams<T>>;
 /// Public type for SHA512/224 (FIPS 180-4 s. 6.6).
 pub type SHA512_224 = SHA512t<224>;
