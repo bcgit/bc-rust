@@ -698,8 +698,7 @@ mod hmac_tests {
             #[test]
             fn $test_name() {
                 let mut rng = HashDRBG_SHA512::new_from_os();
-                let key =
-                    $hmac::keygen_from_rng(&mut rng).expect("keygen_from_rng should succeed");
+                let key = $hmac::keygen_from_rng(&mut rng).expect("keygen_from_rng should succeed");
 
                 assert_eq!(key.key_len(), $n, "key should be the hash's output length");
                 assert_eq!(key.key_type(), KeyType::MACKey, "keygen should return a MAC key");

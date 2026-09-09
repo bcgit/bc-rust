@@ -1,199 +1,91 @@
-//! This crate contains an implementation of the Hash-Based Message Authentication Code (HMAC)
-//! as specified in RFC2104, taking into account NIST Implementation Guidance in FIPS 140-2 IG A.8
-//! and NIST SP 800-107-r1.
+//! The generic Hash-Based Message Authentication Code (HMAC) construction, as specified in RFC 2104,
+//! taking into account NIST Implementation Guidance in FIPS 140-2 IG A.8 and NIST SP 800-107-r1.
 //!
-//! # Usage
+//! This is a utility crate and is not intended to be used directly. It provides [`HMAC`] -- the
+//! construction, generic over any struct that implements [`Hash`] and [`HMACParams`], the extension
+//! point through which a hash declares the metadata from which the HMAC instance is built.
+//! The library provides the following concrete instantiations of HMAC:
 //!
-//! This crate is not intended to be used directly, but rather to be instantiated with a hash function.
+//! | Hash family | Instantiations                                                               |
+//! |-------------|------------------------------------------------------------------------------|
+//! | SHA-2       | `bouncycastle_sha2::hmac` -- `HMAC_SHA224` .. `HMAC_SHA512_256`              |
+//! | SHA-3       | `bouncycastle_sha3::hmac` -- `HMAC_SHA3_224` .. `HMAC_SHA3_512`              |
 //!
-//! The HMAC object (and the [`MAC`] trait in general) is designed in three phases:
+//! Although users are free to implement [`Hash`] and [`HMACParams`] for a a hash function not included with the library,
+//! and will then be able to instantiate [`HMAC`] for it as well.
 //!
-//! * The initialization phase where you specify the underlying hash function and the key material.
-//! * The update phase where you feed in the content being MAC'd, either in one-shot or in chunks.
-//! * The finalization phase where you either obtain the MAC value or verify an existing MAC value.
+//! # Instantiating HMAC over a Hash
 //!
-//! The initialization phase is primarily performed via the [`MAC::new`] function which performs
-//! checks on the provided key to ensure that it is of the correct type [`KeyType::MACKey`] and tagged
-//! at the correct security level for the chosen hash function. In cases where you need to use HMAC
-//! with an intentially week key (such as an all-zero salt), the alternative constructor
-//! [`MAC::new_allow_weak_key`] can be used.
+//! HMAC works with any hash: [`HMAC<HASH>`](HMAC) needs only [`Hash`]. What HMAC cannot
+//! derive on its own is the *metadata* of the resulting construction -- the name "HMAC-SHA256" is not
+//! mechanically obtainable from "SHA256", and RFC 4231 assigns each hash/HMAC combination its own OID
+//! rather than deriving it from the hash's OID. Supplying that metadata is what makes an HMAC a
+//! first-class algorithm in this library rather than an anonymous `HMAC<H>`.
 //!
-//! The update phase supports streaming of the content via the repeated calls to the [`MAC::do_update`] function.
-//! One-shot APIs are provided that combine the update and finalization phases into a single function call.
+//! There are four steps, of which only the second is mandatory:
 //!
+//! 1. Have a hash type that implements [`Hash`] + [`HashAlgParams`] + [`Default`]. Implementing
+//!    [`Hash`] is documented in `bouncycastle-core`; nothing about it is HMAC-specific.
+//! 2. Implement [`HMACParams`] for that hash type, supplying the HMAC's name, claimed security
+//!    strength and OID, plus the key type that [`HMAC::keygen_from_rng`] should return (typically a
+//!    `KeyMaterial<L>` for an L that matches the size of the underlying hash function. This allows
+//!    this crate to provide blanket [`Algorithm`], [`AlgorithmOID`] and [`HMAC::keygen_from_rng`] impls.
+//! 3. Publish a type alias for the instantiation, passing [`HashAlgParams::BLOCK_LEN`] as the key
+//!    buffer length. Per RFC 2104 a key no longer than the hash's block is used verbatim, and only
+//!    longer keys are pre-hashed down to the output length, so the buffer must hold a full block.
+//!    Reading the length off the hash rather than writing a literal means the two cannot drift apart.
+//! 4. Optionally publish the suspended-state length as a constant. [`SuspendableKeyed`] is
+//!    implemented automatically for any hash that implements [`Suspendable`], and HMAC's suspended
+//!    state is exactly the inner hash's -- the key is deliberately excluded -- so the constant is
+//!    just an alias for the hash's own.
 //!
-//! # Examples
+//! ## Worked example
 //!
-//! todo -- crate docs need to be refactored:
-//!           * most of this should be moved to the SHA2 / SHA3 crates
-//!           * the docs here should be re-written to focus on how to construct an HMAC with a custom struct that impls [Hash] from outside the bc-rust lib.
+//! As an example, the `bouncycastle-sha2` crate follows exactly the recipe above; its entry for SHA-256 reduces to:
 //!
-//! Instantiation of an HMAC object is straightforward:
+//! ```rust,ignore
+//! pub type HMAC_SHA256 = HMAC<SHA256, { <SHA256 as HashAlgParams>::BLOCK_LEN }>;
 //!
-//! ```
-//! use bouncycastle_sha2::hmac::HMAC_SHA256;
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_core::key_material::{KeyMaterial256};
-//! use bouncycastle_rng::HashDRBG_SHA256;
-//!
-//! let mut rng = HashDRBG_SHA256::new_from_os();
-//! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
-//!         .expect("Will only fail if the system RNG can't start up.");
-//!
-//! let hmac = HMAC_SHA256::new(&key).expect(
-//!         "Should succeed because key is long enough and tagged KeyType::MACKey");
-//! ```
-//!
-//! Alternatively, if you have key material from somewhere else, you can create the key manually, like so:
-//! ```
-//! use bouncycastle_sha2::hmac::HMAC_SHA256;
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//!
-//! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
-//! let hmac = HMAC_SHA256::new(&key).expect(
-//!         "Should succeed because key is long enough and tagged KeyType::MACKey");
-//! ```
-//!
-//! ## Computing a MAC
-//! MAC functionality is accessed via the [`MAC`] trait.
-//!
-//! The simplest usage is via the one-shot functions.
-//! ```
-//! use bouncycastle_sha2::hmac::HMAC_SHA256;
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_rng::HashDRBG_SHA256;
-//!
-//! let mut rng = HashDRBG_SHA256::new_from_os();
-//! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
-//!         .expect("Will only fail if the system RNG can't start up.");
-//!
-//! let data: &[u8] = b"Hello, world!";
-//! let hmac = HMAC_SHA256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
-//! let output: Vec<u8> = hmac.mac(data);
-//! ```
-//!
-//! More advanced usage will require creating an HMAC object to hold state between successive calls,
-//! for example if input is received in chunks and not all available at the same time:
-//!
-//! ```
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_sha2::hmac::HMAC_SHA256;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_rng::HashDRBG_SHA256;
-//!
-//! let mut rng = HashDRBG_SHA256::new_from_os();
-//! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
-//!         .expect("Will only fail if the system RNG can't start up.");
-//!
-//! let mut hmac = HMAC_SHA256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
-//! hmac.do_update(b"Hello,");
-//! hmac.do_update(b" world!");
-//! let output: Vec<u8> = hmac.do_final();
-//! ```
-//!
-//! ## Verifying a MAC
-//! MAC functionality is accessed via the [`MAC`] trait which provides functions for MAC verification.
-//! The built-in verification functions use constant-time comparisons and so are *strongly recommended*
-//! rather than re-computing the MAC value and comparing it yourself.
-//!
-//! The simplest usage is via the one-shot functions.
-//! ```
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::MAC;
-//!
-//! // For this example to work, we are hard-coding both the key and the MAC value that it generates
-//! // for this data.
-//! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
-//! let data: &[u8] = b"Hello, world!";
-//!
-//! // .verify() returns a bool: true if the MAC is valid, false otherwise.
-//! if bouncycastle_sha2::hmac::HMAC_SHA256::new(&key).unwrap()
-//!                 .verify(data,
-//!                         b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90
-//!                            \x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9"
-//!                         )
-//! {
-//!     println!("MAC is valid!");
-//! } else {
-//!     println!("MAC is invalid!");
+//! impl HMACParams for SHA256 {
+//!     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
+//!     const HMAC_ALG_NAME: &'static str = "HMAC-SHA256";
+//!     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+//!     /// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
+//!     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 9];
+//!     const HMAC_OID_DER: &'static [u8] =
+//!         &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x09];
 //! }
+//!
+//! pub const SUSPENDED_HMAC_SHA256_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
 //! ```
 //!
-//! Similarly, a streaming version is available, which is identical to the streaming interface for
-//! computing a mac value, but calls [`MAC::do_verify_final`] instead of [`MAC::do_final`].
+//! [`HMACParams`] is deliberately **not** sealed, so the same recipe works for a hash function
+//! defined in any other crate. Simply follow the recipe above!
 //!
-//! ```
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_sha2::hmac::HMAC_SHA256;
+//! # Security Considerations
 //!
-//! // For this example to work, we are hard-coding both the key and the MAC value that it generates
-//! // for this data.
-//! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//! let mut hmac = HMAC_SHA256::new(&key).unwrap();
-//! hmac.do_update(b"Hello,");
-//! hmac.do_update(b" world!");
-//! if hmac.do_verify_final(b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90\x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9"
-//!                     )
-//! {
-//!     println!("MAC is valid!");
-//! } else {
-//!     println!("MAC is invalid!");
-//! }
-//! ```
+//! These apply to every instantiation; the hash crates' `hmac` modules repeat the ones that matter
+//! most in day-to-day use.
 //!
-//! # Suspending and resuming execution
-//!
-//! When MAC'ing a large message, it can be advantageous to be able to suspend the operation
-//! to a cache and resume it later; for example if waiting for the message to stream over a slow network
-//! connection. For this reason, all HMAC algorithms impl [`SuspendableKeyed`].
-//!
-//! Note that since HMAC is a keyed
-//! algorithm and we do not want to serialize the private key into the state, the trait structure forces you to
-//! re-provide the same key when you resume the operation. Securely storing this key in the interim
-//! is the responsibility of the caller. Note also that if you resume the HMAC with the wrong key,
-//! `from_serialized_state` has no way to detect this, so the end result will be a broken MAC value
-//! computed with different keys in the inner and outer pad. So make sure you resume with the same key!
-//!
-//!```rust
-//! use bouncycastle_sha2::hmac::HMAC_SHA256;
-//! use bouncycastle_core::key_material::KeyMaterial256;
-//! use bouncycastle_core::traits::{MAC, SuspendableKeyed};
-//! use bouncycastle_core::key_material::KeyType;
-//!
-//! let msg_part1 = b"The quick brown fox";
-//! let msg_part2 = b" jumped over the lazy dog";
-//!
-//! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
-//! let mut hmac = HMAC_SHA256::new(&key).unwrap();
-//! hmac.do_update(msg_part1);
-//!
-//! // suspend the in-progress mac (the key is NOT included in the serialized state)
-//! let serialized_state = hmac.suspend();
-//!
-//! // ...
-//! // do other things in the meantime
-//! // ...
-//!
-//! // ... later, possibly on another host: resume from the serialized state by re-supplying
-//! // the same salt (make sure you store it securely!).
-//! let mut hmac_resumed = HMAC_SHA256::from_suspended(serialized_state, &key).unwrap();
-//! hmac_resumed.do_update(msg_part2);
-//! let h: Vec<u8> = hmac_resumed.do_final();
-//! ```
+//! * [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] is a claim that [`MAC::new`] enforces against the
+//!   key's tagged strength, and that [`HMAC::keygen_from_rng`] enforces against the RNG's. Declaring
+//!   a strength the underlying hash cannot support does not make the construction stronger, it just
+//!   makes the check wrong. NIST SP 800-107-r1 Section 5.3.4 gives the ceiling: the effective
+//!   strength is `min(strength of K, 2C)` for an internal chaining value of `C` bits.
+//! * [`MAC::new_allow_weak_key`] deliberately skips the key-strength check. It exists for protocols
+//!   that call for a weak or all-zero key -- an all-zero HKDF salt, for example -- and should not be
+//!   used to silence an error from [`MAC::new`].
+//! * Verification via [`MAC::verify`] / [`MAC::do_verify_final`] uses a constant-time comparison.
+//!   Recomputing the MAC and comparing it with `==` leaks how many leading bytes matched.
+//! * [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is the shortest truncation this crate will produce, per
+//!   FIPS 140-2 IG A.8 / NIST SP 800-107-r1 Section 5.3.3. It is a floor, not a recommendation:
+//!   RFC 2104 Section 5 recommends that the output length "be not less than half the length of the
+//!   hash output ... and not less than 80 bits".
+//! * The key is deliberately excluded from the suspended state and must be re-supplied on resume.
+//!   Resuming with the wrong key cannot be detected and silently produces a wrong MAC, computed with
+//!   different keys in the inner and outer pad.
+//! * The key buffer is held in [`bouncycastle_utils::secret::Secret`] and zeroized on drop. The
+//!   `K ⊕ ipad` / `K ⊕ opad` blocks are transient stack allocations and are not zeroized.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
