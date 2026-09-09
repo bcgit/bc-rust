@@ -19,12 +19,12 @@ use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, Strea
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use bouncycastle_modes::{Cbc, Cfb, Cfb8, Decrypting, Encrypting};
-use common::{ForwardOnlyToy, SwappedEightToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyCfb8<Dir> = Cfb8<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedCfb8<Dir> = Cfb8<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 type ForwardOnlyCfb8<Dir> = Cfb8<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedEightCfb8<Dir> = Cfb8<SwappedEightToy, Dir, TOY_LEN, TOY_LEN>;
+type SwappedFourCfb8<Dir> = Cfb8<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
 
 /// `do_encrypt`, by value.
 fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>, plaintext: &[u8]) -> Vec<u8> {
@@ -249,9 +249,9 @@ fn the_ciphertext_of_a_prefix_is_a_prefix_of_the_ciphertext() {
 /// SP 800-38A Sec 6.3: "The *forward cipher* function is applied to each input block to produce the
 /// output blocks" -- in CFB *decryption* as well as encryption.
 ///
-/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_2blocks` and `decrypt_8blocks`, so this
+/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_2blocks` and `decrypt_4blocks`, so this
 /// test fails loudly if either direction of the mode ever reaches the inverse cipher. Every decrypt
-/// path is exercised -- eights, pairs and single bytes -- and the result is required to agree with
+/// path is exercised -- fours, pairs and single bytes -- and the result is required to agree with
 /// the plain [`Toy`], otherwise the test could pass by not really encrypting anything.
 #[test]
 fn neither_direction_uses_the_inverse_cipher() {
@@ -263,7 +263,7 @@ fn neither_direction_uses_the_inverse_cipher() {
         ForwardOnlyCfb8::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
     let ct = enc(&mut e, &plaintext);
 
-    // One call: two eights, then a pair, then a single byte.
+    // One call: four fours, then a pair, then a single byte.
     let mut d = ForwardOnlyCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_eq!(dec(&mut d, &ct), plaintext, "all paths, forward cipher only");
 
@@ -303,8 +303,8 @@ fn the_decryptor_shifts_in_ciphertext_not_plaintext() {
 /// at byte granularity. Every chunking in [`CHUNKINGS`] is checked against the one-call reference in
 /// both directions, and every encrypt chunking against every decrypt chunking.
 ///
-/// For CFB8 the decrypt side is where this bites: chunk sizes that are not multiples of 8 leave the
-/// eight-byte batch loop with a different remainder each call, so the register has to carry across
+/// For CFB8 the decrypt side is where this bites: chunk sizes that are not multiples of 4 leave the
+/// four-byte batch loop with a different remainder each call, so the register has to carry across
 /// calls correctly for every alignment.
 #[test]
 fn call_chunking_does_not_change_the_result() {
@@ -350,7 +350,7 @@ fn call_chunking_does_not_change_the_result() {
 /// (`sp800_38a_cfb8_tests.rs`, `acvp_cfb8_tests.rs`) chunks against *published* ciphertext; this is
 /// the direct single-call-versus-chunked comparison.
 ///
-/// The message is 171 bytes, which is 21 eight-byte batches and a 3-byte tail, so the chunkings
+/// The message is 171 bytes, which is 42 four-byte batches and a 3-byte tail, so the chunkings
 /// leave the batch loop with a different remainder each time.
 #[test]
 fn aes_chunking_matches_a_single_call() {
@@ -422,13 +422,13 @@ fn aes_chunking_matches_a_single_call() {
 /// is correct. CFB8 decryption batches through `encrypt_2blocks`, so with this permutation six
 /// bytes handed over together come out wrong while the same bytes one at a time come out right.
 ///
-/// Six, not eight: the trait's default `encrypt_8blocks` is four `encrypt_2blocks` calls, so eight
+/// Two, not four: the trait's default `encrypt_4blocks` is two `encrypt_2blocks` calls, so four
 /// bytes would also be wrong and would not distinguish the two paths.
 #[test]
 fn the_pair_path_is_really_used() {
     let key = toy_key();
     let iv = pinned_iv();
-    let plaintext = message(6);
+    let plaintext = message(2);
 
     // The correct toy round-trips.
     let ct = enc(&mut pinned_encryptor(iv), &plaintext);
@@ -439,46 +439,46 @@ fn the_pair_path_is_really_used() {
         SwappedCfb8::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB8 encryption must not use the pair path");
 
-    // ...but decrypting six bytes together must now be wrong, because the pair path is used.
+    // ...but decrypting two bytes together must now be wrong, because the pair path is used.
     let mut d = SwappedCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(dec(&mut d, &ct), plaintext, "three pairs must go through encrypt_2blocks");
+    assert_ne!(dec(&mut d, &ct), plaintext, "a pair must go through encrypt_2blocks");
 
     // One byte at a time avoids the pair path, so it is correct even for this toy.
     let mut d = SwappedCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_eq!(dec_chunked(&mut d, &ct, 1), plaintext, "the single-byte path must not pair");
 }
 
-/// The eight-byte batch path in `do_decrypt` must actually be taken, and only for full eights.
+/// The four-byte batch path in `do_decrypt` must actually be taken, and only for full fours.
 ///
-/// [`SwappedEightToy`] returns its eight `encrypt_8blocks` results rotated while its pair and
-/// single-block methods are correct. So nine bytes handed over together decrypt wrongly (eight
-/// batched, then one), while six bytes (pairs) or one at a time decrypt correctly.
+/// [`SwappedFourToy`] returns its four `encrypt_4blocks` results rotated while its pair and
+/// single-block methods are correct. So five bytes handed over together decrypt wrongly (four
+/// batched, then one), while two bytes (a pair) or one at a time decrypt correctly.
 #[test]
-fn the_eight_byte_path_is_really_used() {
+fn the_four_byte_path_is_really_used() {
     let key = toy_key();
     let iv = pinned_iv();
-    let plaintext = message(9);
+    let plaintext = message(5);
 
     let ct = enc(&mut pinned_encryptor(iv), &plaintext);
     assert_eq!(dec(&mut pinned_decryptor(iv), &ct), plaintext);
 
-    // The rotated-eight toy encrypts identically: CFB8 encryption is serial and never batches.
+    // The rotated-four toy encrypts identically: CFB8 encryption is serial and never batches.
     let (mut e, _) =
-        SwappedEightCfb8::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
-    assert_eq!(enc(&mut e, &plaintext), ct, "CFB8 encryption must not use the eight path");
+        SwappedFourCfb8::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
+    assert_eq!(enc(&mut e, &plaintext), ct, "CFB8 encryption must not use the four path");
 
-    // ...but nine bytes together must now be wrong, because the first eight go through
-    // encrypt_8blocks.
-    let mut d = SwappedEightCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(dec(&mut d, &ct), plaintext, "nine bytes must go through encrypt_8blocks");
+    // ...but five bytes together must now be wrong, because the first four go through
+    // encrypt_4blocks.
+    let mut d = SwappedFourCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_ne!(dec(&mut d, &ct), plaintext, "five bytes must go through encrypt_4blocks");
 
-    // Six bytes use the pair path only, so they are correct even for this toy...
-    let six = &ct[..6];
-    let mut d = SwappedEightCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_eq!(dec(&mut d, six), plaintext[..6], "pairs must not use the eight path");
+    // Two bytes use the pair path only, so they are correct even for this toy...
+    let two = &ct[..2];
+    let mut d = SwappedFourCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_eq!(dec(&mut d, two), plaintext[..2], "pairs must not use the four path");
 
     // ...and so is one byte at a time.
-    let mut d = SwappedEightCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    let mut d = SwappedFourCfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_eq!(dec_chunked(&mut d, &ct, 1), plaintext, "the single-byte path must not batch");
 }
 

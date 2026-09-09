@@ -30,14 +30,14 @@ use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, Strea
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use bouncycastle_modes::{Ctr, Decrypting, Encrypting};
-use common::{ForwardOnlyToy, SwappedEightToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 /// The default shape under test: a 12-byte nonce, so a 4-byte counter.
 const NONCE_LEN: usize = 12;
 type ToyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
 type SwappedCtr<Dir> = Ctr<SwappedPairToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
 type ForwardOnlyCtr<Dir> = Ctr<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
-type SwappedEightCtr<Dir> = Ctr<SwappedEightToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
+type SwappedFourCtr<Dir> = Ctr<SwappedFourToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
 
 /// A 15-byte nonce leaves a **1-byte** counter, so the whole counter space is 256 blocks -- 4 KiB
 /// of keystream. That makes the exhaustion behaviour reachable in a test.
@@ -589,34 +589,34 @@ fn the_pair_path_is_really_used_in_both_directions() {
     assert_ne!(back, plaintext, "CTR decryption must use the pair path");
 }
 
-/// The eight-block path must be taken, in both directions, and only for full eights.
+/// The four-block path must be taken, in both directions, and only for full fours.
 #[test]
-fn the_eight_block_path_is_really_used_in_both_directions() {
+fn the_four_block_path_is_really_used_in_both_directions() {
     let key = toy_key();
     let nonce = pinned_nonce();
-    let plaintext = message(9 * TOY_LEN);
+    let plaintext = message(5 * TOY_LEN);
 
     let ct = enc(&mut pinned_encryptor(nonce), &plaintext);
 
     let (mut e, _) =
-        SwappedEightCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
+        SwappedFourCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
     e.do_encrypt(&mut swapped).unwrap();
-    assert_ne!(swapped, ct, "nine blocks must go through encrypt_8blocks");
+    assert_ne!(swapped, ct, "five blocks must go through encrypt_4blocks");
 
-    // Four blocks at a time uses pairs only, so the rotated-eight toy is correct there.
+    // Two blocks at a time uses pairs only, so the rotated-four toy is correct there.
     let (mut e, _) =
-        SwappedEightCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
-    let mut fours = plaintext.clone();
-    for piece in fours.chunks_mut(4 * TOY_LEN) {
+        SwappedFourCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
+    let mut pairs = plaintext.clone();
+    for piece in pairs.chunks_mut(2 * TOY_LEN) {
         e.do_encrypt(piece).unwrap();
     }
-    assert_eq!(fours, ct, "fours must not use the eight path");
+    assert_eq!(pairs, ct, "pairs must not use the four path");
 
-    let mut d = SwappedEightCtr::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
+    let mut d = SwappedFourCtr::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
     let mut back = ct.clone();
     d.do_decrypt(&mut back).unwrap();
-    assert_ne!(back, plaintext, "decryption must batch eights too");
+    assert_ne!(back, plaintext, "decryption must batch fours too");
 }
 
 // ---- nonce handling ------------------------------------------------------------------------

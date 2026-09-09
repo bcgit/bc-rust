@@ -101,7 +101,7 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// How to walk the bytes of one case.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Grouping {
-    /// The whole payload in one call: eights, then pairs, then the remaining bytes singly.
+    /// The whole payload in one call: fours, then pairs, then the remaining bytes singly.
     Whole,
     /// One whole block per call.
     Blocks,

@@ -89,7 +89,7 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
         .expect("a valid symmetric cipher key")
 }
 
-/// Chunk sizes that cut across the block and the eight-block batch, so the vectors are reproduced
+/// Chunk sizes that cut across the block and the four-block batch, so the vectors are reproduced
 /// through every path rather than only the batched one.
 const CHUNKINGS: [usize; 6] = [1, 5, 16, 17, 33, 69];
 

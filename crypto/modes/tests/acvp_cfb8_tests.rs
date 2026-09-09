@@ -23,7 +23,7 @@
 //! that reach the batch paths. Every case is run **four times**: as one call over the whole
 //! payload, byte by byte, in 8-byte calls, and in 3-byte calls that never line up with the
 //! 8-byte batch. Between them those put the multi-byte cases through
-//! [`ElectronicCodeBook::encrypt_8blocks`] and [`ElectronicCodeBook::encrypt_2blocks`] -- the
+//! [`ElectronicCodeBook::encrypt_4blocks`] and [`ElectronicCodeBook::encrypt_2blocks`] -- the
 //! *forward* function, even on the decrypt side -- and through the single-byte path, with the
 //! shift register carried across calls at every alignment. So all of that is exercised against real
 //! vectors and not only against the toys in `cfb8_tests.rs`.
@@ -96,12 +96,12 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// How to walk the bytes of one case.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Grouping {
-    /// The whole payload in one call: eights, then pairs, then the remaining bytes singly.
+    /// The whole payload in one call: fours, then pairs, then the remaining bytes singly.
     Whole,
     /// One byte per call. Never batches.
     Bytes,
-    /// Eight bytes per call: every call is exactly one `encrypt_8blocks` batch.
-    Eights,
+    /// Four bytes per call: every call is exactly one `encrypt_4blocks` batch.
+    Fours,
     /// Three bytes per call, so no call lines up with the 8-byte batch and the shift register has
     /// to carry across calls at every alignment.
     Threes,
@@ -112,7 +112,7 @@ impl Grouping {
         match self {
             Grouping::Whole => payload_len.max(1),
             Grouping::Bytes => 1,
-            Grouping::Eights => 8,
+            Grouping::Fours => 4,
             Grouping::Threes => 3,
         }
     }
@@ -256,7 +256,7 @@ fn acvp_aes_cfb8_known_answer_tests() {
                 multi_block += 1;
             }
 
-            for grouping in [Grouping::Whole, Grouping::Bytes, Grouping::Eights, Grouping::Threes] {
+            for grouping in [Grouping::Whole, Grouping::Bytes, Grouping::Fours, Grouping::Threes] {
                 let got = run_case_for_key_len(&key_bytes, iv, &input, encrypt, grouping);
                 assert_eq!(
                     got,

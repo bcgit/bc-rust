@@ -363,7 +363,7 @@
 //! it is live key material for the bytes not yet consumed.
 //!
 //! The data methods work in place. The batch paths in a decryptor are the transient cost: a
-//! `[[u8; BLOCK_LEN]; 8]` of stack for the eight-block path -- 128 B on AES -- and a
+//! `[[u8; BLOCK_LEN]; 4]` of stack for the four-block path -- 64 B on AES -- and a
 //! `[[u8; BLOCK_LEN]; 2]` for the pair path. CFB8's batch paths hold input blocks it builds itself;
 //! CBC's and CFB's hold a copy of the ciphertext they need for the chaining value.
 //! [`Encrypting`] and [`Decrypting`] are zero-sized and held in a `PhantomData`, so encoding the

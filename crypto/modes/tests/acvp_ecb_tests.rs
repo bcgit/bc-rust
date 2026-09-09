@@ -10,7 +10,7 @@
 //! methods; this file is what pins that the mode adds nothing and loses nothing on the way: every
 //! case is run through the `BlockCipherEncryptor` / `BlockCipherDecryptor` API in three groupings
 //! -- block by block, in pairs with a remainder, and the whole payload in one hook call (which for
-//! the 8-to-10-block cases reaches the eight-block path) -- in both directions.
+//! the cases of four or more blocks reaches the four-block path) -- in both directions.
 //!
 //! Unlike the CBC and CFB response files, the ECB one records `key`, `pt` and `ct` for every case,
 //! so it is read alone and each case is checked in both directions regardless of its group's
@@ -77,7 +77,7 @@ enum Grouping {
     Single,
     /// Two blocks per call, with a one-block remainder for odd lengths.
     Pairs,
-    /// The whole payload in one hook call: eights, then pairs, then the remainder.
+    /// The whole payload in one hook call: fours, then pairs, then the remainder.
     Whole,
 }
 
@@ -160,7 +160,7 @@ fn acvp_aes_ecb_through_the_mode_api() {
 
     let mut checked = 0usize;
     let mut multi_block = 0usize;
-    let mut eight_or_more = 0usize;
+    let mut four_or_more = 0usize;
     let mut skipped_mct = 0usize;
     let mut per_key_len: BTreeMap<usize, usize> = BTreeMap::new();
 
@@ -183,7 +183,7 @@ fn acvp_aes_ecb_through_the_mode_api() {
             let ct = to_blocks(&get("ct"));
             assert_eq!(pt.len(), ct.len(), "tcId {tc_id}: pt and ct differ in length");
             multi_block += usize::from(pt.len() > 1);
-            eight_or_more += usize::from(pt.len() >= 8);
+            four_or_more += usize::from(pt.len() >= 4);
 
             for grouping in [Grouping::Single, Grouping::Pairs, Grouping::Whole] {
                 assert_eq!(
@@ -211,11 +211,11 @@ fn acvp_aes_ecb_through_the_mode_api() {
     }
     println!(
         "ACVP AES-ECB via Ecb: {checked} AFT cases checked in three groupings each \
-         ({multi_block} multi-block, {eight_or_more} of eight or more blocks); {skipped_mct} MCT cases skipped"
+         ({multi_block} multi-block, {four_or_more} of four or more blocks); {skipped_mct} MCT cases skipped"
     );
 
     // Guard against a silently-empty or partial run.
     assert!(checked > 2000, "expected the full ACVP AFT set, only checked {checked}");
-    assert!(eight_or_more > 0, "expected cases that reach the eight-block path");
+    assert!(four_or_more > 0, "expected cases that reach the four-block path");
     assert_eq!(per_key_len.len(), 3, "expected all three key lengths");
 }

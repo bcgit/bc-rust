@@ -1,7 +1,7 @@
 //! Structural tests for ECB, driven by a toy permutation.
 //!
 //! These check the properties of the *mode* -- that it is the permutation applied block by block
-//! with nothing chained, that both directions batch through the pair and eight-block paths, call
+//! with nothing chained, that both directions batch through the pair and four-block paths, call
 //! sequencing, direction typing, the empty init data, SP 800-38A Appendix D error propagation, and
 //! the codebook property that makes ECB unsuitable for data -- independently of any real cipher. The
 //! known-answer tests against SP 800-38A Appendix F.1 are in `sp800_38a_ecb_tests.rs`, and the ACVP
@@ -22,11 +22,11 @@ use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Decrypting, Ecb, Encrypting};
 use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
-use common::{SwappedEightToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyEcb<Dir> = Ecb<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedEcb<Dir> = Ecb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedEightEcb<Dir> = Ecb<SwappedEightToy, Dir, TOY_LEN, TOY_LEN>;
+type SwappedFourEcb<Dir> = Ecb<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
 
 /// The implementor hook `do_encrypt_blocks`, by value, for tests whose data is block-shaped.
 fn enc_blocks<const N: usize>(
@@ -205,7 +205,7 @@ fn the_rng_constructor_draws_nothing() {
     assert_eq!(block, enc_flat(&mut encryptor(), &[0x42u8; TOY_LEN]));
 }
 
-// ---- batching: pairs and eights, in both directions ---------------------------------------
+// ---- batching: pairs and fours, in both directions ----------------------------------------
 
 /// Sec 6.1: "multiple forward cipher functions and inverse cipher functions can be computed in
 /// parallel" -- so, unlike CBC and CFB, *both* directions batch. [`SwappedPairToy`] swaps its two
@@ -237,35 +237,31 @@ fn the_pair_path_is_used_in_both_directions() {
     assert_eq!([dec_flat(&mut dec, &ct[0]), dec_flat(&mut dec, &ct[1])], plaintext);
 }
 
-/// The eight-block path must be taken, and only for full eights, in both directions.
-/// [`SwappedEightToy`] rotates its eight results while its pair and single-block methods are
-/// correct, so nine blocks handed over together are wrong (eight rotated, then one right) and the
-/// same blocks as two fours or singly are right.
+/// The four-block path must be taken, and only for full fours, in both directions.
+/// [`SwappedFourToy`] rotates its four results while its pair and single-block methods are
+/// correct, so five blocks handed over together are wrong (four rotated, then one right) and the
+/// same blocks as two pairs or singly are right.
 #[test]
-fn the_eight_block_path_is_used_in_both_directions() {
+fn the_four_block_path_is_used_in_both_directions() {
     let key = toy_key();
-    let plaintext: [[u8; TOY_LEN]; 9] = core::array::from_fn(|i| [0x10 * i as u8 + 1; TOY_LEN]);
+    let plaintext: [[u8; TOY_LEN]; 5] = core::array::from_fn(|i| [0x10 * i as u8 + 1; TOY_LEN]);
     let ct = enc_blocks(&mut encryptor(), &plaintext);
     assert_eq!(dec_blocks(&mut decryptor(), &ct), plaintext);
 
-    let (mut enc, _) = SwappedEightEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
+    let (mut enc, _) = SwappedFourEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
     let rotated = enc_blocks(&mut enc, &plaintext);
-    assert_ne!(rotated, ct, "nine blocks must go through encrypt_8blocks");
-    assert_eq!(rotated[8], ct[8], "the ninth block goes through the single path and is right");
-    assert_eq!(
-        &rotated[..8],
-        &[ct[1], ct[2], ct[3], ct[4], ct[5], ct[6], ct[7], ct[0]],
-        "eight rotated"
-    );
+    assert_ne!(rotated, ct, "five blocks must go through encrypt_4blocks");
+    assert_eq!(rotated[4], ct[4], "the fifth block goes through the single path and is right");
+    assert_eq!(&rotated[..4], &[ct[1], ct[2], ct[3], ct[0]], "four rotated");
 
-    let (mut enc, _) = SwappedEightEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
-    let a = enc_blocks(&mut enc, &[plaintext[0], plaintext[1], plaintext[2], plaintext[3]]);
-    let b = enc_blocks(&mut enc, &[plaintext[4], plaintext[5], plaintext[6], plaintext[7]]);
-    assert_eq!([a, b].as_flattened(), &ct[..8], "fours use the pair path only");
+    let (mut enc, _) = SwappedFourEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
+    let a = enc_blocks(&mut enc, &[plaintext[0], plaintext[1]]);
+    let b = enc_blocks(&mut enc, &[plaintext[2], plaintext[3]]);
+    assert_eq!([a, b].as_flattened(), &ct[..4], "pairs use the pair path only");
 
-    let mut dec = SwappedEightEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
-    assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "nine blocks must go through decrypt_8blocks");
-    let mut dec = SwappedEightEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
+    let mut dec = SwappedFourEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
+    assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "five blocks must go through decrypt_4blocks");
+    let mut dec = SwappedFourEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
     for (c, p) in ct.iter().zip(plaintext.iter()) {
         assert_eq!(&dec_flat(&mut dec, c), p, "the single-block path must not batch");
     }
@@ -287,7 +283,7 @@ fn call_grouping_does_not_change_the_result() {
     got[3..11].copy_from_slice(&enc_blocks(&mut enc, &rest));
     assert_eq!(got, reference);
 
-    for grouping in [1usize, 2, 8, 11] {
+    for grouping in [1usize, 2, 4, 5, 8, 11] {
         let mut dec = decryptor();
         let mut out = Vec::new();
         for chunk in reference.chunks(grouping) {
