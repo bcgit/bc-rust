@@ -13,6 +13,7 @@ bouncycastle-base64 = { path = "./crypto/base64" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
 bouncycastle-factory = { path = "./crypto/factory" }
+bouncycastle-factory-macros = { path = "./crypto/factory-macros" }
 bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }
 bouncycastle-hmac = { path = "./crypto/hmac" }
