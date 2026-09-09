@@ -1,7 +1,7 @@
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::traits::SecurityStrength;
+use bouncycastle::core::traits::{Hash, SecurityStrength, XOF};
 use bouncycastle::hex;
 use std::fs::File;
 use std::io;
@@ -115,4 +115,36 @@ pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMater
         .unwrap();
     }
     Ok(seed)
+}
+
+/// Stream stdin through a [`Hash`] and write the digest to stdout (hex or binary), followed by a
+/// newline. Used by both the SHA-3 and Ascon-Hash256 subcommands.
+pub(crate) fn stream_hash(mut hasher: impl Hash, output_hex: bool) {
+    let mut buf: [u8; 1024] = [0u8; 1024];
+
+    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+    while bytes_read != 0 {
+        hasher.do_update(&buf[..bytes_read]);
+        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+    }
+
+    let out = hasher.do_final();
+    write_bytes_or_hex(&out, output_hex);
+    println!();
+}
+
+/// Stream stdin through an [`XOF`] and squeeze `output_len` bytes to stdout (hex or binary),
+/// followed by a newline. Used by both the SHAKE and Ascon-XOF128/CXOF128 subcommands.
+pub(crate) fn stream_xof(mut xof: impl XOF, output_len: usize, output_hex: bool) {
+    let mut buf: [u8; 1024] = [0u8; 1024];
+
+    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+    while bytes_read != 0 {
+        xof.absorb(&buf[..bytes_read]).expect("absorb before squeeze is infallible");
+        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+    }
+
+    let out = xof.squeeze(output_len);
+    write_bytes_or_hex(&out, output_hex);
+    println!();
 }
