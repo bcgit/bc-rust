@@ -1,13 +1,17 @@
 //! The purpose of this binary is to perform a single run of the primitive under test so that
 //! its peak memory usage can be measured with:
 //!
-//!     valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_mlkem_mem_usage > /dev/null
+//! ```text
+//! valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_mlkem_mem_usage > /dev/null
 //!
-//!     ms_print massif.out.835000
+//! ms_print massif.out.835000
+//! ```
 //!
 //! or, shoved all into one line:
 //!
-//!     clear; clear; valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_mlkem_mem_usage > /dev/null; ms_print massif.out.*; rm massif.out.*
+//! ```text
+//! clear; clear; valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_mlkem_mem_usage > /dev/null; ms_print massif.out.*; rm massif.out.*
+//! ```
 //!
 //!
 //! To measure code size, Claude suggests:
