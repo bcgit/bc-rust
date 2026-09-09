@@ -59,9 +59,10 @@ pub(crate) const SHA512_H0: [u64; 8] = [
 /// the message is the 11 bytes `53 48 41 2D 35 31 32 2F 32 35 36`).
 ///
 /// This is a `const fn` so that the IV is computed at compile time; the results for t = 224 and
-/// t = 256 are checked at compile time against the words listed in s. 5.3.6.1 and s. 5.3.6.2 (see
-/// `lib.rs`). The message is at most 11 bytes, so the SHA-512 computation is always exactly one
-/// padded block (s. 5.1.2).
+/// t = 256 are pinned against the words listed in s. 5.3.6.1 and s. 5.3.6.2 by
+/// `tests/sha512t_h0_tests.rs`, which reads H(0) back out through the public suspend API. The
+/// message is at most 11 bytes, so the SHA-512 computation is always exactly one padded block
+/// (s. 5.1.2).
 pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
     // FIPS 180-4 s. 5.3.6: "t is any positive integer without a leading zero such that t < 512, and t is not 384".
     assert!(t > 0 && t < 512 && t != 384, "FIPS 180-4 s. 5.3.6: 0 < t < 512 and t != 384");
