@@ -386,7 +386,7 @@ fn an_unaligned_message_matches_the_library() {
     use bouncycastle::core::traits::StreamCipherDecryptor;
     use bouncycastle::modes::{Cfb, Decrypting};
 
-    type Aes128Cfb<Dir> = Cfb<bouncycastle::aes::Aes128, Dir, 16, 16>;
+    type Aes128Cfb<Dir> = Cfb<bouncycastle::aes::AES_128, Dir, 16, 16>;
 
     for len in [5usize, 17, 1000, 1024, 1025, 4099] {
         let plaintext = pseudo_random(len, len as u32);

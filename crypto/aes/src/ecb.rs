@@ -39,7 +39,7 @@
 //! decryptor adapter. `Dir` must be [`Encrypting`] or [`Decrypting`], as before.
 
 use crate::padded_mode::PaddedMode;
-use crate::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 
 // Imports needed for docs
@@ -100,8 +100,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<Aes128, Encrypting, 16, BLOCK_LEN>,
-    Ecb<Aes128, Decrypting, 16, BLOCK_LEN>,
+    Ecb<AES_128, Encrypting, 16, BLOCK_LEN>,
+    Ecb<AES_128, Decrypting, 16, BLOCK_LEN>,
     Pad,
     16,
     0,
@@ -127,8 +127,8 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<Aes192, Encrypting, 24, BLOCK_LEN>,
-    Ecb<Aes192, Decrypting, 24, BLOCK_LEN>,
+    Ecb<AES_192, Encrypting, 24, BLOCK_LEN>,
+    Ecb<AES_192, Decrypting, 24, BLOCK_LEN>,
     Pad,
     24,
     0,
@@ -154,8 +154,8 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<Aes256, Encrypting, 32, BLOCK_LEN>,
-    Ecb<Aes256, Decrypting, 32, BLOCK_LEN>,
+    Ecb<AES_256, Encrypting, 32, BLOCK_LEN>,
+    Ecb<AES_256, Decrypting, 32, BLOCK_LEN>,
     Pad,
     32,
     0,

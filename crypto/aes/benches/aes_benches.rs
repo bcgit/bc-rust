@@ -17,7 +17,7 @@ use bouncycastle_aes::AES_BLOCK_LEN;
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
+use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};

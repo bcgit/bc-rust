@@ -5,7 +5,7 @@
 //! the padding scheme changes the behaviour rather than being decorative. The mode and the padding
 //! layer are tested in their own crates; this checks the wiring between them.
 
-use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256, Aes128};
+use bouncycastle_aes::{AES_128, AES_CBC_128, AES_CBC_192, AES_CBC_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
@@ -27,11 +27,11 @@ fn the_aliases_name_the_expected_types() {
 
     assert_eq!(
         size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
-        size_of::<PaddedEncryptor<Cbc<Aes128, Encrypting, 16, 16>, PKCS7, 16, 16, 16>>()
+        size_of::<PaddedEncryptor<Cbc<AES_128, Encrypting, 16, 16>, PKCS7, 16, 16, 16>>()
     );
     assert_eq!(
         size_of::<AES_CBC_128<Decrypting, PKCS7>>(),
-        size_of::<PaddedDecryptor<Cbc<Aes128, Decrypting, 16, 16>, PKCS7, 16, 16, 16>>()
+        size_of::<PaddedDecryptor<Cbc<AES_128, Decrypting, 16, 16>, PKCS7, 16, 16, 16>>()
     );
 
     // The two directions are genuinely different types, so the encryptor and the decryptor do not

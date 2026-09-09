@@ -14,7 +14,7 @@ place to start reading the source.
 
 ## 1. What this crate is (and is not)
 
-It provides the **raw AES keyed permutation** — `Aes128`, `Aes192`, `Aes256` — transforming exactly
+It provides the **raw AES keyed permutation** — `AES_128`, `AES_192`, `AES_256` — transforming exactly
 16 bytes at a time. It is not something you can encrypt data with: used directly on data it *is*
 ECB, which is not confidential. Modes of operation and padding are separate layers.
 
@@ -106,7 +106,7 @@ inverse cipher of Sec 5.3.5. Algorithm 3 applies InvMixColumns *after* AddRoundK
 **unmodified** key schedule; Sec 5.3.5 reorders the round and needs a separate schedule with
 InvMixColumns applied to every round key (Algorithm 5, `KEYEXPANSIONEIC()`).
 
-Following Algorithm 3 is what lets one `Aes` value encrypt *and* decrypt from a single stored
+Following Algorithm 3 is what lets one `AES` value encrypt *and* decrypt from a single stored
 schedule — no second copy, no transformation at construction time, no direction flag. That is the
 whole reason both directions are available at 176–240 bytes of state.
 
@@ -117,7 +117,7 @@ const generic parameter, so a params trait is used instead — the same pattern 
 `HashDRBG80090AParams_*` types in `bouncycastle-rng`:
 
 ```rust
-pub trait AesParams: AesParamsSealed {
+pub trait AESParams: AESParamsInternalTrait {
     const KEY_LEN: usize;   // 16 | 24 | 32      (FIPS 197 Sec 6.1)
     const NK: usize;        //  4 |  6 |  8
     const NR: usize;        // 10 | 12 | 14
@@ -126,7 +126,7 @@ pub trait AesParams: AesParamsSealed {
 }
 ```
 
-`AesParams` has a **private** supertrait, so only the three types in `schedule.rs` can implement
+`AESParams` has a **private** supertrait, so only the three types in `schedule.rs` can implement
 it and no downstream crate can instantiate the cipher with an unapproved key length or round count.
 (This is what `#![allow(private_bounds)]` in `lib.rs` is for.)
 
@@ -144,9 +144,9 @@ stack when the round loop needs it.
 
 | Type | Key | `Nr` | Schedule (persistent) | Tables |
 |---|---|---|---|---|
-| `Aes128` | 16 B | 10 | 176 B | 0 B |
-| `Aes192` | 24 B | 12 | 208 B | 0 B |
-| `Aes256` | 32 B | 14 | 240 B | 0 B |
+| `AES_128` | 16 B | 10 | 176 B | 0 B |
+| `AES_192` | 24 B | 12 | 208 B | 0 B |
+| `AES_256` | 32 B | 14 | 240 B | 0 B |
 
 These are **measured**, not asserted — `cargo run --release -p mem_usage_benches --bin bench_aes_mem_usage`
 prints exactly 176/208/240, and `test_engine_sizes_match_the_documented_memory_table` pins them so
@@ -163,7 +163,7 @@ Per-call stack usage is independent of key length: 32 B of bit-sliced state for 
 ### 2.7 API surface
 
 ```rust
-Aes128::new(&KeyMaterial<16>) -> Result<Self, SymmetricCipherError>   // and 24 / 32
+AES_128::new(&KeyMaterial<16>) -> Result<Self, SymmetricCipherError>   // and 24 / 32
 aes.encrypt_block(&mut [u8; 16])          // infallible
 aes.decrypt_block(&mut [u8; 16])
 aes.encrypt_blocks2(&mut [[u8; 16]; 2])   // the natural unit of work
@@ -172,7 +172,7 @@ aes.decrypt_blocks2(&mut [[u8; 16]; 2])
 
 No `init()`, no `reset()`, no direction flag: constructors set up state and a constructed value is
 always ready. There are no one-shot statics on the permutation because
-`Aes128::new(&key)?.encrypt_block(..)` already *is* the one shot; data-level one-shots belong to the
+`AES_128::new(&key)?.encrypt_block(..)` already *is* the one shot; data-level one-shots belong to the
 modes, which take arbitrary-length input and generate their own initialisation data.
 
 `encrypt_blocks2` / `decrypt_blocks2` are the pair form and roughly double throughput. A
@@ -197,8 +197,8 @@ half is never returned either way.
 | [`src/bitslice.rs`](src/bitslice.rs) | 210 | `ortho`, `pack`, `unpack`; the layout table and its exhaustive test |
 | [`src/sbox.rs`](src/sbox.rs) | 377 | The 113-gate circuit; `inv_sbox`; Tables 4 and 6 for tests |
 | [`src/round.rs`](src/round.rs) | 507 | AddRoundKey, ShiftRows, MixColumns and inverses; byte-wise references |
-| [`src/schedule.rs`](src/schedule.rs) | 456 | `AesParams`, `expand` (Alg 2), `round_key`; Appendix A tables |
-| [`src/aes.rs`](src/aes.rs) | 276 | `Aes<P>`, the three aliases, Alg 1 and Alg 3, key validation |
+| [`src/schedule.rs`](src/schedule.rs) | 456 | `AESParams`, `expand` (Alg 2), `round_key`; Appendix A tables |
+| [`src/aes.rs`](src/aes.rs) | 276 | `AES<P>`, the three aliases, Alg 1 and Alg 3, key validation |
 | [`tests/fips197_tests.rs`](tests/fips197_tests.rs) | 230 | Appendix B; two-block path; key handling |
 | [`tests/sp800_38a_tests.rs`](tests/sp800_38a_tests.rs) | 176 | SP 800-38A F.1.1–F.1.6 |
 | [`tests/acvp_tests.rs`](tests/acvp_tests.rs) | 266 | NIST ACVP `ACVP-AES-ECB` loader |
@@ -226,7 +226,7 @@ recall** — every one is transcribed from a downloaded specification PDF or an 
 | FIPS 197 Sec 5.1.1 | The worked example `S[{53}] = {ed}`. |
 | FIPS 197 Eq 5.5 / 5.8 / 5.12 / 5.15 | ShiftRows and MixColumns and their inverses, against byte-wise references written from the equations — plus a second literal transcription of Eq 5.8/5.15 cross-checking the matrix form. |
 | FIPS 197 Sec 4.2 / Eq 4.5 | The test-only `xtimes`/`gf_mul` helpers against the Sec 4.2 worked chain and `{57}·{13} = {fe}`. |
-| FIPS 197 Table 5 | `RCON` re-derived by repeated XTIMES and compared. |
+| FIPS 197 Table 5 | `Rcon` re-derived by repeated XTIMES and compared. |
 | FIPS 197 Appendix A.1/A.2/A.3 | **Every one of the 156 schedule words**, for all three key lengths. |
 | FIPS 197 Appendix B | The worked AES-128 block, both directions, and via the two-block path in both slots. |
 | SP 800-38A F.1.1–F.1.6 | ECB known answers, all three key lengths, both directions. |
@@ -256,7 +256,7 @@ Two details worth knowing:
 * Some AFT cases have multi-block plaintexts, so the loader iterates blocks (ECB).
 * The set includes **all-zero keys** (the GFSbox-style groups). `KeyMaterial` tags an all-zero
   buffer `Zeroized` and refuses to promote it outside a hazardous closure — which is the right
-  default, and `Aes128::new` rejecting it is itself tested. The *test* opts in via
+  default, and `AES_128::new` rejecting it is itself tested. The *test* opts in via
   `do_hazardous_operations`; the engine's guard was **not** weakened to accommodate NIST.
 
 ### Only the ECB file belongs to this crate
@@ -350,11 +350,11 @@ not have to repeat this investigation.
 
 #### The one real gap, fixed
 
-**`< → >` in `Aes<P>::validate`.** There was no test for a key whose security strength is *below*
+**`< → >` in `AES<P>::validate`.** There was no test for a key whose security strength is *below*
 the level its length implies; because `from_bytes_as_type` always tags a key at its length-implied
 strength, neither `<` nor `>` was ever true and the two comparisons behaved identically.
 `a_key_carrying_too_low_a_security_strength_is_rejected` now covers it (a 32-byte key lowered to
-128-bit must be rejected by `Aes256::new`), and the fix was confirmed by hand-applying the mutation
+128-bit must be rejected by `AES_256::new`), and the fix was confirmed by hand-applying the mutation
 and watching that test fail, then reverting.
 
 This mutant still appears in the run output above, which analysed the pre-fix source — the fix

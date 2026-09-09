@@ -13,7 +13,7 @@
 
 mod common;
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor,
@@ -440,9 +440,9 @@ fn aes_chunking_matches_a_single_call() {
         }
     }
 
-    check::<Aes128, 16>("AES-128");
-    check::<Aes192, 24>("AES-192");
-    check::<Aes256, 32>("AES-256");
+    check::<AES_128, 16>("AES-128");
+    check::<AES_192, 24>("AES-192");
+    check::<AES_256, 32>("AES-256");
 }
 
 /// The pair path in `do_decrypt` must actually be taken, and only where a pair of whole blocks sits
@@ -631,7 +631,7 @@ fn a_ciphertext_bit_error_flips_exactly_that_bit_of_its_own_block() {
 /// real bug and this is what catches it.
 #[test]
 fn an_iv_bit_error_randomises_only_the_first_block() {
-    type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, 16>;
+    type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
     const LEN: usize = 16;
 
     let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -764,25 +764,25 @@ fn every_length_round_trips_without_padding() {
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<Cfb<Aes128, Encrypting, 16, 16>>(), 176 + 16 + 8);
-    assert_eq!(size_of::<Cfb<Aes192, Encrypting, 24, 16>>(), 208 + 16 + 8);
-    assert_eq!(size_of::<Cfb<Aes256, Encrypting, 32, 16>>(), 240 + 16 + 8);
+    assert_eq!(size_of::<Cfb<AES_128, Encrypting, 16, 16>>(), 176 + 16 + 8);
+    assert_eq!(size_of::<Cfb<AES_192, Encrypting, 24, 16>>(), 208 + 16 + 8);
+    assert_eq!(size_of::<Cfb<AES_256, Encrypting, 32, 16>>(), 240 + 16 + 8);
 
     // The direction marker is free, and does not change the layout.
     assert_eq!(
-        size_of::<Cfb<Aes128, Encrypting, 16, 16>>(),
-        size_of::<Cfb<Aes128, Decrypting, 16, 16>>()
+        size_of::<Cfb<AES_128, Encrypting, 16, 16>>(),
+        size_of::<Cfb<AES_128, Decrypting, 16, 16>>()
     );
 
     // ...and the general rule the docs state.
     assert_eq!(
-        size_of::<Cfb<Aes256, Encrypting, 32, 16>>(),
-        size_of::<Aes256>() + 16 + size_of::<usize>()
+        size_of::<Cfb<AES_256, Encrypting, 32, 16>>(),
+        size_of::<AES_256>() + 16 + size_of::<usize>()
     );
 
     // The docs say CFB is one `usize` bigger than CBC.
     assert_eq!(
-        size_of::<Cfb<Aes128, Encrypting, 16, 16>>(),
-        size_of::<Cbc<Aes128, Encrypting, 16, 16>>() + size_of::<usize>()
+        size_of::<Cfb<AES_128, Encrypting, 16, 16>>(),
+        size_of::<Cbc<AES_128, Encrypting, 16, 16>>() + size_of::<usize>()
     );
 }

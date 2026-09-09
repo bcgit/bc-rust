@@ -10,8 +10,8 @@
 //!
 //! ```text
 //! pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
-//!     Cbc<Aes128, Encrypting, 16, 16>,   // what Encrypting resolves to
-//!     Cbc<Aes128, Decrypting, 16, 16>,   // what Decrypting resolves to
+//!     Cbc<AES_128, Encrypting, 16, 16>,   // what Encrypting resolves to
+//!     Cbc<AES_128, Decrypting, 16, 16>,   // what Decrypting resolves to
 //!     Pad, 16, 16,
 //! >>::Mode;
 //! ```

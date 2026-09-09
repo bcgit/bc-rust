@@ -44,7 +44,7 @@
 //! implementing it from anything other than that specification would be guesswork. The test
 //! reports how many it skipped so the gap is visible rather than silent.
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use bouncycastle_aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -82,7 +82,7 @@ fn test_data_dir() -> Option<PathBuf> {
 /// The ACVP set deliberately includes an all-zero key (the GFSbox-style groups vary only the
 /// plaintext under a zero key). `KeyMaterial` tags an all-zero buffer as [`KeyType::Zeroized`]
 /// and will not promote it outside a [`do_hazardous_operations`] closure, which is the right
-/// default -- an all-zero key normally means a broken RNG, and `Aes128::new` rejecting it is
+/// default -- an all-zero key normally means a broken RNG, and `AES_128::new` rejecting it is
 /// tested in `fips197_tests.rs`. Here the zero key is deliberate and comes from NIST, so this
 /// opts in explicitly rather than the library weakening its guard.
 fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
@@ -111,7 +111,7 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
     let transform: BlockTransform = match key.len() {
         16 => {
             let km = cipher_key::<16>(key);
-            let aes = Aes128::new(&km).expect("valid AES-128 key");
+            let aes = AES_128::new(&km).expect("valid AES-128 key");
             if encrypt {
                 Box::new(move |b| aes.encrypt_block(b))
             } else {
@@ -120,7 +120,7 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
         }
         24 => {
             let km = cipher_key::<24>(key);
-            let aes = Aes192::new(&km).expect("valid AES-192 key");
+            let aes = AES_192::new(&km).expect("valid AES-192 key");
             if encrypt {
                 Box::new(move |b| aes.encrypt_block(b))
             } else {
@@ -129,7 +129,7 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
         }
         32 => {
             let km = cipher_key::<32>(key);
-            let aes = Aes256::new(&km).expect("valid AES-256 key");
+            let aes = AES_256::new(&km).expect("valid AES-256 key");
             if encrypt {
                 Box::new(move |b| aes.encrypt_block(b))
             } else {
@@ -158,21 +158,21 @@ fn ecb_pairwise(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
     match key.len() {
         16 => {
             let km = cipher_key::<16>(key);
-            let aes = Aes128::new(&km).unwrap();
+            let aes = AES_128::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
                 if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
             });
         }
         24 => {
             let km = cipher_key::<24>(key);
-            let aes = Aes192::new(&km).unwrap();
+            let aes = AES_192::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
                 if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
             });
         }
         32 => {
             let km = cipher_key::<32>(key);
-            let aes = Aes256::new(&km).unwrap();
+            let aes = AES_256::new(&km).unwrap();
             run_pairwise(&mut blocks, encrypt, |p, e| {
                 if e { aes.encrypt_blocks2(p) } else { aes.decrypt_blocks2(p) }
             });

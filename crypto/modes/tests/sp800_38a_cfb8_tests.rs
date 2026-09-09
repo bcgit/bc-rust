@@ -30,7 +30,7 @@
 //! the vector's IV, and the test asserts the returned init data really is that IV before comparing
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
-use bouncycastle_aes::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -183,32 +183,32 @@ where
 
 #[test]
 fn f_3_7_cfb8_aes128_encrypt() {
-    check_encrypt::<Aes128, 16>("F.3.7", KEY_128, CIPHERTEXT_128);
+    check_encrypt::<AES_128, 16>("F.3.7", KEY_128, CIPHERTEXT_128);
 }
 
 #[test]
 fn f_3_8_cfb8_aes128_decrypt() {
-    check_decrypt::<Aes128, 16>("F.3.8", KEY_128, CIPHERTEXT_128);
+    check_decrypt::<AES_128, 16>("F.3.8", KEY_128, CIPHERTEXT_128);
 }
 
 #[test]
 fn f_3_9_cfb8_aes192_encrypt() {
-    check_encrypt::<Aes192, 24>("F.3.9", KEY_192, CIPHERTEXT_192);
+    check_encrypt::<AES_192, 24>("F.3.9", KEY_192, CIPHERTEXT_192);
 }
 
 #[test]
 fn f_3_10_cfb8_aes192_decrypt() {
-    check_decrypt::<Aes192, 24>("F.3.10", KEY_192, CIPHERTEXT_192);
+    check_decrypt::<AES_192, 24>("F.3.10", KEY_192, CIPHERTEXT_192);
 }
 
 #[test]
 fn f_3_11_cfb8_aes256_encrypt() {
-    check_encrypt::<Aes256, 32>("F.3.11", KEY_256, CIPHERTEXT_256);
+    check_encrypt::<AES_256, 32>("F.3.11", KEY_256, CIPHERTEXT_256);
 }
 
 #[test]
 fn f_3_12_cfb8_aes256_decrypt() {
-    check_decrypt::<Aes256, 32>("F.3.12", KEY_256, CIPHERTEXT_256);
+    check_decrypt::<AES_256, 32>("F.3.12", KEY_256, CIPHERTEXT_256);
 }
 
 /// The spec's tabulated **Input Blocks** are the shift register and its **Output Blocks** are
@@ -225,7 +225,7 @@ fn f_3_12_cfb8_aes256_decrypt() {
 #[test]
 fn the_tabulated_blocks_are_the_shift_register() {
     let key = key_material::<16>(KEY_128);
-    let perm = <Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(&key).expect("a valid key");
+    let perm = <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(&key).expect("a valid key");
     let plaintext = bytes(PLAINTEXT);
     let ciphertext = bytes(CIPHERTEXT_128);
 
