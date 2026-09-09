@@ -20,7 +20,7 @@
 //!
 //! **All five reach the same arbitrary-length API**, so code can be written against one trait and
 //! handed any mode. A block mode gets there by being wrapped in `bouncycastle-padding`'s adapters,
-//! which are [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with the padded block as
+//! which are [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] with the padded block as
 //! their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0` because
 //! it has no final output at all. The `bouncycastle-aes` aliases show the difference in
 //! one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme, `AES_CTR_128<Encrypting>`
@@ -295,7 +295,7 @@
 //! ```
 //! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //! use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
 //!
@@ -532,8 +532,8 @@ pub use ecb::Ecb;
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SimpleCipherDecryptor,
+    SimpleCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
 };
 // end of imports needed for docs
 

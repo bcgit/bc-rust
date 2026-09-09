@@ -373,8 +373,8 @@ are infallible; only `new` can fail, and only on the key. `bouncycastle-aes` imp
 it for all three key lengths (the data-encryption traits are still deliberately not implemented
 there).
 
-`core`: new `SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>` and
-`SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>` traits, the arbitrary-length data API a
+`core`: new `SimpleCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>` and
+`SimpleCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>` traits, the arbitrary-length data API a
 caller uses, as opposed to the block-aligned `BlockCipher*` traits a mode implements. Their shape is
 taken from `PaddedEncryptor` / `PaddedDecryptor`, which now implement them: streaming
 `do_{en,de}crypt_init[_rng]`, exact `update_out_len`, `do_update_out`, and a consuming `do_final` that
@@ -388,11 +388,11 @@ methods, so an implementor writes six methods.
 The older one-shot-only `SymmetricCipher` trait is **deleted**, and its four methods -- `encrypt`,
 `encrypt_out`, `decrypt`, `decrypt_out` -- move onto `AEADCipher`, which was its only remaining
 user. Every other kind of cipher now reaches an arbitrary-length one-shot some other way: a block
-mode through `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor` and the padding adapters, a
+mode through `SimpleCipherEncryptor` / `SimpleCipherDecryptor` and the padding adapters, a
 stream mode through those same traits directly. `AEADCipher` therefore drops the supertrait and
 declares the four itself, against `NONCE_LEN`, with the documentation saying what they mean for an
 AEAD: no additional authenticated data, and a ciphertext layout that is the implementation's
-business because the tag has to go somewhere. `TestFrameworkSymmetricCipher::test`, which was that
+business because the tag has to go somewhere. `TestFrameworkSimpleCipher::test`, which was that
 trait's suite, moves to `TestFrameworkAEADCipher::test_plain_one_shots` and is called from
 `TestFrameworkAEADCipher::test`, so an AEAD implementor keeps the coverage without asking for it.
 
@@ -404,16 +404,16 @@ made that worse, so both now carry the same key-length guard the block and strea
 had. Every strength loop in the file is guarded.
 
 Stream ciphers also reach the arbitrary-length API: `StreamCipherEncryptor` and
-`StreamCipherDecryptor` get blanket impls of `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor`
+`StreamCipherDecryptor` get blanket impls of `SimpleCipherEncryptor` / `SimpleCipherDecryptor`
 with `FINAL_LEN = 0`, written in terms of the in-place `do_encrypt` / `do_decrypt`. An implementor
 still writes only the in-place methods, but a caller can use `encrypt_out`, `do_update_out` and the
 `std` one-shots, and can hold a stream mode through the same trait as a padded block mode -- which
 is what makes "any of the five modes behind one trait" true rather than aspirational. For a stream
 cipher the length predictions are exact rather than upper bounds, and `do_final` has nothing to
 produce. The one cost is that both traits then spell `do_encrypt_init` identically, so code with
-both in scope must qualify the call; `crypto/modes/tests/symmetric_cipher_api_tests.rs` is written
+both in scope must qualify the call; `crypto/modes/tests/simple_cipher_api_tests.rs` is written
 that way deliberately, to show it is workable. That file also runs all three stream modes through
-`TestFrameworkSymmetricCipher::test_encryptor_decryptor`, the same conformance suite the padded
+`TestFrameworkSimpleCipher::test_encryptor_decryptor`, the same conformance suite the padded
 adapters run, and checks the separate-output API against the in-place one byte for byte.
 
 Mutation-tested with `--test-workspace`, which is what these blanket impls need: run against core's
@@ -433,7 +433,7 @@ one-shots over a single implementor hook per direction. `Cfb` and `Cfb8` are its
 
 Testing:
 
-* `core-test-framework` gains `TestFrameworkSymmetricCipher::test_encryptor_decryptor`, which pins the
+* `core-test-framework` gains `TestFrameworkSimpleCipher::test_encryptor_decryptor`, which pins the
   paired contract: one-shot round trips at every length up to a few final chunks, the `std` one-shots
   against the `_out` ones, streaming in eight chunkings with `update_out_len` exact on every call,
   `do_final_out` against `do_final`, a driven RNG reproducing its init data and determining the
@@ -447,7 +447,7 @@ Testing:
   five strengths, which a key shorter than 32 bytes cannot carry, so the framework panicked for
   any 16- or 24-byte key. It now skips the strengths the key length cannot hold. The bug was
   invisible until now because nothing in the workspace implemented the block cipher traits. The
-  identical loop in `TestFrameworkSymmetricCipher` and `TestFrameworkAEADCipher` is still unfixed;
+  identical loop in `TestFrameworkSimpleCipher` and `TestFrameworkAEADCipher` is still unfixed;
   both still have no implementors, so it stays latent.
 * `TestFrameworkStreamCipher::test` was a `todo!()` and is now implemented for the
   `StreamCipherEncryptor` / `StreamCipherDecryptor` pair, carrying the same key-length guard as the
@@ -476,7 +476,7 @@ Testing:
       block as data; `ALWAYS_PADS` is false. Through `PaddedEncryptor` / `PaddedDecryptor` this *enforces* alignment
       with the arbitrary-length API shape: an aligned message passes through with its length unchanged and no final
       block, an unaligned one fails at `do_final` / `encrypt_out`, and an empty ciphertext decrypts to the empty
-      message. The test framework's `TestFrameworkSymmetricCipher` gained `required_alignment`, which makes it assert
+      message. The test framework's `TestFrameworkSimpleCipher` gained `required_alignment`, which makes it assert
       that every unaligned length is refused.
     * Tests are derived from the RFC 5652 padding rule; the adapters are driven with a toy XOR-CBC cipher implementing
       the new block cipher traits, covering every data length, ten chunkings in both directions, tampering, malformed

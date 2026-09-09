@@ -124,7 +124,7 @@ The identical loop appears in two other suites in
 
 | Suite | Loop at | Implementors in tree | Status |
 |---|---|---|---|
-| `TestFrameworkSymmetricCipher::test` | line 87 | 0 | **gone**: the `SymmetricCipher` trait was deleted and its suite moved to `TestFrameworkAEADCipher::test_plain_one_shots`, guarded on the way |
+| `TestFrameworkSimpleCipher::test` | line 87 | 0 | **gone**: the `SymmetricCipher` trait was deleted and its suite moved to `TestFrameworkAEADCipher::test_plain_one_shots`, guarded on the way |
 | `TestFrameworkBlockCipher` | line 240 | 1 (`crypto/modes`) | **fixed** |
 | `TestFrameworkAEADCipher` | line 386 | 0 | **fixed** |
 | `TestFrameworkStreamCipher` | in `test` | 2 (`crypto/modes`: `Cfb`, `Cfb8`) | **fixed** (written later, with the guard) |
@@ -180,7 +180,7 @@ new suites are exercised by:
 
 ## 6. Open items
 
-1. ~~**Fix the same loop in `TestFrameworkSymmetricCipher` and `TestFrameworkAEADCipher`** (§3).~~ Done.
+1. ~~**Fix the same loop in `TestFrameworkSimpleCipher` and `TestFrameworkAEADCipher`** (§3).~~ Done.
    Three lines each, and the next implementor of either trait will otherwise hit the panic.
 2. **Decide whether the `Default` impl added to `TestFrameworkElectronicCodeBook` should be added to
    the other suites** for consistency — they all have `new()` and no `Default`, which clippy

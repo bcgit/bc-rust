@@ -7,7 +7,7 @@
 
 use bouncycastle_aes::{AES_128, AES_CBC_128, AES_CBC_192, AES_CBC_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 
@@ -49,8 +49,8 @@ fn the_aliases_name_the_expected_types() {
 fn every_key_length_round_trips() {
     fn check<const N: usize, Enc, Dec>(name: &str)
     where
-        Enc: SymmetricCipherEncryptor<N, 16, 16>,
-        Dec: SymmetricCipherDecryptor<N, 16, 16>,
+        Enc: SimpleCipherEncryptor<N, 16, 16>,
+        Dec: SimpleCipherDecryptor<N, 16, 16>,
     {
         for len in [0usize, 1, 15, 16, 17, 63, 64] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 11 + 3) as u8).collect();

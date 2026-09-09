@@ -27,7 +27,7 @@
 //!
 //! # These are the arbitrary-length API
 //!
-//! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
+//! A padded alias implements [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`], not the
 //! block traits: `encrypt_out` / `decrypt_out` and the streaming `do_update_out` / `do_final`, all
 //! taking a `&[u8]` of any length. The block-aligned API, with its compile-time length checks and
 //! its in-place data methods, is `bouncycastle_modes::Cbc` itself, which these wrap:
@@ -52,7 +52,7 @@ use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 #[allow(unused_imports)]
 use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 // end of imports needed for docs
@@ -66,7 +66,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// ```
 /// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 /// use bouncycastle_padding::PKCS7;
 ///
@@ -93,7 +93,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// ```
 /// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
+/// use bouncycastle_core::traits::SimpleCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::NoPadding;
 ///
@@ -117,7 +117,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// ```compile_fail
 /// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
+/// use bouncycastle_core::traits::SimpleCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::{NoPadding, PKCS7};
 ///
@@ -134,7 +134,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 /// ```
 /// use bouncycastle_aes::AES_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
+/// use bouncycastle_core::traits::SimpleCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::NoPadding;
 ///
@@ -157,7 +157,7 @@ pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 /// use bouncycastle_aes::AES_CBC_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 /// use bouncycastle_padding::PKCS7;
 ///
@@ -184,7 +184,7 @@ pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 /// use bouncycastle_aes::AES_CBC_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 /// use bouncycastle_padding::PKCS7;
 ///

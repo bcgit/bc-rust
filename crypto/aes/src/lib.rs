@@ -81,7 +81,7 @@
 //! ```
 //! use bouncycastle_aes::AES_CBC_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
 //! use bouncycastle_padding::PKCS7;
 //!
