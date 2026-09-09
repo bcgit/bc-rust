@@ -2,7 +2,7 @@
 //!
 //! Vectors are read from the bc-test-data repo (https://github.com/bcgit/bc-test-data), which must be
 //! cloned alongside this repo at "../bc-test-data" (same convention as the mldsa/mlkem/sha3 crates),
-//! under `crypto/sha2/{bit-oriented,byte-oriented}/`. If it is not present the tests print a warning
+//! under `crypto/sha2/{bit-oriented,byte-oriented}/`. If it is not present, the tests print a warning
 //! and pass vacuously.
 //!
 //! Three SHAVS test types are exercised (SHAVS s. 6):
