@@ -135,6 +135,8 @@ fn sub_word(word: u32) -> u32 {
     ortho(&mut q);
     sbox(&mut q);
     ortho(&mut q);
+    // The word was broadcast into all eight planes, so all eight must carry the same answer.
+    debug_assert!(q.iter().all(|&plane| plane == q[0]), "the eight broadcast planes must agree");
     q[0]
 }
 

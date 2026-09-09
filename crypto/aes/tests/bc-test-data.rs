@@ -23,7 +23,7 @@
 //! | `ACVP-AES-CFB128` | `crypto/modes/tests/acvp_cfb_tests.rs` |
 //! | `ACVP-AES-CFB8` | `crypto/modes/tests/acvp_cfb8_tests.rs` |
 //! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
-//! | `ACVP-AES-CTR` | nothing yet (CTR is unimplemented) |
+//! | `ACVP-AES-CTR` | `crypto/modes/tests/acvp_ctr_tests.rs` |
 //! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |
 //! | `ACVP-AES-FF1` / `-FF3-1` | nothing yet (format-preserving encryption is unimplemented) |
 //!
@@ -62,7 +62,7 @@ const TEST_DATA_PATHS: [&str; 2] = [
 
 const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";
 
-/// Locates the ACVP AES directory, or `None` if `bc-test-data` is not checked out.
+/// Locates the AES directory of `bc-test-data`, or `None` if that repository is not checked out.
 fn test_data_dir() -> Option<PathBuf> {
     for candidate in TEST_DATA_PATHS {
         let path = Path::new(candidate);
