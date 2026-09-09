@@ -1,7 +1,7 @@
 //! [`PaddedEncryptor`] / [`PaddedDecryptor`]: adapt a block-aligned [`BlockCipherEncryptor`] /
 //! [`BlockCipherDecryptor`] to arbitrary-length data using a [`Padding`] scheme.
 //!
-//! The public API is the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits, whose
+//! The public API is the [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] traits, whose
 //! shape was drawn from these two types; the one-shot methods are the traits' provided ones.
 //! `FINAL_LEN` is `BLOCK_LEN`: the final output is the padded block -- or, under a scheme with
 //! [`Padding::ALWAYS_PADS`] `false` (`NoPadding`) and an aligned message, nothing at all, in which
@@ -11,7 +11,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, Padding, RNG, SecurityStrength,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    SimpleCipherDecryptor, SimpleCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 use core::array::from_mut;
@@ -22,8 +22,8 @@ const GROUP: usize = 8;
 
 /// Encrypts arbitrary-length data with a block cipher `E`, padding the final block with `P`.
 ///
-/// Stream with [`SymmetricCipherEncryptor::do_update_out`] then [`SymmetricCipherEncryptor::do_final`],
-/// or use the one-shot [`SymmetricCipherEncryptor::encrypt_out`]. Output is
+/// Stream with [`SimpleCipherEncryptor::do_update_out`] then [`SimpleCipherEncryptor::do_final`],
+/// or use the one-shot [`SimpleCipherEncryptor::encrypt_out`]. Output is
 /// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
 /// input length for one that never does (`NoPadding`, which rejects an unaligned input at
 /// `do_final`). The buffered partial plaintext block is held in a [`Secret`].
@@ -68,7 +68,7 @@ where
 }
 
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    SimpleCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
     for PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
@@ -212,7 +212,7 @@ where
 }
 
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    SimpleCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
     for PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
