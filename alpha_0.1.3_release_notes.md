@@ -350,7 +350,7 @@ ECB (`Ecb`), SP 800-38A Sec 6.1:
   always gets encrypted to the same ciphertext block"). One block smaller than `Cbc` / `Cfb`, since nothing chains
   (176 / 208 / 240 B for AES-128/192/256).
 * **Both directions batch.** Sec 6.1 allows forward and inverse cipher calls "to be computed in parallel", so encryption
-  as well as decryption walks the blocks through `ElectronicCodeBook::{en,de}crypt_blocks8`, then the pair methods, then
+  as well as decryption walks the blocks through `ElectronicCodeBook::{en,de}crypt_4blocks`, then the pair methods, then
   a single block. The swapped-pair and rotated-four test permutations prove both paths are taken in both directions.
 * `aes128-ecb` / `aes192-ecb` / `aes256-ecb` CLI subcommands over the shared block-mode plumbing, which is now generic
   over `INIT_DATA_LEN`: nothing is prepended on `encrypt` or consumed on `decrypt`, so output is exactly as long as
