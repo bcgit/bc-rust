@@ -1,4 +1,4 @@
-//! Block cipher modes of operation (NIST SP 800-38A).
+//! Block cipher modes of operation (NIST SP 800-38A and SP 800-38C).
 //!
 //! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES_128` and friends,
 //! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
@@ -11,20 +11,40 @@
 //! | CFB | [`Cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`Cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`Ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
+//! | CCM | [`Ccm`] | SP 800-38C | Counter with CBC-MAC. **The only authenticated mode here**: CTR plus CBC-MAC, with a tag and AAD |
 //!
-//! They divide two ways. **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`]): whole blocks in, whole blocks out, and arbitrary-length data needs
-//! the padding layer. **CFB, CFB8 and CTR are stream ciphers** ([`StreamCipherEncryptor`] /
-//! [`StreamCipherDecryptor`]): any length in, the same length out, no padding, no finalization --
-//! see [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
+//! They divide three ways.
 //!
-//! **All five reach the same arbitrary-length API**, so code can be written against one trait and
-//! handed any mode. A block mode gets there by being wrapped in `bouncycastle-padding`'s adapters,
-//! which are [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] with the padded block as
-//! their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0` because
-//! it has no final output at all. The `bouncycastle-aes` aliases show the difference in
-//! one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme, `AES_CTR_128<Encrypting>`
-//! has nothing to name.
+//! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
+//! blocks in, whole blocks out, and arbitrary-length data needs the padding layer. **CFB, CFB8 and
+//! CTR are stream ciphers** ([`StreamCipherEncryptor`] / [`StreamCipherDecryptor`]): any length in,
+//! the same length out, no padding, no finalization -- see
+//! [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
+//!
+//! **Those five reach the same arbitrary-length API**, so code can be written against one trait and
+//! handed any of them. A block mode gets there by being wrapped in `bouncycastle-padding`'s
+//! adapters, which are [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] with the padded block
+//! as their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0`
+//! because it has no final output at all. The `bouncycastle-aes` aliases show the difference in one
+//! line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme,
+//! `AES_CTR_128<Encrypting>` has nothing to name.
+//!
+//! **CCM is the odd one out, and deliberately so.** It is an AEAD: it takes additional
+//! authenticated data, and it produces a tag as well as a ciphertext, so it does not fit either of
+//! the traits above -- there is nowhere in them to put the AAD or the tag. It implements
+//! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead (through [`CcmEncryptor`] /
+//! [`CcmDecryptor`]), and its own inherent API is the one to reach for. Two other things set it
+//! apart:
+//!
+//! * **There is an extra input and an extra output.** The AAD is authenticated but not encrypted,
+//!   and the tag has to travel with the ciphertext; `Ccm` offers both the spec's inline
+//!   `ciphertext || tag` layout and a detached-tag pair.
+//! * **The nonce is supplied, not generated.** CCM requires the nonce to be unique but *not*
+//!   unpredictable (SP 800-38C Sec 5.3), which is the opposite of the IV requirement the other
+//!   modes have, so a caller with a counter can do better than this crate's DRBG.
+//!
+//! See [`Ccm`] for both, and [Choosing between the modes](#choosing-between-the-modes) for when it
+//! is the right answer -- which, for a new design, is usually.
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
@@ -38,14 +58,15 @@
 //!
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait. Define a one-line alias for the combination you use -- or use the ready-made
-//! `AES_CBC_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` and friends from
-//! `bouncycastle-aes`. Those aliases are not all the same shape: the two block modes take
-//! a padding scheme as well as a direction, since neither is usable on data of arbitrary length
-//! without one, while the three stream modes take only the direction:
+//! `AES_CBC_128` / `AES_CCM_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128`
+//! and friends from `bouncycastle-aes`. Those aliases are not all the same shape: the two block
+//! modes take a padding scheme as well as a direction, since neither is usable on data of arbitrary
+//! length without one, the three stream modes take only the direction, and CCM takes no direction
+//! at all but does take its nonce and tag lengths:
 //!
 //! ```
 //! use bouncycastle_aes::{AES_128, AES_192, AES_256};
-//! use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ctr, Ecb};
+//! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Ecb};
 //!
 //! type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, 16>;
 //! type Aes192Cbc<Dir> = Cbc<AES_192, Dir, 24, 16>;
@@ -62,6 +83,15 @@
 //! type Aes128Ctr<Dir> = Ctr<AES_128, Dir, 16, 16, 12>;
 //!
 //! type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, 16>;
+//!
+//! // CCM takes the direction like the rest, plus the nonce length and the tag length -- both
+//! // real cryptographic choices rather than AES constants. The nonce length caps the payload
+//! // (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag length is the forgery bound;
+//! // 12 and 16 are the usual pair.
+//! type Aes128Ccm<Dir> = Ccm<AES_128, Dir, 16, 16, 12, 16>;
+//! type Aes256Ccm<Dir> = Ccm<AES_256, Dir, 32, 16, 12, 16>;
+//! // A 13-byte nonce leaves q = 2, so a payload of at most 64 KiB - 1; 802.11 CCMP's pair.
+//! type Aes128CcmShortTag<Dir> = Ccm<AES_128, Dir, 16, 16, 13, 8>;
 //! ```
 //!
 //! # Usage Examples
@@ -212,6 +242,42 @@
 //! assert_eq!(data, plaintext);
 //! ```
 //!
+//! CCM is shaped differently from all of the above, because it is the only authenticated one. There
+//! is no direction parameter, the nonce is supplied rather than generated, and there is an extra
+//! input (the AAD, authenticated but not encrypted) and an extra output (the tag). Decryption
+//! either returns the plaintext or fails -- it never returns plausible-looking rubbish the way the
+//! unauthenticated modes do when the ciphertext has been altered:
+//!
+//! ```
+//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
+//!
+//! type Aes128Ccm<Dir> = Ccm<AES_128, Dir, 16, 16, 12, 16>;
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! // Supplied, not generated -- and it must never repeat under this key.
+//! let nonce = [0x01u8; 12];
+//! let header = b"authenticated, not encrypted";
+//! let message = b"any length: CCM pads internally";
+//!
+//! // The spec's own layout (SP 800-38C Sec 6.1 step 8): `ciphertext || tag`.
+//! let mut sealed = vec![0u8; message.len() + 16];
+//! Aes128Ccm::<Encrypting>::encrypt(&key, &nonce, header, message, &mut sealed).expect("encryption");
+//!
+//! let mut opened = vec![0u8; message.len()];
+//! let n = Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &sealed, &mut opened).expect("decryption");
+//! assert_eq!(&opened[..n], message);
+//!
+//! // Any change to the ciphertext, the tag, the header or the nonce is detected -- which is the
+//! // whole difference from the five modes above.
+//! let mut tampered = sealed.clone();
+//! tampered[0] ^= 1;
+//! assert!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &tampered, &mut opened).is_err());
+//! assert!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, b"other header", &sealed, &mut opened).is_err());
+//! ```
+//!
 //! Using the wrong direction does not compile:
 //!
 //! ```compile_fail
@@ -229,8 +295,31 @@
 //!
 //! # Choosing between the modes
 //!
-//! None is authenticated, so the honest answer for new designs is "none of them -- use an AEAD".
-//! ECB is not a candidate for data at all (below). Between the rest:
+//! **For a new design, use [`Ccm`].** It is the only authenticated mode here, and an
+//! unauthenticated mode is almost never what a new protocol wants: the other five leave the
+//! ciphertext malleable in the specific, exploitable ways set out in
+//! [None of the other modes is authenticated](#none-of-the-other-modes-is-authenticated), and
+//! bolting a MAC on afterwards is a design most people get wrong. CCM's costs, so that the choice
+//! is informed rather than reflexive:
+//!
+//! * **Two cipher calls per block, and no batching.** CCM runs both CTR and a CBC-MAC over the same
+//!   data (Sec 5.2), and the CBC-MAC is serial, so it cannot use the permutation's pair or four
+//!   path. This crate's benches measure it at about half CTR's unbatched throughput and a quarter
+//!   of CTR's batched.
+//! * **It does not stream.** SP 800-38C Sec 3: "CCM is not designed to support partial processing
+//!   or stream processing", because the payload length is inside the first block the MAC covers.
+//!   `Ccm` handles that by taking the length up front, which costs nothing; code written against
+//!   the generic AEAD traits pays for it in buffering instead. See [`Ccm`].
+//! * **The payload is capped** by the nonce length, at `2^(8 * (15 - NONCE_LEN)) - 1` bytes.
+//! * **The nonce must be unique.** Reuse is worse than for CTR: it loses confidentiality *and*
+//!   enables forgery.
+//!
+//! If CCM's shape does not fit -- a genuinely streaming multi-gigabyte input, say --
+//! `bouncycastle-ascon`'s Ascon-AEAD128 is an AEAD that does stream. Choosing an unauthenticated
+//! mode from this crate should be a deliberate decision, made because an existing format or spec
+//! requires it, and paired with separate authentication.
+//!
+//! ECB is not a candidate for data at all (below). Between the five unauthenticated modes:
 //!
 //! * **Only CBC needs padding.** CFB and CFB8 are stream ciphers: any length in, the same length
 //!   out. CBC needs the data padded to a whole number of blocks, which means a padding layer and
@@ -320,7 +409,9 @@
 //!
 //! No heap allocation, and no lookup tables of its own. A CBC or CFB8 value is the permutation plus
 //! one block of chaining value; a CFB value adds a `usize` to that; a CTR value carries the nonce,
-//! a counter and a keystream block; an ECB value is just the permutation, since nothing chains:
+//! a counter and a keystream block; an ECB value is just the permutation, since nothing chains; a
+//! CCM value carries three blocks (the CBC-MAC chaining value, the counter template and the
+//! keystream) plus four counters, because it runs two mechanisms at once:
 //!
 //! ```text
 //! size_of::<Cbc<P, Dir, KEY_LEN, BLOCK_LEN>>()  == size_of::<P>() + BLOCK_LEN
@@ -331,6 +422,16 @@
 //! // CTR, rounded up to the counter's 8-byte alignment:
 //! size_of::<Ctr<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN>>()
 //!     == align8(size_of::<P>() + NONCE_LEN + 8 + BLOCK_LEN + 8)
+//!
+//! // CCM. Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and
+//! // the tag is built at finalization, so neither adds a field. `Dir` is zero-sized.
+//! size_of::<Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>>()
+//!     == align8(size_of::<P>() + 3 * BLOCK_LEN + 3 * size_of::<usize>() + 8)
+//!
+//! // The buffering AEAD-trait adapters, which is where CCM gets expensive: two BUFFER_LEN
+//! // arrays, and the trait's one-shots put a third of the same size on the stack.
+//! size_of::<CcmEncryptor<P, .., BUFFER_LEN>>()
+//!     == align8(size_of::<P>() + 2 * BUFFER_LEN + NONCE_LEN + 2 * size_of::<usize>() + 1)
 //! ```
 //!
 //! | Combination | Permutation | Chain | Count | Total |
@@ -347,6 +448,25 @@
 //! | AES-128 ECB | 176 B | 0 B | -- | 176 B |
 //! | AES-192 ECB | 208 B | 0 B | -- | 208 B |
 //! | AES-256 ECB | 240 B | 0 B | -- | 240 B |
+//! | AES-128 CCM | 176 B | 16 B MAC + 16 B counter template + 16 B keystream | 32 B | 256 B |
+//! | AES-192 CCM | 208 B | 48 B, as above | 32 B | 288 B |
+//! | AES-256 CCM | 240 B | 48 B, as above | 32 B | 320 B |
+//!
+//! CCM is the largest of the streaming values, because it is the only mode running two mechanisms
+//! at once: the CBC-MAC needs its chaining value, and the CTR half needs both a keystream block and
+//! the counter template that generates it. It is **independent of `NONCE_LEN` and `TAG_LEN`** --
+//! `Ccm<AES_128, Encrypting, .., 7, 4>` and `Ccm<AES_128, Encrypting, .., 13, 16>` are both 256 B --
+//! because the nonce is stored inside the counter template rather than separately, and the tag is
+//! assembled at finalization rather than held.
+//!
+//! **[`CcmEncryptor`] and [`CcmDecryptor`] are a different order of magnitude**, and that is the
+//! one memory figure in this crate worth thinking about before choosing an API. They buffer the
+//! whole message, so at `BUFFER_LEN = 2048` an AES-128 encryptor is **4304 B**, and the AEAD
+//! trait's one-shots put another `BUFFER_LEN` on the stack as the finalization buffer -- about
+//! `3 * BUFFER_LEN` in total for a call to `encrypt_out`. Using [`Ccm`] directly costs 264 B
+//! whatever the message length, and the benches measure no throughput difference between the two,
+//! so the buffering pair is worth it only when the generic trait is genuinely needed. See [`Ccm`]
+//! for why the buffering cannot be avoided in the trait.
 //!
 //! CFB8 is the same size as CBC because it stores the same thing: one block of input to the next
 //! cipher call. CFB adds one `usize` because its segment is a whole block and a call may end
@@ -391,9 +511,15 @@
 //! data. If you find yourself reaching for it because it needs no IV, that is the problem the IV
 //! solves.
 //!
-//! ## None of the modes is authenticated
+//! ## None of the other modes is authenticated
 //!
-//! All four provide, at best, confidentiality only. None detects tampering, and each is malleable
+//! This section is about the five SP 800-38A modes. **[`Ccm`] is exempt**: it is an AEAD, its tag
+//! covers the payload, the AAD and the nonce, and decryption returns `Err` rather than plaintext if
+//! any of them has been altered. Everything below is a description of what you give up by choosing
+//! one of the other five, and the reason
+//! [Choosing between the modes](#choosing-between-the-modes) starts with CCM.
+//!
+//! Those five provide, at best, confidentiality only. None detects tampering, and each is malleable
 //! in specific, exploitable ways -- SP 800-38A Appendix D, Table D.2, whose CFB row is
 //! "SBE in the decryption of `Cj`" plus "RBE in the decryption of `Cj+1`,...,`Cj+b/s`" (SBE =
 //! specific bit errors, the same positions; RBE = random bit errors):
@@ -415,8 +541,9 @@
 //!   CFB8 is chosen for -- and it also means a tampered byte damages a bounded, predictable window
 //!   rather than the rest of the message.
 //!
-//! **Authenticate the ciphertext.** Prefer an AEAD; if you must use one of these, MAC the
-//! ciphertext *and* the IV, and verify before decrypting.
+//! **Authenticate the ciphertext.** Prefer an AEAD -- [`Ccm`] is in this crate, and needs no
+//! separate MAC, no key-separation decision and no encrypt-then-MAC ordering care. If you must use
+//! one of the five, MAC the ciphertext *and* the IV, and verify before decrypting.
 //!
 //! Combining decryption with a padding check is the classic padding-oracle setup. It applies to CBC
 //! here, the one mode that needs padding; do not report padding failures distinguishably, and do
@@ -483,16 +610,25 @@
 //! * **CFB1**, the `s = 1` segment size (SP 800-38A Appendix F.3.1-F.3.6). Its segment is a single
 //!   *bit*, so unlike [`Cfb`] and [`Cfb8`] it does not fit a byte-oriented API at all: a message is
 //!   a bit string whose length need not be a multiple of 8, which this crate has no type for.
-//! * **OFB**, the one remaining mode of the recommendation. It is a keystream mode and, like CFB,
+//! * **OFB**, the one remaining mode of SP 800-38A. It is a keystream mode and, like CFB,
 //!   CFB8 and CTR, would implement [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`].
+//! * **GCM** (SP 800-38D), the other widely-used AEAD mode of a block cipher. It would sit
+//!   alongside [`Ccm`] on [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], and unlike CCM it
+//!   streams, but it needs GF(2^128) multiplication, which this crate has no support for.
+//! * **CCM with a formatting function other than Appendix A's.** SP 800-38C Sec 5.4 allows
+//!   alternatives and says "Alternative formatting functions may be developed in the future";
+//!   Appendix A's is the only one that exists in practice and the only one [`Ccm`] implements.
 //!
 //! # Command line
 //!
-//! The `bc-rust` CLI exposes all five modes for all three AES key lengths: `aes{128,192,256}-cbc`,
-//! `-cfb`, `-cfb8`, `-ctr` and `-ecb`, each taking `encrypt` or `decrypt` and streaming stdin to
-//! stdout. There is no API for caller-supplied init data anywhere, so `encrypt` writes what it
-//! generated at the front of its output and `decrypt` reads it back, and the two compose. That is
-//! one block for CBC, CFB and CFB8, **12 bytes** for CTR, and nothing at all for `-ecb`:
+//! The `bc-rust` CLI exposes all six modes for all three AES key lengths: `aes{128,192,256}-cbc`,
+//! `-ccm`, `-cfb`, `-cfb8`, `-ctr` and `-ecb`, each taking `encrypt` or `decrypt`. All but `-ccm`
+//! stream stdin to stdout; see below for why CCM cannot.
+//!
+//! For the five unauthenticated modes there is no API for caller-supplied init data anywhere, so
+//! `encrypt` writes what it generated at the front of its output and `decrypt` reads it back, and
+//! the two compose. That is one block for CBC, CFB and CFB8, **12 bytes** for CTR, and nothing at
+//! all for `-ecb`:
 //!
 //! ```text
 //! bc-rust aes256-cbc encrypt --key-file k.bin < plain.bin > cipher.bin
@@ -511,12 +647,36 @@
 //! [`Cfb8`]; the two are not interoperable. The `-ctr` commands use a 12-byte nonce and so a 4-byte
 //! counter, matching `AES_CTR_*`. Input must be block-aligned for the `-cbc` and `-ecb` commands,
 //! and may be any length for `-cfb`, `-cfb8` and `-ctr`, for the reason given above.
+//!
+//! **`-ccm` is different in three visible ways**, all of them following from CCM being an AEAD:
+//!
+//! ```text
+//! # The nonce is a flag, and the same one is needed to decrypt: CCM needs it unique, not
+//! # unpredictable (SP 800-38C Sec 5.3), so the caller chooses it.
+//! bc-rust aes256-ccm encrypt --key-file k.bin --nonce 000102030405060708090a0b \
+//!     --aad cafebabe < plain.bin > sealed.bin
+//! bc-rust aes256-ccm decrypt --key-file k.bin --nonce 000102030405060708090a0b \
+//!     --aad cafebabe < sealed.bin | cmp - plain.bin
+//! ```
+//!
+//! 1. **`--nonce` / `--nonce-file` is required and is not written to the output**, unlike every
+//!    other mode's generated IV. `--aad` adds data that is authenticated but not encrypted, and
+//!    must match on both sides. `--tag-len` selects the tag length, defaulting to 16.
+//! 2. **The output is `--tag-len` bytes longer than the input** (`ciphertext || tag`, Sec 6.1
+//!    step 8), and `decrypt` **fails with a non-zero exit** rather than emitting rubbish if
+//!    anything has been altered.
+//! 3. **It does not stream**: it reads all of stdin before doing any work, so memory use is
+//!    proportional to the input. That is Sec 3's "CCM is not designed to support partial processing
+//!    or stream processing", not a limitation of this implementation. It does buy something,
+//!    though -- no plaintext is written until the tag has verified, so a failed `decrypt` leaves
+//!    nothing to discard. For a streaming AEAD use `bc-rust ascon-aead128`.
 
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
 mod cbc;
+mod ccm;
 mod cfb;
 mod cfb8;
 mod ctr;
@@ -524,6 +684,7 @@ mod ecb;
 mod iv;
 
 pub use cbc::Cbc;
+pub use ccm::{Ccm, CcmDecryptor, CcmEncryptor};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
@@ -532,8 +693,9 @@ pub use ecb::Ecb;
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SimpleCipherDecryptor,
-    SimpleCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
+    AEADCipher, AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor,
+    BlockCipherEncryptor, ElectronicCodeBook, SimpleCipherDecryptor, SimpleCipherEncryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor,
 };
 // end of imports needed for docs
 

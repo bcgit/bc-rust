@@ -220,6 +220,7 @@
 mod aes;
 mod bitslice;
 mod cbc;
+mod ccm;
 mod cfb;
 mod cfb8;
 mod ctr;
@@ -231,6 +232,11 @@ mod schedule;
 
 pub use aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+pub use ccm::{
+    AES_CCM_128, AES_CCM_128_Decryptor, AES_CCM_128_Encryptor, AES_CCM_192, AES_CCM_192_Decryptor,
+    AES_CCM_192_Encryptor, AES_CCM_256, AES_CCM_256_Decryptor, AES_CCM_256_Encryptor,
+    CCM_NONCE_LEN, CCM_TAG_LEN,
+};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
