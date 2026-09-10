@@ -164,7 +164,7 @@ fn streaming_matches_one_shot() {
     }
     let mut out = c.into_output();
     let head = out.do_output(20);
-    let tail = out.do_final(44);
+    let tail = out.do_output(44);
     assert_eq!([head, tail].concat(), one, "chunked in, split out, must equal the one-shot");
 }
 

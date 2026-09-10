@@ -1786,6 +1786,11 @@ where
 ///
 /// Output is one continuous stream: successive calls continue where the last left off, so reading
 /// 16 bytes twice gives the same 32 bytes as reading 32 once.
+///
+/// There is no `do_final` here, unlike [`Hash`] and [`MAC`]. On those it is load-bearing -- the
+/// only way to get output, and it must consume the value because finalizing pads the state. A
+/// squeeze has nothing to finalize, so such a method would only say "this read is my last", which
+/// ownership already says: drop the value, or let it fall out of scope.
 pub trait XOFOutput {
     /// Produces the next `num_bytes` bytes of the output stream.
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8>;
@@ -1793,30 +1798,6 @@ pub trait XOFOutput {
     /// As [`do_output`](Self::do_output), filling the caller's buffer, which is zeroized first.
     /// Returns the number of bytes written.
     fn do_output_out(&mut self, output: &mut [u8]) -> usize;
-
-    /// The last output: produces `num_bytes` bytes and ends the stream.
-    ///
-    /// Ending the stream is taking `self` by value: the handle is gone afterwards, and dropping it
-    /// zeroizes the sponge. So this is exactly [`do_output`](Self::do_output) plus the end of the
-    /// value's life, provided as a separate name so a call site can say which read is its last.
-    ///
-    /// It reads the same bytes [`do_output`](Self::do_output) would at the same point in the
-    /// stream; the difference is only that nothing can follow it.
-    fn do_final(mut self, num_bytes: usize) -> Vec<u8>
-    where
-        Self: Sized,
-    {
-        self.do_output(num_bytes)
-    }
-
-    /// As [`do_final`](Self::do_final), filling the caller's buffer, which is zeroized first.
-    /// Returns the number of bytes written.
-    fn do_final_out(mut self, output: &mut [u8]) -> usize
-    where
-        Self: Sized,
-    {
-        self.do_output_out(output)
-    }
 }
 
 /// Extendable-Output Functions (XOFs): hashes whose output length is chosen by the caller.
