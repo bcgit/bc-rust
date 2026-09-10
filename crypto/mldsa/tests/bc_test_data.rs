@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_sha3::SHAKE256;
 
 #[cfg(test)]

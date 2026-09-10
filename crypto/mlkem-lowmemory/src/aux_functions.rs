@@ -2,7 +2,7 @@
 
 use crate::mlkem::{N, q, q_inv};
 use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 /// Algorithm 5 ByteEncode_d(𝐹)

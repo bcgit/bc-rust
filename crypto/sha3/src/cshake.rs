@@ -4,7 +4,7 @@ use crate::SHAKEParams;
 use crate::shake::{SHAKEInternal, SHAKEOutput};
 use crate::xof_utils::left_encode;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XofOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFOutput};
 
 /// The domain separator cSHAKE absorbs in place of SHAKE's `1111`: the `00` of SP 800-185 Sec 3.3,
 /// two zero bits, which is what keeps a customized instance separate from plain SHAKE.
@@ -215,15 +215,5 @@ impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
         } else {
             self.shake.into_output_partial_bits(partial_byte, num_bits)
         }
-    }
-
-    fn hash_xof(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.do_update(data);
-        self.into_output().do_output(result_len)
-    }
-
-    fn hash_xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.into_output().do_output_out(output)
     }
 }

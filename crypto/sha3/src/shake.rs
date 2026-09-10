@@ -8,7 +8,7 @@ use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
-    Algorithm, Hash, KDF, SecurityStrength, Suspendable, XOF, XofOutput,
+    Algorithm, Hash, KDF, SecurityStrength, Suspendable, XOF, XOFOutput,
 };
 use bouncycastle_utils::{max, min};
 
@@ -305,7 +305,7 @@ pub struct SHAKEOutput<PARAMS: SHAKEParams> {
     shake: SHAKEInternal<PARAMS>,
 }
 
-impl<PARAMS: SHAKEParams> XofOutput for SHAKEOutput<PARAMS> {
+impl<PARAMS: SHAKEParams> XOFOutput for SHAKEOutput<PARAMS> {
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
         self.do_output_out(&mut out);
@@ -369,8 +369,8 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
     /// The nominal digest size: 32 bytes for SHAKE128, 64 for SHAKE256.
     ///
     /// A XOF has no inherent output length, so this is a convention rather than a property of the
-    /// function. It is BC Java's: `SHAKEDigest.getDigestSize()` returns `fixedOutputLength / 4`,
-    /// which is the length at which the output carries the full security level.
+    /// function: it is twice the security strength, the length at which the output carries the
+    /// full security level.
     fn output_len(&self) -> usize {
         (PARAMS::SIZE as usize) / 4
     }
@@ -399,8 +399,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         self.keccak.absorb(data);
     }
 
-    /// Produces [`output_len`](Self::output_len) bytes and ends the object, as BC Java's
-    /// `Digest.doFinal(out, outOff)` does via `doFinal(out, outOff, getDigestSize())`.
+    /// Produces [`output_len`](Self::output_len) bytes and ends the object.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
         let mut out = vec![0u8; n];
@@ -440,7 +439,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
 /// The absorb-then-squeeze rule, as a compile error rather than a runtime one.
 ///
 /// ```compile_fail
-/// use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+/// use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 /// use bouncycastle_sha3::SHAKE128;
 ///
 /// let mut shake = SHAKE128::new();
@@ -453,7 +452,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
 /// The same value used correctly:
 ///
 /// ```
-/// use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+/// use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 /// use bouncycastle_sha3::SHAKE128;
 ///
 /// let mut shake = SHAKE128::new();

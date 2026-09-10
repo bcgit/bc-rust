@@ -7,7 +7,7 @@ mod shake_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{Hash, KDF, SecurityStrength, XOF, XofOutput};
+    use bouncycastle_core::traits::{Hash, KDF, SecurityStrength, XOF, XOFOutput};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -64,14 +64,14 @@ mod shake_tests {
     /// of them until this test existed.
     ///
     /// `block_bitlen` is the sponge rate, `1600 - 2c`: FIPS 202 Table 3 gives 1344 bits for
-    /// SHAKE128 and 1088 for SHAKE256. `output_len` is the nominal digest size, which BC Java's
-    /// `SHAKEDigest.getDigestSize()` defines as `fixedOutputLength / 4`: 32 and 64 bytes.
+    /// SHAKE128 and 1088 for SHAKE256. `output_len` is the nominal digest size, twice the security
+    /// strength: 32 and 64 bytes.
     #[test]
-    fn metadata_matches_fips202_and_bc_java() {
+    fn metadata_matches_fips202() {
         assert_eq!(SHAKE128::new().block_bitlen(), 1344, "SHAKE128 rate, FIPS 202 Table 3");
         assert_eq!(SHAKE256::new().block_bitlen(), 1088, "SHAKE256 rate, FIPS 202 Table 3");
-        assert_eq!(SHAKE128::new().output_len(), 32, "SHAKEDigest.getDigestSize() for SHAKE128");
-        assert_eq!(SHAKE256::new().output_len(), 64, "SHAKEDigest.getDigestSize() for SHAKE256");
+        assert_eq!(SHAKE128::new().output_len(), 32, "nominal digest size for SHAKE128");
+        assert_eq!(SHAKE256::new().output_len(), 64, "nominal digest size for SHAKE256");
 
         // and do_final actually produces that many bytes
         assert_eq!(SHAKE128::new().hash(b"abc").len(), 32);

@@ -4,7 +4,7 @@
 //! `../bc-test-data` (the same convention as the ML-KEM, ML-DSA and SHA-3 suites). If it is not
 //! present these tests print a warning and pass vacuously.
 
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFOutput};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{CSHAKE128, CSHAKE256, SHAKE128, SHAKE256};

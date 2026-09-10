@@ -1,4 +1,4 @@
-use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 // Test against the bc-test-data repo
 // Requires that the bc-test-data repository is cloned and available for testing at "../bc-test-data"
 // relative to the root of this git project.
@@ -20,7 +20,7 @@ mod bc_test_data {
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, XOF,
-        XofOutput,
+        XOFOutput,
     };
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa_lowmemory::{

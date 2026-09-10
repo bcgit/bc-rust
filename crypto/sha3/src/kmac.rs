@@ -6,7 +6,7 @@ use crate::shake::SHAKEOutput;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, SecurityStrength, XOF, XofOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, SecurityStrength, XOF, XOFOutput};
 use bouncycastle_utils::ct;
 
 /// The function-name string every KMAC binds, per SP 800-185 Sec 4.3. Fixed by the specification:
@@ -309,15 +309,5 @@ impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
             ));
         }
         Ok(self.into_output())
-    }
-
-    fn hash_xof(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.do_update(data);
-        self.into_output().do_output(result_len)
-    }
-
-    fn hash_xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.into_output().do_output_out(output)
     }
 }

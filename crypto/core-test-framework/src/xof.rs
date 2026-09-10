@@ -1,7 +1,7 @@
 //! Generic behaviour tests for anything that implements [`XOF`].
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{XOF, XofOutput};
+use bouncycastle_core::traits::{XOF, XOFOutput};
 
 /// Instance of the test framework.
 pub struct TestFrameworkXOF {
