@@ -6,7 +6,7 @@ mod mlkem_tests {
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         Hash, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF,
-        XofOutput,
+        XOFOutput,
     };
     use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_hex as hex;

@@ -7,7 +7,7 @@ use crate::params::{
     MLDSAParams,
 };
 use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)

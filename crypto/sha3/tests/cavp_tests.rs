@@ -25,7 +25,7 @@
 //!    `Outputlen = minoutbytes + (rightmost 16 bits of Output as big-endian integer) mod
 //!    (maxoutbytes - minoutbytes + 1)` bytes; report `Output`/`Outputlen` per COUNT.
 
-use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 use std::fs;

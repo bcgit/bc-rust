@@ -5,7 +5,7 @@ use crate::cshake::{CSHAKEInternal, absorb_encoded_string_into};
 use crate::shake::SHAKEOutput;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XofOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFOutput};
 
 /// The function-name string every TupleHash binds, per SP 800-185 Sec 5.3.
 const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
@@ -26,10 +26,9 @@ const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
 ///
 /// This is the one place TupleHash departs from the usual [`Hash`] contract. For every other hash,
 /// feeding the input in pieces gives the same answer as feeding it at once; here each
-/// [`Hash::do_update`] call is one tuple element, so the chunking *is* the input. BC Java draws the
-/// same line -- its `TupleHash.update` encodes each call with `XofUtils.encode` before passing it
-/// on -- but it is worth stating plainly, because code that treats a `TupleHash` as an
-/// interchangeable `Hash` and re-chunks its input will silently compute something else.
+/// [`Hash::do_update`] call is one tuple element, so the chunking *is* the input. It is worth
+/// stating plainly, because code that treats a `TupleHash` as an interchangeable `Hash` and
+/// re-chunks its input will silently compute something else.
 ///
 /// [`TupleHashXOFInternal`] is the arbitrary-output-length function of Sec 5.3.1.
 #[derive(Clone)]
@@ -255,15 +254,5 @@ impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
             ));
         }
         Ok(self.into_output())
-    }
-
-    fn hash_xof(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.do_update(data);
-        self.into_output().do_output(result_len)
-    }
-
-    fn hash_xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.into_output().do_output_out(output)
     }
 }

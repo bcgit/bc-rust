@@ -12,7 +12,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
-    Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF, XofOutput,
+    Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF, XOFOutput,
 };
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;

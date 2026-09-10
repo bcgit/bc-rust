@@ -436,6 +436,19 @@ pub trait Hash: Algorithm + Clone {
     fn block_bitlen(&self) -> usize;
 
     /// The size of the output in bytes.
+    ///
+    /// # This is not always part of the function's identity
+    ///
+    /// For most hashes the length is bound into the computation, so asking for a different length
+    /// gives a different function rather than more or fewer bytes of the same one. TupleHash and
+    /// KMAC are built that way deliberately -- SP 800-185 absorbs `right_encode(L)` before
+    /// squeezing.
+    ///
+    /// A [`XOF`] is the exception. Its length is chosen at the point of output and is *not* an
+    /// input to the computation, so this returns a nominal length only -- 32 bytes for SHAKE128 --
+    /// and two outputs of different lengths share their leading bytes. Generic code over `Hash`
+    /// must therefore not infer "different `output_len` implies unrelated output"; see the
+    /// discussion on [`XOF`].
     fn output_len(&self) -> usize;
 
     /// A static one-shot API that hashes the provided data.
@@ -1768,15 +1781,13 @@ where
 ///
 /// This is the type [`XOF::into_output`] hands back. Absorbing and squeezing are separate types
 /// rather than separate states of one type, so "no more input once output has begun" is a fact the
-/// compiler enforces rather than a rule the documentation asks callers to follow. BC Java draws the
-/// same line at run time, throwing `IllegalStateException` from `KeccakDigest.absorb`.
+/// compiler enforces rather than a rule the documentation asks callers to follow, and so there is
+/// no "absorbed after squeezing" error to raise or to test for.
 ///
 /// Output is one continuous stream: successive calls continue where the last left off, so reading
 /// 16 bytes twice gives the same 32 bytes as reading 32 once.
-pub trait XofOutput {
+pub trait XOFOutput {
     /// Produces the next `num_bytes` bytes of the output stream.
-    ///
-    /// BC Java's `Xof.doOutput(out, outOff, outLen)`.
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8>;
 
     /// As [`do_output`](Self::do_output), filling the caller's buffer, which is zeroized first.
@@ -1785,11 +1796,9 @@ pub trait XofOutput {
 
     /// The last output: produces `num_bytes` bytes and ends the stream.
     ///
-    /// This is BC Java's `Xof.doFinal(out, outOff, outLen)` called after `doOutput`, which is
-    /// `doOutput` followed by `reset()` (`SHAKEDigest.java`). Here the reset is taking `self` by
-    /// value: the handle is gone afterwards, and dropping it zeroizes the sponge. So this is
-    /// exactly [`do_output`](Self::do_output) plus the end of the value's life, provided as a
-    /// separate name so a call site can say which read is its last.
+    /// Ending the stream is taking `self` by value: the handle is gone afterwards, and dropping it
+    /// zeroizes the sponge. So this is exactly [`do_output`](Self::do_output) plus the end of the
+    /// value's life, provided as a separate name so a call site can say which read is its last.
     ///
     /// It reads the same bytes [`do_output`](Self::do_output) would at the same point in the
     /// stream; the difference is only that nothing can follow it.
@@ -1812,16 +1821,15 @@ pub trait XofOutput {
 
 /// Extendable-Output Functions (XOFs): hashes whose output length is chosen by the caller.
 ///
-/// `XOF: Hash`, so SHAKE128 and SHAKE256 *are* hashes and can be used wherever one is wanted. This
-/// is the relationship BC Java draws with `Xof extends ExtendedDigest extends Digest`. As a hash, a
-/// XOF has a nominal output length -- [`Hash::output_len`], which for SHAKE is
-/// `fixedOutputLength / 4`, matching `SHAKEDigest.getDigestSize()` -- and [`Hash::do_final`]
-/// produces exactly that many bytes. This trait adds the ability to ask for a different number.
+/// `XOF: Hash`, so SHAKE128 and SHAKE256 *are* hashes and can be used wherever one is wanted. As a
+/// hash, a XOF has a nominal output length -- [`Hash::output_len`], which for SHAKE is twice the
+/// security strength, 32 bytes for SHAKE128 and 64 for SHAKE256 -- and [`Hash::do_final`] produces
+/// exactly that many bytes. This trait adds the ability to ask for a different number.
 ///
 /// # Absorb, then squeeze
 ///
 /// A sponge takes input, then produces output, and cannot go back. Here that is expressed in the
-/// types: [`into_output`](Self::into_output) consumes the XOF and returns an [`XofOutput`], so
+/// types: [`into_output`](Self::into_output) consumes the XOF and returns an [`XOFOutput`], so
 /// after output has begun there is no value left on which to call [`Hash::do_update`]. Nothing
 /// returns an "absorbed after squeezing" error because nothing can reach that state.
 ///
@@ -1834,12 +1842,11 @@ pub trait XofOutput {
 /// matters, salt the input.
 pub trait XOF: Hash {
     /// The squeezing state this XOF turns into.
-    type Output: XofOutput;
+    type Output: XOFOutput;
 
     /// Ends the input phase and begins producing output.
     ///
-    /// BC Java's `Xof.doOutput` in effect, but the phase change is in the type: what comes back
-    /// takes no more input.
+    /// The phase change is in the type: what comes back takes no more input.
     fn into_output(self) -> Self::Output;
 
     /// As [`into_output`](Self::into_output), with a final partial **byte** of input.
@@ -1859,9 +1866,26 @@ pub trait XOF: Hash {
     ) -> Result<Self::Output, HashError>;
 
     /// One-shot: absorbs `data` and produces `result_len` bytes.
-    fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8>;
+    ///
+    /// The default absorbs and squeezes in the obvious way; override it only where the type can do
+    /// better, as SHAKE does.
+    fn hash_xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
+    where
+        Self: Sized,
+    {
+        self.do_update(data);
+        self.into_output().do_output(result_len)
+    }
 
     /// One-shot: absorbs `data` and fills `output`, which is zeroized first. Returns the number of
     /// bytes written.
-    fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize;
+    ///
+    /// Defaulted as [`hash_xof`](Self::hash_xof) is.
+    fn hash_xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize
+    where
+        Self: Sized,
+    {
+        self.do_update(data);
+        self.into_output().do_output_out(output)
+    }
 }

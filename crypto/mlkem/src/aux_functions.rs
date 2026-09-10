@@ -4,7 +4,7 @@ use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mlkem::{N, q, q_inv};
 use crate::params::MLKEMParams;
 use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 pub(crate) fn expandA<P: MLKEMParams>(rho: &[u8; 32]) -> P::MatrixA {

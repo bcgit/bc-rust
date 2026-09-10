@@ -21,7 +21,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::traits::{Hash, Suspendable, XOF, XofOutput};
+use bouncycastle::core::traits::{Hash, Suspendable, XOF, XOFOutput};
 use bouncycastle::sha3::{
     SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN,
 };

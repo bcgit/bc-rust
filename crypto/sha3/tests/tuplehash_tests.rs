@@ -3,7 +3,7 @@
 //! Vectors come from the `bc-test-data` repo cloned alongside this one; see `cshake_tests.rs`.
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFOutput};
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{TUPLEHASH128, TUPLEHASH256, TUPLEHASHXOF128, TUPLEHASHXOF256};
 use std::fs;

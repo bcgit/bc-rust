@@ -3,7 +3,7 @@
 //! direct type side by side on the same input; nothing here is an expected value written by hand.
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_factory::xof_factory::XOFFactory;
 use bouncycastle_factory::{AlgorithmFactory, FactoryError};
@@ -11,7 +11,7 @@ use bouncycastle_sha3::{SHAKE128, SHAKE128_NAME, SHAKE256, SHAKE256_NAME};
 
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
 
-/// Every `Hash`, `XOF` and `XofOutput` method of the factory against the direct type `S`.
+/// Every `Hash`, `XOF` and `XOFOutput` method of the factory against the direct type `S`.
 fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
     let n = S::default().output_len();
 

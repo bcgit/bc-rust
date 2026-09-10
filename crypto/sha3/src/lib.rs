@@ -67,8 +67,8 @@
 //!
 //! [`XOF`] extends [`Hash`], so SHAKE takes input through [`Hash::do_update`] like any other hash.
 //! Output is where they differ: [`XOF::into_output`] ends the input phase and returns an
-//! [`XofOutput`](bouncycastle_core::traits::XofOutput), whose
-//! [`do_output`](bouncycastle_core::traits::XofOutput::do_output) can be called as many times as you
+//! [`XOFOutput`](bouncycastle_core::traits::XOFOutput), whose
+//! [`do_output`](bouncycastle_core::traits::XOFOutput::do_output) can be called as many times as you
 //! like, each call continuing one stream.
 //!
 //! Absorbing after output has begun is not an error you can make: `into_output` consumes the
@@ -76,7 +76,7 @@
 //!
 //! The following code produces the same output as the previous example:
 //!```
-//! use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+//! use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";

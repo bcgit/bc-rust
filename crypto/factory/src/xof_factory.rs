@@ -5,7 +5,7 @@
 //!
 //! Example usage:
 //! ```
-//! use bouncycastle_core::traits::{Hash, XOF, XofOutput};
+//! use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 //! use bouncycastle_factory::AlgorithmFactory;
 //! use bouncycastle_factory::xof_factory::XOFFactory;
 //! use bouncycastle_sha3 as sha3;
@@ -37,7 +37,7 @@
 
 use crate::{AlgorithmFactory, FactoryError};
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XofOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFOutput};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 
@@ -105,7 +105,7 @@ pub enum XOFFactoryOutput {
     SHAKE256(<sha3::SHAKE256 as XOF>::Output),
 }
 
-impl XofOutput for XOFFactoryOutput {
+impl XOFOutput for XOFFactoryOutput {
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         match self {
             Self::SHAKE128(o) => o.do_output(num_bytes),
