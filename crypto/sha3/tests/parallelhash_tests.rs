@@ -4,6 +4,7 @@
 
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF};
+use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{PARALLELHASH128, PARALLELHASH256, PARALLELHASHXOF128, PARALLELHASHXOF256};
 use std::fs;
@@ -259,7 +260,9 @@ fn check_fixed_view<H: Hash>(make: impl Fn() -> H, msg: &[u8], expected: &[u8], 
     let mut out = vec![0xFFu8; n + 7];
     assert_eq!(h.do_final_out(&mut out), n);
     assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
-    assert_eq!(&out[n..], &[0xFFu8; 7], "{ctx}: bytes past the output length are untouched");
+    // Hash::do_final_out zeroizes the whole buffer, so the tail is 0 rather than what the caller
+    // left there -- the same as SHA3, which is the contract these fixed-length types share.
+    assert_eq!(&out[n..], &[0u8; 7], "{ctx}: bytes past the output length are zeroized");
 }
 
 /// Every `Hash` and `XOF` entry point of the XOF form, against one sample value. The samples ask
@@ -336,4 +339,21 @@ fn xof_trait_view_agrees_with_the_sample_values() {
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }
+}
+
+/// Every output-buffer length, at both strengths and a non-default output length.
+///
+/// As for TupleHash: `output_len` is bound into the computation, so a short buffer truncates this
+/// ParallelHash rather than computing a shorter one, and must not panic.
+#[test]
+fn output_buffers_of_every_length() {
+    let framework = TestFrameworkHash::new();
+    let input = b"the quick brown fox jumps over the lazy dog";
+
+    framework.test_hash_output_buffers(|| PARALLELHASH128::new(8, b"", 32), input);
+    framework.test_hash_output_buffers(|| PARALLELHASH256::new(8, b"", 64), input);
+
+    // A block size that does not divide the input, a customization string, odd output lengths.
+    framework.test_hash_output_buffers(|| PARALLELHASH128::new(12, b"Parallel Data", 17), input);
+    framework.test_hash_output_buffers(|| PARALLELHASH256::new(5, b"Parallel Data", 5), input);
 }

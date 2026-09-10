@@ -319,13 +319,14 @@ fn check_out_variants<M: MAC>(make: impl Fn() -> M, msg: &[u8], expected: &[u8],
     assert_eq!(m.do_final_out(&mut out).unwrap(), n, "{ctx}: do_final_out returns the length");
     assert_eq!(out, expected, "{ctx}: do_final_out");
 
-    // do_final_out writes exactly output_len bytes and leaves the rest alone
+    // do_final_out writes output_len bytes and zeroizes the rest, as mac_out above does -- the two
+    // used to disagree, mac_out zero-filling and do_final_out leaving the caller's bytes in place.
     let mut m = make();
     m.do_update(msg);
     let mut out = vec![0xFFu8; n + 5];
     assert_eq!(m.do_final_out(&mut out).unwrap(), n);
     assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
-    assert_eq!(&out[n..], &[0xFFu8; 5], "{ctx}: do_final_out leaves bytes past the tag");
+    assert_eq!(&out[n..], &[0u8; 5], "{ctx}: do_final_out zeroizes past the tag");
 
     // a buffer one byte short is refused, by both
     let mut out = vec![0u8; n - 1];
