@@ -4,6 +4,7 @@
 
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFOutput};
+use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{TUPLEHASH128, TUPLEHASH256, TUPLEHASHXOF128, TUPLEHASHXOF256};
 use std::fs;
@@ -245,7 +246,9 @@ fn check_fixed_view<H: Hash>(make: impl Fn() -> H, tuple: &[&[u8]], expected: &[
     let mut out = vec![0xFFu8; n + 7];
     assert_eq!(h.do_final_out(&mut out), n);
     assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
-    assert_eq!(&out[n..], &[0xFFu8; 7], "{ctx}: bytes past the output length are untouched");
+    // Hash::do_final_out zeroizes the whole buffer, so the tail is 0 rather than what the caller
+    // left there -- the same as SHA3, which is the contract these fixed-length types share.
+    assert_eq!(&out[n..], &[0u8; 7], "{ctx}: bytes past the output length are zeroized");
 
     // hash and hash_out take one element: the last, after the rest have been fed in
     let Some((last, rest)) = tuple.split_last() else { return };
@@ -348,4 +351,22 @@ fn xof_trait_view_agrees_with_the_sample_values() {
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }
+}
+
+/// Every output-buffer length, at both strengths and a non-default output length.
+///
+/// `output_len` is bound into the computation, so a short buffer must truncate this TupleHash
+/// rather than compute the TupleHash of a shorter length -- and must not panic, which it did
+/// before this test existed.
+#[test]
+fn output_buffers_of_every_length() {
+    let framework = TestFrameworkHash::new();
+    let input = b"the quick brown fox";
+
+    framework.test_hash_output_buffers(|| TUPLEHASH128::new(b"", 32), input);
+    framework.test_hash_output_buffers(|| TUPLEHASH256::new(b"", 64), input);
+
+    // Non-default lengths, and a customization string.
+    framework.test_hash_output_buffers(|| TUPLEHASH128::new(b"My Tuple App", 17), input);
+    framework.test_hash_output_buffers(|| TUPLEHASH256::new(b"My Tuple App", 5), input);
 }

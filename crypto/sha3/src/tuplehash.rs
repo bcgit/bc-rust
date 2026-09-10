@@ -97,7 +97,13 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
         let n = self.output_len;
         let (buf, len) = right_encode((n as u64) * 8);
         self.cshake.do_update(&buf[..len]);
-        self.cshake.into_output().do_output_out(&mut output[..n])
+        // Per Hash::do_final_out: a short buffer is filled and the digest truncated, a long one
+        // takes the digest in its first output_len bytes and zeros after it. `n` is bound into the
+        // computation either way -- the buffer's length never reaches right_encode above, so a
+        // truncated read is this TupleHash cut short, not the TupleHash of a shorter length.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        self.cshake.into_output().do_output_out(&mut output[..written])
     }
 
     /// # Errors

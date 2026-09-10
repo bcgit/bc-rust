@@ -144,6 +144,9 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
         }
         let n = self.output_len;
         self.absorb_right_encode((n as u64) * 8);
+        // MAC::do_final_out zeroizes the entire buffer, as HMAC does, so a longer one comes back
+        // with zeros after the MAC rather than whatever the caller left there.
+        out[n..].fill(0);
         Ok(self.cshake.into_output().do_output_out(&mut out[..n]))
     }
 
