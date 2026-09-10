@@ -1,8 +1,10 @@
 mod aes_cbc_cmd;
+mod aes_ccm_cmd;
 mod aes_cfb8_cmd;
 mod aes_cfb_cmd;
 mod aes_ctr_cmd;
 mod aes_ecb_cmd;
+mod ascon_cmd;
 mod block_mode_cmd;
 mod encoders_cmd;
 mod helpers;
@@ -155,6 +157,80 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-Hash256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    AsconHash256 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-XOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-CXOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconCXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        /// Customization string in hex (optional).
+        #[arg(long)]
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Ascon-AEAD128 authenticated encryption/decryption of the content provided on stdin.
+    /// Encrypts by default (stdin = plaintext, output = ciphertext||tag); with --decrypt the
+    /// reverse. Decryption fails with a non-zero exit status if the tag does not verify.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    /// Security note: decryption streams its output, so plaintext bytes are written to stdout
+    /// before the authentication tag (the last 16 bytes of input) can be checked. Do not treat
+    /// the output as authentic until this command exits with status 0; a non-zero exit means the
+    /// input was tampered with and any plaintext already written must be discarded.
+    AsconAEAD128 {
+        /// The 128-bit key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 128-bit key in hex or binary.
+        #[arg(long)]
+        key_file: Option<String>,
+
+        /// The 128-bit nonce in hex. Must be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the 128-bit nonce in hex or binary.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex (authenticated but not encrypted).
+        #[arg(long)]
+        ad: Option<String>,
+
+        /// Decrypt instead of encrypt.
+        #[arg(short, long)]
+        decrypt: bool,
+
+        #[arg(short)]
+        /// Output in hex format.
         x: bool,
     },
 
@@ -704,6 +780,155 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-128 in CCM mode (NIST SP 800-38C): authenticated encryption of stdin to stdout.
+    ///
+    /// CCM is an AEAD: it protects both confidentiality and authenticity, and `decrypt` either
+    /// writes the plaintext or fails, unlike aes*-cbc/-cfb/-ctr, which cannot detect tampering.
+    ///
+    /// The output of `encrypt` is `ciphertext || tag` -- SP 800-38C Sec 6.1 step 8's own layout --
+    /// so it is `--tag-len` bytes longer than the input, and `decrypt` reads the tag back off the
+    /// end. Both directions authenticate `--aad` as well as the payload.
+    ///
+    /// THE NONCE IS SUPPLIED, NOT GENERATED, and this is the only cipher command here that takes
+    /// one. The other modes need an unpredictable IV, so they generate it; CCM needs the nonce to
+    /// be UNIQUE but not unpredictable (Sec 5.3: "The nonce is not required to be random"), and a
+    /// caller with a message counter can guarantee uniqueness better than a random draw. The nonce
+    /// is NOT written to the output, so `decrypt` needs the same `--nonce` as `encrypt`.
+    ///
+    /// WARNING: never reuse a nonce under one key. For CCM a repeat is worse than for CTR: it
+    /// reuses the keystream AND lets an attacker who can replay the nonce flip any chosen bit of
+    /// the payload (Appendix B.1). Use a counter, or a random value long enough that a collision is
+    /// negligible.
+    ///
+    /// Nonce length must be 7 to 13 bytes and `--tag-len` one of 4, 6, 8, 10, 12, 14, 16
+    /// (Appendix A.1). The two are linked to the payload limit and the forgery bound respectively:
+    /// a nonce of n bytes caps the payload at 2^(8*(15-n)) - 1 bytes, so 13 bytes allows only
+    /// 64 KiB - 1 while 7 bytes is effectively unlimited; and Sec B.2 says a tag shorter than
+    /// 8 bytes "shall not be used without a careful analysis of the risks". A 12-byte nonce with a
+    /// 16-byte tag is the usual choice and the default.
+    ///
+    /// UNLIKE EVERY OTHER CIPHER COMMAND HERE, THIS ONE DOES NOT STREAM: it reads all of stdin
+    /// before doing any work, so memory use is proportional to the input. That is inherent to CCM,
+    /// not a limitation of this implementation -- Sec 3: "CCM is not designed to support partial
+    /// processing or stream processing", because Appendix A.2.1 puts the payload length inside the
+    /// first block the MAC covers. It does buy one thing: on `decrypt` NO plaintext is written
+    /// until the tag has verified, so unlike `ascon-aead128` a non-zero exit leaves nothing to
+    /// discard. For large inputs use `ascon-aead128`, which streams.
+    ///
+    /// Input may be any length: CCM pads internally and the payload is not block-aligned.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CCM {
+        action: BlockModeAction,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the nonce, in hex or binary.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
+        #[arg(long, default_value_t = 16)]
+        tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
+    ///
+    /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
+    /// warnings; only the key length differs.
+    AES192_CCM {
+        action: BlockModeAction,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the nonce, in hex or binary.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
+        #[arg(long, default_value_t = 16)]
+        tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
+    ///
+    /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
+    /// warnings; only the key length differs.
+    AES256_CCM {
+        action: BlockModeAction,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the nonce, in hex or binary.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
+        #[arg(long, default_value_t = 16)]
+        tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// AES-128 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
     ///
     /// WARNING: ECB is NOT a confidentiality mode for data. Under a given key every plaintext
@@ -1051,6 +1276,18 @@ fn main() {
         Some(Subcommands::SHAKE256 { length, x }) => {
             sha3_cmd::shake_cmd(256, *length, *x);
         }
+        Some(Subcommands::AsconHash256 { x }) => {
+            ascon_cmd::hash256_cmd(*x);
+        }
+        Some(Subcommands::AsconXOF128 { length, x }) => {
+            ascon_cmd::xof128_cmd(*length, *x);
+        }
+        Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
+            ascon_cmd::cxof128_cmd(customization, *length, *x);
+        }
+        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, decrypt, x }) => {
+            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, *decrypt, *x);
+        }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
         }
@@ -1128,6 +1365,48 @@ fn main() {
         }
         Some(Subcommands::AES256_CTR { action, key, key_file, x }) => {
             aes_ctr_cmd::aes256_ctr_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES128_CCM {
+            action,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            tag_len,
+            x,
+        }) => {
+            aes_ccm_cmd::aes128_ccm_cmd(
+                action, key, key_file, nonce, nonce_file, aad, *tag_len, *x,
+            );
+        }
+        Some(Subcommands::AES192_CCM {
+            action,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            tag_len,
+            x,
+        }) => {
+            aes_ccm_cmd::aes192_ccm_cmd(
+                action, key, key_file, nonce, nonce_file, aad, *tag_len, *x,
+            );
+        }
+        Some(Subcommands::AES256_CCM {
+            action,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            tag_len,
+            x,
+        }) => {
+            aes_ccm_cmd::aes256_ccm_cmd(
+                action, key, key_file, nonce, nonce_file, aad, *tag_len, *x,
+            );
         }
         Some(Subcommands::AES128_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes128_ecb_cmd(action, key, key_file, *x);
