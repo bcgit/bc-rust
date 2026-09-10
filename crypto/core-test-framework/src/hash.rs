@@ -16,6 +16,64 @@ impl TestFrameworkHash {
         Self { enable_partial_byte_tests: true }
     }
 
+    /// Checks [`Hash::do_final_out`] and [`Hash::hash_out`] against every buffer length, for a
+    /// hash whose output length is bound into the computation.
+    ///
+    /// [`test_hash`](Self::test_hash) covers this too, but only for a `Default + HashAlgParams`
+    /// implementor. The SP 800-185 functions take constructor arguments and so cannot reach it;
+    /// `TupleHash` and `ParallelHash` both panicked on a short buffer until this existed.
+    ///
+    /// Not for XOFs. A XOF's [`Hash::output_len`] is nominal rather than bound, and its
+    /// `do_final_out` fills whatever buffer it is handed rather than stopping at `output_len`, so
+    /// the over-long case below does not describe one. Use `TestFrameworkXOF` for those.
+    pub fn test_hash_output_buffers<H: Hash>(&self, make: impl Fn() -> H, input: &[u8]) {
+        let expected = {
+            let mut h = make();
+            h.do_update(input);
+            h.do_final()
+        };
+        let n = make().output_len();
+        assert_eq!(expected.len(), n, "do_final() must produce output_len() bytes");
+
+        // Short: the buffer is filled and the digest truncated to it.
+        for length in 1..n {
+            let mut buf = vec![0xAA_u8; length];
+            let mut h = make();
+            h.do_update(input);
+            let written = h.do_final_out(&mut buf);
+            assert_eq!(written, length, "a {length}-byte buffer must take {length} bytes");
+            assert_eq!(buf, expected[..length], "short buffer must truncate the digest");
+
+            // hash_out is the one-shot spelling of the same thing.
+            let mut buf = vec![0xAA_u8; length];
+            let written = make().hash_out(input, &mut buf);
+            assert_eq!(written, length, "hash_out must agree with do_final_out");
+            assert_eq!(buf, expected[..length], "hash_out must truncate the digest");
+        }
+
+        // Exact.
+        let mut buf = vec![0xAA_u8; n];
+        let mut h = make();
+        h.do_update(input);
+        assert_eq!(h.do_final_out(&mut buf), n);
+        assert_eq!(buf, expected, "an exactly-sized buffer must take the whole digest");
+
+        // Long: the digest lands in the first output_len bytes and the rest is zeroized.
+        for extra in [1, n, 2 * n + 1] {
+            let mut buf = vec![0xAA_u8; n + extra];
+            let mut h = make();
+            h.do_update(input);
+            let written = h.do_final_out(&mut buf);
+            assert_eq!(written, n, "a long buffer must still write only output_len bytes");
+            assert_eq!(&buf[..n], &expected[..], "the digest must land at the start");
+            assert!(
+                buf[n..].iter().all(|&b| b == 0),
+                "bytes past output_len must be zeroized, buffer was {} bytes",
+                n + extra
+            );
+        }
+    }
+
     /// Test all the members of trait Hash against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive; for example it does not test
     /// do_final_partial_bits() or do_final_partial_bits_out()
