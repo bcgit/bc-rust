@@ -37,10 +37,15 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   strength); per-mode OIDs and the `BlockCipherEncryptor` / `BlockCipherDecryptor` impls belong to the mode crates.
 * Ships the type aliases `AES_CBC_128` / `AES_CBC_192` / `AES_CBC_256`, `AES_CFB_128` /
   `AES_CFB_192` / `AES_CFB_256`, `AES_CFB8_128` / `AES_CFB8_192` / `AES_CFB8_256`,
-  `AES_CTR_128` / `AES_CTR_192` / `AES_CTR_256` (12-byte nonce, 4-byte counter) and
-  `AES_ECB_128` / `AES_ECB_192` / `AES_ECB_256`, which fill in the
-  const parameters of `bouncycastle-modes`' `Cbc`, `Cfb`, `Cfb8`, `Ctr` and `Ecb`. The three stream
-  modes leave the direction as the only type parameter; the two **block** modes, CBC and ECB, take
+  `AES_CTR_128` / `AES_CTR_192` / `AES_CTR_256` (12-byte nonce, 4-byte counter),
+  `AES_ECB_128` / `AES_ECB_192` / `AES_ECB_256` and
+  `AES_CCM_128` / `AES_CCM_192` / `AES_CCM_256` (with `_Encryptor` / `_Decryptor` forms for the
+  generic AEAD traits), which fill in the
+  const parameters of `bouncycastle-modes`' `Cbc`, `Cfb`, `Cfb8`, `Ctr`, `Ecb` and `Ccm`. The three
+  stream modes leave the direction as the only type parameter; CCM leaves the direction plus its
+  nonce and tag lengths, which are cryptographic choices rather than AES constants (the nonce length
+  caps the payload and the tag length is the forgery bound), so pinning them would hide a decision;
+  the two **block** modes, CBC and ECB, take
   a padding scheme as well -- `AES_CBC_128<Encrypting, PKCS7>` -- because neither is defined on data
   that is not a whole number of blocks, so the scheme is a choice the caller has to make and one
   both ends must agree on. Naming it in the type makes a mismatched pair a compile error instead of
@@ -49,9 +54,44 @@ permutation (NIST FIPS 197), re-exported from the umbrella crate.
   code, and each one's doctest round-trips and shows that a misaligned length fails to compile.
 
 New crate `bouncycastle-modes` (`bouncycastle::modes`): cipher modes of operation
-(NIST SP 800-38A), providing **CBC** (Sec 6.2), **CFB128** and **CFB8** (Sec 6.3, `s = b` and
-`s = 8`), **CTR** (Sec 6.5) and **ECB** (Sec 6.1) -- four of the recommendation's five modes, with
-only OFB outstanding. Re-exported from the umbrella crate.
+(NIST SP 800-38A and SP 800-38C), providing **CBC** (Sec 6.2), **CFB128** and **CFB8** (Sec 6.3,
+`s = b` and `s = 8`), **CTR** (Sec 6.5) and **ECB** (Sec 6.1) -- four of SP 800-38A's five modes,
+with only OFB outstanding -- plus **CCM** (SP 800-38C), the crate's only authenticated mode.
+Re-exported from the umbrella crate.
+
+**CCM** (`Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>`) is CTR for confidentiality plus
+CBC-MAC for authenticity under one key (Sec 5.2), and is the first AEAD built on a block cipher
+here. It is worth reading its docs before use, because three things about it differ from every other
+mode in the crate:
+
+* **The nonce is supplied, not generated.** Sec 5.3 requires it to be unique but explicitly *not*
+  random ("The nonce is not required to be random"), which is the opposite of SP 800-38A's IV
+  requirement, so a caller with a message counter can do better than a DRBG draw. Reuse under one
+  key is worse than for CTR: it loses confidentiality *and* enables the bit-flipping forgery of
+  Appendix B.1.
+* **`NONCE_LEN` and `TAG_LEN` are cryptographic choices, checked at compile time.** Appendix A.1
+  requires `n + q = 15`, so the nonce length fixes the maximum payload at `2^8q - 1` bytes -- a
+  13-byte nonce caps a message at 64 KiB - 1, a 7-byte nonce lifts the cap entirely. `TAG_LEN` is
+  the forgery bound, and Sec B.2 warns against anything below 8 bytes. Both are `const` assertions
+  in the constructor, so a value A.1 does not permit is a compile error, not a runtime `Err`.
+* **CCM cannot stream.** Sec 3: "CCM is not designed to support partial processing or stream
+  processing", because Appendix A.2.1 puts the payload length inside `B0`, the first block the MAC
+  covers. `Ccm::new` takes the payload length up front, after which everything streams with **no
+  buffering at all**; that is the path to use. `CcmEncryptor` / `CcmDecryptor` implement
+  `AEADCipherEncryptor` / `AEADCipherDecryptor`, whose `do_encrypt_init` is handed no length, and
+  pay for it by buffering the whole message in a `BUFFER_LEN` array -- `2 * BUFFER_LEN` in the
+  value against 256 B for `Ccm` itself. The buffering does buy one thing: no plaintext is released
+  before the tag verifies, so `AEADCipherDecryptor`'s usual unauthenticated-output caveat cannot
+  bite a CCM caller.
+
+Only the forward cipher function is used, in both directions (Sec 3), so a permutation implementing
+just `encrypt_block` suffices. Both the spec's own inline `ciphertext || tag` layout (Sec 6.1 step
+8) and a detached-tag pair are provided. Tested against all four SP 800-38C Appendix C vectors --
+which between them cover `t` of 4, 6, 8 and 14 and `q` of 8, 7, 3 and 2, both ends of A.1's ranges,
+including the six-octet AAD length encoding that only C.4 exercises -- and against all **480** cases
+of NIST's ACVP `ACVP-AES-CCM` set, including its **52 inauthentic** ciphertexts, which are the only
+official negative vectors in the library. CLI: `aes{128,192,256}-ccm`, the one cipher subcommand
+that takes a `--nonce` and the one that does not stream.
 
 * `Cbc`, `Cfb`, `Cfb8` and `Ecb`, each `<P, Dir, KEY_LEN, BLOCK_LEN>`, and `Ctr`, which takes a
   nonce length as a fifth parameter, over any
