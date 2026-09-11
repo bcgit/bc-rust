@@ -2,6 +2,8 @@ The following organisations and people have contributed to the Bouncy Castle Cry
 
 Thanks, may your castles never deflate!
 
+See [our sponsorship page](https://www.bouncycastle.org/engage/contributors/#Rust-contributors)
+
 # Sponsors
 
 The following people and organizations donated financially to help with the release of Bouncy Castle Rust.
