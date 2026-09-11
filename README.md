@@ -21,7 +21,7 @@ or [mike@bouncycastle.org](mailto:mike@bouncycastle.org).
 
 # Sponsors and Contributors
 
-See [CONTRIBUTORS.md].
+See [CONTRIBUTORS.md] and [our sponsorship page](https://www.bouncycastle.org/engage/contributors/#Rust-contributors)
 
 # Docs and Benches
 
