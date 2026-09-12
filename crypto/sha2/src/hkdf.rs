@@ -186,18 +186,17 @@
 //!
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
-//! | `HKDF_SHA256`                                     | 296          |
-//! | `HKDF_SHA512`                                     | 392          |
+//! | `HKDF_SHA256`                                     | 216          |
+//! | `HKDF_SHA512`                                     | 376          |
 //! | Suspended `HKDF_SHA256` state                     | 122          |
 //! | Suspended `HKDF_SHA512` state                     | 218          |
 //!
-//! The object is an `Option` of the inner extract-phase HMAC -- 272 bytes for SHA-256, 368 for
+//! The object is an `Option` of the inner extract-phase HMAC -- 192 bytes for SHA-256, 352 for
 //! SHA-512 -- plus 24 bytes of bookkeeping (the entropy counter, the accumulated security strength
-//! and the state-machine tag, with padding). Note that the inner HMAC is written as `HMAC<H>`, which
-//! takes the *default* key buffer length: the largest block length across all supported hashes
-//! (144 bytes) rather than the 64 or 128 that SHA-256 and SHA-512 actually need. So the inner
-//! `HMAC<SHA256>` is 264 bytes where the published [`crate::hmac::HMAC_SHA256`] is 184, and an
-//! `HKDF_SHA256` is correspondingly larger than the HMAC it is built on.
+//! and the state-machine tag, with padding). The inner HMAC is the published
+//! [`crate::hmac::HMAC_SHA256`] rather than an anonymous one, so its key buffer is sized to the
+//! hash's block length like any other: an `HKDF_SHA256` is 32 bytes larger than the HMAC it is
+//! built on, not 112.
 //!
 //! The suspended state is the inner HMAC's suspended state (which is the hash's) plus 14 bytes; the
 //! salt is deliberately excluded and must be re-supplied on resume.
@@ -245,7 +244,17 @@ pub const SUSPENDED_HKDF_SHA512_STATE_LEN: usize = SUSPENDED_HMAC_SHA512_STATE_L
 /*** Type aliases ***/
 /// Public type for HKDF using SHA256.
 #[allow(non_camel_case_types)]
-pub type HKDF_SHA256 = HKDF<SHA256, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN>;
+pub type HKDF_SHA256 = HKDF<
+    SHA256,
+    crate::hmac::HMAC_SHA256Params,
+    SUSPENDED_SHA256_STATE_LEN,
+    SUSPENDED_HKDF_SHA256_STATE_LEN,
+>;
 /// Public type for HKDF using SHA512.
 #[allow(non_camel_case_types)]
-pub type HKDF_SHA512 = HKDF<SHA512, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN>;
+pub type HKDF_SHA512 = HKDF<
+    SHA512,
+    crate::hmac::HMAC_SHA512Params,
+    SUSPENDED_SHA512_STATE_LEN,
+    SUSPENDED_HKDF_SHA512_STATE_LEN,
+>;

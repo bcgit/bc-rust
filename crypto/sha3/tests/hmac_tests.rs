@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod hmac_sha3_tests {
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
-    use bouncycastle_core::traits::{Algorithm, MAC};
+    use bouncycastle_core::traits::{Algorithm, AlgorithmOID, MAC, SecurityStrength};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_rng::HashDRBG_SHA512;
     use bouncycastle_sha3::hmac::*;
@@ -51,6 +51,16 @@ mod hmac_sha3_tests {
         assert_eq!(HMAC_SHA3_256::ALG_NAME, HMAC_SHA3_256_NAME);
         assert_eq!(HMAC_SHA3_384::ALG_NAME, HMAC_SHA3_384_NAME);
         assert_eq!(HMAC_SHA3_512::ALG_NAME, HMAC_SHA3_512_NAME);
+
+        assert_eq!(HMAC_SHA3_224::OID, [2, 16, 840, 1, 101, 3, 4, 2, 13]);
+        assert_eq!(HMAC_SHA3_256::OID, [2, 16, 840, 1, 101, 3, 4, 2, 14]);
+        assert_eq!(HMAC_SHA3_384::OID, [2, 16, 840, 1, 101, 3, 4, 2, 15]);
+        assert_eq!(HMAC_SHA3_512::OID, [2, 16, 840, 1, 101, 3, 4, 2, 16]);
+
+        assert_eq!(HMAC_SHA3_224::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
+        assert_eq!(HMAC_SHA3_256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(HMAC_SHA3_384::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+        assert_eq!(HMAC_SHA3_512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
     }
 
     #[test]

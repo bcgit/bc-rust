@@ -4,12 +4,15 @@
 //! Uses [`bouncycastle_hmac`] to provide the HMAC-SHA3 instantiations: [`HMAC_SHA3_224`],
 //! [`HMAC_SHA3_256`], [`HMAC_SHA3_384`] and [`HMAC_SHA3_512`].
 //!
-//! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module supplies the
-//! SHA-3-specific parameters via [`HMACParams`] and publishes the resulting type aliases, so that
+//! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module declares one
+//! [`HMACParams`] marker type per instantiation (such as [`HMAC_SHA3_256Params`]), carrying that
+//! HMAC's name, claimed strength, OID and key type, and publishes the type alias pairing each
+//! marker with its hash. This mirrors how the hashes themselves are built, where `SHA256` is
+//! `SHA256Internal<SHA256Params>`. The upshot is that
 //! HMAC over a SHA3 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
 //! rather than as part of library's public API.
 //!
-//! The key buffer length of each alias is the underlying hash's block length: per RFC 2104, a key no
+//! Each params type sizes the internal key buffer to its hash's block length: per RFC 2104, a key no
 //! longer than the block is used verbatim, and only longer keys are pre-hashed down to the output
 //! length, so the buffer must be able to hold a full block. It is taken from
 //! [`HashAlgParams::BLOCK_LEN`] -- the values FIPS 202 Table 3 ("Input block sizes for HMAC") gives
@@ -254,7 +257,7 @@
 use crate::SUSPENDED_SHA3_STATE_LEN;
 use crate::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::HashAlgParams;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
 use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/
@@ -275,54 +278,136 @@ pub const HMAC_SHA3_384_NAME: &str = "HMAC-SHA3-384";
 ///
 pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
 
-/*** Type aliases ***/
+/*** Params types and type aliases ***/
+// TODO: the MAX_SECURITY_STRENGTH values below are each hash's collision strength, which NIST
+// SP 800-107r1 Section 5.3.4 says is not the right basis for an HMAC. See the TODO above the
+// equivalent params types in bouncycastle-sha2 for the analysis. Note that its recommendation
+// covers SHA-2 only: SP 800-107r1 predates SHA-3 and reasons about a Merkle-Damgard chaining
+// value, which a sponge does not have, so these need FIPS 202 / SP 800-185 read first.
+
+/// The parameters for HMAC-SHA3_224 -- see [`HMAC_SHA3_224`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_224Params;
+
+impl Algorithm for HMAC_SHA3_224Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA3_224: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
+impl AlgorithmOID for HMAC_SHA3_224Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0d];
+}
+
+impl HMACParams for HMAC_SHA3_224Params {
+    type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_224 as HashAlgParams>::BLOCK_LEN];
+}
+
 /// Public type for HMAC using SHA3_224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_224 = HMAC<SHA3_224, { <SHA3_224 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_224 {
-    type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0d];
+pub type HMAC_SHA3_224 = HMAC<SHA3_224, HMAC_SHA3_224Params>;
+
+/// The parameters for HMAC-SHA3_256 -- see [`HMAC_SHA3_256`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_256Params;
+
+impl Algorithm for HMAC_SHA3_256Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA3_256: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
+impl AlgorithmOID for HMAC_SHA3_256Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0e];
+}
+
+impl HMACParams for HMAC_SHA3_256Params {
+    type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_256 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_256 = HMAC<SHA3_256, { <SHA3_256 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_256 {
-    type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0e];
+pub type HMAC_SHA3_256 = HMAC<SHA3_256, HMAC_SHA3_256Params>;
+
+/// The parameters for HMAC-SHA3_384 -- see [`HMAC_SHA3_384`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_384Params;
+
+impl Algorithm for HMAC_SHA3_384Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA3_384: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
+impl AlgorithmOID for HMAC_SHA3_384Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0f];
+}
+
+impl HMACParams for HMAC_SHA3_384Params {
+    type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_384 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_384 = HMAC<SHA3_384, { <SHA3_384 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_384 {
-    type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0f];
+pub type HMAC_SHA3_384 = HMAC<SHA3_384, HMAC_SHA3_384Params>;
+
+/// The parameters for HMAC-SHA3_512 -- see [`HMAC_SHA3_512`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_512Params;
+
+impl Algorithm for HMAC_SHA3_512Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA3_512: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
+impl AlgorithmOID for HMAC_SHA3_512Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
+}
+
+impl HMACParams for HMAC_SHA3_512Params {
+    type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_512 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_512 = HMAC<SHA3_512, { <SHA3_512 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_512 {
-    type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
-}
+pub type HMAC_SHA3_512 = HMAC<SHA3_512, HMAC_SHA3_512Params>;
 
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and

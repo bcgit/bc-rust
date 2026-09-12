@@ -4,14 +4,17 @@
 //! Uses [`bouncycastle_hmac`] to provide the HMAC-SHA2 instantiations: [`HMAC_SHA224`],
 //! [`HMAC_SHA256`], [`HMAC_SHA384`] and [`HMAC_SHA512`].
 //!
-//! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module supplies the
-//! SHA-2-specific parameters via [`HMACParams`] and publishes the resulting type aliases, so that
+//! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module declares one
+//! [`HMACParams`] marker type per instantiation (such as [`HMAC_SHA256Params`]), carrying that
+//! HMAC's name, claimed strength, OID and key type, and publishes the type alias pairing each
+//! marker with its hash. This mirrors how the hashes themselves are built, where `SHA256` is
+//! `SHA256Internal<SHA256Params>`. The upshot is that
 //! HMAC over a SHA2 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
 //! rather than as part of library's public API.
 //!
-//! The key buffer length of each alias is the underlying hash's block length: per RFC 2104, a key no
-//! longer than the block is used verbatim, and only longer keys are pre-hashed down to the output
-//! length, so the buffer must be able to hold a full block. It is taken from
+//! Each params type sizes the internal key buffer to its hash's block length: per RFC 2104, a key
+//! no longer than the block is used verbatim, and only longer keys are pre-hashed down to the
+//! output length, so the buffer must be able to hold a full block. It is taken from
 //! [`HashAlgParams::BLOCK_LEN`] rather than restated as a literal so the two cannot drift apart.
 //!
 //! # Usage
@@ -247,7 +250,7 @@
 use crate::{SHA224, SHA256, SHA384, SHA512};
 use crate::{SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::HashAlgParams;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
 use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/
@@ -268,54 +271,162 @@ pub const HMAC_SHA384_NAME: &str = "HMAC-SHA384";
 ///
 pub const HMAC_SHA512_NAME: &str = "HMAC-SHA512";
 
-/*** Type aliases ***/
+/*** Params types and type aliases ***/
+// TODO: revise the MAX_SECURITY_STRENGTH that each params type below declares.
+//
+// They currently declare the underlying hash's collision strength (output length / 2): 112 bits for
+// HMAC-SHA224, 128 for HMAC-SHA256, and so on. That figure is a leftover from when the strength was
+// read off the hash, and NIST SP 800-107 Revision 1 (August 2012) Section 5.3.4 says collision
+// resistance is the wrong basis for an HMAC:
+//
+//     "The effective security strength of the HMAC key is the minimum of the security strength of
+//      K and the value of 2C. That is, security strength = min(security strength of K, 2C)."
+//
+// where C is "the bit length of the internal hash value that is denoted H in FIPS 180-4" -- the
+// chaining value, not the output. Footnote 4 of that section is explicit that collisions are out of
+// scope: "the collision attack is not considered in this document. In this Recommendation, the
+// strength of the HMAC key is considered to be the amount of work required for an attacker who
+// performs a brute-force attack to discover the HMAC key K or the first hash values (Hs) ...".
+//
+// Recommendation: raise them. Section 5.3.4 gives C = 256 for SHA-256 ("L = C for SHA-1, SHA-256,
+// and SHA-512") and C = 512 for SHA-384 and SHA-512/t, so 2C is 512 and 1024 bits respectively --
+// far above any key this library accepts. It does not state C for SHA-224, but C >= L = 224 there,
+// so 2C >= 448 and the conclusion is unchanged: the key's own strength is the binding term in every
+// SHA-2 case. Since `MACKey` is `KeyMaterial<OUTPUT_LEN>`, a full-length key carries 224, 256, 384
+// and 512 bits for HMAC-SHA224/256/384/512, every one of which exceeds what is declared today, and
+// all but the first exceed the top of `SecurityStrength`, so they would cap at `_256bit` (and
+// HMAC-SHA224 at `_192bit`).
+//
+// Do NOT extrapolate this to the HMAC-SHA3 values in bouncycastle-sha3. SP 800-107r1 predates SHA-3
+// and Section 5.3.4 is written in terms of the FIPS 180-4 chaining value, which a sponge
+// construction does not have. Those need their own reference (FIPS 202 / SP 800-185) read first.
+//
+// This is not a mechanical edit. MAX_SECURITY_STRENGTH is enforced, not merely reported, so raising
+// it makes `MAC::new` reject keys it accepts today and `keygen_from_rng` reject RNGs it accepts
+// today. Raising HMAC-SHA256 to `_256bit`, for example, would make HashDRBG_SHA256 insufficient to
+// generate its own key and would invert the existing `keygen_rejects_weak_rng` test. Settle the
+// policy question first: does this constant describe the ceiling the construction can reach, or the
+// minimum a caller is required to bring to it? Those give different numbers.
+
+/// The parameters for HMAC-SHA224 -- see [`HMAC_SHA224`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA224Params;
+
+impl Algorithm for HMAC_SHA224Params {
+    const ALG_NAME: &'static str = HMAC_SHA224_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA224: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+}
+
+/// Defined in RFC 4231: id-hmacWithSHA224 { digestAlgorithm 8 }
+impl AlgorithmOID for HMAC_SHA224Params {
+    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 8];
+    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x08];
+}
+
+impl HMACParams for HMAC_SHA224Params {
+    type MACKey = KeyMaterial<{ <SHA224 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA224 as HashAlgParams>::BLOCK_LEN];
+}
+
 /// Public type for HMAC using SHA224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA224 = HMAC<SHA224, { <SHA224 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA224 {
-    type MACKey = KeyMaterial<{ <SHA224 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA224_NAME;
-    /// Defined in RFC 4231: id-hmacWithSHA224 { digestAlgorithm 8 }
-    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 8];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x08];
+pub type HMAC_SHA224 = HMAC<SHA224, HMAC_SHA224Params>;
+
+/// The parameters for HMAC-SHA256 -- see [`HMAC_SHA256`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA256Params;
+
+impl Algorithm for HMAC_SHA256Params {
+    const ALG_NAME: &'static str = HMAC_SHA256_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA256: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
+impl AlgorithmOID for HMAC_SHA256Params {
+    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 9];
+    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x09];
+}
+
+impl HMACParams for HMAC_SHA256Params {
+    type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA256 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA256 = HMAC<SHA256, { <SHA256 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA256 {
-    type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA256_NAME;
-    /// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
-    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 9];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x09];
+pub type HMAC_SHA256 = HMAC<SHA256, HMAC_SHA256Params>;
+
+/// The parameters for HMAC-SHA384 -- see [`HMAC_SHA384`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA384Params;
+
+impl Algorithm for HMAC_SHA384Params {
+    const ALG_NAME: &'static str = HMAC_SHA384_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA384: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+}
+
+/// Defined in RFC 4231: id-hmacWithSHA384 { digestAlgorithm 10 }
+impl AlgorithmOID for HMAC_SHA384Params {
+    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 10];
+    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0a];
+}
+
+impl HMACParams for HMAC_SHA384Params {
+    type MACKey = KeyMaterial<{ <SHA384 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA384 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA384 = HMAC<SHA384, { <SHA384 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA384 {
-    type MACKey = KeyMaterial<{ <SHA384 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA384_NAME;
-    /// Defined in RFC 4231: id-hmacWithSHA384 { digestAlgorithm 10 }
-    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 10];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0a];
+pub type HMAC_SHA384 = HMAC<SHA384, HMAC_SHA384Params>;
+
+/// The parameters for HMAC-SHA512 -- see [`HMAC_SHA512`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA512Params;
+
+impl Algorithm for HMAC_SHA512Params {
+    const ALG_NAME: &'static str = HMAC_SHA512_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SHA512: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+/// Defined in RFC 4231: id-hmacWithSHA512 { digestAlgorithm 11 }
+impl AlgorithmOID for HMAC_SHA512Params {
+    const OID: &'static [u32] = &[1, 2, 840, 113549, 2, 11];
+    const OID_DER: &'static [u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0b];
+}
+
+impl HMACParams for HMAC_SHA512Params {
+    type MACKey = KeyMaterial<{ <SHA512 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA512 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512 = HMAC<SHA512, { <SHA512 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA512 {
-    type MACKey = KeyMaterial<{ <SHA512 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA512_NAME;
-    /// Defined in RFC 4231: id-hmacWithSHA512 { digestAlgorithm 11 }
-    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 11];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0b];
-}
+pub type HMAC_SHA512 = HMAC<SHA512, HMAC_SHA512Params>;
 
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and
