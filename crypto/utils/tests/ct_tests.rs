@@ -831,6 +831,32 @@ mod ct_bytes_tests {
         assert!(!ct_eq_bytes(&a, &b));
     }
 
+    /// The implementation processes the input one machine word at a time (2, 4 or 8 bytes
+    /// depending on the target) and then the remaining tail byte-wise. Exercise every length up
+    /// to several words so that, whatever the word size, a difference in any position, word or
+    /// tail, is detected and equal inputs of every shape compare equal.
+    #[test]
+    fn test_ct_eq_bytes_word_boundaries() {
+        use bouncycastle_utils::ct::ct_eq_bytes;
+
+        for len in 0..=40usize {
+            let a: [u8; 40] = core::array::from_fn(|i| (i as u8).wrapping_mul(37) ^ 0x5C);
+            let a = &a[..len];
+            let mut b = [0u8; 40];
+            b[..len].copy_from_slice(a);
+            assert!(ct_eq_bytes(a, &b[..len]), "len {len}");
+
+            // flip a single bit at each position in turn
+            for pos in 0..len {
+                for bit in [0x01u8, 0x80] {
+                    b[pos] ^= bit;
+                    assert!(!ct_eq_bytes(a, &b[..len]), "len {len} pos {pos} bit {bit:#x}");
+                    b[pos] ^= bit;
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_ct_eq_zero_bytes() {
         use bouncycastle_utils::ct::ct_eq_zero_bytes;
@@ -853,6 +879,25 @@ mod ct_bytes_tests {
         assert!(!ct_eq_zero_bytes(&buf));
     }
 
+    /// Same boundary sweep as for `ct_eq_bytes`: a non-zero byte at any position of any length
+    /// around the machine-word boundaries must be detected.
+    #[test]
+    fn test_ct_eq_zero_bytes_word_boundaries() {
+        use bouncycastle_utils::ct::ct_eq_zero_bytes;
+
+        for len in 0..=40usize {
+            let mut buf = [0u8; 40];
+            assert!(ct_eq_zero_bytes(&buf[..len]), "len {len}");
+            for pos in 0..len {
+                for val in [0x01u8, 0x80] {
+                    buf[pos] = val;
+                    assert!(!ct_eq_zero_bytes(&buf[..len]), "len {len} pos {pos} val {val:#x}");
+                    buf[pos] = 0;
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_conditional_copy_bytes() {
         use bouncycastle_utils::ct::conditional_copy_bytes;
@@ -866,6 +911,19 @@ mod ct_bytes_tests {
 
         conditional_copy_bytes(&a, &b, &mut out, false);
         assert_eq!(out, [0x10, 0x11, 0x12, 0x13]);
+
+        // every byte position must follow the flag independently, including 0x00 / 0xFF values
+        // that would expose a broken mask, and the empty array must be a no-op
+        let a: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(0x11));
+        let b: [u8; 32] = core::array::from_fn(|i| !(i as u8).wrapping_mul(0x11));
+        let mut out = [0xEEu8; 32];
+        conditional_copy_bytes(&a, &b, &mut out, true);
+        assert_eq!(out, a);
+        conditional_copy_bytes(&a, &b, &mut out, false);
+        assert_eq!(out, b);
+        let mut empty = [0u8; 0];
+        conditional_copy_bytes(&[], &[], &mut empty, true);
+        conditional_copy_bytes(&[], &[], &mut empty, false);
 
         // test wrong-sized array
         // in fact: this won't even compile, so there's nothing to test
