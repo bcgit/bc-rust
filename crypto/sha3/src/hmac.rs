@@ -4,12 +4,15 @@
 //! Uses [`bouncycastle_hmac`] to provide the HMAC-SHA3 instantiations: [`HMAC_SHA3_224`],
 //! [`HMAC_SHA3_256`], [`HMAC_SHA3_384`] and [`HMAC_SHA3_512`].
 //!
-//! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module supplies the
-//! SHA-3-specific parameters via [`HMACParams`] and publishes the resulting type aliases, so that
+//! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module declares one
+//! [`HMACParams`] marker type per instantiation (such as [`HMAC_SHA3_256Params`]), carrying that
+//! HMAC's name, claimed strength, OID and key type, and publishes the type alias pairing each
+//! marker with its hash. This mirrors how the hashes themselves are built, where `SHA256` is
+//! `SHA256Internal<SHA256Params>`. The upshot is that
 //! HMAC over a SHA3 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
 //! rather than as part of library's public API.
 //!
-//! The key buffer length of each alias is the underlying hash's block length: per RFC 2104, a key no
+//! Each params type sizes the internal key buffer to its hash's block length: per RFC 2104, a key no
 //! longer than the block is used verbatim, and only longer keys are pre-hashed down to the output
 //! length, so the buffer must be able to hold a full block. It is taken from
 //! [`HashAlgParams::BLOCK_LEN`] -- the values FIPS 202 Table 3 ("Input block sizes for HMAC") gives
@@ -65,7 +68,8 @@
 //! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //!
 //! let hmac = HMAC_SHA3_256::new(&key).expect(
@@ -128,7 +132,8 @@
 //! // For this example to work, we are hard-coding both the key and the MAC value that it generates
 //! // for this data.
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //!
 //! let data: &[u8] = b"Hello, world!";
@@ -136,8 +141,8 @@
 //! // .verify() returns a bool: true if the MAC is valid, false otherwise.
 //! if HMAC_SHA3_256::new(&key).unwrap()
 //!                 .verify(data,
-//!                         b"\x9c\x49\x05\x83\xff\xf3\x59\x6a\x59\x01\x4a\x0d\x95\xb4\x64\x00
-//!                            \x7d\x5b\xb7\x40\xb3\x84\x20\x7a\x3c\x76\x76\xd8\xc9\x93\xda\xd7"
+//!                         b"\x5d\x16\xf1\xc4\xcc\x22\x83\x8a\xd0\x53\xe6\xb6\x9b\xb2\xd1\x5a
+//!                            \x2a\x79\x35\x76\xb0\x80\x7d\xec\x50\x78\xa1\x36\x99\x33\x7d\xfd"
 //!                         )
 //! {
 //!     println!("MAC is valid!");
@@ -157,12 +162,13 @@
 //! // For this example to work, we are hard-coding both the key and the MAC value that it generates
 //! // for this data.
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //! let mut hmac = HMAC_SHA3_256::new(&key).unwrap();
 //! hmac.do_update(b"Hello,");
 //! hmac.do_update(b" world!");
-//! if hmac.do_verify_final(b"\x9c\x49\x05\x83\xff\xf3\x59\x6a\x59\x01\x4a\x0d\x95\xb4\x64\x00\x7d\x5b\xb7\x40\xb3\x84\x20\x7a\x3c\x76\x76\xd8\xc9\x93\xda\xd7"
+//! if hmac.do_verify_final(b"\x5d\x16\xf1\xc4\xcc\x22\x83\x8a\xd0\x53\xe6\xb6\x9b\xb2\xd1\x5a\x2a\x79\x35\x76\xb0\x80\x7d\xec\x50\x78\xa1\x36\x99\x33\x7d\xfd"
 //!                     )
 //! {
 //!     println!("MAC is valid!");
@@ -193,7 +199,8 @@
 //! let msg_part2 = b" jumped over the lazy dog";
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //!
 //! let mut hmac = HMAC_SHA3_256::new(&key).unwrap();
@@ -234,9 +241,27 @@
 //!
 //! # Security Considerations
 //!
-//! * The key must carry at least the security strength claimed by the HMAC, and [`MAC::new`]
-//!   enforces that. [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a
-//!   weak or all-zero key is called for by the protocol, not to silence an error.
+//! * Each of these HMACs claims the strength NIST SP 800-107r1 Section 5.3.4 gives it, which is
+//!   `min(strength of K, 2C)` and works out to the key length for the whole family: 224 bits for
+//!   HMAC-SHA3-224 and 256 or more for the rest. `SecurityStrength` has no 224-bit category and
+//!   tops out at 256, so the declared values are `_192bit` for HMAC-SHA3-224 and `_256bit` for
+//!   HMAC-SHA3-256, HMAC-SHA3-384 and HMAC-SHA3-512. Note these are *not* the underlying hashes'
+//!   collision strengths, which are half as large; footnote 4 of that section puts collision
+//!   attacks out of scope for HMAC.
+//! * That figure is an **extrapolation**. SP 800-107r1 is older than SHA-3 and does not cover it:
+//!   `C` there is the FIPS 180-4 chaining value, which a sponge does not have. See the note above
+//!   the params types for the analogue used and why the choice does not change the answer.
+//! * The key must carry at least the strength claimed by the HMAC, and [`MAC::new`] enforces that.
+//!   A 20-byte key is therefore not enough for HMAC-SHA3-256; a full 32-byte key is.
+//!   [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a weak or all-zero
+//!   key is called for by the protocol, or by a fixed test vector, not to silence an error.
+//! * The same rule applies to the generator. [`HMAC::keygen_from_rng`] tags the key it returns at
+//!   the HMAC's claimed strength, so it refuses any RNG that cannot back that tag: a 256-bit
+//!   generator is required for HMAC-SHA3-256 and above, and `bouncycastle_rng::DefaultRNG` is
+//!   `HashDRBG_SHA512` and qualifies for all of them. `HashDRBG_SHA256` offers 128 bits and is
+//!   refused by every HMAC in this module. There is no weak-RNG opt-out, because a generator cannot
+//!   be asked for entropy it does not have; build the key yourself and use
+//!   [`MAC::new_allow_weak_key`] if that is genuinely what you want.
 //! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
 //!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
 //!   many leading bytes matched.
@@ -254,7 +279,7 @@
 use crate::SUSPENDED_SHA3_STATE_LEN;
 use crate::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{HashAlgParams, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
 use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/
@@ -275,58 +300,123 @@ pub const HMAC_SHA3_384_NAME: &str = "HMAC-SHA3-384";
 ///
 pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
 
-/*** Type aliases ***/
+/*** Params types and type aliases ***/
+
+/// The parameters for HMAC-SHA3_224 -- see [`HMAC_SHA3_224`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_224Params;
+
+impl Algorithm for HMAC_SHA3_224Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
+    // SP 800-107r1 s.5.3.4, extrapolated from SHA2 to SHA3: min(strength of K, 2C).
+    // SHA3-224 has capacity c = 448, so 2c = 896, and the key is OUTPUT_LEN = 224 bits,
+    // so the key binds: 224 bits, rounded down to the nearest category.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
+impl AlgorithmOID for HMAC_SHA3_224Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0d];
+}
+
+impl HMACParams for HMAC_SHA3_224Params {
+    type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_224 as HashAlgParams>::BLOCK_LEN];
+}
+
 /// Public type for HMAC using SHA3_224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_224 = HMAC<SHA3_224, { <SHA3_224 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_224 {
-    type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0d];
+pub type HMAC_SHA3_224 = HMAC<SHA3_224, HMAC_SHA3_224Params>;
+
+/// The parameters for HMAC-SHA3_256 -- see [`HMAC_SHA3_256`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_256Params;
+
+impl Algorithm for HMAC_SHA3_256Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
+    // SP 800-107r1 s.5.3.4, extrapolated from SHA2 to SHA3: min(strength of K, 2C).
+    // SHA3-256 has capacity c = 512, so 2c = 1024, and the key is OUTPUT_LEN = 256 bits,
+    // so the key binds: 256 bits.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
+impl AlgorithmOID for HMAC_SHA3_256Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0e];
+}
+
+impl HMACParams for HMAC_SHA3_256Params {
+    type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_256 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_256 = HMAC<SHA3_256, { <SHA3_256 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_256 {
-    type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0e];
+pub type HMAC_SHA3_256 = HMAC<SHA3_256, HMAC_SHA3_256Params>;
+
+/// The parameters for HMAC-SHA3_384 -- see [`HMAC_SHA3_384`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_384Params;
+
+impl Algorithm for HMAC_SHA3_384Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
+    // SP 800-107r1 s.5.3.4, extrapolated from SHA2 to SHA3: min(strength of K, 2C).
+    // SHA3-384 has capacity c = 768, so 2c = 1536, and the key is OUTPUT_LEN = 384 bits,
+    // so the key binds: 384 bits, capped at the top of `SecurityStrength`.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
+impl AlgorithmOID for HMAC_SHA3_384Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0f];
+}
+
+impl HMACParams for HMAC_SHA3_384Params {
+    type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_384 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_384 = HMAC<SHA3_384, { <SHA3_384 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_384 {
-    type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0f];
+pub type HMAC_SHA3_384 = HMAC<SHA3_384, HMAC_SHA3_384Params>;
+
+/// The parameters for HMAC-SHA3_512 -- see [`HMAC_SHA3_512`].
+#[derive(Clone)]
+#[allow(non_camel_case_types)]
+pub struct HMAC_SHA3_512Params;
+
+impl Algorithm for HMAC_SHA3_512Params {
+    const ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
+    // SP 800-107r1 s.5.3.4, extrapolated from SHA2 to SHA3: min(strength of K, 2C).
+    // SHA3-512 has capacity c = 1024, so 2c = 2048, and the key is OUTPUT_LEN = 512 bits,
+    // so the key binds: 512 bits, capped at the top of `SecurityStrength`.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+/// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
+impl AlgorithmOID for HMAC_SHA3_512Params {
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
+}
+
+impl HMACParams for HMAC_SHA3_512Params {
+    type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SHA3_512 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_512 = HMAC<SHA3_512, { <SHA3_512 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SHA3_512 {
-    type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-    /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
-    const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
-    const HMAC_OID_DER: &'static [u8] =
-        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
-}
+pub type HMAC_SHA3_512 = HMAC<SHA3_512, HMAC_SHA3_512Params>;
 
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and

@@ -47,6 +47,7 @@
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{KDF, SuspendableKeyed};
 //! use bouncycastle_hkdf::HKDF;
+//! use bouncycastle_sha2::hmac::HMAC_SHA384Params;
 //! use bouncycastle_sha2::{SHA384, SUSPENDED_SHA512_STATE_LEN};
 //!
 //! // SHA-384 is a member of the SHA-512 family, so its suspended state is the SHA-512 one.
@@ -54,7 +55,7 @@
 //!
 //! #[allow(non_camel_case_types)]
 //! pub type HKDF_SHA384 =
-//!     HKDF<SHA384, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>;
+//!     HKDF<SHA384, HMAC_SHA384Params, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>;
 //!
 //! pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
 //!
@@ -115,7 +116,7 @@ use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
     Hash, HashAlgParams, KDF, MAC, SecurityStrength, Suspendable, SuspendableKeyed,
 };
-use bouncycastle_hmac::HMAC;
+use bouncycastle_hmac::{HMAC, HMACParams};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
 // Imports needed only for docs
@@ -160,13 +161,14 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 #[derive(Clone)]
 pub struct HKDF<
     H: Hash + HashAlgParams + Default,
+    PARAMS: HMACParams,
     const HASH_STATE_LEN: usize,
     const HKDF_STATE_LEN: usize,
 > {
     // Optional because an HMAC cannot be constructed until a key is provided
     // to initialize it with.
     // None must correspond to a state of Uninitialized.
-    hmac: Option<HMAC<H>>,
+    hmac: Option<HMAC<H, PARAMS>>,
     entropy: HkdfEntropyTracker<H>,
     state: HkdfStates,
 }
@@ -244,16 +246,24 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    Default for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<
+    H: Hash + HashAlgParams + Default,
+    PARAMS: HMACParams,
+    const HASH_STATE_LEN: usize,
+    const HKDF_STATE_LEN: usize,
+> Default for HKDF<H, PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<
+    H: Hash + HashAlgParams + Default,
+    PARAMS: HMACParams,
+    const HASH_STATE_LEN: usize,
+    const HKDF_STATE_LEN: usize,
+> HKDF<H, PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// Get a new, uninstantiated HKDF object.
     pub fn new() -> Self {
@@ -399,7 +409,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         key_material::do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
             while i < N {
-                let mut hmac = HMAC::<H>::new(&prk_as_mac_key)
+                let mut hmac = HMAC::<H, PARAMS>::new(&prk_as_mac_key)
                     .map_err(|_| KeyMaterialError::GenericError("HMAC initialization failed"))?;
                 hmac.do_update(&T[..t_len]);
                 hmac.do_update(info);
@@ -418,7 +428,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 
         // Part of the output is not taken on the last iteration
         let remaining = L - bytes_written;
-        let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
+        let mut hmac = HMAC::<H, PARAMS>::new(&prk_as_mac_key)?;
         hmac.do_update(&T[..t_len]);
         hmac.do_update(info);
         hmac.do_update(&[i]);
@@ -488,7 +498,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         // Often HMAC is initialized with a zero salt,
         // Key strength errors are ignored here.
         // This will all be tabulated correctly via entropy.credit_entropy()
-        self.hmac = Some(HMAC::<H>::new_allow_weak_key(salt)?);
+        self.hmac = Some(HMAC::<H, PARAMS>::new_allow_weak_key(salt)?);
 
         let additional_entropy = self.entropy.credit_entropy(salt);
         self.state = HkdfStates::Initialized;
@@ -521,7 +531,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         debug_assert!(self.hmac.is_some());
 
         let additional_entropy = self.entropy.credit_entropy(ikm);
-        let hmac_ref: &mut HMAC<H> = self.hmac.as_mut().unwrap();
+        let hmac_ref: &mut HMAC<H, PARAMS> = self.hmac.as_mut().unwrap();
         hmac_ref.do_update(ikm.ref_to_bytes());
         // self.hmac.as_mut().unwrap().do_update(ikm.ref_to_bytes());
 
@@ -610,8 +620,12 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 /// [`KDF::derive_key_from_multiple_out`], or by using the [`HKDF`] impl directly.
 ///
 /// Entropy tracking: this implementation will map entropy from the input keys to the output key.
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    KDF for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<
+    H: Hash + HashAlgParams + Default,
+    PARAMS: HMACParams,
+    const HASH_STATE_LEN: usize,
+    const HKDF_STATE_LEN: usize,
+> KDF for HKDF<H, PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
     /// This provides a fixed-length output, which may be truncated as needed.
@@ -737,8 +751,8 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 /// So the total per HKDF variant is the 3-byte version header + 11 bytes of HKDF bookkeeping
 /// (present flag, state tag, entropy counter, security strength) + the inner HMAC's blob = `B + 14`,
 /// which is the relationship `HKDF_STATE_LEN == HASH_STATE_LEN + 14` asserted below.
-impl<H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> SuspendableKeyed<HKDF_STATE_LEN>
-    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<H, PARAMS: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    SuspendableKeyed<HKDF_STATE_LEN> for HKDF<H, PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 where
     H: Hash + HashAlgParams + Default + Suspendable<HASH_STATE_LEN>,
 {
@@ -786,7 +800,7 @@ where
         let hmac = match state[3] {
             0 => None,
             // infallible: the sub-slice is exactly HASH_STATE_LEN bytes by const construction.
-            1 => Some(HMAC::<H>::from_suspended(
+            1 => Some(HMAC::<H, PARAMS>::from_suspended(
                 state[4..4 + HASH_STATE_LEN].try_into().unwrap(),
                 salt,
             )?),
