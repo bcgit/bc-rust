@@ -13,7 +13,7 @@
 //! let seed_key = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
 //! let additional_input: &[u8] = b"some additional input";
 //!
-//! let mut h = bouncycastle_factory::kdf_factory::KDFFactory::new(bouncycastle_hkdf::HKDF_SHA256_NAME).unwrap();
+//! let mut h = bouncycastle_factory::kdf_factory::KDFFactory::new(bouncycastle_sha2::hkdf::HKDF_SHA256_NAME).unwrap();
 //! let new_key = h.derive_key(&seed_key, additional_input).unwrap();
 //! ```
 //!
@@ -51,8 +51,7 @@ use crate::{AlgorithmFactory, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, Factory
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{KDF, SecurityStrength};
-use bouncycastle_hkdf as hkdf;
-use bouncycastle_hkdf::{HKDF_SHA256_NAME, HKDF_SHA512_NAME};
+use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{
     SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME, SHAKE128_NAME, SHAKE256_NAME,
@@ -63,10 +62,10 @@ use bouncycastle_sha3::{
 pub enum KDFFactory {
     ///
     #[allow(non_camel_case_types)]
-    HKDF_SHA256(hkdf::HKDF_SHA256),
+    HKDF_SHA256(HKDF_SHA256),
     ///
     #[allow(non_camel_case_types)]
-    HKDF_SHA512(hkdf::HKDF_SHA512),
+    HKDF_SHA512(HKDF_SHA512),
     ///
     SHA3_224(sha3::SHA3_224),
     ///
@@ -83,17 +82,17 @@ pub enum KDFFactory {
 
 impl Default for KDFFactory {
     fn default() -> Self {
-        Self::HKDF_SHA512(hkdf::HKDF_SHA512::new())
+        Self::HKDF_SHA512(HKDF_SHA512::new())
     }
 }
 
 impl AlgorithmFactory for KDFFactory {
     fn default_128_bit() -> Self {
-        Self::HKDF_SHA256(hkdf::HKDF_SHA256::new())
+        Self::HKDF_SHA256(HKDF_SHA256::new())
     }
 
     fn default_256_bit() -> Self {
-        Self::HKDF_SHA512(hkdf::HKDF_SHA512::new())
+        Self::HKDF_SHA512(HKDF_SHA512::new())
     }
 
     fn new(alg_name: &str) -> Result<Self, FactoryError> {
@@ -101,8 +100,8 @@ impl AlgorithmFactory for KDFFactory {
             DEFAULT => Ok(KDFFactory::default()),
             DEFAULT_128_BIT => Ok(KDFFactory::default_128_bit()),
             DEFAULT_256_BIT => Ok(KDFFactory::default_256_bit()),
-            HKDF_SHA256_NAME => Ok(Self::HKDF_SHA256(hkdf::HKDF_SHA256::new())),
-            HKDF_SHA512_NAME => Ok(Self::HKDF_SHA512(hkdf::HKDF_SHA512::new())),
+            HKDF_SHA256_NAME => Ok(Self::HKDF_SHA256(HKDF_SHA256::new())),
+            HKDF_SHA512_NAME => Ok(Self::HKDF_SHA512(HKDF_SHA512::new())),
             SHA3_224_NAME => Ok(Self::SHA3_224(sha3::SHA3_224::new())),
             SHA3_256_NAME => Ok(Self::SHA3_256(sha3::SHA3_256::new())),
             SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),

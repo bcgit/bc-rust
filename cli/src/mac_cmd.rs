@@ -7,7 +7,7 @@ use bouncycastle::core::key_material::{
 };
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
-use bouncycastle::hmac::{HMAC_SHA256, HMAC_SHA512};
+use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512};
 
 pub(crate) enum HMACVariant {
     SHA256,
