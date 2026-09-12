@@ -64,14 +64,9 @@ pub(crate) const SHA512_H0: [u64; 8] = [
 /// Deliberate deviation from s. 5.3.6: only a three-digit t is accepted. The crate instantiates
 /// only the two truncations FIPS 180-4 approves, t = 224 (s. 5.3.6.1) and t = 256 (s. 5.3.6.2),
 /// and both are three digits, so the one- and two-digit cases of the decimal formatting would be
-/// branches no caller and no test can reach. A t below 100 fails the assertion below rather than
-/// being formatted with a leading zero, which s. 5.3.6 forbids ("t is 256, but not 0256").
+/// branches no caller and no test can reach.
 ///
-/// This is a `const fn` so that the IV is computed at compile time; the results for t = 224 and
-/// t = 256 are pinned against the words listed in s. 5.3.6.1 and s. 5.3.6.2 by
-/// `tests/sha512t_h0_tests.rs`, which reads H(0) back out through the public suspend API. The
-/// message is exactly 11 bytes, so the SHA-512 computation is always exactly one padded block
-/// (s. 5.1.2).
+/// This is a `const fn` so that the IV is computed at compile time.
 pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
     // FIPS 180-4 s. 5.3.6: "t is any positive integer without a leading zero such that t < 512, and t is not 384",
     // narrowed to three-digit t as the doc comment explains, so a new t under 100 fails the build here.
@@ -289,7 +284,12 @@ impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     ///
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
-    fn finalize(mut self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> usize {
+    fn do_final_internal(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
         debug_assert!(num_partial_bits <= 7);
         output.fill(0);
 
@@ -418,7 +418,7 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general padding.
-        self.finalize(0, 0, output)
+        self.do_final_internal(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -444,7 +444,7 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
-        Ok(self.finalize(partial_byte, num_partial_bits, output))
+        Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

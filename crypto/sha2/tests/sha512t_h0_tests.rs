@@ -37,6 +37,7 @@ const SHA512_256_H0: [u64; 8] = [
 
 /// Recovers the eight chaining words of a freshly-constructed SHA-512-family hash, which has had no
 /// message applied and so still holds H(0).
+/// Uses the [`Suspendable`] API to read the internal state.
 fn h0_of<H: Default + Suspendable<SUSPENDED_SHA512_STATE_LEN>>() -> [u64; 8] {
     let state = H::default().suspend();
 
