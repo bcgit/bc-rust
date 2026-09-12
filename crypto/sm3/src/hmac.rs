@@ -43,7 +43,6 @@
 
 use crate::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_hmac::{HMAC, HMACParams};
 
@@ -67,7 +66,6 @@ pub type HMAC_SM3 = HMAC<SM3, { <SM3 as HashAlgParams>::BLOCK_LEN }>;
 impl HMACParams for SM3 {
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     /// Assigned by the Chinese OSCCA (GM/T 0006): hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
     const HMAC_OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401, 2];
     const HMAC_OID_DER: &'static [u8] =

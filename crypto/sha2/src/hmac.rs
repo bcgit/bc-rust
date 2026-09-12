@@ -247,7 +247,6 @@
 use crate::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use crate::{SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_hmac::{HMAC, HMACParams};
 
@@ -280,7 +279,6 @@ pub type HMAC_SHA224 = HMAC<SHA224, { <SHA224 as HashAlgParams>::BLOCK_LEN }>;
 impl HMACParams for SHA224 {
     type MACKey = KeyMaterial<{ <SHA224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA224_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
     /// Defined in RFC 4231: id-hmacWithSHA224 { digestAlgorithm 8 }
     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 8];
     const HMAC_OID_DER: &'static [u8] =
@@ -293,7 +291,6 @@ pub type HMAC_SHA256 = HMAC<SHA256, { <SHA256 as HashAlgParams>::BLOCK_LEN }>;
 impl HMACParams for SHA256 {
     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA256_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     /// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 9];
     const HMAC_OID_DER: &'static [u8] =
@@ -306,7 +303,6 @@ pub type HMAC_SHA384 = HMAC<SHA384, { <SHA384 as HashAlgParams>::BLOCK_LEN }>;
 impl HMACParams for SHA384 {
     type MACKey = KeyMaterial<{ <SHA384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA384_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
     /// Defined in RFC 4231: id-hmacWithSHA384 { digestAlgorithm 10 }
     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 10];
     const HMAC_OID_DER: &'static [u8] =
@@ -319,7 +315,6 @@ pub type HMAC_SHA512 = HMAC<SHA512, { <SHA512 as HashAlgParams>::BLOCK_LEN }>;
 impl HMACParams for SHA512 {
     type MACKey = KeyMaterial<{ <SHA512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
     /// Defined in RFC 4231: id-hmacWithSHA512 { digestAlgorithm 11 }
     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 11];
     const HMAC_OID_DER: &'static [u8] =
@@ -332,7 +327,6 @@ pub type HMAC_SHA512_224 = HMAC<SHA512_224, { <SHA512_224 as HashAlgParams>::BLO
 impl HMACParams for SHA512_224 {
     type MACKey = KeyMaterial<{ <SHA512_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_224_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
     /// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-224 { digestAlgorithm 12 }
     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 12];
     const HMAC_OID_DER: &'static [u8] =
@@ -345,7 +339,6 @@ pub type HMAC_SHA512_256 = HMAC<SHA512_256, { <SHA512_256 as HashAlgParams>::BLO
 impl HMACParams for SHA512_256 {
     type MACKey = KeyMaterial<{ <SHA512_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_256_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     /// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-256 { digestAlgorithm 13 }
     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 13];
     const HMAC_OID_DER: &'static [u8] =

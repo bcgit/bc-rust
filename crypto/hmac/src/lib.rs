@@ -26,10 +26,12 @@
 //!
 //! 1. Have a hash type that implements [`Hash`] + [`HashAlgParams`] + [`Default`]. Implementing
 //!    [`Hash`] is documented in `bouncycastle-core`; nothing about it is HMAC-specific.
-//! 2. Implement [`HMACParams`] for that hash type, supplying the HMAC's name, claimed security
-//!    strength and OID, plus the key type that [`HMAC::keygen_from_rng`] should return (typically a
-//!    `KeyMaterial<L>` for an L that matches the size of the underlying hash function. This allows
-//!    this crate to provide blanket [`Algorithm`], [`AlgorithmOID`] and [`HMAC::keygen_from_rng`] impls.
+//! 2. Implement [`HMACParams`] for that hash type, supplying the HMAC's name and OID, plus the key
+//!    type that [`HMAC::keygen_from_rng`] should return (typically a `KeyMaterial<L>` for an L that
+//!    matches the size of the underlying hash function). This allows this crate to provide blanket
+//!    [`Algorithm`], [`AlgorithmOID`] and [`HMAC::keygen_from_rng`] impls. The claimed security
+//!    strength is not supplied here -- it is read off the hash's own
+//!    [`Algorithm::MAX_SECURITY_STRENGTH`].
 //! 3. Publish a type alias for the instantiation, passing [`HashAlgParams::BLOCK_LEN`] as the key
 //!    buffer length. Per RFC 2104 a key no longer than the hash's block is used verbatim, and only
 //!    longer keys are pre-hashed down to the output length, so the buffer must hold a full block.
@@ -49,7 +51,6 @@
 //! impl HMACParams for SHA256 {
 //!     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
 //!     const HMAC_ALG_NAME: &'static str = "HMAC-SHA256";
-//!     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 //!     /// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
 //!     const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 9];
 //!     const HMAC_OID_DER: &'static [u8] =
@@ -67,11 +68,11 @@
 //! These apply to every instantiation; the hash crates' `hmac` modules repeat the ones that matter
 //! most in day-to-day use.
 //!
-//! * [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] is a claim that [`MAC::new`] enforces against the
-//!   key's tagged strength, and that [`HMAC::keygen_from_rng`] enforces against the RNG's. Declaring
-//!   a strength the underlying hash cannot support does not make the construction stronger, it just
-//!   makes the check wrong. NIST SP 800-107-r1 Section 5.3.4 gives the ceiling: the effective
-//!   strength is `min(strength of K, 2C)` for an internal chaining value of `C` bits.
+//! * An HMAC claims the security strength of its underlying hash, and that claim is enforced in two
+//!   places: [`MAC::new`] checks it against the key's tagged strength, and
+//!   [`HMAC::keygen_from_rng`] checks it against the RNG's. NIST SP 800-107-r1 Section 5.3.4 gives
+//!   the ceiling: the effective strength is `min(strength of K, 2C)` for an internal chaining value
+//!   of `C` bits.
 //! * [`MAC::new_allow_weak_key`] deliberately skips the key-strength check. It exists for protocols
 //!   that call for a weak or all-zero key -- an all-zero HKDF salt, for example -- and should not be
 //!   used to silence an error from [`MAC::new`].
@@ -109,12 +110,27 @@ use core::fmt::{Debug, Display, Formatter};
 /// [`HMAC::keygen_from_rng`] can be impl'd generically rather than being written out once
 /// per hash.
 ///
-/// Each hash crate is expected to implement this trait for its own hash types and publishes the resulting type
-/// alias. For example,`HMAC_SHA256` lives in `bouncycastle_sha2::hmac` and `HMAC_SHA3_256` in
-/// `bouncycastle_sha3::hmac`.
+/// Each hash crate is expected to implement this trait for its own hash types and publish the
+/// resulting type alias. For example, `HMAC_SHA256` lives in `bouncycastle_sha2::hmac` and
+/// `HMAC_SHA3_256` in `bouncycastle_sha3::hmac`.
+///
+/// # Why the metadata comes in through a trait on the hash
+///
+/// It is tempting to delete this trait and have each hash crate write the impls directly onto its
+/// own alias instead -- `impl Algorithm for HMAC_SHA256` over in `bouncycastle-sha2`. That does not
+/// compile. [`Algorithm`] belongs to `bouncycastle-core` and [`HMAC`] belongs to this crate, so both
+/// are foreign there, and `HMAC<SHA256, 64>` does not become a local type merely because `SHA256`
+/// is: the orphan rule counts `Foreign<Local>` as foreign (RFC 2451), and rustc rejects the impl
+/// with E0117. Only this crate may write `impl ... for HMAC<..>`, and this crate must not depend on
+/// the hash crates -- breaking that cycle is the whole reason HMAC is a utility crate. A blanket
+/// impl fed by a trait on the hash is therefore the only available shape, not a stylistic choice.
 ///
 /// The block length and the generated-key length do not need to be restated here since they are already
 /// carried by the hash itself as [`HashAlgParams::BLOCK_LEN`] and [`HashAlgParams::OUTPUT_LEN`].
+/// Neither does the claimed security strength: an HMAC claims the strength of its underlying hash,
+/// so the blanket [`Algorithm`] impl reads [`Algorithm::MAX_SECURITY_STRENGTH`] straight off the
+/// hash. Restating it here would only create a second copy that could disagree with the one
+/// [`MAC::new`] actually enforces.
 pub trait HMACParams: Hash + HashAlgParams + Default {
     /// The key type produced by [`HMAC::keygen_from_rng`], sized to this hash's output length.
     ///
@@ -125,11 +141,15 @@ pub trait HMACParams: Hash + HashAlgParams + Default {
     type MACKey: KeyMaterialTrait + Default;
 
     /// The name of the HMAC over this hash, as reported by [`Algorithm::ALG_NAME`].
+    ///
+    /// This is always "HMAC-" followed by the hash's own [`Algorithm::ALG_NAME`] -- which is exactly
+    /// what [`HMAC`]'s [`Display`] impl formats at runtime -- but a `const` cannot concatenate two
+    /// `&'static str`s without an external crate, so it is restated here.
     const HMAC_ALG_NAME: &'static str;
-    /// The strength claimed by the HMAC over this hash, as reported by
-    /// [`Algorithm::MAX_SECURITY_STRENGTH`].
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength;
     /// The OID of the HMAC over this hash in component form, as reported by [`AlgorithmOID::OID`].
+    ///
+    /// Every hash/HMAC pair is assigned its own OID -- RFC 4231 for the SHA-2 family, the NIST
+    /// Computer Security Objects Register for SHA-3 -- so this cannot be derived from the hash's OID.
     const HMAC_OID: &'static [u32];
     /// The DER encoding of [`HMACParams::HMAC_OID`], as reported by [`AlgorithmOID::OID_DER`].
     const HMAC_OID_DER: &'static [u8];
@@ -137,7 +157,10 @@ pub trait HMACParams: Hash + HashAlgParams + Default {
 
 impl<HASH: HMACParams, const KEY_BUF_LEN: usize> Algorithm for HMAC<HASH, KEY_BUF_LEN> {
     const ALG_NAME: &'static str = HASH::HMAC_ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = HASH::HMAC_MAX_SECURITY_STRENGTH;
+    // An HMAC claims the security strength of the hash underneath it. Reading it off the hash rather
+    // than restating it per instantiation keeps the advertised strength identical to the one
+    // `HMAC::init` enforces against the key, which it takes from `Hash::max_security_strength`.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = HASH::MAX_SECURITY_STRENGTH;
 }
 
 impl<HASH: HMACParams, const KEY_BUF_LEN: usize> AlgorithmOID for HMAC<HASH, KEY_BUF_LEN> {
@@ -148,7 +171,8 @@ impl<HASH: HMACParams, const KEY_BUF_LEN: usize> AlgorithmOID for HMAC<HASH, KEY
 // The internal key buffer must be able to hold a key up to the *block length* of the underlying hash:
 // per RFC 2104, a key no longer than the block is used verbatim (only longer keys are pre-hashed down
 // to the output length). So the buffer size is a const parameter of the struct, set per hash to its
-// block length by the type aliases.
+// block length by the type aliases below. Block lengths (bytes): SHA-224/256 = 64, SHA-384/512 = 128,
+// SHA3-224 = 144, SHA3-256 = 136, SHA3-384 = 104, SHA3-512 = 72.
 //
 // The default is used only when `HMAC<HASH>` is written without an explicit buffer size; it is the
 // largest block length across all supported hashes, so it is always large enough.
@@ -430,7 +454,7 @@ impl<HASH: HMACParams, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
     pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<HASH::MACKey, RNGError> {
         // Refuse to generate a key from an RNG that cannot back the strength this HMAC claims;
         // otherwise the key's tagged security strength would overstate its true entropy.
-        if rng.security_strength() < HASH::HMAC_MAX_SECURITY_STRENGTH {
+        if rng.security_strength() < HASH::MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm);
         }
 
