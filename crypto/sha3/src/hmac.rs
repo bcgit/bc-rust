@@ -254,7 +254,7 @@
 use crate::SUSPENDED_SHA3_STATE_LEN;
 use crate::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{HashAlgParams, SecurityStrength};
+use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/
@@ -282,7 +282,6 @@ pub type HMAC_SHA3_224 = HMAC<SHA3_224, { <SHA3_224 as HashAlgParams>::BLOCK_LEN
 impl HMACParams for SHA3_224 {
     type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-224 { hashAlgs 13 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 13];
     const HMAC_OID_DER: &'static [u8] =
@@ -295,7 +294,6 @@ pub type HMAC_SHA3_256 = HMAC<SHA3_256, { <SHA3_256 as HashAlgParams>::BLOCK_LEN
 impl HMACParams for SHA3_256 {
     type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-256 { hashAlgs 14 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 14];
     const HMAC_OID_DER: &'static [u8] =
@@ -308,7 +306,6 @@ pub type HMAC_SHA3_384 = HMAC<SHA3_384, { <SHA3_384 as HashAlgParams>::BLOCK_LEN
 impl HMACParams for SHA3_384 {
     type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-384 { hashAlgs 15 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 15];
     const HMAC_OID_DER: &'static [u8] =
@@ -321,7 +318,6 @@ pub type HMAC_SHA3_512 = HMAC<SHA3_512, { <SHA3_512 as HashAlgParams>::BLOCK_LEN
 impl HMACParams for SHA3_512 {
     type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
-    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
     /// Assigned by NIST in the Computer Security Objects Register: id-hmacWithSHA3-512 { hashAlgs 16 }
     const HMAC_OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 16];
     const HMAC_OID_DER: &'static [u8] =
