@@ -163,7 +163,12 @@ impl SM3 {
     ///
     /// Returns the number of bytes written (`min(output.len(), 32)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
-    fn finalize(mut self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> usize {
+    fn do_final_internal(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
         debug_assert!(num_partial_bits <= 7);
         output.fill(0);
 
@@ -275,7 +280,7 @@ impl Hash for SM3 {
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general padding.
-        self.finalize(0, 0, output)
+        self.do_final_internal(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -301,7 +306,7 @@ impl Hash for SM3 {
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
-        Ok(self.finalize(partial_byte, num_partial_bits, output))
+        Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

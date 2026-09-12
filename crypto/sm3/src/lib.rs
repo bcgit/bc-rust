@@ -2,7 +2,7 @@
 //! and IETF draft-shen-sm3-hash-01).
 //!
 //! SM3 is a 256-bit Merkle–Damgård hash with a 512-bit block, structurally similar to SHA-256 but
-//! with its own message expansion, round functions and constants.
+//! with different message expansion, round compression functions and constants.
 //!
 //! # Examples
 //! ## Hash
@@ -99,6 +99,9 @@
 //! sm3_resumed.do_update(msg_part2);
 //! let h: Vec<u8> = sm3_resumed.do_final();
 //! ```
+
+// todo #![no_std]
+//      waiting for the no_std refactor that removes the `-> Vec<u8>` from core::traits::Hash
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
