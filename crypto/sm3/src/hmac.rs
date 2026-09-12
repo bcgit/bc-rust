@@ -68,12 +68,10 @@ pub struct HMAC_SM3Params;
 
 impl Algorithm for HMAC_SM3Params {
     const ALG_NAME: &'static str = HMAC_SM3_NAME;
-    // The strength this HMAC claims. Deliberately stated here rather than read off
-    // SM3: HMAC does not rest on the hash's collision resistance, so in principle the
-    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
-    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
-    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    // SP 800-107r1 s.5.3.4, extrapolated from SHA-2 to SM3, which is likewise Merkle-Damgard:
+    // min(strength of K, 2C). SM3 has C = 256, so 2C = 512, and the key is OUTPUT_LEN = 256 bits,
+    // so the key binds: 256 bits.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
 /// Assigned by the Chinese OSCCA (GM/T 0006): hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
