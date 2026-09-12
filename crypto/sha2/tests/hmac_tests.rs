@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod hmac_tests {
+mod hmac_sha2_tests {
     use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{
@@ -10,14 +10,10 @@ mod hmac_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
     use bouncycastle_hex as hex;
-    use bouncycastle_hmac::*;
+    use bouncycastle_hmac::{HMAC, MIN_FIPS_DIGEST_LEN};
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
     use bouncycastle_sha2::hmac::*;
     use bouncycastle_sha2::*;
-    use bouncycastle_sha3::hmac::*;
-    use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
-    use bouncycastle_sm3::SM3;
-    use bouncycastle_sm3::hmac::*;
 
     #[test]
     fn simple_tests() {
@@ -60,46 +56,6 @@ mod hmac_tests {
             &hex::decode("999a901219f032cd497cadb5e6051e97b6a29ab297bd6ae722bd6062a2f59542")
                 .unwrap()
         );
-    }
-
-    #[test]
-    fn test_type_aliases() {
-        let key = KeyMaterial512::from_bytes_as_type(
-            b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-            KeyType::MACKey).unwrap();
-
-        _ = HMAC::<SHA224>::new(&key).unwrap();
-        _ = HMAC_SHA224::new(&key).unwrap();
-
-        _ = HMAC::<SHA256>::new(&key).unwrap();
-        _ = HMAC_SHA256::new(&key).unwrap();
-
-        _ = HMAC::<SHA384>::new(&key).unwrap();
-        _ = HMAC_SHA384::new(&key).unwrap();
-
-        _ = HMAC::<SHA512>::new(&key).unwrap();
-        _ = HMAC_SHA512::new(&key).unwrap();
-
-        _ = HMAC::<SHA512_224>::new(&key).unwrap();
-        _ = HMAC_SHA512_224::new(&key).unwrap();
-
-        _ = HMAC::<SHA512_256>::new(&key).unwrap();
-        _ = HMAC_SHA512_256::new(&key).unwrap();
-
-        _ = HMAC::<SHA3_224>::new(&key).unwrap();
-        _ = HMAC_SHA3_224::new(&key).unwrap();
-
-        _ = HMAC::<SHA3_256>::new(&key).unwrap();
-        _ = HMAC_SHA3_256::new(&key).unwrap();
-
-        _ = HMAC::<SHA3_384>::new(&key).unwrap();
-        _ = HMAC_SHA3_384::new(&key).unwrap();
-
-        _ = HMAC::<SHA3_512>::new(&key).unwrap();
-        _ = HMAC_SHA3_512::new(&key).unwrap();
-
-        _ = HMAC::<SM3>::new(&key).unwrap();
-        _ = HMAC_SM3::new(&key).unwrap();
     }
 
     #[test]
@@ -171,13 +127,6 @@ mod hmac_tests {
         mac.do_update(b"Hi There");
         let tag = mac.do_final();
         assert!(HMAC_SHA512::new(&key).unwrap().verify(b"Hi There", &tag));
-
-        // SHA3-224 has the largest block (144 bytes); a 143-byte key exercises the top of the range.
-        let key = KeyMaterial::<200>::from_bytes_as_type(&[0x0B; 143], KeyType::MACKey).unwrap();
-        let mut mac = HMAC_SHA3_224::new(&key).unwrap();
-        mac.do_update(b"Hi There");
-        let tag = mac.do_final();
-        assert!(HMAC_SHA3_224::new(&key).unwrap().verify(b"Hi There", &tag));
     }
 
     #[test]
@@ -270,21 +219,6 @@ mod hmac_tests {
         let bytes_written = mac.do_final_out(&mut out).unwrap();
         assert_eq!(bytes_written, MIN_FIPS_DIGEST_LEN);
         assert_eq!(&out, b"\x89\x6f\xb1\x12");
-
-        // fail case: mac value is correct but truncated
-        let mac = HMAC_SHA3_224::new(&key).unwrap();
-        let mut mac_val = mac.mac(b"Polly want a cracker?");
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
-        assert!(verifier.verify(b"Polly want a cracker?", &mac_val));
-
-        // truncation of the mac value is considered a fail
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
-        assert!(!verifier.verify(b"Polly want a cracker?", &mac_val[..mac_val.len() - 1]));
-
-        // .. as is some extra bytes at the end
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
-        mac_val.extend_from_slice(&[0u8; 4]);
-        assert!(!verifier.verify(b"Polly want a cracker?", &mac_val));
     }
 
     #[test]
@@ -300,11 +234,6 @@ mod hmac_tests {
         assert_eq!(HMAC_SHA512_256_NAME, "HMAC-SHA512/256");
         assert_eq!(HMAC_SHA512_224::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
         assert_eq!(HMAC_SHA512_256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
-        assert_eq!(HMAC_SHA3_224::ALG_NAME, HMAC_SHA3_224_NAME);
-        assert_eq!(HMAC_SHA3_256::ALG_NAME, HMAC_SHA3_256_NAME);
-        assert_eq!(HMAC_SHA3_384::ALG_NAME, HMAC_SHA3_384_NAME);
-        assert_eq!(HMAC_SHA3_512::ALG_NAME, HMAC_SHA3_512_NAME);
-        assert_eq!(HMAC_SM3::ALG_NAME, HMAC_SM3_NAME);
     }
 
     #[cfg(test)]
@@ -718,65 +647,6 @@ mod hmac_tests {
         }
     }
 
-    /// HMAC-SM3 known answers. There is no RFC 4231 equivalent for SM3, so these reuse the RFC 4231
-    /// keys/messages (cases 1, 2 and 6) with expected values generated by
-    /// `openssl dgst -sm3 -mac HMAC` and independently confirmed with bc-java's
-    /// `HMac(new SM3Digest())`, plus a zero-length key.
-    #[test]
-    fn hmac_sm3_known_answers() {
-        use bouncycastle_core::key_material::KeyMaterial;
-        let test_framework = TestFrameworkMAC::new();
-
-        // RFC4231 Test Case 1 key/message
-        test_framework.test_mac::<HMAC_SM3>(
-            &KeyMaterial::<20>::from_bytes_as_type(
-                &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
-                KeyType::MACKey,
-            )
-            .unwrap(),
-            b"Hi There",
-            &hex::decode("51b00d1fb49832bfb01c3ce27848e59f871d9ba938dc563b338ca964755cce70")
-                .unwrap(),
-        );
-        // RFC4231 Test Case 2 key/message
-        test_framework.test_mac::<HMAC_SM3>(
-            &KeyMaterial::<4>::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
-            b"what do ya want for nothing?",
-            &hex::decode("2e87f1d16862e6d964b50a5200bf2b10b764faa9680a296a2405f24bec39f882")
-                .unwrap(),
-        );
-        // RFC4231 Test Case 6 key/message: key larger than the 64-byte block, so it is hashed first
-        test_framework.test_mac::<HMAC_SM3>(
-            &KeyMaterial::<131>::from_bytes_as_type(&[0xaa; 131], KeyType::MACKey).unwrap(),
-            b"Test Using Larger Than Block-Size Key - Hash Key First",
-            &hex::decode("b4fd844e13342002f0b2e0690ea7741f1497d993a70494cea601e657bedf67a0")
-                .unwrap(),
-        );
-
-        // zero-length key (weak; needs new_allow_weak_key)
-        let mut zero_length_key = KeyMaterial256::default();
-        key_material::do_hazardous_operations(&mut zero_length_key, |k| {
-            k.set_key_type(KeyType::MACKey)
-        })
-        .unwrap();
-        let mut mac = HMAC_SM3::new_allow_weak_key(&zero_length_key).unwrap();
-        mac.do_update(b"abc");
-        assert_eq!(
-            mac.do_final(),
-            hex::decode("36525058ca466791502435c910517f1a7e86613d5f35ac1f18a94def0eaac81f")
-                .unwrap()
-        );
-
-        assert_eq!(
-            HMAC_SM3::new(
-                &KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap()
-            )
-            .unwrap()
-            .output_len(),
-            32
-        );
-    }
-
     #[test]
     fn suspendable_keyed_state() {
         use bouncycastle_core::errors::SuspendableError;
@@ -834,8 +704,6 @@ mod hmac_tests {
         round_trip(HMAC_SHA512::new(&key).unwrap(), &key, msg);
         round_trip(HMAC_SHA512_224::new(&key).unwrap(), &key, msg);
         round_trip(HMAC_SHA512_256::new(&key).unwrap(), &key, msg);
-        round_trip(HMAC_SHA3_256::new(&key).unwrap(), &key, msg);
-        round_trip(HMAC_SM3::new(&key).unwrap(), &key, msg);
 
         // test suspend / resume with a key larger than block size
         let long_key =
@@ -867,7 +735,7 @@ mod hmac_tests {
     ///   * `HMAC::new(&key)` accepts the freshly generated key, without error.
     ///
     /// HashDRBG_SHA512 is used throughout because it is the only built-in DRBG that meets the
-    /// 256-bit strength that HMAC-SHA512 and HMAC-SHA3-512 claim; see `keygen_rejects_weak_rng`.
+    /// 256-bit strength that HMAC-SHA512 claims; see `keygen_rejects_weak_rng`.
     macro_rules! keygen_test {
         ($test_name:ident, $hmac:ident, $n:literal) => {
             #[test]
@@ -893,11 +761,6 @@ mod hmac_tests {
     keygen_test!(keygen_hmac_sha512, HMAC_SHA512, 64);
     keygen_test!(keygen_hmac_sha512_224, HMAC_SHA512_224, 28);
     keygen_test!(keygen_hmac_sha512_256, HMAC_SHA512_256, 32);
-    keygen_test!(keygen_hmac_sha3_224, HMAC_SHA3_224, 28);
-    keygen_test!(keygen_hmac_sha3_256, HMAC_SHA3_256, 32);
-    keygen_test!(keygen_hmac_sha3_384, HMAC_SHA3_384, 48);
-    keygen_test!(keygen_hmac_sha3_512, HMAC_SHA3_512, 64);
-    keygen_test!(keygen_hmac_sm3, HMAC_SM3, 32);
 
     /// `keygen_from_rng` must refuse an RNG whose security strength is below the strength the HMAC
     /// claims, otherwise the returned key would be tagged stronger than the entropy behind it.
