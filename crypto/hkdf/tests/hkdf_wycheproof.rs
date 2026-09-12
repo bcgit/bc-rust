@@ -15,10 +15,12 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Hash, HashAlgParams};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_hkdf::HKDF;
+use bouncycastle_hmac::HMACParams;
 use bouncycastle_sha2::hkdf::{
     SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN,
     SUSPENDED_HKDF_SHA512_STATE_LEN,
 };
+use bouncycastle_sha2::hmac::{HMAC_SHA256Params, HMAC_SHA384Params, HMAC_SHA512Params};
 use bouncycastle_sha2::{
     SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
 };
@@ -32,6 +34,7 @@ const MAX_OKM_LEN: usize = 255 * 64;
 /// those of `bouncycastle_sha2::hkdf`'s aliases, which cannot be passed as a type here.
 fn run<
     H: Hash + HashAlgParams + Default,
+    PARAMS: HMACParams,
     const HASH_STATE_LEN: usize,
     const HKDF_STATE_LEN: usize,
 >(
@@ -62,7 +65,7 @@ fn run<
             let size = test.get("size").and_then(Value::as_u64).expect("size") as usize;
 
             let mut okm = KeyMaterial::<MAX_OKM_LEN>::new();
-            let result = HKDF::<H, HASH_STATE_LEN, HKDF_STATE_LEN>::extract_and_expand_out(
+            let result = HKDF::<H, PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>::extract_and_expand_out(
                 &salt, &ikm, &info, size, &mut okm,
             );
 
@@ -95,21 +98,21 @@ fn run<
 
 #[test]
 fn wycheproof_hkdf_sha256() {
-    run::<SHA256, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN>(
+    run::<SHA256, HMAC_SHA256Params, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN>(
         "hkdf_sha256_test.json", "HKDF-SHA-256",
     );
 }
 
 #[test]
 fn wycheproof_hkdf_sha384() {
-    run::<SHA384, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>(
+    run::<SHA384, HMAC_SHA384Params, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>(
         "hkdf_sha384_test.json", "HKDF-SHA-384",
     );
 }
 
 #[test]
 fn wycheproof_hkdf_sha512() {
-    run::<SHA512, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN>(
+    run::<SHA512, HMAC_SHA512Params, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN>(
         "hkdf_sha512_test.json", "HKDF-SHA-512",
     );
 }

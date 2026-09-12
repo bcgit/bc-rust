@@ -43,7 +43,8 @@
 
 use crate::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::HashAlgParams;
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/
@@ -59,18 +60,37 @@ use bouncycastle_hmac::MIN_FIPS_DIGEST_LEN;
 /// Algorithm name string for HMAC-SM3, as used by the factories and CLI.
 pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
 
-/*** Type aliases ***/
-/// Public type for HMAC using SM3.
+/*** Params types and type aliases ***/
+/// The parameters for HMAC-SM3 -- see [`HMAC_SM3`].
+#[derive(Clone)]
 #[allow(non_camel_case_types)]
-pub type HMAC_SM3 = HMAC<SM3, { <SM3 as HashAlgParams>::BLOCK_LEN }>;
-impl HMACParams for SM3 {
-    type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
-    const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;
-    /// Assigned by the Chinese OSCCA (GM/T 0006): hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
-    const HMAC_OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401, 2];
-    const HMAC_OID_DER: &'static [u8] =
+pub struct HMAC_SM3Params;
+
+impl Algorithm for HMAC_SM3Params {
+    const ALG_NAME: &'static str = HMAC_SM3_NAME;
+    // The strength this HMAC claims. Deliberately stated here rather than read off
+    // SM3: HMAC does not rest on the hash's collision resistance, so in principle the
+    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
+    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
+    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+/// Assigned by the Chinese OSCCA (GM/T 0006): hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
+impl AlgorithmOID for HMAC_SM3Params {
+    const OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401, 2];
+    const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x83, 0x11, 0x02];
 }
+
+impl HMACParams for HMAC_SM3Params {
+    type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
+    type KeyBuf = [u8; <SM3 as HashAlgParams>::BLOCK_LEN];
+}
+
+/// Public type for HMAC using SM3.
+#[allow(non_camel_case_types)]
+pub type HMAC_SM3 = HMAC<SM3, HMAC_SM3Params>;
 
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and
