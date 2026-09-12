@@ -44,10 +44,10 @@
 //! ```
 //! use bouncycastle_core::key_material::KeyMaterial256;
 //! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_rng::HashDRBG_SHA256;
+//! use bouncycastle_rng::DefaultRNG;
 //! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //!
-//! let mut rng = HashDRBG_SHA256::new_from_os();
+//! let mut rng = DefaultRNG::new_from_os();
 //! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
 //!         .expect("Will only fail if the system RNG can't start up.");
 //!
@@ -64,7 +64,8 @@
 //! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //!
 //! let hmac = HMAC_SHA256::new(&key).expect(
@@ -80,10 +81,10 @@
 //! ```
 //! use bouncycastle_core::key_material::KeyMaterial256;
 //! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_rng::HashDRBG_SHA256;
+//! use bouncycastle_rng::DefaultRNG;
 //! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //!
-//! let mut rng = HashDRBG_SHA256::new_from_os();
+//! let mut rng = DefaultRNG::new_from_os();
 //! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
 //!         .expect("Will only fail if the system RNG can't start up.");
 //!
@@ -98,10 +99,10 @@
 //! ```
 //! use bouncycastle_core::key_material::KeyMaterial256;
 //! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_rng::HashDRBG_SHA256;
+//! use bouncycastle_rng::DefaultRNG;
 //! use bouncycastle_sha2::hmac::HMAC_SHA256;
 //!
-//! let mut rng = HashDRBG_SHA256::new_from_os();
+//! let mut rng = DefaultRNG::new_from_os();
 //! let key: KeyMaterial256 = HMAC_SHA256::keygen_from_rng(&mut rng)
 //!         .expect("Will only fail if the system RNG can't start up.");
 //!
@@ -127,7 +128,8 @@
 //! // For this example to work, we are hard-coding both the key and the MAC value that it generates
 //! // for this data.
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //!
 //! let data: &[u8] = b"Hello, world!";
@@ -135,8 +137,8 @@
 //! // .verify() returns a bool: true if the MAC is valid, false otherwise.
 //! if HMAC_SHA256::new(&key).unwrap()
 //!                 .verify(data,
-//!                         b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90
-//!                            \x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9"
+//!                         b"\x76\xd0\x69\x2c\x75\x6f\x89\x94\x96\xf3\x51\x63\x6a\x69\x69\xe5
+//!                            \x4e\xbf\xb2\x3a\xbb\x09\xfd\x61\x40\x86\x13\x6a\xc9\xab\x26\x77"
 //!                         )
 //! {
 //!     println!("MAC is valid!");
@@ -156,12 +158,13 @@
 //! // For this example to work, we are hard-coding both the key and the MAC value that it generates
 //! // for this data.
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //! let mut hmac = HMAC_SHA256::new(&key).unwrap();
 //! hmac.do_update(b"Hello,");
 //! hmac.do_update(b" world!");
-//! if hmac.do_verify_final(b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90\x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9"
+//! if hmac.do_verify_final(b"\x76\xd0\x69\x2c\x75\x6f\x89\x94\x96\xf3\x51\x63\x6a\x69\x69\xe5\x4e\xbf\xb2\x3a\xbb\x09\xfd\x61\x40\x86\x13\x6a\xc9\xab\x26\x77"
 //!                     )
 //! {
 //!     println!("MAC is valid!");
@@ -192,7 +195,8 @@
 //! let msg_part2 = b" jumped over the lazy dog";
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+//!               \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f",
 //!             KeyType::MACKey).unwrap();
 //!
 //! let mut hmac = HMAC_SHA256::new(&key).unwrap();
@@ -232,10 +236,25 @@
 //!
 //! # Security Considerations
 //!
-//! * The key must carry at least the security strength claimed by the HMAC, and [`MAC::new`]
-//!   enforces that. [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a
-//!   weak or all-zero key is called for by the protocol (an all-zero HKDF salt, for example), not to
-//!   silence an error.
+//! * Each of these HMACs claims the strength NIST SP 800-107r1 Section 5.3.4 gives it, which is
+//!   `min(strength of K, 2C)` and works out to the key length for the whole SHA-2 family: 224 bits
+//!   for HMAC-SHA224 and 256 or more for the rest. `SecurityStrength` has no 224-bit category and
+//!   tops out at 256, so the declared values are `_192bit` for HMAC-SHA224 and `_256bit` for
+//!   HMAC-SHA256, HMAC-SHA384 and HMAC-SHA512. Note these are *not* the underlying hashes'
+//!   collision strengths, which are half as large; footnote 4 of that section puts collision
+//!   attacks out of scope for HMAC.
+//! * The key must carry at least the strength claimed by the HMAC, and [`MAC::new`] enforces that.
+//!   A 20-byte key is therefore no longer enough for HMAC-SHA256; a full 32-byte key is.
+//!   [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a weak or all-zero
+//!   key is called for by the protocol (an all-zero HKDF salt, or a fixed test vector such as
+//!   RFC 4231's 20-byte keys), not to silence an error.
+//! * The same rule applies to the generator. [`HMAC::keygen_from_rng`] tags the key it returns at
+//!   the HMAC's claimed strength, so it refuses any RNG that cannot back that tag: a 256-bit
+//!   generator is required for HMAC-SHA256 and above, and `bouncycastle_rng::DefaultRNG` is
+//!   `HashDRBG_SHA512` and qualifies for all of them. `HashDRBG_SHA256` offers 128 bits and is now
+//!   refused by every HMAC in this module. There is no weak-RNG opt-out, because a generator cannot
+//!   be asked for entropy it does not have; build the key yourself and use
+//!   [`MAC::new_allow_weak_key`] if that is genuinely what you want.
 //! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
 //!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
 //!   many leading bytes matched.
@@ -272,41 +291,6 @@ pub const HMAC_SHA384_NAME: &str = "HMAC-SHA384";
 pub const HMAC_SHA512_NAME: &str = "HMAC-SHA512";
 
 /*** Params types and type aliases ***/
-// TODO: revise the MAX_SECURITY_STRENGTH that each params type below declares.
-//
-// They currently declare the underlying hash's collision strength (output length / 2): 112 bits for
-// HMAC-SHA224, 128 for HMAC-SHA256, and so on. That figure is a leftover from when the strength was
-// read off the hash, and NIST SP 800-107 Revision 1 (August 2012) Section 5.3.4 says collision
-// resistance is the wrong basis for an HMAC:
-//
-//     "The effective security strength of the HMAC key is the minimum of the security strength of
-//      K and the value of 2C. That is, security strength = min(security strength of K, 2C)."
-//
-// where C is "the bit length of the internal hash value that is denoted H in FIPS 180-4" -- the
-// chaining value, not the output. Footnote 4 of that section is explicit that collisions are out of
-// scope: "the collision attack is not considered in this document. In this Recommendation, the
-// strength of the HMAC key is considered to be the amount of work required for an attacker who
-// performs a brute-force attack to discover the HMAC key K or the first hash values (Hs) ...".
-//
-// Recommendation: raise them. Section 5.3.4 gives C = 256 for SHA-256 ("L = C for SHA-1, SHA-256,
-// and SHA-512") and C = 512 for SHA-384 and SHA-512/t, so 2C is 512 and 1024 bits respectively --
-// far above any key this library accepts. It does not state C for SHA-224, but C >= L = 224 there,
-// so 2C >= 448 and the conclusion is unchanged: the key's own strength is the binding term in every
-// SHA-2 case. Since `MACKey` is `KeyMaterial<OUTPUT_LEN>`, a full-length key carries 224, 256, 384
-// and 512 bits for HMAC-SHA224/256/384/512, every one of which exceeds what is declared today, and
-// all but the first exceed the top of `SecurityStrength`, so they would cap at `_256bit` (and
-// HMAC-SHA224 at `_192bit`).
-//
-// Do NOT extrapolate this to the HMAC-SHA3 values in bouncycastle-sha3. SP 800-107r1 predates SHA-3
-// and Section 5.3.4 is written in terms of the FIPS 180-4 chaining value, which a sponge
-// construction does not have. Those need their own reference (FIPS 202 / SP 800-185) read first.
-//
-// This is not a mechanical edit. MAX_SECURITY_STRENGTH is enforced, not merely reported, so raising
-// it makes `MAC::new` reject keys it accepts today and `keygen_from_rng` reject RNGs it accepts
-// today. Raising HMAC-SHA256 to `_256bit`, for example, would make HashDRBG_SHA256 insufficient to
-// generate its own key and would invert the existing `keygen_rejects_weak_rng` test. Settle the
-// policy question first: does this constant describe the ceiling the construction can reach, or the
-// minimum a caller is required to bring to it? Those give different numbers.
 
 /// The parameters for HMAC-SHA224 -- see [`HMAC_SHA224`].
 #[derive(Clone)]
@@ -315,12 +299,9 @@ pub struct HMAC_SHA224Params;
 
 impl Algorithm for HMAC_SHA224Params {
     const ALG_NAME: &'static str = HMAC_SHA224_NAME;
-    // The strength this HMAC claims. Deliberately stated here rather than read off
-    // SHA224: HMAC does not rest on the hash's collision resistance, so in principle the
-    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
-    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
-    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+    // SP 800-107r1 s.5.3.4: min(strength of K, 2C). SHA-224 has C = 256, so 2C = 512,
+    // and the key is OUTPUT_LEN = 224 bits, so the key binds: 224 bits, rounded down to the nearest category.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
 /// Defined in RFC 4231: id-hmacWithSHA224 { digestAlgorithm 8 }
@@ -345,12 +326,9 @@ pub struct HMAC_SHA256Params;
 
 impl Algorithm for HMAC_SHA256Params {
     const ALG_NAME: &'static str = HMAC_SHA256_NAME;
-    // The strength this HMAC claims. Deliberately stated here rather than read off
-    // SHA256: HMAC does not rest on the hash's collision resistance, so in principle the
-    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
-    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
-    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    // SP 800-107r1 s.5.3.4: min(strength of K, 2C). SHA-256 has C = 256, so 2C = 512,
+    // and the key is OUTPUT_LEN = 256 bits, so the key binds: 256 bits.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
 /// Defined in RFC 4231: id-hmacWithSHA256 { digestAlgorithm 9 }
@@ -375,12 +353,9 @@ pub struct HMAC_SHA384Params;
 
 impl Algorithm for HMAC_SHA384Params {
     const ALG_NAME: &'static str = HMAC_SHA384_NAME;
-    // The strength this HMAC claims. Deliberately stated here rather than read off
-    // SHA384: HMAC does not rest on the hash's collision resistance, so in principle the
-    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
-    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
-    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+    // SP 800-107r1 s.5.3.4: min(strength of K, 2C). SHA-384 has C = 512, so 2C = 1024,
+    // and the key is OUTPUT_LEN = 384 bits, so the key binds: 384 bits, capped at the top of `SecurityStrength`.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
 /// Defined in RFC 4231: id-hmacWithSHA384 { digestAlgorithm 10 }
@@ -405,11 +380,8 @@ pub struct HMAC_SHA512Params;
 
 impl Algorithm for HMAC_SHA512Params {
     const ALG_NAME: &'static str = HMAC_SHA512_NAME;
-    // The strength this HMAC claims. Deliberately stated here rather than read off
-    // SHA512: HMAC does not rest on the hash's collision resistance, so in principle the
-    // two can differ (NIST SP 800-107-r1 Section 5.3.4 bounds HMAC's strength by
-    // `min(strength of K, 2C)` for a `C`-bit chaining value). This is the value
-    // `MAC::new` enforces against the key and `keygen_from_rng` against the RNG.
+    // SP 800-107r1 s.5.3.4: min(strength of K, 2C). SHA-512 has C = 512, so 2C = 1024,
+    // and the key is OUTPUT_LEN = 512 bits, so the key binds: 512 bits, capped at the top of `SecurityStrength`.
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 

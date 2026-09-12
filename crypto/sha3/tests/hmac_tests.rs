@@ -28,18 +28,19 @@ mod hmac_sha3_tests {
         )
         .unwrap();
 
-        // fail case: mac value is correct but truncated
-        let mac = HMAC_SHA3_224::new(&key).unwrap();
+        // fail case: mac value is correct but truncated. The 20-byte key is below the strength
+        // HMAC-SHA3-224 claims, so these opt in to a weak key.
+        let mac = HMAC_SHA3_224::new_allow_weak_key(&key).unwrap();
         let mut mac_val = mac.mac(b"Polly want a cracker?");
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
+        let verifier = HMAC_SHA3_224::new_allow_weak_key(&key).unwrap();
         assert!(verifier.verify(b"Polly want a cracker?", &mac_val));
 
         // truncation of the mac value is considered a fail
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
+        let verifier = HMAC_SHA3_224::new_allow_weak_key(&key).unwrap();
         assert!(!verifier.verify(b"Polly want a cracker?", &mac_val[..mac_val.len() - 1]));
 
         // .. as is some extra bytes at the end
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
+        let verifier = HMAC_SHA3_224::new_allow_weak_key(&key).unwrap();
         mac_val.extend_from_slice(&[0u8; 4]);
         assert!(!verifier.verify(b"Polly want a cracker?", &mac_val));
     }
@@ -57,10 +58,12 @@ mod hmac_sha3_tests {
         assert_eq!(HMAC_SHA3_384::OID, [2, 16, 840, 1, 101, 3, 4, 2, 15]);
         assert_eq!(HMAC_SHA3_512::OID, [2, 16, 840, 1, 101, 3, 4, 2, 16]);
 
-        assert_eq!(HMAC_SHA3_224::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
-        assert_eq!(HMAC_SHA3_256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
-        assert_eq!(HMAC_SHA3_384::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
-        assert_eq!(HMAC_SHA3_512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+        // Per SP 800-107r1 s.5.3.4, extrapolated to SHA-3: min(strength of K, 2C) resolves to the
+        // key in every case, so these are OUTPUT_LEN rounded down to a representable category.
+        assert_eq!(HMAC_SHA3_224::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit); // 224 bits
+        assert_eq!(HMAC_SHA3_256::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit); // 256 bits
+        assert_eq!(HMAC_SHA3_384::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit); // 384, capped
+        assert_eq!(HMAC_SHA3_512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit); // 512, capped
     }
 
     #[test]

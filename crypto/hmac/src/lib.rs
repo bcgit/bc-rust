@@ -85,16 +85,21 @@
 //! These apply to every instantiation; the hash crates' `hmac` modules repeat the ones that matter
 //! most in day-to-day use.
 //!
-//! * The strength an HMAC claims is declared by its params, and is enforced in two places:
-//!   [`MAC::new`] checks it against the key's tagged strength, and [`HMAC::keygen_from_rng`]
-//!   checks it against the RNG's. It is not the underlying hash's strength: HMAC does not rest on
-//!   collision resistance, so the figures are independent. NIST SP 800-107-r1 Section 5.3.4 gives
-//!   the ceiling: the effective strength is `min(strength of K, 2C)` for an internal chaining value
-//!   of `C` bits. Declaring a strength the construction cannot support does not make it stronger,
-//!   it just makes both checks wrong.
-//! * [`MAC::new_allow_weak_key`] deliberately skips the key-strength check. It exists for protocols
-//!   that call for a weak or all-zero key -- an all-zero HKDF salt, for example -- and should not be
-//!   used to silence an error from [`MAC::new`].
+//! * The strength an HMAC claims is declared by its params, and is the most the instantiation can
+//!   deliver. It is not the underlying hash's collision strength: NIST SP 800-107-r1 Section 5.3.4
+//!   puts it at `min(strength of K, 2C)` for a `C`-bit chaining value, and footnote 4 there rules
+//!   collision attacks out of scope entirely. Declaring a strength the construction cannot support
+//!   does not make it stronger, it just makes the two gates below wrong.
+//! * Both gates follow from that claim, and both ask the same question: can this input actually
+//!   back the strength the algorithm advertises? [`MAC::new`] checks the key's tagged strength and
+//!   [`HMAC::keygen_from_rng`] checks the RNG's, each refusing anything weaker. So HMAC-SHA256
+//!   wants a 256-bit key and a 256-bit generator. Truncating the *output* still lowers the strength
+//!   of a given tag, which is why this is a ceiling rather than a guarantee.
+//! * The escape hatch is on the key only. [`MAC::new_allow_weak_key`] skips the key check for
+//!   protocols that require a weak or all-zero key, such as an all-zero HKDF salt.
+//!   [`HMAC::keygen_from_rng`] has no equivalent, because a generator cannot be asked to produce
+//!   entropy it does not have; the key it returned would carry a tag that overstates it.
+//!   It should not be used merely to silence an error from [`MAC::new`].
 //! * Verification via [`MAC::verify`] / [`MAC::do_verify_final`] uses a constant-time comparison.
 //!   Recomputing the MAC and comparing it with `==` leaks how many leading bytes matched.
 //! * [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is the shortest truncation this crate will produce, per
@@ -433,6 +438,22 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> HMAC<HASH, PARAMS> {
     ///
     /// The key length is the underlying hash's output length ([`HashAlgParams::OUTPUT_LEN`], carried
     /// as [`HMACParams::MACKey`]); see that associated type for why.
+    ///
+    /// # Contract
+    ///
+    /// The returned key is tagged at this HMAC's [`Algorithm::MAX_SECURITY_STRENGTH`], and that tag
+    /// has to be backed by real entropy -- A generator cannot produce
+    /// more entropy than it has -- so this refuses any RNG that cannot supply it: if
+    /// [`RNG::security_strength`] is below the claimed strength you get
+    /// [`RNGError::SecurityStrengthInsufficientForAlgorithm`] and no key.
+    ///
+    /// In practice this means a 256-bit generator for HMAC-SHA256 and above. `DefaultRNG` is
+    /// `HashDRBG_SHA512` and qualifies for every instantiation in this library; `HashDRBG_SHA256`
+    /// offers 128 bits and so is accepted only where the HMAC claims no more than that.
+    ///
+    /// There is deliberately no weak-RNG escape hatch, unlike [`MAC::new_allow_weak_key`]. A
+    /// caller who genuinely wants a key weaker than the algorithm claims can build one themselves
+    /// and pass it to [`MAC::new_allow_weak_key`], which makes that choice visible at the call site.
     ///
     // Dev note: done this way to avoid this crate needing a dependency on the `bouncycastle-rng` crate,
     //           which itself has a dependency on `bouncycastle-sha2` which depends on this hmac crate,

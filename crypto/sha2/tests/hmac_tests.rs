@@ -36,7 +36,7 @@ mod hmac_sha2_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let mut mac = HMAC_SHA224::new(&key).unwrap();
+        let mut mac = HMAC_SHA224::new_allow_weak_key(&key).unwrap();
         mac.do_update(b"Hi There");
         let output = mac.do_final();
         assert_eq!(output, b"\x89\x6f\xb1\x12\x8a\xbb\xdf\x19\x68\x32\x10\x7c\xd4\x9d\xf3\x3f\x47\xb4\xb1\x16\x99\x12\xba\x4f\x53\x68\x4b\x22");
@@ -47,7 +47,7 @@ mod hmac_sha2_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let mac = HMAC_SHA256::new(&key).unwrap();
+        let mac = HMAC_SHA256::new_allow_weak_key(&key).unwrap();
         // mac.do_update(b"").unwrap();
         let output = mac.do_final();
         assert_eq!(
@@ -76,12 +76,15 @@ mod hmac_sha2_tests {
         // It works after allowing weak keys
         HMAC_SHA256::new_allow_weak_key(&short_key).unwrap();
 
-        // It works with a long enough key
+        // It works with a long enough key. HMAC-SHA256 claims 256 bits (SP 800-107r1 s.5.3.4), so
+        // "long enough" is a full 32-byte key.
         let key = KeyMaterial256::from_bytes_as_type(
-            &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
+            &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b")
+                .unwrap(),
             KeyType::MACKey,
         )
         .unwrap();
+        assert_eq!(key.security_strength(), SecurityStrength::_256bit);
         HMAC_SHA256::new(&key).unwrap();
     }
 
@@ -182,23 +185,25 @@ mod hmac_sha2_tests {
         .unwrap();
 
         // get the known-good output
-        let out = HMAC_SHA224::new(&key).unwrap().mac(b"Hi There");
+        let out = HMAC_SHA224::new_allow_weak_key(&key).unwrap().mac(b"Hi There");
 
         // test output that's the wrong length, should simply return False
-        let mut mac = HMAC_SHA224::new(&key).unwrap();
+        let mut mac = HMAC_SHA224::new_allow_weak_key(&key).unwrap();
         mac.do_update(b"Hi There");
         assert!(!mac.do_verify_final(&out[..out.len() - 1]));
 
         // test output that's the right length but wrong value -- do_verify
-        let mut mac = HMAC_SHA224::new(&key).unwrap();
+        let mut mac = HMAC_SHA224::new_allow_weak_key(&key).unwrap();
         mac.do_update(b"Hi There");
         assert!(!mac.do_verify_final(&[0x01_u8; 28]));
 
         // test output that's the right length but wrong value -- static verify
-        assert!(!HMAC_SHA224::new(&key).unwrap().verify(b"Hi There", &[0x01_u8; 28]));
+        assert!(
+            !HMAC_SHA224::new_allow_weak_key(&key).unwrap().verify(b"Hi There", &[0x01_u8; 28])
+        );
 
         // error case: test that it'll refuse to truncate below MIN_FIPS_DIGEST_LEN
-        let mut mac = HMAC_SHA224::new(&key).unwrap();
+        let mut mac = HMAC_SHA224::new_allow_weak_key(&key).unwrap();
         mac.do_update(b"Hi There");
         let mut out = vec![0u8; MIN_FIPS_DIGEST_LEN - 1];
         match mac.do_final_out(&mut out) {
@@ -212,7 +217,7 @@ mod hmac_sha2_tests {
         }
 
         // success case: ... but it will truncate to exactly MIN_FIPS_DIGEST_LEN
-        let mut mac = HMAC_SHA224::new(&key).unwrap();
+        let mut mac = HMAC_SHA224::new_allow_weak_key(&key).unwrap();
         mac.do_update(b"Hi There");
         let mut out = vec![0u8; MIN_FIPS_DIGEST_LEN];
         let bytes_written = mac.do_final_out(&mut out).unwrap();
@@ -233,10 +238,12 @@ mod hmac_sha2_tests {
         assert_eq!(HMAC_SHA384::OID, [1, 2, 840, 113549, 2, 10]);
         assert_eq!(HMAC_SHA512::OID, [1, 2, 840, 113549, 2, 11]);
 
-        assert_eq!(HMAC_SHA224::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
-        assert_eq!(HMAC_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
-        assert_eq!(HMAC_SHA384::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
-        assert_eq!(HMAC_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+        // Per SP 800-107r1 s.5.3.4 these are min(strength of K, 2C), which for every SHA-2 HMAC
+        // resolves to the key: OUTPUT_LEN bits, rounded down to a representable category.
+        assert_eq!(HMAC_SHA224::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit); // 224 bits
+        assert_eq!(HMAC_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit); // 256 bits
+        assert_eq!(HMAC_SHA384::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit); // 384, capped
+        assert_eq!(HMAC_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit); // 512, capped
     }
 
     #[cfg(test)]
@@ -301,7 +308,10 @@ mod hmac_sha2_tests {
             )
             .unwrap();
             let mut out = [0u8; 128 / 8];
-            HMAC_SHA224::new(&key).unwrap().mac_out(b"Test With Truncation", &mut out).unwrap();
+            HMAC_SHA224::new_allow_weak_key(&key)
+                .unwrap()
+                .mac_out(b"Test With Truncation", &mut out)
+                .unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("0e2aea68a90c8d37c988bcdb9fca6fa8").unwrap());
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
@@ -382,7 +392,10 @@ mod hmac_sha2_tests {
             )
             .unwrap();
             let mut out = [0u8; 128 / 8];
-            HMAC_SHA256::new(&key).unwrap().mac_out(b"Test With Truncation", &mut out).unwrap();
+            HMAC_SHA256::new_allow_weak_key(&key)
+                .unwrap()
+                .mac_out(b"Test With Truncation", &mut out)
+                .unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("a3b6167473100ee06e0c796c2955552b").unwrap());
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
@@ -626,7 +639,7 @@ mod hmac_sha2_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let hmac = HMAC_SHA256::new(&key).unwrap();
+        let hmac = HMAC_SHA256::new_allow_weak_key(&key).unwrap();
 
         // test fmt
         let fmt_str = format!("{}", &hmac);
@@ -669,20 +682,26 @@ mod hmac_sha2_tests {
 
     /// `keygen_from_rng` must refuse an RNG whose security strength is below the strength the HMAC
     /// claims, otherwise the returned key would be tagged stronger than the entropy behind it.
-    /// HashDRBG_SHA256 offers 128 bits, which is enough for HMAC-SHA256 but not for HMAC-SHA512.
+    /// HashDRBG_SHA256 offers 128 bits. Since SP 800-107r1 s.5.3.4 puts every SHA-2 HMAC at 192
+    /// bits or more, it is now too weak for all of them, and a 256-bit generator is required.
+    /// `DefaultRNG` resolves to HashDRBG_SHA512 and so qualifies out of the box.
     #[test]
     fn keygen_rejects_weak_rng() {
-        let mut weak_rng = HashDRBG_SHA256::new_from_os();
-        assert!(
-            matches!(
-                HMAC_SHA512::keygen_from_rng(&mut weak_rng),
-                Err(RNGError::SecurityStrengthInsufficientForAlgorithm)
-            ),
-            "a 128-bit RNG must not be accepted for a 256-bit HMAC"
-        );
+        for refused in [
+            HMAC_SHA224::keygen_from_rng(&mut HashDRBG_SHA256::new_from_os()).err(),
+            HMAC_SHA256::keygen_from_rng(&mut HashDRBG_SHA256::new_from_os()).err(),
+            HMAC_SHA384::keygen_from_rng(&mut HashDRBG_SHA256::new_from_os()).err(),
+            HMAC_SHA512::keygen_from_rng(&mut HashDRBG_SHA256::new_from_os()).err(),
+        ] {
+            assert!(
+                matches!(refused, Some(RNGError::SecurityStrengthInsufficientForAlgorithm)),
+                "a 128-bit RNG must not be accepted for an HMAC claiming 192 bits or more"
+            );
+        }
 
-        let mut ok_rng = HashDRBG_SHA256::new_from_os();
+        // A 256-bit generator backs every SHA-2 HMAC in the crate.
+        let mut ok_rng = HashDRBG_SHA512::new_from_os();
         HMAC_SHA256::keygen_from_rng(&mut ok_rng)
-            .expect("a 128-bit RNG is sufficient for a 128-bit HMAC");
+            .expect("a 256-bit RNG is sufficient for a 256-bit HMAC");
     }
 }
