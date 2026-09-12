@@ -4,7 +4,7 @@
 //! ```text
 //! valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_aes_mem_usage > /dev/null
 //!
-//! ms_print massif.out.835000
+//! ms_print massif.out.*
 //! ```
 //!
 //! or, shoved all into one line:
