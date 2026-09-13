@@ -282,6 +282,19 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
   counting pattern longer than one draw when the test relies on consecutive draws differing.
 
+## Scope of changes
+
+Implement what was asked and stop. Unrequested refactors — extracting a trait, renaming for
+readability, restructuring impls — are not free even when they are correct: bundled into a feature
+commit they make the diff unreviewable, because a reviewer cannot separate the new behaviour from
+the restructuring, and the review time that costs is the reason not to do it.
+
+- If a refactor genuinely unblocks the task, give it **its own commit ahead of** the feature, so it
+  can be reviewed or dropped on its own.
+- If it unblocks nothing, propose it and wait rather than doing it.
+- The same goes for drive-by comment rewrites, reformatting and file moves in code you are only
+  passing through.
+
 ## Working from specifications
 
 QUALITY_AND_STYLE.md is where the requirement for spec-corresponding comments and justified deviations lives. This
