@@ -50,6 +50,9 @@
 //! let output: Vec<u8> = sm3.do_final_partial_bits(data[16], 3).expect("num_partial_bits is in 0..=7");
 //! ```
 //!
+//! ## HMAC
+//! See [hmac].
+//!
 //! # Memory Usage
 //!
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
@@ -68,7 +71,7 @@
 //!
 //! * SM3 offers 128 bits of collision resistance and 256 bits of preimage resistance.
 //! * SM3 is a Merkle–Damgård construction and is therefore subject to length-extension:
-//!   `H(k || m)` is not a secure MAC. Use HMAC for keyed hashing.
+//!   `H(k || m)` is not a secure MAC. Use HMAC ([`crate::hmac`]) for keyed hashing.
 //! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
 //!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
 //!   locals during compression are not zeroized.
@@ -107,6 +110,8 @@
 #![forbid(missing_docs)]
 
 mod sm3;
+
+pub mod hmac;
 
 pub use self::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
