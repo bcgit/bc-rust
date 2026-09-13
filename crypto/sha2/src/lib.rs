@@ -3,6 +3,8 @@
 //! This crate provides the following primitives:
 //!
 //! * SHA2 [`Hash`] functions.
+//! * HMAC_SHA2* [`MAC`] functions.
+//! * HKDF-SHA2* [`KDF`] functions.
 //!
 //! # Examples
 //! ## Hash
@@ -52,6 +54,13 @@
 //! sha2.do_update(&data[..16]);
 //! let output: Vec<u8> = sha2.do_final_partial_bits(data[16], 3).expect("num_partial_bits is in 0..=7");
 //! ```
+//! ## HMAC
+//! See [hmac].
+//!
+//! ## HKDF
+//!
+//! See [hkdf]
+//!
 //!
 //! # Suspending and resuming execution
 //!
@@ -116,6 +125,9 @@
 mod sha256;
 mod sha512;
 
+pub mod hkdf;
+pub mod hmac;
+
 pub use self::sha256::SHA256Internal;
 use self::sha256::{SHA224_H0, SHA256_H0};
 pub use self::sha512::SHA512Internal;
@@ -124,7 +136,7 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, Security
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, Suspendable};
+use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable};
 /*** end of doc-only imports ***/
 
 /*** String constants ***/

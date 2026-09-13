@@ -2,6 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Required reading
+
+This file is a *map*, not a rulebook. It records repo mechanics — commands, layout, where things live, how to work
+here. The project's binding standards live in their own documents, which are authoritative and are updated
+independently of this file. Read them; do not infer their contents from this file, and do not work from memory of a
+previous session's reading of them.
+
+- **[QUALITY_AND_STYLE.md](QUALITY_AND_STYLE.md) — read before writing or changing code, and before reviewing a
+  diff.** The authority on architecture, crate and API shape, naming conventions, fallibility, macros, what tests and
+  benchmarks a crate owes, and which sections crate docs must have. Its own opening line invites an AI to review a PR
+  against it, so treat it as exactly that checklist.
+- **[CONTRIBUTING.md](CONTRIBUTING.md) — read before writing a commit message, opening a PR, or advising on how a
+  change gets merged.** The authority on coding philosophy, PR hygiene and self-review, the quality bar a submission
+  must clear to be accepted, how merges actually happen in this project, and the AI policy. That policy places
+  requirements on the commit messages and PR descriptions of AI-assisted work, which covers anything written here:
+  never compose a commit message or PR description for this repo without checking it first. It links onward to
+  [SECURITY.md](SECURITY.md) for anything security-sensitive and [ISSUES_STYLE_GUIDE.md](ISSUES_STYLE_GUIDE.md) for
+  issue and sub-issue structure.
+- **[INTRODUCTION.md](INTRODUCTION.md) — read for design intent**, when a change touches public API shape or you need
+  the reasoning behind a convention rather than the convention itself.
+
+Where this file and one of those documents disagree, the document wins — and say so, so the stale line here gets
+fixed.
+
 ## Toolchain
 
 - Uses Rust **nightly** (pinned in `rust-toolchain.toml`) — `core/src/lib.rs` uses `#![feature(adt_const_params)]`.
@@ -78,20 +102,21 @@ crypto/<name>/
 
 `#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
 
-## Project-specific conventions (from QUALITY_AND_STYLE.md and INTRODUCTION.md)
+## Project-specific conventions
 
-These are non-obvious house rules — follow them when writing or modifying code:
+The house rules are deliberately **not** reproduced here — see [Required reading](#required-reading) above.
+QUALITY_AND_STYLE.md governs API shape, naming, fallibility, macro use, and the tests, benches and doc sections a
+crate owes; CONTRIBUTING.md governs what a submission must satisfy to be accepted. Both cover ground that is easy to
+violate without noticing, so read them at the start of a session that will touch code rather than guessing which
+conventions apply.
 
-- **No `unsafe`, no runtime third-party deps.** `#![forbid(unsafe_code)]` is required at every crate's `lib.rs`. Avoid adding any non-internal runtime dependency; dev/bench dependencies (`criterion`, `clap`) are fine.
-- **Push errors to compile time.** Prefer `&[u8; N]` over `&[u8]` + length-check, prefer the typestate pattern over runtime "initialized" booleans. `Result` should only carry truly-uncontrollable failures (bad user input, RNG init failure). If you're returning `Result` for something the caller can't reasonably hit with valid usage, redesign the signature instead. Run `./dev_scripts/quality_stats.sh` before and after to confirm you haven't increased unwrap/`Err()` counts.
-- **No `init()` / `reset()`; `do_final` takes `self` by value.** Constructors set up state; consumption methods consume. This is the deliberate departure from other Bouncy Castle ports. Stateful builder-style patterns are discouraged.
-- **One-shot static APIs are the default.** Every primitive should expose a take-data-return-result static method in addition to any streaming API.
-- **Sensitive types impl `core::Secret` (and its supertraits).** Anything that holds key material needs this — don't reach for raw byte arrays for secrets.
-- **`unwrap()` requires justification.** Either a preceding check that proves success, or an inline comment explaining why it's infallible.
-- **Spec correspondence in comments.** Code that mirrors a FIPS/NIST/RFC spec should be commented line-by-line against the spec, citing section/algorithm/step numbers. Any deliberate deviation must be called out and justified. The "would 6-months-from-now me need >10 minutes to re-understand this?" check is the bar. Never write or check these comments from memory — see "Working from specifications" below.
-- **Every primitive crate must ship: tests (`src/tests` or `tests/`), criterion benches in `benches/`, and a CLI subcommand.** Stack-memory characteristics matter — algorithms with non-trivial stack usage get a `mem_usage_benches/` harness.
-- **CLI commands stream.** The `cli/` binary's design is stdin→stdout with ~1 KB buffers so commands compose in shell pipelines; preserve that when adding subcommands.
-- **Crate docs must include sections:** "Usage Examples", "Memory Usage" (stack-usage table), and usually "Security Considerations".
+Repo mechanics behind those rules, which the documents don't spell out:
+
+- `./dev_scripts/quality_stats.sh` produces the fallibility metrics both documents ask you to check. Run it before
+  and after a change and compare, rather than eyeballing the diff.
+- **CLI commands stream.** The `cli/` binary is stdin→stdout with ~1 KB buffers so commands compose in shell
+  pipelines; preserve that when adding subcommands.
+- Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
 
 ## Scope of changes
 
@@ -107,6 +132,9 @@ the restructuring, and the review time that costs is the reason not to do it.
   passing through.
 
 ## Working from specifications
+
+QUALITY_AND_STYLE.md is where the requirement for spec-corresponding comments and justified deviations lives. This
+section is only about *how* to satisfy it without introducing errors.
 
 **Never cite, paraphrase, or implement a specification from recall.** Model recall of RFC text, FIPS algorithm steps, NIST parameter tables, and section numbering is unreliable — plausible-looking but wrong step numbers and subtly wrong constants are the failure mode. Before writing or reviewing any code, comment, or doc that references a spec, download a fresh copy and read the relevant part of it.
 
@@ -133,6 +161,9 @@ Rules when working from the downloaded copy:
 - **Test vectors come from the spec or its official companion files** (NIST CAVP / ACVP vectors, RFC test-vector appendices), downloaded the same way. Never hand-write an "expected" value from recall.
 
 ## Notes on testing
+
+What a crate must be tested against — including the mutation-testing expectation, the trait test framework, and the
+external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING.md. Repo-specific mechanics:
 
 - `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`).
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.

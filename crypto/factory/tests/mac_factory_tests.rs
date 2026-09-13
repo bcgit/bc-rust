@@ -33,7 +33,8 @@ mod hash_factory_tests {
             let hmac = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
             assert_eq!(hmac.output_len(), 28);
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
-            let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA512_224_NAME, &key).unwrap();
+            let hmac =
+                MACFactory::new(bouncycastle_sha2::hmac::HMAC_SHA512_224_NAME, &key).unwrap();
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
 
             // HMAC-SHA512/256 -- NIST ACVP HMAC-SHA2-512/256 2.0, tgId 1, tcId 147 (MAC truncated to 160 bits)
@@ -47,7 +48,8 @@ mod hash_factory_tests {
             let hmac = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
             assert_eq!(hmac.output_len(), 32);
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
-            let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA512_256_NAME, &key).unwrap();
+            let hmac =
+                MACFactory::new(bouncycastle_sha2::hmac::HMAC_SHA512_256_NAME, &key).unwrap();
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
 
             // HMAC-SHA512/224 pass-throughs: streaming, mac_out, verify and do_verify_final.
@@ -139,30 +141,6 @@ mod hash_factory_tests {
             assert!(!hmac.do_verify_final(&wrong));
 
             // TODO: at least one test for each type
-        }
-
-        #[test]
-        fn hmac_sm3_tests() {
-            // RFC4231 Test Case 1 key/message; expected value from `openssl dgst -sm3 -mac HMAC`,
-            // confirmed with bc-java's HMac(new SM3Digest()).
-            let key = KeyMaterial::<32>::from_bytes_as_type(
-                &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
-                KeyType::MACKey,
-            )
-            .unwrap();
-            for name in ["HMAC-SM3", bouncycastle_hmac::HMAC_SM3_NAME] {
-                let hmac = MACFactory::new(name, &key).unwrap();
-                assert_eq!(hmac.output_len(), 32);
-                assert!(
-                    hmac.verify(
-                        b"Hi There",
-                        &hex::decode(
-                            "51b00d1fb49832bfb01c3ce27848e59f871d9ba938dc563b338ca964755cce70"
-                        )
-                        .unwrap(),
-                    )
-                );
-            }
         }
     }
 }
