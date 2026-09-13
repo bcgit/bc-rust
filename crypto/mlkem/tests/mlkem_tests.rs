@@ -5,7 +5,8 @@ mod mlkem_tests {
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
-        KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF,
+        Hash, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF,
+        XOFOutput,
     };
     use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_hex as hex;
@@ -469,12 +470,11 @@ mod mlkem_tests {
                 //  J is SHAKE256(𝑠, 8*32)
 
                 let mut shake = SHAKE256::new();
-                shake
-                    .absorb(&seed.ref_to_bytes()[32..64])
-                    .expect("absorb before squeeze is infallible");
-                shake.absorb(&busted_ciphertext).expect("absorb before squeeze is infallible");
+                shake.do_update(&seed.ref_to_bytes()[32..64]);
+                shake.do_update(&busted_ciphertext);
                 let mut buf = [0u8; 32];
-                _ = shake.squeeze_out(&mut buf);
+                let mut shake = shake.into_output();
+                _ = shake.do_output_out(&mut buf);
 
                 assert_eq!(ss.ref_to_bytes(), buf);
             }

@@ -399,7 +399,8 @@ use crate::{
 use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable, XOF,
+    Algorithm, AlgorithmOID, Hash, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable,
+    XOF, XOFOutput,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
@@ -787,11 +788,12 @@ impl<
         // Alg 7; 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
         let rho_p_p: [u8; 64] = {
             let mut h = H::new();
-            h.absorb(sk.K()).expect("absorb before squeeze is infallible");
-            h.absorb(&rnd).expect("absorb before squeeze is infallible");
-            h.absorb(mu).expect("absorb before squeeze is infallible");
+            h.do_update(sk.K());
+            h.do_update(&rnd);
+            h.do_update(mu);
             let mut rho_p_p = [0u8; 64];
-            h.squeeze_out(&mut rho_p_p);
+            let mut h = h.into_output();
+            h.do_output_out(&mut rho_p_p);
 
             rho_p_p
         };
@@ -817,15 +819,15 @@ impl<
             let sig_val_c_tilde = {
                 // scope for hash
                 let mut hash = H::new();
-                hash.absorb(mu).expect("absorb before squeeze is infallible");
+                hash.do_update(mu);
                 for row in 0..P::k {
                     let mut w = compute_w_row::<P>(&sk.rho(), &rho_p_p, kappa, row);
                     w.high_bits::<P>();
-                    hash.absorb(w.w1_encode::<P>().as_ref())
-                        .expect("absorb before squeeze is infallible");
+                    hash.do_update(w.w1_encode::<P>().as_ref());
                 }
                 let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-                hash.squeeze_out(sig_val_c_tilde.as_mut());
+                let mut hash = hash.into_output();
+                hash.do_output_out(sig_val_c_tilde.as_mut());
                 sig_val_c_tilde
             };
             // 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
@@ -1013,7 +1015,7 @@ impl<
         // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
         // ▷ hash it; this should match 𝑐_tilde
         let mut hash = H::new();
-        hash.absorb(mu).expect("absorb before squeeze is infallible");
+        hash.do_update(mu);
 
         for row in 0..P::k {
             let mut wp_approx = match {
@@ -1034,12 +1036,12 @@ impl<
             // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
             // ▷ reconstruction of signer’s commitment
             wp_approx.use_hint::<P>(&h_i);
-            hash.absorb(wp_approx.w1_encode::<P>().as_ref())
-                .expect("absorb before squeeze is infallible");
+            hash.do_update(wp_approx.w1_encode::<P>().as_ref());
         }
 
         let mut c_tilde_p = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-        hash.squeeze_out(c_tilde_p.as_mut());
+        let mut hash = hash.into_output();
+        hash.do_output_out(c_tilde_p.as_mut());
 
         // Verification is also done in constant time
         // 13 (second half): return [[ ||𝐳||∞ < 𝛾1 − 𝛽]] and [[𝑐 ̃ = 𝑐′ ]]
@@ -1446,14 +1448,14 @@ impl MuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
         let mut mb = Self { h: H::new() };
-        mb.h.absorb(tr).expect("absorb before squeeze is infallible");
+        mb.h.do_update(tr);
 
         // Algorithm 2
         // 10: 𝑀′ ← BytesToBits(IntegerToBytes(0, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥) ∥ 𝑀
         // all done together
-        mb.h.absorb(&[0u8]).expect("absorb before squeeze is infallible");
-        mb.h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
-        mb.h.absorb(ctx).expect("absorb before squeeze is infallible");
+        mb.h.do_update(&[0u8]);
+        mb.h.do_update(&[ctx.len() as u8]);
+        mb.h.do_update(ctx);
 
         // now ready to absorb M
         Ok(mb)
@@ -1461,16 +1463,16 @@ impl MuBuilder {
 
     /// Stream a chunk of the message.
     pub fn do_update(&mut self, msg_chunk: &[u8]) {
-        self.h.absorb(msg_chunk).expect("absorb before squeeze is infallible");
+        self.h.do_update(msg_chunk);
     }
 
     /// Finalize and return the mu value.
-    pub fn do_final(mut self) -> [u8; 64] {
+    pub fn do_final(self) -> [u8; 64] {
         // Completion of
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.squeeze_out(&mut mu);
+        self.h.into_output().do_output_out(&mut mu);
 
         mu
     }

@@ -84,7 +84,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, PHSignatureVerifier, PHSigner, RNG, SecurityStrength,
-    SignatureVerifier, Signer, XOF,
+    SignatureVerifier, Signer, XOF, XOFOutput,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
@@ -384,19 +384,19 @@ impl<
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
         let mu = {
             let mut h = H::new();
-            h.absorb(sk.tr()).expect("absorb before squeeze is infallible");
+            h.do_update(sk.tr());
 
             // Algorithm 4
             // 23: 𝑀' ← BytesToBits(IntegerToBytes(1, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥 ∥ OID ∥ PH𝑀)
             // all done together
-            h.absorb(&[1u8]).expect("absorb before squeeze is infallible");
-            h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
-            h.absorb(ctx).expect("absorb before squeeze is infallible");
-            h.absorb(<P::PreHash as AlgorithmOID>::OID_DER)
-                .expect("absorb before squeeze is infallible");
-            h.absorb(ph).expect("absorb before squeeze is infallible");
+            h.do_update(&[1u8]);
+            h.do_update(&[ctx.len() as u8]);
+            h.do_update(ctx);
+            h.do_update(<P::PreHash as AlgorithmOID>::OID_DER);
+            h.do_update(ph);
             let mut mu = [0u8; MLDSA_MU_LEN];
-            let bytes_written = h.squeeze_out(&mut mu);
+            let mut h = h.into_output();
+            let bytes_written = h.do_output_out(&mut mu);
             debug_assert_eq!(bytes_written, MLDSA_MU_LEN);
 
             mu
@@ -489,19 +489,19 @@ impl<
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
         let mu = {
             let mut h = H::new();
-            h.absorb(&pk.compute_tr()).expect("absorb before squeeze is infallible");
+            h.do_update(&pk.compute_tr());
 
             // Algorithm 4
             // 23: 𝑀 ← BytesToBits(IntegerToBytes(1, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥 ∥ OID ∥ PH𝑀)
             // all done together
-            h.absorb(&[1u8]).expect("absorb before squeeze is infallible");
-            h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
-            h.absorb(ctx).expect("absorb before squeeze is infallible");
-            h.absorb(<P::PreHash as AlgorithmOID>::OID_DER)
-                .expect("absorb before squeeze is infallible");
-            h.absorb(ph).expect("absorb before squeeze is infallible");
+            h.do_update(&[1u8]);
+            h.do_update(&[ctx.len() as u8]);
+            h.do_update(ctx);
+            h.do_update(<P::PreHash as AlgorithmOID>::OID_DER);
+            h.do_update(ph);
             let mut mu = [0u8; MLDSA_MU_LEN];
-            _ = h.squeeze_out(&mut mu);
+            let mut h = h.into_output();
+            _ = h.do_output_out(&mut mu);
 
             mu
         };

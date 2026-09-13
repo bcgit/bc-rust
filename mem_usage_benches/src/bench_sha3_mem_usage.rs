@@ -25,7 +25,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::traits::{Hash, Suspendable, XOF};
+use bouncycastle::core::traits::{Hash, Suspendable, XOF, XOFOutput};
 use bouncycastle::sha3::{
     SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN,
 };
@@ -85,9 +85,10 @@ fn bench_shake128_xof() {
     eprintln!("SHAKE128/absorb+squeeze_out");
 
     let mut x = SHAKE128::new();
-    x.absorb(&MSG).expect("absorb before squeeze is infallible");
+    x.do_update(&MSG);
     let mut out = [0u8; 512];
-    x.squeeze_out(&mut out);
+    let mut x = x.into_output();
+    x.do_output_out(&mut out);
     println!("{:x?}", out);
 }
 
@@ -95,9 +96,10 @@ fn bench_shake256_xof() {
     eprintln!("SHAKE256/absorb+squeeze_out");
 
     let mut x = SHAKE256::new();
-    x.absorb(&MSG).expect("absorb before squeeze is infallible");
+    x.do_update(&MSG);
     let mut out = [0u8; 512];
-    x.squeeze_out(&mut out);
+    let mut x = x.into_output();
+    x.do_output_out(&mut out);
     println!("{:x?}", out);
 }
 

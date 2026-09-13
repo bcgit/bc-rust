@@ -60,7 +60,7 @@
 //! ## XOF
 //! SHA3 offers Extendable-Output Functions in the form of SHAKE, which is accessed through the [`XOF`] trait,
 //! which is implemented by [`SHAKE128`] and [`SHAKE256`].
-//! The difference from [`Hash`] is that SHAKE can produce output of any length.
+//! [`XOF`] extends [`Hash`] -- SHAKE *is* a hash -- and adds the ability to choose the output length.
 //!
 //! The simplest usage is via the static functions. The following example produces a 16 byte (128-bit) and 16KiB output:
 //!```
@@ -72,26 +72,34 @@
 //! let output_16KiB: Vec<u8> = sha3::SHAKE128::new().hash_xof(data, 16 * 1024);
 //! ```
 //!
-//! As with [`Hash`] above, the [`XOF`] trait has streaming APIs in the form of [`XOF::absorb`] and [`XOF::squeeze`].
-//! Unlike [`Hash::do_final`], [`XOF::squeeze`] can be called multiple times.
-//! Note, however, that once you start squeezing, you can no longer absorb more input -- [`XOF::absorb`]
-//! will throw a [`HashError::InvalidState`], but the SHAKE object will still be usable for squeezing
-//! as if the erroneous `absorb` call never happened.
+//! [`XOF`] extends [`Hash`], so SHAKE takes input through [`Hash::do_update`] like any other hash.
+//! Output is where they differ: [`XOF::into_output`] ends the input phase and returns an
+//! [`XOFOutput`](bouncycastle_core::traits::XOFOutput), whose
+//! [`do_output`](bouncycastle_core::traits::XOFOutput::do_output) can be called as many times as you
+//! like, each call continuing one stream.
+//!
+//! Absorbing after output has begun is not an error you can make: `into_output` consumes the
+//! SHAKE, so there is no value left to call [`Hash::do_update`] on.
 //!
 //! The following code produces the same output as the previous example:
 //!```
-//! use bouncycastle_core::traits::XOF;
+//! use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let mut shake = sha3::SHAKE128::new();
-//! shake.absorb(data).expect("infallible before squeeze");
-//! let output_16byte: Vec<u8> = shake.squeeze(16);
+//! shake.do_update(data);
+//! let output_16byte: Vec<u8> = shake.into_output().do_output(16);
 //!
-//! let mut shake = sha3::SHAKE128::new();
+//! let mut shake = sha3::SHAKE128::new().into_output();
 //! let mut output_16KiB: Vec<u8> = vec![];
-//! for i in 0..16 { output_16KiB.extend_from_slice(&shake.squeeze(1024)) }
+//! for i in 0..16 { output_16KiB.extend_from_slice(&shake.do_output(1024)) }
 //! ```
+//!
+//! Because [`XOF`] extends [`Hash`], SHAKE can also be used wherever a hash is wanted:
+//! [`Hash::do_final`] produces the nominal digest size, 32 bytes for SHAKE128 and 64 for SHAKE256
+//! (the length at which the output carries the full security level), and the one-shot
+//! [`Hash::hash`] does the same.
 //!
 //! ## KDF
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,
@@ -193,9 +201,14 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF};
 // end of doc-only imports
 
+mod cshake;
 mod keccak;
+mod kmac;
+mod parallelhash;
 mod sha3;
 mod shake;
+mod tuplehash;
+mod xof_utils;
 
 pub mod hmac;
 
@@ -212,10 +225,99 @@ pub const SHA3_512_NAME: &str = "SHA3-512";
 pub const SHAKE128_NAME: &str = "SHAKE128";
 /// Algorithm name string for SHAKE256, as used by the factories and CLI.
 pub const SHAKE256_NAME: &str = "SHAKE256";
+/// The name of the cSHAKE128 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE128_NAME: &str = "CSHAKE128";
+/// The name of the cSHAKE256 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE256_NAME: &str = "CSHAKE256";
+/// The name of the KMAC128 algorithm (NIST SP 800-185 Sec 4).
+pub const KMAC128_NAME: &str = "KMAC128";
+/// The name of the KMAC256 algorithm (NIST SP 800-185 Sec 4).
+pub const KMAC256_NAME: &str = "KMAC256";
+/// The name of the KMACXOF128 algorithm (NIST SP 800-185 Sec 4.3.1).
+pub const KMACXOF128_NAME: &str = "KMACXOF128";
+/// The name of the KMACXOF256 algorithm (NIST SP 800-185 Sec 4.3.1).
+pub const KMACXOF256_NAME: &str = "KMACXOF256";
+/// The name of the TupleHash128 algorithm (NIST SP 800-185 Sec 5).
+pub const TUPLEHASH128_NAME: &str = "TupleHash128";
+/// The name of the TupleHash256 algorithm (NIST SP 800-185 Sec 5).
+pub const TUPLEHASH256_NAME: &str = "TupleHash256";
+/// The name of the TupleHashXOF128 algorithm (NIST SP 800-185 Sec 5.3.1).
+pub const TUPLEHASHXOF128_NAME: &str = "TupleHashXOF128";
+/// The name of the TupleHashXOF256 algorithm (NIST SP 800-185 Sec 5.3.1).
+pub const TUPLEHASHXOF256_NAME: &str = "TupleHashXOF256";
+/// The name of the ParallelHash128 algorithm (NIST SP 800-185 Sec 6).
+pub const PARALLELHASH128_NAME: &str = "ParallelHash128";
+/// The name of the ParallelHash256 algorithm (NIST SP 800-185 Sec 6).
+pub const PARALLELHASH256_NAME: &str = "ParallelHash256";
+/// The name of the ParallelHashXOF128 algorithm (NIST SP 800-185 Sec 6.3.1).
+pub const PARALLELHASHXOF128_NAME: &str = "ParallelHashXOF128";
+/// The name of the ParallelHashXOF256 algorithm (NIST SP 800-185 Sec 6.3.1).
+pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 
 /*** pub types ***/
+pub use cshake::CSHAKEInternal;
+pub use kmac::{KMACInternal, KMACXOFInternal};
+pub use parallelhash::{ParallelHashInternal, ParallelHashXOFInternal};
 pub use sha3::SHA3Internal;
-pub use shake::SHAKEInternal;
+pub use tuplehash::{TupleHashInternal, TupleHashXOFInternal};
+
+/// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
+///
+/// Construct with [`CSHAKEInternal::new`], passing the function-name string `N` (reserved for
+/// NIST, normally empty) and the customization string `S`. With both empty this is exactly
+/// [`SHAKE128`].
+pub type CSHAKE128 = CSHAKEInternal<SHAKE128Params>;
+/// cSHAKE256: the customizable SHAKE256 of NIST SP 800-185 Sec 3, at a 256-bit security strength.
+///
+/// See [`CSHAKE128`].
+pub type CSHAKE256 = CSHAKEInternal<SHAKE256Params>;
+
+/// KMAC128: the Keccak MAC of NIST SP 800-185 Sec 4, at a 128-bit security strength.
+///
+/// [`bouncycastle_core::traits::MAC::new`] gives the common case -- no customization, 32-byte
+/// output. [`KMACInternal::new_with_params`] chooses the customization string and output length,
+/// [`KMACXOF128`] is the separate arbitrary-length function of Sec 4.3.1.
+pub type KMAC128 = KMACInternal<SHAKE128Params>;
+/// KMAC256: the Keccak MAC of NIST SP 800-185 Sec 4, at a 256-bit security strength.
+///
+/// See [`KMAC128`]. The nominal output length is 64 bytes.
+pub type KMAC256 = KMACInternal<SHAKE256Params>;
+
+/// KMACXOF128: the arbitrary-output-length KMAC of NIST SP 800-185 Sec 4.3.1.
+///
+/// A keyed [`XOF`]. Distinct from [`KMAC128`], and not a longer
+/// view of it: over the same inputs the two produce unrelated output.
+pub type KMACXOF128 = KMACXOFInternal<SHAKE128Params>;
+/// KMACXOF256: the arbitrary-output-length KMAC of NIST SP 800-185 Sec 4.3.1.
+///
+/// See [`KMACXOF128`].
+pub type KMACXOF256 = KMACXOFInternal<SHAKE256Params>;
+
+/// TupleHash128: the unambiguous tuple hash of NIST SP 800-185 Sec 5, 128-bit strength.
+///
+/// Each [`Hash::do_update`] call appends one *tuple
+/// element*, not a run of bytes -- so unlike every other hash here, the chunking is part of the
+/// input. See [`TupleHashInternal`].
+pub type TUPLEHASH128 = TupleHashInternal<SHAKE128Params>;
+/// TupleHash256: see [`TUPLEHASH128`].
+pub type TUPLEHASH256 = TupleHashInternal<SHAKE256Params>;
+/// TupleHashXOF128: the arbitrary-output-length TupleHash of Sec 5.3.1.
+pub type TUPLEHASHXOF128 = TupleHashXOFInternal<SHAKE128Params>;
+/// TupleHashXOF256: see [`TUPLEHASHXOF128`].
+pub type TUPLEHASHXOF256 = TupleHashXOFInternal<SHAKE256Params>;
+
+/// ParallelHash128: the parallelisable hash of NIST SP 800-185 Sec 6, 128-bit strength.
+///
+/// The block size `B` is part of the function, not a tuning knob: the same message under a
+/// different `B` hashes differently. See [`ParallelHashInternal`].
+pub type PARALLELHASH128 = ParallelHashInternal<SHAKE128Params>;
+/// ParallelHash256: see [`PARALLELHASH128`].
+pub type PARALLELHASH256 = ParallelHashInternal<SHAKE256Params>;
+/// ParallelHashXOF128: the arbitrary-output-length ParallelHash of Sec 6.3.1.
+pub type PARALLELHASHXOF128 = ParallelHashXOFInternal<SHAKE128Params>;
+/// ParallelHashXOF256: see [`PARALLELHASHXOF128`].
+pub type PARALLELHASHXOF256 = ParallelHashXOFInternal<SHAKE256Params>;
+pub use shake::{SHAKEInternal, SHAKEOutput};
 
 pub use keccak::SUSPENDED_SHA3_STATE_LEN;
 
@@ -235,7 +337,7 @@ pub type SHAKE256 = SHAKEInternal<SHAKE256Params>;
 /*** Param traits ***/
 
 /// Private trait on purpose so that only the NIST-approved params can be used.
-trait SHA3Params: HashAlgParams {
+trait SHA3Params: HashAlgParams + Clone {
     const SIZE: KeccakSize;
     /// A tag, unique across all SHA3 *and* SHAKE variants, identifying which variant produced a
     /// serialized state. Distinguishing same-rate variants (e.g. SHA3-256 vs SHAKE256) requires
@@ -338,10 +440,27 @@ impl AlgorithmOID for SHA3_512 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0a];
 }
 
-trait SHAKEParams: Algorithm {
+trait SHAKEParams: Algorithm + Clone {
     const SIZE: KeccakSize;
     /// See [`SHA3Params::STATE_TAG`]. Must be distinct from every SHA3 *and* SHAKE variant's tag.
     const STATE_TAG: u8;
+    /// The sponge rate in bytes: `(1600 - 2c) / 8`, 168 for SHAKE128 and 136 for SHAKE256.
+    /// SP 800-185 Sec 3.3 pads cSHAKE's encoded strings to a multiple of it.
+    const RATE_BYTES: usize = (1600 - ((Self::SIZE as usize) << 1)) / 8;
+    /// The name of the cSHAKE built on this parameter set.
+    const CSHAKE_ALG_NAME: &'static str;
+    /// The name of the KMAC built on this parameter set.
+    const KMAC_ALG_NAME: &'static str;
+    /// The name of the KMACXOF built on this parameter set.
+    const KMACXOF_ALG_NAME: &'static str;
+    /// The name of the TupleHash built on this parameter set.
+    const TUPLEHASH_ALG_NAME: &'static str;
+    /// The name of the TupleHashXOF built on this parameter set.
+    const TUPLEHASHXOF_ALG_NAME: &'static str;
+    /// The name of the ParallelHash built on this parameter set.
+    const PARALLELHASH_ALG_NAME: &'static str;
+    /// The name of the ParallelHashXOF built on this parameter set.
+    const PARALLELHASHXOF_ALG_NAME: &'static str;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -353,6 +472,13 @@ impl Algorithm for SHAKE128Params {
 impl SHAKEParams for SHAKE128Params {
     const SIZE: KeccakSize = KeccakSize::_128;
     const STATE_TAG: u8 = 5;
+    const CSHAKE_ALG_NAME: &'static str = CSHAKE128_NAME;
+    const KMAC_ALG_NAME: &'static str = KMAC128_NAME;
+    const KMACXOF_ALG_NAME: &'static str = KMACXOF128_NAME;
+    const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH128_NAME;
+    const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF128_NAME;
+    const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH128_NAME;
+    const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF128_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake128 { hashAlgs 11 }
 impl AlgorithmOID for SHAKE128 {
@@ -370,6 +496,13 @@ impl Algorithm for SHAKE256Params {
 impl SHAKEParams for SHAKE256Params {
     const SIZE: KeccakSize = KeccakSize::_256;
     const STATE_TAG: u8 = 6;
+    const CSHAKE_ALG_NAME: &'static str = CSHAKE256_NAME;
+    const KMAC_ALG_NAME: &'static str = KMAC256_NAME;
+    const KMACXOF_ALG_NAME: &'static str = KMACXOF256_NAME;
+    const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH256_NAME;
+    const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF256_NAME;
+    const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH256_NAME;
+    const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF256_NAME;
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake256 { hashAlgs 12 }
 impl AlgorithmOID for SHAKE256 {

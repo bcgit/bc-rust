@@ -2,7 +2,7 @@
 
 use crate::mlkem::{N, q, q_inv};
 use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::XOF;
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 /// Algorithm 5 ByteEncode_d(𝐹)
@@ -83,8 +83,8 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // 1: ctx ← XOF.Init()
     // 2: ctx ← XOF.Absorb(ctx, 𝐵) ▷ input the given byte array into XOF
     let mut xof = SHAKE128::new();
-    xof.absorb(rho).expect("absorb before squeeze is infallible");
-    xof.absorb(nonce).expect("absorb before squeeze is infallible");
+    xof.do_update(rho);
+    xof.do_update(nonce);
 
     // 3: 𝑗 ← 0
     let mut j = 0usize;
@@ -95,7 +95,8 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // It's likely around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut C = [0u8; 216];
-    xof.squeeze_out(&mut C);
+    let mut xof = xof.into_output();
+    xof.do_output_out(&mut C);
     let mut idx: usize = 0;
 
     // 4: while 𝑗 < 256 do
@@ -103,7 +104,7 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
         // 5: (ctx, 𝐶) ← XOF.Squeeze(ctx, 3)
         //   ▷ get a fresh 3-byte array 𝐶 from XOF
         if idx == C.len() {
-            xof.squeeze_out(&mut C);
+            xof.do_output_out(&mut C);
             idx = 0;
         }
 
@@ -200,11 +201,12 @@ pub(crate) fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
         2 => {
             let buf = {
                 let mut xof = SHAKE256::new();
-                xof.absorb(b).expect("absorb before squeeze is infallible");
-                xof.absorb(&n.to_le_bytes()).expect("absorb before squeeze is infallible");
+                xof.do_update(b);
+                xof.do_update(&n.to_le_bytes());
 
                 let mut buf = [0u8; 2 * 64];
-                xof.squeeze_out(&mut buf);
+                let mut xof = xof.into_output();
+                xof.do_output_out(&mut buf);
                 buf
             };
 
@@ -213,10 +215,11 @@ pub(crate) fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
         3 => {
             let buf = {
                 let mut xof = SHAKE256::new();
-                xof.absorb(b).expect("absorb before squeeze is infallible");
-                xof.absorb(&n.to_le_bytes()).expect("absorb before squeeze is infallible");
+                xof.do_update(b);
+                xof.do_update(&n.to_le_bytes());
                 let mut buf = [0u8; 3 * 64];
-                xof.squeeze_out(&mut buf);
+                let mut xof = xof.into_output();
+                xof.do_output_out(&mut buf);
                 buf
             };
 

@@ -7,7 +7,7 @@ use crate::params::{
     MLDSAParams,
 };
 use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::XOF;
+use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
@@ -500,9 +500,10 @@ pub(crate) fn sample_in_ball<P: MLDSAParams>(rho: &P::SigCTilde) -> Polynomial {
     // 3: ctx ← H.Absorb(ctx, 𝜌)
     // 4: (ctx, 𝑠) ← H.Squeeze(ctx, 8)
     let mut h = H::new();
-    h.absorb(rho.as_ref()).expect("absorb before squeeze is infallible");
+    h.do_update(rho.as_ref());
     let mut s = [0u8; 8];
-    h.squeeze_out(&mut s);
+    let mut h = h.into_output();
+    h.do_output_out(&mut s);
 
     // 5: ℎ ← BytesToBits(𝑠)
     //   ▷ ℎ is a bit string of length 64
@@ -521,13 +522,13 @@ pub(crate) fn sample_in_ball<P: MLDSAParams>(rho: &P::SigCTilde) -> Polynomial {
         // Note: Even though it may appear that pre-squeezing a buffer outside the loop would be faster,
         //       testing it both ways doesn't make a noticeable difference, so this has been left as is
         //       for better correspondence with the FIPS sample algorithm.
-        h.squeeze_out(&mut j);
+        h.do_output_out(&mut j);
 
         // 8: while 𝑗 > 𝑖 do
         while j[0] as usize > i {
             // ▷ rejection sampling in {0, … , 𝑖}
             // 9: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
-            h.squeeze_out(&mut j);
+            h.do_output_out(&mut j);
         }
 
         // 11: 𝑐𝑖 ← 𝑐𝑗
@@ -564,8 +565,8 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     let mut w_hat = Polynomial::new();
     let mut j: usize = 0;
     let mut g = G::new();
-    g.absorb(rho).expect("absorb before squeeze is infallible");
-    g.absorb(nonce).expect("absorb before squeeze is infallible");
+    g.do_update(rho);
+    g.do_update(nonce);
 
     // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so instead this implementation does a block.
     // Size is not a limitation, so long as it's a multiple of 3.
@@ -573,12 +574,13 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut s = [0u8; 288];
-    g.squeeze_out(&mut s);
+    let mut g = g.into_output();
+    g.do_output_out(&mut s);
     let mut idx: usize = 0;
 
     while j < N {
         if idx == s.len() {
-            g.squeeze_out(&mut s);
+            g.do_output_out(&mut s);
             idx = 0;
         }
         w_hat[j] = match coeff_from_three_bytes(&s[idx..idx + 3].try_into().unwrap()) {
@@ -609,15 +611,16 @@ pub(crate) fn rej_bounded_poly<P: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) 
     let mut a = Polynomial::new();
     let mut j: usize = 0;
     let mut h = H::new();
-    h.absorb(rho).expect("absorb before squeeze is infallible");
-    h.absorb(nonce).expect("absorb before squeeze is infallible");
+    h.do_update(rho);
+    h.do_update(nonce);
 
     // size doesn't really matter
     // 312 seemed to be the sweet spot from playing with benchmarks
     // maybe something to do with the average rejection rate?
     // Also, 312 is a multiple of 8 (efficient for SHAKE)
     let mut z_arr = [0u8; 312];
-    h.squeeze_out(&mut z_arr);
+    let mut h = h.into_output();
+    h.do_output_out(&mut z_arr);
     let mut idx: usize = 0;
 
     while j < N {
@@ -635,7 +638,7 @@ pub(crate) fn rej_bounded_poly<P: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) 
 
         idx += 1;
         if idx == z_arr.len() {
-            h.squeeze_out(&mut z_arr);
+            h.do_output_out(&mut z_arr);
             idx = 0;
         }
     }
@@ -713,11 +716,11 @@ pub(crate) fn expand_mask<P: MLDSAParams>(rho: &[u8; 64], mu: u16) -> P::VecL {
         // 4: 𝑣 ← H(𝜌′, 32𝑐)
         let v = {
             let mut h = H::new();
-            h.absorb(rho).expect("absorb before squeeze is infallible");
-            h.absorb(&(mu + (r as u16)).to_le_bytes())
-                .expect("absorb before squeeze is infallible");
+            h.do_update(rho);
+            h.do_update(&(mu + (r as u16)).to_le_bytes());
             let mut v = <P::PolyZPacked as ZeroizablePrimitive>::ZEROED;
-            h.squeeze_out(v.as_mut());
+            let mut h = h.into_output();
+            h.do_output_out(v.as_mut());
             v
         };
 
