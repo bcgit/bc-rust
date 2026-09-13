@@ -93,6 +93,19 @@ These are non-obvious house rules — follow them when writing or modifying code
 - **CLI commands stream.** The `cli/` binary's design is stdin→stdout with ~1 KB buffers so commands compose in shell pipelines; preserve that when adding subcommands.
 - **Crate docs must include sections:** "Usage Examples", "Memory Usage" (stack-usage table), and usually "Security Considerations".
 
+## Scope of changes
+
+Implement what was asked and stop. Unrequested refactors — extracting a trait, renaming for
+readability, restructuring impls — are not free even when they are correct: bundled into a feature
+commit they make the diff unreviewable, because a reviewer cannot separate the new behaviour from
+the restructuring, and the review time that costs is the reason not to do it.
+
+- If a refactor genuinely unblocks the task, give it **its own commit ahead of** the feature, so it
+  can be reviewed or dropped on its own.
+- If it unblocks nothing, propose it and wait rather than doing it.
+- The same goes for drive-by comment rewrites, reformatting and file moves in code you are only
+  passing through.
+
 ## Working from specifications
 
 **Never cite, paraphrase, or implement a specification from recall.** Model recall of RFC text, FIPS algorithm steps, NIST parameter tables, and section numbering is unreliable — plausible-looking but wrong step numbers and subtly wrong constants are the failure mode. Before writing or reviewing any code, comment, or doc that references a spec, download a fresh copy and read the relevant part of it.
