@@ -344,4 +344,35 @@ mod sha2_tests {
         assert_eq!(output, output2);
         assert_eq!(output.len(), 28);
     }
+
+    /// FIPS 180-4 s. 5.1.2 has SHA-384/512/512-t append the message length l as a *128-bit* field,
+    /// where s. 5.1.1 gives SHA-224/256 only 64 bits. Since byte_count is a u64 of bytes, l needs
+    /// `byte_count << 3` for the low word and `byte_count >> 61` for the high one, and it is the
+    /// high word that separates the two families: drop it and SHA-512 would silently agree with
+    /// itself across byte counts 2^61 apart, exactly as SHA-256 is obliged to.
+    ///
+    /// A message that long cannot be hashed in a test, but suspend()/from_suspended() round-trips
+    /// byte_count through a byte field, so the state can simply be written by hand.
+    #[test]
+    fn sha512_length_field_carries_the_high_word() {
+        use bouncycastle_core::traits::Suspendable;
+
+        // Suspended layout (see SHA512Internal::suspend): 3 bytes of library version, h[0..8] as
+        // eight little-endian u64s, then byte_count as a little-endian u64.
+        const BYTE_COUNT_OFFSET: usize = 3 + 64;
+        fn with_byte_count(byte_count: u64) -> SHA512 {
+            let mut state: [u8; SUSPENDED_SHA512_STATE_LEN] = SHA512::new().suspend();
+            state[BYTE_COUNT_OFFSET..BYTE_COUNT_OFFSET + 8]
+                .copy_from_slice(&byte_count.to_le_bytes());
+            SHA512::from_suspended(state).unwrap()
+        }
+
+        // 2^61 bytes is 2^64 bits: the low word of l is identical for these two, so they can only
+        // differ if the high word is written.
+        assert_ne!(with_byte_count(0).do_final(), with_byte_count(1 << 61).do_final());
+        assert_ne!(with_byte_count(1).do_final(), with_byte_count((1 << 61) + 1).do_final());
+
+        // and byte_count 0 is still the empty-message digest, i.e. the high word is zero there
+        assert_eq!(with_byte_count(0).do_final(), SHA512::new().do_final());
+    }
 }

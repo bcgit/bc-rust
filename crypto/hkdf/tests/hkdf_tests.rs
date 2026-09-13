@@ -10,8 +10,11 @@ mod hkdf_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
-    use bouncycastle_hkdf::{HKDF, HKDF_SHA256, HKDF_SHA512};
-    use bouncycastle_sha2::{SHA256, SHA512};
+    use bouncycastle_hkdf::HKDF;
+    use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+    use bouncycastle_sha2::{
+        SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
+    };
     use bouncycastle_utils::ct;
 
     #[test]
@@ -24,7 +27,7 @@ mod hkdf_tests {
         _ = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, info, 64, &mut okm).unwrap();
 
         // Test that streaming API do_extract gets the same result
-        let mut hkdf = HKDF::<SHA256>::default();
+        let mut hkdf = HKDF_SHA256::default();
         hkdf.do_extract_init(&salt).unwrap();
         hkdf.do_extract_update_bytes(ikm.ref_to_bytes()).unwrap();
         let prk = hkdf.do_extract_final().unwrap();
@@ -394,28 +397,28 @@ mod hkdf_tests {
 
         // can't test with a low entropy salt because the salt has to be full entropy or zero.
         // but can test with a zeroized key
-        let mut hkdf = HKDF::<SHA256>::new();
+        let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
         hkdf.do_extract_init(&KeyMaterial0::new()).unwrap();
         assert_eq!(hkdf.get_entropy(), 0);
         assert_eq!(hkdf.is_fully_seeded(), false);
 
         // test do_extract_init with a full entropy salt
-        let mut hkdf = HKDF::<SHA256>::new();
+        let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
         hkdf.do_extract_init(&salt16).unwrap();
         assert_eq!(hkdf.get_entropy(), 16);
         assert_eq!(hkdf.is_fully_seeded(), false);
 
         // with enough entropy in the salt.
-        let mut hkdf = HKDF::<SHA256>::new();
+        let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
         hkdf.do_extract_init(&salt64).unwrap();
         assert_eq!(hkdf.get_entropy(), 64);
         assert_eq!(hkdf.is_fully_seeded(), true);
 
         // building up to full entropy
-        let mut hkdf = HKDF::<SHA256>::new();
+        let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
         hkdf.do_extract_init(&salt16).unwrap();
         assert_eq!(hkdf.get_entropy(), 16);
@@ -696,7 +699,7 @@ mod hkdf_tests {
 
         // do it manually just to check that we have the test vector right.
         let mut output_key = KeyMaterial::<128>::new();
-        let bytes_written = HKDF::<SHA256>::extract_and_expand_out(
+        let bytes_written = HKDF_SHA256::extract_and_expand_out(
             &salt,
             &ikm,
             additional_input.as_slice(),
@@ -708,7 +711,7 @@ mod hkdf_tests {
         assert_eq!(output_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
         // One-key derive_key -- since HKDF.derive_key() doesn't accept a salt but sets it to zero, we can only test vectors with a zero salt.
-        let hkdf = HKDF::<SHA256>::default();
+        let hkdf = HKDF_SHA256::default();
         let output_key = hkdf.derive_key(&ikm, &additional_input).unwrap();
         // kdf.derive_key is a one-step that doesn't expand, so need to truncate the expected key to match.
         let mut expected_key_truncated = expected_key.clone();
@@ -716,10 +719,10 @@ mod hkdf_tests {
         assert_eq!(output_key.ref_to_bytes(), expected_key_truncated.ref_to_bytes());
 
         testframework
-            .test_kdf_single_key::<HKDF<SHA256>>(&ikm, &additional_input, &expected_key_truncated);
+            .test_kdf_single_key::<HKDF_SHA256>(&ikm, &additional_input, &expected_key_truncated);
 
         let keys = [&salt, &ikm];
-        testframework.test_kdf_multiple_key::<HKDF<SHA256>>(
+        testframework.test_kdf_multiple_key::<HKDF_SHA256>(
             &keys,
             additional_input.as_slice(),
             &mut expected_key,
@@ -729,7 +732,9 @@ mod hkdf_tests {
     fn serializable_keyed_state() {
         use bouncycastle_core::traits::{Hash, SuspendableKeyed};
         use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
-        use bouncycastle_hkdf::{SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN};
+        use bouncycastle_sha2::hkdf::{
+            SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN,
+        };
 
         // HKDF is keyed by its salt: the salt is NOT serialized and is re-supplied on resume.
         let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
@@ -739,17 +744,21 @@ mod hkdf_tests {
         // A helper that exercises the full round-trip for one HKDF variant. A concrete `&KeyMaterial128`
         // works for `do_extract_init` (which wants a `Sized` `&impl KeyMaterialTrait`) and coerces to
         // `&dyn KeyMaterialTrait` for the serialization APIs.
-        fn round_trip<const LEN: usize, H>(salt: &KeyMaterial128, part1: &[u8], part2: &[u8])
-        where
+        fn round_trip<const HASH_LEN: usize, const LEN: usize, H>(
+            salt: &KeyMaterial128,
+            part1: &[u8],
+            part2: &[u8],
+        ) where
             H: Hash + HashAlgParams + Default,
-            HKDF<H>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
+            HKDF<H, HASH_LEN, LEN>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
         {
-            let hkdf = HKDF::<H>::new();
+            let hkdf = HKDF::<H, HASH_LEN, LEN>::new();
 
             // it can be serialized pre-init, which is kinda a no-op, but at least it works.
             let serialized_state = hkdf.suspend();
             assert_eq!(serialized_state.len(), LEN);
-            let mut hkdf = HKDF::<H>::from_suspended(serialized_state, salt).unwrap();
+            let mut hkdf =
+                HKDF::<H, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
 
             hkdf.do_extract_init(salt).unwrap();
             hkdf.do_extract_update_bytes(part1).unwrap();
@@ -765,15 +774,20 @@ mod hkdf_tests {
             let prk = hkdf.do_extract_final().unwrap();
 
             // resume (re-supplying the salt), feed the identical remaining IKM, and compare PRKs
-            let mut resumed = HKDF::<H>::from_suspended(serialized_state, salt).unwrap();
+            let mut resumed =
+                HKDF::<H, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
             resumed.do_extract_update_bytes(part2).unwrap();
             let prk_resumed = resumed.do_extract_final().unwrap();
 
             assert_eq!(prk.ref_to_bytes(), prk_resumed.ref_to_bytes());
         }
 
-        round_trip::<SUSPENDED_HKDF_SHA256_STATE_LEN, SHA256>(&salt, part1, part2);
-        round_trip::<SUSPENDED_HKDF_SHA512_STATE_LEN, SHA512>(&salt, part1, part2);
+        round_trip::<SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN, SHA256>(
+            &salt, part1, part2,
+        );
+        round_trip::<SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN, SHA512>(
+            &salt, part1, part2,
+        );
 
         // Test the guard for invalid states
         // testing just on HKDF_SHA256
