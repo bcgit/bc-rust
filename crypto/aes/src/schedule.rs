@@ -31,15 +31,16 @@ use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 ///
 /// Table 5 gives each as the word `[x, 00, 00, 00]`; only the leftmost byte is ever non-zero, and
 /// words are held little-endian here, so the word `Rcon[j]` is just this byte. Indexing is shifted
-/// by one against the spec: `RCON[j - 1]` is the spec's `Rcon[j]`, since the spec counts from 1.
-const RCON: [u32; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
+/// by one against the spec: `Rcon[j - 1]` here is the spec's `Rcon[j]`, since the spec counts from 1.
+#[allow(non_upper_case_globals)]
+const Rcon: [u32; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
 
 /// Prevents a fourth parameter set from being added outside this crate.
 ///
-/// FIPS 197 Sec 6.1 defines exactly three: AES-128, AES-192 and AES-256. Because [`AesParams`]
+/// FIPS 197 Sec 6.1 defines exactly three: AES-128, AES-192 and AES-256. Because [`AESParams`]
 /// has this private supertrait, only the three types in this module can implement it, so no
 /// downstream crate can instantiate the cipher with an unapproved key length or round count.
-trait AesParamsSealed {}
+trait AESParamsInternalTrait {}
 
 /// The per-key-length constants of FIPS 197 Sec 6.1.
 ///
@@ -48,8 +49,10 @@ trait AesParamsSealed {}
 /// const-generics; each implementation spells its own array type out instead. The same pattern is
 /// used by the `HashDRBG80090AParams_*` types in `bouncycastle-rng`.
 ///
-/// Sealed via a private supertrait, so the three types below are the only implementations.
-pub trait AesParams: AesParamsSealed {
+/// Sealed via a private supertrait, so the three types below are the only implementations. The
+/// supertrait is named `*InternalTrait` after the pattern of `MLKEMPrivateKeyInternalTrait` in
+/// `bouncycastle-mlkem`, which seals its key types the same way.
+pub trait AESParams: AESParamsInternalTrait {
     /// Key length in bytes: 16, 24 or 32 (FIPS 197 Sec 6.1).
     const KEY_LEN: usize;
     /// `Nk`, the key length in 32-bit words: 4, 6 or 8 (FIPS 197 Sec 6.1).
@@ -64,19 +67,19 @@ pub trait AesParams: AesParamsSealed {
 
 /// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Sec 6.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Aes128Params;
+pub struct AES128Params;
 /// AES-192 parameters: 24-byte key, `Nk` = 6, `Nr` = 12 (FIPS 197 Sec 6.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Aes192Params;
+pub struct AES192Params;
 /// AES-256 parameters: 32-byte key, `Nk` = 8, `Nr` = 14 (FIPS 197 Sec 6.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Aes256Params;
+pub struct AES256Params;
 
-impl AesParamsSealed for Aes128Params {}
-impl AesParamsSealed for Aes192Params {}
-impl AesParamsSealed for Aes256Params {}
+impl AESParamsInternalTrait for AES128Params {}
+impl AESParamsInternalTrait for AES192Params {}
+impl AESParamsInternalTrait for AES256Params {}
 
-impl AesParams for Aes128Params {
+impl AESParams for AES128Params {
     const KEY_LEN: usize = 16;
     const NK: usize = 4;
     const NR: usize = 10;
@@ -84,7 +87,7 @@ impl AesParams for Aes128Params {
     type Schedule = [u32; 44]; // 4 * (10 + 1)
 }
 
-impl AesParams for Aes192Params {
+impl AESParams for AES192Params {
     const KEY_LEN: usize = 24;
     const NK: usize = 6;
     const NR: usize = 12;
@@ -92,7 +95,7 @@ impl AesParams for Aes192Params {
     type Schedule = [u32; 52]; // 4 * (12 + 1)
 }
 
-impl AesParams for Aes256Params {
+impl AESParams for AES256Params {
     const KEY_LEN: usize = 32;
     const NK: usize = 8;
     const NR: usize = 14;
@@ -132,6 +135,8 @@ fn sub_word(word: u32) -> u32 {
     ortho(&mut q);
     sbox(&mut q);
     ortho(&mut q);
+    // The word was broadcast into all eight planes, so all eight must carry the same answer.
+    debug_assert!(q.iter().all(|&plane| plane == q[0]), "the eight broadcast planes must agree");
     q[0]
 }
 
@@ -145,7 +150,7 @@ fn sub_word(word: u32) -> u32 {
 /// described in the module docs. Verified against the worked expansions in FIPS 197
 /// Appendix A.1, A.2 and A.3 by the tests at the bottom of this file, which decompress the
 /// stored schedule and compare every w[i].
-pub(crate) fn expand<P: AesParams>(key: &[u8]) -> Secret<P::Schedule> {
+pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
     debug_assert_eq!(key.len(), P::KEY_LEN);
 
     let mut schedule = Secret::<P::Schedule>::new();
@@ -162,7 +167,7 @@ pub(crate) fn expand<P: AesParams>(key: &[u8]) -> Secret<P::Schedule> {
     for i in P::NK..w.len() {
         if i % P::NK == 0 {
             // line 10: temp = SUBWORD(ROTWORD(temp)) XOR Rcon[i / Nk]
-            temp = sub_word(rot_word(temp)) ^ RCON[i / P::NK - 1];
+            temp = sub_word(rot_word(temp)) ^ Rcon[i / P::NK - 1];
         } else if P::NK > 6 && i % P::NK == 4 {
             // lines 11-12: the extra substitution that only AES-256 reaches
             temp = sub_word(temp);
@@ -203,7 +208,7 @@ pub(crate) fn expand<P: AesParams>(key: &[u8]) -> Secret<P::Schedule> {
 ///
 /// Translated from BearSSL `aes_ct.c:br_aes_ct_skey_expand`.
 #[inline(always)]
-pub(crate) fn round_key<P: AesParams>(schedule: &P::Schedule, round: usize) -> Planes {
+pub(crate) fn round_key<P: AESParams>(schedule: &P::Schedule, round: usize) -> Planes {
     debug_assert!(round <= P::NR);
     let w = schedule.as_ref();
     let mut sk: Planes = [0u32; 8];
@@ -285,7 +290,7 @@ mod tests {
     /// leaving the duplicated pre-slicing words with `w[4*round + j]` in position `2j`. This is
     /// what lets the Appendix A vectors test the real [`expand`] output rather than a
     /// reimplementation of it.
-    fn classical_word<P: AesParams>(schedule: &P::Schedule, i: usize) -> u32 {
+    fn classical_word<P: AESParams>(schedule: &P::Schedule, i: usize) -> u32 {
         let mut q = round_key::<P>(schedule, i / 4);
         ortho(&mut q);
         let j = i % 4;
@@ -298,7 +303,7 @@ mod tests {
     /// Appendix A prints a word as the byte sequence `[a0,a1,a2,a3]` left to right, so the
     /// tabulated `u32` has `a0` in its *most* significant byte; words are held little-endian
     /// here, so `swap_bytes` is the conversion.
-    fn assert_expansion_matches<P: AesParams>(key: &[u8], expected: &[u32], label: &str) {
+    fn assert_expansion_matches<P: AESParams>(key: &[u8], expected: &[u32], label: &str) {
         let schedule = expand::<P>(key);
         assert_eq!(expected.len(), 4 * (P::NR + 1), "{label}: table length");
         for (i, &want) in expected.iter().enumerate() {
@@ -313,7 +318,7 @@ mod tests {
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
         ];
-        assert_expansion_matches::<Aes128Params>(&key, &APPENDIX_A1_WORDS, "Appendix A.1");
+        assert_expansion_matches::<AES128Params>(&key, &APPENDIX_A1_WORDS, "Appendix A.1");
     }
 
     #[test]
@@ -322,7 +327,7 @@ mod tests {
             0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b, 0x80, 0x90,
             0x79, 0xe5, 0x62, 0xf8, 0xea, 0xd2, 0x52, 0x2c, 0x6b, 0x7b,
         ];
-        assert_expansion_matches::<Aes192Params>(&key, &APPENDIX_A2_WORDS, "Appendix A.2");
+        assert_expansion_matches::<AES192Params>(&key, &APPENDIX_A2_WORDS, "Appendix A.2");
     }
 
     #[test]
@@ -332,7 +337,7 @@ mod tests {
             0x77, 0x81, 0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7, 0x2d, 0x98, 0x10, 0xa3,
             0x09, 0x14, 0xdf, 0xf4,
         ];
-        assert_expansion_matches::<Aes256Params>(&key, &APPENDIX_A3_WORDS, "Appendix A.3");
+        assert_expansion_matches::<AES256Params>(&key, &APPENDIX_A3_WORDS, "Appendix A.3");
     }
 
     #[test]
@@ -343,9 +348,9 @@ mod tests {
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
         ];
-        let schedule = expand::<Aes128Params>(&key);
-        for i in 0..Aes128Params::NK {
-            let got = classical_word::<Aes128Params>(&schedule, i);
+        let schedule = expand::<AES128Params>(&key);
+        for i in 0..AES128Params::NK {
+            let got = classical_word::<AES128Params>(&schedule, i);
             assert_eq!(got.to_le_bytes(), key[4 * i..4 * i + 4]);
         }
     }
@@ -388,7 +393,7 @@ mod tests {
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
         ];
-        let schedule = expand::<Aes128Params>(&key);
+        let schedule = expand::<AES128Params>(&key);
 
         // Recompute the classical schedule without the compression step.
         let mut w = [0u32; 44];
@@ -398,14 +403,14 @@ mod tests {
         let mut temp = w[3];
         for i in 4..44 {
             if i % 4 == 0 {
-                temp = sub_word(rot_word(temp)) ^ RCON[i / 4 - 1];
+                temp = sub_word(rot_word(temp)) ^ Rcon[i / 4 - 1];
             }
             temp ^= w[i - 4];
             w[i] = temp;
         }
 
-        for round in 0..=Aes128Params::NR {
-            let got = round_key::<Aes128Params>(&schedule, round);
+        for round in 0..=AES128Params::NR {
+            let got = round_key::<AES128Params>(&schedule, round);
             let mut expected: Planes = [0u32; 8];
             for j in 0..4 {
                 expected[2 * j] = w[4 * round + j];
@@ -421,25 +426,25 @@ mod tests {
         // FIPS 197 Sec 5.2: the schedule is 4 * (Nr + 1) words. The array types are written out
         // by hand per parameter set, so this guards against a typo in one of them.
         assert_eq!(
-            size_of::<<Aes128Params as AesParams>::Schedule>() / 4,
-            4 * (Aes128Params::NR + 1)
+            size_of::<<AES128Params as AESParams>::Schedule>() / 4,
+            4 * (AES128Params::NR + 1)
         );
         assert_eq!(
-            size_of::<<Aes192Params as AesParams>::Schedule>() / 4,
-            4 * (Aes192Params::NR + 1)
+            size_of::<<AES192Params as AESParams>::Schedule>() / 4,
+            4 * (AES192Params::NR + 1)
         );
         assert_eq!(
-            size_of::<<Aes256Params as AesParams>::Schedule>() / 4,
-            4 * (Aes256Params::NR + 1)
+            size_of::<<AES256Params as AESParams>::Schedule>() / 4,
+            4 * (AES256Params::NR + 1)
         );
     }
 
     #[test]
     fn test_key_len_is_four_times_nk() {
         // FIPS 197 Sec 6.1 ties the two together; both are declared independently above.
-        assert_eq!(Aes128Params::KEY_LEN, 4 * Aes128Params::NK);
-        assert_eq!(Aes192Params::KEY_LEN, 4 * Aes192Params::NK);
-        assert_eq!(Aes256Params::KEY_LEN, 4 * Aes256Params::NK);
+        assert_eq!(AES128Params::KEY_LEN, 4 * AES128Params::NK);
+        assert_eq!(AES192Params::KEY_LEN, 4 * AES192Params::NK);
+        assert_eq!(AES256Params::KEY_LEN, 4 * AES256Params::NK);
     }
 
     #[test]
@@ -453,9 +458,9 @@ mod tests {
             *slot = u32::from(v);
             v = (v << 1) ^ if v & 0x80 != 0 { 0x1b } else { 0 };
         }
-        assert_eq!(RCON, expected);
+        assert_eq!(Rcon, expected);
         // Spot-check the two values from Table 5 that are not plain powers of two.
-        assert_eq!(RCON[8], 0x1b);
-        assert_eq!(RCON[9], 0x36);
+        assert_eq!(Rcon[8], 0x1b);
+        assert_eq!(Rcon[9], 0x36);
     }
 }

@@ -80,7 +80,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
 /// A deliberately broken toy whose pair methods **swap** their two results.
 ///
 /// Used to prove that the mode really does take the pair path: with this permutation, a CBC
-/// decryptor that uses `decrypt_blocks2` must produce something other than the correct plaintext.
+/// decryptor that uses `decrypt_2blocks` must produce something other than the correct plaintext.
 /// If a test using this still round-trips, the pair path is dead code and the coverage claimed for
 /// it is false.
 ///
@@ -107,13 +107,13 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
         self.inner.decrypt_block(block);
     }
 
-    fn encrypt_blocks2(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
         self.inner.encrypt_block(&mut blocks[0]);
         self.inner.encrypt_block(&mut blocks[1]);
         blocks.swap(0, 1);
     }
 
-    fn decrypt_blocks2(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
         self.inner.decrypt_block(&mut blocks[0]);
         self.inner.decrypt_block(&mut blocks[1]);
         blocks.swap(0, 1);
@@ -123,14 +123,14 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
 /// A toy whose **inverse cipher function panics**.
 ///
 /// SP 800-38A Sec 6.3 applies the forward cipher function in both directions of CFB, so a correct
-/// `Cfb` never touches `decrypt_block`, `decrypt_blocks2` or `decrypt_blocks8`. Running a full CFB round trip over this
+/// `Cfb` never touches `decrypt_block`, `decrypt_2blocks` or `decrypt_4blocks`. Running a full CFB round trip over this
 /// permutation turns that claim into a test: if either decryption entry point is ever reached, the
 /// test panics with the message below rather than quietly producing a right answer for the wrong
 /// reason.
 ///
 /// This is deliberately not a valid [`ElectronicCodeBook`] -- it cannot pass
 /// `TestFrameworkElectronicCodeBook`, which exercises both directions -- so it is only ever used with
-/// `Cfb`. Its forward methods delegate to [`Toy`], including the pair and eight-block methods, so a CFB round trip
+/// `Cfb`. Its forward methods delegate to [`Toy`], including the pair and four-block methods, so a CFB round trip
 /// over it must agree with one over `Toy`.
 pub struct ForwardOnlyToy {
     inner: Toy,
@@ -154,39 +154,39 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
         panic!("CFB must never call the inverse cipher function (SP 800-38A Sec 6.3)");
     }
 
-    fn encrypt_blocks2(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
-        self.inner.encrypt_blocks2(blocks);
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+        self.inner.encrypt_2blocks(blocks);
     }
 
-    fn decrypt_blocks2(&self, _blocks: &mut [[u8; TOY_LEN]; 2]) {
+    fn decrypt_2blocks(&self, _blocks: &mut [[u8; TOY_LEN]; 2]) {
         panic!("CFB must never call the inverse cipher pair function (SP 800-38A Sec 6.3)");
     }
 
-    fn encrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
-        self.inner.encrypt_blocks8(blocks);
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {
+        self.inner.encrypt_4blocks(blocks);
     }
 
-    fn decrypt_blocks8(&self, _blocks: &mut [[u8; TOY_LEN]; 8]) {
-        panic!("CFB must never call the inverse cipher eight-block function (SP 800-38A Sec 6.3)");
+    fn decrypt_4blocks(&self, _blocks: &mut [[u8; TOY_LEN]; 4]) {
+        panic!("CFB must never call the inverse cipher four-block function (SP 800-38A Sec 6.3)");
     }
 }
 
-/// A [`Toy`] whose `encrypt_blocks8` / `decrypt_blocks8` return their eight results rotated by one
+/// A [`Toy`] whose `encrypt_4blocks` / `decrypt_4blocks` return their four results rotated by one
 /// slot, while every other method -- single block and pair -- is correct.
 ///
-/// The eight-block analogue of [`SwappedPairToy`]: a CBC decryptor that uses `decrypt_blocks8`
-/// must produce something other than the correct plaintext for eight or more blocks, while fewer
-/// than eight, which go through the pair and single paths, still round-trip.
-pub struct SwappedEightToy {
+/// The four-block analogue of [`SwappedPairToy`]: a CBC decryptor that uses `decrypt_4blocks`
+/// must produce something other than the correct plaintext for four or more blocks, while fewer
+/// than four, which go through the pair and single paths, still round-trip.
+pub struct SwappedFourToy {
     inner: Toy,
 }
 
-impl Algorithm for SwappedEightToy {
-    const ALG_NAME: &'static str = "SwappedEightToy";
+impl Algorithm for SwappedFourToy {
+    const ALG_NAME: &'static str = "SwappedFourToy";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedEightToy {
+impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
@@ -199,14 +199,14 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedEightToy {
         self.inner.decrypt_block(block);
     }
 
-    fn encrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {
         for block in blocks.iter_mut() {
             self.inner.encrypt_block(block);
         }
         blocks.rotate_left(1);
     }
 
-    fn decrypt_blocks8(&self, blocks: &mut [[u8; TOY_LEN]; 8]) {
+    fn decrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {
         for block in blocks.iter_mut() {
             self.inner.decrypt_block(block);
         }

@@ -3,7 +3,7 @@
 //! These are the only NIST-published known-answer vectors for AES-192 and AES-256 that live in a
 //! specification document rather than a separate vector file -- FIPS 197 Appendix B only covers
 //! AES-128, and FIPS 197 (Update 1) removed the Appendix C example vectors in favour of a pointer
-//! to the CSRC website. `acvp_tests.rs` covers far more cases, but only when the `bc-test-data`
+//! to the CSRC website. `bc-test-data.rs` covers far more cases, but only when the `bc-test-data`
 //! repository is present, so these vectors are the always-available known-answer floor.
 //!
 //! ECB applies the raw permutation to each block independently, so an ECB example vector *is* a
@@ -15,8 +15,9 @@
 //!
 //! Transcribed from the published SP 800-38A PDF, sections F.1.1 through F.1.6.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use bouncycastle_aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_hex as hex;
 
 /// The four plaintext blocks shared by every F.1 subsection.
@@ -72,7 +73,7 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 
 #[test]
 fn f_1_1_ecb_aes128_encrypt() {
-    let aes = Aes128::new(&key_material::<16>(KEY_128)).unwrap();
+    let aes = AES_128::new(&key_material::<16>(KEY_128)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_128.iter()).enumerate() {
         let mut b = block(pt);
         aes.encrypt_block(&mut b);
@@ -82,7 +83,7 @@ fn f_1_1_ecb_aes128_encrypt() {
 
 #[test]
 fn f_1_2_ecb_aes128_decrypt() {
-    let aes = Aes128::new(&key_material::<16>(KEY_128)).unwrap();
+    let aes = AES_128::new(&key_material::<16>(KEY_128)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_128.iter()).enumerate() {
         let mut b = block(ct);
         aes.decrypt_block(&mut b);
@@ -94,7 +95,7 @@ fn f_1_2_ecb_aes128_decrypt() {
 
 #[test]
 fn f_1_3_ecb_aes192_encrypt() {
-    let aes = Aes192::new(&key_material::<24>(KEY_192)).unwrap();
+    let aes = AES_192::new(&key_material::<24>(KEY_192)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_192.iter()).enumerate() {
         let mut b = block(pt);
         aes.encrypt_block(&mut b);
@@ -104,7 +105,7 @@ fn f_1_3_ecb_aes192_encrypt() {
 
 #[test]
 fn f_1_4_ecb_aes192_decrypt() {
-    let aes = Aes192::new(&key_material::<24>(KEY_192)).unwrap();
+    let aes = AES_192::new(&key_material::<24>(KEY_192)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_192.iter()).enumerate() {
         let mut b = block(ct);
         aes.decrypt_block(&mut b);
@@ -116,7 +117,7 @@ fn f_1_4_ecb_aes192_decrypt() {
 
 #[test]
 fn f_1_5_ecb_aes256_encrypt() {
-    let aes = Aes256::new(&key_material::<32>(KEY_256)).unwrap();
+    let aes = AES_256::new(&key_material::<32>(KEY_256)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_256.iter()).enumerate() {
         let mut b = block(pt);
         aes.encrypt_block(&mut b);
@@ -126,7 +127,7 @@ fn f_1_5_ecb_aes256_encrypt() {
 
 #[test]
 fn f_1_6_ecb_aes256_decrypt() {
-    let aes = Aes256::new(&key_material::<32>(KEY_256)).unwrap();
+    let aes = AES_256::new(&key_material::<32>(KEY_256)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_256.iter()).enumerate() {
         let mut b = block(ct);
         aes.decrypt_block(&mut b);
@@ -143,17 +144,17 @@ fn f_1_6_ecb_aes256_decrypt() {
 /// puts the same data in both halves.
 #[test]
 fn two_block_path_matches_the_f_1_vectors() {
-    let aes = Aes128::new(&key_material::<16>(KEY_128)).unwrap();
+    let aes = AES_128::new(&key_material::<16>(KEY_128)).unwrap();
 
     // Blocks 1 and 2 as a pair, then 3 and 4.
     for chunk in 0..2 {
         let (i, j) = (chunk * 2, chunk * 2 + 1);
         let mut pair = [block(PLAINTEXTS[i]), block(PLAINTEXTS[j])];
-        aes.encrypt_blocks2(&mut pair);
+        aes.encrypt_2blocks(&mut pair);
         assert_eq!(pair[0], block(CIPHERTEXTS_128[i]), "pair {chunk} slot 0");
         assert_eq!(pair[1], block(CIPHERTEXTS_128[j]), "pair {chunk} slot 1");
 
-        aes.decrypt_blocks2(&mut pair);
+        aes.decrypt_2blocks(&mut pair);
         assert_eq!(pair[0], block(PLAINTEXTS[i]));
         assert_eq!(pair[1], block(PLAINTEXTS[j]));
     }
@@ -162,12 +163,12 @@ fn two_block_path_matches_the_f_1_vectors() {
 /// Swapping the two slots must swap the two results, and nothing else.
 #[test]
 fn two_block_path_is_slot_symmetric() {
-    let aes = Aes256::new(&key_material::<32>(KEY_256)).unwrap();
+    let aes = AES_256::new(&key_material::<32>(KEY_256)).unwrap();
 
     let mut forward = [block(PLAINTEXTS[0]), block(PLAINTEXTS[1])];
     let mut reversed = [block(PLAINTEXTS[1]), block(PLAINTEXTS[0])];
-    aes.encrypt_blocks2(&mut forward);
-    aes.encrypt_blocks2(&mut reversed);
+    aes.encrypt_2blocks(&mut forward);
+    aes.encrypt_2blocks(&mut reversed);
 
     assert_eq!(forward[0], reversed[1]);
     assert_eq!(forward[1], reversed[0]);

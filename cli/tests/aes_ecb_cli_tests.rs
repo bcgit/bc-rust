@@ -234,8 +234,8 @@ fn encrypt_then_decrypt_round_trips_with_no_iv() {
     }
 }
 
-/// Round trips at sizes that straddle the 1 KiB streaming chunk, the eight-block batch and the
-/// block boundary: 128 is one eight; 144 is an eight plus one block; 1040 is a chunk plus a block.
+/// Round trips at sizes that straddle the 1 KiB streaming chunk, the four-block batch and the
+/// block boundary: 128 is two fours; 144 is two fours plus one block; 1040 is a chunk plus a block.
 #[test]
 fn round_trips_across_chunk_and_batch_boundaries() {
     for size in [16usize, 32, 128, 144, 1024, 1040, 4096, 4112, 65536] {

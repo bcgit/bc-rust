@@ -4,9 +4,9 @@
 //! CBC and CFB is serial by construction (SP 800-38A Sec 6.2 and Sec 6.3: each forward cipher input
 //! depends on the previous output), so it can only ever use the single-block path. *Decryption* in
 //! both is parallel, and this implementation hands blocks to the permutation's batch methods --
-//! eights first, then pairs, then the remainder singly: for CBC that is `decrypt_blocks8` /
-//! `decrypt_blocks2`, for CFB it is `encrypt_blocks8` / `encrypt_blocks2`, since CFB uses the
-//! forward function in both directions. AES overrides only the pair form, so its eights are four
+//! fours first, then pairs, then the remainder singly: for CBC that is `decrypt_4blocks` /
+//! `decrypt_2blocks`, for CFB it is `encrypt_4blocks` / `encrypt_2blocks`, since CFB uses the
+//! forward function in both directions. AES overrides only the pair form, so its fours are two
 //! pairs. With the bit-sliced AES, whose two-block path costs barely more than one block,
 //! decryption should therefore run at roughly twice the throughput of encryption. That gap is the
 //! entire justification for the batch methods on `ElectronicCodeBook`, so if it disappears,
@@ -21,23 +21,23 @@
 //! blocks: every such call ends mid-segment and the next one starts by finishing it byte by byte,
 //! so they show what the byte path costs relative to the block path at a comparable call length.
 //!
-//! The `modes::cfb8::Aes128` group measures the other thing worth knowing about CFB8: it spends one
+//! The `modes::cfb8::AES_128` group measures the other thing worth knowing about CFB8: it spends one
 //! full forward cipher per *byte*, so on a 16-byte block it should come out at roughly **1/16** the
-//! throughput of CFB over the same 16 KiB. That ratio, against `modes::cfb::Aes128`, is the number
+//! throughput of CFB over the same 16 KiB. That ratio, against `modes::cfb::AES_128`, is the number
 //! to watch; it is inherent to `s = 8` (Sec 6.3 discards `b - s` bits of every output block), not a
 //! property of this implementation. Decryption should still beat encryption, because CFB8
-//! decryption builds its input blocks in series and then batches the ciphers eight at a time while
+//! decryption builds its input blocks in series and then batches the ciphers four at a time while
 //! encryption cannot.
 //!
 //! The cipher works in place, so each measurement runs on a fresh copy of the data made in
 //! criterion's untimed setup (`iter_batched`); the copy is not part of the timing.
 //!
-//! The `modes::cbc::Aes128` and `modes::cfb::Aes128` groups are directly comparable -- same cipher,
+//! The `modes::cbc::AES_128` and `modes::cfb::AES_128` groups are directly comparable -- same cipher,
 //! same data, same call granularity -- so the difference between them is the cost of the mode. CFB
 //! never calls the inverse cipher, so on an engine whose inverse is slower than its forward
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes256};
+use bouncycastle_aes::{AES_128, AES_256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -53,26 +53,26 @@ const BLOCK_LEN: usize = 16;
 const NUM_BLOCKS: usize = 1024;
 const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
-type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, BLOCK_LEN>;
-type Aes256Cbc<Dir> = Cbc<Aes256, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, BLOCK_LEN>;
-type Aes256Cfb<Dir> = Cfb<Aes256, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb8<Dir> = Cfb8<Aes128, Dir, 16, BLOCK_LEN>;
-type Aes128Ctr<Dir> = Ctr<Aes128, Dir, 16, BLOCK_LEN, 12>;
-type Aes256Ctr<Dir> = Ctr<Aes256, Dir, 32, BLOCK_LEN, 12>;
-type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, BLOCK_LEN>;
+type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, BLOCK_LEN>;
+type Aes256Cbc<Dir> = Cbc<AES_256, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, BLOCK_LEN>;
+type Aes256Cfb<Dir> = Cfb<AES_256, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, BLOCK_LEN>;
+type Aes128Ctr<Dir> = Ctr<AES_128, Dir, 16, BLOCK_LEN, 12>;
+type Aes256Ctr<Dir> = Ctr<AES_256, Dir, 32, BLOCK_LEN, 12>;
+type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, BLOCK_LEN>;
 
 /// AES-128 with the pair methods **not** overridden, so they fall back to the trait defaults of
 /// two single-block calls.
 ///
-/// This exists purely to isolate the value of the pair path. Comparing `Cbc<Aes128, ..>` against
+/// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES_128, ..>` against
 /// `Cbc<UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
 /// call granularity, same amount of data movement -- so the difference is attributable to
-/// `decrypt_blocks2` and nothing else.
+/// `decrypt_2blocks` and nothing else.
 ///
 /// Comparing `N = 1` against `N = 8` does *not* isolate it: encryption, which can never pair, also
 /// speeds up substantially between those two, so call granularity dominates that comparison.
-struct UnpairedAes128(Aes128);
+struct UnpairedAes128(AES_128);
 
 impl Algorithm for UnpairedAes128 {
     const ALG_NAME: &'static str = "AES-128 (unpaired)";
@@ -81,15 +81,15 @@ impl Algorithm for UnpairedAes128 {
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(<Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
+        Ok(Self(<AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
     }
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
+        <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
     }
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <Aes128 as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
+        <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
-    // encrypt_blocks2 / decrypt_blocks2 deliberately left as the trait defaults.
+    // encrypt_2blocks / decrypt_2blocks deliberately left as the trait defaults.
 }
 
 type UnpairedAes128Cbc<Dir> = Cbc<UnpairedAes128, Dir, 16, BLOCK_LEN>;
@@ -111,7 +111,7 @@ fn bench_aes128(c: &mut Criterion) {
     let k = key::<16>();
     let blocks = data();
 
-    let mut group = c.benchmark_group("modes::cbc::Aes128");
+    let mut group = c.benchmark_group("modes::cbc::AES_128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     // ---- encryption: serial, one block at a time is all it can do ----
@@ -145,7 +145,7 @@ fn bench_aes128(c: &mut Criterion) {
         )
     });
 
-    // ---- decryption: parallel, uses decrypt_blocks2 for every pair ----
+    // ---- decryption: parallel, uses decrypt_2blocks for every pair ----
     let (mut enc, iv) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
@@ -168,8 +168,8 @@ fn bench_aes128(c: &mut Criterion) {
         )
     });
 
-    // N=2 is one pair and N=8 one eight (four pairs, for AES), so every block goes through
-    // decrypt_blocks2.
+    // N=2 is one pair and N=8 two fours (four pairs, for AES), so every block goes through
+    // decrypt_2blocks.
     group.bench_function("16KiB decrypt -- N=2 (all pairs)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
@@ -186,7 +186,7 @@ fn bench_aes128(c: &mut Criterion) {
         )
     });
 
-    group.bench_function("16KiB decrypt -- N=8 (all pairs)", |b| {
+    group.bench_function("16KiB decrypt -- N=8 (all fours)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -220,8 +220,8 @@ fn bench_aes128(c: &mut Criterion) {
     });
 
     // The controlled comparison: identical N, identical cipher, pair methods overridden vs not.
-    // This pair of numbers -- and only this pair -- measures what `decrypt_blocks2` buys.
-    group.bench_function("16KiB decrypt -- N=8, pair path (blocks2 overridden)", |b| {
+    // This pair of numbers -- and only this pair -- measures what `decrypt_2blocks` buys.
+    group.bench_function("16KiB decrypt -- N=8, pair path (2blocks overridden)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -260,7 +260,7 @@ fn bench_aes256(c: &mut Criterion) {
     let k = key::<32>();
     let blocks = data();
 
-    let mut group = c.benchmark_group("modes::cbc::Aes256");
+    let mut group = c.benchmark_group("modes::cbc::AES_256");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB encrypt -- N=8", |b| {
@@ -285,7 +285,7 @@ fn bench_aes256(c: &mut Criterion) {
         enc.do_encrypt_blocks(chunk).unwrap();
     }
 
-    group.bench_function("16KiB decrypt -- N=8 (all pairs)", |b| {
+    group.bench_function("16KiB decrypt -- N=8 (all fours)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -343,7 +343,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
     let blocks = data();
     let flat: Vec<u8> = blocks.as_flattened().to_vec();
 
-    let mut group = c.benchmark_group("modes::cfb::Aes128");
+    let mut group = c.benchmark_group("modes::cfb::AES_128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     // ---- encryption: serial. Oj+1 = CIPH_K(Cj), and Cj is the previous call's output ----
@@ -368,7 +368,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         });
     }
 
-    // ---- decryption: parallel, and uses `encrypt_blocks8` / `encrypt_blocks2` -- the FORWARD
+    // ---- decryption: parallel, and uses `encrypt_4blocks` / `encrypt_2blocks` -- the FORWARD
     // batch methods ----
     let (mut enc, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = flat.clone();
@@ -378,10 +378,10 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         // N=1 never forms a pair, so this is the single-block path: the ratio against encrypt
         // should be about 1.
         ("16KiB decrypt -- N=1 (no pairing)", BLOCK_LEN),
-        // N=2 and N=8 are all pairs (N=8 one eight), so every block goes through a batch method.
+        // N=2 and N=8 are all batches (N=8 two fours), so every block goes through a batch method.
         ("16KiB decrypt -- N=2 (all pairs)", 2 * BLOCK_LEN),
-        ("16KiB decrypt -- N=8 (all pairs)", 8 * BLOCK_LEN),
-        // N=9 is one eight plus a one-block remainder, so it exercises the tail path too.
+        ("16KiB decrypt -- N=8 (all fours)", 8 * BLOCK_LEN),
+        // N=9 is two fours plus a one-block remainder, so it exercises the tail path too.
         ("16KiB decrypt -- N=9 (pairs + remainder)", 9 * BLOCK_LEN),
         // As for encryption: 7 blocks plus 13 bytes per call. Compare with N=8.
         ("16KiB decrypt -- 125-byte calls (byte path at both ends)", 125),
@@ -401,8 +401,8 @@ fn bench_cfb_aes128(c: &mut Criterion) {
     }
 
     // The controlled comparison: identical N, identical cipher, pair methods overridden vs not.
-    // This pair of numbers -- and only this pair -- measures what `encrypt_blocks2` buys CFB.
-    group.bench_function("16KiB decrypt -- N=8, pair path (blocks2 overridden)", |b| {
+    // This pair of numbers -- and only this pair -- measures what `encrypt_2blocks` buys CFB.
+    group.bench_function("16KiB decrypt -- N=8, pair path (2blocks overridden)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -441,7 +441,7 @@ fn bench_cfb_aes256(c: &mut Criterion) {
     let k = key::<32>();
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
-    let mut group = c.benchmark_group("modes::cfb::Aes256");
+    let mut group = c.benchmark_group("modes::cfb::AES_256");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB encrypt -- N=8", |b| {
@@ -463,7 +463,7 @@ fn bench_cfb_aes256(c: &mut Criterion) {
     let mut ciphertext = flat.clone();
     enc.do_encrypt(&mut ciphertext).unwrap();
 
-    group.bench_function("16KiB decrypt -- N=8 (all pairs)", |b| {
+    group.bench_function("16KiB decrypt -- N=8 (all fours)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -485,14 +485,14 @@ fn bench_cfb_aes256(c: &mut Criterion) {
 /// CFB8: one forward cipher per byte, so ~1/16 of CFB's throughput on a 16-byte block.
 ///
 /// Encryption is strictly serial. Decryption builds its input blocks in series and then runs them
-/// through `encrypt_blocks8` / `encrypt_blocks2` (SP 800-38A Sec 6.3's parallel decryption), so it
+/// through `encrypt_4blocks` / `encrypt_2blocks` (SP 800-38A Sec 6.3's parallel decryption), so it
 /// should be substantially faster than encryption -- the same batch effect CBC and CFB show, at
 /// byte granularity.
 fn bench_cfb8_aes128(c: &mut Criterion) {
     let k = key::<16>();
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
-    let mut group = c.benchmark_group("modes::cfb8::Aes128");
+    let mut group = c.benchmark_group("modes::cfb8::AES_128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     // Serial by construction: I_{j+1} needs Cj, which this call just produced.
@@ -514,10 +514,10 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
     enc.do_encrypt(&mut ciphertext).unwrap();
 
     for (name, call_len) in [
-        // One call: eights, then pairs, then the tail. This is the batched path.
+        // One call: fours, then pairs, then the tail. This is the batched path.
         ("16KiB decrypt -- whole message in one call (batched)", DATA_LEN),
-        // 8-byte calls: still exactly one eight-block batch per call.
-        ("16KiB decrypt -- 8-byte calls (one batch each)", 8),
+        // 8-byte calls: exactly two four-block batches per call.
+        ("16KiB decrypt -- 8-byte calls (two batches each)", 8),
         // 1-byte calls: never batches, so this is the cost of the serial path on the decrypt side
         // and the controlled comparison for what batching buys.
         ("16KiB decrypt -- 1-byte calls (no batching)", 1),
@@ -549,14 +549,14 @@ fn bench_ctr_aes128(c: &mut Criterion) {
     let k = key::<16>();
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
-    let mut group = c.benchmark_group("modes::ctr::Aes128");
+    let mut group = c.benchmark_group("modes::ctr::AES_128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     for (name, call_len) in [
         // N=1 never forms a pair: the single-block path, and the baseline for the batch effect.
         ("16KiB encrypt -- N=1 (no batching)", BLOCK_LEN),
         ("16KiB encrypt -- N=2 (all pairs)", 2 * BLOCK_LEN),
-        ("16KiB encrypt -- N=8 (one eight per call)", 8 * BLOCK_LEN),
+        ("16KiB encrypt -- N=8 (two fours per call)", 8 * BLOCK_LEN),
         // Calls that are not a whole number of blocks, so each end goes byte by byte.
         ("16KiB encrypt -- 125-byte calls (byte path at both ends)", 125),
     ] {
@@ -580,7 +580,7 @@ fn bench_ctr_aes128(c: &mut Criterion) {
 
     for (name, call_len) in [
         ("16KiB decrypt -- N=1 (no batching)", BLOCK_LEN),
-        ("16KiB decrypt -- N=8 (one eight per call)", 8 * BLOCK_LEN),
+        ("16KiB decrypt -- N=8 (two fours per call)", 8 * BLOCK_LEN),
     ] {
         group.bench_function(name, |b| {
             b.iter_batched(
@@ -604,7 +604,7 @@ fn bench_ctr_aes256(c: &mut Criterion) {
     let k = key::<32>();
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
-    let mut group = c.benchmark_group("modes::ctr::Aes256");
+    let mut group = c.benchmark_group("modes::ctr::AES_256");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB encrypt -- N=8", |b| {
@@ -633,7 +633,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
     let k = key::<16>();
     let blocks = data();
 
-    let mut group = c.benchmark_group("modes::ecb::Aes128");
+    let mut group = c.benchmark_group("modes::ecb::AES_128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB encrypt -- N=1 (no batching)", |b| {
@@ -650,7 +650,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
         )
     });
 
-    group.bench_function("16KiB encrypt -- N=8 (eights)", |b| {
+    group.bench_function("16KiB encrypt -- N=8 (fours)", |b| {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
@@ -666,7 +666,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
         )
     });
 
-    group.bench_function("16KiB decrypt -- N=8 (eights)", |b| {
+    group.bench_function("16KiB decrypt -- N=8 (fours)", |b| {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
@@ -711,15 +711,15 @@ fn bench_init(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("modes::init");
 
-    group.bench_function("Aes128 do_encrypt_init (key schedule + IV)", |b| {
+    group.bench_function("AES_128 do_encrypt_init (key schedule + IV)", |b| {
         b.iter(|| black_box(Aes128Cbc::<Encrypting>::do_encrypt_init(black_box(&k128)).unwrap().1))
     });
-    group.bench_function("Aes128 do_decrypt_init (key schedule only)", |b| {
+    group.bench_function("AES_128 do_decrypt_init (key schedule only)", |b| {
         b.iter(|| {
             black_box(Aes128Cbc::<Decrypting>::do_decrypt_init(black_box(&k128), &iv).unwrap())
         })
     });
-    group.bench_function("Aes256 do_decrypt_init (key schedule only)", |b| {
+    group.bench_function("AES_256 do_decrypt_init (key schedule only)", |b| {
         b.iter(|| {
             black_box(Aes256Cbc::<Decrypting>::do_decrypt_init(black_box(&k256), &iv).unwrap())
         })
@@ -728,10 +728,10 @@ fn bench_init(c: &mut Criterion) {
     // CFB does exactly the same work here -- one key expansion, plus an IV draw when encrypting --
     // so these should match the CBC numbers. A divergence would mean one mode is doing something
     // extra at construction time.
-    group.bench_function("Aes128 do_encrypt_init, CFB (key schedule + IV)", |b| {
+    group.bench_function("AES_128 do_encrypt_init, CFB (key schedule + IV)", |b| {
         b.iter(|| black_box(Aes128Cfb::<Encrypting>::do_encrypt_init(black_box(&k128)).unwrap().1))
     });
-    group.bench_function("Aes128 do_decrypt_init, CFB (key schedule only)", |b| {
+    group.bench_function("AES_128 do_decrypt_init, CFB (key schedule only)", |b| {
         b.iter(|| {
             black_box(Aes128Cfb::<Decrypting>::do_decrypt_init(black_box(&k128), &iv).unwrap())
         })

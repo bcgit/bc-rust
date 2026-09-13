@@ -1,6 +1,6 @@
 //! Block cipher modes of operation (NIST SP 800-38A).
 //!
-//! A mode turns a keyed block permutation -- `bouncycastle-aes-lowmemory`'s `Aes128` and friends,
+//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES_128` and friends,
 //! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
 //! one block. This crate provides:
 //!
@@ -18,6 +18,14 @@
 //! [`StreamCipherDecryptor`]): any length in, the same length out, no padding, no finalization --
 //! see [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
 //!
+//! **All five reach the same arbitrary-length API**, so code can be written against one trait and
+//! handed any mode. A block mode gets there by being wrapped in `bouncycastle-padding`'s adapters,
+//! which are [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] with the padded block as
+//! their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0` because
+//! it has no final output at all. The `bouncycastle-aes` aliases show the difference in
+//! one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme, `AES_CTR_128<Encrypting>`
+//! has nothing to name.
+//!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block -- see
@@ -31,27 +39,29 @@
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait. Define a one-line alias for the combination you use -- or use the ready-made
 //! `AES_CBC_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` and friends from
-//! `bouncycastle-aes-lowmemory`:
+//! `bouncycastle-aes`. Those aliases are not all the same shape: the two block modes take
+//! a padding scheme as well as a direction, since neither is usable on data of arbitrary length
+//! without one, while the three stream modes take only the direction:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+//! use bouncycastle_aes::{AES_128, AES_192, AES_256};
 //! use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ctr, Ecb};
 //!
-//! type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, 16>;
-//! type Aes192Cbc<Dir> = Cbc<Aes192, Dir, 24, 16>;
-//! type Aes256Cbc<Dir> = Cbc<Aes256, Dir, 32, 16>;
+//! type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, 16>;
+//! type Aes192Cbc<Dir> = Cbc<AES_192, Dir, 24, 16>;
+//! type Aes256Cbc<Dir> = Cbc<AES_256, Dir, 32, 16>;
 //!
-//! type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, 16>;
-//! type Aes192Cfb<Dir> = Cfb<Aes192, Dir, 24, 16>;
-//! type Aes256Cfb<Dir> = Cfb<Aes256, Dir, 32, 16>;
+//! type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
+//! type Aes192Cfb<Dir> = Cfb<AES_192, Dir, 24, 16>;
+//! type Aes256Cfb<Dir> = Cfb<AES_256, Dir, 32, 16>;
 //!
-//! type Aes128Cfb8<Dir> = Cfb8<Aes128, Dir, 16, 16>;
+//! type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
-//! type Aes128Ctr<Dir> = Ctr<Aes128, Dir, 16, 16, 12>;
+//! type Aes128Ctr<Dir> = Ctr<AES_128, Dir, 16, 16, 12>;
 //!
-//! type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, 16>;
+//! type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, 16>;
 //! ```
 //!
 //! # Usage Examples
@@ -64,12 +74,12 @@
 //! [Security Considerations](#security-considerations)).
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //!
-//! type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, 16>;
+//! type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -90,12 +100,12 @@
 //! the concatenation:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes256;
+//! use bouncycastle_aes::AES_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //!
-//! type Aes256Cbc<Dir> = Cbc<Aes256, Dir, 32, 16>;
+//! type Aes256Cbc<Dir> = Cbc<AES_256, Dir, 32, 16>;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -119,13 +129,13 @@
 //! exactly as long as the plaintext:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
 //!
-//! type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, 16>;
-//! type Aes128Cfb8<Dir> = Cfb8<Aes128, Dir, 16, 16>;
+//! type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
+//! type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -150,12 +160,12 @@
 //! Streaming works at any byte boundary, and the chunking is not visible in the output:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
 //!
-//! type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, 16>;
+//! type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -183,12 +193,12 @@
 //! The codebook property that makes it unsuitable for data is visible in the ciphertext:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 //!
-//! type Aes128Ecb<Dir> = Ecb<Aes128, Dir, 16, 16>;
+//! type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -205,12 +215,12 @@
 //! Using the wrong direction does not compile:
 //!
 //! ```compile_fail
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::BlockCipherDecryptor;
 //! use bouncycastle_modes::{Cbc, Encrypting};
 //!
-//! type Aes128Cbc<Dir> = Cbc<Aes128, Dir, 16, 16>;
+//! type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, 16>;
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
 //! // `Encrypting` does not implement `BlockCipherDecryptor`.
@@ -232,7 +242,7 @@
 //!   directly, in the segment they targeted. All are malleable; authenticate the ciphertext.
 //! * **CFB and CFB8 need only the forward cipher function**, in both directions (Sec 6.3). That
 //!   halves what a permutation has to provide, and where the inverse costs more than the forward
-//!   direction it makes CFB decryption faster: with `bouncycastle-aes-lowmemory` this crate's
+//!   direction it makes CFB decryption faster: with `bouncycastle-aes` this crate's
 //!   benches measure CFB decryption at about 1.37x CBC decryption (AES-128, 16 KiB, `N = 8`).
 //!   Encryption is the same speed in CBC and CFB, since both are serial and both use only the
 //!   forward function.
@@ -283,14 +293,14 @@
 //! an error at `do_final` rather than something padded -- for formats defined on whole blocks.
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //! use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
 //!
-//! type Enc = PaddedEncryptor<Cbc<Aes128, Encrypting, 16, 16>, PKCS7, 16, 16, 16>;
-//! type Dec = PaddedDecryptor<Cbc<Aes128, Decrypting, 16, 16>, PKCS7, 16, 16, 16>;
+//! type Enc = PaddedEncryptor<Cbc<AES_128, Encrypting, 16, 16>, PKCS7, 16, 16, 16>;
+//! type Dec = PaddedDecryptor<Cbc<AES_128, Decrypting, 16, 16>, PKCS7, 16, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -353,7 +363,7 @@
 //! it is live key material for the bytes not yet consumed.
 //!
 //! The data methods work in place. The batch paths in a decryptor are the transient cost: a
-//! `[[u8; BLOCK_LEN]; 8]` of stack for the eight-block path -- 128 B on AES -- and a
+//! `[[u8; BLOCK_LEN]; 4]` of stack for the four-block path -- 64 B on AES -- and a
 //! `[[u8; BLOCK_LEN]; 2]` for the pair path. CFB8's batch paths hold input blocks it builds itself;
 //! CBC's and CFB's hold a copy of the ciphertext they need for the chaining value.
 //! [`Encrypting`] and [`Decrypting`] are zero-sized and held in a `PhantomData`, so encoding the
@@ -522,8 +532,8 @@ pub use ecb::Ecb;
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor,
-    StreamCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SimpleCipherDecryptor,
+    SimpleCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
 };
 // end of imports needed for docs
 

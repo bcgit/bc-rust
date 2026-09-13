@@ -10,7 +10,7 @@
 //! the work of [`AES_CFB_128`](crate::AES_CFB_128). See the `bouncycastle_modes::Cfb8` docs for
 //! when that is the right trade.
 
-use crate::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_modes::Cfb8;
 
 /// AES-128 in CFB8 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or
@@ -21,7 +21,7 @@ use bouncycastle_modes::Cfb8;
 /// returned; it is never supplied. Encryption and decryption work in place.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::{AES_CFB8_128, AES_CFB_128};
+/// use bouncycastle_aes::{AES_CFB8_128, AES_CFB_128};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -56,12 +56,12 @@ use bouncycastle_modes::Cfb8;
 /// assert_ne!(as_cfb128, message);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CFB8_128<Dir> = Cfb8<Aes128, Dir, 16, BLOCK_LEN>;
+pub type AES_CFB8_128<Dir> = Cfb8<AES_128, Dir, 16, BLOCK_LEN>;
 
 /// AES-192 in CFB8 mode. See [`AES_CFB8_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB8_192;
+/// use bouncycastle_aes::AES_CFB8_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -73,12 +73,12 @@ pub type AES_CFB8_128<Dir> = Cfb8<Aes128, Dir, 16, BLOCK_LEN>;
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CFB8_192<Dir> = Cfb8<Aes192, Dir, 24, BLOCK_LEN>;
+pub type AES_CFB8_192<Dir> = Cfb8<AES_192, Dir, 24, BLOCK_LEN>;
 
 /// AES-256 in CFB8 mode. See [`AES_CFB8_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB8_256;
+/// use bouncycastle_aes::AES_CFB8_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -90,4 +90,4 @@ pub type AES_CFB8_192<Dir> = Cfb8<Aes192, Dir, 24, BLOCK_LEN>;
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CFB8_256<Dir> = Cfb8<Aes256, Dir, 32, BLOCK_LEN>;
+pub type AES_CFB8_256<Dir> = Cfb8<AES_256, Dir, 32, BLOCK_LEN>;

@@ -75,9 +75,9 @@
 //!
 //! Decryption knows every ciphertext byte before it starts, so it can build the shift register's
 //! successive states in series -- byte shuffling, no cipher calls -- and then run the forward
-//! ciphers together. This implementation does exactly that, in eights through
-//! [`ElectronicCodeBook::encrypt_blocks8`] and then pairs through
-//! [`ElectronicCodeBook::encrypt_blocks2`], which is where a bit-sliced engine earns back a large
+//! ciphers together. This implementation does exactly that, in fours through
+//! [`ElectronicCodeBook::encrypt_4blocks`] and then pairs through
+//! [`ElectronicCodeBook::encrypt_2blocks`], which is where a bit-sliced engine earns back a large
 //! part of what the mode costs. Encryption cannot: `Ij` needs `C_{j-1}`, which is the output of the
 //! previous cipher call.
 
@@ -253,17 +253,17 @@ where
     /// with the *ciphertext* byte -- the one that came in, not the plaintext going out -- shifted
     /// into the register.
     ///
-    /// Walks the data in eights through the permutation's *forward* eight-block path, then in pairs
+    /// Walks the data in fours through the permutation's *forward* four-block path, then in pairs
     /// through its forward pair path, then the remaining bytes singly (Sec 6.3's parallel
     /// decryption; see the module docs). Never fails: CFB has no per-IV data limit.
     fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        let (eights, rest) = data.as_chunks_mut::<8>();
-        for eight in eights.iter_mut() {
-            self.decrypt_batch(eight, P::encrypt_blocks8);
+        let (fours, rest) = data.as_chunks_mut::<4>();
+        for four in fours.iter_mut() {
+            self.decrypt_batch(four, P::encrypt_4blocks);
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
-            self.decrypt_batch(pair, P::encrypt_blocks2);
+            self.decrypt_batch(pair, P::encrypt_2blocks);
         }
         for byte in tail.iter_mut() {
             let c = *byte;

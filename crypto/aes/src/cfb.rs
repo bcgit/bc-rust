@@ -9,7 +9,7 @@
 //! different, non-interoperable mode with its own aliases -- [`AES_CFB8_128`](crate::AES_CFB8_128)
 //! and friends -- and `s = 1` is not implemented; see the `bouncycastle_modes::Cfb` docs.
 
-use crate::{Aes128, Aes192, Aes256, BLOCK_LEN};
+use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
 use bouncycastle_modes::Cfb;
 
 /// AES-128 in CFB128 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or
@@ -20,7 +20,7 @@ use bouncycastle_modes::Cfb;
 /// Encryption and decryption work in place.
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB_128;
+/// use bouncycastle_aes::AES_CFB_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -49,12 +49,12 @@ use bouncycastle_modes::Cfb;
 /// ```
 ///
 #[allow(non_camel_case_types)]
-pub type AES_CFB_128<Dir> = Cfb<Aes128, Dir, 16, BLOCK_LEN>;
+pub type AES_CFB_128<Dir> = Cfb<AES_128, Dir, 16, BLOCK_LEN>;
 
 /// AES-192 in CFB128 mode. See [`AES_CFB_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB_192;
+/// use bouncycastle_aes::AES_CFB_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -66,12 +66,12 @@ pub type AES_CFB_128<Dir> = Cfb<Aes128, Dir, 16, BLOCK_LEN>;
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CFB_192<Dir> = Cfb<Aes192, Dir, 24, BLOCK_LEN>;
+pub type AES_CFB_192<Dir> = Cfb<AES_192, Dir, 24, BLOCK_LEN>;
 
 /// AES-256 in CFB128 mode. See [`AES_CFB_128`].
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::AES_CFB_256;
+/// use bouncycastle_aes::AES_CFB_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -83,4 +83,4 @@ pub type AES_CFB_192<Dir> = Cfb<Aes192, Dir, 24, BLOCK_LEN>;
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CFB_256<Dir> = Cfb<Aes256, Dir, 32, BLOCK_LEN>;
+pub type AES_CFB_256<Dir> = Cfb<AES_256, Dir, 32, BLOCK_LEN>;

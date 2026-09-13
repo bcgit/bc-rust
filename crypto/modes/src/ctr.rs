@@ -92,8 +92,8 @@
 //! Sec 6.5: "In both CTR encryption and CTR decryption, the forward cipher functions can be
 //! performed in parallel". Counter blocks depend on nothing but the nonce and the index, so unlike
 //! CBC and CFB there is no serial direction at all: **both** directions walk the block-aligned part
-//! of the data in eights through [`ElectronicCodeBook::encrypt_blocks8`], then in pairs through
-//! [`ElectronicCodeBook::encrypt_blocks2`]. Only the bytes that finish a partially-used keystream
+//! of the data in fours through [`ElectronicCodeBook::encrypt_4blocks`], then in pairs through
+//! [`ElectronicCodeBook::encrypt_2blocks`]. Only the bytes that finish a partially-used keystream
 //! block, and the short tail at the end, go one block at a time.
 //!
 //! Like the rest of CFB and CTR, only the **forward** cipher function is ever used, in both
@@ -135,41 +135,41 @@ use core::marker::PhantomData;
 /// A nonce as long as the block would leave no counter at all, and could not count:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes_lowmemory::Aes128;
+/// use bouncycastle_aes::AES_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// // A 16-byte nonce on a 16-byte block leaves a zero-byte counter.
-/// let _ = Ctr::<Aes128, Encrypting, 16, 16, 16>::do_encrypt_init(&key);
+/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 16>::do_encrypt_init(&key);
 /// ```
 ///
 /// ...and a nonce shorter than `BLOCK_LEN - 4` would ask for a counter wider than this type
 /// supports:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes_lowmemory::Aes128;
+/// use bouncycastle_aes::AES_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// // An 11-byte nonce would give a 5-byte counter, past the 4-byte cap.
-/// let _ = Ctr::<Aes128, Encrypting, 16, 16, 11>::do_encrypt_init(&key);
+/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 11>::do_encrypt_init(&key);
 /// ```
 ///
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_aes_lowmemory::Aes128;
+/// use bouncycastle_aes::AES_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// let _ = Ctr::<Aes128, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
-/// let _ = Ctr::<Aes128, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
+/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
+/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
 /// ```
 ///
 /// # State
@@ -367,13 +367,13 @@ where
         self.apply_bytes(head);
 
         let (blocks, tail) = rest.as_chunks_mut::<BLOCK_LEN>();
-        let (eights, rest_blocks) = blocks.as_chunks_mut::<8>();
-        for eight in eights.iter_mut() {
-            self.apply_batch(eight, P::encrypt_blocks8);
+        let (fours, rest_blocks) = blocks.as_chunks_mut::<4>();
+        for four in fours.iter_mut() {
+            self.apply_batch(four, P::encrypt_4blocks);
         }
         let (pairs, single) = rest_blocks.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
-            self.apply_batch(pair, P::encrypt_blocks2);
+            self.apply_batch(pair, P::encrypt_2blocks);
         }
         for block in single.iter_mut() {
             self.apply_one(block);

@@ -1,6 +1,6 @@
 //! A constant-time, table-free AES block cipher engine (NIST FIPS 197).
 //!
-//! This crate provides the raw AES keyed permutation -- [`Aes128`], [`Aes192`] and [`Aes256`] --
+//! This crate provides the raw AES keyed permutation -- [`AES_128`], [`AES_192`] and [`AES_256`] --
 //! implemented as a Boolean circuit over bit-planes rather than as byte substitutions through a
 //! lookup table. That makes it both smaller and constant-time; see [Design](#design).
 //!
@@ -12,8 +12,9 @@
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes128;
+//! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -21,7 +22,7 @@
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
 //!
-//! let aes = Aes128::new(&key).expect("a valid AES-128 key");
+//! let aes = AES_128::new(&key).expect("a valid AES-128 key");
 //!
 //! // FIPS 197 Appendix B.
 //! let mut block = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
@@ -39,61 +40,70 @@
 //! ## Two blocks at a time
 //!
 //! The bit-sliced state holds two blocks, so two independent blocks cost barely more than one.
-//! Where a caller has two, [`Aes::encrypt_blocks2`] is roughly twice the throughput of two
-//! [`Aes::encrypt_block`] calls:
+//! Where a caller has two, [`ElectronicCodeBook::encrypt_2blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_2blocks) is roughly twice the throughput of two
+//! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls:
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::Aes256;
+//! use bouncycastle_aes::AES_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let aes = Aes256::new(&key).expect("a valid AES-256 key");
+//! let aes = AES_256::new(&key).expect("a valid AES-256 key");
 //!
 //! let mut blocks = [[0u8; 16], [1u8; 16]];
-//! aes.encrypt_blocks2(&mut blocks);
-//! aes.decrypt_blocks2(&mut blocks);
+//! aes.encrypt_2blocks(&mut blocks);
+//! aes.decrypt_2blocks(&mut blocks);
 //! assert_eq!(blocks, [[0u8; 16], [1u8; 16]]);
 //! ```
 //!
 //! ## Modes of operation
 //!
 //! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
-//! provides aliases that fill in the const parameters, with the direction left as the type
-//! parameter: [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] for CBC (SP 800-38A Sec 6.2),
-//! and [`AES_CFB_128`], [`AES_CFB_192`] and [`AES_CFB_256`] for CFB128 (Sec 6.3).
+//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
+//! makes: [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] for CBC (SP 800-38A Sec 6.2), which
+//! take the direction **and a padding scheme**, and [`AES_CFB_128`], [`AES_CFB_192`] and
+//! [`AES_CFB_256`] for CFB128 (Sec 6.3), which take only the direction.
 //! [`AES_CFB8_128`], [`AES_CFB8_192`] and [`AES_CFB8_256`] give CFB8, the `s = 8` segment size,
 //! which is a different and non-interoperable mode costing one AES call per byte.
 //! [`AES_CTR_128`], [`AES_CTR_192`] and [`AES_CTR_256`] give CTR (Sec 6.5) with a 12-byte nonce
 //! and a 4-byte counter.
-//! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1) the same shape with no
-//! IV, for interoperability and test vectors only -- see
+//! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1), which takes a padding
+//! scheme like CBC and has no IV, for interoperability and test vectors only -- see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
 //!
-//! CBC is a block cipher and needs whole blocks; the two CFB modes are stream ciphers and take any
-//! length. See the `bouncycastle-modes` crate docs for the comparison.
+//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
+//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
+//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
+//! [`AES_CBC_128`] for why the scheme is named in the type.
 //!
 //! ```
-//! use bouncycastle_aes_lowmemory::AES_CBC_256;
+//! use bouncycastle_aes::AES_CBC_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_padding::PKCS7;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
-//! let plaintext = [0x5Au8; 48];
+//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
+//! let plaintext = [0x5Au8; 50];
 //!
-//! // Encryption is in place. The IV is generated for you and returned; there is no API for
-//! // supplying one.
-//! let mut data = plaintext;
-//! let iv = AES_CBC_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
-//! assert_ne!(data, plaintext);
-//! AES_CBC_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
-//! assert_eq!(data, plaintext);
+//! // The IV is generated for you and returned; there is no API for supplying one.
+//! let (iv, ciphertext) =
+//!     AES_CBC_256::<Encrypting, PKCS7>::encrypt(&key, &plaintext).expect("encryption");
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! let recovered =
+//!     AES_CBC_256::<Decrypting, PKCS7>::decrypt(&key, &iv, &ciphertext).expect("decryption");
+//! assert_eq!(recovered, plaintext);
 //! ```
 //!
-//! There is no one-shot static on the permutation, because `Aes128::new(&key)?.encrypt_block(..)`
+//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
+//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
+//!
+//! There is no one-shot static on the permutation, because `AES_128::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
 //! arbitrary-length input and generate their own initialisation data.
 //!
@@ -129,7 +139,7 @@
 //! Decryption follows FIPS 197 Algorithm 3, the straight inverse cipher, rather than the
 //! equivalent inverse cipher of Sec 5.3.5. Algorithm 3 puts INVMIXCOLUMNS() after ADDROUNDKEY(),
 //! so it uses the *unmodified* key schedule; the equivalent inverse cipher would need a second
-//! schedule with each round key transformed. One [`Aes`] value therefore encrypts and decrypts
+//! schedule with each round key transformed. One [`AES_128`] value therefore encrypts and decrypts
 //! from one stored schedule.
 //!
 //! # Memory Usage
@@ -140,9 +150,9 @@
 //!
 //! | Type | Key | `Nr` | Schedule (persistent) | Tables |
 //! |---|---|---|---|---|
-//! | [`Aes128`] | 16 B | 10 | 176 B | 0 B |
-//! | [`Aes192`] | 24 B | 12 | 208 B | 0 B |
-//! | [`Aes256`] | 32 B | 14 | 240 B | 0 B |
+//! | [`AES_128`] | 16 B | 10 | 176 B | 0 B |
+//! | [`AES_192`] | 24 B | 12 | 208 B | 0 B |
+//! | [`AES_256`] | 32 B | 14 | 240 B | 0 B |
 //!
 //! Per-call stack usage is independent of key length: 32 bytes of bit-sliced state for the two
 //! blocks, 32 bytes for the round key expanded from its compressed form, plus the S-box circuit's
@@ -157,15 +167,16 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`Aes128`] and friends transform exactly 16 bytes. Using them directly on data means ECB,
+//! [`AES_128`] and friends transform exactly 16 bytes. Using them directly on data means ECB,
 //! which is not confidential: identical plaintext blocks produce identical ciphertext blocks, so
 //! structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation, and
 //! prefer an authenticated one so that ciphertext tampering is detected.
 //!
 //! The [`AES_ECB_128`] / [`AES_ECB_192`] / [`AES_ECB_256`] aliases give that same block-by-block
 //! operation the mode API, so that systems and specifications which require ECB -- and test-vector
-//! harnesses -- can use it through the same interface as the other modes. They do not make it
-//! confidential; the warning above applies to them unchanged.
+//! harnesses -- can use it through the same interface as the other modes. Like the CBC aliases they
+//! carry a padding scheme, which is what lets them accept data of any length. Neither the mode API
+//! nor the padding makes ECB confidential; the warning above applies to them unchanged.
 //!
 //! ## Constant-time properties
 //!
@@ -202,7 +213,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
-// `AesParams` is deliberately sealed with a private supertrait so that no fourth parameter set can
+// `AESParams` is deliberately sealed with a private supertrait so that no fourth parameter set can
 // be added outside this crate; that is what triggers this lint.
 #![allow(private_bounds)]
 
@@ -213,15 +224,14 @@ mod cfb;
 mod cfb8;
 mod ctr;
 mod ecb;
+mod padded_mode;
 mod round;
 mod sbox;
 mod schedule;
 
-pub use aes::{Aes, Aes128, Aes192, Aes256, BLOCK_LEN};
-pub use bitslice::Block;
+pub use aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
-pub use schedule::{Aes128Params, Aes192Params, Aes256Params, AesParams};

@@ -2,11 +2,11 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA, `aes-lowmemory` and AES-CBC suites --
+//! matching the convention used by the ML-KEM, ML-DSA, `aes` and AES-CBC suites --
 //! `cargo test` must stay green for someone who has only cloned this repository.
 //!
 //! This is the CFB128 counterpart to `acvp_tests.rs` (AES-CBC) and to
-//! `crypto/aes-lowmemory/tests/acvp_tests.rs` (AES-ECB, the raw permutation). The `CFB128` file is
+//! `crypto/aes/tests/acvp_tests.rs` (AES-ECB, the raw permutation). The `CFB128` file is
 //! the one that matches [`Cfb`]; `ACVP-AES-CFB8` matches `Cfb8` and is read by
 //! `acvp_cfb8_tests.rs`. `ACVP-AES-CFB1` is the one segment size this crate does not implement,
 //! and is deliberately not read.
@@ -24,8 +24,8 @@
 //! including 54 whose payload spans 2 to 10 blocks. Every case is run **four times**: block by
 //! block, in pairs with a one-block remainder for odd lengths, as one call over the whole payload,
 //! and in 5-byte calls that never line up with a block. The second and third passes are what put
-//! the multi-block cases through the pair and eight-block paths -- which for CFB are
-//! [`ElectronicCodeBook::encrypt_blocks2`] and [`ElectronicCodeBook::encrypt_blocks8`], the
+//! the multi-block cases through the pair and four-block paths -- which for CFB are
+//! [`ElectronicCodeBook::encrypt_2blocks`] and [`ElectronicCodeBook::encrypt_4blocks`], the
 //! *forward* function, even on the decrypt side -- and the fourth is what puts them through the
 //! byte path with segments left open between calls. So all of that is exercised against real
 //! vectors and not only against the toys in `cfb_tests.rs`. Every ACVP CFB128 payload is a whole
@@ -37,7 +37,7 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -104,8 +104,8 @@ enum Grouping {
     Single,
     /// Two blocks per call, with a one-block remainder for odd lengths. Uses the pair path.
     Pairs,
-    /// The whole payload in one call: eights, then pairs, then the remaining block. The cases
-    /// spanning 8 to 10 blocks are the ones that reach `encrypt_blocks8`.
+    /// The whole payload in one call: fours, then pairs, then the remaining block. The cases
+    /// of four or more blocks are the ones that reach `encrypt_4blocks`.
     Whole,
     /// Five bytes per call, so every call but the first starts mid-segment and none is a whole
     /// block: the byte path, with the unused keystream carried between calls.
@@ -172,9 +172,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<u8> {
     match key_bytes.len() {
-        16 => run_case::<Aes128, 16>(key_bytes, iv, input, encrypt, grouping),
-        24 => run_case::<Aes192, 24>(key_bytes, iv, input, encrypt, grouping),
-        32 => run_case::<Aes256, 32>(key_bytes, iv, input, encrypt, grouping),
+        16 => run_case::<AES_128, 16>(key_bytes, iv, input, encrypt, grouping),
+        24 => run_case::<AES_192, 24>(key_bytes, iv, input, encrypt, grouping),
+        32 => run_case::<AES_256, 32>(key_bytes, iv, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }

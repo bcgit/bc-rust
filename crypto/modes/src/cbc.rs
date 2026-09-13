@@ -26,10 +26,10 @@
 //! operation (except the first) depends on the result of the previous forward cipher operation, so
 //! the forward cipher operations cannot be performed in parallel".
 //!
-//! This implementation uses that: decryption walks the ciphertext eight blocks at a time through
-//! [`ElectronicCodeBook::decrypt_blocks8`], then any remaining pair through
-//! [`ElectronicCodeBook::decrypt_blocks2`], then the last block singly. A bit-sliced engine
-//! computes a pair (AES) or eight blocks (SM4) for barely more than the cost of one. Encryption
+//! This implementation uses that: decryption walks the ciphertext four blocks at a time through
+//! [`ElectronicCodeBook::decrypt_4blocks`], then any remaining pair through
+//! [`ElectronicCodeBook::decrypt_2blocks`], then the last block singly. A bit-sliced engine
+//! computes a pair (AES) or four blocks (SM4) for barely more than the cost of one. Encryption
 //! cannot, and does not.
 
 use crate::iv::random_iv;
@@ -94,7 +94,7 @@ where
         self.chain = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::decrypt_blocks2`] call.
+    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::decrypt_2blocks`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Cj-1` the incoming chaining value, Sec 6.2 gives
     ///
@@ -110,7 +110,7 @@ where
     #[inline]
     fn decrypt_pair(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         let [cj, cj1] = *blocks;
-        self.perm.decrypt_blocks2(blocks);
+        self.perm.decrypt_2blocks(blocks);
 
         let [pj, pj1] = blocks;
         for (b, chain) in pj.iter_mut().zip(self.chain.iter()) {
@@ -123,17 +123,17 @@ where
         self.chain = cj1;
     }
 
-    /// Decrypts eight consecutive blocks with one [`ElectronicCodeBook::decrypt_blocks8`] call.
+    /// Decrypts four consecutive blocks with one [`ElectronicCodeBook::decrypt_4blocks`] call.
     ///
-    /// The same argument as [`Self::decrypt_pair`], eight wide: `Pj+k = CIPH^-1_K(Cj+k) XOR Cj+k-1`
-    /// for `k = 0..8`, with `Cj-1` the incoming chaining value. No inverse cipher depends on
-    /// another's output, so all eight run together; the ciphertexts are copied out first because
+    /// The same argument as [`Self::decrypt_pair`], four wide: `Pj+k = CIPH^-1_K(Cj+k) XOR Cj+k-1`
+    /// for `k = 0..4`, with `Cj-1` the incoming chaining value. No inverse cipher depends on
+    /// another's output, so all four run together; the ciphertexts are copied out first because
     /// the permutation overwrites them and each is the next block's XOR operand, and the chaining
-    /// value advances to `Cj+7`.
+    /// value advances to `Cj+3`.
     #[inline]
-    fn decrypt_eight(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+    fn decrypt_four(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
         let cts = *blocks;
-        self.perm.decrypt_blocks8(blocks);
+        self.perm.decrypt_4blocks(blocks);
 
         let mut prev = self.chain;
         for (pj, cj) in blocks.iter_mut().zip(cts.iter()) {
@@ -213,7 +213,7 @@ where
 
     /// The implementor hook (the flat `do_decrypt` is provided over it).
     ///
-    /// Walks the input in eights through `decrypt_blocks8`, then pairs through `decrypt_blocks2`,
+    /// Walks the input in fours through `decrypt_4blocks`, then pairs through `decrypt_2blocks`,
     /// then the at-most-one block left over: Sec 6.2's parallelism, in the units the permutation
     /// offers. `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
     /// indexing arithmetic. Never fails: CBC has no per-IV data limit.
@@ -221,9 +221,9 @@ where
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError> {
-        let (eights, rest) = blocks.as_chunks_mut::<8>();
-        for eight in eights.iter_mut() {
-            self.decrypt_eight(eight);
+        let (fours, rest) = blocks.as_chunks_mut::<4>();
+        for four in fours.iter_mut() {
+            self.decrypt_four(four);
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {

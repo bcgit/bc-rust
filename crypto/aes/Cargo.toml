@@ -1,5 +1,5 @@
 [package]
-name = "bouncycastle-aes-lowmemory"
+name = "bouncycastle-aes"
 version.workspace = true
 edition.workspace = true
 
@@ -8,13 +8,15 @@ bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
 # Only for the AES-CBC type aliases in `cbc.rs`; the engine itself does not use it.
 bouncycastle-modes.workspace = true
+# Only for the padded AES-CBC aliases in `cbc.rs`; the engine itself does not use it.
+bouncycastle-padding.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
 criterion.workspace = true
-serde_json = "1.0"
+serde_json = "1.0" # for parsing the bc-test-data ACVP vector files
 
 [[bench]]
 name = "aes_benches"

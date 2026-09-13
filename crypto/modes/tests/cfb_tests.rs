@@ -1,7 +1,7 @@
 //! Structural tests for CFB, driven by a toy permutation.
 //!
 //! These check the properties of the *mode* -- the keystream construction, chaining, call
-//! sequencing at arbitrary byte boundaries, the short final segment, the pair/eight-block split on
+//! sequencing at arbitrary byte boundaries, the short final segment, the pair/four-block split on
 //! the decrypt side, direction typing, SP 800-38A Appendix D error propagation, and the "forward
 //! cipher function only" rule of Sec 6.3 -- independently of any real cipher. The known-answer
 //! tests against SP 800-38A Appendix F.3.13-F.3.18 are in `sp800_38a_cfb_tests.rs`, and the ACVP
@@ -13,7 +13,7 @@
 
 mod common;
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor,
@@ -21,12 +21,12 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use bouncycastle_modes::{Cbc, Cfb, Decrypting, Encrypting};
-use common::{ForwardOnlyToy, SwappedEightToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyCfb<Dir> = Cfb<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedCfb<Dir> = Cfb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 type ForwardOnlyCfb<Dir> = Cfb<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedEightCfb<Dir> = Cfb<SwappedEightToy, Dir, TOY_LEN, TOY_LEN>;
+type SwappedFourCfb<Dir> = Cfb<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
 
 /// `do_encrypt`, by value.
 fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>, plaintext: &[u8]) -> Vec<u8> {
@@ -264,9 +264,9 @@ fn the_ciphertext_of_a_prefix_is_a_prefix_of_the_ciphertext() {
 /// SP 800-38A Sec 6.3: "The *forward cipher* function is applied to each input block to produce the
 /// output blocks" -- in CFB *decryption* as well as encryption.
 ///
-/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_blocks2` and `decrypt_blocks8`, so this
+/// [`ForwardOnlyToy`] panics from `decrypt_block`, `decrypt_2blocks` and `decrypt_4blocks`, so this
 /// test fails loudly if either direction of the mode ever reaches the inverse cipher. Every
-/// decrypt path is exercised -- the eight-block, pair, single-block and byte paths -- and the result
+/// decrypt path is exercised -- the four-block, pair, single-block and byte paths -- and the result
 /// is required to agree with the plain [`Toy`], otherwise the test could pass by not really
 /// encrypting anything.
 #[test]
@@ -279,7 +279,7 @@ fn neither_direction_uses_the_inverse_cipher() {
         ForwardOnlyCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
     let ct = enc(&mut e, &plaintext);
 
-    // One call: eight blocks, then a pair, then a single, then the short segment.
+    // One call: two fours, then a pair, then a single, then the short segment.
     let mut d = ForwardOnlyCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_eq!(dec(&mut d, &ct), plaintext, "all paths, forward cipher only");
 
@@ -381,7 +381,7 @@ fn call_chunking_does_not_change_the_result() {
 /// the direct single-call-versus-chunked comparison.
 ///
 /// The message is 171 bytes: not a whole number of blocks, so every chunking ends on a short final
-/// segment, and long enough to run the decryptor's eight-block batch ten times over.
+/// segment, and long enough to run the decryptor's four-block batch several times over.
 #[test]
 fn aes_chunking_matches_a_single_call() {
     fn check<P, const KEY_LEN: usize>(name: &str)
@@ -440,16 +440,16 @@ fn aes_chunking_matches_a_single_call() {
         }
     }
 
-    check::<Aes128, 16>("AES-128");
-    check::<Aes192, 24>("AES-192");
-    check::<Aes256, 32>("AES-256");
+    check::<AES_128, 16>("AES-128");
+    check::<AES_192, 24>("AES-192");
+    check::<AES_256, 32>("AES-256");
 }
 
 /// The pair path in `do_decrypt` must actually be taken, and only where a pair of whole blocks sits
 /// at a segment boundary.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block methods
-/// are correct. CFB decryption pairs through `encrypt_blocks2`, so with this permutation two blocks
+/// are correct. CFB decryption pairs through `encrypt_2blocks`, so with this permutation two blocks
 /// handed over together come out wrong, while the same bytes handed over one block at a time, or
 /// offset by a partial segment so that no two whole blocks line up, come out right. If everything
 /// came out right, the pair path would be dead code and every claim about it would be untested.
@@ -464,14 +464,14 @@ fn the_pair_path_is_really_used() {
     assert_eq!(dec(&mut pinned_decryptor(iv), &ct), plaintext);
 
     // The swapped-pair toy encrypts identically -- CFB encryption is serial and never pairs, so its
-    // `encrypt_blocks2` override is not reached from the encryptor at all.
+    // `encrypt_2blocks` override is not reached from the encryptor at all.
     let (mut e, _) =
         SwappedCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB encryption must not use the pair path");
 
     // ...but decrypting the pair together must now be wrong, because the pair path is used.
     let mut d = SwappedCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(dec(&mut d, &ct), plaintext, "decrypting a pair must go through encrypt_blocks2");
+    assert_ne!(dec(&mut d, &ct), plaintext, "decrypting a pair must go through encrypt_2blocks");
 
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
     let mut d = SwappedCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
@@ -486,43 +486,43 @@ fn the_pair_path_is_really_used() {
     assert_eq!(got, plaintext, "a pair not at a segment boundary is not a pair");
 }
 
-/// The eight-block path in `do_decrypt` must actually be taken, and only for full eights.
+/// The four-block path in `do_decrypt` must actually be taken, and only for full fours.
 ///
-/// [`SwappedEightToy`] returns its eight `encrypt_blocks8` results rotated while its pair and
-/// single-block methods are correct. CFB decryption batches eights through the *forward*
-/// `encrypt_blocks8`, so with this permutation nine blocks handed over together decrypt wrongly
-/// (eight rotated, then one), while the same blocks handed over as two fours (pairs) or one at a
-/// time decrypt correctly. Encryption is serial and never batches, so it is unaffected.
+/// [`SwappedFourToy`] returns its four `encrypt_4blocks` results rotated while its pair and
+/// single-block methods are correct. CFB decryption batches fours through the *forward*
+/// `encrypt_4blocks`, so with this permutation five blocks handed over together decrypt wrongly
+/// (four rotated, then one), while the same blocks handed over as two pairs or one at a time
+/// decrypt correctly. Encryption is serial and never batches, so it is unaffected.
 #[test]
-fn the_eight_block_path_is_really_used() {
+fn the_four_block_path_is_really_used() {
     let key = toy_key();
     let iv = pinned_iv();
-    let plaintext = message(9 * TOY_LEN);
+    let plaintext = message(5 * TOY_LEN);
 
-    // The correct toy round-trips nine blocks.
+    // The correct toy round-trips five blocks.
     let ct = enc(&mut pinned_encryptor(iv), &plaintext);
     assert_eq!(dec(&mut pinned_decryptor(iv), &ct), plaintext);
 
-    // The rotated-eight toy encrypts identically: CFB encryption is serial and never batches.
+    // The rotated-four toy encrypts identically: CFB encryption is serial and never batches.
     let (mut e, _) =
-        SwappedEightCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
-    assert_eq!(enc(&mut e, &plaintext), ct, "CFB encryption must not use the eight path");
+        SwappedFourCfb::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(iv)).unwrap();
+    assert_eq!(enc(&mut e, &plaintext), ct, "CFB encryption must not use the four path");
 
-    // ...but nine blocks together must now be wrong, because the first eight go through
-    // encrypt_blocks8.
-    let mut d = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-    assert_ne!(dec(&mut d, &ct), plaintext, "nine blocks must go through encrypt_blocks8");
+    // ...but five blocks together must now be wrong, because the first four go through
+    // encrypt_4blocks.
+    let mut d = SwappedFourCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    assert_ne!(dec(&mut d, &ct), plaintext, "five blocks must go through encrypt_4blocks");
 
-    // Two fours use the pair path only, so they are correct even for this toy...
-    let mut d = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    // Pairs use the pair path only, so they are correct even for this toy...
+    let mut d = SwappedFourCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_eq!(
-        dec_chunked(&mut d, &ct, 4 * TOY_LEN),
+        dec_chunked(&mut d, &ct, 2 * TOY_LEN),
         plaintext,
-        "fours must not use the eight path"
+        "pairs must not use the four path"
     );
 
     // ...and so is one block at a time.
-    let mut d = SwappedEightCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    let mut d = SwappedFourCfb::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
     assert_eq!(
         dec_chunked(&mut d, &ct, TOY_LEN),
         plaintext,
@@ -631,7 +631,7 @@ fn a_ciphertext_bit_error_flips_exactly_that_bit_of_its_own_block() {
 /// real bug and this is what catches it.
 #[test]
 fn an_iv_bit_error_randomises_only_the_first_block() {
-    type Aes128Cfb<Dir> = Cfb<Aes128, Dir, 16, 16>;
+    type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
     const LEN: usize = 16;
 
     let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -764,25 +764,25 @@ fn every_length_round_trips_without_padding() {
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<Cfb<Aes128, Encrypting, 16, 16>>(), 176 + 16 + 8);
-    assert_eq!(size_of::<Cfb<Aes192, Encrypting, 24, 16>>(), 208 + 16 + 8);
-    assert_eq!(size_of::<Cfb<Aes256, Encrypting, 32, 16>>(), 240 + 16 + 8);
+    assert_eq!(size_of::<Cfb<AES_128, Encrypting, 16, 16>>(), 176 + 16 + 8);
+    assert_eq!(size_of::<Cfb<AES_192, Encrypting, 24, 16>>(), 208 + 16 + 8);
+    assert_eq!(size_of::<Cfb<AES_256, Encrypting, 32, 16>>(), 240 + 16 + 8);
 
     // The direction marker is free, and does not change the layout.
     assert_eq!(
-        size_of::<Cfb<Aes128, Encrypting, 16, 16>>(),
-        size_of::<Cfb<Aes128, Decrypting, 16, 16>>()
+        size_of::<Cfb<AES_128, Encrypting, 16, 16>>(),
+        size_of::<Cfb<AES_128, Decrypting, 16, 16>>()
     );
 
     // ...and the general rule the docs state.
     assert_eq!(
-        size_of::<Cfb<Aes256, Encrypting, 32, 16>>(),
-        size_of::<Aes256>() + 16 + size_of::<usize>()
+        size_of::<Cfb<AES_256, Encrypting, 32, 16>>(),
+        size_of::<AES_256>() + 16 + size_of::<usize>()
     );
 
     // The docs say CFB is one `usize` bigger than CBC.
     assert_eq!(
-        size_of::<Cfb<Aes128, Encrypting, 16, 16>>(),
-        size_of::<Cbc<Aes128, Encrypting, 16, 16>>() + size_of::<usize>()
+        size_of::<Cfb<AES_128, Encrypting, 16, 16>>(),
+        size_of::<Cbc<AES_128, Encrypting, 16, 16>>() + size_of::<usize>()
     );
 }

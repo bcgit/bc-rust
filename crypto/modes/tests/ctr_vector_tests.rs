@@ -25,7 +25,7 @@
 //! the counter starting at zero, so the two line up exactly when the IV's low four bytes are zero,
 //! which is why the IV above ends in `00000000`. See the [`Ctr`] module docs.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -89,7 +89,7 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
         .expect("a valid symmetric cipher key")
 }
 
-/// Chunk sizes that cut across the block and the eight-block batch, so the vectors are reproduced
+/// Chunk sizes that cut across the block and the four-block batch, so the vectors are reproduced
 /// through every path rather than only the batched one.
 const CHUNKINGS: [usize; 6] = [1, 5, 16, 17, 33, 69];
 
@@ -142,17 +142,17 @@ where
 
 #[test]
 fn aes128_ctr_matches_openssl() {
-    check::<Aes128, 16>("AES-128", KEY_128, CT_128);
+    check::<AES_128, 16>("AES-128", KEY_128, CT_128);
 }
 
 #[test]
 fn aes192_ctr_matches_openssl() {
-    check::<Aes192, 24>("AES-192", KEY_192, CT_192);
+    check::<AES_192, 24>("AES-192", KEY_192, CT_192);
 }
 
 #[test]
 fn aes256_ctr_matches_openssl() {
-    check::<Aes256, 32>("AES-256", KEY_256, CT_256);
+    check::<AES_256, 32>("AES-256", KEY_256, CT_256);
 }
 
 /// The vectors must actually depend on the counter advancing: the second block of ciphertext must

@@ -40,8 +40,8 @@
 //!
 //! Sec 6.1: "In ECB encryption and ECB decryption, multiple forward cipher functions and inverse
 //! cipher functions can be computed in parallel." Unlike CBC and CFB, whose encryption is serial,
-//! both directions here batch through the permutation's eight-block and pair methods
-//! ([`ElectronicCodeBook::encrypt_blocks8`] / [`ElectronicCodeBook::encrypt_blocks2`] and their
+//! both directions here batch through the permutation's four-block and pair methods
+//! ([`ElectronicCodeBook::encrypt_4blocks`] / [`ElectronicCodeBook::encrypt_2blocks`] and their
 //! inverses), then finish the remaining block singly.
 
 use crate::{Decrypting, Encrypting};
@@ -127,20 +127,20 @@ where
     /// block, in place.
     ///
     /// Sec 6.1 allows the forward cipher functions to "be computed in parallel", so the blocks go
-    /// to the permutation in eights, then pairs, then the remaining block singly. `as_chunks_mut`
+    /// to the permutation in fours, then pairs, then the remaining block singly. `as_chunks_mut`
     /// splits into exactly those shapes with no runtime length check. Never fails: ECB has no
     /// per-initialization data limit.
     fn do_encrypt_blocks(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError> {
-        let (eights, rest) = blocks.as_chunks_mut::<8>();
-        for eight in eights.iter_mut() {
-            self.perm.encrypt_blocks8(eight);
+        let (fours, rest) = blocks.as_chunks_mut::<4>();
+        for four in fours.iter_mut() {
+            self.perm.encrypt_4blocks(four);
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
-            self.perm.encrypt_blocks2(pair);
+            self.perm.encrypt_2blocks(pair);
         }
         for block in tail.iter_mut() {
             self.perm.encrypt_block(block);
@@ -164,19 +164,19 @@ where
     }
 
     /// The implementor hook (the flat `do_decrypt` is provided over it): `Pj = CIPH^-1_K(Cj)` for
-    /// every block, in place -- eights, then pairs, then the remaining block, as on the encrypt
+    /// every block, in place -- fours, then pairs, then the remaining block, as on the encrypt
     /// side. Never fails.
     fn do_decrypt_blocks(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<(), SymmetricCipherError> {
-        let (eights, rest) = blocks.as_chunks_mut::<8>();
-        for eight in eights.iter_mut() {
-            self.perm.decrypt_blocks8(eight);
+        let (fours, rest) = blocks.as_chunks_mut::<4>();
+        for four in fours.iter_mut() {
+            self.perm.decrypt_4blocks(four);
         }
         let (pairs, tail) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {
-            self.perm.decrypt_blocks2(pair);
+            self.perm.decrypt_2blocks(pair);
         }
         for block in tail.iter_mut() {
             self.perm.decrypt_block(block);

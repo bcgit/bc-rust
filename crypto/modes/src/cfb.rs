@@ -101,7 +101,7 @@
 //! applied to each input block to produce the output blocks."
 //!
 //! So [`Cfb<P, Decrypting, ..>`](Cfb) never calls [`ElectronicCodeBook::decrypt_block`],
-//! [`ElectronicCodeBook::decrypt_blocks2`] or [`ElectronicCodeBook::decrypt_blocks8`]. A
+//! [`ElectronicCodeBook::decrypt_2blocks`] or [`ElectronicCodeBook::decrypt_4blocks`]. A
 //! permutation could implement only the forward direction and still work here; `cfb_tests.rs` pins
 //! that with a toy whose inverse panics. The mode XORs a keystream in both directions, and the two
 //! directions differ only in which of the two values -- the byte that came in, or the byte that
@@ -117,8 +117,8 @@
 //!
 //! Constructing them "in series" is trivial here: with `s = b` the input blocks *are* the IV
 //! followed by the ciphertext blocks, already in hand. Decryption therefore walks the
-//! block-aligned part of the data in eights through [`ElectronicCodeBook::encrypt_blocks8`] and
-//! pairs through [`ElectronicCodeBook::encrypt_blocks2`], which a bit-sliced engine computes for
+//! block-aligned part of the data in fours through [`ElectronicCodeBook::encrypt_4blocks`] and
+//! pairs through [`ElectronicCodeBook::encrypt_2blocks`], which a bit-sliced engine computes for
 //! barely more than the cost of one block. Encryption cannot, and does not. Only the bytes that
 //! complete an open segment, and the bytes that open the final short one, go singly.
 
@@ -251,7 +251,7 @@ where
         self.buf = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::encrypt_blocks2`] call.
+    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::encrypt_2blocks`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Ij` the incoming input block, the `s = b` equations
     /// give
@@ -273,7 +273,7 @@ where
         debug_assert_eq!(self.used, BLOCK_LEN, "the block path needs a segment boundary");
         // The two input blocks, constructed in series: Ij (already held) and Ij+1 (= Cj).
         let mut o = [self.buf, blocks[0]];
-        self.perm.encrypt_blocks2(&mut o);
+        self.perm.encrypt_2blocks(&mut o);
 
         // I_{j+2} = Cj+1, read before the XOR below turns it into Pj+1.
         self.buf = blocks[1];
@@ -285,19 +285,18 @@ where
         }
     }
 
-    /// Decrypts eight consecutive blocks with one [`ElectronicCodeBook::encrypt_blocks8`] call.
+    /// Decrypts four consecutive blocks with one [`ElectronicCodeBook::encrypt_4blocks`] call.
     ///
-    /// The same construction as [`Self::decrypt_pair`] widened to eight: the input blocks are the
-    /// incoming input block followed by the first seven ciphertext blocks, all known before any
-    /// cipher call, so the eight forward ciphers are independent (Sec 6.3's parallel decryption).
-    /// `I_{j+8} = Cj+7` is read before the XOR turns it into `Pj+7`.
+    /// The same construction as [`Self::decrypt_pair`] widened to four: the input blocks are the
+    /// incoming input block followed by the first three ciphertext blocks, all known before any
+    /// cipher call, so the four forward ciphers are independent (Sec 6.3's parallel decryption).
+    /// `I_{j+4} = Cj+3` is read before the XOR turns it into `Pj+3`.
     #[inline]
-    fn decrypt_eight(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 8]) {
+    fn decrypt_four(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
         debug_assert_eq!(self.used, BLOCK_LEN, "the block path needs a segment boundary");
-        let mut o =
-            [self.buf, blocks[0], blocks[1], blocks[2], blocks[3], blocks[4], blocks[5], blocks[6]];
-        self.perm.encrypt_blocks8(&mut o);
-        self.buf = blocks[7];
+        let mut o = [self.buf, blocks[0], blocks[1], blocks[2]];
+        self.perm.encrypt_4blocks(&mut o);
+        self.buf = blocks[3];
         for (block, o) in blocks.iter_mut().zip(o.iter()) {
             for (b, o) in block.iter_mut().zip(o.iter()) {
                 *b ^= *o;
@@ -392,7 +391,7 @@ where
 
     /// Decrypts `data`, of any length, in place.
     ///
-    /// Walks the block-aligned middle in eights through the permutation's *forward* eight-block
+    /// Walks the block-aligned middle in fours through the permutation's *forward* four-block
     /// path, then in pairs through its forward pair path, then the remaining block singly.
     /// `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
     /// indexing arithmetic. The bytes that complete an open segment, and the final short segment,
@@ -400,9 +399,9 @@ where
     fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         let (head, blocks, tail) = self.split(data);
         self.decrypt_bytes(head);
-        let (eights, rest) = blocks.as_chunks_mut::<8>();
-        for eight in eights.iter_mut() {
-            self.decrypt_eight(eight);
+        let (fours, rest) = blocks.as_chunks_mut::<4>();
+        for four in fours.iter_mut() {
+            self.decrypt_four(four);
         }
         let (pairs, single) = rest.as_chunks_mut::<2>();
         for pair in pairs.iter_mut() {

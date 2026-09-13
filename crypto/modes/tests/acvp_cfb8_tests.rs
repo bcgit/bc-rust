@@ -2,11 +2,11 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA, `aes-lowmemory` and AES-CBC suites --
+//! matching the convention used by the ML-KEM, ML-DSA, `aes` and AES-CBC suites --
 //! `cargo test` must stay green for someone who has only cloned this repository.
 //!
 //! This is the CFB8 counterpart to `acvp_cfb_tests.rs` (AES-CFB128), `acvp_tests.rs` (AES-CBC) and
-//! `crypto/aes-lowmemory/tests/acvp_tests.rs` (AES-ECB, the raw permutation). `ACVP-AES-CFB1` is
+//! `crypto/aes/tests/acvp_tests.rs` (AES-ECB, the raw permutation). `ACVP-AES-CFB1` is
 //! the one remaining segment size, which this crate does not implement, and is not read.
 //!
 //! # Joining the request and response files
@@ -23,7 +23,7 @@
 //! that reach the batch paths. Every case is run **four times**: as one call over the whole
 //! payload, byte by byte, in 8-byte calls, and in 3-byte calls that never line up with the
 //! 8-byte batch. Between them those put the multi-byte cases through
-//! [`ElectronicCodeBook::encrypt_blocks8`] and [`ElectronicCodeBook::encrypt_blocks2`] -- the
+//! [`ElectronicCodeBook::encrypt_4blocks`] and [`ElectronicCodeBook::encrypt_2blocks`] -- the
 //! *forward* function, even on the decrypt side -- and through the single-byte path, with the
 //! shift register carried across calls at every alignment. So all of that is exercised against real
 //! vectors and not only against the toys in `cfb8_tests.rs`.
@@ -33,7 +33,7 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -96,12 +96,12 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// How to walk the bytes of one case.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Grouping {
-    /// The whole payload in one call: eights, then pairs, then the remaining bytes singly.
+    /// The whole payload in one call: fours, then pairs, then the remaining bytes singly.
     Whole,
     /// One byte per call. Never batches.
     Bytes,
-    /// Eight bytes per call: every call is exactly one `encrypt_blocks8` batch.
-    Eights,
+    /// Four bytes per call: every call is exactly one `encrypt_4blocks` batch.
+    Fours,
     /// Three bytes per call, so no call lines up with the 8-byte batch and the shift register has
     /// to carry across calls at every alignment.
     Threes,
@@ -112,7 +112,7 @@ impl Grouping {
         match self {
             Grouping::Whole => payload_len.max(1),
             Grouping::Bytes => 1,
-            Grouping::Eights => 8,
+            Grouping::Fours => 4,
             Grouping::Threes => 3,
         }
     }
@@ -167,9 +167,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<u8> {
     match key_bytes.len() {
-        16 => run_case::<Aes128, 16>(key_bytes, iv, input, encrypt, grouping),
-        24 => run_case::<Aes192, 24>(key_bytes, iv, input, encrypt, grouping),
-        32 => run_case::<Aes256, 32>(key_bytes, iv, input, encrypt, grouping),
+        16 => run_case::<AES_128, 16>(key_bytes, iv, input, encrypt, grouping),
+        24 => run_case::<AES_192, 24>(key_bytes, iv, input, encrypt, grouping),
+        32 => run_case::<AES_256, 32>(key_bytes, iv, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }
@@ -256,7 +256,7 @@ fn acvp_aes_cfb8_known_answer_tests() {
                 multi_block += 1;
             }
 
-            for grouping in [Grouping::Whole, Grouping::Bytes, Grouping::Eights, Grouping::Threes] {
+            for grouping in [Grouping::Whole, Grouping::Bytes, Grouping::Fours, Grouping::Threes] {
                 let got = run_case_for_key_len(&key_bytes, iv, &input, encrypt, grouping);
                 assert_eq!(
                     got,
