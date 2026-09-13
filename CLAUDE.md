@@ -33,12 +33,15 @@ fixed.
 
 ## Common commands
 
-Build / test / bench / docs run against the cargo workspace from the repo root:
+Build / test / bench / docs run against the cargo workspace from the repo root. `--workspace` is
+not optional: the root manifest is both the workspace and the umbrella `bouncycastle` package, so a
+bare `cargo build` builds only that package (no `cli`, no benches) and a bare `cargo test` runs
+**zero** tests and still exits 0, because the umbrella crate has none of its own.
 
 ```
-cargo build                     # whole workspace incl. `bc-rust` CLI binary
+cargo build --workspace         # whole workspace incl. `bc-rust` CLI binary
 cargo build -p bouncycastle-sha3   # one sub-crate
-cargo test                      # all tests
+cargo test --workspace          # all tests
 cargo test -p bouncycastle-mlkem   # tests for one crate
 cargo test -p bouncycastle-mlkem ml_kem_tests   # one integration test file
 cargo bench --all               # all criterion benches
@@ -54,19 +57,25 @@ Quality / mutation testing:
 cargo mutants                              # config in .cargo/mutants.toml (output: custom_mutants_output/)
 ```
 
-Stack-memory benches are separate binaries under `mem_usage_benches/`:
+Stack-memory benches are separate binaries under `mem_usage_benches/src/`, each declared as a
+`[[bin]]` in that crate's `Cargo.toml`:
 
 ```
 cargo run --release -p mem_usage_benches --bin bench_mlkem_mem_usage
 cargo run --release -p mem_usage_benches --bin bench_mldsa_mem_usage
 ```
 
+`mem_usage_benches/src/lib.rs` makes those sources modules of a lib target as well, so their `//!`
+headers are rustdoc'd and any indented or fenced block in them is compiled as a Rust doctest. The
+valgrind and `ms_print` recipes there are fenced as ```` ```text ```` for that reason — keep it that
+way when adding a harness, or `cargo test --workspace` fails to compile them.
+
 ## Workspace architecture
 
 The workspace has three top-level kinds of member:
 
-1. `crypto/*` — one sub-crate per primitive (`sha2`, `sha3`, `hmac`, `hkdf`, `mlkem`, `mlkem_lowmemory`, `mldsa`, `mldsa_lowmemory`, `rng`, `hex`, `base64`, `utils`) plus the spine crates `core`, `core-test-framework`, and `factory`. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
-2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
+1. `crypto/*` — one sub-crate per primitive (`sha2`, `sha3`, `sm3`, `hmac`, `hkdf`, `mlkem`, `mlkem_lowmemory`, `mldsa`, `mldsa_lowmemory`, `rng`, `hex`, `base64`, `utils`) plus the spine crates `core`, `core-test-framework`, and `factory`. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
+2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
 
@@ -109,6 +118,19 @@ Repo mechanics behind those rules, which the documents don't spell out:
   pipelines; preserve that when adding subcommands.
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
 
+## Scope of changes
+
+Implement what was asked and stop. Unrequested refactors — extracting a trait, renaming for
+readability, restructuring impls — are not free even when they are correct: bundled into a feature
+commit they make the diff unreviewable, because a reviewer cannot separate the new behaviour from
+the restructuring, and the review time that costs is the reason not to do it.
+
+- If a refactor genuinely unblocks the task, give it **its own commit ahead of** the feature, so it
+  can be reviewed or dropped on its own.
+- If it unblocks nothing, propose it and wait rather than doing it.
+- The same goes for drive-by comment rewrites, reformatting and file moves in code you are only
+  passing through.
+
 ## Working from specifications
 
 QUALITY_AND_STYLE.md is where the requirement for spec-corresponding comments and justified deviations lives. This
@@ -144,10 +166,11 @@ What a crate must be tested against — including the mutation-testing expectati
 external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING.md. Repo-specific mechanics:
 
 - `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`).
-- Behaviour-critical private functions can use in-file `#[cfg(test)] mod tests` blocks when they can't be exercised from outside the crate.
+- Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
+- A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
 - For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation.
 - The per-width `impl Condition<W>` blocks in `crypto/utils/src/ct.rs` (and their test modules) are deliberately duplicated rather than macro-generated: `cargo mutants` cannot see into `macro_rules!` bodies, so a macro would hide the mask identities from mutation testing. Do not fold them back into a macro. Any change to one width in a group (i64/i32, u64/u32) must be applied to every width in that group.
 
 ## CI
 
-The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test` is the gate.
+The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test --workspace` is the gate, and nothing but a developer running it stands between a broken test and `main`.

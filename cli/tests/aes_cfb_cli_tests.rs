@@ -1,0 +1,550 @@
+//! Tests for the `aes128-cfb` / `aes192-cfb` / `aes256-cfb` subcommands.
+//!
+//! These drive the built `bc-rust` binary as a subprocess, because the behaviour worth testing is
+//! the command-line contract itself -- the IV riding in the first block, the chunked streaming
+//! loop, exit codes, key loading -- none of which is reachable from the library API.
+//!
+//! The commands share their key loading and IV convention with `aes*-cbc`
+//! (`cli/src/block_mode_cmd.rs`) and their streaming loop with `aes*-cfb8`
+//! (`cli/src/stream_mode_cmd.rs`), so this file deliberately repeats the CBC suite's coverage
+//! rather than assuming it: the shared code is generic over the mode, and a wiring mistake in the
+//! CFB dispatcher would not show up in the CBC tests. What is *not* shared, and is tested only
+//! here, is the F.3 vectors, the CFB-specific Appendix D error propagation, the guard that CFB and
+//! CBC ciphertexts are not interchangeable, and -- the difference from the CBC suite -- that input
+//! of *any* length is accepted, because CFB is a stream cipher and pads nothing.
+//!
+//! `CARGO_BIN_EXE_bc-rust` is set by cargo for integration tests and points at the binary for the
+//! current profile, so there is nothing to build or locate by hand.
+
+use std::io::{ErrorKind, Write};
+use std::process::{Command, Output, Stdio};
+use std::thread;
+
+/// The path to the binary under test, resolved by cargo.
+const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
+
+/// SP 800-38A Appendix F IV, shared by every F.3 subsection.
+const IV: &str = "000102030405060708090a0b0c0d0e0f";
+
+/// The four SP 800-38A Appendix F plaintext blocks.
+const PLAINTEXT: &str = concat!(
+    "6bc1bee22e409f96e93d7e117393172a",
+    "ae2d8a571e03ac9c9eb76fac45af8e51",
+    "30c81c46a35ce411e5fbc1191a0a52ef",
+    "f69f2445df4f9b17ad2b417be66c3710",
+);
+
+const KEY_128: &str = "2b7e151628aed2a6abf7158809cf4f3c";
+const KEY_192: &str = "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b";
+const KEY_256: &str = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
+
+/// F.3.13 CFB128-AES128.Encrypt ciphertext.
+const CT_128: &str = concat!(
+    "3b3fd92eb72dad20333449f8e83cfb4a",
+    "c8a64537a0b3a93fcde3cdad9f1ce58b",
+    "26751f67a3cbb140b1808cf187a4f4df",
+    "c04b05357c5d1c0eeac4c66f9ff7f2e6",
+);
+/// F.3.15 CFB128-AES192.Encrypt ciphertext.
+const CT_192: &str = concat!(
+    "cdc80d6fddf18cab34c25909c99a4174",
+    "67ce7f7f81173621961a2b70171d3d7a",
+    "2e1e8a1dd59b88b1c8e60fed1efac4c9",
+    "c05f9f9ca9834fa042ae8fba584b09ff",
+);
+/// F.3.17 CFB128-AES256.Encrypt ciphertext.
+const CT_256: &str = concat!(
+    "dc7e84bfda79164b7ecd8486985d3860",
+    "39ffed143b28b1c832113c6331e5407b",
+    "df10132415e54b92a13ed0a8267ae2f9",
+    "75a385741ab9cef82031623d55b1e471",
+);
+
+/// F.2.1 CBC-AES128.Encrypt ciphertext, for the cross-mode guard.
+const CBC_CT_128: &str = concat!(
+    "7649abac8119b246cee98e9b12e9197d",
+    "5086cb9b507219ee95db113a917678b2",
+    "73bed6b8e3c1743b7116e69e22229516",
+    "3ff1caa1681fac09120eca307586e1a7",
+);
+
+/// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and returns the completed output.
+///
+/// # Why stdin is written from a thread
+///
+/// stdin, stdout and stderr are all pipes with a bounded buffer (typically 64 KiB). Writing all of
+/// stdin from *this* thread before reading any output deadlocks as soon as the payload is large
+/// enough: the child fills its stdout buffer and blocks, so it stops draining stdin, so our write
+/// blocks too, and neither side can move. That is a hang rather than a failure, so it would surface
+/// as a CI timeout. Writing on a separate thread leaves this one free to drain stdout and stderr
+/// via `wait_with_output`, which breaks the cycle. `a_payload_larger_than_the_pipe_buffer_round_trips`
+/// pins it.
+///
+/// Dropping the pipe when the write finishes is what signals EOF to the child, so the writer thread
+/// owns the handle (`take`, not `as_mut`) and must run to completion.
+///
+/// # Why `BrokenPipe` is ignored
+///
+/// The error-path tests hand a rejected key to a command that `exit`s before it reads stdin, so the
+/// write races the child's exit and loses. That is an expected outcome, not a
+/// harness failure: those tests assert the exit status and stderr, both of which `wait_with_output`
+/// still returns. Any *other* write error is a real problem and still panics.
+/// `a_large_payload_on_an_error_path_does_not_break_the_harness` pins it.
+fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
+    let mut child = Command::new(BC_RUST)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn bc-rust");
+
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    let payload = stdin_bytes.to_vec();
+    let writer = thread::spawn(move || {
+        match stdin.write_all(&payload) {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+            Err(e) => panic!("failed to write to stdin: {e}"),
+        }
+        // `stdin` drops here, closing the pipe so the child sees EOF and can exit.
+    });
+
+    // Drain stdout and stderr first: the writer may still be blocked on a full stdin buffer, and it
+    // cannot finish until the child consumes more, which it cannot do while its output is backed up.
+    let output = child.wait_with_output().expect("failed to wait for bc-rust");
+    writer.join().expect("the stdin writer thread panicked");
+    output
+}
+
+/// Runs a command that is expected to succeed, returning stdout.
+fn run_ok(args: &[&str], stdin_bytes: &[u8]) -> Vec<u8> {
+    let out = run(args, stdin_bytes);
+    assert!(
+        out.status.success(),
+        "expected success from {args:?}, got {:?}\nstderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    out.stdout
+}
+
+/// Runs a command that is expected to fail, returning stderr as a string.
+fn run_err(args: &[&str], stdin_bytes: &[u8]) -> String {
+    let out = run(args, stdin_bytes);
+    assert!(
+        !out.status.success(),
+        "expected failure from {args:?}, but it succeeded\nstdout: {:?}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    assert!(s.len().is_multiple_of(2), "hex string must have even length");
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex"))
+        .collect()
+}
+
+fn tohex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Deterministic pseudo-random bytes, so the tests do not depend on an RNG or on `/dev/urandom`.
+fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
+    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+    (0..len)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state >> 24) as u8
+        })
+        .collect()
+}
+
+// ---- the harness itself ------------------------------------------------------------------
+//
+// These two pin `run`'s pipe handling. Both bugs they cover are timing-dependent: they pass on a
+// fast machine with a small payload and fail on a slow or loaded runner, which is exactly how the
+// first one reached CI. Forcing the condition with an oversized payload makes them deterministic
+// instead of waiting for a bad day. The same pair exists in `aes_cbc_cli_tests.rs`, because each
+// file has its own copy of `run`.
+
+/// Far beyond any pipe buffer, so a write cannot complete before the child has drained it.
+const OVERSIZED: usize = 4 * 1024 * 1024;
+
+/// An error path must not take the harness down with it.
+///
+/// `encrypt` with no `--key` prints its complaint and exits without reading stdin, so the write
+/// loses the race and the pipe breaks. Before `run` tolerated `ErrorKind::BrokenPipe` this panicked
+/// with "failed to write to stdin" (os error 109 on Windows, EPIPE elsewhere) instead of reporting
+/// the CLI's actual error, which is what the other error-path tests assert on.
+#[test]
+fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
+    let stderr = run_err(&["aes128-cfb", "encrypt"], &vec![0u8; OVERSIZED]);
+    assert!(stderr.contains("--key"), "the CLI's own error must still be reported: {stderr}");
+}
+
+/// A payload larger than the pipe buffer must round-trip rather than deadlock.
+///
+/// This is the reason `run` writes stdin from a separate thread. Writing it inline wedges once both
+/// pipes fill: the child blocks writing stdout, so it stops reading stdin, so the harness blocks
+/// writing stdin. Nothing times out on its own -- the test just hangs until CI kills the job -- so
+/// this is the check that would have caught it.
+#[test]
+fn a_payload_larger_than_the_pipe_buffer_round_trips() {
+    let plaintext = pseudo_random(OVERSIZED, 0xC0FFEE);
+    let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+    assert_eq!(ciphertext.len(), plaintext.len() + 16, "IV plus the ciphertext");
+
+    let recovered = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
+    assert_eq!(recovered, plaintext, "{OVERSIZED} bytes should round trip");
+}
+
+// ---- the SP 800-38A F.3 vectors, through the CLI -----------------------------------------
+
+/// `decrypt` reproduces the spec plaintext when handed the spec's IV followed by the spec's
+/// ciphertext, for F.3.13/F.3.15/F.3.17 (CFB128-AES128/192/256).
+///
+/// This is the direction that can be pinned exactly: `encrypt` picks its own IV, so it cannot be
+/// asked to reproduce a published ciphertext. `encrypt` is covered by the round-trip tests below
+/// and, at the library level, by `crypto/modes/tests/sp800_38a_cfb_tests.rs`.
+#[test]
+fn decrypt_matches_sp800_38a_f3_vectors() {
+    for (cmd, key, ct) in [
+        ("aes128-cfb", KEY_128, CT_128),
+        ("aes192-cfb", KEY_192, CT_192),
+        ("aes256-cfb", KEY_256, CT_256),
+    ] {
+        // The CLI expects the IV as the first block of its input, which is exactly how `encrypt`
+        // emits it.
+        let input = unhex(&format!("{IV}{ct}"));
+        let out = run_ok(&[cmd, "decrypt", "--key", key], &input);
+        assert_eq!(
+            tohex(&out),
+            PLAINTEXT,
+            "{cmd} decrypt should reproduce the Appendix F.3 plaintext"
+        );
+    }
+}
+
+/// The same, with `-x`, which should give the identical answer in hex plus a trailing newline.
+#[test]
+fn hex_output_matches_binary_output() {
+    let input = unhex(&format!("{IV}{CT_128}"));
+    let binary = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &input);
+    let hex_out = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128, "-x"], &input);
+
+    let hex_str = String::from_utf8(hex_out).expect("hex output is text");
+    assert_eq!(hex_str.trim_end(), tohex(&binary));
+    assert_eq!(hex_str.trim_end(), PLAINTEXT);
+}
+
+// ---- round trips ------------------------------------------------------------------------
+
+/// `encrypt | decrypt` recovers the input, for all three key lengths.
+///
+/// Also checks the output length: the ciphertext is one block longer than the plaintext, because
+/// the IV is prepended.
+#[test]
+fn encrypt_then_decrypt_round_trips() {
+    for (cmd, key) in [("aes128-cfb", KEY_128), ("aes192-cfb", KEY_192), ("aes256-cfb", KEY_256)] {
+        let plaintext = unhex(PLAINTEXT);
+        let ciphertext = run_ok(&[cmd, "encrypt", "--key", key], &plaintext);
+        assert_eq!(
+            ciphertext.len(),
+            plaintext.len() + 16,
+            "{cmd}: output should be the 16-byte IV plus the ciphertext"
+        );
+
+        let recovered = run_ok(&[cmd, "decrypt", "--key", key], &ciphertext);
+        assert_eq!(recovered, plaintext, "{cmd}: round trip");
+    }
+}
+
+/// Round trips at sizes that straddle the 1 KiB streaming chunk and the block boundary.
+///
+/// 1024 is exactly one chunk; 1040 is a chunk plus one block; 4112 is four chunks plus a block;
+/// 65536 is many chunks. The odd sizes leave a partial final segment and put a chunk boundary in
+/// the middle of a segment.
+#[test]
+fn round_trips_across_chunk_boundaries() {
+    for size in [16usize, 32, 1023, 1024, 1025, 1040, 4096, 4112, 65535, 65536] {
+        let plaintext = pseudo_random(size, size as u32);
+        let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        let recovered = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
+        assert_eq!(recovered, plaintext, "{size} bytes should round trip");
+    }
+}
+
+/// A fresh IV per invocation, so the same plaintext under the same key gives different output.
+///
+/// This matters even more for CFB than for CBC: CFB XORs a keystream, so a repeated key-and-IV pair
+/// leaks the XOR of the two plaintexts outright, not merely whether blocks were equal.
+#[test]
+fn each_invocation_uses_a_fresh_iv() {
+    let plaintext = unhex(PLAINTEXT);
+    let mut seen = std::collections::BTreeSet::new();
+
+    for _ in 0..8 {
+        let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        let iv = ciphertext[..16].to_vec();
+        assert!(seen.insert(iv), "the CLI reused an IV across invocations");
+        // ...and the body differs too, not just the IV.
+        let recovered = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
+        assert_eq!(recovered, plaintext);
+    }
+}
+
+// ---- key handling -----------------------------------------------------------------------
+
+/// `--key-file` accepts both a hex file and a raw binary file, and agrees with `--key`.
+#[test]
+fn key_file_accepts_hex_and_binary() {
+    let dir = std::env::temp_dir().join(format!("bc_rust_cfb_cli_key_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+
+    let hex_path = dir.join("key.hex");
+    let bin_path = dir.join("key.bin");
+    std::fs::write(&hex_path, KEY_128).expect("write hex key");
+    std::fs::write(&bin_path, unhex(KEY_128)).expect("write binary key");
+
+    let input = unhex(&format!("{IV}{CT_128}"));
+    let expected = unhex(PLAINTEXT);
+
+    for path in [&hex_path, &bin_path] {
+        let out = run_ok(&["aes128-cfb", "decrypt", "--key-file", path.to_str().unwrap()], &input);
+        assert_eq!(out, expected, "--key-file {path:?}");
+    }
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A key of the wrong length for the chosen variant is rejected, naming both lengths.
+#[test]
+fn a_key_of_the_wrong_length_is_rejected() {
+    let stderr = run_err(&["aes256-cfb", "encrypt", "--key", KEY_128], &unhex(PLAINTEXT));
+    assert!(stderr.contains("32-byte key"), "stderr should name the expected length: {stderr}");
+    assert!(stderr.contains("16 bytes"), "stderr should name the supplied length: {stderr}");
+}
+
+/// Omitting the key entirely is an error, not a default.
+#[test]
+fn a_missing_key_is_rejected() {
+    let stderr = run_err(&["aes128-cfb", "encrypt"], &unhex(PLAINTEXT));
+    assert!(stderr.contains("--key"), "stderr should mention the key options: {stderr}");
+}
+
+/// An all-zero key warns but proceeds, matching `helpers::parse_seed`'s stance. NIST publishes
+/// all-zero-key vectors, so refusing outright would make some of them untestable from the CLI.
+#[test]
+fn an_all_zero_key_warns_but_proceeds() {
+    let zero_key = "0".repeat(32);
+    let out = run(&["aes128-cfb", "encrypt", "--key", &zero_key], &unhex(PLAINTEXT));
+    assert!(out.status.success(), "an all-zero key should still work");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.to_lowercase().contains("warning"), "an all-zero key should warn: {stderr}");
+    assert_eq!(out.stdout.len(), 16 + 64, "IV plus four ciphertext blocks");
+}
+
+// ---- block alignment and framing --------------------------------------------------------
+
+/// Input of *any* length is accepted and round-trips, and the ciphertext is exactly as long as the
+/// plaintext. CFB is a stream cipher, so unlike `aes*-cbc` these commands neither pad nor reject.
+///
+/// Every length from empty to just past two blocks is covered, which includes the exact multiples
+/// and every partial final segment.
+#[test]
+fn any_input_length_is_accepted_and_round_trips() {
+    for len in 0..=(2 * 16 + 1) {
+        let plaintext = pseudo_random(len, len as u32);
+        let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        assert_eq!(
+            ciphertext.len(),
+            len + 16,
+            "len {len}: output should be the 16-byte IV plus a ciphertext as long as the plaintext"
+        );
+
+        let recovered = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
+        assert_eq!(recovered, plaintext, "len {len}: round trip");
+    }
+}
+
+/// A message that is not a whole number of blocks must agree with the library, byte for byte,
+/// including its short final segment.
+///
+/// The F.3 vectors are all block-aligned, so this is the one end-to-end check that the CLI's
+/// streaming loop handles a partial final segment the same way `bouncycastle_modes::Cfb` does --
+/// the CLI reads stdin in 1 KiB pieces, so a long unaligned message also crosses a chunk boundary
+/// mid-segment.
+#[test]
+fn an_unaligned_message_matches_the_library() {
+    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle::core::traits::StreamCipherDecryptor;
+    use bouncycastle::modes::{Cfb, Decrypting};
+
+    type Aes128Cfb<Dir> = Cfb<bouncycastle::aes_lowmemory::Aes128, Dir, 16, 16>;
+
+    for len in [5usize, 17, 1000, 1024, 1025, 4099] {
+        let plaintext = pseudo_random(len, len as u32);
+        let out = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+        let (iv, ciphertext) = out.split_at(16);
+
+        let key =
+            KeyMaterial::<16>::from_bytes_as_type(&unhex(KEY_128), KeyType::SymmetricCipherKey)
+                .expect("a valid AES-128 key");
+        let mut recovered = ciphertext.to_vec();
+        Aes128Cfb::<Decrypting>::decrypt(
+            &key,
+            iv.try_into().expect("a 16-byte IV"),
+            &mut recovered,
+        )
+        .expect("library decryption");
+        assert_eq!(recovered, plaintext, "len {len}: the CLI must agree with the library");
+    }
+}
+
+/// Decrypt input shorter than the IV it must start with is rejected, and says so.
+#[test]
+fn decrypt_input_shorter_than_the_iv_is_rejected() {
+    for len in [0usize, 1, 15] {
+        let stderr = run_err(&["aes128-cfb", "decrypt", "--key", KEY_128], &pseudo_random(len, 1));
+        assert!(
+            stderr.contains("IV"),
+            "stderr should explain the missing IV (len {len}): {stderr}"
+        );
+    }
+}
+
+/// Decrypt input that carries the IV and then an unaligned body is accepted, for the same reason.
+/// Anything past the IV is ciphertext, whatever its length.
+#[test]
+fn decrypt_accepts_an_unaligned_body() {
+    let mut input = unhex(IV);
+    input.extend_from_slice(&pseudo_random(20, 3)); // 20 is not a multiple of 16
+    let out = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &input);
+    assert_eq!(out.len(), 20, "the plaintext is exactly as long as the ciphertext");
+}
+
+/// Empty input to `encrypt` produces just the IV: zero blocks in, zero blocks out.
+///
+/// Worth pinning because it is the one input length that is block-aligned but has no blocks, and
+/// it is easy for a streaming loop to mishandle.
+#[test]
+fn empty_input_produces_only_the_iv() {
+    let out = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &[]);
+    assert_eq!(out.len(), 16, "empty input should yield exactly the IV");
+
+    // ...and feeding that straight back gives empty output.
+    let back = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &out);
+    assert!(back.is_empty(), "decrypting an IV with no body should give nothing");
+}
+
+// ---- SP 800-38A Appendix D, through the CLI ----------------------------------------------
+
+/// Appendix D, Table D.2 for CFB: a bit error in `Cj` gives "SBE in the decryption of `Cj`" --
+/// **specific** bit errors, i.e. the very same bit position -- plus random bit errors in `Cj+1`,
+/// and nothing beyond that (with `s = b`, `b/s` is 1).
+///
+/// This is the property that makes CFB tampering directly exploitable, which is why the subcommand
+/// help warns about it, and it is also a sharp end-to-end check that the CLI is running CFB rather
+/// than CBC: under CBC the controlled flip would land in `Pj+1`, not `Pj`.
+#[test]
+fn a_ciphertext_bit_flip_flips_the_same_plaintext_bit() {
+    let plaintext = unhex(PLAINTEXT);
+    let mut input = unhex(&format!("{IV}{CT_128}"));
+
+    // Byte 3 of the second ciphertext block. Input layout is IV | C1 | C2 | C3 | C4, so C2 starts
+    // at offset 32.
+    const OFFSET: usize = 32 + 3;
+    const MASK: u8 = 0b0010_0000;
+    input[OFFSET] ^= MASK;
+
+    let out = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &input);
+    assert_eq!(out.len(), 64);
+
+    assert_eq!(&out[0..16], &plaintext[0..16], "P1 depends only on the IV, so it is unaffected");
+
+    let mut expected_p2 = plaintext[16..32].to_vec();
+    expected_p2[3] ^= MASK;
+    assert_eq!(&out[16..32], &expected_p2[..], "P2 should show exactly the flipped bit");
+
+    assert_ne!(&out[32..48], &plaintext[32..48], "P3 is randomised: C2 feeds the next cipher call");
+    assert_eq!(
+        &out[48..64],
+        &plaintext[48..64],
+        "P4 is unaffected: with s = b, damage stops at P3"
+    );
+}
+
+// ---- cross-variant and cross-mode behaviour ---------------------------------------------
+
+/// Decrypting with a different key length than was used to encrypt cannot succeed silently.
+#[test]
+fn the_three_variants_are_not_interchangeable() {
+    let plaintext = unhex(PLAINTEXT);
+    let ciphertext = run_ok(&["aes128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+
+    // Right length, wrong key: decryption "succeeds" but must not recover the plaintext. CFB is
+    // unauthenticated, so garbage out is the expected behaviour, not an error -- which is exactly
+    // why the crate docs insist on authenticating separately.
+    let wrong_key = "ff".repeat(16);
+    let out = run_ok(&["aes128-cfb", "decrypt", "--key", &wrong_key], &ciphertext);
+    assert_ne!(out, plaintext, "a wrong key must not recover the plaintext");
+    assert_eq!(out.len(), plaintext.len(), "but the length is unchanged: CFB is unauthenticated");
+}
+
+/// CFB and CBC ciphertexts are not interchangeable, in either direction.
+///
+/// The two commands take the same arguments and produce the same-shaped output, so nothing but this
+/// stops a caller pairing them up by mistake. Both spec ciphertexts are for the same key, IV and
+/// plaintext, so this is a clean comparison: each mode must reproduce the plaintext only from its
+/// own ciphertext.
+#[test]
+fn cfb_and_cbc_are_not_interchangeable() {
+    let plaintext = unhex(PLAINTEXT);
+    let cfb_input = unhex(&format!("{IV}{CT_128}"));
+    let cbc_input = unhex(&format!("{IV}{CBC_CT_128}"));
+
+    // Each mode with its own ciphertext: correct.
+    assert_eq!(run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &cfb_input), plaintext);
+    assert_eq!(run_ok(&["aes128-cbc", "decrypt", "--key", KEY_128], &cbc_input), plaintext);
+
+    // Each mode with the other's ciphertext: wrong, but silently so -- neither mode is
+    // authenticated, so there is nothing to detect the mismatch.
+    let cfb_reads_cbc = run_ok(&["aes128-cfb", "decrypt", "--key", KEY_128], &cbc_input);
+    assert_ne!(cfb_reads_cbc, plaintext, "CFB must not decrypt a CBC ciphertext");
+
+    let cbc_reads_cfb = run_ok(&["aes128-cbc", "decrypt", "--key", KEY_128], &cfb_input);
+    assert_ne!(cbc_reads_cfb, plaintext, "CBC must not decrypt a CFB ciphertext");
+}
+
+// ---- discoverability --------------------------------------------------------------------
+
+/// The subcommands appear in `--help`, so they are discoverable.
+#[test]
+fn the_subcommands_are_listed_in_help() {
+    let out = run_ok(&["--help"], &[]);
+    let help = String::from_utf8_lossy(&out);
+    for cmd in ["aes128-cfb", "aes192-cfb", "aes256-cfb"] {
+        assert!(help.contains(cmd), "`--help` should list {cmd}");
+    }
+}
+
+/// Each subcommand's own help names the two actions, the IV convention, and -- because `CFB8` and
+/// `CFB1` are different, non-interoperable modes -- the segment size.
+#[test]
+fn per_command_help_documents_the_iv_convention_and_the_segment_size() {
+    let out = run_ok(&["aes128-cfb", "--help"], &[]);
+    let help = String::from_utf8_lossy(&out);
+    assert!(help.contains("encrypt"), "help should list the encrypt action");
+    assert!(help.contains("decrypt"), "help should list the decrypt action");
+    assert!(
+        help.contains("FIRST 16 BYTES") || help.contains("first 16 bytes"),
+        "help should explain where the IV goes: {help}"
+    );
+    assert!(help.contains("CFB128"), "help should say which CFB variant this is: {help}");
+}

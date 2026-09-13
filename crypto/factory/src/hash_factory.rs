@@ -31,9 +31,13 @@ use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength};
 use bouncycastle_sha2 as sha2;
-use bouncycastle_sha2::{SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_NAME};
+use bouncycastle_sha2::{
+    SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_224_NAME, SHA512_256_NAME, SHA512_NAME,
+};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME};
+use bouncycastle_sm3 as sm3;
+use bouncycastle_sm3::SM3_NAME;
 
 /// Wrapper object for all algorithms that impl [`Hash`].
 /// Note: no SHAKE because SHAKE is not NIST approved as a hash function. See FIPS 202 section A.2.
@@ -48,6 +52,10 @@ pub enum HashFactory {
     ///
     SHA512(sha2::SHA512),
     ///
+    SHA512_224(sha2::SHA512_224),
+    ///
+    SHA512_256(sha2::SHA512_256),
+    ///
     SHA3_224(sha3::SHA3_224),
     ///
     SHA3_256(sha3::SHA3_256),
@@ -55,6 +63,8 @@ pub enum HashFactory {
     SHA3_384(sha3::SHA3_384),
     ///
     SHA3_512(sha3::SHA3_512),
+    ///
+    SM3(sm3::SM3),
 }
 
 impl Default for HashFactory {
@@ -80,10 +90,13 @@ impl AlgorithmFactory for HashFactory {
             SHA256_NAME => Ok(Self::SHA256(sha2::SHA256::new())),
             SHA384_NAME => Ok(Self::SHA384(sha2::SHA384::new())),
             SHA512_NAME => Ok(Self::SHA512(sha2::SHA512::new())),
+            SHA512_224_NAME => Ok(Self::SHA512_224(sha2::SHA512_224::new())),
+            SHA512_256_NAME => Ok(Self::SHA512_256(sha2::SHA512_256::new())),
             SHA3_224_NAME => Ok(Self::SHA3_224(sha3::SHA3_224::new())),
             SHA3_256_NAME => Ok(Self::SHA3_256(sha3::SHA3_256::new())),
             SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),
             SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
+            SM3_NAME => Ok(Self::SM3(sm3::SM3::new())),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known Hash",
                 alg_name
@@ -108,10 +121,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.block_bitlen(),
             Self::SHA384(h) => h.block_bitlen(),
             Self::SHA512(h) => h.block_bitlen(),
+            Self::SHA512_224(h) => h.block_bitlen(),
+            Self::SHA512_256(h) => h.block_bitlen(),
             Self::SHA3_224(h) => h.block_bitlen(),
             Self::SHA3_256(h) => h.block_bitlen(),
             Self::SHA3_384(h) => h.block_bitlen(),
             Self::SHA3_512(h) => h.block_bitlen(),
+            Self::SM3(h) => h.block_bitlen(),
         }
     }
 
@@ -121,10 +137,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.output_len(),
             Self::SHA384(h) => h.output_len(),
             Self::SHA512(h) => h.output_len(),
+            Self::SHA512_224(h) => h.output_len(),
+            Self::SHA512_256(h) => h.output_len(),
             Self::SHA3_224(h) => h.output_len(),
             Self::SHA3_256(h) => h.output_len(),
             Self::SHA3_384(h) => h.output_len(),
             Self::SHA3_512(h) => h.output_len(),
+            Self::SM3(h) => h.output_len(),
         }
     }
 
@@ -134,10 +153,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.hash(data),
             Self::SHA384(h) => h.hash(data),
             Self::SHA512(h) => h.hash(data),
+            Self::SHA512_224(h) => h.hash(data),
+            Self::SHA512_256(h) => h.hash(data),
             Self::SHA3_224(h) => h.hash(data),
             Self::SHA3_256(h) => h.hash(data),
             Self::SHA3_384(h) => h.hash(data),
             Self::SHA3_512(h) => h.hash(data),
+            Self::SM3(h) => h.hash(data),
         }
     }
 
@@ -149,10 +171,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.hash_out(data, output),
             Self::SHA384(h) => h.hash_out(data, output),
             Self::SHA512(h) => h.hash_out(data, output),
+            Self::SHA512_224(h) => h.hash_out(data, output),
+            Self::SHA512_256(h) => h.hash_out(data, output),
             Self::SHA3_224(h) => h.hash_out(data, output),
             Self::SHA3_256(h) => h.hash_out(data, output),
             Self::SHA3_384(h) => h.hash_out(data, output),
             Self::SHA3_512(h) => h.hash_out(data, output),
+            Self::SM3(h) => h.hash_out(data, output),
         }
     }
 
@@ -162,10 +187,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.do_update(data),
             Self::SHA384(h) => h.do_update(data),
             Self::SHA512(h) => h.do_update(data),
+            Self::SHA512_224(h) => h.do_update(data),
+            Self::SHA512_256(h) => h.do_update(data),
             Self::SHA3_224(h) => h.do_update(data),
             Self::SHA3_256(h) => h.do_update(data),
             Self::SHA3_384(h) => h.do_update(data),
             Self::SHA3_512(h) => h.do_update(data),
+            Self::SM3(h) => h.do_update(data),
         }
     }
 
@@ -175,10 +203,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.do_final(),
             Self::SHA384(h) => h.do_final(),
             Self::SHA512(h) => h.do_final(),
+            Self::SHA512_224(h) => h.do_final(),
+            Self::SHA512_256(h) => h.do_final(),
             Self::SHA3_224(h) => h.do_final(),
             Self::SHA3_256(h) => h.do_final(),
             Self::SHA3_384(h) => h.do_final(),
             Self::SHA3_512(h) => h.do_final(),
+            Self::SM3(h) => h.do_final(),
         }
     }
 
@@ -190,10 +221,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.do_final_out(output),
             Self::SHA384(h) => h.do_final_out(output),
             Self::SHA512(h) => h.do_final_out(output),
+            Self::SHA512_224(h) => h.do_final_out(output),
+            Self::SHA512_256(h) => h.do_final_out(output),
             Self::SHA3_224(h) => h.do_final_out(output),
             Self::SHA3_256(h) => h.do_final_out(output),
             Self::SHA3_384(h) => h.do_final_out(output),
             Self::SHA3_512(h) => h.do_final_out(output),
+            Self::SM3(h) => h.do_final_out(output),
         }
     }
 
@@ -207,10 +241,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
+            Self::SHA512_224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
+            Self::SHA512_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA3_224(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA3_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA3_384(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SHA3_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
+            Self::SM3(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
         }
     }
 
@@ -225,6 +262,12 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
             Self::SHA384(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
             Self::SHA512(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
+            Self::SHA512_224(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
+            Self::SHA512_256(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
             Self::SHA3_224(h) => {
                 h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
             }
@@ -237,6 +280,7 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => {
                 h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
             }
+            Self::SM3(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
         }
     }
 
@@ -246,10 +290,13 @@ impl Hash for HashFactory {
             Self::SHA256(h) => h.max_security_strength(),
             Self::SHA384(h) => h.max_security_strength(),
             Self::SHA512(h) => h.max_security_strength(),
+            Self::SHA512_224(h) => h.max_security_strength(),
+            Self::SHA512_256(h) => h.max_security_strength(),
             Self::SHA3_224(h) => h.max_security_strength(),
             Self::SHA3_256(h) => h.max_security_strength(),
             Self::SHA3_384(h) => h.max_security_strength(),
             Self::SHA3_512(h) => h.max_security_strength(),
+            Self::SM3(h) => h.max_security_strength(),
         }
     }
 }

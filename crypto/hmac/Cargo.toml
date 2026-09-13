@@ -7,7 +7,7 @@ edition.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
 
-# bouncycastle-sha2, -sha3 and -rng are dev-dependencies so that the tests, benches and doc examples
+# bouncycastle-sha2, -sha3, -sm3 and -rng are dev-dependencies so that the tests, benches and doc examples
 # here can still exercise HMAC over the library's own hashes; Cargo permits cycles through
 # dev-dependencies.
 # todo -- we're about to change that and move them to their respective crates in the next phase.
@@ -18,3 +18,4 @@ bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
+bouncycastle-sm3.workspace = true

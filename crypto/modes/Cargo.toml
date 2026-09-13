@@ -1,0 +1,24 @@
+[package]
+name = "bouncycastle-modes"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+# Only for the default OS-backed DRBG that generates the IV in `do_encrypt_init`.
+bouncycastle-rng.workspace = true
+# Only for `Secret`, which holds CTR's unused keystream so it is zeroized on drop.
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-aes-lowmemory.workspace = true
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+# Only to prove the modes compose with the padding layer for arbitrary-length data; no runtime dep.
+bouncycastle-padding.workspace = true
+criterion.workspace = true
+serde_json = "1.0"
+
+[[bench]]
+name = "modes_benches"
+harness = false

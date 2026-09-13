@@ -1,10 +1,12 @@
-use crate::SHA2Params;
+use crate::SHA512InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
 
+/// FIPS 180-4 s. 4.2.3: the eighty 64-bit constants K0..K79 shared by SHA-384, SHA-512,
+/// SHA-512/224 and SHA-512/256.
 const SHA512_K: [u64; 80] = [
     0x428A2F98D728AE22, 0x7137449123EF65CD, 0xB5C0FBCFEC4D3B2F, 0xE9B5DBA58189DBBC,
     0x3956C25BF348B538, 0x59F111F1B605D019, 0x923F82A4AF194F9B, 0xAB1C5ED5DA6D8118,
@@ -28,127 +30,223 @@ const SHA512_K: [u64; 80] = [
     0x4CC5D4BECB3E42B6, 0x597F299CFC657E2A, 0x5FCB6FAB3AD6FAEC, 0x6C44198C4A475817,
 ];
 
+/// FIPS 180-4 s. 5.3.4: the initial hash value H(0) for SHA-384.
+pub(crate) const SHA384_H0: [u64; 8] = [
+    0xCBBB9D5DC1059ED8, 0x629A292A367CD507, 0x9159015A3070DD17, 0x152FECD8F70E5939,
+    0x67332667FFC00B31, 0x8EB44A8768581511, 0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
+];
+
+/// FIPS 180-4 s. 5.3.5: the initial hash value H(0) for SHA-512.
+pub(crate) const SHA512_H0: [u64; 8] = [
+    0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B, 0xA54FF53A5F1D36F1,
+    0x510E527FADE682D1, 0x9B05688C2B3E6C1F, 0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
+];
+
+/// FIPS 180-4 s. 5.3.6 "SHA-512/t IV Generation Function": computes the initial hash value H(0)
+/// for SHA-512/t.
+///
+/// Quoting the procedure:
+///
+/// > Denote H(0)' to be the initial hash value of SHA-512 as specified in Section 5.3.5 above.
+/// >
+/// > Denote H(0)'' to be the initial hash value computed below.
+/// >
+/// > H(0) is the IV for SHA-512/t.
+/// >
+/// > For i = 0 to 7 { Hi(0)'' = Hi(0)' xor a5a5a5a5a5a5a5a5(in hex). }
+/// >
+/// > H(0) = SHA-512 ("SHA-512/t") using H(0)'' as the IV, where t is the specific truncation value.
+///
+/// where, per the same section, "t is any positive integer without a leading zero such that t < 512,
+/// and t is not 384", and "SHA-512/t" is the ASCII string with t written in decimal (so for t = 256
+/// the message is the 11 bytes `53 48 41 2D 35 31 32 2F 32 35 36`).
+///
+/// Deliberate deviation from s. 5.3.6: only a three-digit t is accepted. The crate instantiates
+/// only the two truncations FIPS 180-4 approves, t = 224 (s. 5.3.6.1) and t = 256 (s. 5.3.6.2),
+/// and both are three digits, so the one- and two-digit cases of the decimal formatting would be
+/// branches no caller and no test can reach.
+///
+/// This is a `const fn` so that the IV is computed at compile time.
+pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
+    // FIPS 180-4 s. 5.3.6 asks only for "any positive integer without a leading zero such that
+    // t < 512, and t is not 384"; the t >= 100 is ours, from the three-digit formatting below, so a
+    // new t under 100 fails the build rather than being written with a leading zero s. 5.3.6 forbids.
+    assert!(
+        t >= 100 && t < 512 && t != 384,
+        "sha512t_h0 formats t as three digits: need 100 <= t < 512 and t != 384"
+    );
+
+    // FIPS 180-4 s. 5.3.6: H(0)'' = H(0)', the SHA-512 initial hash value (s. 5.3.5), with each word XOR a5a5a5a5a5a5a5a5.
+    let mut h = SHA512_H0;
+    let mut i = 0;
+    while i < 8 {
+        h[i] ^= 0xA5A5A5A5A5A5A5A5;
+        i += 1;
+    }
+
+    // FIPS 180-4 s. 5.3.6: the message is the ASCII string "SHA-512/t" (11 bytes, so one block).
+    // It is built directly in its padded form (s. 5.1.2) inside a single 1024-bit block (s. 5.2.2).
+    let mut block = [0u8; 128];
+    let prefix = b"SHA-512/";
+    let mut len = 0;
+    while len < prefix.len() {
+        block[len] = prefix[len];
+        len += 1;
+    }
+    // FIPS 180-4 s. 5.3.6: t written in decimal "without a leading zero"; three digits, since
+    // 100 <= t < 512 (the assertion above), so "SHA-512/t" is the 11 characters of the s. 5.3.6
+    // example for t = 256.
+    block[len] = b'0' + (t / 100) as u8;
+    block[len + 1] = b'0' + ((t / 10) % 10) as u8;
+    block[len + 2] = b'0' + (t % 10) as u8;
+    len += 3;
+
+    // FIPS 180-4 s. 5.1.2: append the bit "1", then k zero bits (the rest of the block is already zero).
+    block[len] = 0x80;
+    // FIPS 180-4 s. 5.1.2: the final 128 bits are the message length l in bits; l < 2^64 so bytes 112..120 stay 0.
+    let bit_len = (len as u64) * 8;
+    let bit_len_bytes = bit_len.to_be_bytes();
+    let mut i = 0;
+    while i < 8 {
+        block[120 + i] = bit_len_bytes[i];
+        i += 1;
+    }
+
+    // FIPS 180-4 s. 5.3.6: H(0) = SHA-512("SHA-512/t") using H(0)'' as the IV, i.e. one pass of s. 6.4.2.
+    compress_block(&mut h, &block);
+    h
+}
+
+/// FIPS 180-4 s. 4.1.3 (4.8) Ch(x, y, z) = (x AND y) XOR (NOT x AND z)
+/// Mutants note: the two masks are disjoint, so `^` and `|` give identical results here; a
+/// surviving `^`/`|` swap in this function is an equivalent mutant, not a missing test.
 #[inline]
-fn ch(x: u64, y: u64, z: u64) -> u64 {
+const fn ch(x: u64, y: u64, z: u64) -> u64 {
     (x & y) ^ (!x & z)
 }
 
+/// FIPS 180-4 s. 4.1.3 (4.9) Maj(x, y, z) = (x AND y) XOR (x AND z) XOR (y AND z).
+/// Written in the equivalent form (x AND y) OR (z AND (x XOR y)), which saves an operation.
+/// Mutants note: the two masks are disjoint, so `^` and `|` give identical results here; a
+/// surviving `^`/`|` swap in this function is an equivalent mutant, not a missing test.
 #[inline]
-fn maj(x: u64, y: u64, z: u64) -> u64 {
+const fn maj(x: u64, y: u64, z: u64) -> u64 {
     (x & y) | (z & (x ^ y))
 }
 
+/// FIPS 180-4 s. 4.1.3 (4.10) Sigma0(x) = ROTR28(x) XOR ROTR34(x) XOR ROTR39(x)
 #[inline]
-fn sum0(x: u64) -> u64 {
+const fn sum0(x: u64) -> u64 {
     x.rotate_right(28) ^ x.rotate_right(34) ^ x.rotate_right(39)
 }
 
+/// FIPS 180-4 s. 4.1.3 (4.11) Sigma1(x) = ROTR14(x) XOR ROTR18(x) XOR ROTR41(x)
 #[inline]
-fn sum1(x: u64) -> u64 {
+const fn sum1(x: u64) -> u64 {
     x.rotate_right(14) ^ x.rotate_right(18) ^ x.rotate_right(41)
 }
 
+/// FIPS 180-4 s. 4.1.3 (4.12) sigma0(x) = ROTR1(x) XOR ROTR8(x) XOR SHR7(x)
 #[inline]
-fn theta0(x: u64) -> u64 {
+const fn theta0(x: u64) -> u64 {
     x.rotate_right(1) ^ x.rotate_right(8) ^ (x >> 7)
 }
 
+/// FIPS 180-4 s. 4.1.3 (4.13) sigma1(x) = ROTR19(x) XOR ROTR61(x) XOR SHR6(x)
 #[inline]
-fn theta1(x: u64) -> u64 {
+const fn theta1(x: u64) -> u64 {
     x.rotate_right(19) ^ x.rotate_right(61) ^ (x >> 6)
 }
 
-// todo -- cleanup
-// #[derive(Clone, Copy)]
+/// FIPS 180-4 s. 6.4.2, one iteration of the outer loop: absorbs a single 1024-bit message block
+/// into the hash value `s` (H(i-1) in, H(i) out).
+///
+/// This is a `const fn` (hence `while` rather than `for` loops) so that [`sha512t_h0`] can run it
+/// at compile time. At runtime it is ordinary code, and is the hot path of every SHA-512 variant.
+#[inline]
+const fn compress_block(s: &mut [u64; 8], block: &[u8; 128]) {
+    // FIPS 180-4 s. 6.4.2 step 1: prepare the message schedule {W_t}.
+    let mut x = [0u64; 80];
+    // FIPS 180-4 s. 6.4.2 step 1: W_t = M_t(i) for 0 <= t <= 15 (s. 5.2.2: sixteen big-endian 64-bit words).
+    let (words, _remainder) = block.as_chunks::<8>();
+    let mut i = 0;
+    while i < 16 {
+        x[i] = u64::from_be_bytes(words[i]);
+        i += 1;
+    }
+    // FIPS 180-4 s. 6.4.2 step 1: W_t = sigma1(W_t-2) + W_t-7 + sigma0(W_t-15) + W_t-16 for 16 <= t <= 79.
+    while i < 80 {
+        x[i] = theta1(x[i - 2])
+            .wrapping_add(x[i - 7])
+            .wrapping_add(theta0(x[i - 15]))
+            .wrapping_add(x[i - 16]);
+        i += 1;
+    }
+
+    // FIPS 180-4 s. 6.4.2 step 2: initialize the working variables a..h with H(i-1).
+    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *s;
+
+    // FIPS 180-4 s. 6.4.2 step 3: for t = 0 to 79, one round. The spec rotates the working variables
+    // (h = g, g = f, ...); here the rotation is done by renaming the variables passed to the macro
+    // instead, eight rounds at a time, which is equivalent and avoids the moves. The spec's T1 lands
+    // in the "$h" position, "$d" becomes d + T1, and T1 + T2 is then computed in place.
+    macro_rules! sha512_round {
+        ($a:ident,$b:ident,$c:ident,$d:ident,$e:ident,$f:ident,$g:ident,$h:ident,$t:ident) => {
+            // FIPS 180-4 s. 6.4.2 step 3: T1 = h + Sigma1(e) + Ch(e, f, g) + K_t + W_t
+            $h = $h
+                .wrapping_add(sum1($e))
+                .wrapping_add(ch($e, $f, $g))
+                .wrapping_add(SHA512_K[$t])
+                .wrapping_add(x[$t]);
+            // FIPS 180-4 s. 6.4.2 step 3: e = d + T1
+            $d = $d.wrapping_add($h);
+            // FIPS 180-4 s. 6.4.2 step 3: a = T1 + T2, where T2 = Sigma0(a) + Maj(a, b, c)
+            $h = $h.wrapping_add(sum0($a)).wrapping_add(maj($a, $b, $c));
+            $t += 1;
+        };
+    }
+
+    let mut t: usize = 0;
+    while t < 80 {
+        sha512_round!(a, b, c, d, e, f, g, h, t);
+        sha512_round!(h, a, b, c, d, e, f, g, t);
+        sha512_round!(g, h, a, b, c, d, e, f, t);
+        sha512_round!(f, g, h, a, b, c, d, e, t);
+        sha512_round!(e, f, g, h, a, b, c, d, t);
+        sha512_round!(d, e, f, g, h, a, b, c, t);
+        sha512_round!(c, d, e, f, g, h, a, b, t);
+        sha512_round!(b, c, d, e, f, g, h, a, t);
+    }
+
+    // FIPS 180-4 s. 6.4.2 step 4: H_j(i) = (working variable j) + H_j(i-1).
+    s[0] = s[0].wrapping_add(a);
+    s[1] = s[1].wrapping_add(b);
+    s[2] = s[2].wrapping_add(c);
+    s[3] = s[3].wrapping_add(d);
+    s[4] = s[4].wrapping_add(e);
+    s[5] = s[5].wrapping_add(f);
+    s[6] = s[6].wrapping_add(g);
+    s[7] = s[7].wrapping_add(h);
+}
+
 #[derive(Clone)]
-pub(crate) struct Sha512State<PARAMS: SHA2Params> {
-    _params: std::marker::PhantomData<PARAMS>,
+pub(crate) struct Sha512State<PARAMS: SHA512InitValue> {
+    _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u64; 8]>,
 }
 
-impl<PARAMS: SHA2Params> Sha512State<PARAMS> {
+impl<PARAMS: SHA512InitValue> Sha512State<PARAMS> {
     pub(crate) fn new() -> Self {
         let mut h = Secret::<[u64; 8]>::new();
-        match PARAMS::OUTPUT_LEN * 8 {
-            384 => {
-                h.copy_from_slice(&[
-                    0xCBBB9D5DC1059ED8, 0x629A292A367CD507, 0x9159015A3070DD17, 0x152FECD8F70E5939,
-                    0x67332667FFC00B31, 0x8EB44A8768581511, 0xDB0C2E0D64F98FA7, 0x47B5481DBEFA4FA4,
-                ]);
-                Self { _params: std::marker::PhantomData, h }
-            }
-            512 => {
-                h.copy_from_slice(&[
-                    0x6A09E667F3BCC908, 0xBB67AE8584CAA73B, 0x3C6EF372FE94F82B, 0xA54FF53A5F1D36F1,
-                    0x510E527FADE682D1, 0x9B05688C2B3E6C1F, 0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
-                ]);
-                Self { _params: std::marker::PhantomData, h }
-            }
-            _ => panic!("Invalid SHA-2 bit size"),
-        }
+        // FIPS 180-4 s. 6.4.1 step 1: set the initial hash value H(0) (s. 5.3.4 / 5.3.5 / 5.3.6 per variant).
+        h.copy_from_slice(&PARAMS::H0);
+        Self { _params: core::marker::PhantomData, h }
     }
 
     fn compress(&mut self, blocks: &[[u8; 128]]) {
-        let mut x = [0u64; 80];
-
-        let s = &mut *self.h;
-        let &mut [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = s;
-
+        // FIPS 180-4 s. 6.4.2: each message block M(1), ..., M(N) is processed in order.
         for block in blocks {
-            let (chunks, _remainder) = block.as_chunks::<8>();
-            for (i, w) in x[..16].iter_mut().zip(chunks) {
-                *i = u64::from_be_bytes(*w);
-            }
-
-            for i in 16..80 {
-                x[i] = theta1(x[i - 2])
-                    .wrapping_add(x[i - 7])
-                    .wrapping_add(theta0(x[i - 15]))
-                    .wrapping_add(x[i - 16]);
-            }
-
-            macro_rules! sha512_round {
-                ($a:ident,$b:ident,$c:ident,$d:ident,$e:ident,$f:ident,$g:ident,$h:ident,$t:ident,$K:ident,$x:ident) => {
-                    $h = $h
-                        .wrapping_add(sum1($e))
-                        .wrapping_add(ch($e, $f, $g))
-                        .wrapping_add($K[$t])
-                        .wrapping_add($x[$t]);
-                    $d = $d.wrapping_add($h);
-                    $h = $h.wrapping_add(sum0($a)).wrapping_add(maj($a, $b, $c));
-                    $t += 1;
-                };
-            }
-
-            let mut t: usize = 0;
-            for _ in 0..10 {
-                sha512_round!(a, b, c, d, e, f, g, h, t, SHA512_K, x);
-                sha512_round!(h, a, b, c, d, e, f, g, t, SHA512_K, x);
-                sha512_round!(g, h, a, b, c, d, e, f, t, SHA512_K, x);
-                sha512_round!(f, g, h, a, b, c, d, e, t, SHA512_K, x);
-                sha512_round!(e, f, g, h, a, b, c, d, t, SHA512_K, x);
-                sha512_round!(d, e, f, g, h, a, b, c, t, SHA512_K, x);
-                sha512_round!(c, d, e, f, g, h, a, b, t, SHA512_K, x);
-                sha512_round!(b, c, d, e, f, g, h, a, t, SHA512_K, x);
-            }
-
-            a = a.wrapping_add(s[0]);
-            b = b.wrapping_add(s[1]);
-            c = c.wrapping_add(s[2]);
-            d = d.wrapping_add(s[3]);
-            e = e.wrapping_add(s[4]);
-            f = f.wrapping_add(s[5]);
-            g = g.wrapping_add(s[6]);
-            h = h.wrapping_add(s[7]);
-
-            s[0] = a;
-            s[1] = b;
-            s[2] = c;
-            s[3] = d;
-            s[4] = e;
-            s[5] = f;
-            s[6] = g;
-            s[7] = h;
+            compress_block(&mut self.h, block);
         }
     }
 }
@@ -157,20 +255,20 @@ impl<PARAMS: SHA2Params> Sha512State<PARAMS> {
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
-pub struct SHA512Internal<PARAMS: SHA2Params> {
-    _params: std::marker::PhantomData<PARAMS>,
+pub struct SHA512Internal<PARAMS: SHA512InitValue> {
+    _params: core::marker::PhantomData<PARAMS>,
     state: Sha512State<PARAMS>,
-    // NOTE The code currently only supports 2^67 bits, not the full 2^128
+    // NOTE: FIPS 180-4 allows messages up to 2^128 bits; this counter supports 2^67 bits (2^64 bytes).
     byte_count: u64,
     x_buf: Secret<[u8; 128]>,
     x_buf_off: usize,
 }
 
-impl<PARAMS: SHA2Params> SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     /// Creates a new SHA512 instance, ready for use.
     pub fn new() -> Self {
         Self {
-            _params: std::marker::PhantomData,
+            _params: core::marker::PhantomData,
             state: Sha512State::<PARAMS>::new(),
             byte_count: 0,
             x_buf: Secret::new(),
@@ -179,18 +277,88 @@ impl<PARAMS: SHA2Params> SHA512Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHA2Params> Default for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
+    /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.2, then writes the digest.
+    ///
+    /// The `num_partial_bits` (0..=7, validated by the caller) trailing message bits are the most
+    /// significant bits of `partial_byte`, leading bit first: the ASN.1 BIT STRING order of
+    /// X.690 s. 8.6.2.1, which is also how FIPS 180-4 s. 3.1 numbers the bits of a message byte. So
+    /// they are used in place, the low `8 - num_partial_bits` bits are ignored, and the mandatory
+    /// "1" padding bit follows the message bits immediately in the same byte.
+    ///
+    /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
+    /// truncates the digest, a longer one is zero-filled past the digest.
+    fn do_final_internal(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
+        debug_assert!(num_partial_bits <= 7);
+        output.fill(0);
+
+        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
+
+        // FIPS 180-4 s. 5.1.2: append the bit "1" to the end of the message. The message bits are the
+        // top num_partial_bits bits of partial_byte, so the final message byte is [those bits] [1] [0...];
+        // with no partial bits this is the familiar 0x80. The mask is built in u16 so that the 8-bit
+        // shift for num_partial_bits == 0 cannot overflow (0xFF00 >> 0 truncates to 0x00).
+        let mask = (0xFF00u16 >> num_partial_bits) as u8;
+        // Mutants note: the masked message bits and the padding bit occupy disjoint bit positions, so
+        // `|` and `^` give identical results here; a surviving `|`/`^` swap is an equivalent mutant.
+        let pad_byte = (partial_byte & mask) | (0x80u8 >> num_partial_bits);
+
+        self.x_buf[self.x_buf_off] = pad_byte;
+        self.x_buf_off += 1;
+
+        // FIPS 180-4 s. 5.1.2: if fewer than 128 bits remain for l, the k zero bits run into a second block.
+        if self.x_buf_off > 112 {
+            self.x_buf[self.x_buf_off..].fill(0x00);
+            self.state.compress(slice::from_ref(&self.x_buf));
+            self.x_buf_off = 0;
+        }
+
+        // FIPS 180-4 s. 5.1.2: k zero bits so that l + 1 + k = 896 mod 1024, then the 128-bit big-endian
+        // message length l in bits.
+        self.x_buf[self.x_buf_off..112].fill(0x00);
+        // byte_count is a byte counter, so the high 64 bits of l are byte_count >> 61 and the low 64
+        // bits are (byte_count << 3) | num_partial_bits (the low three bits of byte_count << 3 are zero).
+        let bit_len_hi: u64 = self.byte_count >> 61;
+        // Mutants note: the low three bits of byte_count << 3 are zero, so `|` and `^` give identical
+        // results here; a surviving `|`/`^` swap is an equivalent mutant.
+        let bit_len_lo: u64 = (self.byte_count << 3) | (num_partial_bits as u64);
+        self.x_buf[112..120].copy_from_slice(&bit_len_hi.to_be_bytes());
+        self.x_buf[120..128].copy_from_slice(&bit_len_lo.to_be_bytes());
+        self.state.compress(slice::from_ref(&self.x_buf));
+
+        // FIPS 180-4 s. 6.4.2: the digest is H_0(N) || ... || H_7(N) (big-endian words), truncated to the
+        // left-most OUTPUT_LEN bytes (s. 6.5 / 6.6 / 6.7 exception 2 for SHA-384, SHA-512/224 and SHA-512/256), and further to the caller's
+        // buffer if that is shorter.
+        let h = &self.state.h;
+        for i in 0..(n / 8) {
+            output[i * 8..i * 8 + 8].copy_from_slice(&h[i].to_be_bytes());
+        }
+        if !n.is_multiple_of(8) {
+            output[((n / 8) * 8)..((n / 8) * 8) + (n % 8)]
+                .copy_from_slice(&h[n / 8].to_be_bytes()[0..(n % 8)]);
+        }
+
+        n
+    }
+}
+
+impl<PARAMS: SHA512InitValue> Default for SHA512Internal<PARAMS> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<PARAMS: SHA2Params> Algorithm for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Algorithm for SHA512Internal<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
-impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
         1024
@@ -216,8 +384,9 @@ impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // TODO: Check there is enough space left in 'byte_count' to allow this operation,
-        // TODO: although overflowing a u64 is unlikely to happen in practice, and rust will throw an error anyway.
+        // FIPS 180-4 s. 5.1.2: do_final_internal writes the whole 128-bit field, carrying the top
+        // three bits of byte_count in bit_len_hi, so unlike SHA-256 nothing is lost to the shift.
+        // The limit is byte_count itself at 2^64 bytes, far inside the l < 2^128 bits of Table 1.
         self.byte_count += len as u64;
 
         let available = 128 - self.x_buf_off;
@@ -236,6 +405,7 @@ impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
             //self.x_buf_off = 0;
         }
 
+        // FIPS 180-4 s. 5.2.2: the message is parsed into 1024-bit blocks; a partial trailing block waits in x_buf.
         let (chunks, remainder) = block.as_chunks::<128>();
 
         self.state.compress(chunks);
@@ -251,64 +421,35 @@ impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
         output
     }
 
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
-
-        let bit_len_hi: u64 = self.byte_count >> 61;
-        let bit_len_lo: u64 = self.byte_count << 3;
-
-        self.x_buf[self.x_buf_off] = 0x80;
-        self.x_buf_off += 1;
-
-        if self.x_buf_off > 112 {
-            self.x_buf[self.x_buf_off..].fill(0x00);
-            self.state.compress(slice::from_ref(&self.x_buf));
-            self.x_buf_off = 0;
-        }
-
-        self.x_buf[self.x_buf_off..112].fill(0x00);
-        self.x_buf[112..120].copy_from_slice(&bit_len_hi.to_be_bytes());
-        self.x_buf[120..128].copy_from_slice(&bit_len_lo.to_be_bytes());
-        self.state.compress(slice::from_ref(&self.x_buf));
-
-        let h = &self.state.h;
-
-        for i in 0..(n / 8) {
-            output[i * 8..i * 8 + 8].copy_from_slice(&h[i].to_be_bytes());
-        }
-        if !n.is_multiple_of(8) {
-            output[((n / 8) * 8)..((n / 8) * 8) + (n % 8)]
-                .copy_from_slice(&h[n / 8].to_be_bytes()[0..(n % 8)]);
-        }
-
-        n
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        // A whole-byte message is the zero-partial-bits case of the general padding.
+        self.do_final_internal(0, 0, output)
     }
 
-    /// TODO: This is defined in FIPS 180-4 s. 5.1.2
-    /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: It can be implemented if required
-    #[allow(unused)]
     fn do_final_partial_bits(
         self,
         partial_byte: u8,
         num_partial_bits: usize,
     ) -> Result<Vec<u8>, HashError> {
-        unimplemented!()
+        let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
+        self.do_final_partial_bits_out(partial_byte, num_partial_bits, &mut output)?;
+        Ok(output)
     }
 
-    /// TODO: This is defined in FIPS 180-4 s. 5.1.2
-    /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
-    /// TODO: It can be implemented if required
-    #[allow(unused)]
+    /// FIPS 180-4 s. 5.1: bit-oriented messages. The `num_partial_bits` most significant bits of
+    /// `partial_byte` (ASN.1 BIT STRING order, leading bit first) are appended to the message before
+    /// padding; the low bits are ignored. `num_partial_bits == 0` behaves exactly like
+    /// [`Hash::do_final_out`].
     fn do_final_partial_bits_out(
         self,
         partial_byte: u8,
         num_partial_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        unimplemented!()
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
+        }
+        Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -316,10 +457,10 @@ impl<PARAMS: SHA2Params> Hash for SHA512Internal<PARAMS> {
     }
 }
 
-/// Length in bytes of the serialized state of SHA384 and SHA512.
+/// Length in bytes of the serialized state of SHA384, SHA512, SHA512/224 and SHA512/256.
 pub const SUSPENDED_SHA512_STATE_LEN: usize = 204;
 
-impl<PARAMS: SHA2Params> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_SHA512_STATE_LEN] {
         debug_assert_eq!(SUSPENDED_SHA512_STATE_LEN, 204);
 

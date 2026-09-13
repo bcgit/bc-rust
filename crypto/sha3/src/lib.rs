@@ -41,8 +41,11 @@
 //! let output: Vec<u8> = sha3.do_final();
 //! ```
 //!
-//! It is also possible to provide input where the final byte contains less than 8 bits of data (ie is a partial byte);
-//! for example, the following code uses only 3 bits of the final byte:
+//! It is also possible to provide input where the final byte contains less than 8 bits of data (ie is a partial byte).
+//! The partial byte is taken as it arrives in the final octet of an ASN.1 BIT STRING: the message bits are
+//! its most significant bits, leading bit first, and the low "unused" bits are ignored (the reversal into
+//! the FIPS 202 Appendix B.1 bit order that Keccak absorbs is done internally). For example, the following
+//! code uses only the top 3 bits of the final byte:
 //! ```
 //! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sha3 as sha3;

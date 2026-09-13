@@ -9,12 +9,16 @@ bouncycastle.workspace = true
 
 [[bin]]
 name = "bench_mldsa_mem_usage"
-path = "bench_mldsa_mem_usage.rs"
+path = "src/bench_mldsa_mem_usage.rs"
 
 [[bin]]
 name = "bench_mlkem_mem_usage"
-path = "bench_mlkem_mem_usage.rs"
+path = "src/bench_mlkem_mem_usage.rs"
 
 [[bin]]
 name = "bench_sha3_mem_usage"
-path = "bench_sha3_mem_usage.rs"
+path = "src/bench_sha3_mem_usage.rs"
+
+[[bin]]
+name = "bench_aes_mem_usage"
+path = "src/bench_aes_mem_usage.rs"

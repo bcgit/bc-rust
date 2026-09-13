@@ -13,7 +13,7 @@ use bouncycastle_core::traits::{Hash, HashAlgParams, RNG, SecurityStrength};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{min, secret::Secret};
 
-use std::fmt::{Display, Formatter};
+use core::fmt::{Display, Formatter};
 
 enum SupportedHash {
     SHA256,
@@ -90,7 +90,7 @@ struct AdministrativeInfo {
 
 /// Explicit implementation of Display that prevents auto-generated ones from accidentally leaking secrets.
 impl<const SEED_LEN: usize> Display for WorkingState<SEED_LEN> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "HashDRBG80090A::WorkingState::<{}>", SEED_LEN)
     }
 }
