@@ -68,9 +68,13 @@ pub(crate) const SHA512_H0: [u64; 8] = [
 ///
 /// This is a `const fn` so that the IV is computed at compile time.
 pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
-    // FIPS 180-4 s. 5.3.6: "t is any positive integer without a leading zero such that t < 512, and t is not 384",
-    // narrowed to three-digit t as the doc comment explains, so a new t under 100 fails the build here.
-    assert!(t >= 100 && t < 512 && t != 384, "FIPS 180-4 s. 5.3.6: 100 <= t < 512 and t != 384");
+    // FIPS 180-4 s. 5.3.6 asks only for "any positive integer without a leading zero such that
+    // t < 512, and t is not 384"; the t >= 100 is ours, from the three-digit formatting below, so a
+    // new t under 100 fails the build rather than being written with a leading zero s. 5.3.6 forbids.
+    assert!(
+        t >= 100 && t < 512 && t != 384,
+        "sha512t_h0 formats t as three digits: need 100 <= t < 512 and t != 384"
+    );
 
     // FIPS 180-4 s. 5.3.6: H(0)'' = H(0)', the SHA-512 initial hash value (s. 5.3.5), with each word XOR a5a5a5a5a5a5a5a5.
     let mut h = SHA512_H0;
@@ -380,8 +384,9 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // byte_count is a u64 byte counter, so this supports messages up to 2^64 bytes (2^67 bits).
-        // Exceeding it is infeasible in practice; in debug builds the add panics, in release it wraps.
+        // FIPS 180-4 s. 5.1.2: do_final_internal writes the whole 128-bit field, carrying the top
+        // three bits of byte_count in bit_len_hi, so unlike SHA-256 nothing is lost to the shift.
+        // The limit is byte_count itself at 2^64 bytes, far inside the l < 2^128 bits of Table 1.
         self.byte_count += len as u64;
 
         let available = 128 - self.x_buf_off;

@@ -17,6 +17,10 @@ const SHA256_K: [u32; 64] = [
     0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208, 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2,
 ];
 
+/// FIPS 180-4 Table 1 and s. 6.2: SHA-224 and SHA-256 are defined for a message of l bits where
+/// 0 <= l < 2^64, so the longest whole-byte message they cover is 2^61 - 1 bytes.
+const MAX_MESSAGE_BYTES: u64 = (1 << 61) - 1;
+
 /// FIPS 180-4 s. 5.3.2: the initial hash value H(0) for SHA-224.
 pub(crate) const SHA224_H0: [u32; 8] = [
     0xC1059ED8, 0x367CD507, 0x3070DD17, 0xF70E5939, 0xFFC00B31, 0x68581511, 0x64F98FA7, 0xBEFA4FA4,
@@ -291,8 +295,13 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // byte_count is a u64 byte counter, so this supports messages up to 2^64 bytes (2^67 bits).
-        // Exceeding it is infeasible in practice; in debug builds the add panics, in release it wraps.
+        // FIPS 180-4 s. 5.1.1: do_final_internal encodes l in a 64-bit field as `byte_count << 3`,
+        // and a left shift discards rather than panics, so past MAX_MESSAGE_BYTES the digest would
+        // silently be that of a message 2^64 bits shorter. do_update returns (), hence debug-only.
+        debug_assert!(
+            self.byte_count.checked_add(len as u64).is_some_and(|total| total <= MAX_MESSAGE_BYTES),
+            "message exceeds the FIPS 180-4 limit of {MAX_MESSAGE_BYTES} bytes for SHA-224/SHA-256"
+        );
         self.byte_count += len as u64;
 
         let available = 64 - self.x_buf_off;
