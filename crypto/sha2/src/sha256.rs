@@ -1,4 +1,4 @@
-use crate::Sha256Family;
+use crate::SHA256InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
@@ -16,6 +16,10 @@ const SHA256_K: [u32; 64] = [
     0x19A4C116, 0x1E376C08, 0x2748774C, 0x34B0BCB5, 0x391C0CB3, 0x4ED8AA4A, 0x5B9CCA4F, 0x682E6FF3,
     0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208, 0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2,
 ];
+
+/// FIPS 180-4 Table 1 and s. 6.2: SHA-224 and SHA-256 are defined for a message of l bits where
+/// 0 <= l < 2^64, so the longest whole-byte message they cover is 2^61 - 1 bytes.
+const MAX_MESSAGE_BYTES: u64 = (1 << 61) - 1;
 
 /// FIPS 180-4 s. 5.3.2: the initial hash value H(0) for SHA-224.
 pub(crate) const SHA224_H0: [u32; 8] = [
@@ -140,12 +144,12 @@ const fn compress_block(s: &mut [u32; 8], block: &[u8; 64]) {
 }
 
 #[derive(Clone)]
-pub(crate) struct Sha256State<PARAMS: Sha256Family> {
+pub(crate) struct Sha256State<PARAMS: SHA256InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u32; 8]>,
 }
 
-impl<PARAMS: Sha256Family> Sha256State<PARAMS> {
+impl<PARAMS: SHA256InitValue> Sha256State<PARAMS> {
     pub(crate) fn new() -> Self {
         let mut h = Secret::<[u32; 8]>::new();
         // FIPS 180-4 s. 6.2.1 step 1: set the initial hash value H(0) (s. 5.3.3, or s. 5.3.2 for SHA-224).
@@ -165,7 +169,7 @@ impl<PARAMS: Sha256Family> Sha256State<PARAMS> {
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
 #[derive(Clone)]
-pub struct SHA256Internal<PARAMS: Sha256Family> {
+pub struct SHA256Internal<PARAMS: SHA256InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     state: Sha256State<PARAMS>,
     byte_count: u64,
@@ -173,7 +177,7 @@ pub struct SHA256Internal<PARAMS: Sha256Family> {
     x_buf_off: usize,
 }
 
-impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
+impl<PARAMS: SHA256InitValue> SHA256Internal<PARAMS> {
     /// Creates a new SHA256 instance, ready for use.
     pub fn new() -> Self {
         Self {
@@ -186,7 +190,7 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
+impl<PARAMS: SHA256InitValue> SHA256Internal<PARAMS> {
     /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.1, then writes the digest.
     ///
     /// The `num_partial_bits` (0..=7, validated by the caller) trailing message bits are the most
@@ -197,7 +201,12 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
     ///
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
-    fn finalize(mut self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> usize {
+    fn do_final_internal(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
         debug_assert!(num_partial_bits <= 7);
         output.fill(0);
 
@@ -249,18 +258,18 @@ impl<PARAMS: Sha256Family> SHA256Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: Sha256Family> Default for SHA256Internal<PARAMS> {
+impl<PARAMS: SHA256InitValue> Default for SHA256Internal<PARAMS> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<PARAMS: Sha256Family> Algorithm for SHA256Internal<PARAMS> {
+impl<PARAMS: SHA256InitValue> Algorithm for SHA256Internal<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
-impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
+impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
         512
@@ -286,8 +295,13 @@ impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // byte_count is a u64 byte counter, so this supports messages up to 2^64 bytes (2^67 bits).
-        // Exceeding it is infeasible in practice; in debug builds the add panics, in release it wraps.
+        // FIPS 180-4 s. 5.1.1: do_final_internal encodes l in a 64-bit field as `byte_count << 3`,
+        // and a left shift discards rather than panics, so past MAX_MESSAGE_BYTES the digest would
+        // silently be that of a message 2^64 bits shorter. do_update returns (), hence debug-only.
+        debug_assert!(
+            self.byte_count.checked_add(len as u64).is_some_and(|total| total <= MAX_MESSAGE_BYTES),
+            "message exceeds the FIPS 180-4 limit of {MAX_MESSAGE_BYTES} bytes for SHA-224/SHA-256"
+        );
         self.byte_count += len as u64;
 
         let available = 64 - self.x_buf_off;
@@ -325,7 +339,7 @@ impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general padding.
-        self.finalize(0, 0, output)
+        self.do_final_internal(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -351,7 +365,7 @@ impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
-        Ok(self.finalize(partial_byte, num_partial_bits, output))
+        Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -362,7 +376,7 @@ impl<PARAMS: Sha256Family> Hash for SHA256Internal<PARAMS> {
 /// Length in bytes of the serialized state of SHA224 and SHA256.
 pub const SUSPENDED_SHA256_STATE_LEN: usize = 108;
 
-impl<PARAMS: Sha256Family> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Internal<PARAMS> {
+impl<PARAMS: SHA256InitValue> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256Internal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_SHA256_STATE_LEN] {
         debug_assert_eq!(SUSPENDED_SHA256_STATE_LEN, 108);
 

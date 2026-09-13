@@ -20,13 +20,13 @@
 //!         &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
 //!         KeyType::MACKey,
 //!     ).unwrap();
-//! let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA3_256_NAME, &key).unwrap();
+//! let hmac = MACFactory::new(bouncycastle_sha3::hmac::HMAC_SHA3_256_NAME, &key).unwrap();
 //!
 //! // Generate the MAC value
 //! let mac_value: Vec<u8> = hmac.mac(data);
 //!
 //! // Verify the MAC value
-//! let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA3_256_NAME, &key).unwrap();
+//! let hmac = MACFactory::new(bouncycastle_sha3::hmac::HMAC_SHA3_256_NAME, &key).unwrap();
 //! if hmac.verify(data, &mac_value,) {
 //!     println!("MAC verified successfully!")
 //! } else {
@@ -74,19 +74,18 @@ use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{MAC, SecurityStrength};
-use bouncycastle_hmac as hmac;
-use bouncycastle_hmac::HMAC_SM3_NAME;
-use bouncycastle_hmac::{
-    HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME,
-};
-use bouncycastle_hmac::{
+use bouncycastle_sha2 as sha2;
+use bouncycastle_sha2::hmac::{
     HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_224_NAME,
     HMAC_SHA512_256_NAME, HMAC_SHA512_NAME,
 };
-use bouncycastle_sha2 as sha2;
 use bouncycastle_sha3 as sha3;
+use bouncycastle_sha3::hmac::{
+    HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME,
+};
 use bouncycastle_sha3::{KMAC128, KMAC128_NAME, KMAC256, KMAC256_NAME};
 use bouncycastle_sm3 as sm3;
+use bouncycastle_sm3::hmac::HMAC_SM3_NAME;
 
 /*** Defaults ***/
 ///
@@ -111,27 +110,27 @@ pub enum MACFactory {
     /// KMAC256 with no customization string and a 64-byte tag. See [`MACFactory::KMAC128`].
     KMAC256(KMAC256),
     ///
-    HMAC_SHA224(hmac::HMAC<sha2::SHA224>),
+    HMAC_SHA224(sha2::hmac::HMAC_SHA224),
     ///
-    HMAC_SHA256(hmac::HMAC<sha2::SHA256>),
+    HMAC_SHA256(sha2::hmac::HMAC_SHA256),
     ///
-    HMAC_SHA384(hmac::HMAC<sha2::SHA384>),
+    HMAC_SHA384(sha2::hmac::HMAC_SHA384),
     ///
-    HMAC_SHA512(hmac::HMAC<sha2::SHA512>),
+    HMAC_SHA512(sha2::hmac::HMAC_SHA512),
     ///
-    HMAC_SHA512_224(hmac::HMAC<sha2::SHA512_224>),
+    HMAC_SHA512_224(sha2::hmac::HMAC_SHA512_224),
     ///
-    HMAC_SHA512_256(hmac::HMAC<sha2::SHA512_256>),
+    HMAC_SHA512_256(sha2::hmac::HMAC_SHA512_256),
     ///
-    HMAC_SHA3_224(hmac::HMAC<sha3::SHA3_224>),
+    HMAC_SHA3_224(sha3::hmac::HMAC_SHA3_224),
     ///
-    HMAC_SHA3_256(hmac::HMAC<sha3::SHA3_256>),
+    HMAC_SHA3_256(sha3::hmac::HMAC_SHA3_256),
     ///
-    HMAC_SHA3_384(hmac::HMAC<sha3::SHA3_384>),
+    HMAC_SHA3_384(sha3::hmac::HMAC_SHA3_384),
     ///
-    HMAC_SHA3_512(hmac::HMAC<sha3::SHA3_512>),
+    HMAC_SHA3_512(sha3::hmac::HMAC_SHA3_512),
     ///
-    HMAC_SM3(hmac::HMAC<sm3::SM3>),
+    HMAC_SM3(sm3::hmac::HMAC_SM3),
 }
 
 impl MACFactory {
@@ -155,21 +154,21 @@ impl MACFactory {
             DEFAULT_256_BIT => Self::default_256_bit(key),
             KMAC128_NAME => Ok(Self::KMAC128(KMAC128::new(key)?)),
             KMAC256_NAME => Ok(Self::KMAC256(KMAC256::new(key)?)),
-            HMAC_SHA224_NAME => Ok(Self::HMAC_SHA224(hmac::HMAC::<sha2::SHA224>::new(key)?)),
-            HMAC_SHA256_NAME => Ok(Self::HMAC_SHA256(hmac::HMAC::<sha2::SHA256>::new(key)?)),
-            HMAC_SHA384_NAME => Ok(Self::HMAC_SHA384(hmac::HMAC::<sha2::SHA384>::new(key)?)),
-            HMAC_SHA512_NAME => Ok(Self::HMAC_SHA512(hmac::HMAC::<sha2::SHA512>::new(key)?)),
+            HMAC_SHA224_NAME => Ok(Self::HMAC_SHA224(sha2::hmac::HMAC_SHA224::new(key)?)),
+            HMAC_SHA256_NAME => Ok(Self::HMAC_SHA256(sha2::hmac::HMAC_SHA256::new(key)?)),
+            HMAC_SHA384_NAME => Ok(Self::HMAC_SHA384(sha2::hmac::HMAC_SHA384::new(key)?)),
+            HMAC_SHA512_NAME => Ok(Self::HMAC_SHA512(sha2::hmac::HMAC_SHA512::new(key)?)),
             HMAC_SHA512_224_NAME => {
-                Ok(Self::HMAC_SHA512_224(hmac::HMAC::<sha2::SHA512_224>::new(key)?))
+                Ok(Self::HMAC_SHA512_224(sha2::hmac::HMAC_SHA512_224::new(key)?))
             }
             HMAC_SHA512_256_NAME => {
-                Ok(Self::HMAC_SHA512_256(hmac::HMAC::<sha2::SHA512_256>::new(key)?))
+                Ok(Self::HMAC_SHA512_256(sha2::hmac::HMAC_SHA512_256::new(key)?))
             }
-            HMAC_SHA3_224_NAME => Ok(Self::HMAC_SHA3_224(hmac::HMAC::<sha3::SHA3_224>::new(key)?)),
-            HMAC_SHA3_256_NAME => Ok(Self::HMAC_SHA3_256(hmac::HMAC::<sha3::SHA3_256>::new(key)?)),
-            HMAC_SHA3_384_NAME => Ok(Self::HMAC_SHA3_384(hmac::HMAC::<sha3::SHA3_384>::new(key)?)),
-            HMAC_SHA3_512_NAME => Ok(Self::HMAC_SHA3_512(hmac::HMAC::<sha3::SHA3_512>::new(key)?)),
-            HMAC_SM3_NAME => Ok(Self::HMAC_SM3(hmac::HMAC::<sm3::SM3>::new(key)?)),
+            HMAC_SHA3_224_NAME => Ok(Self::HMAC_SHA3_224(sha3::hmac::HMAC_SHA3_224::new(key)?)),
+            HMAC_SHA3_256_NAME => Ok(Self::HMAC_SHA3_256(sha3::hmac::HMAC_SHA3_256::new(key)?)),
+            HMAC_SHA3_384_NAME => Ok(Self::HMAC_SHA3_384(sha3::hmac::HMAC_SHA3_384::new(key)?)),
+            HMAC_SHA3_512_NAME => Ok(Self::HMAC_SHA3_512(sha3::hmac::HMAC_SHA3_512::new(key)?)),
+            HMAC_SM3_NAME => Ok(Self::HMAC_SM3(sm3::hmac::HMAC_SM3::new(key)?)),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known MAC",
                 alg_name

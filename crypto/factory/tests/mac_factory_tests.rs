@@ -33,7 +33,8 @@ mod hash_factory_tests {
             let hmac = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
             assert_eq!(hmac.output_len(), 28);
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
-            let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA512_224_NAME, &key).unwrap();
+            let hmac =
+                MACFactory::new(bouncycastle_sha2::hmac::HMAC_SHA512_224_NAME, &key).unwrap();
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
 
             // HMAC-SHA512/256 -- NIST ACVP HMAC-SHA2-512/256 2.0, tgId 1, tcId 147 (MAC truncated to 160 bits)
@@ -47,7 +48,8 @@ mod hash_factory_tests {
             let hmac = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
             assert_eq!(hmac.output_len(), 32);
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
-            let hmac = MACFactory::new(bouncycastle_hmac::HMAC_SHA512_256_NAME, &key).unwrap();
+            let hmac =
+                MACFactory::new(bouncycastle_sha2::hmac::HMAC_SHA512_256_NAME, &key).unwrap();
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
 
             // HMAC-SHA512/224 pass-throughs: streaming, mac_out, verify and do_verify_final.
@@ -150,7 +152,7 @@ mod hash_factory_tests {
                 KeyType::MACKey,
             )
             .unwrap();
-            for name in ["HMAC-SM3", bouncycastle_hmac::HMAC_SM3_NAME] {
+            for name in ["HMAC-SM3", bouncycastle_sm3::hmac::HMAC_SM3_NAME] {
                 let hmac = MACFactory::new(name, &key).unwrap();
                 assert_eq!(hmac.output_len(), 32);
                 assert!(

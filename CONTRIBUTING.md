@@ -32,10 +32,9 @@ regarded as one.
 There is a time and a place for "Move fast and break things", but the source code of a crypto library is not one of
 them.
 
-This project takes the philosophy that taking the time to do things right pays off in the long run, both in terms of
-the runtime and memory footprint of the code, and it terms of the time required for a future maintainer to get up to
-speed with the code
-and avoid introducing bugs due to the code being hard to understand.
+This project takes the philosophy that taking the time to do things right pays off in the long run, both in terms of the
+runtime and memory footprint of the code, and it terms of the time required for a future maintainer to get up to speed
+with the code and avoid introducing bugs due to the code being hard to understand.
 
 Some specifics:
 
@@ -80,9 +79,26 @@ For minor updates, you can instead choose to create an issue with short snippets
 For more information, refer to the Bouncy Castle documentation
 on [Getting Started with Bouncy Castle](https://doc.primekey.com/bouncycastle/introduction#Introduction-GettingStartedwithBouncyCastle).
 
+### Merging a pull request
+
+While this project uses GitHub for its issue tracking and Pull Request reviews, GitHub is a read-only mirror of a
+private upstream git server. Therefore, all PRs need to be merged manually to the private server by a committer.
+
+Merge checklist for committers:
+
+* Merges should be done as a squash merge both to reduce the overall number of commits in the git tree, and so that only
+  the final version of a feature or bug fix gets merged; the intermediate sequence of working commits could be useful
+  for a PR reviewer, but not once merged (and it is persisted in the PR branch anyway).
+* Committers may make stylistic changes while processing the merge.
+* Attributing the contributor: if the PR was submitted by an external contributor, they should be recognized
+  in [CONTRIBUTORS.md], and, if possible, preserving their commit will give them credit for the contribution in Github.
+
 ### Creating sub-issues
 
-When an issue requires a large amount of time or code changes to complete, it may be convenient for a contributor to break it up into distinct sub-issues, which can each be addressed by a separate pull request. This avoids reviewers managing very large PRs, or submitters needing to frequently resolve merge conflicts in their branches. If you would like to break up issue into sub-issues, see the instructions in [Issues Style Guide](ISSUES_STYLE_GUIDE.md).
+When an issue requires a large amount of time or code changes to complete, it may be convenient for a contributor to
+break it up into distinct sub-issues, which can each be addressed by a separate pull request. This avoids reviewers
+managing very large PRs, or submitters needing to frequently resolve merge conflicts in their branches. If you would
+like to break up issue into sub-issues, see the instructions in [Issues Style Guide](ISSUES_STYLE_GUIDE.md).
 
 ### Quality Standards
 
@@ -90,12 +106,12 @@ Except where otherwise noted, all crates must have:
 
 * benchmarks
 * unit tests that (mostly) satisfy cargo mutants
-* lib.rs needs to compile with: #![forbid(missing_docs)], #![no_std]
-* Fallibility: as much as humanly possible, Result and unwrap() should be used for "Bad input data" type things and
-  not "Programmer didn't read the docs" type things. Things like \[u8]'s of the wrong length, or trying to call an
-  algorithm with a key of the wrong parameter set should be detected at compile time via the typing system and should
-  not require a Result / unwrap() mechanism. Please run `./dev_scripts/quality_stats.sh` before and after your change to
-  see if you have increased the fallibility of the code you changed.
+* lib.rs needs to compile with: #![forbid (missing_docs)], #![no_std]
+* Fallibility: as much as humanly possible, Result and unwrap () should be used for "Bad input data" type things and not
+  "Programmer didn't read the docs" type things. Things like \[u8]'s of the wrong length, or trying to call an algorithm
+  with a key of the wrong parameter set should be detected at compile time via the typing system and should not require
+  a Result / unwrap () mechanism. Please run `./dev_scripts/quality_stats.sh` before and after your change to see if you
+  have increased the fallibility of the code you changed.
 
 Code submissions that do not meet these standards, or that require significant effort from the maintainers in order to
 meet these standards, will not be accepted.
@@ -160,10 +176,9 @@ rejected for this reason.
 
 Specifics:
 
-What counts as "non-trivial"?
-A non-trivial portion of a submission has been created with an AI tool when it has generated meaningful code, logic, or
-documentation — not merely assisted with trivial tasks like autocompletion of a single line, reformatting, or
-spell-checking. If in doubt, declare it as a non-trivial contribution.
+What counts as "non-trivial"? A non-trivial portion of a submission has been created with an AI tool when it has
+generated meaningful code, logic, or documentation — not merely assisted with trivial tasks like autocompletion of a
+single line, reformatting, or spell-checking. If in doubt, declare it as a non-trivial contribution.
 
 How to declare it:
 The commit message or body of the pull request must include a line of the form `Assisted-by: {agent}:{model}`; for

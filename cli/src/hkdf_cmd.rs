@@ -7,6 +7,7 @@ use bouncycastle::core::key_material::{
 };
 use bouncycastle::hex;
 use bouncycastle::hkdf;
+use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
 
 pub(crate) fn hkdf_cmd(
     hkdfname: &str,
@@ -70,14 +71,14 @@ pub(crate) fn hkdf_cmd(
 
     match hkdfname {
         "HKDF-SHA256" => {
-            let mut h = hkdf::HKDF_SHA256::new();
+            let mut h = HKDF_SHA256::new();
             h.do_extract_init(&salt_key).unwrap();
             h.do_extract_update_bytes(ikm_bytes.as_slice()).unwrap();
             h.do_extract_update_bytes(additional_input_bytes.as_slice()).unwrap();
             h.do_extract_final_out(&mut out_key).unwrap();
         }
         "HKDF-SHA512" => {
-            let mut h = hkdf::HKDF_SHA512::new();
+            let mut h = HKDF_SHA512::new();
             h.do_extract_init(&salt_key).unwrap();
             h.do_extract_update_bytes(ikm_bytes.as_slice()).unwrap();
             h.do_extract_update_bytes(additional_input_bytes.as_slice()).unwrap();

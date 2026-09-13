@@ -137,6 +137,36 @@ Note that rust macros tend not to play well with a lot of dev tooling for compil
 `cargo mutants`, which is a good reason to avoid macros in core algorithm or data processing code. Macros can be used
 more freely within test code.
 
+## Unit tests vs integration tests
+
+Unit tests are test code (and supporting helper functions) embedded in src/**.rs files. They have access to
+crate-private or module-private functions and constants.
+
+Integration tests are test code (and supporting helper functions) in tests/**.rs files. They test the crate's code from
+the outside -- ie through its public APIs -- since tests/ is a separate crate from src/.
+
+In general, integration tests are preferred over unit tests. This is for a number of reasons:
+
+* To reduce reviewer burden; reviewers will typically focus more effort on the src/ than the tests/, so we want to keep
+  src/ as short as is reasonable.
+* Usually it is easier to determine what is the correct behaviour at the public API level. For example, this is the
+  level at which we typically have KATs and test vectors.
+* Tools like cargo mutants are very helpful at detecting branches that are not exercisable via the public APIs, which
+  often is an indicator that the branch isn't doing what you think it's doing, or is simply not useful and can be
+  deleted. Unit tests that bypass the public APIs to pin these sorts of branches obscure the fact that this code is
+  unreachable.
+
+Unit tests are reasonable to include in the following cases:
+
+* There is high-risk code (usually meaning that it is complex code whose behaviour is not obvious from inspection) where
+  unit tests help to document the behaviour and protect against accidental breakage via a benign-looking change.
+* AND where known answer tests are available.
+* AND where this behaviour cannot be tested from integration tests.
+
+When writing unit tests, they should be contained with an `mod tests` at the bottom of the file, and ALL helper
+functions that support the unit tests must be contained within that module. The intention is to clearly signal to a code
+reviewer what is test code vs functional code.
+
 # Docs
 
 ## Usage Examples

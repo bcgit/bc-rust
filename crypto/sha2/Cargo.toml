@@ -5,6 +5,8 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
+bouncycastle-hkdf.workspace = true
+bouncycastle-hmac.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
@@ -15,4 +17,12 @@ bouncycastle-hex.workspace = true
 
 [[bench]]
 name = "sha2_benches"
+harness = false
+
+[[bench]]
+name = "hkdf_sha2_benches"
+harness = false
+
+[[bench]]
+name = "hmac_sha2_benches"
 harness = false
