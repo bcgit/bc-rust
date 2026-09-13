@@ -9,6 +9,10 @@ const SM3_IV: [u32; 8] = [
     0x7380166F, 0x4914B2B9, 0x172442D7, 0xDA8A0600, 0xA96F30BC, 0x163138AA, 0xE38DEE4D, 0xB0FB0E4E,
 ];
 
+/// GB/T 32905-2016 s. 5.1: SM3 takes "a message m of length l (where l < 2^64) in bits", so the
+/// longest whole-byte message it covers is 2^61 - 1 bytes.
+const MAX_MESSAGE_BYTES: u64 = (1 << 61) - 1;
+
 /// GB/T 32905-2016 s. 4.2: constants T_j = 79CC4519 for 0 <= j <= 15, 7A879D8A for 16 <= j <= 63.
 /// The round function uses (T_j <<< (j mod 32)), which is precomputed here at compile time.
 /// Mutants note: `u32::rotate_left` reduces its argument modulo 32 itself, so replacing `j % 32`
@@ -246,8 +250,13 @@ impl Hash for SM3 {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // byte_count is a u64 byte counter, so this supports messages up to 2^64 bytes.
-        // Exceeding it is infeasible in practice; in debug builds the add panics, in release it wraps.
+        // GB/T 32905-2016 s. 5.2: do_final_internal encodes l in a 64-bit field as
+        // `byte_count << 3`, and a left shift discards rather than panics, so past
+        // MAX_MESSAGE_BYTES the digest would silently be that of a message 2^64 bits shorter.
+        debug_assert!(
+            self.byte_count.checked_add(len as u64).is_some_and(|total| total <= MAX_MESSAGE_BYTES),
+            "message exceeds the SM3 limit of {MAX_MESSAGE_BYTES} bytes"
+        );
         self.byte_count += len as u64;
 
         let available = 64 - self.x_buf_off;
