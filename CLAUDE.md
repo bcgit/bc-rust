@@ -54,8 +54,14 @@ Quality / mutation testing:
 
 ```
 ./dev_scripts/quality_stats.sh ./crypto    # lines-of-code, docstring & fallibility metrics; CI publishes this
-cargo mutants                              # config in .cargo/mutants.toml (output: custom_mutants_output/)
+cargo mutants -p bouncycastle-sha3         # config in .cargo/mutants.toml (output: custom_mutants_output/)
 ```
+
+`-p` is as non-optional here as `--workspace` is for build and test, and for the same reason: a bare
+`cargo mutants` examines only the root `bouncycastle` package, whose single `src/lib.rs` yields no
+mutants, so it prints "No mutants found under the active filters" and exits **0**. See
+[the mutation-testing mechanics](#notes-on-testing) for scoping a run to one file, for crates whose
+tests live elsewhere, and for the test-data symlink.
 
 Stack-memory benches are separate binaries under `mem_usage_benches/src/`, each declared as a
 `[[bin]]` in that crate's `Cargo.toml`:
@@ -158,37 +164,22 @@ Rules when working from the downloaded copy:
 - **Quote exactly, and locate precisely.** Comments and commit messages should name the document with its revision (e.g. "FIPS 203, Algorithm 13 (ML-KEM.Encaps_internal), step 2", "RFC 5869 §2.2"), and quote the spec verbatim where a quote is clearer than a paraphrase. Verify every section/algorithm/step number against the file you just downloaded — including numbers already present in the code, which may predate a spec revision.
 - **The specification is the source of truth for correct behaviour** — not the C/Java/Go implementation you have seen, not the BC Java or BC C# port, and not another crate. When an existing implementation appears to disagree with the spec, re-read the spec, and if the disagreement is real, follow the spec and note the discrepancy in the PR description rather than silently copying the other implementation.
 - **Optimizations are allowed, provided externally-visible behaviour is identical.** Restructuring loops, fusing steps, precomputing tables, constant-time rewrites, and in-place buffer reuse are all fine — the spec constrains observable outputs (and, for this library, timing behaviour on secret data), not the shape of the code. Any such deviation from the spec's literal steps gets a comment saying which spec steps it implements and why it is equivalent.
-- **Test vectors come from the spec or its official companion files** (NIST CAVP / ACVP vectors, RFC test-vector appendices, the NIST "Examples with Intermediate Values" sample files). Never hand-write an "expected" value from recall.
-
-### Test vector data
-
-Vectors live in the **`bc-test-data`** repo, cloned alongside this one at `../bc-test-data`; suites read from it by relative path and print a warning and pass vacuously if it is absent (see `crypto/sha3/tests/cavp_tests.rs` for the pattern). Symlink it to `/tmp/bc-test-data` before running `cargo mutants`, whose build directories are elsewhere.
-
-- Commit the vectors there, not here, and not as PDFs — that repo holds `.rsp`, `.txt` and `.json`, and has no PDFs at all. Extract what a harness needs into the CAVP-style `.rsp` shape already used by `crypto/sha3/`.
-- Every new directory gets a `README.md` giving provenance: upstream URL, licence or copyright status, retrieval date, and the SHA-256 of each source document so a refresh can be checked. `crypto/wycheproof/` and `crypto/sp800-185/` are the examples.
-- **Validate an extraction against declared lengths, not just that it parses.** NIST sample-value PDFs split hex blocks across page boundaries, and the continuation line then begins with a form feed rather than spaces, so an "indented hex lines" pattern stops at the break and silently truncates. The result is still well-formed hex. Check each value against the length the file states (`Outputlen`, `Length of data is`, `Length of Key is`), and cross-check against BC Java's expected values where an equivalent test exists.
+- **Test vectors come from the spec or its official companion files** (NIST CAVP / ACVP vectors, RFC test-vector appendices), downloaded the same way. Never hand-write an "expected" value from recall.
 
 ## Notes on testing
 
 What a crate must be tested against — including the mutation-testing expectation, the trait test framework, and the
 external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING.md. Repo-specific mechanics:
 
-- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`).
+- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`). Four things about running it here:
+  - **Always pass `-p <crate>`.** Without it only the root package is examined, which has no mutants, and the run "passes" vacuously — see [Common commands](#common-commands).
+  - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
+  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from `sha3` and `factory`, so a `-p bouncycastle-core` run alone reports them all as missed.
+  - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
 - A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
-- Scoping a mutation run: **`--file` is silently ignored** by the installed cargo-mutants — it accepts the flag, filters nothing, and runs the whole package, so a run reported as covering one file may have covered the crate. Use **`-F <regex>`**, which matches the mutant names `--list` prints, and confirm the scope with `--list` first. `--test-workspace` needs an explicit value (`--test-workspace=true`), and is required whenever the mutated code is a `core` trait used by other crates.
-- `--in-diff` finds nothing for a change that is mostly trait declarations, renamed call sites and documentation, because the executable code in impl bodies is unchanged. File-scoped runs are the useful gate for that shape of change; do not read "no mutants to filter" as "nothing to test".
-- Behaviour-critical private functions can use in-file `#[cfg(test)] mod tests` blocks when they can't be exercised from outside the crate.
 - For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation.
 - The per-width `impl Condition<W>` blocks in `crypto/utils/src/ct.rs` (and their test modules) are deliberately duplicated rather than macro-generated: `cargo mutants` cannot see into `macro_rules!` bodies, so a macro would hide the mask identities from mutation testing. Do not fold them back into a macro. Any change to one width in a group (i64/i32, u64/u32) must be applied to every width in that group.
-
-## Commit messages
-
-One-line subject only: no body, no "Squashed commits" list, and **no `Co-Authored-By` trailer**. This overrides the usual default of adding one. It applies on the release branches and on feature branches alike, so `git commit -m "<subject>"` is the whole of it — put in the subject what the body would have said.
-
-Subjects are `<crate>: <what changed>`, and a change spanning several crates is normally split into one commit per crate, including that crate's factory and CLI wiring. Split only where each commit still builds: a trait change that every implementor must follow cannot be split that way and belongs in one commit.
-
-Do not strip `Co-Authored-By` from commits written in earlier sessions when rewording them during a rebase — that removes someone else's attribution.
 
 ## CI
 
