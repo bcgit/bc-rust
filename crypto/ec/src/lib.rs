@@ -26,3 +26,4 @@
 pub mod nat;
 pub mod p256;
 pub mod p256_point;
+pub mod p256_scalar;
