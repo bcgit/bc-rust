@@ -1,0 +1,14 @@
+[package]
+name = "bouncycastle-ec"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "p256_field_benches"
+harness = false
