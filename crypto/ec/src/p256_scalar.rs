@@ -129,6 +129,14 @@ impl P256ScalarField {
         self.mul(self)
     }
 
+    /// Converts a secret scalar (`d` or `k`) into Montgomery form for field arithmetic (`k⁻¹`, `r*d`,
+    /// ...). Reads the secret's limbs once into a plain value, the same "protects storage, not
+    /// every derived computation" boundary [`crate::p256_comb::comb_multiply_base_point`] already
+    /// crosses to read `k`'s bits.
+    pub fn from_secret(secret: &P256Scalar) -> Self {
+        Self::from_limbs(*secret.limbs())
+    }
+
     /// `self^-1 mod n`, or `0` if `self` is `0`. Fermat's little theorem (`n` is prime), by fixed
     /// square-then-conditionally-multiply over the public exponent `n-2` -- see
     /// [`crate::p256::P256FieldElement::invert`]'s docs, which this mirrors exactly (branch-free,
@@ -262,10 +270,12 @@ fn reduce_once(limbs: [u64; 4]) -> [u64; 4] {
 /// A scalar mod `n`, `< n`, held in `Secret` -- for a value that must never be handled in
 /// non-constant time: a private key `d`, or the per-signature secret `k`. There is deliberately no
 /// conversion from `P256Scalar` to [`P256PublicScalar`]: the crate's constant-time and
-/// variable-time scalar multipliers (not yet implemented) take `&P256Scalar` and
-/// `&P256PublicScalar` respectively, so a caller cannot pass a secret scalar to the variable-time
-/// multiplier by accident -- the type system forbids it, rather than relying on a reviewer to
-/// notice (the design plan's §5, §7 rule 4).
+/// variable-time scalar multipliers take `&P256Scalar` and `&P256PublicScalar` respectively, so a
+/// caller cannot pass a secret scalar to the variable-time multiplier by accident -- the type
+/// system forbids it, rather than relying on a reviewer to notice (the design plan's §5, §7 rule
+/// 4). `Clone`/`Debug`/`PartialEq`/`Eq` forward to [`Secret`]'s own impls (`Debug` redacting,
+/// `PartialEq` constant-time), which is what `core::traits::SignaturePrivateKey`'s bound needs.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct P256Scalar(Secret<[u64; 4]>);
 
 impl P256Scalar {
@@ -277,13 +287,21 @@ impl P256Scalar {
         Self(secret)
     }
 
-    /// The scalar's limbs, for the crate's own multiplier implementations to read. Not exposed
-    /// outside the crate: nothing outside `bouncycastle-ec` should ever hold a bare, unprotected
-    /// copy of a secret scalar's value.
-    ///
-    /// `#[allow(dead_code)]`: not yet called outside this file's own tests -- the constant-time
-    /// multiplier that will read it lands in the very next commit.
-    #[allow(dead_code)]
+    /// Builds a secret scalar from SEC 1 §2.3.7 big-endian octets, reducing once if `>= n`.
+    pub fn from_be_bytes(bytes: &[u8; 32]) -> Self {
+        Self::from_limbs(crate::p256_sec1::limbs_from_be_bytes(bytes))
+    }
+
+    /// Encodes to SEC 1 §2.3.7 big-endian octets -- the wire form of an ECDSA private key.
+    /// Momentarily holds the plain value in the returned array, same as any other `encode()` on a
+    /// `SignaturePrivateKey`: the caller asked for the bytes.
+    pub fn to_be_bytes(&self) -> [u8; 32] {
+        crate::p256_sec1::be_bytes_from_limbs(&self.0)
+    }
+
+    /// The scalar's limbs, for the crate's own multiplier and field-arithmetic implementations to
+    /// read (see [`P256ScalarField::from_secret`]). Not exposed outside the crate: nothing outside
+    /// `bouncycastle-ec` should ever hold a bare, unprotected copy of a secret scalar's value.
     pub(crate) fn limbs(&self) -> &[u64; 4] {
         &self.0
     }
