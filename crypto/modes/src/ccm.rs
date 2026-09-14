@@ -879,6 +879,9 @@ where
 /// [`SymmetricCipherError::GenericError`]. Pick `BUFFER_LEN` from the largest packet the protocol
 /// allows -- CCM is a packet mode (Sec 3), so there is such a number.
 ///
+/// See [`AEADCipherEncryptor`]'s "A length-dependent construction still has to buffer" section for
+/// why this trait was not reshaped to avoid the buffering instead.
+///
 /// # Memory
 ///
 /// `2 * BUFFER_LEN` bytes in the value itself, plus the `FINAL_LEN`-byte buffer the trait's
