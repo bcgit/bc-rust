@@ -9,9 +9,12 @@
 //!
 //! # Status
 //!
-//! Only the P-256 base field ([`p256`]) exists so far -- limb arithmetic, field add/sub/negate,
-//! multiply, and constant-time inversion. Point arithmetic, scalar multiplication, and SEC 1
-//! encodings are not yet implemented.
+//! P-256 is complete through domain parameters and encodings: the base field ([`p256`]), branch-free
+//! Jacobian point arithmetic ([`p256_point`]), the scalar field ([`p256_scalar`]), constant-time
+//! fixed-base scalar multiplication for signing ([`p256_comb`]), variable-time Shamir's-trick
+//! multiplication for verification ([`p256_wnaf`]), and SEC 1 point encoding/decoding with SP 800-186
+//! public-key validation ([`p256_sec1`]). ECDSA itself (key generation, sign, verify) is not yet
+//! implemented; see `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9.
 //!
 //! # Security Considerations
 //!
@@ -27,6 +30,8 @@ pub mod nat;
 pub mod p256;
 pub mod p256_comb;
 pub(crate) mod p256_comb_table;
+pub mod p256_domain;
 pub mod p256_point;
 pub mod p256_scalar;
+pub mod p256_sec1;
 pub mod p256_wnaf;
