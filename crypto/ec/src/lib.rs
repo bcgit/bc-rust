@@ -25,5 +25,7 @@
 
 pub mod nat;
 pub mod p256;
+pub mod p256_comb;
+pub(crate) mod p256_comb_table;
 pub mod p256_point;
 pub mod p256_scalar;
