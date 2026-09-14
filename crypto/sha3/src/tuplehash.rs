@@ -2,7 +2,7 @@
 
 use crate::SHAKEParams;
 use crate::cshake::{CSHAKEInternal, absorb_encoded_string_into};
-use crate::shake::SHAKESqueezer;
+use crate::length_bound_squeezer::LengthBoundSqueezer;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
@@ -142,8 +142,15 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
 ///
 /// The arbitrary-output-length TupleHash of Sec 5.3.1: `right_encode(0)` in place of the length.
 /// As with KMAC, it is a *different function* from the fixed-length one, not a longer view of it,
-/// and it is a separate type for the same reason -- but here the length not being bound means
-/// output at one length really is a prefix of output at a longer one.
+/// and it is a separate type for the same reason -- but read as a stream
+/// ([`XOFSqueezer::do_output`]) the length is not bound, so output at one length is a prefix of
+/// output at a longer one.
+///
+/// A *final* read binds it, because a caller that names a length and will not be back has said
+/// what `L` is: [`XOFSqueezer::do_final`] and [`XOF::xof`] produce the fixed-length TupleHash of
+/// Sec 5.3 (see [`LengthBoundSqueezer`]), and the [`Hash`] view -- [`Hash::do_final`],
+/// [`Hash::hash`] and [`Hash::hash_out`] -- does the same at the nominal [`Hash::output_len`],
+/// since a hash's output length is fixed by its type.
 ///
 /// [`Hash::do_update`] appends one tuple element, exactly as for [`TupleHashInternal`].
 #[derive(Clone)]
@@ -163,7 +170,7 @@ impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
     }
 
     /// Hashes a whole tuple and returns the output stream.
-    pub fn output_for(mut self, tuple: &[&[u8]]) -> SHAKESqueezer<PARAMS> {
+    pub fn output_for(mut self, tuple: &[&[u8]]) -> LengthBoundSqueezer<PARAMS> {
         for element in tuple {
             self.do_update(element);
         }
@@ -176,21 +183,21 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
         self.cshake.block_bitlen()
     }
 
-    /// The nominal length, 32 or 64 bytes. Not bound into the computation -- see
-    /// [`TupleHashXOFInternal`].
+    /// The nominal length, 32 or 64 bytes: twice the security strength, the length at which the
+    /// output carries that strength in full. Bound by the [`Hash`] view and not by the XOF one --
+    /// see [`TupleHashXOFInternal`].
     fn output_len(&self) -> usize {
         self.cshake.output_len()
     }
 
     fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        let n = self.output_len();
         self.do_update(data);
-        self.into_squeezer().do_output(n)
+        self.do_final()
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_squeezer().do_output_out(output)
+        self.do_final_out(output)
     }
 
     /// Appends **one tuple element**.
@@ -198,13 +205,21 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
         absorb_encoded_string_into(&mut self.cshake, data);
     }
 
+    /// A final read at the nominal length, so `L` is bound: this is the fixed-length TupleHash of
+    /// Sec 5.3 at `n = ` [`Hash::output_len`], not a prefix of the TupleHashXOF stream.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_output(n)
+        self.into_squeezer().do_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_squeezer().do_output_out(output)
+        let n = self.output_len();
+        // Per Hash::do_final_out, as for the fixed-length form: a short buffer truncates this
+        // TupleHash rather than computing the TupleHash of a shorter length, because `n` is what
+        // reaches right_encode, not the buffer's length.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        self.into_squeezer().do_final_out_with_length((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
@@ -240,13 +255,12 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
-    type Squeezer = SHAKESqueezer<PARAMS>;
+    type Squeezer = LengthBoundSqueezer<PARAMS>;
 
-    fn into_squeezer(mut self) -> Self::Squeezer {
-        // Sec 5.3.1 step 4: right_encode(0) rather than the length.
-        let (buf, len) = right_encode(0);
-        self.cshake.do_update(&buf[..len]);
-        self.cshake.into_squeezer()
+    /// The `right_encode` of Sec 5.3.1 step 4 is not absorbed here: whether it carries 0 or the
+    /// length of a final read is [`LengthBoundSqueezer`]'s decision.
+    fn into_squeezer(self) -> Self::Squeezer {
+        LengthBoundSqueezer::new(self.cshake)
     }
 
     fn into_squeezer_partial_bits(

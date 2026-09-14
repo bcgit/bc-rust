@@ -2,7 +2,8 @@
 
 use crate::SHAKEParams;
 use crate::cshake::{CSHAKEInternal, absorb_left_encode_into};
-use crate::shake::{SHAKEInternal, SHAKESqueezer};
+use crate::length_bound_squeezer::LengthBoundSqueezer;
+use crate::shake::SHAKEInternal;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
@@ -66,21 +67,31 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
         self.buffer.extend_from_slice(data);
     }
 
-    /// Flushes the short final block, then binds the block count and the length (steps 3 and 4).
+    /// Flushes the short final block and binds the block count: step 3, and the `right_encode(n)`
+    /// half of step 4.
     ///
-    /// `length_bits` is `right_encode`'s argument: the requested output length for the
-    /// fixed-length function, or 0 for the XOF (Sec 6.3.1).
-    fn finish(mut self, length_bits: u64) -> CSHAKEInternal<PARAMS> {
+    /// The `right_encode(L)` that completes step 4 is left to the caller, because which `L` it
+    /// carries is not settled here: the fixed-length function knows it up front ([`Self::finish`]),
+    /// and the XOF leaves it to the first read ([`LengthBoundSqueezer`]).
+    fn finish_blocks(mut self) -> CSHAKEInternal<PARAMS> {
         if !self.buffer.is_empty() {
             let block = core::mem::take(&mut self.buffer);
             self.absorb_block(&block);
         }
-        // Step 4: z = z || right_encode(n) || right_encode(L).
-        for value in [self.blocks, length_bits] {
-            let (buf, len) = right_encode(value);
-            self.cshake.do_update(&buf[..len]);
-        }
+        // Step 4: z = z || right_encode(n) ...
+        let (buf, len) = right_encode(self.blocks);
+        self.cshake.do_update(&buf[..len]);
         self.cshake
+    }
+
+    /// [`Self::finish_blocks`], then the `right_encode(L)` that completes step 4.
+    ///
+    /// `length_bits` is the requested output length of the fixed-length function of Sec 6.3.
+    fn finish(self, length_bits: u64) -> CSHAKEInternal<PARAMS> {
+        let mut cshake = self.finish_blocks();
+        let (buf, len) = right_encode(length_bits);
+        cshake.do_update(&buf[..len]);
+        cshake
     }
 }
 
@@ -226,33 +237,41 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
         self.state.cshake.block_bitlen()
     }
 
-    /// The nominal length, 32 or 64 bytes; not bound into the computation.
+    /// The nominal length, 32 or 64 bytes: twice the security strength, the length at which the
+    /// output carries that strength in full. Bound by the [`Hash`] view and not by the XOF one.
     fn output_len(&self) -> usize {
         self.state.cshake.output_len()
     }
 
     fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        let n = self.output_len();
         self.do_update(data);
-        self.into_squeezer().do_output(n)
+        self.do_final()
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_squeezer().do_output_out(output)
+        self.do_final_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
         self.state.do_update(data);
     }
 
+    /// A final read at the nominal length, so `L` is bound: this is the fixed-length ParallelHash
+    /// of Sec 6.3 at `n = ` [`Hash::output_len`], not a prefix of the ParallelHashXOF stream.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_output(n)
+        self.into_squeezer().do_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_squeezer().do_output_out(output)
+        let n = self.output_len();
+        // Per Hash::do_final_out, as for the fixed-length form: a short buffer truncates this
+        // ParallelHash rather than computing the ParallelHash of a shorter length, because `n` is
+        // what reaches right_encode, not the buffer's length.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        self.into_squeezer().do_final_out_with_length((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
@@ -288,11 +307,13 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
-    type Squeezer = SHAKESqueezer<PARAMS>;
+    type Squeezer = LengthBoundSqueezer<PARAMS>;
 
+    /// The block count of Sec 6.3.1 step 4 is bound here; the `right_encode` that follows it is
+    /// not, because whether it carries 0 or the length of a final read is
+    /// [`LengthBoundSqueezer`]'s decision.
     fn into_squeezer(self) -> Self::Squeezer {
-        // Sec 6.3.1 step 4: right_encode(0) rather than the length.
-        self.state.finish(0).into_squeezer()
+        LengthBoundSqueezer::new(self.state.finish_blocks())
     }
 
     fn into_squeezer_partial_bits(

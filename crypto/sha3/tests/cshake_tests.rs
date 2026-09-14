@@ -185,6 +185,35 @@ fn cshake_is_a_hash() {
     assert_eq!(c.do_final().len(), 64, "cSHAKE256's nominal output length");
 }
 
+/// As for SHAKE: the `Hash` view writes [`Hash::output_len`] bytes and zeroizes the rest, while
+/// the XOF spelling fills whatever buffer it is given.
+#[test]
+fn the_hash_view_writes_output_len_bytes_and_zeroes_the_rest() {
+    let make = || CSHAKE128::new(b"", b"Email Signature");
+
+    let mut hash_view = [0xFFu8; 100];
+    assert_eq!(make().hash_out(b"abc", &mut hash_view), 32, "cSHAKE128's nominal length");
+    assert_eq!(&hash_view[..32], &make().hash(b"abc")[..], "... written in full");
+    assert_eq!(&hash_view[32..], &[0u8; 68][..], "everything past output_len is zeroized");
+
+    let mut buf = [0xFFu8; 100];
+    let mut c = make();
+    c.do_update(b"abc");
+    assert_eq!(c.do_final_out(&mut buf), 32);
+    assert_eq!(buf, hash_view, "do_final_out must agree with hash_out");
+
+    let mut xof_view = [0xFFu8; 100];
+    assert_eq!(make().xof_out(b"abc", &mut xof_view), 100, "the XOF fills the buffer");
+    assert_eq!(&xof_view[..32], &hash_view[..32], "the same stream, read further");
+    assert_ne!(&xof_view[32..], &[0u8; 68][..], "... rather than stopping at output_len");
+
+    // cSHAKE256's nominal length is 64, so its split lands elsewhere.
+    let mut hash_view = [0xFFu8; 100];
+    let n = CSHAKE256::new(b"", b"Email Signature").hash_out(b"abc", &mut hash_view);
+    assert_eq!(n, 64, "cSHAKE256's nominal length");
+    assert_eq!(&hash_view[64..], &[0u8; 36][..], "everything past output_len is zeroized");
+}
+
 /// The algorithm names, so the factory and any registry agree with the specification's spelling.
 #[test]
 fn algorithm_names() {

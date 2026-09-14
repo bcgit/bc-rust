@@ -4,7 +4,7 @@
 
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
@@ -109,12 +109,18 @@ fn nist_sp800_185_kmacxof_sample_values() {
         let want = v.output_len / 8;
         let key = key_material(&v.key);
 
+        // Read with do_output, which is the XOF reading of the stream: the one-shots bind the
+        // length they are given, and are checked against the fixed-length samples elsewhere.
         let got = match v.strength {
             128 => {
-                KMACXOF128::new(&key, v.s.as_bytes(), false).expect("a valid key").xof(&v.msg, want)
+                let mut k = KMACXOF128::new(&key, v.s.as_bytes(), false).expect("a valid key");
+                k.do_update(&v.msg);
+                k.into_squeezer().do_output(want)
             }
             256 => {
-                KMACXOF256::new(&key, v.s.as_bytes(), false).expect("a valid key").xof(&v.msg, want)
+                let mut k = KMACXOF256::new(&key, v.s.as_bytes(), false).expect("a valid key");
+                k.do_update(&v.msg);
+                k.into_squeezer().do_output(want)
             }
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
@@ -233,22 +239,130 @@ fn algorithm_names() {
     assert_eq!(KMAC256::ALG_NAME, "KMAC256");
 }
 
-/// The counterpart to `output_length_changes_the_function`: because KMACXOF binds
-/// `right_encode(0)` rather than the length, output at one length *is* a prefix of output at a
-/// longer one, and `do_final` is simply the first `output_len` bytes of that same stream.
+/// The counterpart to `output_length_changes_the_function`: read as a stream, KMACXOF binds
+/// `right_encode(0)` rather than the length, so output at one length *is* a prefix of output at a
+/// longer one. The `Hash` view is not part of that stream -- it is a final read at the nominal
+/// length, so it binds `L` and computes fixed-length KMAC128 instead.
 #[test]
 fn kmacxof_output_is_one_stream() {
     let key = key_material(&[0x42u8; 32]);
-    let long = KMACXOF128::new(&key, b"", false).unwrap().xof(b"abc", 64);
+    let squeeze = |n| {
+        let mut k = KMACXOF128::new(&key, b"", false).unwrap();
+        k.do_update(b"abc");
+        k.into_squeezer().do_output(n)
+    };
+    let long = squeeze(64);
 
-    let short = KMACXOF128::new(&key, b"", false).unwrap().xof(b"abc", 16);
+    let short = squeeze(16);
     assert_eq!(&long[..16], &short[..], "KMACXOF at a shorter length must be a prefix");
 
     let mut k = KMACXOF128::new(&key, b"", false).unwrap();
     k.do_update(b"abc");
     let via_hash = k.do_final();
     assert_eq!(via_hash.len(), 32, "the nominal output length");
-    assert_eq!(&long[..32], &via_hash[..], "do_final must be a prefix of the stream");
+    assert_ne!(&long[..32], &via_hash[..], "the Hash view binds L, so it leaves the stream");
+    assert_eq!(
+        via_hash,
+        KMAC128::new(&key).unwrap().mac(b"abc"),
+        "... and lands on fixed-length KMAC128 at the nominal length"
+    );
+}
+
+/// `do_final` as the first read binds `right_encode(L)`, so it computes fixed-length KMAC.
+///
+/// SP 800-185 s. 4.3 and s. 4.3.1 are the same function but for one field: step 1 absorbs
+/// `bytepad(encode_string(K), 168) || X || right_encode(L)` for KMAC and `right_encode(0)` for
+/// KMACXOF. Nothing else separates them, so the encoding need not be chosen until the caller says
+/// how it wants to read -- and `do_final` as the first read says both how many bytes it wants and
+/// that it will not be back, which is exactly `L`.
+///
+/// So `KMACXOF128::into_squeezer().do_final(n)` must be `KMAC128(K, X, 8n, S)` to the byte, which
+/// the paired sample files check directly: `KMAC.rsp` and `KMACXOF.rsp` publish the same key,
+/// message, customization and length, and the fixed-length file is what `do_final` has to match.
+#[test]
+fn do_final_binds_the_length_when_nothing_has_been_read() {
+    let (Some(fixed), Some(xof)) = (read_vectors("KMAC.rsp"), read_vectors("KMACXOF.rsp")) else {
+        return;
+    };
+    assert_eq!(fixed.len(), xof.len(), "the two sample files pair up");
+
+    for (i, (f, x)) in fixed.iter().zip(xof.iter()).enumerate() {
+        let key = key_material(&f.key);
+        let ctx = format!("COUNT {i}: KMACXOF{} S={:?}", f.strength, f.s);
+        let s = f.s.as_bytes();
+        match f.strength {
+            128 => check_do_final_binds_length(
+                || KMACXOF128::new(&key, s, false).expect("a valid key"),
+                |n| KMAC128::new_with_params(&key, s, n, false).expect("a valid key").mac(&f.msg),
+                &f.msg,
+                &f.output,
+                &x.output,
+                &ctx,
+            ),
+            256 => check_do_final_binds_length(
+                || KMACXOF256::new(&key, s, false).expect("a valid key"),
+                |n| KMAC256::new_with_params(&key, s, n, false).expect("a valid key").mac(&f.msg),
+                &f.msg,
+                &f.output,
+                &x.output,
+                &ctx,
+            ),
+            other => panic!("COUNT {i}: unexpected strength {other}"),
+        }
+    }
+    println!("KMACXOF do_final: {} sample values", fixed.len());
+}
+
+/// One paired sample through `do_final`. `fixed_expected` is the published fixed-length value,
+/// `xof_expected` the published XOF value over the same inputs, and `fixed_of` computes the
+/// fixed-length function at a length no vector covers.
+fn check_do_final_binds_length<X: XOF>(
+    make: impl Fn() -> X,
+    fixed_of: impl Fn(usize) -> Vec<u8>,
+    msg: &[u8],
+    fixed_expected: &[u8],
+    xof_expected: &[u8],
+    ctx: &str,
+) {
+    let n = fixed_expected.len();
+    assert_ne!(fixed_expected, xof_expected, "{ctx}: the two sample values must differ at all");
+
+    // The first read, with no do_output before it: right_encode(8n), so the fixed-length function.
+    let mut x = make();
+    x.do_update(msg);
+    assert_eq!(x.into_squeezer().do_final(n), fixed_expected, "{ctx}: do_final binds the length");
+
+    // Pre-filled, so the documented zeroization is observable.
+    let mut buf = vec![0xFFu8; n];
+    let mut x = make();
+    x.do_update(msg);
+    assert_eq!(x.into_squeezer().do_final_out(&mut buf), n, "{ctx}: do_final_out returns the len");
+    assert_eq!(buf, fixed_expected, "{ctx}: do_final_out binds the length");
+
+    // The `L` bound is the length actually asked for, not a fixed one. No sample value covers
+    // these lengths, so the comparison is against this library's own fixed-length function.
+    for shorter in [n / 2, n - 1] {
+        let mut x = make();
+        x.do_update(msg);
+        assert_eq!(x.into_squeezer().do_final(shorter), fixed_of(shorter), "{ctx}: L = {shorter}");
+    }
+
+    // The one-shots name their length and never come back, so they bind it too.
+    assert_eq!(make().xof(msg, n), fixed_expected, "{ctx}: xof binds the length");
+
+    let mut buf = vec![0xFFu8; n];
+    assert_eq!(make().xof_out(msg, &mut buf), n, "{ctx}: xof_out returns the length");
+    assert_eq!(buf, fixed_expected, "{ctx}: xof_out binds the length");
+
+    // Once a read has happened right_encode(0) is in the sponge and cannot be revised, so do_final
+    // after a do_output is the XOF stream continuing, not the fixed-length function.
+    let split = n / 2;
+    let mut x = make();
+    x.do_update(msg);
+    let mut squeezer = x.into_squeezer();
+    let head = squeezer.do_output(split);
+    let tail = squeezer.do_final(n - split);
+    assert_eq!([head, tail].concat(), xof_expected, "{ctx}: do_final after a read stays the XOF");
 }
 
 /// A partial final byte cannot be expressed: `right_encode(0)` has to follow the message, and the
@@ -290,6 +404,9 @@ fn test_framework_xof() {
     // message -- so that part of the suite is switched off.
     let mut framework = TestFrameworkXOF::new();
     framework.enable_partial_byte_tests = false;
+    // Sec 4.3.1: do_final as the first read binds right_encode(L), which is fixed-length KMAC
+    // rather than this stream. Checked against the paired sample files elsewhere in this file.
+    framework.do_final_binds_output_length = true;
     framework.test_xof(
         || KMACXOF128::new(&key, v.s.as_bytes(), false).expect("a valid key"),
         &v.msg,

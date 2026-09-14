@@ -142,29 +142,39 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         self.shake.output_len()
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let n = self.output_len();
-        let mut out = vec![0u8; n];
-        self.hash_out(data, &mut out);
-        out
+    fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_squeezer().do_output_out(output)
+        self.do_final_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
         self.shake.do_update(data);
     }
 
+    /// A final read at the nominal length: [`Hash::output_len`] bytes, 32 for cSHAKE128 and 64 for
+    /// cSHAKE256, twice the security strength.
+    ///
+    /// Like SHAKE and unlike the SP 800-185 functions built on it, cSHAKE has no length to bind --
+    /// `L` reaches it as "how much to read", not as absorbed input (Sec 3.3) -- so these are the
+    /// same bytes the squeezer produces. What the `Hash` view fixes is how many.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_output(n)
+        self.into_squeezer().do_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_squeezer().do_output_out(output)
+        let n = self.output_len();
+        // Per Hash::do_final_out: a short buffer is filled and the output truncated, a long one
+        // takes it in its first output_len bytes and zeros after. To fill a longer buffer, use the
+        // XOF spelling, which takes its length from the buffer.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        self.into_squeezer().do_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(
@@ -183,7 +193,13 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        Ok(self.into_squeezer_partial_bits(partial_byte, num_bits)?.do_output_out(output))
+        let n = self.output_len();
+        // Validated before anything is written, so a rejected call leaves `output` untouched.
+        let squeezer = self.into_squeezer_partial_bits(partial_byte, num_bits)?;
+        // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        Ok(squeezer.do_final_out(&mut output[..written]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

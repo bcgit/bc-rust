@@ -204,6 +204,7 @@ use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF};
 mod cshake;
 mod keccak;
 mod kmac;
+mod length_bound_squeezer;
 mod parallelhash;
 mod sha3;
 mod shake;
@@ -257,6 +258,7 @@ pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 /*** pub types ***/
 pub use cshake::CSHAKEInternal;
 pub use kmac::{KMACInternal, KMACXOFInternal};
+pub use length_bound_squeezer::LengthBoundSqueezer;
 pub use parallelhash::{ParallelHashInternal, ParallelHashXOFInternal};
 pub use sha3::SHA3Internal;
 pub use tuplehash::{TupleHashInternal, TupleHashXOFInternal};

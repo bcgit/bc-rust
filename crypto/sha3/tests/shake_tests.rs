@@ -78,6 +78,50 @@ mod shake_tests {
         assert_eq!(SHAKE256::new().hash(b"abc").len(), 64);
     }
 
+    /// The `Hash` view writes [`Hash::output_len`] bytes and zeroizes the rest of the buffer; the
+    /// XOF spelling is what fills a buffer of the caller's choosing.
+    ///
+    /// FIPS 202 binds no length, so the two readings agree on the bytes they share -- the hash is
+    /// the first `output_len` bytes of the same stream -- and differ only in how much they write.
+    /// Before this, the `Hash` entry points took their length from the buffer, so a long one came
+    /// back full of XOF output and `output_len` meant nothing.
+    #[test]
+    fn the_hash_view_writes_output_len_bytes_and_zeroes_the_rest() {
+        let mut hash_view = [0xFFu8; 100];
+        assert_eq!(SHAKE128::new().hash_out(b"abc", &mut hash_view), 32, "the nominal length");
+        assert_eq!(&hash_view[..32], &SHAKE128::new().hash(b"abc")[..], "... written in full");
+        assert_eq!(&hash_view[32..], &[0u8; 68][..], "everything past output_len is zeroized");
+
+        // do_final_out and the byte-aligned partial-bit spelling follow the same rule.
+        let mut buf = [0xFFu8; 100];
+        let mut h = SHAKE128::new();
+        h.do_update(b"abc");
+        assert_eq!(h.do_final_out(&mut buf), 32);
+        assert_eq!(buf, hash_view, "do_final_out must agree with hash_out");
+
+        let mut buf = [0xFFu8; 100];
+        let mut h = SHAKE128::new();
+        h.do_update(b"abc");
+        assert_eq!(h.do_final_partial_bits_out(0, 0, &mut buf).expect("0 is in range"), 32);
+        assert_eq!(buf, hash_view, "a zero-bit partial byte is the same call");
+
+        // A short buffer truncates, as it always did.
+        let mut short = [0xFFu8; 16];
+        assert_eq!(SHAKE128::new().hash_out(b"abc", &mut short), 16);
+        assert_eq!(&short[..], &hash_view[..16], "a short buffer truncates the same output");
+
+        // The XOF spelling takes its length from the buffer and keeps reading past output_len.
+        let mut xof_view = [0xFFu8; 100];
+        assert_eq!(SHAKE128::new().xof_out(b"abc", &mut xof_view), 100, "the XOF fills it");
+        assert_eq!(&xof_view[..32], &hash_view[..32], "the same stream, read further");
+        assert_ne!(&xof_view[32..], &[0u8; 68][..], "... rather than stopping at output_len");
+
+        // SHAKE256's nominal length is 64, so its split lands elsewhere.
+        let mut hash_view = [0xFFu8; 100];
+        assert_eq!(SHAKE256::new().hash_out(b"abc", &mut hash_view), 64, "the nominal length");
+        assert_eq!(&hash_view[64..], &[0u8; 36][..], "everything past output_len is zeroized");
+    }
+
     #[test]
     fn test_update_bytes() {
         for tc in read_test_vectors("SHAKETestVectors.txt") {

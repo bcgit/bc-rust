@@ -375,14 +375,14 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         (PARAMS::SIZE as usize) / 4
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let result_len = self.output_len();
-        self.hash_internal(data, result_len)
+    fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
     }
 
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        // hash_internal_out zeroizes `output` before writing.
-        self.hash_internal_out(data, output)
+    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 
     /// Infallible, and this is a fact about the type rather than a promise.
@@ -399,16 +399,26 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         self.keccak.absorb(data);
     }
 
-    /// Produces [`output_len`](Self::output_len) bytes and ends the object.
+    /// A final read at the nominal length: [`output_len`](Self::output_len) bytes, 32 for
+    /// SHAKE128 and 64 for SHAKE256, twice the security strength.
+    ///
+    /// FIPS 202 gives SHAKE no length to bind -- the output length is not an input to the function
+    /// -- so these are the same bytes the squeezer produces. What the `Hash` view fixes is *how
+    /// many*: a hash has one output length and it is this one. Ask for another through the XOF.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        let mut out = vec![0u8; n];
-        self.do_final_out(&mut out);
-        out
+        self.into_squeezer().do_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_squeezer().do_output_out(output)
+        let n = self.output_len();
+        // Per Hash::do_final_out: a short buffer is filled and the output truncated, a long one
+        // takes it in its first output_len bytes and zeros after. To fill a longer buffer, use the
+        // XOF spelling -- XOF::xof_out and XOFSqueezer::do_output_out take their length from the
+        // buffer, which is exactly the difference between a XOF and a hash.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        self.into_squeezer().do_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(
@@ -427,8 +437,13 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
+        let n = self.output_len();
         // Validated before anything is written, so a rejected call leaves `output` untouched.
-        Ok(self.into_squeezer_partial_bits(partial_byte, num_bits)?.do_output_out(output))
+        let squeezer = self.into_squeezer_partial_bits(partial_byte, num_bits)?;
+        // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        Ok(squeezer.do_final_out(&mut output[..written]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

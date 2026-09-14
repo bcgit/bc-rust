@@ -2,7 +2,7 @@
 
 use crate::SHAKEParams;
 use crate::cshake::CSHAKEInternal;
-use crate::shake::SHAKESqueezer;
+use crate::length_bound_squeezer::LengthBoundSqueezer;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
@@ -184,9 +184,14 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
 /// `Hash` share five method names (`do_update`, `do_final`, `output_len` and two more), one type
 /// implementing both would make every one of those calls ambiguous, so they are separate types.
 ///
-/// Because the length is *not* bound here, output at one length really is a prefix of output at a
-/// longer one -- the opposite of fixed-length KMAC -- so [`Hash::do_final`] is the first
-/// [`Hash::output_len`] bytes of the same stream [`XOF::into_squeezer`] produces.
+/// Read as a stream -- [`XOFSqueezer::do_output`] -- the length really is not bound, so output at
+/// one length is a prefix of output at a longer one, the opposite of fixed-length KMAC.
+///
+/// Read as a *final* read, it is bound, because a caller that names a length and will not be back
+/// has said what `L` is: [`XOFSqueezer::do_final`] and [`XOF::xof`] absorb `right_encode(8n)` and
+/// so produce `KMAC(K, X, 8n, S)` exactly (see [`LengthBoundSqueezer`]), and the [`Hash`] view --
+/// [`Hash::do_final`], [`Hash::hash`] and [`Hash::hash_out`] -- does the same at the nominal
+/// [`Hash::output_len`], since a hash's output length is fixed by its type.
 #[derive(Clone)]
 pub struct KMACXOFInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
@@ -216,12 +221,6 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
         let kmac = KMACInternal::<PARAMS>::new_with_params(key, customization, 0, allow_weak_key)?;
         Ok(Self { cshake: kmac.cshake, strength: kmac.strength })
     }
-
-    /// Absorbs `right_encode(0)`, the Sec 4.3.1 length binding, ending the input phase.
-    fn bind_zero_length(&mut self) {
-        let (buf, len) = right_encode(0);
-        self.cshake.do_update(&buf[..len]);
-    }
 }
 
 impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
@@ -229,34 +228,44 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
         self.cshake.block_bitlen()
     }
 
-    /// The nominal length, 32 or 64 bytes. Unlike [`KMACInternal`] this is not bound into the
-    /// computation -- it is only how many bytes [`Hash::do_final`] takes from the stream.
+    /// The nominal length, 32 or 64 bytes: twice the security strength of this KMAC, which is the
+    /// length at which the output carries that strength in full. Reading as a XOF does not bind
+    /// it; the [`Hash`] view does, because a hash has one output length and it is this one.
     fn output_len(&self) -> usize {
         self.cshake.output_len()
     }
 
     fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        let n = self.output_len();
         self.do_update(data);
-        self.into_squeezer().do_output(n)
+        self.do_final()
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_squeezer().do_output_out(output)
+        self.do_final_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
         self.cshake.do_update(data);
     }
 
+    /// A final read at the nominal length, so `L` is bound: this is `KMAC(K, X, 8n, S)` for
+    /// `n = ` [`Hash::output_len`] -- the fixed-length KMAC of Sec 4.3, not a prefix of the
+    /// KMACXOF stream.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_output(n)
+        self.into_squeezer().do_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_squeezer().do_output_out(output)
+        let n = self.output_len();
+        // Per Hash::do_final_out: a short buffer is filled and the output truncated, a long one
+        // takes it in its first output_len bytes and zeros after. `n` is what reaches
+        // right_encode either way, so a truncated read is this KMAC cut short rather than the
+        // KMAC of the buffer's length.
+        let written = n.min(output.len());
+        output[written..].fill(0);
+        self.into_squeezer().do_final_out_with_length((n as u64) * 8, &mut output[..written])
     }
 
     /// # Errors
@@ -294,11 +303,12 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
-    type Squeezer = SHAKESqueezer<PARAMS>;
+    type Squeezer = LengthBoundSqueezer<PARAMS>;
 
-    fn into_squeezer(mut self) -> Self::Squeezer {
-        self.bind_zero_length();
-        self.cshake.into_squeezer()
+    /// The `right_encode(L)` of Sec 4.3.1 step 1 is not absorbed here: which `L` it carries depends
+    /// on how the first output is read, so [`LengthBoundSqueezer`] decides it.
+    fn into_squeezer(self) -> Self::Squeezer {
+        LengthBoundSqueezer::new(self.cshake)
     }
 
     fn into_squeezer_partial_bits(

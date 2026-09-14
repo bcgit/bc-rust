@@ -1787,10 +1787,28 @@ where
 /// Output is one continuous stream: successive calls continue where the last left off, so reading
 /// 16 bytes twice gives the same 32 bytes as reading 32 once.
 ///
-/// There is no `do_final` here, unlike [`Hash`] and [`MAC`]. On those it is load-bearing -- the
-/// only way to get output, and it must consume the value because finalizing pads the state. A
-/// squeeze has nothing to finalize, so such a method would only say "this read is my last", which
-/// ownership already says: drop the value, or let it fall out of scope.
+/// [`do_final`](Self::do_final) means something weaker here than on [`Hash`] and [`MAC`]. On those
+/// it is load-bearing -- the only way to get output, and it must consume the value because
+/// finalizing pads the state. A squeeze has nothing to finalize, so it produces exactly the bytes
+/// [`do_output`](Self::do_output) would and differs only in taking ownership: it is how a caller
+/// says "this read is my last", and it ends the stream at the point of the call rather than
+/// leaving a `mut` binding alive for the rest of the scope.
+///
+/// # Being the last read can be an input to the function
+///
+/// For SHAKE and cSHAKE the bytes do not depend on how much of the stream is taken, so `do_final`
+/// really is just `do_output` plus ownership, which is what the default does. That is not
+/// universal. The SP 800-185 functions end their absorbed input with `right_encode(L)`, and their
+/// XOF forms (s. 4.3.1, 5.3.1 and 6.3.1) differ from the fixed-length ones only in putting 0 there
+/// -- so an implementation can leave `L` unchosen until it knows how the caller intends to read.
+/// A `do_final` that is also the *first* read says both how many bytes are wanted and that there
+/// will be no more, which is exactly `L`; such an implementation binds it and produces the
+/// fixed-length function (KMAC, TupleHash, ParallelHash) rather than a prefix of the XOF stream.
+///
+/// After a [`do_output`](Self::do_output) there is nothing left to choose -- `right_encode(0)` is
+/// in the sponge and a length bound into a sponge cannot be revised -- so `do_final` then just
+/// ends the stream that read began. Implementors that have no such choice to make should keep the
+/// default.
 pub trait XOFSqueezer {
     /// Produces the next `num_bytes` bytes of the output stream.
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8>;
@@ -1798,6 +1816,30 @@ pub trait XOFSqueezer {
     /// As [`do_output`](Self::do_output), filling the caller's buffer, which is zeroized first.
     /// Returns the number of bytes written.
     fn do_output_out(&mut self, output: &mut [u8]) -> usize;
+
+    /// Produces the last `num_bytes` bytes of the output stream and ends the object.
+    ///
+    /// Consumes self, so this must be the final call to this object. The default is a plain last
+    /// read -- the bytes [`do_output`](Self::do_output) would give, continuing from wherever
+    /// earlier reads left the stream. An implementation with an output length still to bind
+    /// overrides it to bind `num_bytes` when nothing has been read yet; see the trait docs.
+    fn do_final(mut self, num_bytes: usize) -> Vec<u8>
+    where
+        Self: Sized,
+    {
+        self.do_output(num_bytes)
+    }
+
+    /// As [`do_final`](Self::do_final), filling the caller's buffer, which is zeroized first.
+    /// Returns the number of bytes written.
+    ///
+    /// Defaulted as [`do_final`](Self::do_final) is.
+    fn do_final_out(mut self, output: &mut [u8]) -> usize
+    where
+        Self: Sized,
+    {
+        self.do_output_out(output)
+    }
 }
 
 /// Extendable-Output Functions (XOFs): hashes whose output length is chosen by the caller.
@@ -1848,25 +1890,30 @@ pub trait XOF: Hash {
 
     /// One-shot: absorbs `data` and produces `result_len` bytes.
     ///
-    /// The default absorbs and squeezes in the obvious way; override it only where the type can do
+    /// A one-shot names its length and never comes back, so this is
+    /// [`XOFSqueezer::do_final`]'s reading of the stream, not
+    /// [`do_output`](XOFSqueezer::do_output)'s: where an implementation binds the length it is
+    /// asked for, this binds `result_len`. For SHAKE and cSHAKE the two are the same bytes.
+    ///
+    /// The default absorbs and reads in the obvious way; override it only where the type can do
     /// better, as SHAKE does.
     fn xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
     where
         Self: Sized,
     {
         self.do_update(data);
-        self.into_squeezer().do_output(result_len)
+        self.into_squeezer().do_final(result_len)
     }
 
     /// One-shot: absorbs `data` and fills `output`, which is zeroized first. Returns the number of
     /// bytes written.
     ///
-    /// Defaulted as [`xof`](Self::xof) is.
+    /// A final read of `output.len()` bytes, and defaulted as [`xof`](Self::xof) is.
     fn xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize
     where
         Self: Sized,
     {
         self.do_update(data);
-        self.into_squeezer().do_output_out(output)
+        self.into_squeezer().do_final_out(output)
     }
 }

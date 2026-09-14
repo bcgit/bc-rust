@@ -8,12 +8,17 @@ pub struct TestFrameworkXOF {
     // Put any config options here
     /// Can be disabled for XOFs that don't support a partial final byte of input.
     pub enable_partial_byte_tests: bool,
+    /// Set for XOFs whose [`XOFSqueezer::do_final`] binds the length it is asked for when it is
+    /// the first read -- the SP 800-185 forms, which then compute their fixed-length counterpart
+    /// rather than the XOF stream. The suite cannot know those bytes, so it checks the split
+    /// instead and leaves the values to the implementation's own vector tests.
+    pub do_final_binds_output_length: bool,
 }
 
 impl TestFrameworkXOF {
     ///
     pub fn new() -> Self {
-        Self { enable_partial_byte_tests: true }
+        Self { enable_partial_byte_tests: true, do_final_binds_output_length: false }
     }
 
     /// Exercises the trait against a known input-output pair.
@@ -76,17 +81,59 @@ impl TestFrameworkXOF {
         assert_eq!(n, expected_output.len());
         assert_eq!(buf, expected_output, "do_output_out must zeroize before writing");
 
+        /*** fn do_final(self, num_bytes: usize) -> Vec<u8> ***/
+        // As the first read, do_final is either the end of this stream or -- for a XOF that binds
+        // the length it is asked for -- a different function altogether. Both are pinned here; the
+        // second's bytes belong to the implementation's own vector tests.
+        let mut xof = make();
+        xof.do_update(input);
+        let first_read = xof.into_squeezer().do_final(expected_output.len());
+        if self.do_final_binds_output_length {
+            assert_ne!(
+                first_read, expected_output,
+                "a length-binding do_final must not reproduce the XOF stream"
+            );
+        } else {
+            assert_eq!(first_read, expected_output, "do_final must produce the expected bytes");
+        }
+
+        /*** fn do_final_out(self, output: &mut [u8]) -> usize ***/
+        // Pre-filled so that the documented zeroization is observable.
+        let mut buf = vec![0xFFu8; expected_output.len()];
+        let mut xof = make();
+        xof.do_update(input);
+        let n = xof.into_squeezer().do_final_out(&mut buf);
+        assert_eq!(n, expected_output.len(), "do_final_out must report what it wrote");
+        assert_eq!(buf, first_read, "do_final_out must agree with do_final");
+
+        // Once a read has happened there is nothing left to bind, so do_final continues the stream
+        // that read began rather than restarting it -- however the two behave as a first read.
+        let mut xof = make();
+        xof.do_update(input);
+        let mut out = xof.into_squeezer();
+        let first = out.do_output(split);
+        assert_eq!(
+            [first, out.do_final(expected_output.len() - split)].concat(),
+            expected_output,
+            "do_final after a read must continue that stream"
+        );
+
         /*** fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> ***/
+        // The one-shots name their length and never come back, so they read as do_final does: for
+        // a XOF that binds its output length they produce what do_final produced above, not the
+        // stream.
+        let one_shot: &[u8] =
+            if self.do_final_binds_output_length { &first_read } else { expected_output };
         assert_eq!(
             make().xof(input, expected_output.len()),
-            expected_output,
-            "the one-shot must equal update-then-output"
+            one_shot,
+            "the one-shot must equal update-then-do_final"
         );
 
         let mut output = vec![0xFFu8; expected_output.len()];
         let n = make().xof_out(input, &mut output);
         assert_eq!(n, expected_output.len());
-        assert_eq!(output, expected_output, "xof_out must agree with xof");
+        assert_eq!(output, one_shot, "xof_out must agree with xof");
 
         /*** Clone: a XOF mid-absorb can be forked ***/
         // The clone continues from the same absorbed prefix and owns its own sponge.
@@ -139,7 +186,6 @@ impl TestFrameworkXOF {
             "block_bitlen must be a whole number of bytes"
         );
 
-        // do_final is do_output at the nominal length: the same stream, truncated.
         let mut a = make();
         a.do_update(input);
         let via_hash = a.do_final();
@@ -147,19 +193,38 @@ impl TestFrameworkXOF {
 
         let mut b = make();
         b.do_update(input);
-        assert_eq!(
-            via_hash,
-            b.into_squeezer().do_output(output_len),
-            "do_final must equal do_output(output_len)"
-        );
-
-        // ... and it is a prefix of the longer output, because a XOF cannot diversify by length.
-        if expected_output.len() >= output_len {
-            assert_eq!(
-                &via_hash[..],
-                &expected_output[..output_len],
-                "do_final must be a prefix of the longer output"
+        if self.do_final_binds_output_length {
+            // The Hash view is a final read at the nominal length, so it binds that length and is
+            // a different function from the stream -- and must agree with the squeezer's own final
+            // read at the same length.
+            assert_ne!(
+                via_hash,
+                b.into_squeezer().do_output(output_len),
+                "a length-binding Hash::do_final must not be the stream truncated"
             );
+            let mut c = make();
+            c.do_update(input);
+            assert_eq!(
+                via_hash,
+                c.into_squeezer().do_final(output_len),
+                "Hash::do_final must be the squeezer's final read at output_len"
+            );
+        } else {
+            // do_final is do_output at the nominal length: the same stream, truncated.
+            assert_eq!(
+                via_hash,
+                b.into_squeezer().do_output(output_len),
+                "do_final must equal do_output(output_len)"
+            );
+
+            // ... and a prefix of the longer output, because a XOF cannot diversify by length.
+            if expected_output.len() >= output_len {
+                assert_eq!(
+                    &via_hash[..],
+                    &expected_output[..output_len],
+                    "do_final must be a prefix of the longer output"
+                );
+            }
         }
 
         // do_final_out fills the caller's buffer, zeroizing it first.
