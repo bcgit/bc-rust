@@ -12,3 +12,7 @@ criterion.workspace = true
 [[bench]]
 name = "p256_field_benches"
 harness = false
+
+[[bench]]
+name = "p256_point_benches"
+harness = false

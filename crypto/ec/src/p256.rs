@@ -70,6 +70,11 @@ impl P256FieldElement {
         self.0
     }
 
+    /// TRUE iff this element is the additive identity.
+    pub fn is_zero(&self) -> Condition<u64> {
+        nat::is_zero(&self.0)
+    }
+
     /// `self + other mod p`.
     pub fn add(&self, other: &Self) -> Self {
         let (sum, carry) = nat::add(&self.0, &other.0);
