@@ -29,3 +29,4 @@ pub mod p256_comb;
 pub(crate) mod p256_comb_table;
 pub mod p256_point;
 pub mod p256_scalar;
+pub mod p256_wnaf;
