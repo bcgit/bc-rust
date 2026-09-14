@@ -60,11 +60,13 @@ impl TestFrameworkSignature {
         let sig = SIGNER::sign(&sk, msg, Some(b"test with ctx")).unwrap();
         VERIFIER::verify(&pk, msg, Some(b"test with ctx"), &sig).unwrap();
 
-        // but it had better produce something different
-        if !self.alg_accepts_ctx {
+        // an algorithm that ignores ctx must produce the same signature with and without one,
+        // provided it is also deterministic -- a non-deterministic algorithm's signatures differ
+        // from run to run regardless of ctx, so it can't be used to test this property
+        if !self.alg_accepts_ctx && self.alg_is_deterministic {
             let sig1 = SIGNER::sign(&sk, msg, None).unwrap();
             let sig2 = SIGNER::sign(&sk, msg, Some(&[0u8; 1])).unwrap();
-            assert_ne!(sig1, sig2);
+            assert_eq!(sig1, sig2);
         }
 
         // Test that verification fails for broken signature value
@@ -209,11 +211,13 @@ impl TestFrameworkSignature {
         let sig = PHSIGNER::sign(&sk, msg, Some(b"test with ctx")).unwrap();
         PHVERIFIER::verify(&pk, msg, Some(b"test with ctx"), &sig).unwrap();
 
-        // but it had better produce something different
-        if !self.alg_accepts_ctx {
+        // an algorithm that ignores ctx must produce the same signature with and without one,
+        // provided it is also deterministic -- a non-deterministic algorithm's signatures differ
+        // from run to run regardless of ctx, so it can't be used to test this property
+        if !self.alg_accepts_ctx && self.alg_is_deterministic {
             let sig1 = PHSIGNER::sign(&sk, msg, None).unwrap();
             let sig2 = PHSIGNER::sign(&sk, msg, Some(&[0u8; 1])).unwrap();
-            assert_ne!(sig1, sig2);
+            assert_eq!(sig1, sig2);
         }
 
         // Test that verification fails for broken signature value
