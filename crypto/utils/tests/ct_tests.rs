@@ -873,3 +873,40 @@ mod ct_bytes_tests {
         // conditional_copy_bytes(&a, &c, &mut out, false);
     }
 }
+
+mod limb_array_tests {
+    use bouncycastle_utils::ct::Condition;
+
+    #[test]
+    fn test_conditional_select() {
+        use bouncycastle_utils::ct::conditional_select;
+
+        let a: [u64; 4] = [0x01, 0x02, 0x03, 0x04];
+        let b: [u64; 4] = [u64::MAX, u64::MAX - 1, u64::MAX - 2, u64::MAX - 3];
+        let mut out = [0u64; 4];
+
+        conditional_select(Condition::<u64>::TRUE, &a, &b, &mut out);
+        assert_eq!(out, a);
+
+        conditional_select(Condition::<u64>::FALSE, &a, &b, &mut out);
+        assert_eq!(out, b);
+    }
+
+    #[test]
+    fn test_conditional_swap() {
+        use bouncycastle_utils::ct::conditional_swap;
+
+        let a_orig: [u64; 4] = [0x01, 0x02, 0x03, 0x04];
+        let b_orig: [u64; 4] = [u64::MAX, u64::MAX - 1, u64::MAX - 2, u64::MAX - 3];
+
+        let mut a = a_orig;
+        let mut b = b_orig;
+        conditional_swap(Condition::<u64>::FALSE, &mut a, &mut b);
+        assert_eq!(a, a_orig);
+        assert_eq!(b, b_orig);
+
+        conditional_swap(Condition::<u64>::TRUE, &mut a, &mut b);
+        assert_eq!(a, b_orig);
+        assert_eq!(b, a_orig);
+    }
+}
