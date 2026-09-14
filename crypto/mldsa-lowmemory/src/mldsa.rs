@@ -400,7 +400,7 @@ use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable,
-    XOF, XOFOutput,
+    XOF, XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
@@ -792,7 +792,7 @@ impl<
             h.do_update(&rnd);
             h.do_update(mu);
             let mut rho_p_p = [0u8; 64];
-            let mut h = h.into_output();
+            let mut h = h.into_squeezer();
             h.do_output_out(&mut rho_p_p);
 
             rho_p_p
@@ -826,7 +826,7 @@ impl<
                     hash.do_update(w.w1_encode::<P>().as_ref());
                 }
                 let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-                let mut hash = hash.into_output();
+                let mut hash = hash.into_squeezer();
                 hash.do_output_out(sig_val_c_tilde.as_mut());
                 sig_val_c_tilde
             };
@@ -1040,7 +1040,7 @@ impl<
         }
 
         let mut c_tilde_p = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-        let mut hash = hash.into_output();
+        let mut hash = hash.into_squeezer();
         hash.do_output_out(c_tilde_p.as_mut());
 
         // Verification is also done in constant time
@@ -1472,7 +1472,7 @@ impl MuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.into_output().do_output_out(&mut mu);
+        self.h.into_squeezer().do_output_out(&mut mu);
 
         mu
     }

@@ -7,7 +7,7 @@ use crate::params::{
     MLDSAParams,
 };
 use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 /// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
@@ -435,7 +435,7 @@ pub(crate) fn sample_in_ball<P: MLDSAParams>(rho: &P::SigCTilde) -> Polynomial {
     let mut h = H::new();
     h.do_update(rho.as_ref());
     let mut s = [0u8; 8];
-    let mut h = h.into_output();
+    let mut h = h.into_squeezer();
     h.do_output_out(&mut s);
 
     // 5: ℎ ← BytesToBits(𝑠)
@@ -506,7 +506,7 @@ pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut s = [0u8; 288];
-    let mut g = g.into_output();
+    let mut g = g.into_squeezer();
     g.do_output_out(&mut s);
     let mut idx: usize = 0;
 
@@ -552,7 +552,7 @@ pub(crate) fn rej_bounded_poly<P: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) 
     // which is possibly also related with the average rejection rate.
     // Also, 312 is a multiple of 8 (efficient for SHAKE)
     let mut z_arr = [0u8; 312];
-    let mut h = h.into_output();
+    let mut h = h.into_squeezer();
     h.do_output_out(&mut z_arr);
     let mut idx: usize = 0;
 
@@ -594,7 +594,7 @@ pub(crate) fn expand_mask_poly<P: MLDSAParams>(rho: &[u8; 64], nonce: u16) -> Po
     h.do_update(rho);
     h.do_update(&nonce.to_le_bytes());
     let mut v = <P::PolyZPacked as ZeroizablePrimitive>::ZEROED;
-    let mut h = h.into_output();
+    let mut h = h.into_squeezer();
     h.do_output_out(v.as_mut());
     bit_unpack_gamma1::<P>(v.as_ref())
 }

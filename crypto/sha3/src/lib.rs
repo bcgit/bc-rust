@@ -68,30 +68,30 @@
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output_16byte: Vec<u8> = sha3::SHAKE128::new().hash_xof(data, 16);
-//! let output_16KiB: Vec<u8> = sha3::SHAKE128::new().hash_xof(data, 16 * 1024);
+//! let output_16byte: Vec<u8> = sha3::SHAKE128::new().xof(data, 16);
+//! let output_16KiB: Vec<u8> = sha3::SHAKE128::new().xof(data, 16 * 1024);
 //! ```
 //!
 //! [`XOF`] extends [`Hash`], so SHAKE takes input through [`Hash::do_update`] like any other hash.
-//! Output is where they differ: [`XOF::into_output`] ends the input phase and returns an
-//! [`XOFOutput`](bouncycastle_core::traits::XOFOutput), whose
-//! [`do_output`](bouncycastle_core::traits::XOFOutput::do_output) can be called as many times as you
+//! Output is where they differ: [`XOF::into_squeezer`] ends the input phase and returns an
+//! [`XOFSqueezer`](bouncycastle_core::traits::XOFSqueezer), whose
+//! [`do_output`](bouncycastle_core::traits::XOFSqueezer::do_output) can be called as many times as you
 //! like, each call continuing one stream.
 //!
-//! Absorbing after output has begun is not an error you can make: `into_output` consumes the
+//! Absorbing after output has begun is not an error you can make: `into_squeezer` consumes the
 //! SHAKE, so there is no value left to call [`Hash::do_update`] on.
 //!
 //! The following code produces the same output as the previous example:
 //!```
-//! use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+//! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
 //! let mut shake = sha3::SHAKE128::new();
 //! shake.do_update(data);
-//! let output_16byte: Vec<u8> = shake.into_output().do_output(16);
+//! let output_16byte: Vec<u8> = shake.into_squeezer().do_output(16);
 //!
-//! let mut shake = sha3::SHAKE128::new().into_output();
+//! let mut shake = sha3::SHAKE128::new().into_squeezer();
 //! let mut output_16KiB: Vec<u8> = vec![];
 //! for i in 0..16 { output_16KiB.extend_from_slice(&shake.do_output(1024)) }
 //! ```
@@ -317,7 +317,7 @@ pub type PARALLELHASH256 = ParallelHashInternal<SHAKE256Params>;
 pub type PARALLELHASHXOF128 = ParallelHashXOFInternal<SHAKE128Params>;
 /// ParallelHashXOF256: see [`PARALLELHASHXOF128`].
 pub type PARALLELHASHXOF256 = ParallelHashXOFInternal<SHAKE256Params>;
-pub use shake::{SHAKEInternal, SHAKEOutput};
+pub use shake::{SHAKEInternal, SHAKESqueezer};
 
 pub use keccak::SUSPENDED_SHA3_STATE_LEN;
 

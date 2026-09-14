@@ -1,4 +1,4 @@
-use bouncycastle::core::traits::{Hash, XOF, XOFOutput};
+use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use std::io;
 use std::io::{Read, Write};
 
@@ -184,7 +184,7 @@ fn do_shake(mut shake: impl XOF, output_len: usize, output_hex: bool) {
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
-    let mut shake = shake.into_output();
+    let mut shake = shake.into_squeezer();
     let out = shake.do_output(output_len);
     if output_hex {
         for b in out.iter() {

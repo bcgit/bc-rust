@@ -1,7 +1,7 @@
 //! Generic behaviour tests for anything that implements [`XOF`].
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{XOF, XOFOutput};
+use bouncycastle_core::traits::{XOF, XOFSqueezer};
 
 /// Instance of the test framework.
 pub struct TestFrameworkXOF {
@@ -19,7 +19,7 @@ impl TestFrameworkXOF {
     /// Exercises the trait against a known input-output pair.
     ///
     /// `expected_output` is the result of reading `expected_output.len()` bytes after absorbing
-    /// `input`. There is deliberately no absorb-after-squeeze test: [`XOF::into_output`] consumes
+    /// `input`. There is deliberately no absorb-after-squeeze test: [`XOF::into_squeezer`] consumes
     /// the XOF, so absorbing afterwards is not expressible and there is no runtime rule left to
     /// check. That guarantee is asserted instead by `compile_fail` doctests on the implementors.
     pub fn test_xof<X: XOF>(&self, make: impl Fn() -> X, input: &[u8], expected_output: &[u8]) {
@@ -30,7 +30,7 @@ impl TestFrameworkXOF {
             xof.do_update(chunk);
         }
         assert_eq!(
-            xof.into_output().do_output(expected_output.len()),
+            xof.into_squeezer().do_output(expected_output.len()),
             expected_output,
             "chunked input must equal a single update"
         );
@@ -39,7 +39,7 @@ impl TestFrameworkXOF {
         let mut xof = make();
         xof.do_update(input);
         assert_eq!(
-            xof.into_output().do_output(expected_output.len()),
+            xof.into_squeezer().do_output(expected_output.len()),
             expected_output,
             "do_output must produce the expected bytes"
         );
@@ -49,7 +49,7 @@ impl TestFrameworkXOF {
         let mut output = vec![0xFFu8; expected_output.len()];
         let mut xof = make();
         xof.do_update(input);
-        let n = xof.into_output().do_output_out(&mut output);
+        let n = xof.into_squeezer().do_output_out(&mut output);
         assert_eq!(n, expected_output.len(), "do_output_out must report what it wrote");
         assert_eq!(output, expected_output, "do_output_out must agree with do_output");
 
@@ -57,7 +57,7 @@ impl TestFrameworkXOF {
         let split = expected_output.len() / 2;
         let mut xof = make();
         xof.do_update(input);
-        let mut out = xof.into_output();
+        let mut out = xof.into_squeezer();
         let first = out.do_output(split);
         let mut second = vec![0u8; expected_output.len() - split];
         out.do_output_out(&mut second);
@@ -72,21 +72,21 @@ impl TestFrameworkXOF {
         let mut buf = vec![0xFFu8; expected_output.len()];
         let mut xof = make();
         xof.do_update(input);
-        let n = xof.into_output().do_output_out(&mut buf);
+        let n = xof.into_squeezer().do_output_out(&mut buf);
         assert_eq!(n, expected_output.len());
         assert_eq!(buf, expected_output, "do_output_out must zeroize before writing");
 
-        /*** fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> ***/
+        /*** fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> ***/
         assert_eq!(
-            make().hash_xof(input, expected_output.len()),
+            make().xof(input, expected_output.len()),
             expected_output,
             "the one-shot must equal update-then-output"
         );
 
         let mut output = vec![0xFFu8; expected_output.len()];
-        let n = make().hash_xof_out(input, &mut output);
+        let n = make().xof_out(input, &mut output);
         assert_eq!(n, expected_output.len());
-        assert_eq!(output, expected_output, "hash_xof_out must agree with hash_xof");
+        assert_eq!(output, expected_output, "xof_out must agree with xof");
 
         /*** Clone: a XOF mid-absorb can be forked ***/
         // The clone continues from the same absorbed prefix and owns its own sponge.
@@ -97,12 +97,12 @@ impl TestFrameworkXOF {
         original.do_update(tail);
         forked.do_update(tail);
         assert_eq!(
-            original.into_output().do_output(expected_output.len()),
+            original.into_squeezer().do_output(expected_output.len()),
             expected_output,
             "the original must be unaffected by cloning"
         );
         assert_eq!(
-            forked.into_output().do_output(expected_output.len()),
+            forked.into_squeezer().do_output(expected_output.len()),
             expected_output,
             "a clone must continue from the same absorbed prefix"
         );
@@ -114,8 +114,8 @@ impl TestFrameworkXOF {
         forked.do_update(&[0xA5]);
         forked.do_update(tail);
         assert_ne!(
-            forked.into_output().do_output(expected_output.len()),
-            original.into_output().do_output(expected_output.len()),
+            forked.into_squeezer().do_output(expected_output.len()),
+            original.into_squeezer().do_output(expected_output.len()),
             "a clone must have its own state, not share the original's"
         );
 
@@ -149,7 +149,7 @@ impl TestFrameworkXOF {
         b.do_update(input);
         assert_eq!(
             via_hash,
-            b.into_output().do_output(output_len),
+            b.into_squeezer().do_output(output_len),
             "do_final must equal do_output(output_len)"
         );
 
@@ -188,7 +188,7 @@ impl TestFrameworkXOF {
         let mut xof = make();
         xof.do_update(input);
         assert_eq!(
-            xof.into_output_partial_bits(0, 0)
+            xof.into_squeezer_partial_bits(0, 0)
                 .expect("0 is in range")
                 .do_output(expected_output.len()),
             expected_output,
@@ -200,7 +200,7 @@ impl TestFrameworkXOF {
             let mut a = make();
             a.do_update(input);
             let with_bits = a
-                .into_output_partial_bits(0xFE, num_bits)
+                .into_squeezer_partial_bits(0xFE, num_bits)
                 .expect("num_bits is in 1..=7")
                 .do_output(expected_output.len());
             assert_ne!(
@@ -233,10 +233,10 @@ impl TestFrameworkXOF {
             xof.do_update(input);
             assert!(
                 matches!(
-                    xof.into_output_partial_bits(0xFF, num_bits),
+                    xof.into_squeezer_partial_bits(0xFF, num_bits),
                     Err(HashError::InvalidLength(_))
                 ),
-                "into_output_partial_bits must reject num_bits = {num_bits}"
+                "into_squeezer_partial_bits must reject num_bits = {num_bits}"
             );
 
             let mut xof = make();

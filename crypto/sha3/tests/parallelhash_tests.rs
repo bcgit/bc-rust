@@ -96,8 +96,8 @@ fn nist_sp800_185_parallelhashxof_sample_values() {
     for (i, v) in vectors.iter().enumerate() {
         let want = v.output_len / 8;
         let got = match v.strength {
-            128 => PARALLELHASHXOF128::new(v.block_size, v.s.as_bytes()).hash_xof(&v.msg, want),
-            256 => PARALLELHASHXOF256::new(v.block_size, v.s.as_bytes()).hash_xof(&v.msg, want),
+            128 => PARALLELHASHXOF128::new(v.block_size, v.s.as_bytes()).xof(&v.msg, want),
+            256 => PARALLELHASHXOF256::new(v.block_size, v.s.as_bytes()).xof(&v.msg, want),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(
@@ -188,8 +188,8 @@ fn length_binding_differs_between_the_two() {
     let long = PARALLELHASH128::new(4, b"", 32).hash(msg);
     assert_ne!(&long[..16], &short[..], "ParallelHash: a different length is a different function");
 
-    let short = PARALLELHASHXOF128::new(4, b"").hash_xof(msg, 16);
-    let long = PARALLELHASHXOF128::new(4, b"").hash_xof(msg, 32);
+    let short = PARALLELHASHXOF128::new(4, b"").xof(msg, 16);
+    let long = PARALLELHASHXOF128::new(4, b"").xof(msg, 32);
     assert_eq!(&long[..16], &short[..], "ParallelHashXOF: one stream, so shorter is a prefix");
 }
 
@@ -202,7 +202,7 @@ fn partial_final_byte_is_refused() {
 
     let mut p = PARALLELHASHXOF128::new(8, b"");
     p.do_update(b"abc");
-    assert!(matches!(p.into_output_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
+    assert!(matches!(p.into_squeezer_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
 }
 
 /// Sec 6.2 forbids a zero block size.
@@ -305,11 +305,11 @@ fn check_xof_view<X: XOF>(make: impl Fn() -> X, msg: &[u8], expected: &[u8], ctx
         Err(HashError::InvalidLength(_))
     ));
 
-    assert_eq!(make().hash_xof(msg, n / 2), &expected[..n / 2], "{ctx}: hash_xof, shorter");
+    assert_eq!(make().xof(msg, n / 2), &expected[..n / 2], "{ctx}: xof, shorter");
 
     let mut out = vec![0u8; n];
-    assert_eq!(make().hash_xof_out(msg, &mut out), n, "{ctx}: hash_xof_out returns the length");
-    assert_eq!(out, expected, "{ctx}: hash_xof_out");
+    assert_eq!(make().xof_out(msg, &mut out), n, "{ctx}: xof_out returns the length");
+    assert_eq!(out, expected, "{ctx}: xof_out");
 }
 
 #[test]

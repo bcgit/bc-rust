@@ -4,7 +4,7 @@
 //! `../bc-test-data` (the same convention as the ML-KEM, ML-DSA and SHA-3 suites). If it is not
 //! present these tests print a warning and pass vacuously.
 
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{CSHAKE128, CSHAKE256, SHAKE128, SHAKE256};
@@ -84,12 +84,12 @@ fn nist_sp800_185_sample_values() {
             128 => {
                 let mut c = CSHAKE128::new(v.n.as_bytes(), v.s.as_bytes());
                 c.do_update(&v.msg);
-                c.into_output().do_output(want)
+                c.into_squeezer().do_output(want)
             }
             256 => {
                 let mut c = CSHAKE256::new(v.n.as_bytes(), v.s.as_bytes());
                 c.do_update(&v.msg);
-                c.into_output().do_output(want)
+                c.into_squeezer().do_output(want)
             }
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
@@ -110,13 +110,13 @@ fn empty_name_and_customization_is_plain_shake() {
     for msg in [b"".as_slice(), b"abc", &[0u8; 200], b"Hello, world!"] {
         for len in [1usize, 16, 32, 168, 200] {
             assert_eq!(
-                CSHAKE128::new(b"", b"").hash_xof(msg, len),
-                SHAKE128::new().hash_xof(msg, len),
+                CSHAKE128::new(b"", b"").xof(msg, len),
+                SHAKE128::new().xof(msg, len),
                 "cSHAKE128 with no N or S must equal SHAKE128 / len {len}"
             );
             assert_eq!(
-                CSHAKE256::new(b"", b"").hash_xof(msg, len),
-                SHAKE256::new().hash_xof(msg, len),
+                CSHAKE256::new(b"", b"").xof(msg, len),
+                SHAKE256::new().xof(msg, len),
                 "cSHAKE256 with no N or S must equal SHAKE256 / len {len}"
             );
         }
@@ -128,10 +128,10 @@ fn empty_name_and_customization_is_plain_shake() {
 #[test]
 fn customization_separates_the_functions() {
     let msg = b"the same message";
-    let plain = SHAKE128::new().hash_xof(msg, 32);
-    let email = CSHAKE128::new(b"", b"Email Signature").hash_xof(msg, 32);
-    let finger = CSHAKE128::new(b"", b"key fingerprint").hash_xof(msg, 32);
-    let named = CSHAKE128::new(b"KMAC", b"").hash_xof(msg, 32);
+    let plain = SHAKE128::new().xof(msg, 32);
+    let email = CSHAKE128::new(b"", b"Email Signature").xof(msg, 32);
+    let finger = CSHAKE128::new(b"", b"key fingerprint").xof(msg, 32);
+    let named = CSHAKE128::new(b"KMAC", b"").xof(msg, 32);
 
     assert_ne!(plain, email, "a customized cSHAKE must differ from SHAKE");
     assert_ne!(email, finger, "different S must give unrelated output");
@@ -146,8 +146,8 @@ fn customization_separates_the_functions() {
 fn the_boundary_between_n_and_s_is_unambiguous() {
     let msg = b"x";
     assert_ne!(
-        CSHAKE128::new(b"AB", b"").hash_xof(msg, 32),
-        CSHAKE128::new(b"A", b"B").hash_xof(msg, 32),
+        CSHAKE128::new(b"AB", b"").xof(msg, 32),
+        CSHAKE128::new(b"A", b"B").xof(msg, 32),
         "the split between N and S must be part of the computation"
     );
 }
@@ -156,13 +156,13 @@ fn the_boundary_between_n_and_s_is_unambiguous() {
 #[test]
 fn streaming_matches_one_shot() {
     let msg: Vec<u8> = (0..=255u8).collect();
-    let one = CSHAKE128::new(b"", b"Email Signature").hash_xof(&msg, 64);
+    let one = CSHAKE128::new(b"", b"Email Signature").xof(&msg, 64);
 
     let mut c = CSHAKE128::new(b"", b"Email Signature");
     for chunk in msg.chunks(7) {
         c.do_update(chunk);
     }
-    let mut out = c.into_output();
+    let mut out = c.into_squeezer();
     let head = out.do_output(20);
     let tail = out.do_output(44);
     assert_eq!([head, tail].concat(), one, "chunked in, split out, must equal the one-shot");
@@ -177,7 +177,7 @@ fn cshake_is_a_hash() {
     assert_eq!(digest.len(), 32, "cSHAKE128's nominal output length");
     assert_eq!(CSHAKE128::new(b"", b"Email Signature").hash(b"abc"), digest);
 
-    let long = CSHAKE128::new(b"", b"Email Signature").hash_xof(b"abc", 64);
+    let long = CSHAKE128::new(b"", b"Email Signature").xof(b"abc", 64);
     assert_eq!(&long[..32], &digest[..], "do_final must be a prefix of the longer output");
 
     let mut c = CSHAKE256::new(b"", b"Email Signature");

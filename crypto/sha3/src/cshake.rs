@@ -1,10 +1,10 @@
 //! cSHAKE, the customizable SHAKE of NIST SP 800-185 Sec 3.
 
 use crate::SHAKEParams;
-use crate::shake::{SHAKEInternal, SHAKEOutput};
+use crate::shake::{SHAKEInternal, SHAKESqueezer};
 use crate::xof_utils::left_encode;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
 
 /// The domain separator cSHAKE absorbs in place of SHAKE's `1111`: the `00` of SP 800-185 Sec 3.3,
 /// two zero bits, which is what keeps a customized instance separate from plain SHAKE.
@@ -151,7 +151,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -160,11 +160,11 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
 
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_output().do_output(n)
+        self.into_squeezer().do_output(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     fn do_final_partial_bits(
@@ -183,7 +183,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError> {
-        Ok(self.into_output_partial_bits(partial_byte, num_bits)?.do_output_out(output))
+        Ok(self.into_squeezer_partial_bits(partial_byte, num_bits)?.do_output_out(output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -192,28 +192,28 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
-    type Output = SHAKEOutput<PARAMS>;
+    type Squeezer = SHAKESqueezer<PARAMS>;
 
-    fn into_output(self) -> Self::Output {
+    fn into_squeezer(self) -> Self::Squeezer {
         if self.customized {
             let (suffix, bits) = CSHAKE_SUFFIX;
-            self.shake.into_output_with_suffix(suffix, bits)
+            self.shake.into_squeezer_with_suffix(suffix, bits)
         } else {
             // Sec 3.3 step 1: with no N and no S this is SHAKE, separator included.
-            self.shake.into_output()
+            self.shake.into_squeezer()
         }
     }
 
-    fn into_output_partial_bits(
+    fn into_squeezer_partial_bits(
         self,
         partial_byte: u8,
         num_bits: usize,
-    ) -> Result<Self::Output, HashError> {
+    ) -> Result<Self::Squeezer, HashError> {
         if self.customized {
             let (suffix, bits) = CSHAKE_SUFFIX;
-            self.shake.into_output_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)
+            self.shake.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)
         } else {
-            self.shake.into_output_partial_bits(partial_byte, num_bits)
+            self.shake.into_squeezer_partial_bits(partial_byte, num_bits)
         }
     }
 }

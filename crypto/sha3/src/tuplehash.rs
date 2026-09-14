@@ -2,10 +2,10 @@
 
 use crate::SHAKEParams;
 use crate::cshake::{CSHAKEInternal, absorb_encoded_string_into};
-use crate::shake::SHAKEOutput;
+use crate::shake::SHAKESqueezer;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
 
 /// The function-name string every TupleHash binds, per SP 800-185 Sec 5.3.
 const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
@@ -90,7 +90,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
         let n = self.output_len;
         let (buf, len) = right_encode((n as u64) * 8);
         self.cshake.do_update(&buf[..len]);
-        self.cshake.into_output().do_output(n)
+        self.cshake.into_squeezer().do_output(n)
     }
 
     fn do_final_out(mut self, output: &mut [u8]) -> usize {
@@ -103,7 +103,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
         // truncated read is this TupleHash cut short, not the TupleHash of a shorter length.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.cshake.into_output().do_output_out(&mut output[..written])
+        self.cshake.into_squeezer().do_output_out(&mut output[..written])
     }
 
     /// # Errors
@@ -163,11 +163,11 @@ impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
     }
 
     /// Hashes a whole tuple and returns the output stream.
-    pub fn output_for(mut self, tuple: &[&[u8]]) -> SHAKEOutput<PARAMS> {
+    pub fn output_for(mut self, tuple: &[&[u8]]) -> SHAKESqueezer<PARAMS> {
         for element in tuple {
             self.do_update(element);
         }
-        self.into_output()
+        self.into_squeezer()
     }
 }
 
@@ -185,12 +185,12 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
     fn hash(mut self, data: &[u8]) -> Vec<u8> {
         let n = self.output_len();
         self.do_update(data);
-        self.into_output().do_output(n)
+        self.into_squeezer().do_output(n)
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     /// Appends **one tuple element**.
@@ -200,11 +200,11 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
 
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_output().do_output(n)
+        self.into_squeezer().do_output(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     /// # Errors
@@ -240,25 +240,25 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
-    type Output = SHAKEOutput<PARAMS>;
+    type Squeezer = SHAKESqueezer<PARAMS>;
 
-    fn into_output(mut self) -> Self::Output {
+    fn into_squeezer(mut self) -> Self::Squeezer {
         // Sec 5.3.1 step 4: right_encode(0) rather than the length.
         let (buf, len) = right_encode(0);
         self.cshake.do_update(&buf[..len]);
-        self.cshake.into_output()
+        self.cshake.into_squeezer()
     }
 
-    fn into_output_partial_bits(
+    fn into_squeezer_partial_bits(
         self,
         _partial_byte: u8,
         num_bits: usize,
-    ) -> Result<Self::Output, HashError> {
+    ) -> Result<Self::Squeezer, HashError> {
         if num_bits != 0 {
             return Err(HashError::InvalidLength(
                 "TupleHashXOF cannot take a partial final byte: right_encode(0) must follow",
             ));
         }
-        Ok(self.into_output())
+        Ok(self.into_squeezer())
     }
 }

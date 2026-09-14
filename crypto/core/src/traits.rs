@@ -1779,7 +1779,7 @@ where
 
 /// The squeezing phase of an [`XOF`]: a value that produces output and can no longer take input.
 ///
-/// This is the type [`XOF::into_output`] hands back. Absorbing and squeezing are separate types
+/// This is the type [`XOF::into_squeezer`] hands back. Absorbing and squeezing are separate types
 /// rather than separate states of one type, so "no more input once output has begun" is a fact the
 /// compiler enforces rather than a rule the documentation asks callers to follow, and so there is
 /// no "absorbed after squeezing" error to raise or to test for.
@@ -1791,7 +1791,7 @@ where
 /// only way to get output, and it must consume the value because finalizing pads the state. A
 /// squeeze has nothing to finalize, so such a method would only say "this read is my last", which
 /// ownership already says: drop the value, or let it fall out of scope.
-pub trait XOFOutput {
+pub trait XOFSqueezer {
     /// Produces the next `num_bytes` bytes of the output stream.
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8>;
 
@@ -1810,7 +1810,7 @@ pub trait XOFOutput {
 /// # Absorb, then squeeze
 ///
 /// A sponge takes input, then produces output, and cannot go back. Here that is expressed in the
-/// types: [`into_output`](Self::into_output) consumes the XOF and returns an [`XOFOutput`], so
+/// types: [`into_squeezer`](Self::into_squeezer) consumes the XOF and returns an [`XOFSqueezer`], so
 /// after output has begun there is no value left on which to call [`Hash::do_update`]. Nothing
 /// returns an "absorbed after squeezing" error because nothing can reach that state.
 ///
@@ -1823,50 +1823,50 @@ pub trait XOFOutput {
 /// matters, salt the input.
 pub trait XOF: Hash {
     /// The squeezing state this XOF turns into.
-    type Output: XOFOutput;
+    type Squeezer: XOFSqueezer;
 
     /// Ends the input phase and begins producing output.
     ///
     /// The phase change is in the type: what comes back takes no more input.
-    fn into_output(self) -> Self::Output;
+    fn into_squeezer(self) -> Self::Squeezer;
 
-    /// As [`into_output`](Self::into_output), with a final partial **byte** of input.
+    /// As [`into_squeezer`](Self::into_squeezer), with a final partial **byte** of input.
     ///
     /// The partial byte arrives as the final octet of an ASN.1 BIT STRING (X.690 s. 8.6.2.1): the
     /// `num_bits` message bits are the most significant bits of `partial_byte`, leading bit first,
     /// and the low `8 - num_bits` "unused" bits are ignored. Same convention as
     /// [`Hash::do_final_partial_bits`]. `num_bits` of 0 means the message ended on a byte boundary
-    /// and is equivalent to [`into_output`](Self::into_output).
+    /// and is equivalent to [`into_squeezer`](Self::into_squeezer).
     ///
     /// # Errors
     /// [`HashError::InvalidLength`] if `num_bits` is not in `0..=7`.
-    fn into_output_partial_bits(
+    fn into_squeezer_partial_bits(
         self,
         partial_byte: u8,
         num_bits: usize,
-    ) -> Result<Self::Output, HashError>;
+    ) -> Result<Self::Squeezer, HashError>;
 
     /// One-shot: absorbs `data` and produces `result_len` bytes.
     ///
     /// The default absorbs and squeezes in the obvious way; override it only where the type can do
     /// better, as SHAKE does.
-    fn hash_xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
+    fn xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
     where
         Self: Sized,
     {
         self.do_update(data);
-        self.into_output().do_output(result_len)
+        self.into_squeezer().do_output(result_len)
     }
 
     /// One-shot: absorbs `data` and fills `output`, which is zeroized first. Returns the number of
     /// bytes written.
     ///
-    /// Defaulted as [`hash_xof`](Self::hash_xof) is.
-    fn hash_xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize
+    /// Defaulted as [`xof`](Self::xof) is.
+    fn xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize
     where
         Self: Sized,
     {
         self.do_update(data);
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 }

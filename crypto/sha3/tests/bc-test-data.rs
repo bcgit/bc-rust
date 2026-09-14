@@ -25,7 +25,7 @@
 //!    `Outputlen = minoutbytes + (rightmost 16 bits of Output as big-endian integer) mod
 //!    (maxoutbytes - minoutbytes + 1)` bytes; report `Output`/`Outputlen` per COUNT.
 
-use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 use std::fs;
@@ -170,9 +170,10 @@ fn shake_bits<X: XOF + Default>(msg: &[u8], len_bits: usize, out_bits: usize) ->
     let (whole, partial) = (len_bits / 8, len_bits % 8);
     x.do_update(&msg[..whole]);
     let mut out_stream = if partial != 0 {
-        x.into_output_partial_bits(msg[whole].reverse_bits(), partial).expect("partial is in 1..=7")
+        x.into_squeezer_partial_bits(msg[whole].reverse_bits(), partial)
+            .expect("partial is in 1..=7")
     } else {
-        x.into_output()
+        x.into_squeezer()
     };
     let (out_whole, out_partial) = (out_bits / 8, out_bits % 8);
     let mut out = out_stream.do_output(out_whole + usize::from(out_partial != 0));
@@ -291,7 +292,7 @@ fn run_shake_monte_file<X: XOF + Default>(orientation: &str, filename: &str) {
             let n = output.len().min(16);
             m[..n].copy_from_slice(&output[..n]);
             // Output = SHAKE(Msg, Outputlen)
-            output = X::default().hash_xof(&m, out_bytes);
+            output = X::default().xof(&m, out_bytes);
             // Rightmost_Output_bits = rightmost 16 bits of Output (big-endian integer)
             let l = output.len();
             let rightmost = u16::from_be_bytes([output[l - 2], output[l - 1]]) as usize;

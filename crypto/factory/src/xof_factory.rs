@@ -5,7 +5,7 @@
 //!
 //! Example usage:
 //! ```
-//! use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+//! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 //! use bouncycastle_factory::AlgorithmFactory;
 //! use bouncycastle_factory::xof_factory::XOFFactory;
 //! use bouncycastle_sha3 as sha3;
@@ -14,7 +14,7 @@
 //!
 //! let mut h = XOFFactory::new(sha3::SHAKE128_NAME).unwrap();
 //! h.do_update(data);
-//! let output: Vec<u8> = h.into_output().do_output(16);
+//! let output: Vec<u8> = h.into_squeezer().do_output(16);
 //! ```
 //! `XOFFactory` implements [`Hash`] too, so it can be used wherever a hash is wanted; `do_final`
 //! then produces the nominal 32 or 64 bytes.
@@ -37,7 +37,7 @@
 
 use crate::{AlgorithmFactory, FactoryError};
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 
@@ -96,16 +96,16 @@ impl Algorithm for XOFFactory {
 
 /// The squeezing phase of whichever XOF the factory selected.
 ///
-/// [`XOF::into_output`] consumes the factory value, so this enum is what remains; like
+/// [`XOF::into_squeezer`] consumes the factory value, so this enum is what remains; like
 /// [`XOFFactory`] itself it dispatches on the variant.
-pub enum XOFFactoryOutput {
+pub enum XOFFactorySqueezer {
     /// SHAKE128 output.
-    SHAKE128(<sha3::SHAKE128 as XOF>::Output),
+    SHAKE128(<sha3::SHAKE128 as XOF>::Squeezer),
     /// SHAKE256 output.
-    SHAKE256(<sha3::SHAKE256 as XOF>::Output),
+    SHAKE256(<sha3::SHAKE256 as XOF>::Squeezer),
 }
 
-impl XOFOutput for XOFFactoryOutput {
+impl XOFSqueezer for XOFFactorySqueezer {
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         match self {
             Self::SHAKE128(o) => o.do_output(num_bytes),
@@ -203,43 +203,43 @@ impl Hash for XOFFactory {
 }
 
 impl XOF for XOFFactory {
-    type Output = XOFFactoryOutput;
+    type Squeezer = XOFFactorySqueezer;
 
-    fn into_output(self) -> Self::Output {
+    fn into_squeezer(self) -> Self::Squeezer {
         match self {
-            Self::SHAKE128(h) => XOFFactoryOutput::SHAKE128(h.into_output()),
-            Self::SHAKE256(h) => XOFFactoryOutput::SHAKE256(h.into_output()),
+            Self::SHAKE128(h) => XOFFactorySqueezer::SHAKE128(h.into_squeezer()),
+            Self::SHAKE256(h) => XOFFactorySqueezer::SHAKE256(h.into_squeezer()),
         }
     }
 
-    fn into_output_partial_bits(
+    fn into_squeezer_partial_bits(
         self,
         partial_byte: u8,
         num_bits: usize,
-    ) -> Result<Self::Output, HashError> {
+    ) -> Result<Self::Squeezer, HashError> {
         Ok(match self {
             Self::SHAKE128(h) => {
-                XOFFactoryOutput::SHAKE128(h.into_output_partial_bits(partial_byte, num_bits)?)
+                XOFFactorySqueezer::SHAKE128(h.into_squeezer_partial_bits(partial_byte, num_bits)?)
             }
             Self::SHAKE256(h) => {
-                XOFFactoryOutput::SHAKE256(h.into_output_partial_bits(partial_byte, num_bits)?)
+                XOFFactorySqueezer::SHAKE256(h.into_squeezer_partial_bits(partial_byte, num_bits)?)
             }
         })
     }
 
-    fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
+    fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
         match self {
-            Self::SHAKE128(h) => h.hash_xof(data, result_len),
-            Self::SHAKE256(h) => h.hash_xof(data, result_len),
+            Self::SHAKE128(h) => h.xof(data, result_len),
+            Self::SHAKE256(h) => h.xof(data, result_len),
         }
     }
 
-    fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
+    fn xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
         output.fill(0);
 
         match self {
-            Self::SHAKE128(h) => h.hash_xof_out(data, output),
-            Self::SHAKE256(h) => h.hash_xof_out(data, output),
+            Self::SHAKE128(h) => h.xof_out(data, output),
+            Self::SHAKE256(h) => h.xof_out(data, output),
         }
     }
 }

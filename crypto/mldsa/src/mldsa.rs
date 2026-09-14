@@ -491,7 +491,7 @@ use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable,
-    XOF, XOFOutput,
+    XOF, XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
@@ -694,7 +694,7 @@ impl<
             h.do_update(seed.ref_to_bytes());
             h.do_update(&(P::k as u8).to_le_bytes());
             h.do_update(&(P::l as u8).to_le_bytes());
-            let mut h = h.into_output();
+            let mut h = h.into_squeezer();
             let bytes_written = h.do_output_out(&mut rho);
             debug_assert_eq!(bytes_written, 32);
             let mut rho_prime: [u8; 64] = [0u8; 64];
@@ -790,7 +790,7 @@ impl<
             h.do_update(&rnd);
             h.do_update(mu);
             let mut rho_p_p = [0u8; 64];
-            let mut h = h.into_output();
+            let mut h = h.into_squeezer();
             h.do_output_out(&mut rho_p_p);
 
             rho_p_p
@@ -846,7 +846,7 @@ impl<
                 let mut hash = H::new();
                 hash.do_update(mu);
                 w1.w1_encode_and_hash::<P>(&mut hash);
-                let mut hash = hash.into_output();
+                let mut hash = hash.into_squeezer();
                 hash.do_output_out(sig_val_c_tilde.as_mut());
             }
 
@@ -1025,7 +1025,7 @@ impl<
             let mut hash = H::new();
             hash.do_update(mu);
             w1p.w1_encode_and_hash::<P>(&mut hash);
-            let mut hash = hash.into_output();
+            let mut hash = hash.into_squeezer();
             hash.do_output_out(c_tilde_p.as_mut());
 
             c_tilde_p
@@ -1251,7 +1251,7 @@ impl<
                 h.do_update(&(P::k as u8).to_le_bytes());
                 h.do_update(&(P::l as u8).to_le_bytes());
                 let mut rho = [0u8; 32];
-                let mut h = h.into_output();
+                let mut h = h.into_squeezer();
                 let bytes_written = h.do_output_out(&mut rho);
                 debug_assert_eq!(bytes_written, 32);
                 let mut rho_prime = [0u8; 64];
@@ -1271,7 +1271,7 @@ impl<
                 h.do_update(&rnd);
                 h.do_update(mu);
                 let mut rho_p_p = [0u8; 64];
-                let mut h = h.into_output();
+                let mut h = h.into_squeezer();
                 h.do_output_out(&mut rho_p_p);
 
                 rho_p_p
@@ -1342,7 +1342,7 @@ impl<
                 let mut hash = H::new();
                 hash.do_update(mu);
                 w1.w1_encode_and_hash::<P>(&mut hash);
-                let mut hash = hash.into_output();
+                let mut hash = hash.into_squeezer();
                 hash.do_output_out(sig_val_c_tilde.as_mut());
             }
 
@@ -1993,7 +1993,7 @@ impl MuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.into_output().do_output_out(&mut mu);
+        self.h.into_squeezer().do_output_out(&mut mu);
 
         mu
     }

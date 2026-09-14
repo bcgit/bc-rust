@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_sha3::SHAKE256;
 
 #[cfg(test)]
@@ -990,7 +990,7 @@ impl BustedMuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.into_output().do_output_out(&mut mu);
+        self.h.into_squeezer().do_output_out(&mut mu);
 
         mu
     }

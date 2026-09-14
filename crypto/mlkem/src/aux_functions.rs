@@ -4,7 +4,7 @@ use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mlkem::{N, q, q_inv};
 use crate::params::MLKEMParams;
 use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 pub(crate) fn expandA<P: MLKEMParams>(rho: &[u8; 32]) -> P::MatrixA {
@@ -104,7 +104,7 @@ pub fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // It's probably around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut C = [0u8; 216];
-    let mut xof = xof.into_output();
+    let mut xof = xof.into_squeezer();
     xof.do_output_out(&mut C);
     let mut idx: usize = 0;
 
@@ -214,7 +214,7 @@ pub(crate) fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
                 xof.do_update(&n.to_le_bytes());
 
                 let mut buf = [0u8; 2 * 64];
-                let mut xof = xof.into_output();
+                let mut xof = xof.into_squeezer();
                 xof.do_output_out(&mut buf);
                 buf
             };
@@ -227,7 +227,7 @@ pub(crate) fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
                 xof.do_update(b);
                 xof.do_update(&n.to_le_bytes());
                 let mut buf = [0u8; 3 * 64];
-                let mut xof = xof.into_output();
+                let mut xof = xof.into_squeezer();
                 xof.do_output_out(&mut buf);
                 buf
             };

@@ -3,7 +3,7 @@
 //! Vectors come from the `bc-test-data` repo cloned alongside this one; see `cshake_tests.rs`.
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{TUPLEHASH128, TUPLEHASH256, TUPLEHASHXOF128, TUPLEHASHXOF256};
@@ -198,7 +198,7 @@ fn partial_final_byte_is_refused() {
 
     let mut t = TUPLEHASHXOF128::new(b"");
     t.do_update(b"abc");
-    assert!(matches!(t.into_output_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
+    assert!(matches!(t.into_squeezer_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
 }
 
 #[test]
@@ -311,17 +311,17 @@ fn check_xof_view<X: XOF>(make: impl Fn() -> X, tuple: &[&[u8]], expected: &[u8]
 
     let mut x = make();
     rest.iter().for_each(|e| x.do_update(e));
-    assert_eq!(x.hash_xof(last, n), expected, "{ctx}: hash_xof");
+    assert_eq!(x.xof(last, n), expected, "{ctx}: xof");
 
     let mut x = make();
     rest.iter().for_each(|e| x.do_update(e));
-    assert_eq!(x.hash_xof(last, n / 2), &expected[..n / 2], "{ctx}: hash_xof, shorter");
+    assert_eq!(x.xof(last, n / 2), &expected[..n / 2], "{ctx}: xof, shorter");
 
     let mut x = make();
     rest.iter().for_each(|e| x.do_update(e));
     let mut out = vec![0u8; n];
-    assert_eq!(x.hash_xof_out(last, &mut out), n, "{ctx}: hash_xof_out returns the length");
-    assert_eq!(out, expected, "{ctx}: hash_xof_out");
+    assert_eq!(x.xof_out(last, &mut out), n, "{ctx}: xof_out returns the length");
+    assert_eq!(out, expected, "{ctx}: xof_out");
 }
 
 #[test]

@@ -19,7 +19,7 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, SecurityStrength, XOF,
-    XOFOutput,
+    XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
@@ -434,7 +434,7 @@ impl<
             let mut j = J::new();
             j.do_update(dk.z());
             j.do_update(&c);
-            let mut j = j.into_output();
+            let mut j = j.into_squeezer();
             let bytes_written = j.do_output_out(&mut *K_bar);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
 

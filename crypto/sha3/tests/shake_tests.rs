@@ -7,7 +7,7 @@ mod shake_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{Hash, KDF, SecurityStrength, XOF, XOFOutput};
+    use bouncycastle_core::traits::{Hash, KDF, SecurityStrength, XOF, XOFSqueezer};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -19,9 +19,9 @@ mod shake_tests {
     /// packing: message bits 0001 in the low nibble, first bit in the LSB), i.e. 0x10 in the API's
     /// MSB-first order.
     #[test]
-    fn into_output_partial_bits_four_bits() {
+    fn into_squeezer_partial_bits_four_bits() {
         let shake = SHAKE128::new();
-        let mut out = shake.into_output_partial_bits(0x10, 4).unwrap();
+        let mut out = shake.into_squeezer_partial_bits(0x10, 4).unwrap();
         assert_eq!(
             out.do_output(16),
             bouncycastle_hex::decode("d40238024b040a954d9c2c89daf480e5").unwrap(),
@@ -29,16 +29,16 @@ mod shake_tests {
         );
     }
 
-    /// into_output_partial_bits() must validate num_bits before shifting: 0 is allowed
+    /// into_squeezer_partial_bits() must validate num_bits before shifting: 0 is allowed
     /// (finalize with no partial byte), 8+ is rejected with InvalidLength rather than panicking.
     #[test]
-    fn into_output_partial_bits_validates_range() {
+    fn into_squeezer_partial_bits_validates_range() {
         for bad in [8usize, 9, 15, 16, 64, usize::MAX] {
             let mut shake = SHAKE128::new();
             shake.do_update(b"abc");
             assert!(
                 matches!(
-                    shake.into_output_partial_bits(0xFF, bad),
+                    shake.into_squeezer_partial_bits(0xFF, bad),
                     Err(HashError::InvalidLength(_))
                 ),
                 "num_bits={bad}"
@@ -46,15 +46,15 @@ mod shake_tests {
         }
         let mut a = SHAKE128::new();
         a.do_update(b"abc");
-        let mut a = a.into_output_partial_bits(0xFF, 0).unwrap();
-        assert_eq!(a.do_output(32), SHAKE128::new().hash_xof(b"abc", 32));
+        let mut a = a.into_squeezer_partial_bits(0xFF, 0).unwrap();
+        assert_eq!(a.do_output(32), SHAKE128::new().xof(b"abc", 32));
 
         // Upper boundary: 7 bits is the largest valid partial byte and must be accepted, and must
         // actually change the output relative to the byte-aligned message.
         let mut b = SHAKE128::new();
         b.do_update(b"abc");
-        let mut b = b.into_output_partial_bits(0xFE, 7).unwrap();
-        assert_ne!(b.do_output(32), SHAKE128::new().hash_xof(b"abc", 32));
+        let mut b = b.into_squeezer_partial_bits(0xFE, 7).unwrap();
+        assert_ne!(b.do_output(32), SHAKE128::new().xof(b"abc", 32));
     }
 
     /// The two `Hash` metadata methods, pinned to their actual values.
@@ -271,11 +271,11 @@ mod shake_tests {
 
         // A helper that exercises the full round-trip for one SHAKE variant.
         // Each phase suspends as its own type: an absorbing state resumes as `X`, a squeezing one
-        // as `X::Output`, and each rejects the other's phase.
+        // as `X::Squeezer`, and each rejects the other's phase.
         fn round_trip<const N: usize, X>(mut shake: X, input: &[u8])
         where
             X: XOF + Suspendable<N> + Clone,
-            X::Output: Suspendable<N> + Clone,
+            X::Squeezer: Suspendable<N> + Clone,
         {
             shake.do_update(input);
 
@@ -285,13 +285,13 @@ mod shake_tests {
             // Test #1
             // serialize the in-progress (absorbing) state, then read from the original and compare
             let absorbing_state = shake.clone().suspend();
-            let mut out = shake.into_output();
+            let mut out = shake.into_squeezer();
             let expected = out.do_output(64);
 
             // rebuild from the serialized state and confirm it produces the same output
             let from_state =
                 X::from_suspended(absorbing_state).expect("an absorbing state resumes as the XOF");
-            assert_eq!(expected, from_state.into_output().do_output(64));
+            assert_eq!(expected, from_state.into_squeezer().do_output(64));
 
             // Test #2
             // serialize the in-progress (squeezing) state, then read more from the original and compare
@@ -299,7 +299,7 @@ mod shake_tests {
             let expected = out.do_output(64);
 
             // rebuild from the serialized state and confirm it produces the same output
-            let mut from_state = X::Output::from_suspended(squeezing_state)
+            let mut from_state = X::Squeezer::from_suspended(squeezing_state)
                 .expect("a squeezing state resumes as the output");
             assert_eq!(expected, from_state.do_output(64));
 
@@ -310,7 +310,7 @@ mod shake_tests {
             );
             assert!(
                 matches!(
-                    X::Output::from_suspended(absorbing_state),
+                    X::Squeezer::from_suspended(absorbing_state),
                     Err(SuspendableError::InvalidData)
                 ),
                 "an absorbing state must not resume as an output"
@@ -321,7 +321,7 @@ mod shake_tests {
             //         + bits_in_queue(8) + squeezing(1)
             let mut busted = squeezing_state;
             busted[3 + 1 + 400] = 42;
-            match X::Output::from_suspended(busted) {
+            match X::Squeezer::from_suspended(busted) {
                 Err(SuspendableError::InvalidData) => { /* good */ }
                 _ => panic!("Expected an error for a corrupt squeezing byte"),
             }
@@ -370,12 +370,12 @@ mod shake_tests {
 
         if partial_bits == 0 {
             shake.do_update(tc.msg.as_slice());
-            let mut shake = shake.into_output();
+            let mut shake = shake.into_squeezer();
             output = shake.do_output(tc.output.len());
         } else {
             shake.do_update(&tc.msg[..(tc.msg.len() - 1)]);
             let mut shake = shake
-                .into_output_partial_bits(tc.msg[tc.msg.len() - 1], partial_bits)
+                .into_squeezer_partial_bits(tc.msg[tc.msg.len() - 1], partial_bits)
                 .expect("partial_bits is in 1..=7");
             output = shake.do_output(tc.output.len());
         }

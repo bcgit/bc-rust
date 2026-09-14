@@ -2,10 +2,10 @@
 
 use crate::SHAKEParams;
 use crate::cshake::{CSHAKEInternal, absorb_left_encode_into};
-use crate::shake::{SHAKEInternal, SHAKEOutput};
+use crate::shake::{SHAKEInternal, SHAKESqueezer};
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
 
 /// The function-name string every ParallelHash binds, per SP 800-185 Sec 6.3.
 const PARALLELHASH_FUNCTION_NAME: &[u8] = b"ParallelHash";
@@ -40,7 +40,7 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     /// The inner call is `cSHAKE(block, 2c, "", "")`, which by Sec 3.3 step 1 is plain SHAKE --
     /// so SHAKE is what is used here.
     fn absorb_block(&mut self, block: &[u8]) {
-        let inner = SHAKEInternal::<PARAMS>::new().hash_xof(block, Self::INNER_LEN);
+        let inner = SHAKEInternal::<PARAMS>::new().xof(block, Self::INNER_LEN);
         self.cshake.do_update(&inner);
         self.blocks += 1;
     }
@@ -149,7 +149,7 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
 
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len;
-        self.state.finish((n as u64) * 8).into_output().do_output(n)
+        self.state.finish((n as u64) * 8).into_squeezer().do_output(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
@@ -160,7 +160,7 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
         // truncated read is this ParallelHash cut short, not the ParallelHash of a shorter length.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.state.finish((n as u64) * 8).into_output().do_output_out(&mut output[..written])
+        self.state.finish((n as u64) * 8).into_squeezer().do_output_out(&mut output[..written])
     }
 
     /// # Errors
@@ -234,12 +234,12 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
     fn hash(mut self, data: &[u8]) -> Vec<u8> {
         let n = self.output_len();
         self.do_update(data);
-        self.into_output().do_output(n)
+        self.into_squeezer().do_output(n)
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -248,11 +248,11 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
 
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_output().do_output(n)
+        self.into_squeezer().do_output(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     /// # Errors
@@ -288,23 +288,23 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
-    type Output = SHAKEOutput<PARAMS>;
+    type Squeezer = SHAKESqueezer<PARAMS>;
 
-    fn into_output(self) -> Self::Output {
+    fn into_squeezer(self) -> Self::Squeezer {
         // Sec 6.3.1 step 4: right_encode(0) rather than the length.
-        self.state.finish(0).into_output()
+        self.state.finish(0).into_squeezer()
     }
 
-    fn into_output_partial_bits(
+    fn into_squeezer_partial_bits(
         self,
         _partial_byte: u8,
         num_bits: usize,
-    ) -> Result<Self::Output, HashError> {
+    ) -> Result<Self::Squeezer, HashError> {
         if num_bits != 0 {
             return Err(HashError::InvalidLength(
                 "ParallelHashXOF cannot take a partial final byte: the encodings must follow",
             ));
         }
-        Ok(self.into_output())
+        Ok(self.into_squeezer())
     }
 }

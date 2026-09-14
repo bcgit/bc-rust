@@ -83,7 +83,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, PHSignatureVerifier, PHSigner, RNG, SecurityStrength,
-    SignatureVerifier, Signer, XOF, XOFOutput,
+    SignatureVerifier, Signer, XOF, XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
@@ -353,7 +353,7 @@ impl<
         h.do_update(<P::PreHash as AlgorithmOID>::OID_DER);
         h.do_update(ph);
         let mut mu = [0u8; MLDSA_MU_LEN];
-        let mut h = h.into_output();
+        let mut h = h.into_squeezer();
         let bytes_written = h.do_output_out(&mut mu);
         debug_assert_eq!(bytes_written, MLDSA_MU_LEN);
 
@@ -642,7 +642,7 @@ impl<
         h.do_update(<P::PreHash as AlgorithmOID>::OID_DER);
         h.do_update(ph);
         let mut mu = [0u8; MLDSA_MU_LEN];
-        let mut h = h.into_output();
+        let mut h = h.into_squeezer();
         _ = h.do_output_out(&mut mu);
 
         MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>::verify_mu(

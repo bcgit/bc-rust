@@ -6,7 +6,7 @@ mod mlkem_tests {
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         Hash, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF,
-        XOFOutput,
+        XOFSqueezer,
     };
     use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_hex as hex;
@@ -473,7 +473,7 @@ mod mlkem_tests {
                 shake.do_update(&seed.ref_to_bytes()[32..64]);
                 shake.do_update(&busted_ciphertext);
                 let mut buf = [0u8; 32];
-                let mut shake = shake.into_output();
+                let mut shake = shake.into_squeezer();
                 _ = shake.do_output_out(&mut buf);
 
                 assert_eq!(ss.ref_to_bytes(), buf);

@@ -1,4 +1,4 @@
-use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 // Test against the bc-test-data repo
 // Requires that the bc-test-data repository is cloned and available for testing at "../bc-test-data"
 // relative to the root of this git project.
@@ -20,7 +20,7 @@ mod bc_test_data {
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::traits::{
         Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, XOF,
-        XOFOutput,
+        XOFSqueezer,
     };
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa_lowmemory::{
@@ -989,7 +989,7 @@ impl BustedMuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.into_output().do_output_out(&mut mu);
+        self.h.into_squeezer().do_output_out(&mut mu);
 
         mu
     }

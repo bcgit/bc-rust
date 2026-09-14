@@ -3,7 +3,7 @@
 //! direct type side by side on the same input; nothing here is an expected value written by hand.
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Hash, XOF, XOFOutput};
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_factory::xof_factory::XOFFactory;
 use bouncycastle_factory::{AlgorithmFactory, FactoryError};
@@ -11,7 +11,7 @@ use bouncycastle_sha3::{SHAKE128, SHAKE128_NAME, SHAKE256, SHAKE256_NAME};
 
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
 
-/// Every `Hash`, `XOF` and `XOFOutput` method of the factory against the direct type `S`.
+/// Every `Hash`, `XOF` and `XOFSqueezer` method of the factory against the direct type `S`.
 fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
     let n = S::default().output_len();
 
@@ -69,12 +69,12 @@ fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
     // the XOF view: one stream, of which the Hash view is the first output_len bytes
     let mut s = S::default();
     s.do_update(MSG);
-    let long = s.into_output().do_output(3 * n);
+    let long = s.into_squeezer().do_output(3 * n);
     assert_eq!(&long[..n], &expected[..], "the direct type's hash is a prefix of its stream");
 
     let mut f = make();
     f.do_update(MSG);
-    let mut fo = f.into_output();
+    let mut fo = f.into_squeezer();
     assert_eq!(fo.do_output(n), &long[..n], "{ctx}: do_output");
     let mut buf = vec![0u8; 2 * n];
     assert_eq!(fo.do_output_out(&mut buf), 2 * n, "{ctx}: do_output_out returns the length");
@@ -82,23 +82,23 @@ fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
 
     let mut s = S::default();
     s.do_update(MSG);
-    let want = s.into_output_partial_bits(0x05, 3).unwrap().do_output(n);
+    let want = s.into_squeezer_partial_bits(0x05, 3).unwrap().do_output(n);
     let mut f = make();
     f.do_update(MSG);
     assert_eq!(
-        f.into_output_partial_bits(0x05, 3).unwrap().do_output(n),
+        f.into_squeezer_partial_bits(0x05, 3).unwrap().do_output(n),
         want,
-        "{ctx}: into_output_partial_bits"
+        "{ctx}: into_squeezer_partial_bits"
     );
     let mut f = make();
     f.do_update(MSG);
-    assert!(matches!(f.into_output_partial_bits(0xFF, 8), Err(HashError::InvalidLength(_))));
+    assert!(matches!(f.into_squeezer_partial_bits(0xFF, 8), Err(HashError::InvalidLength(_))));
 
     // the one-shots
-    assert_eq!(make().hash_xof(MSG, 3 * n), long, "{ctx}: hash_xof");
+    assert_eq!(make().xof(MSG, 3 * n), long, "{ctx}: xof");
     let mut out = vec![0xFFu8; 3 * n];
-    assert_eq!(make().hash_xof_out(MSG, &mut out), 3 * n, "{ctx}: hash_xof_out returns the length");
-    assert_eq!(out, long, "{ctx}: hash_xof_out");
+    assert_eq!(make().xof_out(MSG, &mut out), 3 * n, "{ctx}: xof_out returns the length");
+    assert_eq!(out, long, "{ctx}: xof_out");
 }
 
 #[test]
@@ -138,11 +138,11 @@ fn test_framework_xof() {
     framework.test_xof(
         || XOFFactory::new(SHAKE128_NAME).unwrap(),
         MSG,
-        &SHAKE128::new().hash_xof(MSG, 100),
+        &SHAKE128::new().xof(MSG, 100),
     );
     framework.test_xof(
         || XOFFactory::new(SHAKE256_NAME).unwrap(),
         MSG,
-        &SHAKE256::new().hash_xof(MSG, 100),
+        &SHAKE256::new().xof(MSG, 100),
     );
 }

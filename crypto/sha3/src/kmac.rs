@@ -2,11 +2,11 @@
 
 use crate::SHAKEParams;
 use crate::cshake::CSHAKEInternal;
-use crate::shake::SHAKEOutput;
+use crate::shake::SHAKESqueezer;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, SecurityStrength, XOF, XOFOutput};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, SecurityStrength, XOF, XOFSqueezer};
 use bouncycastle_utils::ct;
 
 /// The function-name string every KMAC binds, per SP 800-185 Sec 4.3. Fixed by the specification:
@@ -133,7 +133,7 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
         let n = self.output_len;
         // Sec 4.3 step 1: the requested length is bound into the input before any output.
         self.absorb_right_encode((n as u64) * 8);
-        self.cshake.into_output().do_output(n)
+        self.cshake.into_squeezer().do_output(n)
     }
 
     fn do_final_out(mut self, out: &mut [u8]) -> Result<usize, MACError> {
@@ -147,7 +147,7 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
         // MAC::do_final_out zeroizes the entire buffer, as HMAC does, so a longer one comes back
         // with zeros after the MAC rather than whatever the caller left there.
         out[n..].fill(0);
-        Ok(self.cshake.into_output().do_output_out(&mut out[..n]))
+        Ok(self.cshake.into_squeezer().do_output_out(&mut out[..n]))
     }
 
     /// Compares in constant time, and only against the full output length: a caller must not be
@@ -186,7 +186,7 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
 ///
 /// Because the length is *not* bound here, output at one length really is a prefix of output at a
 /// longer one -- the opposite of fixed-length KMAC -- so [`Hash::do_final`] is the first
-/// [`Hash::output_len`] bytes of the same stream [`XOF::into_output`] produces.
+/// [`Hash::output_len`] bytes of the same stream [`XOF::into_squeezer`] produces.
 #[derive(Clone)]
 pub struct KMACXOFInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
@@ -238,12 +238,12 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
     fn hash(mut self, data: &[u8]) -> Vec<u8> {
         let n = self.output_len();
         self.do_update(data);
-        self.into_output().do_output(n)
+        self.into_squeezer().do_output(n)
     }
 
     fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
         self.do_update(data);
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -252,11 +252,11 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
 
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_output().do_output(n)
+        self.into_squeezer().do_output(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
-        self.into_output().do_output_out(output)
+        self.into_squeezer().do_output_out(output)
     }
 
     /// # Errors
@@ -294,23 +294,23 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
-    type Output = SHAKEOutput<PARAMS>;
+    type Squeezer = SHAKESqueezer<PARAMS>;
 
-    fn into_output(mut self) -> Self::Output {
+    fn into_squeezer(mut self) -> Self::Squeezer {
         self.bind_zero_length();
-        self.cshake.into_output()
+        self.cshake.into_squeezer()
     }
 
-    fn into_output_partial_bits(
+    fn into_squeezer_partial_bits(
         self,
         _partial_byte: u8,
         num_bits: usize,
-    ) -> Result<Self::Output, HashError> {
+    ) -> Result<Self::Squeezer, HashError> {
         if num_bits != 0 {
             return Err(HashError::InvalidLength(
                 "KMACXOF cannot take a partial final byte: right_encode(0) must follow the message",
             ));
         }
-        Ok(self.into_output())
+        Ok(self.into_squeezer())
     }
 }

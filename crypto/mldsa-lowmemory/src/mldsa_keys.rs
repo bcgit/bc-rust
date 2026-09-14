@@ -12,7 +12,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
-    Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF, XOFOutput,
+    Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer,
 };
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
@@ -97,7 +97,7 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyTrait<P, PK_LEN>
 
     fn compute_tr(&self) -> [u8; 64] {
         let mut tr = [0u8; 64];
-        H::new().hash_xof_out(&self.encode(), &mut tr);
+        H::new().xof_out(&self.encode(), &mut tr);
 
         tr
     }
@@ -342,7 +342,7 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
         h.do_update(seed.ref_to_bytes());
         h.do_update(&(P::k as u8).to_le_bytes());
         h.do_update(&(P::l as u8).to_le_bytes());
-        let mut h = h.into_output();
+        let mut h = h.into_squeezer();
         let bytes_written = h.do_output_out(&mut rho);
         debug_assert_eq!(bytes_written, 32);
         let bytes_written = h.do_output_out(rho_prime.deref_mut());

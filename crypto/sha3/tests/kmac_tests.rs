@@ -110,12 +110,12 @@ fn nist_sp800_185_kmacxof_sample_values() {
         let key = key_material(&v.key);
 
         let got = match v.strength {
-            128 => KMACXOF128::new(&key, v.s.as_bytes(), false)
-                .expect("a valid key")
-                .hash_xof(&v.msg, want),
-            256 => KMACXOF256::new(&key, v.s.as_bytes(), false)
-                .expect("a valid key")
-                .hash_xof(&v.msg, want),
+            128 => {
+                KMACXOF128::new(&key, v.s.as_bytes(), false).expect("a valid key").xof(&v.msg, want)
+            }
+            256 => {
+                KMACXOF256::new(&key, v.s.as_bytes(), false).expect("a valid key").xof(&v.msg, want)
+            }
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(got, v.output, "COUNT {i}: KMACXOF{} S={:?}", v.strength, v.s);
@@ -126,7 +126,7 @@ fn nist_sp800_185_kmacxof_sample_values() {
 /// Sec 4.3.1 versus Sec 4.3: with identical key, message, customization *and* length, KMAC and
 /// KMACXOF are different functions, because one binds `right_encode(L)` and the other
 /// `right_encode(0)`. The published samples use the same inputs for both, so this is checkable
-/// directly against them -- and it is the property that would break if `into_output` bound the
+/// directly against them -- and it is the property that would break if `into_squeezer` bound the
 /// length by mistake.
 #[test]
 fn kmacxof_is_not_kmac_truncated() {
@@ -239,9 +239,9 @@ fn algorithm_names() {
 #[test]
 fn kmacxof_output_is_one_stream() {
     let key = key_material(&[0x42u8; 32]);
-    let long = KMACXOF128::new(&key, b"", false).unwrap().hash_xof(b"abc", 64);
+    let long = KMACXOF128::new(&key, b"", false).unwrap().xof(b"abc", 64);
 
-    let short = KMACXOF128::new(&key, b"", false).unwrap().hash_xof(b"abc", 16);
+    let short = KMACXOF128::new(&key, b"", false).unwrap().xof(b"abc", 16);
     assert_eq!(&long[..16], &short[..], "KMACXOF at a shorter length must be a prefix");
 
     let mut k = KMACXOF128::new(&key, b"", false).unwrap();
@@ -259,14 +259,14 @@ fn kmacxof_rejects_a_partial_final_byte() {
     let mut k = KMACXOF128::new(&key, b"", false).unwrap();
     k.do_update(b"abc");
     assert!(matches!(
-        k.into_output_partial_bits(0xF0, 4),
+        k.into_squeezer_partial_bits(0xF0, 4),
         Err(bouncycastle_core::errors::HashError::InvalidLength(_))
     ));
 
     // ... but zero bits means the message ended on a byte boundary, which is fine.
     let mut k = KMACXOF128::new(&key, b"", false).unwrap();
     k.do_update(b"abc");
-    assert!(k.into_output_partial_bits(0, 0).is_ok());
+    assert!(k.into_squeezer_partial_bits(0, 0).is_ok());
 }
 
 #[test]
@@ -411,7 +411,7 @@ fn key_type_is_checked() {
 
 /// The `Hash` view of the partial-byte entry points on KMACXOF: zero bits is the byte-aligned case
 /// and yields the same bytes as `do_final`; anything else is refused. The test above only covers
-/// the `XOF` entry point, `into_output_partial_bits`.
+/// the `XOF` entry point, `into_squeezer_partial_bits`.
 #[test]
 fn kmacxof_hash_view_partial_bits() {
     let key = key_material(&[0x42u8; 32]);
