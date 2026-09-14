@@ -15,6 +15,7 @@ bouncycastle-modes = { path = "./crypto/modes" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
 bouncycastle-ec = { path = "./crypto/ec" }
+bouncycastle-ecdsa = { path = "./crypto/ecdsa" }
 bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }
