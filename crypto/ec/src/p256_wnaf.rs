@@ -28,18 +28,13 @@
 
 use crate::nat;
 use crate::p256::P256FieldElement;
+use crate::p256_domain::{G_X_LIMBS, G_Y_LIMBS};
 use crate::p256_point::P256JacobianPoint;
 use crate::p256_scalar::P256PublicScalar;
 
 const WIDTH: usize = 5;
 const WNAF_LEN: usize = 257;
 const ODD_MULTIPLE_COUNT: usize = 1 << (WIDTH - 2);
-
-// SP 800-186 (Feb 2023) §3.2.1.3, the P-256 base point G.
-const G_X: [u64; 4] =
-    [0xf4a13945d898c296, 0x77037d812deb33a0, 0xf8bce6e563a440f2, 0x6b17d1f2e12c4247];
-const G_Y: [u64; 4] =
-    [0xcbb6406837bf51f5, 0x2bce33576b315ece, 0x8ee7eb4a7c0f9e16, 0x4fe342e2fe1a7f9b];
 
 /// `[u]G + [v]Q`.
 pub fn shamir_multiply(
@@ -51,8 +46,8 @@ pub fn shamir_multiply(
     let dv = compute_wnaf(v.to_limbs());
 
     let g = P256JacobianPoint::from_affine(
-        P256FieldElement::from_limbs(G_X),
-        P256FieldElement::from_limbs(G_Y),
+        P256FieldElement::from_limbs(G_X_LIMBS),
+        P256FieldElement::from_limbs(G_Y_LIMBS),
     );
     let table_g = odd_multiples(&g);
     let table_q = odd_multiples(q);
