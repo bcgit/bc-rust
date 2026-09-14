@@ -11,7 +11,7 @@
 //! # for each i: (-vals[i]) % n, pow(vals[i], n-2, n) if vals[i] != 0 else 0
 //! ```
 
-use bouncycastle_ec::p256_scalar::{N_LIMBS, P256PublicScalar, P256ScalarField};
+use bouncycastle_ec::p256_scalar::{N_LIMBS, P256PublicScalar, P256Scalar, P256ScalarField};
 
 const VALS_0: [u64; 4] =
     [0x61790134676b1b6a, 0x9974d75b333824fe, 0x3af27f802dc5fd3d, 0x221c4e003f9931ee];
@@ -244,6 +244,32 @@ fn public_scalar_eq_detects_a_difference_in_any_limb() {
             P256PublicScalar::from_limbs(other),
             "a difference in limb {limb_idx} must be detected"
         );
+    }
+}
+
+#[test]
+fn secret_scalar_be_bytes_round_trip() {
+    for limbs in [VALS_0, VALS_1, VALS_2, VALS_3, VALS_4] {
+        let secret = P256Scalar::from_limbs(limbs);
+        let round_tripped = P256Scalar::from_be_bytes(&secret.to_be_bytes());
+        assert_eq!(round_tripped, secret);
+    }
+}
+
+#[test]
+fn secret_scalar_from_be_bytes_reduces_out_of_range_input() {
+    let mut n_bytes = [0u8; 32];
+    for (i, limb) in N_LIMBS.iter().rev().enumerate() {
+        n_bytes[i * 8..i * 8 + 8].copy_from_slice(&limb.to_be_bytes());
+    }
+    assert_eq!(P256Scalar::from_be_bytes(&n_bytes), P256Scalar::from_limbs([0, 0, 0, 0]));
+}
+
+#[test]
+fn scalar_field_from_secret_matches_from_limbs() {
+    for limbs in [VALS_0, VALS_1, VALS_2, VALS_3, VALS_4, VALS_5] {
+        let secret = P256Scalar::from_limbs(limbs);
+        assert_eq!(P256ScalarField::from_secret(&secret), fe(limbs));
     }
 }
 
