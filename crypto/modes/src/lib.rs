@@ -11,7 +11,8 @@
 //! | CFB | [`Cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`Cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`Ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
-//! | CCM | [`Ccm`] | SP 800-38C | Counter with CBC-MAC. **The only authenticated mode here**: CTR plus CBC-MAC, with a tag and AAD |
+//! | CCM | [`Ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
+//! | GCM | [`Gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
 //!
 //! They divide three ways.
 //!
@@ -29,7 +30,7 @@
 //! difference in one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme,
 //! `AES_CTR_128<Encrypting>` has nothing to name.
 //!
-//! **CCM is the odd one out, and deliberately so.** It is an AEAD: it takes additional
+//! **CCM and GCM are the odd ones out, and deliberately so.** CCM is an AEAD: it takes additional
 //! authenticated data, and it produces a tag as well as a ciphertext, so it does not fit either of
 //! the traits above -- there is nowhere in them to put the AAD or the tag. It implements
 //! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead (through [`CcmEncryptor`] /
@@ -47,6 +48,13 @@
 //!
 //! See [`Ccm`] for both, and [Choosing between the modes](#choosing-between-the-modes) for when it
 //! is the right answer -- which, for a new design, is usually.
+//!
+//! **GCM is the other authenticated mode**, built from CTR and a universal hash rather than a
+//! CBC-MAC. Its final output is the authentication tag, not a padded block: it implements
+//! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] directly with
+//! `FINAL_LEN = TAG_LEN` -- the inline `ciphertext || tag` view -- alongside an inherent
+//! detached-tag API, and `AES_GCM_128<Encrypting>` fixes the tag length. Unlike CCM its nonce is
+//! generated rather than supplied; see the `gcm` module docs.
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
@@ -244,7 +252,7 @@
 //! assert_eq!(data, plaintext);
 //! ```
 //!
-//! CCM is shaped differently from all of the above, because it is the only authenticated one. The
+//! CCM is shaped differently from all of the above, because it is authenticated. The
 //! nonce is supplied rather than generated, and there is an extra input (the AAD, authenticated but
 //! not encrypted) and an extra output (the tag). Decryption either returns the plaintext or fails
 //! -- it never returns plausible-looking rubbish the way the unauthenticated modes do when the
@@ -297,7 +305,7 @@
 //!
 //! # Choosing between the modes
 //!
-//! **For a new design, use [`Ccm`].** It is the only authenticated mode here, and an
+//! **For a new design, use [`Ccm`].** It is authenticated, as [`Gcm`] is, and an
 //! unauthenticated mode is almost never what a new protocol wants: the other five leave the
 //! ciphertext malleable in the specific, exploitable ways set out in
 //! [None of the other modes is authenticated](#none-of-the-other-modes-is-authenticated), and
@@ -684,6 +692,8 @@ mod cfb;
 mod cfb8;
 mod ctr;
 mod ecb;
+mod gcm;
+mod ghash;
 mod iv;
 
 pub use cbc::Cbc;
@@ -692,6 +702,7 @@ pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
 pub use ecb::Ecb;
+pub use gcm::{GCM_NONCE_LEN, Gcm};
 
 // Imports needed for docs
 #[allow(unused_imports)]

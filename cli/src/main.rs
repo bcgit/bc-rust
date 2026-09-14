@@ -1,9 +1,11 @@
+mod aead_mode_cmd;
 mod aes_cbc_cmd;
 mod aes_ccm_cmd;
 mod aes_cfb8_cmd;
 mod aes_cfb_cmd;
 mod aes_ctr_cmd;
 mod aes_ecb_cmd;
+mod aes_gcm_cmd;
 mod ascon_cmd;
 mod block_mode_cmd;
 mod encoders_cmd;
@@ -1116,6 +1118,118 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-128 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// AUTHENTICATED, unlike the other AES modes here: tampering with the ciphertext, the AAD or
+    /// the nonce is detected rather than merely producing wrong plaintext.
+    ///
+    /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output,
+    /// the ciphertext follows, and the 16-byte tag is written last. `decrypt` reads the nonce back
+    /// from the first 12 bytes of input and streams the rest, checking the tag once input is
+    /// exhausted. There is deliberately no `--iv` flag: a repeated GCM nonce is worse than merely
+    /// unwise, since it lets an attacker recover the hash subkey (SP 800-38D Appendix A).
+    ///
+    /// `--aad` (hex) or `--aad-file` (binary or hex) supply the additional authenticated data,
+    /// which is covered by the tag but not encrypted; if neither is given, AAD is empty.
+    ///
+    /// Input may be ANY length: GCM needs no padding.
+    ///
+    /// WARNING: on `decrypt`, a tag failure may be reported only after plaintext has already been
+    /// written to stdout, because this command streams the inline decryptor. A script MUST check
+    /// the exit code before trusting anything already written; on failure this command prints
+    /// `Error: authentication failed` and exits non-zero.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_GCM {
+        action: BlockModeAction,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, in binary or hex.
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
+    /// length differs.
+    AES192_GCM {
+        action: BlockModeAction,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, in binary or hex.
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
+    /// length differs.
+    AES256_GCM {
+        action: BlockModeAction,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, in binary or hex.
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// AES-128 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
     ///
     /// WARNING: ECB is NOT a confidentiality mode for data. Under a given key every plaintext
@@ -1634,6 +1748,15 @@ fn run() {
             aes_ccm_cmd::aes256_ccm_cmd(
                 action, key, key_file, nonce, nonce_file, aad, *tag_len, *x,
             );
+        }
+        Some(Subcommands::AES128_GCM { action, key, key_file, aad, aad_file, x }) => {
+            aes_gcm_cmd::aes128_gcm_cmd(action, key, key_file, aad, aad_file, *x);
+        }
+        Some(Subcommands::AES192_GCM { action, key, key_file, aad, aad_file, x }) => {
+            aes_gcm_cmd::aes192_gcm_cmd(action, key, key_file, aad, aad_file, *x);
+        }
+        Some(Subcommands::AES256_GCM { action, key, key_file, aad, aad_file, x }) => {
+            aes_gcm_cmd::aes256_gcm_cmd(action, key, key_file, aad, aad_file, *x);
         }
         Some(Subcommands::AES128_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes128_ecb_cmd(action, key, key_file, *x);

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git rebase *)",
+      "Bash(git status *)",
+      "Bash(git add *)"
+    ]
+  }
+}
