@@ -282,19 +282,6 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
   counting pattern longer than one draw when the test relies on consecutive draws differing.
 
-## Scope of changes
-
-Implement what was asked and stop. Unrequested refactors — extracting a trait, renaming for
-readability, restructuring impls — are not free even when they are correct: bundled into a feature
-commit they make the diff unreviewable, because a reviewer cannot separate the new behaviour from
-the restructuring, and the review time that costs is the reason not to do it.
-
-- If a refactor genuinely unblocks the task, give it **its own commit ahead of** the feature, so it
-  can be reviewed or dropped on its own.
-- If it unblocks nothing, propose it and wait rather than doing it.
-- The same goes for drive-by comment rewrites, reformatting and file moves in code you are only
-  passing through.
-
 ## Working from specifications
 
 QUALITY_AND_STYLE.md is where the requirement for spec-corresponding comments and justified deviations lives. This
@@ -322,15 +309,7 @@ Rules when working from the downloaded copy:
 - **Quote exactly, and locate precisely.** Comments and commit messages should name the document with its revision (e.g. "FIPS 203, Algorithm 13 (ML-KEM.Encaps_internal), step 2", "RFC 5869 §2.2"), and quote the spec verbatim where a quote is clearer than a paraphrase. Verify every section/algorithm/step number against the file you just downloaded — including numbers already present in the code, which may predate a spec revision.
 - **The specification is the source of truth for correct behaviour** — not the C/Java/Go implementation you have seen, not the BC Java or BC C# port, and not another crate. When an existing implementation appears to disagree with the spec, re-read the spec, and if the disagreement is real, follow the spec and note the discrepancy in the PR description rather than silently copying the other implementation.
 - **Optimizations are allowed, provided externally-visible behaviour is identical.** Restructuring loops, fusing steps, precomputing tables, constant-time rewrites, and in-place buffer reuse are all fine — the spec constrains observable outputs (and, for this library, timing behaviour on secret data), not the shape of the code. Any such deviation from the spec's literal steps gets a comment saying which spec steps it implements and why it is equivalent.
-- **Test vectors come from the spec or its official companion files** (NIST CAVP / ACVP vectors, RFC test-vector appendices, the NIST "Examples with Intermediate Values" sample files). Never hand-write an "expected" value from recall.
-
-### Test vector data
-
-Vectors live in the **`bc-test-data`** repo, cloned alongside this one at `../bc-test-data`; suites read from it by relative path and print a warning and pass vacuously if it is absent (see `crypto/sha3/tests/cavp_tests.rs` for the pattern). Symlink it to `/tmp/bc-test-data` before running `cargo mutants`, whose build directories are elsewhere.
-
-- Commit the vectors there, not here, and not as PDFs — that repo holds `.rsp`, `.txt` and `.json`, and has no PDFs at all. Extract what a harness needs into the CAVP-style `.rsp` shape already used by `crypto/sha3/`.
-- Every new directory gets a `README.md` giving provenance: upstream URL, licence or copyright status, retrieval date, and the SHA-256 of each source document so a refresh can be checked. `crypto/wycheproof/` and `crypto/sp800-185/` are the examples.
-- **Validate an extraction against declared lengths, not just that it parses.** NIST sample-value PDFs split hex blocks across page boundaries, and the continuation line then begins with a form feed rather than spaces, so an "indented hex lines" pattern stops at the break and silently truncates. The result is still well-formed hex. Check each value against the length the file states (`Outputlen`, `Length of data is`, `Length of Key is`), and cross-check against BC Java's expected values where an equivalent test exists.
+- **Test vectors come from the spec or its official companion files** (NIST CAVP / ACVP vectors, RFC test-vector appendices), downloaded the same way. Never hand-write an "expected" value from recall.
 
 ## Notes on testing
 
@@ -345,19 +324,8 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
   - **Builds use the `mutants` cargo profile** (`profile = "mutants"` in the config, defined in the root `Cargo.toml`): release optimisation without LTO, with incremental codegen. Measured on `bouncycastle-mldsa-lowmemory`, a mutant rebuilds in under a second and the suite runs in about 4 s, against 160 s per run unoptimised and an 80 s thin-LTO rebuild per mutant under `release`. Do not pass `--profile dev` or `--profile release` to "speed things up"; both are slower here.
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
 - A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
-- Scoping a mutation run: **`--file` is silently ignored** by the installed cargo-mutants — it accepts the flag, filters nothing, and runs the whole package, so a run reported as covering one file may have covered the crate. Use **`-F <regex>`**, which matches the mutant names `--list` prints, and confirm the scope with `--list` first. `--test-workspace` needs an explicit value (`--test-workspace=true`), and is required whenever the mutated code is a `core` trait used by other crates.
-- `--in-diff` finds nothing for a change that is mostly trait declarations, renamed call sites and documentation, because the executable code in impl bodies is unchanged. File-scoped runs are the useful gate for that shape of change; do not read "no mutants to filter" as "nothing to test".
-- Behaviour-critical private functions can use in-file `#[cfg(test)] mod tests` blocks when they can't be exercised from outside the crate.
 - For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation.
 - The per-width `impl Condition<W>` blocks in `crypto/utils/src/ct.rs` (and their test modules) are deliberately duplicated rather than macro-generated: `cargo mutants` cannot see into `macro_rules!` bodies, so a macro would hide the mask identities from mutation testing. Do not fold them back into a macro. Any change to one width in a group (i64/i32, u64/u32) must be applied to every width in that group.
-
-## Commit messages
-
-One-line subject only: no body, no "Squashed commits" list, and **no `Co-Authored-By` trailer**. This overrides the usual default of adding one. It applies on the release branches and on feature branches alike, so `git commit -m "<subject>"` is the whole of it — put in the subject what the body would have said.
-
-Subjects are `<crate>: <what changed>`, and a change spanning several crates is normally split into one commit per crate, including that crate's factory and CLI wiring. Split only where each commit still builds: a trait change that every implementor must follow cannot be split that way and belongs in one commit.
-
-Do not strip `Co-Authored-By` from commits written in earlier sessions when rewording them during a rebase — that removes someone else's attribution.
 
 ## CI
 
