@@ -11,20 +11,27 @@
 //! | CFB | [`Cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`Cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`Ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
+//! | GCM | [`Gcm`] | SP 800-38D | Authenticated. 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
 //!
-//! They divide two ways. **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`]): whole blocks in, whole blocks out, and arbitrary-length data needs
-//! the padding layer. **CFB, CFB8 and CTR are stream ciphers** ([`StreamCipherEncryptor`] /
-//! [`StreamCipherDecryptor`]): any length in, the same length out, no padding, no finalization --
-//! see [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
+//! ECB, CBC, CFB, CFB8 and CTR divide two ways. **ECB and CBC are block ciphers**
+//! ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole blocks in, whole blocks out, and
+//! arbitrary-length data needs the padding layer. **CFB, CFB8 and CTR are stream ciphers**
+//! ([`StreamCipherEncryptor`] / [`StreamCipherDecryptor`]): any length in, the same length out, no
+//! padding, no finalization -- see
+//! [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
+//! **GCM is neither**: it is the first mode here with `FINAL_LEN != 0` that is not a padding
+//! adapter -- its final output is the authentication tag, not a padded block -- and it reaches the
+//! arbitrary-length trait directly rather than through a blanket impl, alongside an inherent
+//! detached-tag API; see the `gcm` module docs.
 //!
-//! **All five reach the same arbitrary-length API**, so code can be written against one trait and
+//! **All reach the same arbitrary-length API**, so code can be written against one trait and
 //! handed any mode. A block mode gets there by being wrapped in `bouncycastle-padding`'s adapters,
 //! which are [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] with the padded block as
 //! their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0` because
-//! it has no final output at all. The `bouncycastle-aes` aliases show the difference in
-//! one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme, `AES_CTR_128<Encrypting>`
-//! has nothing to name.
+//! it has no final output at all; GCM implements them directly too, with `FINAL_LEN = TAG_LEN`. The
+//! `bouncycastle-aes` aliases show the difference in one line each: `AES_CBC_128<Encrypting, PKCS7>`
+//! names a padding scheme, `AES_CTR_128<Encrypting>` has nothing to name, and
+//! `AES_GCM_128<Encrypting>` fixes the tag length.
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
@@ -521,6 +528,8 @@ mod cfb;
 mod cfb8;
 mod ctr;
 mod ecb;
+mod gcm;
+mod ghash;
 mod iv;
 
 pub use cbc::Cbc;
@@ -528,6 +537,7 @@ pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
 pub use ecb::Ecb;
+pub use gcm::{GCM_NONCE_LEN, Gcm};
 
 // Imports needed for docs
 #[allow(unused_imports)]
