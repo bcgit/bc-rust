@@ -350,6 +350,25 @@ pub trait AEADCipherDecryptor<
 /// everything released, in any chunking, plus the data part of
 /// [`do_encrypt_final`](Self::do_encrypt_final), is the ciphertext.
 ///
+/// # A length-dependent construction still has to buffer
+///
+/// [`do_encrypt_init`](Self::do_encrypt_init) takes no length, and [`do_update_aad`](Self::do_update_aad)
+/// / [`do_update_out`](Self::do_update_out) are open-ended by design -- most AEAD constructions never
+/// need to know a total in advance. Ascon-AEAD128 does not; GCM, once it exists in this crate, will not
+/// either, because its length block is computed from tallied byte counts at finalization, not up front.
+///
+/// CCM (NIST SP 800-38C) is the exception, and this trait was partly implemented for CCM specifically
+/// to find out whether it was: Appendix A.2.1 puts the payload's octet length inside `B0`, the very
+/// first block the CBC-MAC absorbs, and Appendix A.2.2's AAD length encoding must precede the AAD bytes
+/// it describes, so neither AAD nor payload can be authenticated until the caller has finished handing
+/// over the total of each. A construction with that property has exactly two options, and changing the
+/// shape of this trait for one implementor's benefit is neither of them: buffer the whole message
+/// internally and pay the memory cost (see `bouncycastle_modes::CcmEncryptor` / `CcmDecryptor`), or,
+/// preferably when the caller can supply the lengths up front -- which a packet-oriented protocol
+/// generally can -- provide a separate, purpose-built non-buffering API instead (see
+/// `bouncycastle_modes::Ccm::new`). Do not add a length parameter here to spare one implementor a
+/// buffer; every other implementor would carry a parameter it never uses.
+///
 /// # Any length, as a slice
 ///
 /// [`do_update_out`](Self::do_update_out)'s input is a `&[u8]` rather than a `&[u8; LEN]` because
