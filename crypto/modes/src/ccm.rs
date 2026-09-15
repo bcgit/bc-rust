@@ -247,7 +247,11 @@ pub struct Ccm<
     // The CBC-MAC chaining value: `Y0` once the constructor has absorbed `B0` (Sec 6.1 step 2),
     // then `Yi` as further blocks arrive (step 3). Bytes are XORed into it in place, so part-way
     // through a block it holds `Yi-1 XOR (the part of Bi seen so far)`.
-    y: [u8; BLOCK_LEN],
+    //
+    // `Yr`'s low `TAG_LEN` bytes are the raw tag `T` before it is masked with `S0` (`finish_mac`),
+    // and every intermediate `Yi` is key-dependent CBC-MAC state, so this gets the same treatment
+    // as `ks` below rather than a plain array.
+    y: Secret<[u8; BLOCK_LEN]>,
     // How many bytes of the current CBC-MAC input block have been XORed into `y`.
     mac_pos: usize,
     // `Ctr_i` with its counter field zeroed (A.3, Table 3): the flags octet and the nonce, which
@@ -286,8 +290,10 @@ where
     /// The largest payload this parameterization can carry, from A.1's "by definition, p<2^8q".
     ///
     /// `q = 8` would make `2^8q` exactly `2^64`, which does not fit a `u64`; there the bound is
-    /// `p <= 2^64 - 1`, i.e. `u64::MAX`, which is no bound at all on a `usize` length.
-    const MAX_PAYLOAD_LEN: u64 =
+    /// `p <= 2^64 - 1`, i.e. `u64::MAX`, which is no bound at all on a `usize` length. Public so a
+    /// caller choosing a `BUFFER_LEN` for [`CcmEncryptor`] / [`CcmDecryptor`], or reporting the
+    /// limit in an error message, has the real number instead of re-deriving it.
+    pub const MAX_PAYLOAD_LEN: u64 =
         if Self::Q_LEN >= 8 { u64::MAX } else { (1u64 << (8 * Self::Q_LEN)) - 1 };
 
     /// The compile-time shape check, from Appendix A.1 and Sec 5.1; run from the constructor.
@@ -405,7 +411,7 @@ where
             // Sec 6.1 step 2 is `Y0 = CIPH_K(B0)`, with no XOR, unlike step 3's `Bi XOR Yi-1`.
             // Starting the chaining value at zero unifies the two: `B0 XOR 0 = B0`, so absorbing
             // `B0` through the same path as every other block yields exactly `Y0`.
-            y: [0u8; BLOCK_LEN],
+            y: Secret::new(),
             mac_pos: 0,
             ctr_template,
             ks: Secret::new(),
@@ -619,7 +625,10 @@ where
         // A.2.3: the payload's own blocks are zero-padded to a block boundary.
         self.mac_pad();
 
-        let mut s0 = self.ctr_template;
+        // A keystream block of exactly the kind `ks` holds, so it gets the same `Secret` treatment
+        // rather than a plain local that outlives this function's stack frame unzeroed.
+        let mut s0: Secret<[u8; BLOCK_LEN]> = Secret::new();
+        *s0 = self.ctr_template;
         Self::put_q_field(&mut s0, 0);
         self.perm.encrypt_block(&mut s0);
 
@@ -879,6 +888,21 @@ where
 /// [`SymmetricCipherError::GenericError`]. Pick `BUFFER_LEN` from the largest packet the protocol
 /// allows -- CCM is a packet mode (Sec 3), so there is such a number.
 ///
+/// A `BUFFER_LEN` past what `NONCE_LEN` allows (A.1's `2^8q - 1`) does not compile, rather than
+/// buffering the whole message only to fail at [`do_encrypt_final`](AEADCipherEncryptor::do_encrypt_final):
+///
+/// ```compile_fail
+/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::AEADCipherEncryptor;
+/// use bouncycastle_modes::CcmEncryptor;
+///
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// // NONCE_LEN = 13 gives q = 2, a 65535-byte limit; BUFFER_LEN = 100_000 exceeds it.
+/// let _ = CcmEncryptor::<AES_128, 16, 16, 13, 8, 100_000>::do_encrypt_init(&key);
+/// ```
+///
 /// See [`AEADCipherEncryptor`]'s "A length-dependent construction still has to buffer" section for
 /// why this trait was not reshaped to avoid the buffering instead.
 ///
@@ -955,6 +979,15 @@ where
         // The shape check belongs here too: this type never calls `Ccm::new`, and without it a
         // `NONCE_LEN` or `TAG_LEN` A.1 forbids would not be caught until `do_encrypt_final`.
         Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::check_shape();
+        const {
+            // Without this, a `BUFFER_LEN` beyond what `NONCE_LEN` allows compiles fine and only
+            // fails at `do_encrypt_final`, after the whole message has been buffered for nothing.
+            assert!(
+                BUFFER_LEN as u64
+                    <= Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
+                "CCM: BUFFER_LEN exceeds the payload limit 2^8q - 1 that NONCE_LEN implies (A.1)"
+            );
+        };
         let perm = Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::checked_perm(key)?;
         let nonce =
             Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::nonce_from_rng(rng)?;
@@ -1029,6 +1062,13 @@ where
 
     /// Runs the whole of Sec 6.1 over the buffered message: writes the ciphertext to `output` and
     /// returns its length with the tag.
+    ///
+    /// # Errors
+    /// None, in practice: `do_encrypt_init_rng`'s `const` assertion already guarantees
+    /// `BUFFER_LEN <= `[`Ccm::MAX_PAYLOAD_LEN`]`, the only thing [`Ccm::new`]'s equivalent
+    /// construction path can fail on, and `do_update_out` already guarantees the AAD and payload
+    /// it buffered are each no more than `BUFFER_LEN`. The `Result` return exists to satisfy
+    /// [`AEADCipherEncryptor::do_encrypt_final`]'s signature.
     fn do_encrypt_final(
         mut self,
         output: &mut [u8; BUFFER_LEN],
@@ -1108,6 +1148,15 @@ where
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::check_shape();
+        const {
+            // See `CcmEncryptor::do_encrypt_init_rng`'s identical check: without it a `BUFFER_LEN`
+            // beyond what `NONCE_LEN` allows compiles fine and only fails at `do_decrypt_final`.
+            assert!(
+                BUFFER_LEN as u64
+                    <= Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
+                "CCM: BUFFER_LEN exceeds the payload limit 2^8q - 1 that NONCE_LEN implies (A.1)"
+            );
+        };
         let perm = Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::checked_perm(key)?;
         Ok(Self {
             perm,
@@ -1174,7 +1223,9 @@ where
     /// the MAC T shall not be revealed".
     ///
     /// # Errors
-    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify. Nothing else:
+    /// `do_decrypt_init`'s `const` assertion already guarantees `BUFFER_LEN <= `
+    /// [`Ccm::MAX_PAYLOAD_LEN`], the only other thing the construction this wraps can fail on.
     fn do_decrypt_final(
         mut self,
         tag: &[u8; TAG_LEN],
@@ -1281,7 +1332,7 @@ mod tests {
     fn the_constructor_absorbs_b0() {
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
         let ccm = Ccm::<Identity, Encrypting, 16, 16, 7, 4>::new(&key(), &nonce, &[], 4).unwrap();
-        assert_eq!(ccm.y, Ccm::<Identity, Encrypting, 16, 16, 7, 4>::format_b0(&nonce, false, 4));
+        assert_eq!(*ccm.y, Ccm::<Identity, Encrypting, 16, 16, 7, 4>::format_b0(&nonce, false, 4));
         assert_eq!(ccm.mac_pos, 0, "a whole block was absorbed, so nothing is part-filled");
     }
 
@@ -1424,7 +1475,7 @@ mod tests {
         let mut b1 = [0u8; 16];
         b1[..2].copy_from_slice(&14u16.to_be_bytes());
         let expected: [u8; 16] = core::array::from_fn(|i| b0[i] ^ b1[i]);
-        assert_eq!(ccm.y, expected, "y must be B0 ^ B1, with B1 starting with [14]_16");
+        assert_eq!(*ccm.y, expected, "y must be B0 ^ B1, with B1 starting with [14]_16");
     }
 
     /// A.1's `p < 2^8q`. With `n = 13`, `q = 2`, so the limit is 65535 and 65536 must be refused.
