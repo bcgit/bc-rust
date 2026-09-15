@@ -28,6 +28,15 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod bp256r1;
+pub mod bp256r1_comb;
+pub(crate) mod bp256r1_comb_table;
+pub mod bp256r1_domain;
+pub mod bp256r1_point;
+pub mod bp256r1_scalar;
+pub mod bp256r1_sec1;
+pub mod bp256r1_wnaf;
+pub mod montgomery;
 pub mod nat;
 pub mod p256;
 pub mod p256_comb;
