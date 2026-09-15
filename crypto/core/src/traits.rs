@@ -204,7 +204,9 @@ pub trait AEADCipherDecryptor<
     /// # Errors
     /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
-    /// consumed in that case.
+    /// consumed in that case. As [`AEADCipherEncryptor::do_update_out`], an implementor with a
+    /// fixed buffering capacity may also return [`SymmetricCipherError::GenericError`] if
+    /// `ciphertext` would exceed it.
     fn do_update_out(
         &mut self,
         ciphertext: &[u8],
@@ -417,6 +419,10 @@ pub trait AEADCipherEncryptor<
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if called with a non-empty `aad` after
     /// [`do_update_out`](Self::do_update_out) -- see the trait docs for why the AAD comes first.
+    /// An implementor whose buffering has a fixed capacity -- see "A length-dependent construction
+    /// still has to buffer" above -- may also return [`SymmetricCipherError::GenericError`] if
+    /// `aad` would exceed it; that is a property of the implementor, not of this trait, so it is
+    /// not listed as a general contract here.
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
 
     /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
@@ -432,7 +438,9 @@ pub trait AEADCipherEncryptor<
     /// # Errors
     /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
-    /// consumed in that case.
+    /// consumed in that case. As [`do_update_aad`](Self::do_update_aad), an implementor with a
+    /// fixed buffering capacity may also return [`SymmetricCipherError::GenericError`] if
+    /// `plaintext` would exceed it.
     fn do_update_out(
         &mut self,
         plaintext: &[u8],
