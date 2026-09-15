@@ -198,25 +198,25 @@ fn run<P, const KEY_LEN: usize>(
         ($n:literal) => {
             match tag_len {
                 4 => go::<P, KEY_LEN, $n, 4>(
-                    key, &nonce_bytes, &aad_bytes, &input, encrypt, output_hex,
+                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
                 6 => go::<P, KEY_LEN, $n, 6>(
-                    key, &nonce_bytes, &aad_bytes, &input, encrypt, output_hex,
+                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
                 8 => go::<P, KEY_LEN, $n, 8>(
-                    key, &nonce_bytes, &aad_bytes, &input, encrypt, output_hex,
+                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
                 10 => go::<P, KEY_LEN, $n, 10>(
-                    key, &nonce_bytes, &aad_bytes, &input, encrypt, output_hex,
+                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
                 12 => go::<P, KEY_LEN, $n, 12>(
-                    key, &nonce_bytes, &aad_bytes, &input, encrypt, output_hex,
+                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
                 14 => go::<P, KEY_LEN, $n, 14>(
-                    key, &nonce_bytes, &aad_bytes, &input, encrypt, output_hex,
+                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
                 16 => go::<P, KEY_LEN, $n, 16>(
-                    key, &nonce_bytes, &aad_bytes, &input, encrypt, output_hex,
+                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
                 other => {
                     eprintln!(
@@ -247,11 +247,16 @@ fn run<P, const KEY_LEN: usize>(
 }
 
 /// One fully-instantiated CCM run.
+///
+/// `input` is processed in place through [`Ccm`]'s own streaming API rather than through the
+/// one-shot [`Ccm::encrypt`]/[`Ccm::decrypt`], which each need a second, freshly allocated buffer
+/// the size of `input`: the declared-length constructor already has everything a one-shot needs,
+/// so there is no second buffer to allocate or copy into.
 fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     nonce_bytes: &[u8],
     aad: &[u8],
-    input: &[u8],
+    mut input: Vec<u8>,
     encrypt: bool,
     output_hex: bool,
 ) where
@@ -269,16 +274,22 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     };
 
     if encrypt {
-        let mut out = vec![0u8; input.len() + TAG_LEN];
-        match Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::encrypt(key, &nonce, aad, input, &mut out) {
-            Ok(written) => {
-                helpers::write_bytes_or_hex(&out[..written], output_hex);
+        match Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new(key, &nonce, aad, input.len()) {
+            Ok(mut ccm) => {
+                // `new` already accepted this exact length as `input.len()`, and this is the one
+                // and only call supplying it, so `take_owed` can never see too much and `owed`
+                // can never be left nonzero: neither of these can fail on the path that reaches
+                // them.
+                ccm.do_encrypt_update(&mut input).expect("declared length matches what was sent");
+                let tag = ccm.do_encrypt_final().expect("declared length was fully supplied");
+                helpers::write_bytes_or_hex(&input, output_hex);
+                helpers::write_bytes_or_hex(&tag, output_hex);
                 if output_hex {
                     println!();
                 }
             }
             Err(SymmetricCipherError::GenericError(msg)) => {
-                // The only `GenericError` reachable here is the payload limit: A.1's `p < 2^8q`,
+                // The only `GenericError` `new` can return is the payload limit: A.1's `p < 2^8q`,
                 // where `q = 15 - n`. Report it with the numbers, since the fix is a shorter nonce.
                 eprintln!("Error: {msg}");
                 eprintln!(
@@ -286,7 +297,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                      limit is {} bytes.",
                     input.len(),
                     15 - NONCE_LEN,
-                    payload_limit(15 - NONCE_LEN),
+                    Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
                 );
                 eprintln!("       Use a shorter nonce for a larger payload.");
                 exit(-1)
@@ -297,27 +308,42 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
             }
         }
     } else {
-        if input.len() < TAG_LEN {
-            // Sec 6.2 step 1: "If Clen <= Tlen, then return INVALID".
+        // `split_last_chunk_mut` is `None` exactly when there is no room for a `TAG_LEN`-byte tag,
+        // which is the same octet-level test (and the same allowance for an empty payload plus its
+        // tag) that `Ccm::decrypt`'s own doc comment explains for Sec 6.2 step 1.
+        let Some((data, tag)) = input.split_last_chunk_mut::<TAG_LEN>() else {
             eprintln!(
                 "Error: input is {} bytes, shorter than the {TAG_LEN}-byte tag it must end with.",
                 input.len()
             );
             exit(-1)
-        }
-        let mut out = vec![0u8; input.len() - TAG_LEN];
-        match Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt(key, &nonce, aad, input, &mut out) {
-            Ok(written) => {
-                helpers::write_bytes_or_hex(&out[..written], output_hex);
-                if output_hex {
-                    println!();
+        };
+        match Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new(key, &nonce, aad, data.len()) {
+            Ok(mut ccm) => {
+                // As the encrypt arm above: `data.len()` is exactly the length just declared, and
+                // it is supplied in this one call, so this cannot fail.
+                ccm.do_decrypt_update(data).expect("declared length matches what was sent");
+                match ccm.do_decrypt_final(tag) {
+                    Ok(()) => {
+                        helpers::write_bytes_or_hex(data, output_hex);
+                        if output_hex {
+                            println!();
+                        }
+                    }
+                    Err(SymmetricCipherError::AEADTagCheckFailed) => {
+                        // Nothing has been written to stdout at this point, which is what
+                        // processing in place still buys here: Sec 6.2's "the payload P and the
+                        // MAC T shall not be revealed" holds end to end.
+                        eprintln!(
+                            "Error: AES-CCM authentication failed; the input is not authentic."
+                        );
+                        exit(-1)
+                    }
+                    Err(e) => {
+                        eprintln!("Error: AES-CCM decryption failed: {e:?}");
+                        exit(-1)
+                    }
                 }
-            }
-            Err(SymmetricCipherError::AEADTagCheckFailed) => {
-                // Nothing has been written to stdout at this point, which is what buffering buys:
-                // Sec 6.2's "the payload P and the MAC T shall not be revealed" holds end to end.
-                eprintln!("Error: AES-CCM authentication failed; the input is not authentic.");
-                exit(-1)
             }
             Err(e) => {
                 eprintln!("Error: AES-CCM decryption failed: {e:?}");
@@ -325,10 +351,4 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
             }
         }
     }
-}
-
-/// A.1's `2^8q - 1`, for the error message above. Saturates at `u64::MAX` for `q = 8`, where the
-/// bound is beyond any real input anyway.
-fn payload_limit(q: usize) -> u64 {
-    if q >= 8 { u64::MAX } else { (1u64 << (8 * q)) - 1 }
 }
