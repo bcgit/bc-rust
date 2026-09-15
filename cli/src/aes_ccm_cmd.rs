@@ -120,13 +120,18 @@ pub(crate) fn aes256_ccm_cmd(
     );
 }
 
-/// Loads the nonce from `--nonce` (hex) or `--nonce-file` (hex or binary).
+/// Loads the nonce from `--nonce` (hex) or `--nonce-file` (raw bytes, exactly as they are).
 ///
 /// Unlike the key there is no entropy question here: Sec 5.3 asks for uniqueness, not randomness,
 /// so an all-zero nonce is a perfectly valid *first* nonce and only a repeat is a problem.
+///
+/// `--nonce-file` reads raw bytes ([`helpers::read_from_file_raw`]), not the hex-or-raw guess
+/// [`helpers::read_from_file`] uses for keys: a repeated nonce under one key is fatal for CCM (see
+/// the module docs), so two distinct binary nonce files that happen to look like hex text of the
+/// same value must not silently collapse to the same nonce.
 fn load_nonce(nonce: &Option<String>, nonce_file: &Option<String>) -> Vec<u8> {
     let bytes = if let Some(file) = nonce_file {
-        helpers::read_from_file(file)
+        helpers::read_from_file_raw(file)
     } else if let Some(v) = nonce {
         hex::decode(v).unwrap_or_else(|_| {
             eprintln!("Error: nonce is not valid hex.");

@@ -8,6 +8,31 @@ use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
 
+/// Reads a file's bytes exactly as they are, with no hex-or-raw guessing.
+///
+/// Use this where a misread would silently change the *value* the caller asked for rather than
+/// merely fail to match it -- a nonce is the reason this exists: two distinct binary nonce files
+/// that happen to decode as hex to the same bytes must not collapse to one nonce (see
+/// `aes_ccm_cmd::load_nonce`). [`read_from_file`]'s "try hex, fall back to raw" heuristic is fine
+/// for a key, where a wrong guess only ever produces a mismatch, never a same-looking-different
+/// value.
+pub(crate) fn read_from_file_raw(filename: &str) -> Vec<u8> {
+    let file = File::open(filename);
+    if file.is_ok() {
+        let mut buf = Vec::<u8>::new();
+        match file.unwrap().read_to_end(&mut buf) {
+            Ok(_bytes_read) => buf,
+            Err(_) => {
+                eprintln!("Error: couldn't open file '{}'", &filename);
+                exit(-1);
+            }
+        }
+    } else {
+        eprintln!("Error: couldn't open file '{}'", &filename);
+        exit(-1);
+    }
+}
+
 /// Reads either bin or hex
 pub(crate) fn read_from_file(filename: &str) -> Vec<u8> {
     let file = File::open(&filename);
