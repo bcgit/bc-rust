@@ -609,3 +609,46 @@ fn sizes_match_the_documented_memory_table() {
     );
     assert!(size_of::<CcmEncryptor<AES_128, 16, 16, 12, 16, 4096>>() >= 2 * 4096);
 }
+
+// ---- moved from crypto/modes/src/ccm.rs's in-file unit tests -----------------------------
+
+/// A.1's `p < 2^8q`. With `n = 13`, `q = 2`, so the limit is 65535 and 65536 must be refused.
+///
+/// Only the public API is exercised, so this belongs here rather than in `ccm.rs`'s own
+/// `#[cfg(test)]` block, which is for the private formatting helpers no public API reaches.
+#[test]
+fn payload_longer_than_the_q_limit_is_refused() {
+    let k = key::<16>(APPENDIX_C_KEY);
+    let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
+    assert!(
+        Ccm::<AES_128, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65535).is_ok(),
+        "2^16 - 1 is the largest payload q = 2 can encode"
+    );
+    assert!(
+        matches!(
+            Ccm::<AES_128, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65536),
+            Err(SymmetricCipherError::GenericError(_))
+        ),
+        "2^16 does not fit [p]_16"
+    );
+}
+
+/// The declared payload length is inside `B0`, so neither direction may be finalized with the
+/// wrong amount of data.
+#[test]
+fn a_short_or_long_payload_is_refused() {
+    let k = key::<16>(APPENDIX_C_KEY);
+    let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
+    let mut ccm = Ccm::<AES_128, Encrypting, 16, 16, 7, 4>::new(&k, &nonce, &[], 8).unwrap();
+    let mut too_much = [0u8; 9];
+    assert!(
+        matches!(ccm.do_encrypt_update(&mut too_much), Err(SymmetricCipherError::StateError(_))),
+        "9 bytes against a declared 8"
+    );
+    let mut some = [0u8; 4];
+    ccm.do_encrypt_update(&mut some).expect("4 of the 8 declared bytes");
+    assert!(
+        matches!(ccm.do_encrypt_final(), Err(SymmetricCipherError::StateError(_))),
+        "finalizing 4 bytes short"
+    );
+}
