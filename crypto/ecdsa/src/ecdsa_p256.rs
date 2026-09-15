@@ -36,9 +36,13 @@ use bouncycastle_ec::p256_sec1;
 use bouncycastle_ec::p256_wnaf::shamir_multiply;
 use bouncycastle_sha2::SHA256;
 
-/// Raw `r || s` signature length: two 32-byte field-width integers (the plan's §6.4 choice --
-/// X9.62/SEC 1 DER `SEQUENCE { r, s }` needs an ASN.1 crate this workspace doesn't have yet).
+/// Raw `r || s` signature length: two 32-byte field-width integers (the plan's §6.4 choice of
+/// default encoding). [`ECDSAP256::sign_der`]/[`ECDSAP256::verify_der`] offer the RFC 3279 §2.2.3
+/// DER `SEQUENCE { r, s }` alternative via [`crate::der`], for interop that needs it.
 pub const SIG_LEN: usize = 64;
+
+/// Upper bound on a DER-encoded P-256 signature (`r`, `s` each 32 bytes); see [`crate::der::max_len`].
+pub const DER_SIG_MAX_LEN: usize = crate::der::max_len(32);
 
 /// Streaming state for both `ECDSAP256`'s [`Signer`] and [`SignatureVerifier`] impls, mirroring
 /// how `bouncycastle_mldsa::MLDSA` holds an optional signing key and an optional verification key
@@ -122,6 +126,34 @@ impl ECDSAP256 {
         let k = reduce_wide_bits_mod_n_minus_1(&extra_bits);
 
         sign_with_k(sk, &e, k)
+    }
+
+    /// As [`Signer::sign`], but DER-encodes the result (RFC 3279 §2.2.3 `Ecdsa-Sig-Value`) instead
+    /// of raw `r || s`. Returns the encoded length; unused trailing bytes of the fixed-size buffer
+    /// are left as written by [`crate::der::encode`] (zeroed only up to that length).
+    pub fn sign_der(
+        sk: &ECDSAP256PrivateKey,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+    ) -> Result<([u8; DER_SIG_MAX_LEN], usize), SignatureError> {
+        let raw = Self::sign(sk, msg, ctx)?;
+        let mut out = [0u8; DER_SIG_MAX_LEN];
+        let len = crate::der::encode(&raw[..32], &raw[32..], &mut out);
+        Ok((out, len))
+    }
+
+    /// As [`SignatureVerifier::verify`], but expects a DER-encoded signature (see [`Self::sign_der`])
+    /// instead of raw `r || s`.
+    pub fn verify_der(
+        pk: &ECDSAP256PublicKey,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        let mut raw = [0u8; SIG_LEN];
+        let (r_out, s_out) = raw.split_at_mut(32);
+        crate::der::decode(sig, r_out, s_out).ok_or(SignatureError::SignatureVerificationFailed)?;
+        Self::verify(pk, msg, ctx, &raw)
     }
 }
 
