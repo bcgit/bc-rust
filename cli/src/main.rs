@@ -1023,7 +1023,7 @@ enum Subcommands {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing the nonce, in hex or binary.
+        /// A file containing the nonce, as raw bytes exactly as they are (no hex decoding).
         #[arg(long)]
         nonce_file: Option<String>,
 
@@ -1061,7 +1061,7 @@ enum Subcommands {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing the nonce, in hex or binary.
+        /// A file containing the nonce, as raw bytes exactly as they are (no hex decoding).
         #[arg(long)]
         nonce_file: Option<String>,
 
@@ -1099,7 +1099,7 @@ enum Subcommands {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing the nonce, in hex or binary.
+        /// A file containing the nonce, as raw bytes exactly as they are (no hex decoding).
         #[arg(long)]
         nonce_file: Option<String>,
 
