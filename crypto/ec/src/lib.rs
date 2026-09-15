@@ -9,15 +9,13 @@
 //!
 //! # Status
 //!
-//! P-256 and P-384 are both complete through domain parameters, branch-free Jacobian point
-//! arithmetic ([`p256_point`]/[`p384_point`]), the scalar field ([`p256_scalar`]/[`p384_scalar`]),
-//! constant-time fixed-base scalar multiplication for signing ([`p256_comb`]/[`p384_comb`]),
-//! variable-time Shamir's-trick multiplication for verification ([`p256_wnaf`]/[`p384_wnaf`]), and
-//! SEC 1 point encoding/decoding with SP 800-186 public-key validation
-//! ([`p256_sec1`]/[`p384_sec1`]). ECDSA itself (key generation, sign, verify) is built on top of
-//! this in the separate `bouncycastle-ecdsa` crate, P-256 only so far; see
-//! `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9 for the rest of the plan (P-384's own
-//! ECDSA wiring, P-521, secp256k1, other curves, CLI wiring, benches).
+//! P-256, P-384, and P-521 are all complete through domain parameters, branch-free Jacobian point
+//! arithmetic, the scalar field, constant-time fixed-base scalar multiplication for signing,
+//! variable-time Shamir's-trick multiplication for verification, and SEC 1 point encoding/decoding
+//! with SP 800-186 public-key validation. ECDSA itself (key generation, sign, verify) is built on
+//! top of this in the separate `bouncycastle-ecdsa` crate; see
+//! `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9 for the rest of the plan (secp256k1,
+//! brainpool curves, SM2, CLI wiring, benches).
 //!
 //! # Security Considerations
 //!
@@ -46,3 +44,11 @@ pub mod p384_point;
 pub mod p384_scalar;
 pub mod p384_sec1;
 pub mod p384_wnaf;
+pub mod p521;
+pub mod p521_comb;
+pub(crate) mod p521_comb_table;
+pub mod p521_domain;
+pub mod p521_point;
+pub mod p521_scalar;
+pub mod p521_sec1;
+pub mod p521_wnaf;
