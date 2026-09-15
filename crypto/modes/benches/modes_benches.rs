@@ -757,35 +757,36 @@ fn bench_init(c: &mut Criterion) {
 }
 
 /// CCM (SP 800-38C), which is the only authenticated mode here and the only one that costs
-/// **two** cipher calls per block.
+/// **two** cipher calls per block -- but only one of the two batches.
 ///
 /// Sec 5.2 builds CCM out of CTR for confidentiality and CBC-MAC for authenticity, over the same
 /// key, so every payload block goes through the forward cipher twice: once as a counter block and
-/// once as a CBC-MAC input. The number to watch is CCM against the CTR group on the same data, and
-/// **which** CTR number matters:
+/// once as a CBC-MAC input. The CBC-MAC half is serial by construction (Sec 6.1 step 3: `Yi` is
+/// the cipher of `Bi XOR Yi-1`), so unlike [`Ctr`] and the decrypt direction of `Cbc`/`Cfb` it has
+/// no pair or four path -- but the CTR half has exactly `Ctr`'s parallelism (A.3's `Ctrj` depends
+/// only on `j`), and `Ccm::apply_keystream` batches it the same way. So CCM sits *between* CTR's
+/// two numbers, not at a fixed fraction of either:
 ///
 /// * against `modes::ctr::AES_128/16KiB encrypt -- N=1`, CTR's unbatched single-block path, CCM
-///   should be **about half** -- two cipher calls per block instead of one, and nothing else;
-/// * against CTR's `N=8` batched path, CCM should be about **a quarter**, because CCM cannot batch
-///   at all and CTR's pair path roughly doubles it.
+///   should be noticeably better than half -- one full unbatched pass (the MAC) plus a batched
+///   pass that costs much less than a second unbatched one would;
+/// * against CTR's `N=8` batched path, CCM should be noticeably better than a quarter, for the
+///   same reason: only the MAC half pays the unbatched price.
 ///
-/// Measured on the reference machine: 26 MiB/s for CCM against 51 MiB/s for CTR `N=1` and
-/// 102 MiB/s for CTR `N=8`, i.e. both ratios as predicted. Materially worse than half of `N=1`
-/// would mean something other than the two unavoidable cipher calls is dominating.
-///
-/// Neither half of CCM can be batched, and that is inherent, not an omission. The CBC-MAC is serial
-/// by construction (Sec 6.1 step 3: `Yi` is the cipher of `Bi XOR Yi-1`), so unlike `Ctr` and the
-/// decrypt direction of `Cbc`/`Cfb` there is no pair or four path to take, and the counter blocks
-/// are generated one at a time to stay interleaved with it. So CCM is deliberately absent from the
-/// batch-path comparison the other groups are about.
+/// Measured on the reference machine: 36 MiB/s for CCM against 52 MiB/s for CTR `N=1` (CCM at
+/// ~69%, not ~50%) and 103 MiB/s for CTR `N=8` (CCM at ~35%, not ~25%) -- both above the naive
+/// "two full unbatched passes" ratios, which is the batched CTR half showing up.
 ///
 /// Encryption and decryption should be within noise of each other: Sec 6.1 and Sec 6.2 do the same
 /// work in the opposite order (MAC-then-XOR versus XOR-then-MAC), and only the forward cipher is
 /// ever used, so the inverse cipher's cost never enters.
 ///
 /// The AAD is measured separately, and is the cheap half: it is absorbed into the CBC-MAC only,
-/// one cipher call per block rather than two, so AAD-only throughput should be about twice the
-/// payload's and about the same as CTR's.
+/// one unbatched cipher call per block, against the payload's one unbatched call plus one batched
+/// call. Batching the keystream narrows this gap from the naive "twice the payload's throughput"
+/// to about **1.5x** -- measured 52 MiB/s AAD-only against 36 MiB/s for the payload -- and AAD-only
+/// throughput should now sit close to CTR's *unbatched* number, since both are exactly one
+/// unbatched cipher call per block.
 fn bench_ccm_aes128(c: &mut Criterion) {
     let key = key::<16>();
     let nonce = [0x24u8; CCM_NONCE_LEN];
@@ -920,7 +921,8 @@ fn bench_ccm_buffering_pair(c: &mut Criterion) {
     });
 
     // The same 4 KiB through `Ccm` directly, for the ratio. This one also draws no nonce, since
-    // `Ccm` takes it from the caller, so `bench_ccm_init` covers that difference separately.
+    // `Ccm` takes it from the caller -- the DRBG draw `CcmEncryptor::do_encrypt_init` pays for is
+    // not measured separately here; `bench_init` above times that same draw for the other modes.
     let nonce = [0x24u8; CCM_NONCE_LEN];
     group.bench_function("Ccm::encrypt_detached 4KiB", |b| {
         b.iter_batched_ref(

@@ -74,6 +74,11 @@
 //! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1), which takes a padding
 //! scheme like CBC and has no IV, for interoperability and test vectors only -- see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
+//! [`AES_CCM_128`], [`AES_CCM_192`] and [`AES_CCM_256`] give CCM (SP 800-38C), this crate's only
+//! *authenticated* mode: it takes the direction plus a nonce length and a tag length, both real
+//! cryptographic choices rather than AES constants (see [`CCM_NONCE_LEN`], [`CCM_TAG_LEN`] for the
+//! usual pair), and each has an `_Encryptor`/`_Decryptor` form for the generic AEAD traits. See the
+//! `bouncycastle-modes` crate docs for why CCM is the mode to reach for in a new design.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
 //! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length

@@ -61,8 +61,8 @@
 //! `AES_CBC_128` / `AES_CCM_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128`
 //! and friends from `bouncycastle-aes`. Those aliases are not all the same shape: the two block
 //! modes take a padding scheme as well as a direction, since neither is usable on data of arbitrary
-//! length without one, the three stream modes take only the direction, and CCM takes no direction
-//! at all but does take its nonce and tag lengths:
+//! length without one, the three stream modes take only the direction, and CCM takes the direction
+//! too, plus its nonce and tag lengths:
 //!
 //! ```
 //! use bouncycastle_aes::{AES_128, AES_192, AES_256};
@@ -242,11 +242,11 @@
 //! assert_eq!(data, plaintext);
 //! ```
 //!
-//! CCM is shaped differently from all of the above, because it is the only authenticated one. There
-//! is no direction parameter, the nonce is supplied rather than generated, and there is an extra
-//! input (the AAD, authenticated but not encrypted) and an extra output (the tag). Decryption
-//! either returns the plaintext or fails -- it never returns plausible-looking rubbish the way the
-//! unauthenticated modes do when the ciphertext has been altered:
+//! CCM is shaped differently from all of the above, because it is the only authenticated one. The
+//! nonce is supplied rather than generated, and there is an extra input (the AAD, authenticated but
+//! not encrypted) and an extra output (the tag). Decryption either returns the plaintext or fails
+//! -- it never returns plausible-looking rubbish the way the unauthenticated modes do when the
+//! ciphertext has been altered:
 //!
 //! ```
 //! use bouncycastle_aes::AES_128;
@@ -302,10 +302,12 @@
 //! bolting a MAC on afterwards is a design most people get wrong. CCM's costs, so that the choice
 //! is informed rather than reflexive:
 //!
-//! * **Two cipher calls per block, and no batching.** CCM runs both CTR and a CBC-MAC over the same
-//!   data (Sec 5.2), and the CBC-MAC is serial, so it cannot use the permutation's pair or four
-//!   path. This crate's benches measure it at about half CTR's unbatched throughput and a quarter
-//!   of CTR's batched.
+//! * **Two cipher calls per block, only one of which batches.** CCM runs both CTR and a CBC-MAC
+//!   over the same data (Sec 5.2). The CBC-MAC is serial by construction (Sec 6.1 step 3: `Yi`
+//!   depends on `Yi-1`), so it cannot use the permutation's pair or four path, but the CTR half
+//!   can and does, exactly as [`Ctr`] does. This crate's benches measure roughly two thirds of
+//!   CTR's unbatched throughput and a third of CTR's batched -- better than a naive "two full
+//!   passes" would suggest, because only one of the two passes pays the unbatched cost.
 //! * **It does not stream.** SP 800-38C Sec 3: "CCM is not designed to support partial processing
 //!   or stream processing", because the payload length is inside the first block the MAC covers.
 //!   `Ccm` handles that by taking the length up front, which costs nothing; code written against
@@ -463,8 +465,9 @@
 //! one memory figure in this crate worth thinking about before choosing an API. They buffer the
 //! whole message, so at `BUFFER_LEN = 2048` an AES-128 encryptor is **4304 B**, and the AEAD
 //! trait's one-shots put another `BUFFER_LEN` on the stack as the finalization buffer -- about
-//! `3 * BUFFER_LEN` in total for a call to `encrypt_out`. Using [`Ccm`] directly costs 264 B
-//! whatever the message length, and the benches measure no throughput difference between the two,
+//! `3 * BUFFER_LEN` in total for a call to `encrypt_out`. Using [`Ccm`] directly costs 256 B for
+//! AES-128 (the table above) whatever the message length, and the benches measure no throughput
+//! difference between the two,
 //! so the buffering pair is worth it only when the generic trait is genuinely needed. See [`Ccm`]
 //! for why the buffering cannot be avoided in the trait.
 //!

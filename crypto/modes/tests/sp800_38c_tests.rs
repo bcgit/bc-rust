@@ -572,3 +572,40 @@ fn each_direction_has_its_own_methods() {
     dec.do_decrypt_final(&tag).expect("decrypt final");
     assert_eq!(data, [1u8, 2, 3, 4]);
 }
+
+// ---- memory ------------------------------------------------------------------------------
+
+/// Pins the "Memory Usage" table in the crate docs: `Ccm` is 256/288/320 B for AES-128/192/256,
+/// independent of `NONCE_LEN`/`TAG_LEN`, and the buffering pair is `2 * BUFFER_LEN`.
+#[test]
+fn sizes_match_the_documented_memory_table() {
+    use core::mem::size_of;
+
+    assert_eq!(size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(), 256);
+    assert_eq!(size_of::<Ccm<AES_192, Encrypting, 24, 16, 12, 16>>(), 288);
+    assert_eq!(size_of::<Ccm<AES_256, Encrypting, 32, 16, 12, 16>>(), 320);
+
+    // Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and the
+    // tag is assembled at finalization, not held.
+    assert_eq!(
+        size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(),
+        size_of::<Ccm<AES_128, Encrypting, 16, 16, 7, 4>>()
+    );
+    assert_eq!(
+        size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(),
+        size_of::<Ccm<AES_128, Encrypting, 16, 16, 13, 16>>()
+    );
+
+    // The direction marker is free, and does not change the layout.
+    assert_eq!(
+        size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(),
+        size_of::<Ccm<AES_128, Decrypting, 16, 16, 12, 16>>()
+    );
+
+    // The buffering adapters: 2 * BUFFER_LEN each (an `aad` array and a `data` array).
+    assert_eq!(
+        size_of::<CcmEncryptor<AES_128, 16, 16, 12, 16, 4096>>(),
+        size_of::<CcmDecryptor<AES_128, 16, 16, 12, 16, 4096>>()
+    );
+    assert!(size_of::<CcmEncryptor<AES_128, 16, 16, 12, 16, 4096>>() >= 2 * 4096);
+}
