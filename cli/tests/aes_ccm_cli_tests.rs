@@ -192,6 +192,44 @@ fn the_nonce_is_not_written_to_the_output_and_is_required_to_decrypt() {
     assert!(stderr.contains("authentication failed"), "got: {stderr}");
 }
 
+/// `--nonce-file` is raw bytes, not hex-or-raw guessed like `--key-file`: two different binary
+/// nonces that happen to be valid hex *text* for the same value must not collapse to one nonce,
+/// since a repeated nonce under one key breaks CCM's authentication (see the module docs).
+#[test]
+fn nonce_file_is_raw_bytes_not_hex_decoded() {
+    let dir = std::env::temp_dir().join(format!("bc_rust_ccm_cli_nonce_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+
+    // 12 ASCII bytes that are also valid hex *text* -- decoding them halves the length to 6, which
+    // is out of CCM's 7..=13 range. A nonce-file that hex-decodes opportunistically would reject a
+    // perfectly good 12-byte nonce (or worse, silently accept a *different* file that decodes to
+    // the same 6 bytes); one that reads raw bytes only must accept these 12 bytes as-is.
+    let raw_path = dir.join("nonce_raw.bin");
+    let raw_nonce = b"aabbccddeeff".to_vec();
+    std::fs::write(&raw_path, &raw_nonce).expect("write raw nonce file");
+
+    let plaintext = b"the nonce file's bytes are used raw";
+    let sealed = run_ok(
+        &["aes128-ccm", "encrypt", "--key", KEY_128, "--nonce-file", raw_path.to_str().unwrap()],
+        plaintext,
+    );
+
+    // Decrypting with the 12 raw bytes, passed directly via --nonce, must agree: --nonce-file did
+    // not hex-decode them down to 6 bytes.
+    let recovered =
+        run_ok(&["aes128-ccm", "decrypt", "--key", KEY_128, "--nonce", &hex(&raw_nonce)], &sealed);
+    assert_eq!(recovered, plaintext);
+
+    // The would-be hex decoding of those same 12 ASCII bytes is only 6 bytes, out of CCM's
+    // 7..=13 range -- if --nonce-file had decoded them, this file would already have been
+    // rejected as a bad nonce length instead of round-tripping above.
+    let stderr =
+        run_err(&["aes128-ccm", "decrypt", "--key", KEY_128, "--nonce", "aabbccddeeff"], &sealed);
+    assert!(stderr.contains("nonce is 6 bytes"), "got: {stderr}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Omitting the nonce is refused, and the message says why there is no generated one.
 #[test]
 fn a_missing_nonce_is_rejected_with_an_explanation() {
