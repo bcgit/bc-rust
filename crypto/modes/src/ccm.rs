@@ -569,16 +569,62 @@ where
         }
     }
 
+    /// Builds `Ctrj` (A.3, Table 3) for counter index `j`, without encrypting it.
+    #[inline]
+    fn counter_block(&self, j: u64) -> [u8; BLOCK_LEN] {
+        let mut ctr = self.ctr_template;
+        Self::put_q_field(&mut ctr, j);
+        ctr
+    }
+
     /// Generates the next keystream block, `Sj = CIPH_K(Ctrj)` for the current `j` (Sec 6.1
     /// steps 5-6), and advances `j`.
     #[inline]
     fn refill_keystream(&mut self) {
-        let mut ctr = self.ctr_template;
-        Self::put_q_field(&mut ctr, self.next_ctr);
-        *self.ks = ctr;
+        *self.ks = self.counter_block(self.next_ctr);
         self.perm.encrypt_block(&mut self.ks);
         self.next_ctr += 1;
         self.ks_pos = 0;
+    }
+
+    /// XORs `data` (shorter than a block, or finishing/opening one) with the open keystream block,
+    /// refilling one block at a time as needed. Used for the bytes before and after the batched
+    /// whole-block run in [`Self::apply_keystream`].
+    #[inline]
+    fn apply_keystream_bytes(&mut self, data: &mut [u8]) {
+        for byte in data.iter_mut() {
+            if self.ks_pos == BLOCK_LEN {
+                self.refill_keystream();
+            }
+            *byte ^= self.ks[self.ks_pos];
+            self.ks_pos += 1;
+        }
+    }
+
+    /// XORs `N` whole blocks against `N` counter blocks encrypted in one batched call.
+    ///
+    /// `Ctrj` (A.3) depends only on `j`, not on the plaintext/ciphertext or on any other counter
+    /// block's cipher output, so the `N` forward ciphers here are independent -- the same
+    /// parallelism [`crate::Ctr`] uses, and unrelated to the CBC-MAC, which stays byte-at-a-time
+    /// serial (Sec 6.1 step 3: `Yi` depends on `Yi-1`) in [`Self::mac_absorb`]. Only the counter
+    /// half batches; nothing here changes what the MAC absorbs or when.
+    #[inline]
+    fn apply_keystream_batch<const N: usize>(
+        &mut self,
+        blocks: &mut [[u8; BLOCK_LEN]; N],
+        batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
+    ) {
+        let mut ks = [[0u8; BLOCK_LEN]; N];
+        for slot in ks.iter_mut() {
+            *slot = self.counter_block(self.next_ctr);
+            self.next_ctr += 1;
+        }
+        batch(&self.perm, &mut ks);
+        for (block, k) in blocks.iter_mut().zip(ks.iter()) {
+            for (b, k) in block.iter_mut().zip(k.iter()) {
+                *b ^= *k;
+            }
+        }
     }
 
     /// XORs `data` in place with the next `data.len()` bytes of `S1 || S2 || ...`.
@@ -587,21 +633,30 @@ where
     /// operation, which is why one function serves both directions. A call may start and end
     /// part-way through a keystream block, so the caller's chunking is invisible in the output, and
     /// only the tail of the very last block is ever discarded.
+    ///
+    /// Splits into the bytes that finish an already-open keystream block, the whole blocks that
+    /// follow, and the short tail, exactly as [`crate::Ctr::apply`] does; the middle goes through
+    /// the batch paths, only the two ends go byte by byte.
     #[inline]
     fn apply_keystream(&mut self, data: &mut [u8]) {
-        let mut rest = data;
-        while !rest.is_empty() {
-            if self.ks_pos == BLOCK_LEN {
-                self.refill_keystream();
-            }
-            let take = core::cmp::min(BLOCK_LEN - self.ks_pos, rest.len());
-            let (now, later) = rest.split_at_mut(take);
-            for (b, k) in now.iter_mut().zip(self.ks[self.ks_pos..].iter()) {
-                *b ^= *k;
-            }
-            self.ks_pos += take;
-            rest = later;
+        let head_len = if self.ks_pos < BLOCK_LEN { BLOCK_LEN - self.ks_pos } else { 0 };
+        let (head, rest) = data.split_at_mut(core::cmp::min(head_len, data.len()));
+        self.apply_keystream_bytes(head);
+
+        let (blocks, tail) = rest.as_chunks_mut::<BLOCK_LEN>();
+        let (fours, rest_blocks) = blocks.as_chunks_mut::<4>();
+        for four in fours.iter_mut() {
+            self.apply_keystream_batch(four, P::encrypt_4blocks);
         }
+        let (pairs, single) = rest_blocks.as_chunks_mut::<2>();
+        for pair in pairs.iter_mut() {
+            self.apply_keystream_batch(pair, P::encrypt_2blocks);
+        }
+        for block in single.iter_mut() {
+            self.apply_keystream_bytes(block);
+        }
+
+        self.apply_keystream_bytes(tail);
     }
 
     /// Debits `len` bytes from the payload length declared to [`Self::new`].
