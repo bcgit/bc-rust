@@ -1,15 +1,15 @@
-//! ECDSA over P-256, P-384, and P-521: key generation (FIPS 186-5 Appendix A.2.1), signature
-//! generation (§6.4.1, deterministic per §6.3.2/Appendix A.3.3/RFC 6979 by default, randomised per
-//! §6.3.1/Appendix A.3.1 as an additional API), and verification (§6.4.2), built on
+//! ECDSA over P-256, P-384, P-521, and secp256k1: key generation (FIPS 186-5 Appendix A.2.1),
+//! signature generation (§6.4.1, deterministic per §6.3.2/Appendix A.3.3/RFC 6979 by default,
+//! randomised per §6.3.1/Appendix A.3.1 as an additional API), and verification (§6.4.2), built on
 //! [`bouncycastle_ec`]'s field/scalar/point arithmetic, SEC 1 encodings, and comb/wNAF
 //! multipliers. Raw `r || s` is the default signature encoding; [`der`] offers DER `SEQUENCE { r,
 //! s }` (RFC 3279 §2.2.3) as an alternative for interop that needs it.
 //!
 //! # Status
 //!
-//! P-256 (SHA-256), P-384 (SHA-384), and P-521 (SHA-512). See
-//! `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9 for the rest of the plan (other curves, CLI
-//! wiring, benches).
+//! P-256 (SHA-256), P-384 (SHA-384), P-521 (SHA-512), and secp256k1 (SHA-256). See
+//! `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9 for the rest of the plan (brainpool curves,
+//! SM2, CLI wiring, benches).
 //!
 //! # Security Considerations
 //!
@@ -41,12 +41,15 @@
 
 pub mod der;
 pub mod ecdsa_p256;
+pub mod ecdsa_p256k1;
 pub mod ecdsa_p384;
 pub mod ecdsa_p521;
 pub mod extra_bits;
 pub mod keys;
+pub mod keys_p256k1;
 pub mod keys_p384;
 pub mod keys_p521;
 pub mod rfc6979;
+pub mod rfc6979_p256k1;
 pub mod rfc6979_p384;
 pub mod rfc6979_p521;
