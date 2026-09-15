@@ -340,7 +340,10 @@ pub trait AEADCipherEncryptor<
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if called with a non-empty `aad` after
     /// [`SymmetricCipherEncryptor::do_update_out`] -- see the trait docs for why the AAD comes
-    /// first.
+    /// first. An implementor whose buffering has a fixed capacity -- see "A length-dependent
+    /// construction still has to buffer" above -- may also return
+    /// [`SymmetricCipherError::GenericError`] if `aad` would exceed it; that is a property of the
+    /// implementor, not of this trait, so it is not listed as a general contract here.
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
 
     /// Finishes the encryption with the tag detached, consuming the encryptor: flushes whatever
@@ -1855,7 +1858,10 @@ pub trait SymmetricCipherDecryptor<
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
-    /// consumed in that case.
+    /// consumed in that case. An implementor with a fixed buffering capacity, such as an AEAD
+    /// that has to see the whole message before it can process any of it (see
+    /// [`AEADCipherEncryptor`]), may also return [`SymmetricCipherError::GenericError`] if the
+    /// input would exceed it.
     fn do_update_out(
         &mut self,
         ciphertext: &[u8],
@@ -2023,7 +2029,10 @@ pub trait SymmetricCipherEncryptor<
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
-    /// consumed in that case.
+    /// consumed in that case. An implementor with a fixed buffering capacity, such as an AEAD
+    /// that has to see the whole message before it can process any of it (see
+    /// [`AEADCipherEncryptor`]), may also return [`SymmetricCipherError::GenericError`] if the
+    /// input would exceed it.
     fn do_update_out(
         &mut self,
         plaintext: &[u8],
