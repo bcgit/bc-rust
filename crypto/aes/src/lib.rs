@@ -72,6 +72,10 @@
 //! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1), which takes a padding
 //! scheme like CBC and has no IV, for interoperability and test vectors only -- see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
+//! [`AES_GCM_128`], [`AES_GCM_192`] and [`AES_GCM_256`] give GCM (NIST SP 800-38D), the
+//! authenticated mode built from CTR and a universal hash: a 96-bit nonce and a 128-bit tag, with
+//! both a detached-tag streaming API and an inline `ciphertext || tag` view -- see the `gcm` module
+//! docs in `bouncycastle-modes` for the full shape and the security considerations.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
 //! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
@@ -224,6 +228,7 @@ mod cfb;
 mod cfb8;
 mod ctr;
 mod ecb;
+mod gcm;
 mod padded_mode;
 mod round;
 mod sbox;
@@ -235,3 +240,4 @@ pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
+pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};

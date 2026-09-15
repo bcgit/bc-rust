@@ -247,6 +247,28 @@ where
         }
     }
 
+    /// As [`start`](Self::start), but the counter of the *next* block is `counter` instead of 0.
+    ///
+    /// GCM's GCTR (SP 800-38D Sec 6.5) runs the data through this mode starting at `inc32(J0)`,
+    /// whose counter field is `2` -- see `gcm.rs`. Crate-private because the public API's contract
+    /// is that a message starts at counter 0; only `gcm.rs` needs otherwise.
+    #[inline]
+    pub(crate) fn start_at(perm: P, nonce: [u8; INIT_DATA_LEN], counter: u64) -> Self {
+        Self::check_shape();
+        debug_assert!(
+            counter < Self::BLOCK_LIMIT,
+            "start_at must not be handed an already-exhausted counter"
+        );
+        Self {
+            perm,
+            nonce,
+            next_counter: counter,
+            keystream: Secret::new(),
+            used: BLOCK_LEN,
+            _dir: PhantomData,
+        }
+    }
+
     /// `Tj = N | [j]m`: the nonce followed by the counter, big-endian, in the trailing `CTR_LEN`
     /// bytes.
     ///
@@ -455,5 +477,54 @@ where
     /// As [`StreamCipherEncryptor::do_encrypt`].
     fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.apply(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for `start_at`, which is `pub(crate)` and so cannot be reached from
+    //! `tests/ctr_tests.rs` -- exactly the "high-risk code that cannot be reached through the
+    //! public API" case QUALITY_AND_STYLE.md carves out for a unit test here rather than an
+    //! integration test.
+
+    use super::*;
+    use bouncycastle_aes::AES_128;
+    use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle_core::traits::ElectronicCodeBook;
+
+    type ToyCtr = Ctr<AES_128, Encrypting, 16, 16, 12>;
+
+    fn key() -> KeyMaterial<16> {
+        KeyMaterial::<16>::from_bytes_as_type(&[0x5Au8; 16], KeyType::SymmetricCipherKey)
+            .expect("a valid AES-128 key")
+    }
+
+    /// `start_at(.., 2)` must produce the same keystream as `start` after its first two blocks
+    /// (32 bytes) have been discarded. This is what lets GCM's GCTR (SP 800-38D Sec 6.5) begin at
+    /// `inc32(J0)`, whose counter field is 2 -- see `gcm.rs`.
+    #[test]
+    fn start_at_matches_start_after_discarding_blocks() {
+        let nonce = [0x11u8; 12];
+
+        let mut from_start = ToyCtr::start(AES_128::new(&key()).unwrap(), nonce);
+        let mut discarded = [0u8; 32];
+        from_start.apply(&mut discarded).unwrap();
+
+        let mut from_start_at = ToyCtr::start_at(AES_128::new(&key()).unwrap(), nonce, 2);
+
+        let mut a = [0x42u8; 48];
+        let mut b = a;
+        from_start.apply(&mut a).unwrap();
+        from_start_at.apply(&mut b).unwrap();
+        assert_eq!(a, b, "start_at(.., 2) must agree with start() past its first two blocks");
+    }
+
+    /// The capacity left after starting at counter 2 is exactly `2^32 - 2` blocks -- the SP
+    /// 800-38D Sec 5.2.1.1 plaintext length bound (`len(P) <= 2^39 - 256` bits, i.e. `2^32 - 2`
+    /// 128-bit blocks) that GCM relies on `Ctr`'s existing "counter exhausted" error to enforce.
+    #[test]
+    fn start_at_capacity_is_block_limit_minus_the_starting_counter() {
+        let ctr = ToyCtr::start_at(AES_128::new(&key()).unwrap(), [0u8; 12], 2);
+        assert_eq!(ctr.remaining_capacity(), (ToyCtr::BLOCK_LIMIT - 2) * 16);
     }
 }
