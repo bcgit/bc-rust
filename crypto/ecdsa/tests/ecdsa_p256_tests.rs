@@ -4,7 +4,9 @@
 //! cover -- the randomised (Appendix A.3.1) signing path and public-key encoding round trips.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core::traits::{
+    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+};
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
@@ -53,6 +55,31 @@ fn sign_randomized_signature_rejected_under_wrong_key() {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
+}
+
+#[test]
+fn sign_der_matches_raw_sign_and_round_trips_through_verify_der() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"DER-encoded ECDSA signing";
+
+    let raw = ECDSAP256::sign(&sk, msg, None).unwrap();
+    let (der, der_len) = ECDSAP256::sign_der(&sk, msg, None).unwrap();
+
+    let mut r_out = [0u8; 32];
+    let mut s_out = [0u8; 32];
+    bouncycastle_ecdsa::der::decode(&der[..der_len], &mut r_out, &mut s_out)
+        .expect("sign_der's output must be a well-formed DER SEQUENCE { r, s }");
+    assert_eq!(r_out, raw[..32], "DER-decoded r must match sign's raw r");
+    assert_eq!(s_out, raw[32..], "DER-decoded s must match sign's raw s");
+
+    ECDSAP256::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
+
+    let mut tampered = der;
+    tampered[der_len - 1] ^= 0xFF;
+    assert!(
+        ECDSAP256::verify_der(&pk, msg, None, &tampered[..der_len]).is_err(),
+        "a corrupted DER signature must not verify"
+    );
 }
 
 #[test]
