@@ -121,7 +121,11 @@ Repo mechanics behind those rules, which the documents don't spell out:
 - `./dev_scripts/quality_stats.sh` produces the fallibility metrics both documents ask you to check. Run it before
   and after a change and compare, rather than eyeballing the diff.
 - **CLI commands stream.** The `cli/` binary is stdin→stdout with ~1 KB buffers so commands compose in shell
-  pipelines; preserve that when adding subcommands.
+  pipelines; preserve that when adding subcommands. The exception is a construction that is not
+  itself streamable, such as CCM (SP 800-38C Sec 3: "CCM is not designed to support partial
+  processing or stream processing", because the payload length is inside the first block the MAC
+  covers) -- there, read the whole input once and process it in place, rather than adding a second
+  buffer the size of the input on top of it; see `aes_ccm_cmd.rs`.
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
 
 ## Scope of changes
