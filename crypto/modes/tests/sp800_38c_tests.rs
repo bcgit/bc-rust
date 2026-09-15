@@ -462,6 +462,66 @@ fn the_buffering_pair_refuses_a_message_past_its_buffer() {
     assert!(matches!(enc.do_update_aad(&[0u8; 33]), Err(SymmetricCipherError::GenericError(_))));
 }
 
+/// Filling `BUFFER_LEN` *exactly* must be accepted, not refused: `CcmBuffer::do_update_aad` /
+/// `do_update_out` check `end > BUFFER_LEN`, so using the whole buffer is legitimate and only one
+/// byte more is not. Both boundary sides, in one call and split across two.
+#[test]
+fn the_buffering_pair_accepts_a_message_that_exactly_fills_its_buffer() {
+    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, 32>;
+    let k = key::<16>(APPENDIX_C_KEY);
+    let mut nothing = [0u8; 0];
+
+    let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
+    assert_eq!(enc.do_update_out(&[0u8; 32], &mut nothing).expect("exactly fills BUFFER_LEN"), 0);
+
+    let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
+    assert_eq!(enc.do_update_out(&[0u8; 20], &mut nothing).expect("fits"), 0);
+    assert_eq!(
+        enc.do_update_out(&[0u8; 12], &mut nothing).expect("exactly fills the remaining space"),
+        0
+    );
+
+    let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
+    assert!(enc.do_update_aad(&[0u8; 32]).is_ok(), "AAD exactly filling BUFFER_LEN is accepted");
+}
+
+/// Resuming a part-way-open keystream block into the batched fours/pairs path.
+///
+/// None of the Appendix C vectors are long enough for this: the largest, C.4, is 32 bytes (two
+/// blocks), too short for a small opening call to leave enough afterwards to reach
+/// `apply_keystream_batch`'s fours/pairs path at all. Every chunking `check_vector` sweeps is also
+/// *uniform*, so the only call that can ever see `ks_pos` strictly between `0` and `BLOCK_LEN` on
+/// entry is a small final remainder -- never one big enough to batch. A first small,
+/// non-block-aligned call followed by one call spanning several whole blocks exercises exactly
+/// that: the batched blocks must still line up with the keystream the small call left partway
+/// through, not silently skip over it. Checked against a one-shot encryption of the identical
+/// plaintext, which does not go anywhere near this split.
+#[test]
+fn resuming_a_part_way_open_block_agrees_with_a_one_shot() {
+    type Enc = Ccm<AES_128, Encrypting, 16, 16, 12, 16>;
+    let k = key::<16>(APPENDIX_C_KEY);
+    let nonce = [0x24u8; 12];
+    let aad = b"header";
+    // Long enough that, after a several-byte opening call, what remains spans at least one
+    // four-block batch and one pair-block batch (4 + 2 = 6 blocks = 96 bytes) plus a short tail.
+    let plaintext: Vec<u8> = (0..123u8).collect();
+
+    let mut reference = vec![0u8; plaintext.len()];
+    let (_, reference_tag) =
+        Enc::encrypt_detached(&k, &nonce, aad, &plaintext, &mut reference).expect("one-shot");
+
+    for first in [1usize, 3, 5, 15] {
+        let mut ccm = Enc::new(&k, &nonce, aad, plaintext.len()).expect("streaming init");
+        let mut streamed = plaintext.clone();
+        let (head, rest) = streamed.split_at_mut(first);
+        ccm.do_encrypt_update(head).expect("small first update");
+        ccm.do_encrypt_update(rest).expect("large second update");
+        let tag = ccm.do_encrypt_final().expect("final");
+        assert_eq!(streamed, reference, "ciphertext, resuming a {first}-byte-open block");
+        assert_eq!(tag, reference_tag, "tag, resuming a {first}-byte-open block");
+    }
+}
+
 /// Sec 6.2 step 1: "If Clen <= Tlen, then return INVALID". The inline layout has to reject a `C`
 /// too short to contain a tag before it can split one off.
 ///

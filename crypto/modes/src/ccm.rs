@@ -617,6 +617,11 @@ where
     /// the batch paths, only the two ends go byte by byte.
     #[inline]
     fn apply_keystream(&mut self, data: &mut [u8]) {
+        // `ks_pos` never exceeds `BLOCK_LEN` (it is reset to 0 on refill and only ever
+        // incremented up to it), so at the one point `<` and `<=` disagree -- `ks_pos ==
+        // BLOCK_LEN` -- both give `head_len = 0`: the `if` arm's `BLOCK_LEN - BLOCK_LEN` matches
+        // the `else` arm exactly. `cargo mutants` reports `<` to `<=` as a surviving mutant; it
+        // is provably equivalent, not a gap, for the same reason `format_b0`'s `|`/`^` ones are.
         let head_len = if self.ks_pos < BLOCK_LEN { BLOCK_LEN - self.ks_pos } else { 0 };
         let (head, rest) = data.split_at_mut(core::cmp::min(head_len, data.len()));
         self.apply_keystream_bytes(head);
