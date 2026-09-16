@@ -3,16 +3,26 @@ name = "bouncycastle-sha2"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-core-test-framework/alloc",
+    "bouncycastle-hkdf/alloc",
+    "bouncycastle-hmac/alloc",
+    "bouncycastle-rng/alloc",
+]
+
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-hkdf.workspace = true
-bouncycastle-hmac.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-hkdf = { workspace = true, default-features = false }
+bouncycastle-hmac = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-bouncycastle-core-test-framework.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
+bouncycastle-rng = { workspace = true, default-features = false }
 
 [[bench]]
 name = "sha2_benches"

@@ -5,10 +5,12 @@ edition.workspace = true
 
 [features]
 default = ["alloc"]
-alloc = []
+alloc = [
+    "bouncycastle-rng/alloc"
+]
 
 [dependencies]
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-rng.workspace = true
+bouncycastle-rng = { workspace = true, default-features = false }

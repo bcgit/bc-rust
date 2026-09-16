@@ -14,14 +14,14 @@ bouncycastle-core = { path = "crypto/core", default-features = false }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", default-features = false }
 bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
-bouncycastle-hkdf = { path = "./crypto/hkdf" }
-bouncycastle-hmac = { path = "./crypto/hmac" }
+bouncycastle-hkdf = { path = "./crypto/hkdf", default-features = false }
+bouncycastle-hmac = { path = "./crypto/hmac", default-features = false }
 bouncycastle-mlkem = { path = "./crypto/mlkem" }
 bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory" }
 bouncycastle-mldsa = { path = "./crypto/mldsa" }
 bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory" }
-bouncycastle-rng = { path = "./crypto/rng" }
-bouncycastle-sha2 = { path = "./crypto/sha2" }
+bouncycastle-rng = { path = "./crypto/rng", default-features = false }
+bouncycastle-sha2 = { path = "./crypto/sha2", default-features = false }
 bouncycastle-sha3 = { path = "./crypto/sha3" }
 bouncycastle-utils = { path = "./crypto/utils" }
 
