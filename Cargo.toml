@@ -10,8 +10,8 @@ version = "0.1.3"
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
 bouncycastle-base64 = { path = "./crypto/base64" }
-bouncycastle-core = { path = "crypto/core" }
-bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
+bouncycastle-core = { path = "crypto/core", default-features = false }
+bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", default-features = false }
 bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }

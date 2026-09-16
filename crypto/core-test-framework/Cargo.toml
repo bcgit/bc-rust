@@ -3,7 +3,16 @@ name = "bouncycastle-core-test-framework"
 version.workspace = true
 edition.workspace = true
 
+# core-test-framework only needs to build for std/alloc environments
+# However it must appropriately enable or disable `alloc` feature
+# for all dependencies
+[features]
+default = ["alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+]
+
 [dependencies]
-bouncycastle-core.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
 
 [dev-dependencies]
