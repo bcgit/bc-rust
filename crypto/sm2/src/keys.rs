@@ -41,6 +41,22 @@ impl SM2PrivateKey {
     pub(crate) fn scalar(&self) -> &Sm2Scalar {
         &self.0
     }
+
+    /// Recomputes the matching public key `PA = [dA]G` directly from the wrapped private scalar,
+    /// using the same fixed-base multiplier [`keygen_from_rng`] uses internally. For the CLI's
+    /// `PkFromSk`/`CheckConsistency` actions, which need this without having generated the pair
+    /// together -- see `bouncycastle_ecdsa::keys_common::DerivePublicKey`'s docs for the shape this
+    /// mirrors (kept as a plain inherent method here rather than a shared trait, since SM2's own
+    /// CLI command needs the extra `IDA` argument every other curve's doesn't, so it was never
+    /// going to share a single generic command function with them anyway).
+    pub fn derive_pk(&self) -> SM2PublicKey {
+        let q = comb_multiply_base_point(&self.0);
+        // dA is in [1, n-1] by construction (every SM2PrivateKey is built that way; see
+        // from_bytes and keygen_from_rng) and G has prime order n (h = 1), so [dA]G is never the
+        // identity.
+        let (x, y) = q.to_affine().expect("[dA]G is never infinity for dA in [1, n-1]");
+        SM2PublicKey { x, y }
+    }
 }
 
 impl SignaturePrivateKey<SK_LEN> for SM2PrivateKey {
