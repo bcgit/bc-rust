@@ -8,8 +8,9 @@
 //! # Status
 //!
 //! P-256 (SHA-256), P-384 (SHA-384), P-521 (SHA-512), secp256k1 (SHA-256), brainpoolP256r1
-//! (SHA-256), and brainpoolP384r1 (SHA-384). See `local/ec_custom_curves_and_ecdsa_plan.md` §6 and
-//! §9 for the rest of the plan (brainpoolP512r1, SM2, CLI wiring, benches).
+//! (SHA-256), brainpoolP384r1 (SHA-384), and brainpoolP512r1 (SHA-512). See
+//! `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9 for the rest of the plan (SM2, CLI wiring,
+//! benches).
 //!
 //! # Security Considerations
 //!
@@ -42,6 +43,7 @@
 pub mod der;
 pub mod ecdsa_bp256r1;
 pub mod ecdsa_bp384r1;
+pub mod ecdsa_bp512r1;
 pub mod ecdsa_p256;
 pub mod ecdsa_p256k1;
 pub mod ecdsa_p384;
@@ -49,15 +51,18 @@ pub mod ecdsa_p521;
 pub mod extra_bits;
 pub mod extra_bits_bp256r1;
 pub mod extra_bits_bp384r1;
+pub mod extra_bits_bp512r1;
 pub mod keys;
 pub mod keys_bp256r1;
 pub mod keys_bp384r1;
+pub mod keys_bp512r1;
 pub mod keys_p256k1;
 pub mod keys_p384;
 pub mod keys_p521;
 pub mod rfc6979;
 pub mod rfc6979_bp256r1;
 pub mod rfc6979_bp384r1;
+pub mod rfc6979_bp512r1;
 pub mod rfc6979_p256k1;
 pub mod rfc6979_p384;
 pub mod rfc6979_p521;
