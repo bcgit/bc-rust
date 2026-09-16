@@ -89,10 +89,10 @@
 //! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
 //! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
 //! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
-//! HelloWorld rust application.
+//! The measurements may over-estimate by as much as 7.7 kB, since that is the measured peak memory usage of a do-nothing
+//! HelloWorld rust application in the same harness.
 //!
-//! | Algorithm                 | Peak swap memory usage (kB) | Throughput (ops/s)  |
+//! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
 //! | MLDSA44_lowmemory/KeyGen  | 12.6 (113.8)                | 11,800     (11,300) |
 //! | MLDSA65_lowmemory/KeyGen  | 15.0 (124.1)                | 5,500      (7,000)  |
