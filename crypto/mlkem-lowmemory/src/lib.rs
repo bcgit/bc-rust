@@ -87,22 +87,22 @@
 //! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
 //! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
 //! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
-//! HelloWorld rust application.
+//! The measurements may over-estimate by as much as 7.7 kB, since that is the measured peak memory usage of a do-nothing
+//! HelloWorld rust application in the same harness.
 //!
 //! | Algorithm                  | Peak stack memory usage (kB) | Throughput (Kops/s) |
 //! |----------------------------|------------------------|-------------------|
-//! | MLKEM512_lowmemory/KeyGen  | 5.8 (21.7)             | 50.1 (48.7) |
-//! | MLKEM512_lowmemory/KeyGen  | 7.3 (28.9)             | 28.3 (28.8) |
-//! | MLKEM1024_lowmemory/KeyGen | 9.3 (41.4)             | 16.9 (18.1) |
-//! | MLKEM512_lowmemory/Encaps  | 8.9 (18.8)             | 37.8 (43.7) |
-//! | MLKEM768_lowmemory/Encaps  | 9.9 (27.9)             | 22.3 (26.0) |
-//! | MLKEM1024_lowmemory/Encaps | 11.2 (44.2)            | 14.2 (15.6) |
-//! | MLKEM512_lowmemory/Decaps  | 13.6 (25.7)            | 13.4 (31.6) |
+//! | MLKEM512_lowmemory/KeyGen  | 7.7 (12.9)             | 50.1 (48.7) |
+//! | MLKEM768_lowmemory/KeyGen  | 9.2 (19.4)             | 28.3 (28.8) |
+//! | MLKEM1024_lowmemory/KeyGen | 11.1 (28.9)            | 16.9 (18.1) |
+//! | MLKEM512_lowmemory/Encaps  | 8.4 (18.2)             | 37.8 (43.7) |
+//! | MLKEM768_lowmemory/Encaps  | 9.5 (29.7)             | 22.3 (26.0) |
+//! | MLKEM1024_lowmemory/Encaps | 10.7 (40.2)            | 14.2 (15.6) |
+//! | MLKEM512_lowmemory/Decaps  | 13.8 (25.0)            | 13.4 (31.6) |
 //! | MLKEM768_lowmemory/Decaps  | 16.6 (40.6)            | 7.8 (21.0) |
-//! | MLKEM1024_lowmemory/Decaps | 20.5 (58.4)            | 4.9 (13.6) |
+//! | MLKEM1024_lowmemory/Decaps | 20.0 (65.4)            | 4.9 (13.6) |
 //!
-//! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
+//! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mlkem] crate.
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
 //! Performance throughput numbers were collected on my laptop using the library's provided benchmarks, so
 //! performance they should be taken with an extreme grain of salt.
