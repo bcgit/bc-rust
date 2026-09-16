@@ -12,7 +12,14 @@ use bouncycastle_core_test_framework::signature::{
 };
 use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
 use bouncycastle_ecdsa::keys::{ECDSAP256PrivateKey, ECDSAP256PublicKey, keygen};
+use bouncycastle_ecdsa::keys_common::DerivePublicKey;
 use bouncycastle_rng::DefaultRNG;
+
+#[test]
+fn derive_pk_matches_keygen() {
+    let (pk, sk) = keygen().unwrap();
+    assert_eq!(sk.derive_pk(), pk);
+}
 
 /// RFC 6979 §3.4/§3.6: `k` is a deterministic function of `d` and the message, so `sign` always
 /// reproduces the same `(r, s)`; ECDSA has no `ctx` input at all, so it ignores the one the

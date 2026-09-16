@@ -56,6 +56,7 @@ pub mod keys;
 pub mod keys_bp256r1;
 pub mod keys_bp384r1;
 pub mod keys_bp512r1;
+pub mod keys_common;
 pub mod keys_p256k1;
 pub mod keys_p384;
 pub mod keys_p521;

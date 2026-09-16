@@ -14,6 +14,7 @@
 //! specifically for the P-256 case where the DRBG output is wider than the scalar's native limb
 //! width, which doesn't arise here.
 
+use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::nat;
@@ -57,6 +58,16 @@ impl ECDSAP384PrivateKey {
     /// The wrapped scalar, for this crate's own sign implementation to compute with.
     pub(crate) fn scalar(&self) -> &P384Scalar {
         &self.0
+    }
+}
+
+impl DerivePublicKey<ECDSAP384PublicKey, PK_LEN> for ECDSAP384PrivateKey {
+    fn derive_pk(&self) -> ECDSAP384PublicKey {
+        let q = comb_multiply_base_point(&self.0);
+        // d is in [1, n-1] by construction (every ECDSAP384PrivateKey is built that way; see
+        // from_bytes and keygen_from_rng) and G has prime order n, so [d]G is never the identity.
+        let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        ECDSAP384PublicKey { x, y }
     }
 }
 
