@@ -16,6 +16,7 @@
 //! the same pattern [`crate::keys_p384`] uses for the same reason), rather than
 //! [`crate::extra_bits`]'s bit-by-bit wide reduction.
 
+use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::nat;
@@ -60,6 +61,16 @@ impl ECDSASecp256K1PrivateKey {
     /// The wrapped scalar, for this crate's own sign implementation to compute with.
     pub(crate) fn scalar(&self) -> &P256K1Scalar {
         &self.0
+    }
+}
+
+impl DerivePublicKey<ECDSASecp256K1PublicKey, PK_LEN> for ECDSASecp256K1PrivateKey {
+    fn derive_pk(&self) -> ECDSASecp256K1PublicKey {
+        let q = comb_multiply_base_point(&self.0);
+        // d is in [1, n-1] by construction (every ECDSASecp256K1PrivateKey is built that way; see
+        // from_bytes and keygen_from_rng) and G has prime order n, so [d]G is never the identity.
+        let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        ECDSASecp256K1PublicKey { x, y }
     }
 }
 

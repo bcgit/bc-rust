@@ -8,8 +8,15 @@ use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
 use bouncycastle_ecdsa::ecdsa_p384::ECDSAP384;
+use bouncycastle_ecdsa::keys_common::DerivePublicKey;
 use bouncycastle_ecdsa::keys_p384::{ECDSAP384PrivateKey, ECDSAP384PublicKey, keygen};
 use bouncycastle_rng::DefaultRNG;
+
+#[test]
+fn derive_pk_matches_keygen() {
+    let (pk, sk) = keygen().unwrap();
+    assert_eq!(sk.derive_pk(), pk);
+}
 
 #[test]
 fn conformance_suite() {

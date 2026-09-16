@@ -19,6 +19,7 @@
 //! makes it wider). [`reduce_wide_bits_mod_n_minus_1`] is this module's own copy, sized for
 //! P-521's 9-limb width.
 
+use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::nat;
@@ -103,6 +104,16 @@ impl ECDSAP521PrivateKey {
     /// The wrapped scalar, for this crate's own sign implementation to compute with.
     pub(crate) fn scalar(&self) -> &P521Scalar {
         &self.0
+    }
+}
+
+impl DerivePublicKey<ECDSAP521PublicKey, PK_LEN> for ECDSAP521PrivateKey {
+    fn derive_pk(&self) -> ECDSAP521PublicKey {
+        let q = comb_multiply_base_point(&self.0);
+        // d is in [1, n-1] by construction (every ECDSAP521PrivateKey is built that way; see
+        // from_bytes and keygen_from_rng) and G has prime order n, so [d]G is never the identity.
+        let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        ECDSAP521PublicKey { x, y }
     }
 }
 

@@ -5,6 +5,7 @@
 //! that module's docs for why).
 
 use crate::extra_bits_bp256r1::reduce_wide_bits_mod_n_minus_1;
+use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::bp256r1::Bp256r1FieldElement;
@@ -39,6 +40,16 @@ impl ECDSABp256r1PrivateKey {
     /// The wrapped scalar, for this crate's own sign implementation to compute with.
     pub(crate) fn scalar(&self) -> &Bp256r1Scalar {
         &self.0
+    }
+}
+
+impl DerivePublicKey<ECDSABp256r1PublicKey, PK_LEN> for ECDSABp256r1PrivateKey {
+    fn derive_pk(&self) -> ECDSABp256r1PublicKey {
+        let q = comb_multiply_base_point(&self.0);
+        // d is in [1, n-1] by construction (every ECDSABp256r1PrivateKey is built that way; see
+        // from_bytes and keygen_from_rng) and G has prime order n, so [d]G is never the identity.
+        let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        ECDSABp256r1PublicKey { x, y }
     }
 }
 

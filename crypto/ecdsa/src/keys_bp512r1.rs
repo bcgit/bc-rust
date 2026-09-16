@@ -5,6 +5,7 @@
 //! that module's docs for why).
 
 use crate::extra_bits_bp512r1::reduce_wide_bits_mod_n_minus_1;
+use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::bp512r1::Bp512r1FieldElement;
@@ -39,6 +40,16 @@ impl ECDSABp512r1PrivateKey {
     /// The wrapped scalar, for this crate's own sign implementation to compute with.
     pub(crate) fn scalar(&self) -> &Bp512r1Scalar {
         &self.0
+    }
+}
+
+impl DerivePublicKey<ECDSABp512r1PublicKey, PK_LEN> for ECDSABp512r1PrivateKey {
+    fn derive_pk(&self) -> ECDSABp512r1PublicKey {
+        let q = comb_multiply_base_point(&self.0);
+        // d is in [1, n-1] by construction (every ECDSABp512r1PrivateKey is built that way; see
+        // from_bytes and keygen_from_rng) and G has prime order n, so [d]G is never the identity.
+        let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        ECDSABp512r1PublicKey { x, y }
     }
 }
 
