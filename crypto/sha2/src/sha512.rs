@@ -223,10 +223,15 @@ const fn compress_block(s: &mut [u64; 8], block: &[u8; 128]) {
     s[7] = s[7].wrapping_add(h);
 }
 
-#[derive(Clone)]
 pub(crate) struct Sha512State<PARAMS: Sha512Family> {
     _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u64; 8]>,
+}
+
+impl<PARAMS: Sha512Family> Clone for Sha512State<PARAMS> {
+    fn clone(&self) -> Self {
+        Self { _params: core::marker::PhantomData, h: self.h.clone() }
+    }
 }
 
 impl<PARAMS: Sha512Family> Sha512State<PARAMS> {
@@ -248,7 +253,6 @@ impl<PARAMS: Sha512Family> Sha512State<PARAMS> {
 /// Internal struct for SHA512.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
-#[derive(Clone)]
 pub struct SHA512Internal<PARAMS: Sha512Family> {
     _params: core::marker::PhantomData<PARAMS>,
     state: Sha512State<PARAMS>,
@@ -256,6 +260,18 @@ pub struct SHA512Internal<PARAMS: Sha512Family> {
     byte_count: u64,
     x_buf: Secret<[u8; 128]>,
     x_buf_off: usize,
+}
+
+impl<PARAMS: Sha512Family> Clone for SHA512Internal<PARAMS> {
+    fn clone(&self) -> Self {
+        Self {
+            _params: core::marker::PhantomData,
+            state: self.state.clone(),
+            byte_count: self.byte_count,
+            x_buf: self.x_buf.clone(),
+            x_buf_off: self.x_buf_off,
+        }
+    }
 }
 
 impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
