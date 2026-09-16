@@ -71,12 +71,12 @@
 //!
 //! | Key Object | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
 //! |------------|-----------------|-------------------|-----------------|-------------------|
-//! | ML-DSA-44  | 1312            | 1312 (4128)       | 2560            | 12464             |
-//! | ML-DSA-65  | 1952            | 1952 (6176)       | 4032            | 17584             |
-//! | ML-DSA-87  | 2592            | 2592 (8224)       | 4896            | 23728             |
+//! | ML-DSA-44  | 1312            | 4128              | 2560            | 12464             |
+//! | ML-DSA-65  | 1952            | 6176              | 4032            | 17584             |
+//! | ML-DSA-87  | 2592            | 8224              | 4896            | 23728             |
 //!
 //! The following table lists the size of the on-disk bytes encoding and the in-memory struct size of the
-//! expanded key objects that pre-expand the public matrix A for faster repeated verify() operations:
+//! expanded key objects that pre-expand the public matrix A for faster repeated sign() and verify() operations:
 //!
 //! | Key Object          | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
 //! |---------------------|-----------------|-------------------|-----------------|-------------------|
@@ -85,8 +85,14 @@
 //! | ML-DSA-87_expanded  | 2592            | 65568             | 4896            | 81072             |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
-//! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
+//! The (rough) performance gains for the pre-expanded key mode are (keygen not included because it does not change):
+//!
+//! | Key Object          | sign()   | verify() |
+//! |---------------------|----------|----------|
+//! | ML-DSA-44_expanded  | x1.08    | x1.86    |
+//! | ML-DSA-65_expanded  | x1.19    | x2.08    |
+//! | ML-DSA-87_expanded  | x1.26    | x2.47    |
 //!
 //! # 🚨 Security 🚨
 //!
