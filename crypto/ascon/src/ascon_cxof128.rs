@@ -6,10 +6,14 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_core::traits::{Algorithm, SecurityStrength, Suspendable, XOF};
+use bouncycastle_core::traits::{
+    Algorithm, Hash, HashAlgParams, SecurityStrength, Suspendable, XOF, XOFSqueezer,
+};
 use bouncycastle_utils::secret::Secret;
 
 use crate::sponge::{RATE, Sponge};
+
+const XOF_HASH_BYTES: usize = 32;
 
 /// Maximum customization-string length in bytes (2048 bits, per SP 800-232 §5.3).
 const MAX_CUSTOMIZATION_BYTES: usize = 256;
@@ -17,6 +21,12 @@ const MAX_CUSTOMIZATION_BYTES: usize = 256;
 /// Ascon-CXOF128 customized extendable-output function (NIST SP 800-232 §5.3).
 #[derive(Clone)]
 pub struct AsconCXof128 {
+    sponge: Sponge,
+}
+
+/// Squeezing state for [`AsconCXof128`].
+#[derive(Clone)]
+pub struct AsconCXof128Squeezer {
     sponge: Sponge,
 }
 
@@ -71,15 +81,65 @@ impl AsconCXof128 {
         Ok(Self { sponge })
     }
 
-    // Squeeze `output.len()` bytes of output. May be called multiple times; the first call ends the
-    // absorb phase by padding and absorbing the final block. Returns the number of bytes written.
-    fn squeeze_into(&mut self, output: &mut [u8]) -> usize {
-        let written = output.len();
+    /// Compatibility helper for the old streaming API: absorb bytes while still in the input phase.
+    pub fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
+        if self.sponge.squeezing() {
+            return Err(HashError::InvalidState(
+                "Ascon-CXOF128 cannot absorb after squeezing has begun",
+            ));
+        }
+        self.sponge.absorb(data);
+        Ok(())
+    }
+
+    /// Compatibility helper for the old one-shot XOF API.
+    pub fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
+        <Self as XOF>::xof(self, data, result_len)
+    }
+
+    /// Compatibility helper for the old one-shot XOF API.
+    pub fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        <Self as XOF>::xof_out(self, data, output)
+    }
+
+    /// Compatibility helper for the old streaming API: produce `num_bytes` bytes.
+    pub fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.squeeze_out(&mut out);
+        out
+    }
+
+    /// Compatibility helper for the old streaming API: fill `output` from the XOF stream.
+    pub fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
         if !self.sponge.squeezing() {
             self.sponge.pad_and_absorb();
         }
         self.sponge.squeeze(output);
-        written
+        output.len()
+    }
+
+    /// Ascon-CXOF128 does not support bit-level input.
+    pub fn absorb_last_partial_byte(
+        &mut self,
+        _partial_byte: u8,
+        _num_partial_bits: usize,
+    ) -> Result<(), HashError> {
+        Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte input"))
+    }
+
+    /// Ascon-CXOF128 does not support bit-level output.
+    pub fn squeeze_partial_byte_final(self, _num_bits: usize) -> Result<u8, HashError> {
+        Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte output"))
+    }
+
+    /// Ascon-CXOF128 does not support bit-level output.
+    pub fn squeeze_partial_byte_final_out(
+        self,
+        _num_bits: usize,
+        _output: &mut u8,
+    ) -> Result<(), HashError> {
+        Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte output"))
     }
 }
 
@@ -94,61 +154,111 @@ impl Algorithm for AsconCXof128 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl XOF for AsconCXof128 {
-    fn hash_xof(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.sponge.absorb(data);
-        let mut out = vec![0u8; result_len];
-        self.squeeze_into(&mut out);
-        out
+impl HashAlgParams for AsconCXof128 {
+    const OUTPUT_LEN: usize = XOF_HASH_BYTES;
+    const BLOCK_LEN: usize = RATE;
+}
+
+impl Hash for AsconCXof128 {
+    fn block_bitlen(&self) -> usize {
+        RATE * 8
     }
 
-    fn hash_xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.sponge.absorb(data);
-        self.squeeze_into(output)
+    fn output_len(&self) -> usize {
+        XOF_HASH_BYTES
     }
 
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
+    fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.sponge.absorb(data);
+        self.into_squeezer().do_final(XOF_HASH_BYTES)
+    }
+
+    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.sponge.absorb(data);
+        output.fill(0);
+        let n = core::cmp::min(output.len(), XOF_HASH_BYTES);
+        self.into_squeezer().do_final_out(&mut output[..n])
+    }
+
+    fn do_update(&mut self, data: &[u8]) {
         if self.sponge.squeezing() {
-            return Err(HashError::InvalidState(
-                "Ascon-CXOF128 cannot absorb after squeezing has begun",
-            ));
+            panic!("Ascon-CXOF128 cannot absorb after squeezing has begun");
         }
         self.sponge.absorb(data);
-        Ok(())
     }
 
-    fn absorb_last_partial_byte(
-        &mut self,
+    fn do_final(self) -> Vec<u8> {
+        self.into_squeezer().do_final(XOF_HASH_BYTES)
+    }
+
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        output.fill(0);
+        let n = core::cmp::min(output.len(), XOF_HASH_BYTES);
+        self.into_squeezer().do_final_out(&mut output[..n])
+    }
+
+    fn do_final_partial_bits(
+        self,
         _partial_byte: u8,
         _num_partial_bits: usize,
-    ) -> Result<(), HashError> {
+    ) -> Result<Vec<u8>, HashError> {
         Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte input"))
     }
 
-    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out = vec![0u8; num_bytes];
-        self.squeeze_into(&mut out);
-        out
-    }
-
-    fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
-        self.squeeze_into(output)
-    }
-
-    fn squeeze_partial_byte_final(self, _num_bits: usize) -> Result<u8, HashError> {
-        Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte output"))
-    }
-
-    fn squeeze_partial_byte_final_out(
+    fn do_final_partial_bits_out(
         self,
-        _num_bits: usize,
-        _output: &mut u8,
-    ) -> Result<(), HashError> {
-        Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte output"))
+        _partial_byte: u8,
+        _num_partial_bits: usize,
+        _output: &mut [u8],
+    ) -> Result<usize, HashError> {
+        Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte input"))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
         SecurityStrength::_128bit
+    }
+}
+
+impl XOF for AsconCXof128 {
+    type Squeezer = AsconCXof128Squeezer;
+
+    fn into_squeezer(mut self) -> Self::Squeezer {
+        if !self.sponge.squeezing() {
+            self.sponge.pad_and_absorb();
+        }
+        AsconCXof128Squeezer { sponge: self.sponge }
+    }
+
+    fn into_squeezer_partial_bits(
+        self,
+        _partial_byte: u8,
+        _num_bits: usize,
+    ) -> Result<Self::Squeezer, HashError> {
+        Err(HashError::InvalidInput("Ascon-CXOF128 does not support partial byte input"))
+    }
+
+    fn xof(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
+        self.sponge.absorb(data);
+        self.into_squeezer().do_final(result_len)
+    }
+
+    fn xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.sponge.absorb(data);
+        self.into_squeezer().do_final_out(output)
+    }
+}
+
+impl XOFSqueezer for AsconCXof128Squeezer {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_out(&mut out);
+        out
+    }
+
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+        self.sponge.squeeze(output);
+        output.len()
     }
 }
 

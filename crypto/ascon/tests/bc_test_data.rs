@@ -16,7 +16,7 @@ mod bc_test_data {
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
     };
-    use bouncycastle_core::traits::{SecurityStrength, XOF};
+    use bouncycastle_core::traits::SecurityStrength;
     use bouncycastle_hex as hex;
     use std::collections::BTreeMap;
     use std::fs;

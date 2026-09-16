@@ -6,7 +6,7 @@
 use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
 use bouncycastle_ascon::ascon_xof128::AsconXof128;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::XOF;
+use bouncycastle_core::traits::Hash;
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
 
@@ -126,6 +126,24 @@ fn cxof128_byte_at_a_time_matches_one_shot() {
     let mut o = [0u8; 48];
     c.squeeze_out(&mut o);
     assert_eq!(o.to_vec(), cref, "CXOF128 byte-at-a-time absorb mismatch");
+}
+
+#[test]
+fn cxof128_hash_trait_finalizes_to_nominal_32_bytes() {
+    let msg = pattern(40);
+    let expected = AsconCXof128::with_customization(b"zz").unwrap().hash_xof(&msg, 32);
+
+    let mut h = AsconCXof128::with_customization(b"zz").unwrap();
+    h.do_update(&msg);
+    assert_eq!(h.output_len(), 32);
+    assert_eq!(h.do_final(), expected);
+
+    let mut out = [0xA5u8; 48];
+    let mut h = AsconCXof128::with_customization(b"zz").unwrap();
+    h.do_update(&msg);
+    assert_eq!(h.do_final_out(&mut out), 32);
+    assert_eq!(&out[..32], expected.as_slice());
+    assert_eq!(&out[32..], &[0u8; 16]);
 }
 
 #[test]
