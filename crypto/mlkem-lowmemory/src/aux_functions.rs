@@ -91,8 +91,9 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 
     // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so a block is done instead.
     // size doesn't really matter, so long as it's a multiple of 3.
-    // 288 seemed to be the sweet spot from playing with benchmarks
-    // It's likely around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
+    // 216 seemed to be the sweet spot from playing with benchmarks
+    // It's likely around the average rejection rate,
+    // and 216 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut C = [0u8; 216];
     xof.squeeze_out(&mut C);
