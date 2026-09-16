@@ -154,7 +154,7 @@
 //! |----------------------|-----------------|-------------------|-----------------|-------------------|
 //! | ML-KEM-512_expanded  | 800            | 3104              | 1632            | 4226 |
 //! | ML-KEM-768_expanded  | 1184           | 6176              | 2400            | 7810 |
-//! | ML-KEM-1024_expanded | 1568           | 10272              | 3168            | 12418 |
+//! | ML-KEM-1024_expanded | 1568           | 10272             | 3168            | 12418 |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
@@ -168,6 +168,14 @@
 //! | Decaps    | 20,920 | 33,560 | 47,240 |
 //!
 //! Values are in bytes and include the harness's own frames (about 3 KB).
+//!
+//! The (rough) performance gains for the pre-expanded key mode are (keygen not included because it does not change):
+//!
+//! | Key Object           | encaps()  | decaps() |
+//! |----------------------|----------|-----------|
+//! | ML-KEM-512_expanded  | x1.37    | x1.27    |
+//! | ML-KEM-768_expanded  | x1.59    | x1.43    |
+//! | ML-KEM-1024_expanded | x1.78    | x1.59    |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
