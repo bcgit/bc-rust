@@ -24,6 +24,12 @@ fn key_boundary_conditions() {
 }
 
 #[test]
+fn derive_pk_matches_keygen() {
+    let (pk, sk) = keygen().unwrap();
+    assert_eq!(sk.derive_pk(), pk);
+}
+
+#[test]
 fn sign_then_verify_round_trips() {
     let (pk, sk) = keygen().unwrap();
     let msg = b"The quick brown fox jumped over the lazy dog";
