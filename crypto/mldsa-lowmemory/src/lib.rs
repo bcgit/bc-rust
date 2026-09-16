@@ -93,20 +93,20 @@
 //! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
 //! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
 //! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
-//! HelloWorld rust application.
+//! The measurements may over-estimate by as much as 7.7 kB, since that is the measured peak memory usage of a do-nothing
+//! HelloWorld rust application in the same harness.
 //!
-//! | Algorithm                 | Peak swap memory usage (kB) | Throughput (ops/s)  |
+//! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
-//! | MLDSA44_lowmemory/KeyGen  | 12.6 (113.8)                | 11,800     (11,300) |
-//! | MLDSA65_lowmemory/KeyGen  | 15.0 (124.1)                | 5,500      (7.000)  |
-//! | MLDSA87_lowmemory/KeyGen  | 15.2 (197.8)                | 3,300      (4,200)  |
-//! | MLDSA44_lowmemory/Sign    | 24.8 (117.7)                | 850        (4,000)  |
-//! | MLDSA65_lowmemory/Sign    | 28.2 (159.6)                | 580        (2,900)  |
-//! | MLDSA87_lowmemory/Sign    | 31.1 (236.7)                | 315        (2,000)  |
-//! | MLDSA44_lowmemory/Verify  | 17.1 (73.0)                 | 10,100     (14,000) |
-//! | MLDSA65_lowmemory/Verify  | 18.0 (134.4)                | 6,300      (8,400)  |
-//! | MLDSA87_lowmemory/Verify  | 20.6 (211.6)                | 3,500      (5,000)  |
+//! | MLDSA44_lowmemory/KeyGen  | 13.3 (75.0)                 | 11,800     (11,300) |
+//! | MLDSA65_lowmemory/KeyGen  | 15.8 (118.9)                | 5,500      (7.000)  |
+//! | MLDSA87_lowmemory/KeyGen  | 17.8 (190.6)                | 3,300      (4,200)  |
+//! | MLDSA44_lowmemory/Sign    | 25.3 (96.2)                 | 850        (4,000)  |
+//! | MLDSA65_lowmemory/Sign    | 30.9 (124.7)                | 580        (2,900)  |
+//! | MLDSA87_lowmemory/Sign    | 34.5 (182.6)                | 315        (2,000)  |
+//! | MLDSA44_lowmemory/Verify  | 17.2 (78.8)                 | 10,100     (14,000) |
+//! | MLDSA65_lowmemory/Verify  | 18.1 (126.5)                | 6,300      (8,400)  |
+//! | MLDSA87_lowmemory/Verify  | 20.7 (202.4)                | 3,500      (5,000)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.

@@ -2184,7 +2184,7 @@ fn main() {
     // bench_mlkem1024_keygen()
     // bench_mlkem1024_lowmemory_keygen()
     // bench_mlkem512_encaps()
-    // bench_mlkem512_encaps_expanded_pk()
+    bench_mlkem512_encaps_expanded_pk()
     // bench_mlkem512_lowmemory_encaps()
     // bench_mlkem768_encaps()
     // bench_mlkem768_encaps_expanded_pk()
@@ -2199,6 +2199,6 @@ fn main() {
     // bench_mlkem768_decaps_expanded_sk()
     // bench_mlkem768_lowmemory_decaps()
     // bench_mlkem1024_decaps()
-    bench_mlkem1024_decaps_expanded_sk()
+    // bench_mlkem1024_decaps_expanded_sk()
     // bench_mlkem1024_lowmemory_decaps()
 }
