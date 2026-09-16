@@ -42,6 +42,72 @@ pub(crate) const SHA512_H0: [u64; 8] = [
     0x510E527FADE682D1, 0x9B05688C2B3E6C1F, 0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
 ];
 
+/// The truncations FIPS 180-4 s. 5.3.6 actually approves: "SHA-512/224 (t = 224) and SHA-512/256
+/// (t = 256) are approved hash algorithms. Other SHA-512/t hash algorithms with different t values
+/// may be specified in [SP 800-107] in the future as the need arises."
+pub(crate) const fn t_is_fips_approved(t: usize) -> bool {
+    t == 224 || t == 256
+}
+
+/// Rejects, at compile time, every `t` for which SHA-512/t is not defined or not representable
+/// here. See [`sha512t_h0`] for where each rule comes from; the multiple-of-8 rule is this crate's,
+/// the rest are FIPS 180-4 s. 5.3.6's.
+pub(crate) const fn check_t(t: usize) {
+    // FIPS 180-4 s. 5.3.6: "t is any positive integer ... such that t < 512".
+    assert!(t > 0, "FIPS 180-4 s. 5.3.6: t must be a positive integer");
+    assert!(t < 512, "FIPS 180-4 s. 5.3.6: t must be less than 512");
+    // FIPS 180-4 s. 5.3.6: "and t is not 384". SHA-384 is its own algorithm (s. 5.3.4 / s. 6.5)
+    // with an IV that is not the one this function would generate.
+    assert!(t != 384, "FIPS 180-4 s. 5.3.6: t must not be 384 -- use SHA384 instead");
+    // This crate's restriction, not the standard's: the digest must be a whole number of bytes.
+    assert!(t.is_multiple_of(8), "SHA-512/t here requires t to be a multiple of 8");
+}
+
+/// The number of decimal digits in `t`, i.e. the length of the "t" part of the ASCII string
+/// "SHA-512/t" that FIPS 180-4 s. 5.3.6 hashes. `t < 512`, so one, two or three.
+pub(crate) const fn t_digits(t: usize) -> usize {
+    if t >= 100 {
+        3
+    } else if t >= 10 {
+        2
+    } else {
+        1
+    }
+}
+
+/// This crate's algorithm name for SHA-512/t, `"SHA512/t"` with `t` in decimal -- `"SHA512/224"`,
+/// `"SHA512/256"`, `"SHA512/8"` -- returned NUL-padded to the longest form, with
+/// [`alg_name_len`] giving the significant prefix. Two pieces because
+/// [`Algorithm::ALG_NAME`](bouncycastle_core::traits::Algorithm::ALG_NAME) is a `&'static str` and
+/// a const generic cannot size the buffer to the digit count.
+///
+/// Note this is *not* the s. 5.3.6 spelling: the string the IV Generation Function hashes is
+/// "SHA-512/t", with the hyphen, and is built separately in [`sha512t_h0`]. This one follows the
+/// crate's existing names, [`SHA512_224_NAME`](crate::SHA512_224_NAME) and
+/// [`SHA512_256_NAME`](crate::SHA512_256_NAME), which it has to keep reproducing exactly.
+pub(crate) const fn alg_name_bytes(t: usize) -> [u8; ALG_NAME_BUF_LEN] {
+    let mut buf = [b'S', b'H', b'A', b'5', b'1', b'2', b'/', 0, 0, 0];
+    let mut i = 7;
+    if t >= 100 {
+        buf[i] = b'0' + (t / 100) as u8;
+        i += 1;
+    }
+    if t >= 10 {
+        buf[i] = b'0' + ((t / 10) % 10) as u8;
+        i += 1;
+    }
+    buf[i] = b'0' + (t % 10) as u8;
+    buf
+}
+
+/// Size of the [`alg_name_bytes`] buffer: `"SHA512/"` plus the most digits `t` can have.
+pub(crate) const ALG_NAME_BUF_LEN: usize = 7 + 3;
+
+/// The significant length of [`alg_name_bytes`]'s output for `t`.
+pub(crate) const fn alg_name_len(t: usize) -> usize {
+    7 + t_digits(t)
+}
+
 /// FIPS 180-4 s. 5.3.6 "SHA-512/t IV Generation Function": computes the initial hash value H(0)
 /// for SHA-512/t.
 ///
@@ -61,20 +127,18 @@ pub(crate) const SHA512_H0: [u64; 8] = [
 /// and t is not 384", and "SHA-512/t" is the ASCII string with t written in decimal (so for t = 256
 /// the message is the 11 bytes `53 48 41 2D 35 31 32 2F 32 35 36`).
 ///
-/// Deliberate deviation from s. 5.3.6: only a three-digit t is accepted. The crate instantiates
-/// only the two truncations FIPS 180-4 approves, t = 224 (s. 5.3.6.1) and t = 256 (s. 5.3.6.2),
-/// and both are three digits, so the one- and two-digit cases of the decimal formatting would be
-/// branches no caller and no test can reach.
+/// Deliberate deviation from s. 5.3.6: `t` must additionally be a multiple of 8. The section
+/// allows "any positive integer" below 512, including values that are not a whole number of bytes,
+/// but [`Hash`](bouncycastle_core::traits::Hash) is byte-oriented -- `OUTPUT_LEN` is a byte count
+/// and `do_final_out` writes whole bytes -- so a t of, say, 100 bits has no representable digest
+/// here. BC Java's `SHA512tDigest` imposes the same restriction ("bitLength needs to be a multiple
+/// of 8"), so the two libraries accept exactly the same set of truncations.
 ///
-/// This is a `const fn` so that the IV is computed at compile time.
+/// This is a `const fn` so that the IV is computed at compile time, which is also what makes the
+/// rules above compile errors rather than panics: an unusable `t` fails the build at the point the
+/// parameter set is instantiated.
 pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
-    // FIPS 180-4 s. 5.3.6 asks only for "any positive integer without a leading zero such that
-    // t < 512, and t is not 384"; the t >= 100 is ours, from the three-digit formatting below, so a
-    // new t under 100 fails the build rather than being written with a leading zero s. 5.3.6 forbids.
-    assert!(
-        t >= 100 && t < 512 && t != 384,
-        "sha512t_h0 formats t as three digits: need 100 <= t < 512 and t != 384"
-    );
+    check_t(t);
 
     // FIPS 180-4 s. 5.3.6: H(0)'' = H(0)', the SHA-512 initial hash value (s. 5.3.5), with each word XOR a5a5a5a5a5a5a5a5.
     let mut h = SHA512_H0;
@@ -84,8 +148,9 @@ pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
         i += 1;
     }
 
-    // FIPS 180-4 s. 5.3.6: the message is the ASCII string "SHA-512/t" (11 bytes, so one block).
-    // It is built directly in its padded form (s. 5.1.2) inside a single 1024-bit block (s. 5.2.2).
+    // FIPS 180-4 s. 5.3.6: the message is the ASCII string "SHA-512/t" (at most 11 bytes, so one
+    // block). It is built directly in its padded form (s. 5.1.2) inside a single 1024-bit block
+    // (s. 5.2.2).
     let mut block = [0u8; 128];
     let prefix = b"SHA-512/";
     let mut len = 0;
@@ -93,13 +158,20 @@ pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
         block[len] = prefix[len];
         len += 1;
     }
-    // FIPS 180-4 s. 5.3.6: t written in decimal "without a leading zero"; three digits, since
-    // 100 <= t < 512 (the assertion above), so "SHA-512/t" is the 11 characters of the s. 5.3.6
-    // example for t = 256.
-    block[len] = b'0' + (t / 100) as u8;
-    block[len + 1] = b'0' + ((t / 10) % 10) as u8;
-    block[len + 2] = b'0' + (t % 10) as u8;
-    len += 3;
+    // FIPS 180-4 s. 5.3.6: t written in decimal "without a leading zero" ("t is 256, but not
+    // 0256"). t < 512, so one, two or three digits, and the leading digit is emitted only when it
+    // is significant -- writing a fixed three digits would produce the "0256" spelling the section
+    // forbids, and hence the wrong IV, for every t below 100.
+    if t >= 100 {
+        block[len] = b'0' + (t / 100) as u8;
+        len += 1;
+    }
+    if t >= 10 {
+        block[len] = b'0' + ((t / 10) % 10) as u8;
+        len += 1;
+    }
+    block[len] = b'0' + (t % 10) as u8;
+    len += 1;
 
     // FIPS 180-4 s. 5.1.2: append the bit "1", then k zero bits (the rest of the block is already zero).
     block[len] = 0x80;
@@ -266,7 +338,39 @@ pub struct SHA512Internal<PARAMS: SHA512InitValue> {
 
 impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     /// Creates a new SHA512 instance, ready for use.
+    ///
+    /// Restricted to parameter sets that are approved hash algorithms. Every member of the family
+    /// but SHA-512/t is one; for SHA-512/t only t = 224 and t = 256 are (FIPS 180-4 s. 5.3.6), so
+    /// any other truncation is a compile error here and has to be asked for by name through
+    /// [`new_allow_unapproved_t`](Self::new_allow_unapproved_t).
     pub fn new() -> Self {
+        const {
+            assert!(
+                PARAMS::FIPS_APPROVED,
+                "this SHA-512/t truncation is not FIPS 180-4 approved (only t = 224 and t = 256 are); \
+                 use SHA512Internal::new_allow_unapproved_t() if that is deliberate"
+            )
+        };
+        Self::construct()
+    }
+
+    /// As [`new`](Self::new), but accepts the SHA-512/t truncations FIPS 180-4 s. 5.3.6 does not
+    /// approve.
+    ///
+    /// The IV Generation Function is defined for every `t` this crate accepts, and the resulting
+    /// hash is a perfectly well-formed SHA-512/t -- it is simply not one NIST has approved, so it
+    /// must not be used where an approved algorithm is required. Reaching for this constructor is
+    /// how that choice is made explicit; [`new`](Self::new) will not build for such a `t`, and
+    /// neither will anything that goes through `Default`, which keeps an unapproved truncation
+    /// from reaching generic code by accident.
+    ///
+    /// The `t` validity rules themselves are not relaxed: `t` must still be a positive multiple of
+    /// 8 below 512 and not 384, checked when the parameter set is instantiated.
+    pub fn new_allow_unapproved_t() -> Self {
+        Self::construct()
+    }
+
+    fn construct() -> Self {
         Self {
             _params: core::marker::PhantomData,
             state: Sha512State::<PARAMS>::new(),
