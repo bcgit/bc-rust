@@ -982,7 +982,7 @@ impl TryFrom<u8> for SecurityStrength {
 impl SecurityStrength {
     /// Rounds down to the closest supported security strength.
     /// For example, 120-bits is rounded down to 112-bit.
-    pub fn from_bits(bits: usize) -> Self {
+    pub const fn from_bits(bits: usize) -> Self {
         if bits < 112 {
             Self::None
         } else if bits < 128 {
@@ -998,7 +998,7 @@ impl SecurityStrength {
 
     /// Rounds down to the closest supported security strength.
     /// For example, 15 bytes (120-bits) is rounded down to 112-bit.
-    pub fn from_bytes(bytes: usize) -> Self {
+    pub const fn from_bytes(bytes: usize) -> Self {
         Self::from_bits(bytes * 8)
     }
 
