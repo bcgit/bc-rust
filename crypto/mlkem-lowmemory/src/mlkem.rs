@@ -201,8 +201,7 @@ impl<
     /// correctly-sized [`KeyMaterial512`] using [`KeyMaterialTrait::truncate`].
     pub(crate) fn keygen_internal(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError> {
         let sk = SK::from_keymaterial(seed)?;
-        let pk = sk.pk();
-        let pk = PK::new(pk.t_hat_packed, pk.rho); // stupid conversion, but it gets around these overly-generified rust types
+        let pk = PK::new(sk.t_hat_packed(), *sk.rho());
         Ok((pk, sk))
     }
 
