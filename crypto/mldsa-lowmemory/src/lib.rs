@@ -98,15 +98,15 @@
 //!
 //! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
-//! | MLDSA44_lowmemory/KeyGen  | 13.3 (75.0)                 | 11,800     (11,300) |
-//! | MLDSA65_lowmemory/KeyGen  | 15.8 (118.9)                | 5,500      (7.000)  |
-//! | MLDSA87_lowmemory/KeyGen  | 17.8 (190.6)                | 3,300      (4,200)  |
-//! | MLDSA44_lowmemory/Sign    | 25.3 (96.2)                 | 850        (4,000)  |
-//! | MLDSA65_lowmemory/Sign    | 30.9 (124.7)                | 580        (2,900)  |
-//! | MLDSA87_lowmemory/Sign    | 34.5 (182.6)                | 315        (2,000)  |
-//! | MLDSA44_lowmemory/Verify  | 17.2 (78.8)                 | 10,100     (14,000) |
-//! | MLDSA65_lowmemory/Verify  | 18.1 (126.5)                | 6,300      (8,400)  |
-//! | MLDSA87_lowmemory/Verify  | 20.7 (202.4)                | 3,500      (5,000)  |
+//! | MLDSA44_lowmemory/KeyGen  | 12.3 (75.0)                 | 11,500     (11,200) |
+//! | MLDSA65_lowmemory/KeyGen  | 14.8 (118.9)                | 6,700      (6,800)  |
+//! | MLDSA87_lowmemory/KeyGen  | 16.8 (190.6)                | 3,800      (4,200)  |
+//! | MLDSA44_lowmemory/Sign    | 22.3 (94.1)                 | 1,000      (3,400)  |
+//! | MLDSA65_lowmemory/Sign    | 27.9 (124.7)                | 570        (2,400)  |
+//! | MLDSA87_lowmemory/Sign    | 31.6 (182.7)                | 340        (1,700)  |
+//! | MLDSA44_lowmemory/Verify  | 16.5 (78.8)                 | 10,900     (13,100) |
+//! | MLDSA65_lowmemory/Verify  | 15.7 (126.5)                | 6,500      (8,100)  |
+//! | MLDSA87_lowmemory/Verify  | 17.7 (202.4)                | 3,700      (4,800)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.

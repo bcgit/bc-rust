@@ -90,9 +90,9 @@
 //!
 //! | Key Object          | sign()   | verify() |
 //! |---------------------|----------|----------|
-//! | ML-DSA-44_expanded  | x1.08    | x1.86    |
-//! | ML-DSA-65_expanded  | x1.19    | x2.08    |
-//! | ML-DSA-87_expanded  | x1.26    | x2.47    |
+//! | ML-DSA-44_expanded  | x1.15    | x1.9    |
+//! | ML-DSA-65_expanded  | x1.2    | x2.2    |
+//! | ML-DSA-87_expanded  | x1.25    | x2.5    |
 //!
 //! # 🚨 Security 🚨
 //!

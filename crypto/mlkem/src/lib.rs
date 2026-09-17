@@ -119,9 +119,9 @@
 //!
 //! | Key Object           | encaps()  | decaps() |
 //! |----------------------|----------|-----------|
-//! | ML-KEM-512_expanded  | x1.37    | x1.27    |
-//! | ML-KEM-768_expanded  | x1.59    | x1.43    |
-//! | ML-KEM-1024_expanded | x1.78    | x1.59    |
+//! | ML-KEM-512_expanded  | x1.4     | x1.3      |
+//! | ML-KEM-768_expanded  | x1.6     | x1.4      |
+//! | ML-KEM-1024_expanded | x1.8     | x1.6      |
 //!
 //! # 🚨 Security 🚨
 //!

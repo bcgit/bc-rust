@@ -92,15 +92,15 @@
 //!
 //! | Algorithm                  | Peak stack memory usage (kB) | Throughput (Kops/s) |
 //! |----------------------------|------------------------|-------------------|
-//! | MLKEM512_lowmemory/KeyGen  | 7.7 (12.9)             | 50.1 (48.7) |
-//! | MLKEM768_lowmemory/KeyGen  | 9.2 (19.4)             | 28.3 (28.8) |
-//! | MLKEM1024_lowmemory/KeyGen | 11.1 (28.9)            | 16.9 (18.1) |
-//! | MLKEM512_lowmemory/Encaps  | 8.4 (18.2)             | 37.8 (43.7) |
-//! | MLKEM768_lowmemory/Encaps  | 9.5 (29.7)             | 22.3 (26.0) |
-//! | MLKEM1024_lowmemory/Encaps | 10.7 (40.2)            | 14.2 (15.6) |
-//! | MLKEM512_lowmemory/Decaps  | 13.8 (25.0)            | 13.4 (31.6) |
-//! | MLKEM768_lowmemory/Decaps  | 16.6 (40.6)            | 7.8 (21.0) |
-//! | MLKEM1024_lowmemory/Decaps | 20.0 (65.4)            | 4.9 (13.6) |
+//! | MLKEM512_lowmemory/KeyGen  | 7.7 (12.9)             | 49.6 (49.6) |
+//! | MLKEM768_lowmemory/KeyGen  | 9.2 (19.4)             | 28.3 (29.9) |
+//! | MLKEM1024_lowmemory/KeyGen | 11.1 (28.9)            | 17.1 (18.7) |
+//! | MLKEM512_lowmemory/Encaps  | 8.4 (17.4)             | 38.0 (45.0) |
+//! | MLKEM768_lowmemory/Encaps  | 9.5 (28.5)             | 22.7 (27.3) |
+//! | MLKEM1024_lowmemory/Encaps | 10.7 (40.2)            | 14.4 (18.1) |
+//! | MLKEM512_lowmemory/Decaps  | 12.0 (24.1)            | 13.3 (35.4) |
+//! | MLKEM768_lowmemory/Decaps  | 13.9 (39.5)            | 7.9 (22.1) |
+//! | MLKEM1024_lowmemory/Decaps | 15.9 (63.8)            | 5.0 (15.0) |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mlkem] crate.
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
