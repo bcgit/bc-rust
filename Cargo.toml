@@ -42,15 +42,15 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-base64.workspace = true
-bouncycastle-core.workspace = true
+bouncycastle-core = { workspace = true, default-features = true }
 bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
-bouncycastle-hkdf.workspace = true
-bouncycastle-hmac.workspace = true
+bouncycastle-hkdf = { workspace = true, default-features = true }
+bouncycastle-hmac = { workspace = true, default-features = true }
 bouncycastle-mldsa.workspace = true
 bouncycastle-mldsa-lowmemory.workspace = true
 bouncycastle-mlkem.workspace = true
 bouncycastle-mlkem-lowmemory.workspace = true
-bouncycastle-rng.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-rng = { workspace = true, default-features = true }
+bouncycastle-sha2 = { workspace = true, default-features = true }
 bouncycastle-sha3.workspace = true
