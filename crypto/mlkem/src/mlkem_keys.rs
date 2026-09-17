@@ -298,7 +298,7 @@ impl<P: MLKEMParams, PK: MLKEMPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: u
     for MLKEMPublicKeyExpanded<P, PK, PK_LEN>
 {
     fn eq(&self, other: &Self) -> bool {
-        self.encode() == other.encode()
+        bouncycastle_utils::ct::ct_eq_bytes(&self.encode(), &other.encode())
     }
 }
 
@@ -613,9 +613,6 @@ impl<
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        if bytes.len() != SK_LEN {
-            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
-        }
         if bytes.len() != SK_LEN {
             return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
         }

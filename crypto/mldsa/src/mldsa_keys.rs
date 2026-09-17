@@ -928,7 +928,7 @@ impl<
     }
 
     fn A_hat(&self) -> P::MatrixA {
-        self.sk.A_hat()
+        self.A_hat.clone()
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN> {
