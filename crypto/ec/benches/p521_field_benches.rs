@@ -15,6 +15,7 @@ fn bench_p521_field(c: &mut Criterion) {
     group.bench_function("mul", |bencher| {
         bencher.iter(|| black_box(black_box(a).mul(black_box(&b))))
     });
+    group.bench_function("square", |bencher| bencher.iter(|| black_box(black_box(a).square())));
     group.bench_function("invert", |bencher| bencher.iter(|| black_box(black_box(a).invert())));
     group.finish();
 }

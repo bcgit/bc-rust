@@ -120,8 +120,13 @@ impl Bp512r1FieldElement {
     }
 
     /// `self^2 mod p`.
+    /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
+    /// [`montgomery::widening_square`]. Used by the exponentiation loops, not by point
+    /// arithmetic; see [`crate::p256::P256FieldElement::square`] for the measurement behind that
+    /// split.
     pub fn square(&self) -> Self {
-        self.mul(self)
+        let t = montgomery::widening_square::<8, 16>(&self.0);
+        Self(Self::finish_redc(&t))
     }
 
     /// `self^-1 mod p`, or `0` if `self` is `0`. Fermat's little theorem, by fixed

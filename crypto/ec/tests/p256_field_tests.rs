@@ -389,3 +389,34 @@ fn known_answer_mul_at_the_reduction_bounds() {
         assert_eq!(fe(b).mul(&fe(a)), fe(expected), "commuted: a = {a:x?}, b = {b:x?}");
     }
 }
+
+/// `square` is a different routine from `mul`, not a wrapper around it (see the field module's
+/// `widening_square`), so the property that makes it correct -- agreeing with `mul` on every
+/// input -- is worth pinning directly rather than only through `invert`, which is the only
+/// caller that would otherwise exercise it. Includes the values most likely to expose a carry
+/// bug in the doubling or diagonal passes: zero, one, and all-ones limbs.
+#[test]
+fn square_agrees_with_mul() {
+    let mut rng = Xorshift64(0xC0FFEE0000000001);
+    for _ in 0..5000 {
+        let a = fe(rng.next_limbs());
+        assert_eq!(a.square(), a.mul(&a), "square disagrees with mul");
+    }
+    for limbs in [
+        [0u64; 4],
+        {
+            let mut l = [0u64; 4];
+            l[0] = 1;
+            l
+        },
+        [u64::MAX; 4],
+        {
+            let mut l = [u64::MAX; 4];
+            l[0] = 0;
+            l
+        },
+    ] {
+        let a = fe(limbs);
+        assert_eq!(a.square(), a.mul(&a), "square disagrees with mul for {limbs:x?}");
+    }
+}
