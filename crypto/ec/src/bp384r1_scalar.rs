@@ -115,8 +115,13 @@ impl Bp384r1ScalarField {
     }
 
     /// `self^2 mod n`.
+    /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
+    /// [`montgomery::widening_square`]. Used by the exponentiation loops, not by point
+    /// arithmetic; see [`crate::p256::P256FieldElement::square`] for the measurement behind that
+    /// split.
     pub fn square(&self) -> Self {
-        self.mul(self)
+        let t = montgomery::widening_square::<6, 12>(&self.0);
+        Self(Self::finish_redc(&t))
     }
 
     /// Converts a secret scalar (`d` or `k`) into Montgomery form for field arithmetic. See
