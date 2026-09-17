@@ -50,13 +50,15 @@ impl Bp256r1ScalarField {
         let (diff, borrow) = crate::nat::sub(&limbs, &N_LIMBS);
         let mut reduced = [0u64; 4];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut reduced);
-        let (low, high) = montgomery::widening_mul(&reduced, &R_SQUARED_LIMBS);
-        Self(Self::finish_redc(low, high))
+        let t = montgomery::widening_mul::<4, 8>(&reduced, &R_SQUARED_LIMBS);
+        Self(Self::finish_redc(&t))
     }
 
     /// Returns the canonical little-endian `u64` limbs (an ordinary, non-Montgomery value), `< n`.
     pub fn to_limbs(&self) -> [u64; 4] {
-        montgomery::redc(&self.0, &[0u64; 4], &N_LIMBS, N_PRIME).0
+        let mut t = [0u64; 8];
+        t[..4].copy_from_slice(&self.0);
+        montgomery::redc::<4, 8, 9>(&t, &N_LIMBS, N_PRIME).0
     }
 
     /// TRUE iff this element is the additive identity.
@@ -100,8 +102,8 @@ impl Bp256r1ScalarField {
 
     /// `self * other mod n`, via Montgomery multiplication.
     pub fn mul(&self, other: &Self) -> Self {
-        let (low, high) = montgomery::widening_mul(&self.0, &other.0);
-        Self(Self::finish_redc(low, high))
+        let t = montgomery::widening_mul::<4, 8>(&self.0, &other.0);
+        Self(Self::finish_redc(&t))
     }
 
     /// `self^2 mod n`.
@@ -136,8 +138,8 @@ impl Bp256r1ScalarField {
     /// [`montgomery::redc`]'s `(high, extra)` result, reduced to the canonical `< n` value. See
     /// [`crate::bp256r1::Bp256r1FieldElement`]'s identical `finish_redc` for the invariant this
     /// relies on and how it was verified for this specific `n`.
-    fn finish_redc(low: [u64; 4], high: [u64; 4]) -> [u64; 4] {
-        let (high, extra) = montgomery::redc(&low, &high, &N_LIMBS, N_PRIME);
+    fn finish_redc(t: &[u64; 8]) -> [u64; 4] {
+        let (high, extra) = montgomery::redc::<4, 8, 9>(t, &N_LIMBS, N_PRIME);
         let (sum, _) = crate::nat::add(&high, &R_MOD_N_LIMBS);
         let (diff, borrow) = crate::nat::sub(&high, &N_LIMBS);
         let mut when_no_extra = [0u64; 4];
