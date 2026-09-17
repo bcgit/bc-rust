@@ -58,13 +58,15 @@ impl Bp512r1ScalarField {
         let (diff, borrow) = crate::nat::sub(&limbs, &N_LIMBS);
         let mut reduced = [0u64; 8];
         ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut reduced);
-        let (low, high) = montgomery::widening_mul(&reduced, &R_SQUARED_LIMBS);
-        Self(Self::finish_redc(low, high))
+        let t = montgomery::widening_mul::<8, 16>(&reduced, &R_SQUARED_LIMBS);
+        Self(Self::finish_redc(&t))
     }
 
     /// Returns the canonical little-endian `u64` limbs (an ordinary, non-Montgomery value), `< n`.
     pub fn to_limbs(&self) -> [u64; 8] {
-        montgomery::redc(&self.0, &[0u64; 8], &N_LIMBS, N_PRIME).0
+        let mut t = [0u64; 16];
+        t[..8].copy_from_slice(&self.0);
+        montgomery::redc::<8, 16, 17>(&t, &N_LIMBS, N_PRIME).0
     }
 
     /// TRUE iff this element is the additive identity.
@@ -108,8 +110,8 @@ impl Bp512r1ScalarField {
 
     /// `self * other mod n`, via Montgomery multiplication.
     pub fn mul(&self, other: &Self) -> Self {
-        let (low, high) = montgomery::widening_mul(&self.0, &other.0);
-        Self(Self::finish_redc(low, high))
+        let t = montgomery::widening_mul::<8, 16>(&self.0, &other.0);
+        Self(Self::finish_redc(&t))
     }
 
     /// `self^2 mod n`.
@@ -131,11 +133,12 @@ impl Bp512r1ScalarField {
             let limb = N_MINUS_2_LIMBS[limb_idx];
             for bit in (0..64).rev() {
                 result = result.square();
-                let multiplied = result.mul(self);
-                let bit_is_set = Condition::<u64>::from_lsb((limb >> bit) & 1);
-                let mut selected = [0u64; 8];
-                ct::conditional_select(bit_is_set, &multiplied.0, &result.0, &mut selected);
-                result = Self(selected);
+                // `limb` is one word of a compile-time constant exponent and `bit` a loop
+                // index, so this branch is on public data only: the sequence of squarings and
+                // multiplications is fixed at compile time and identical on every call.
+                if (limb >> bit) & 1 == 1 {
+                    result = result.mul(self);
+                }
             }
         }
         result
@@ -144,8 +147,8 @@ impl Bp512r1ScalarField {
     /// [`montgomery::redc`]'s `(high, extra)` result, reduced to the canonical `< n` value. See
     /// [`crate::bp512r1::Bp512r1FieldElement`]'s identical `finish_redc` for the invariant this
     /// relies on and how it was verified for this specific `n`.
-    fn finish_redc(low: [u64; 8], high: [u64; 8]) -> [u64; 8] {
-        let (high, extra) = montgomery::redc(&low, &high, &N_LIMBS, N_PRIME);
+    fn finish_redc(t: &[u64; 16]) -> [u64; 8] {
+        let (high, extra) = montgomery::redc::<8, 16, 17>(t, &N_LIMBS, N_PRIME);
         let (sum, _) = crate::nat::add(&high, &R_MOD_N_LIMBS);
         let (diff, borrow) = crate::nat::sub(&high, &N_LIMBS);
         let mut when_no_extra = [0u64; 8];

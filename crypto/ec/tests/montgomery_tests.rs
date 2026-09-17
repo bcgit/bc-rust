@@ -39,18 +39,20 @@ fn reduce_once((high, extra): ([u64; 4], u64)) -> [u64; 4] {
 /// single-conditional-subtraction final step every curve's own `redc` caller performs.
 fn generic_mul_via_montgomery_form(a: [u64; 4], b: [u64; 4]) -> [u64; 4] {
     fn to_montgomery(x: [u64; 4]) -> [u64; 4] {
-        let (low, high) = widening_mul(&x, &R_SQUARED_LIMBS);
-        reduce_once(redc(&low, &high, &N_LIMBS, N_PRIME))
+        let t = widening_mul::<4, 8>(&x, &R_SQUARED_LIMBS);
+        reduce_once(redc::<4, 8, 9>(&t, &N_LIMBS, N_PRIME))
     }
 
     let am = to_montgomery(a);
     let bm = to_montgomery(b);
-    let (low, high) = widening_mul(&am, &bm);
-    let product_montgomery = reduce_once(redc(&low, &high, &N_LIMBS, N_PRIME));
-    // Converting back out of Montgomery form: REDC of `product_montgomery` treated as the *low*
+    let t = widening_mul::<4, 8>(&am, &bm);
+    let product_montgomery = reduce_once(redc::<4, 8, 9>(&t, &N_LIMBS, N_PRIME));
+    // Converting back out of Montgomery form: REDC of `product_montgomery` placed in the *low*
     // half of a 2L-limb value with a zero high half (i.e. `T = product_montgomery`, `T < R`)
     // computes `T * R^-1 mod n = product_montgomery * R^-1 mod n`, undoing the Montgomery scaling.
-    reduce_once(redc(&product_montgomery, &[0u64; 4], &N_LIMBS, N_PRIME))
+    let mut wide = [0u64; 8];
+    wide[..4].copy_from_slice(&product_montgomery);
+    reduce_once(redc::<4, 8, 9>(&wide, &N_LIMBS, N_PRIME))
 }
 
 struct Xorshift64(u64);
