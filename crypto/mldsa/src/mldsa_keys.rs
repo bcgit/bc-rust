@@ -218,8 +218,8 @@ impl<P: MLDSAParams, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for MLDSAPu
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(&bytes_sized))
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(bytes_sized))
     }
 }
 
@@ -298,8 +298,8 @@ impl<
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(&bytes_sized))
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(bytes_sized))
     }
 }
 
@@ -728,9 +728,9 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> SignaturePrivateK
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
+        let bytes_sized: &[u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 
-        <Self as MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN>>::sk_decode(&bytes_sized)
+        <Self as MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN>>::sk_decode(bytes_sized)
     }
 }
 
