@@ -218,6 +218,8 @@ fn widening_square(a: &[u64; 4]) -> [u64; 8] {
     let mut carry = 0u64;
     for limb in result.iter_mut() {
         let next_carry = *limb >> 63;
+        // `*limb << 1` always leaves bit 0 clear and `carry` is only ever 0 or 1, so the two
+        // operands are disjoint: mutating this `|` to `^` is an accepted equivalent, not a bug.
         *limb = (*limb << 1) | carry;
         carry = next_carry;
     }
