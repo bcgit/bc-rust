@@ -25,6 +25,7 @@ use bouncycastle_hmac::HMAC;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 /// SHA-512's output length in bytes.
 const HLEN: usize = 64;
@@ -32,7 +33,7 @@ const HLEN: usize = 64;
 /// `rlen = 8*ceil(qlen/8)` for P-521's `qlen = 521`: the width `int2octets`/`bits2octets` produce.
 const RLEN: usize = 66;
 
-fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
+fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
         .expect("HLEN-byte key always fits");
     let mut hmac =
@@ -40,8 +41,8 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
     for piece in data {
         hmac.do_update(piece);
     }
-    let mut out = [0u8; HLEN];
-    hmac.do_final_out(&mut out).expect("HLEN-byte output buffer always fits HMAC-SHA512's output");
+    let mut out = Secret::<[u8; HLEN]>::new();
+    hmac.do_final_out(&mut *out).expect("HLEN-byte output buffer always fits HMAC-SHA512's output");
     out
 }
 
@@ -71,13 +72,13 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; RLEN] {
 /// followed by `v2`'s first two bytes) must actually be shifted right by those 7 bits, carrying
 /// bits across the byte boundary, to land the result in `[0, 2^521)` the way every other `<
 /// 2^521` value in this crate is represented.
-fn bits2int_521(v1: &[u8; HLEN], v2: &[u8; HLEN]) -> [u8; RLEN] {
+fn bits2int_521(v1: &[u8; HLEN], v2: &[u8; HLEN]) -> Secret<[u8; RLEN]> {
     let mut prefix = [0u8; RLEN];
     prefix[..HLEN].copy_from_slice(v1);
     prefix[HLEN] = v2[0];
     prefix[HLEN + 1] = v2[1];
 
-    let mut shifted = [0u8; RLEN];
+    let mut shifted = Secret::<[u8; RLEN]>::new();
     shifted[0] = prefix[0] >> 7;
     for i in 1..RLEN {
         // `prefix[i] >> 7` occupies only bit 0; `prefix[i - 1] << 1` occupies bits 1-7 (its own
@@ -102,27 +103,31 @@ fn candidate_in_range(candidate: &[u8; RLEN]) -> bool {
 /// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs; step h differs as
 /// described in the module docs (two `HMAC_K(V)` rounds per candidate, then a 521-bit truncation).
 pub fn generate_k(d: &P521Scalar, h1: &[u8; HLEN]) -> P521Scalar {
-    let int2octets_d = d.to_be_bytes();
+    let mut int2octets_d = Secret::<[u8; RLEN]>::new();
+    *int2octets_d = d.to_be_bytes();
     let bits2octets_h1 = bits2octets(h1);
 
-    let mut key = [0u8; HLEN];
-    let mut v = [0x01u8; HLEN];
+    let mut key = Secret::<[u8; HLEN]>::new();
+    let mut v = Secret::<[u8; HLEN]>::new();
+    *v = [0x01u8; HLEN];
 
-    key = hmac_k(&key, &[&v, &[0x00], &int2octets_d, &bits2octets_h1]);
-    v = hmac_k(&key, &[&v]);
-    key = hmac_k(&key, &[&v, &[0x01], &int2octets_d, &bits2octets_h1]);
-    v = hmac_k(&key, &[&v]);
+    key = hmac_k(&key, &[&*v, &[0x00], &*int2octets_d, &bits2octets_h1]);
+    v = hmac_k(&key, &[&*v]);
+    key = hmac_k(&key, &[&*v, &[0x01], &*int2octets_d, &bits2octets_h1]);
+    v = hmac_k(&key, &[&*v]);
 
     loop {
-        let v1 = hmac_k(&key, &[&v]);
-        let v2 = hmac_k(&key, &[&v1]);
-        v = v2;
+        let v1 = hmac_k(&key, &[&*v]);
+        let v2 = hmac_k(&key, &[&*v1]);
+        // `candidate` is built before `v2` is moved into `v`; both are `Secret`, so the previous
+        // `v` is scrubbed by that assignment and `v1`/`v2` when they go out of scope.
         let candidate = bits2int_521(&v1, &v2);
+        v = v2;
         if candidate_in_range(&candidate) {
             return P521Scalar::from_limbs(p521_sec1::limbs_from_be_bytes(&candidate));
         }
-        key = hmac_k(&key, &[&v, &[0x00]]);
-        v = hmac_k(&key, &[&v]);
+        key = hmac_k(&key, &[&*v, &[0x00]]);
+        v = hmac_k(&key, &[&*v]);
     }
 }
 
@@ -169,6 +174,6 @@ mod tests {
         let mut v2 = [0u8; HLEN];
         v2[HLEN - 1] = 0x01; // the least significant bit of the whole 1024-bit input
         let result = bits2int_521(&v1, &v2);
-        assert_eq!(result, [0u8; RLEN]);
+        assert_eq!(*result, [0u8; RLEN]);
     }
 }

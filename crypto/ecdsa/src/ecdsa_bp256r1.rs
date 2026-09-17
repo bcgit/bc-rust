@@ -21,6 +21,7 @@ use bouncycastle_ec::bp256r1_sec1;
 use bouncycastle_ec::bp256r1_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
 use bouncycastle_sha2::SHA256;
+use bouncycastle_utils::secret::Secret;
 
 /// Raw `r || s` signature length: two 32-byte field-width integers (the plan's §6.4 choice of
 /// default encoding). [`ECDSABp256r1::sign_der`]/[`ECDSABp256r1::verify_der`] offer the RFC 3279
@@ -104,9 +105,11 @@ impl ECDSABp256r1 {
         let h: [u8; 32] = SHA256::default().hash(msg)[..32].try_into().unwrap();
         let e = e_from_hash(&h);
 
-        let mut extra_bits = [0u8; crate::keys_bp256r1::EXTRA_BITS_DRBG_OUTPUT_LEN];
-        rng.next_bytes_out(&mut extra_bits).map_err(SignatureError::RNGError)?;
-        let k = reduce_wide_bits_mod_n_minus_1(&extra_bits);
+        // Raw DRBG output, reduced below into the private key / per-message secret: held in
+        // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+        let mut extra_bits = Secret::<[u8; crate::keys_bp256r1::EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
+        rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
+        let k = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
         sign_with_k(sk, &e, k)
     }
@@ -216,7 +219,14 @@ impl SignatureVerifier<ECDSABp256r1PublicKey, PK_LEN, SIG_LEN> for ECDSABp256r1 
         let pk = self.pk.ok_or(SignatureError::GenericError(
             "verify_final called on a sign-initialized ECDSABp256r1; call sign_final instead",
         ))?;
-        if sig.len() < SIG_LEN {
+        // Exactly SIG_LEN, not "at least": the raw encoding is two fixed-width integers and
+        // nothing else, so trailing bytes make this a different, malformed encoding rather than a
+        // valid signature in a roomy buffer. Accepting them would let anyone turn one valid
+        // signature into unlimited distinct byte strings that all verify -- malleability that
+        // breaks any caller treating the signature as an opaque, comparable blob. This matches how
+        // `SignaturePublicKey`/`SignaturePrivateKey::from_bytes` already reject an over-long
+        // encoding here (see `core-test-framework`'s own `test_boundary_conditions`).
+        if sig.len() != SIG_LEN {
             return Err(SignatureError::SignatureVerificationFailed);
         }
 

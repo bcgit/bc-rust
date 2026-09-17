@@ -10,6 +10,8 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
+use bouncycastle_ec::p256_scalar::N_LIMBS;
+use bouncycastle_ec::p256_sec1::be_bytes_from_limbs;
 use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
 use bouncycastle_ecdsa::keys::{ECDSAP256PrivateKey, ECDSAP256PublicKey, keygen};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
@@ -142,6 +144,34 @@ fn private_key_rejects_zero() {
     }
 }
 
+/// FIPS 186-5 §6.2 puts `d` in `[1, n-1]`, so an encoding of `n` or anything above it is not a
+/// key. Reducing such an encoding mod `n` instead of rejecting it would give a single key two (in
+/// fact, unboundedly many) valid-looking encodings: `d = n + 1` would load as `d = 1`.
+#[test]
+fn private_key_rejects_values_at_or_above_the_group_order() {
+    let n = be_bytes_from_limbs(&N_LIMBS);
+
+    for (name, bytes) in [("n", n), ("n + 1", add_one(&n)), ("2^256 - 1", [0xffu8; 32])] {
+        match ECDSAP256PrivateKey::from_bytes(&bytes) {
+            Err(SignatureError::DecodingError(_)) => {}
+            other => panic!("d = {name} should have been rejected, got {other:?}"),
+        }
+    }
+
+    // n - 1 is the largest valid d and must still load, and must not collide with any of the above.
+    let mut n_minus_1 = n;
+    n_minus_1[31] -= 1; // N_LIMBS[0] is odd, so this never borrows
+    let sk = ECDSAP256PrivateKey::from_bytes(&n_minus_1).expect("d = n - 1 is in range");
+    assert_eq!(sk.encode(), n_minus_1, "d = n - 1 must round-trip unchanged");
+}
+
+/// Big-endian `bytes + 1`; only ever called on a value whose last byte is not `0xff`.
+fn add_one(bytes: &[u8; 32]) -> [u8; 32] {
+    let mut out = *bytes;
+    out[31] += 1;
+    out
+}
+
 #[test]
 fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
     // A fixed-output RNG (all-0x42 bytes) must yield the same key pair both times: pins that
@@ -185,4 +215,31 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
     let (pk2, sk2) = bouncycastle_ecdsa::keys::keygen_from_rng(&mut FixedRng).unwrap();
     assert_eq!(sk1, sk2);
     assert_eq!(pk1, pk2);
+}
+
+/// The raw encoding is exactly `r || s`; anything longer or shorter is a different, malformed
+/// encoding, not a signature in a roomy buffer. Accepting trailing bytes would turn one valid
+/// signature into unlimited distinct byte strings that all verify.
+#[test]
+fn verify_rejects_signature_of_the_wrong_length() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"length-checked signature";
+    let sig = ECDSAP256::sign(&sk, msg, None).unwrap();
+    ECDSAP256::verify(&pk, msg, None, &sig).expect("the untampered signature must verify");
+
+    for extra in 1..=3 {
+        let mut too_long = sig.to_vec();
+        too_long.extend(core::iter::repeat_n(0xAAu8, extra));
+        match ECDSAP256::verify(&pk, msg, None, &too_long) {
+            Err(SignatureError::SignatureVerificationFailed) => {}
+            other => panic!("{extra} trailing byte(s) should have failed, got {other:?}"),
+        }
+    }
+
+    for short in 1..=3 {
+        match ECDSAP256::verify(&pk, msg, None, &sig[..64 - short]) {
+            Err(SignatureError::SignatureVerificationFailed) => {}
+            other => panic!("{short} byte(s) short should have failed, got {other:?}"),
+        }
+    }
 }
