@@ -72,3 +72,35 @@ harness = false
 [[bench]]
 name = "sm2_point_benches"
 harness = false
+
+[[bench]]
+name = "p256_scalar_benches"
+harness = false
+
+[[bench]]
+name = "p384_scalar_benches"
+harness = false
+
+[[bench]]
+name = "p521_scalar_benches"
+harness = false
+
+[[bench]]
+name = "p256k1_scalar_benches"
+harness = false
+
+[[bench]]
+name = "bp256r1_scalar_benches"
+harness = false
+
+[[bench]]
+name = "bp384r1_scalar_benches"
+harness = false
+
+[[bench]]
+name = "bp512r1_scalar_benches"
+harness = false
+
+[[bench]]
+name = "sm2_scalar_benches"
+harness = false
