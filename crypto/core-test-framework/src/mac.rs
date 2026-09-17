@@ -165,7 +165,8 @@ impl TestFrameworkMAC {
             );
             // complains at first
             match M::new(&low_security_key) {
-                Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
+                Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */
+                }
                 _ => {
                     panic!(
                         "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"

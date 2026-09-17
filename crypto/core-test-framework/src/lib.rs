@@ -10,7 +10,6 @@
 //! Should only ever be a dev-dependency.
 //! This crate need not support no_std
 
-
 #![forbid(unsafe_code)]
 // Let's include this for completeness, but since this in an internal test crate, no reason to fully
 // properly document everything.
