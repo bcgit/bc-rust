@@ -16,3 +16,59 @@ harness = false
 [[bench]]
 name = "p256_point_benches"
 harness = false
+
+[[bench]]
+name = "p384_field_benches"
+harness = false
+
+[[bench]]
+name = "p384_point_benches"
+harness = false
+
+[[bench]]
+name = "p521_field_benches"
+harness = false
+
+[[bench]]
+name = "p521_point_benches"
+harness = false
+
+[[bench]]
+name = "p256k1_field_benches"
+harness = false
+
+[[bench]]
+name = "p256k1_point_benches"
+harness = false
+
+[[bench]]
+name = "bp256r1_field_benches"
+harness = false
+
+[[bench]]
+name = "bp256r1_point_benches"
+harness = false
+
+[[bench]]
+name = "bp384r1_field_benches"
+harness = false
+
+[[bench]]
+name = "bp384r1_point_benches"
+harness = false
+
+[[bench]]
+name = "bp512r1_field_benches"
+harness = false
+
+[[bench]]
+name = "bp512r1_point_benches"
+harness = false
+
+[[bench]]
+name = "sm2_field_benches"
+harness = false
+
+[[bench]]
+name = "sm2_point_benches"
+harness = false
