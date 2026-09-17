@@ -368,7 +368,9 @@
 //! }
 //! ```
 
-use crate::aux_functions::{unpack_c_tilde, unpack_h_row};
+use crate::aux_functions::{
+    ZEROED_HINT_ROW, hint_get, make_hint_row, unpack_c_tilde, unpack_h_row, use_hint_row,
+};
 use crate::low_memory_helpers::{
     compute_ct0_component, compute_w_row, compute_w0cs2_component, compute_wp_approx_row,
     compute_z_component, s_unpack,
@@ -712,7 +714,8 @@ pub(crate) fn sign_internal<
             tmp.conditional_add_q();
 
             w.high_bits_inplace::<P>();
-            let (hint_row, weight) = tmp.make_hint::<P>(&w);
+            let mut hint_row = ZEROED_HINT_ROW;
+            let weight = make_hint_row::<P>(&tmp, &w, &mut hint_row);
             let next_hint_count = hint_count + weight as usize;
 
             // mutants note: don't have a test vector that exercises this condition,
@@ -723,7 +726,7 @@ pub(crate) fn sign_internal<
             }
 
             for idx in 0..N {
-                if hint_row[idx] != 0 {
+                if hint_get(&hint_row, idx) != 0 {
                     output[hint_offset + hint_count] = idx as u8;
                     hint_count += 1;
                 }
@@ -794,15 +797,16 @@ pub(crate) fn verify_internal<
             None => return Err(SignatureError::SignatureVerificationFailed),
         };
 
-        let h_i = match unpack_h_row::<P, SIG_LEN>(row, sig) {
-            Some(h_i) => h_i,
-            // means there were more than OMEGA bits set in the hint
-            None => return Err(SignatureError::SignatureVerificationFailed),
-        };
+        let mut h_i = ZEROED_HINT_ROW;
+        if !unpack_h_row::<P, SIG_LEN>(row, sig, &mut h_i) {
+            // the encoded hint is malformed: out-of-order indices, more than OMEGA bits set,
+            // or nonzero padding
+            return Err(SignatureError::SignatureVerificationFailed);
+        }
 
         // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
         // ▷ reconstruction of signer’s commitment
-        wp_approx.use_hint::<P>(&h_i);
+        use_hint_row::<P>(&mut wp_approx, &h_i);
         hash.do_update(wp_approx.w1_encode::<P>().as_ref());
     }
 
