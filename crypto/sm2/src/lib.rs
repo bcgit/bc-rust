@@ -20,6 +20,72 @@
 //! `ctx` parameter to carry it -- see [`sm2`]'s module docs for the full reasoning and the
 //! resulting requirement that `ctx` must be `Some`.
 //!
+//! # Usage Examples
+//!
+//! Every SM2 operation needs the signer's identity `IDA`, which `ZA` binds into the message hash;
+//! this crate carries it in the `Signer`/`SignatureVerifier` traits' `ctx` parameter, and rejects
+//! `None`. Signing draws a fresh `k` each call, so signatures are not reproducible:
+//!
+//! ```
+//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
+//! use bouncycastle_sm2::keys::keygen;
+//! use bouncycastle_sm2::sm2::SM2;
+//!
+//! let (pk, sk) = keygen()?;
+//! let id = b"alice@example.com";
+//! let message = b"the message to sign";
+//!
+//! let signature = SM2::sign(&sk, message, Some(id))?;
+//! SM2::verify(&pk, message, Some(id), &signature)?;
+//!
+//! // The identity is part of what is signed: verifying under a different one fails.
+//! assert!(SM2::verify(&pk, message, Some(b"bob@example.com"), &signature).is_err());
+//! // And `ctx` is not optional here, unlike every other primitive in this workspace.
+//! assert!(SM2::sign(&sk, message, None).is_err());
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
+//! Streaming, for a message too large to hold at once. `ZA` is absorbed by `sign_init`, so only
+//! the message itself passes through `sign_update`:
+//!
+//! ```
+//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
+//! use bouncycastle_sm2::keys::keygen;
+//! use bouncycastle_sm2::sm2::SM2;
+//!
+//! let (pk, sk) = keygen()?;
+//! let id = b"alice@example.com";
+//!
+//! let mut signer = SM2::sign_init(&sk, Some(id))?;
+//! signer.sign_update(b"the first chunk, ");
+//! signer.sign_update(b"then the second");
+//! let signature = signer.sign_final()?;
+//!
+//! let mut verifier = SM2::verify_init(&pk, Some(id))?;
+//! verifier.verify_update(b"the first chunk, then the second");
+//! verifier.verify_final(&signature)?;
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
+//! Keys use the same SEC 1 encodings as `bouncycastle-ecdsa` -- `04 || X || Y` for a public key
+//! (the 33-byte compressed form is also accepted on decode), a 32-byte big-endian integer for a
+//! private key, with `dA` required to be in `[1, n-1]`:
+//!
+//! ```
+//! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+//! use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
+//!
+//! let (pk, sk) = keygen()?;
+//!
+//! assert_eq!(SM2PublicKey::from_bytes(&pk.encode())?, pk);
+//! assert_eq!(SM2PrivateKey::from_bytes(&sk.encode())?, sk);
+//! // A private key carries its own public key, so this costs nothing to ask for.
+//! assert_eq!(sk.derive_pk(), pk);
+//!
+//! assert!(SM2PrivateKey::from_bytes(&[0u8; 32]).is_err());
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
 //! # Memory Footprint
 //!
 //! The following table lists the size of the on-disk bytes encoding and the in-memory struct size

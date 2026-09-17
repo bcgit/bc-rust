@@ -93,12 +93,14 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// so that transient is copied into the `Secret` above but the transient itself is not erased.
 ///
 /// The rejection loop (step h.3, "otherwise ... loop") is the one place this crate's own
-/// constant-time rules permit branching on a value derived from a secret: per
-/// `local/ec_custom_curves_and_ecdsa_plan.md` §6.2, "a rejection loop is acceptable when a
-/// rejected candidate is discarded entirely and nothing derived from it is ever used, because the
-/// only thing the iteration count reveals is how many candidates were rejected, which is
-/// independent of the k finally used" -- and for P-256, `n` is within `2^-32` of `2^256`, so
-/// rejection happens with negligible probability regardless.
+/// constant-time rules permit branching on a value derived from a secret. The position, which
+/// applies equally to FIPS 186-5 Appendix A.3.2's and A.4.2's identical loops: a rejection loop is
+/// acceptable when a rejected candidate is discarded entirely and nothing derived from it is ever
+/// used, because the only thing its iteration count can reveal is how many candidates were
+/// rejected -- and that is independent of the `k` finally returned. What must be constant time is
+/// everything subsequently done *with* the accepted `k`, which is the rest of this crate's
+/// concern. For P-256 the question is close to moot anyway: `n` is within `2^-32` of `2^256`, so a
+/// candidate is rejected with negligible probability.
 pub fn generate_k(d: &P256Scalar, h1: &[u8; HLEN]) -> P256Scalar {
     let mut int2octets_d = Secret::<[u8; HLEN]>::new();
     *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
