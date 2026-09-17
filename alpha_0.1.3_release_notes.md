@@ -21,3 +21,4 @@
       existing test used
       `0xFF`, which masked the second error.
     * Changed the order of bits when absorbing a final partial byte to match ASN.1 DER BIT_STRING bit ordering.
+* Further reductions to the memory usage of the mldsa-lowmemory and mlkem-lowmemory crates. 
