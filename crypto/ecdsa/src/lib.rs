@@ -1,16 +1,98 @@
-//! ECDSA over P-256, P-384, P-521, and secp256k1: key generation (FIPS 186-5 Appendix A.2.1),
-//! signature generation (§6.4.1, deterministic per §6.3.2/Appendix A.3.3/RFC 6979 by default,
-//! randomised per §6.3.1/Appendix A.3.1 as an additional API), and verification (§6.4.2), built on
+//! ECDSA over seven curves: key generation (FIPS 186-5 Appendix A.2.1), signature generation
+//! (§6.4.1, deterministic per §6.3.2/Appendix A.3.3/RFC 6979 by default, randomised per
+//! §6.3.1/Appendix A.3.1 as an additional API), and verification (§6.4.2), built on
 //! [`bouncycastle_ec`]'s field/scalar/point arithmetic, SEC 1 encodings, and comb/wNAF
 //! multipliers. Raw `r || s` is the default signature encoding; [`der`] offers DER `SEQUENCE { r,
 //! s }` (RFC 3279 §2.2.3) as an alternative for interop that needs it.
 //!
+//! # Usage Examples
+//!
+//! Signing is deterministic (RFC 6979), so the same key and message always produce the same
+//! signature:
+//!
+//! ```
+//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
+//! use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
+//! use bouncycastle_ecdsa::keys::keygen;
+//!
+//! let (pk, sk) = keygen()?;
+//! let message = b"the message to sign";
+//!
+//! // ECDSA has no context string; the trait's `ctx` parameter is accepted and ignored.
+//! let signature = ECDSAP256::sign(&sk, message, None)?;
+//! assert_eq!(signature, ECDSAP256::sign(&sk, message, None)?, "RFC 6979 is deterministic");
+//!
+//! ECDSAP256::verify(&pk, message, None, &signature)?;
+//! assert!(ECDSAP256::verify(&pk, b"a different message", None, &signature).is_err());
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
+//! Streaming, for a message you do not want to hold in memory at once:
+//!
+//! ```
+//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
+//! use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
+//! use bouncycastle_ecdsa::keys::keygen;
+//!
+//! let (pk, sk) = keygen()?;
+//!
+//! let mut signer = ECDSAP256::sign_init(&sk, None)?;
+//! signer.sign_update(b"the first chunk, ");
+//! signer.sign_update(b"then the second");
+//! let signature = signer.sign_final()?;
+//!
+//! let mut verifier = ECDSAP256::verify_init(&pk, None)?;
+//! verifier.verify_update(b"the first chunk, then the second");
+//! verifier.verify_final(&signature)?;
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
+//! Keys encode as SEC 1 octets -- `04 || X || Y` for a public key (the 33-byte compressed form is
+//! also accepted on decode), a fixed-width big-endian integer for a private key. Both reject
+//! malformed input rather than reinterpreting it:
+//!
+//! ```
+//! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+//! use bouncycastle_ecdsa::keys::{ECDSAP256PrivateKey, ECDSAP256PublicKey, keygen};
+//!
+//! let (pk, sk) = keygen()?;
+//!
+//! let pk_bytes = pk.encode();
+//! assert_eq!(pk_bytes[0], 0x04);
+//! assert_eq!(ECDSAP256PublicKey::from_bytes(&pk_bytes)?, pk);
+//!
+//! let sk_bytes = sk.encode();
+//! assert_eq!(ECDSAP256PrivateKey::from_bytes(&sk_bytes)?, sk);
+//!
+//! // `d` must be in [1, n-1]: zero, `n`, and anything above it are rejected rather than reduced.
+//! assert!(ECDSAP256PrivateKey::from_bytes(&[0u8; 32]).is_err());
+//! assert!(ECDSAP256PrivateKey::from_bytes(&[0xff; 32]).is_err());
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
+//! For interop that needs DER `SEQUENCE { r, s }` rather than raw `r || s`:
+//!
+//! ```
+//! use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
+//! use bouncycastle_ecdsa::keys::keygen;
+//!
+//! let (pk, sk) = keygen()?;
+//! let (der, der_len) = ECDSAP256::sign_der(&sk, b"message", None)?;
+//! ECDSAP256::verify_der(&pk, b"message", None, &der[..der_len])?;
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
+//! Every curve follows the same shape, in its own module pair: `ecdsa_p256`/`keys`,
+//! `ecdsa_p384`/`keys_p384`, `ecdsa_p521`/`keys_p521`, `ecdsa_p256k1`/`keys_p256k1`,
+//! `ecdsa_bp256r1`/`keys_bp256r1`, `ecdsa_bp384r1`/`keys_bp384r1`,
+//! `ecdsa_bp512r1`/`keys_bp512r1`.
+//!
 //! # Status
 //!
-//! P-256 (SHA-256), P-384 (SHA-384), P-521 (SHA-512), secp256k1 (SHA-256), brainpoolP256r1
-//! (SHA-256), brainpoolP384r1 (SHA-384), and brainpoolP512r1 (SHA-512). See
-//! `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9 for the rest of the plan (SM2, CLI wiring,
-//! benches).
+//! Seven curves, each paired with the hash whose output matches its order: P-256 (SHA-256), P-384
+//! (SHA-384), P-521 (SHA-512), secp256k1 (SHA-256), brainpoolP256r1 (SHA-256), brainpoolP384r1
+//! (SHA-384), and brainpoolP512r1 (SHA-512). SM2 is a different signature algorithm rather than
+//! another ECDSA curve, and lives in [`bouncycastle_sm2`](../bouncycastle_sm2/index.html).
 //!
 //! # Memory Footprint
 //!
