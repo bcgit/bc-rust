@@ -20,6 +20,21 @@
 //! `ctx` parameter to carry it -- see [`sm2`]'s module docs for the full reasoning and the
 //! resulting requirement that `ctx` must be `Some`.
 //!
+//! # Memory Footprint
+//!
+//! The following table lists the size of the on-disk bytes encoding and the in-memory struct size
+//! of the key objects:
+//!
+//! | Key Object | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
+//! |------------|-----------------|--------------------|------------------|--------------------|
+//! | SM2        | 65              | 64                 | 32               | 32                 |
+//!
+//! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`; the
+//! "on disk" sizes are [`keys::PK_LEN`]/[`keys::SK_LEN`]. These numbers are produced by
+//! `mem_usage_benches`' `bench_sm2_mem_usage` binary's `print_struct_sizes()`; that binary is also
+//! the stack-usage measurement harness (see its own doc comment for the `valgrind`/`massif`
+//! invocation).
+//!
 //! # Security Considerations
 //!
 //! - **The private key `dA` and the per-message secret `k` are never handled in variable time.**
