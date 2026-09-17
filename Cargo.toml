@@ -9,6 +9,7 @@ version = "0.1.3"
 
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
+bouncycastle-ascon = { path = "./crypto/ascon" }
 bouncycastle-aes = { path = "./crypto/aes" }
 bouncycastle-base64 = { path = "./crypto/base64" }
 bouncycastle-modes = { path = "./crypto/modes" }
@@ -45,6 +46,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+bouncycastle-ascon.workspace = true
 bouncycastle-aes.workspace = true
 bouncycastle-base64.workspace = true
 bouncycastle-core.workspace = true

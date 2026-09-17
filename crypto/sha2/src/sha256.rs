@@ -143,10 +143,15 @@ const fn compress_block(s: &mut [u32; 8], block: &[u8; 64]) {
     s[7] = s[7].wrapping_add(h);
 }
 
-#[derive(Clone)]
 pub(crate) struct Sha256State<PARAMS: SHA256InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u32; 8]>,
+}
+
+impl<PARAMS: SHA256InitValue> Clone for Sha256State<PARAMS> {
+    fn clone(&self) -> Self {
+        Self { _params: core::marker::PhantomData, h: self.h.clone() }
+    }
 }
 
 impl<PARAMS: SHA256InitValue> Sha256State<PARAMS> {
@@ -168,13 +173,24 @@ impl<PARAMS: SHA256InitValue> Sha256State<PARAMS> {
 /// Internal struct for SHA256.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
-#[derive(Clone)]
 pub struct SHA256Internal<PARAMS: SHA256InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     state: Sha256State<PARAMS>,
     byte_count: u64,
     x_buf: Secret<[u8; 64]>,
     x_buf_off: usize,
+}
+
+impl<PARAMS: SHA256InitValue> Clone for SHA256Internal<PARAMS> {
+    fn clone(&self) -> Self {
+        Self {
+            _params: core::marker::PhantomData,
+            state: self.state.clone(),
+            byte_count: self.byte_count,
+            x_buf: self.x_buf.clone(),
+            x_buf_off: self.x_buf_off,
+        }
+    }
 }
 
 impl<PARAMS: SHA256InitValue> SHA256Internal<PARAMS> {

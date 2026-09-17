@@ -252,12 +252,14 @@ impl TestFrameworkSimpleCipher {
             SecurityStrength::_192bit,
             SecurityStrength::_256bit,
         ];
+        let mut strengths_tested = 0;
         for ss in security_strengths.iter() {
             // Skip the strengths a KEY_LEN-byte key cannot carry; see `TestFrameworkElectronicCodeBook`.
             if ss > &SecurityStrength::from_bytes(KEY_LEN) {
                 continue;
             }
             do_hazardous_operations(&mut key, |key| key.set_security_strength(*ss)).unwrap();
+            strengths_tested += 1;
 
             match E::do_encrypt_init(&key) {
                 Ok(_) => assert!(
@@ -278,6 +280,7 @@ impl TestFrameworkSimpleCipher {
                 _ => panic!("Unexpected error"),
             };
         }
+        assert!(strengths_tested > 0, "strength sweep must not be vacuous");
     }
 }
 
@@ -408,6 +411,7 @@ impl TestFrameworkBlockCipher {
             SecurityStrength::_192bit,
             SecurityStrength::_256bit,
         ];
+        let mut strengths_tested = 0;
         for ss in security_strengths.iter() {
             // `set_security_strength` enforces its key-length guard even inside a
             // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
@@ -421,6 +425,7 @@ impl TestFrameworkBlockCipher {
 
             // Tag the key at an arbitrary strength for the purpose of this test.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+            strengths_tested += 1;
 
             match E::do_encrypt_init(&key) {
                 Ok(_) => {
@@ -438,6 +443,7 @@ impl TestFrameworkBlockCipher {
                 _ => panic!("Unexpected error"),
             };
         }
+        assert!(strengths_tested > 0, "strength sweep must not be vacuous");
     }
 }
 
@@ -521,6 +527,7 @@ impl TestFrameworkAEADCipher {
             SecurityStrength::_192bit,
             SecurityStrength::_256bit,
         ];
+        let mut strengths_tested = 0;
         for ss in security_strengths.iter() {
             // `set_security_strength` enforces its key-length guard even inside a
             // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
@@ -534,6 +541,7 @@ impl TestFrameworkAEADCipher {
 
             // Tag the key at an arbitrary strength for the purpose of this test.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+            strengths_tested += 1;
 
             match C::encrypt_out(&key, msg, &mut ct) {
                 Ok(_) => {
@@ -551,6 +559,7 @@ impl TestFrameworkAEADCipher {
                 _ => panic!("Unexpected error"),
             };
         }
+        assert!(strengths_tested > 0, "strength sweep must not be vacuous");
     }
 
     /// Test all the members of trait AEADCipher against the given input-output pair.
@@ -595,15 +604,21 @@ impl TestFrameworkAEADCipher {
         // Modifying the ciphertext MUST cause an AEAD failure: unlike an unauthenticated cipher,
         // a conformant AEAD must never return plaintext for a ciphertext that fails its tag check.
         ct[17] ^= 0xFF;
+        pt[..ct_bytes_written].fill(0xAA);
         match C::aead_decrypt_out(&key, &nonce, aad, &ct[..ct_bytes_written], &tag, &mut pt) {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             Err(SymmetricCipherError::DecryptionFailed) => { /* also acceptable */ }
             _ => panic!("Modified ciphertext must fail the AEAD tag check"),
         };
+        assert!(
+            pt[..ct_bytes_written].iter().all(|&b| b == 0),
+            "AEAD must not leave plaintext in the output buffer after a failed tag check"
+        );
         // restore the ciphertext so the AAD- and tag-tamper checks below each test one variable
         ct[17] ^= 0xFF;
 
         // messing with the aad causes the aead_decrypt to fail
+        pt[..ct_bytes_written].fill(0xAA);
         match C::aead_decrypt_out(
             &key,
             &nonce,
@@ -615,8 +630,13 @@ impl TestFrameworkAEADCipher {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             _ => panic!("Expected TagCheckFailed error"),
         };
+        assert!(
+            pt[..ct_bytes_written].iter().all(|&b| b == 0),
+            "AEAD must not leave plaintext in the output buffer after a failed tag check"
+        );
 
         // messing with the tag causes the aead_decrypt to fail
+        pt[..ct_bytes_written].fill(0xAA);
         match C::aead_decrypt_out(
             &key,
             &nonce,
@@ -628,6 +648,10 @@ impl TestFrameworkAEADCipher {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             _ => panic!("Expected TagCheckFailed error"),
         };
+        assert!(
+            pt[..ct_bytes_written].iter().all(|&b| b == 0),
+            "AEAD must not leave plaintext in the output buffer after a failed tag check"
+        );
 
         // multiple invocations give different nonces
         let (nonce1, _ct_bytes_written, _tag) =
@@ -658,6 +682,7 @@ impl TestFrameworkAEADCipher {
             SecurityStrength::_192bit,
             SecurityStrength::_256bit,
         ];
+        let mut strengths_tested = 0;
         for ss in security_strengths.iter() {
             // `set_security_strength` enforces its key-length guard even inside a
             // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
@@ -671,6 +696,7 @@ impl TestFrameworkAEADCipher {
 
             // Tag the key at an arbitrary strength for the purpose of this test.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+            strengths_tested += 1;
 
             // The key-strength requirement must be enforced both by the AEAD one-shot and by the
             // plain one (encrypt_out), so exercise both.
@@ -692,6 +718,7 @@ impl TestFrameworkAEADCipher {
             check_strength(C::aead_encrypt_out(&key, aad, msg, &mut ct).map(|_| ()));
             check_strength(C::encrypt_out(&key, msg, &mut ct).map(|_| ()));
         }
+        assert!(strengths_tested > 0, "strength sweep must not be vacuous");
     }
 }
 
@@ -839,6 +866,7 @@ impl TestFrameworkStreamCipher {
             SecurityStrength::_192bit,
             SecurityStrength::_256bit,
         ];
+        let mut strengths_tested = 0;
         for ss in security_strengths.iter() {
             // `set_security_strength` enforces its key-length guard even inside a
             // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
@@ -852,6 +880,7 @@ impl TestFrameworkStreamCipher {
 
             // Tag the key at an arbitrary strength for the purpose of this test.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
+            strengths_tested += 1;
 
             let check = |r: Result<(), SymmetricCipherError>, max: &SecurityStrength| match r {
                 Ok(_) => {
@@ -874,5 +903,6 @@ impl TestFrameworkStreamCipher {
                 &D::MAX_SECURITY_STRENGTH,
             );
         }
+        assert!(strengths_tested > 0, "strength sweep must not be vacuous");
     }
 }

@@ -7,33 +7,48 @@ use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_core::traits::{Algorithm, KDF, SecurityStrength, Suspendable, XOF};
+use bouncycastle_core::traits::{
+    Algorithm, Hash, KDF, SecurityStrength, Suspendable, XOF, XOFSqueezer,
+};
 use bouncycastle_utils::{max, min};
 
 /// Internal struct for SHAKE.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
 ///
-/// Note that even though SHAKE is physically capable of acting as a hash function, and in fact is secure
-/// as such if the provided message includes the requested length, SHAKE does not implement the [`Hash`] trait.
-/// FIPS 202 section 7 states:
-///
-///   "SHAKE128 and SHAKE256 are approved XOFs, whose approved uses will be specified in
-/// NIST Special Publications. Although some of those uses may overlap with the uses of approved
-/// hash functions, the XOFs are not approved as hash functions, due to the property that is
-/// discussed in Sec. A.2."
-///
-/// Section A.2 describes how SHAKE does not internally diversify its output based on the requested length.
-/// For example, the first 32 bytes of SHAKE128("message", 64) and SHAKE128("message", 128), will be identical
-/// and equal to SHAKE128("message", 32). Proper hash functions don't do this, and NIST is concerned that
-/// this could lead to application vulnerabilities.
-#[derive(Clone)]
+/// SHAKE is exposed as a [`Hash`] because the core API now treats XOFs as hashes with a nominal
+/// output length. The XOF API remains the right interface when the caller chooses an arbitrary
+/// output length.
 pub struct SHAKEInternal<PARAMS: SHAKEParams> {
     _phantomdata: core::marker::PhantomData<PARAMS>,
     keccak: KeccakInternal,
     kdf_key_type: KeyType,
     kdf_security_strength: SecurityStrength,
     kdf_entropy: usize,
+}
+
+/// Squeezing state for SHAKE.
+pub struct SHAKESqueezer<PARAMS: SHAKEParams> {
+    _phantomdata: core::marker::PhantomData<PARAMS>,
+    keccak: KeccakInternal,
+}
+
+impl<PARAMS: SHAKEParams> Clone for SHAKEInternal<PARAMS> {
+    fn clone(&self) -> Self {
+        Self {
+            _phantomdata: core::marker::PhantomData,
+            keccak: self.keccak.clone(),
+            kdf_key_type: self.kdf_key_type,
+            kdf_security_strength: self.kdf_security_strength,
+            kdf_entropy: self.kdf_entropy,
+        }
+    }
+}
+
+impl<PARAMS: SHAKEParams> Clone for SHAKESqueezer<PARAMS> {
+    fn clone(&self) -> Self {
+        Self { _phantomdata: core::marker::PhantomData, keccak: self.keccak.clone() }
+    }
 }
 
 impl<PARAMS: SHAKEParams> Algorithm for SHAKEInternal<PARAMS> {
@@ -74,6 +89,105 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
             return 0;
         }
         self.squeeze_out(output)
+    }
+
+    fn nominal_output_len() -> usize {
+        match PARAMS::SIZE {
+            KeccakSize::_128 => 32,
+            KeccakSize::_256 => 64,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Compatibility helper for the old one-shot XOF API.
+    pub fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
+        self.hash_internal(data, result_len)
+    }
+
+    /// Compatibility helper for the old one-shot XOF API.
+    pub fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        self.hash_internal_out(data, output)
+    }
+
+    /// Compatibility helper for the old streaming API: absorb bytes while still in the input phase.
+    pub fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
+        if self.keccak.squeezing {
+            return Err(HashError::InvalidState("cannot absorb after squeezing has begun"));
+        }
+        self.keccak.absorb(data);
+        Ok(())
+    }
+
+    /// Compatibility helper for the old streaming API: switch to squeezing with a final partial byte.
+    pub fn absorb_last_partial_byte(
+        &mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+    ) -> Result<(), HashError> {
+        if self.keccak.squeezing {
+            return Err(HashError::InvalidState("cannot absorb after squeezing has begun"));
+        }
+        if num_partial_bits > 7 {
+            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
+        }
+
+        let message_bits = (partial_byte.reverse_bits() as u16) & ((1 << num_partial_bits) - 1);
+        let mut final_input: u16 = message_bits | (0x0F << num_partial_bits);
+        let mut final_bits = num_partial_bits + 4;
+
+        if final_bits >= 8 {
+            self.keccak.absorb(&[final_input as u8]);
+            final_bits -= 8;
+            final_input >>= 8;
+        }
+
+        self.keccak.absorb_bits(final_input as u8, final_bits).expect("Absorb failed.");
+
+        Ok(())
+    }
+
+    /// Compatibility helper for the old streaming API: produce `num_bytes` bytes.
+    pub fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out: Vec<u8> = vec![0u8; num_bytes];
+        self.squeeze_out(&mut out);
+        out
+    }
+
+    /// Compatibility helper for the old streaming API: fill `output` from the XOF stream.
+    pub fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+
+        if !self.keccak.squeezing {
+            self.keccak.absorb_bits(0x0F, 4).expect("Absorb_bits failed");
+        };
+
+        self.keccak.squeeze(output)
+    }
+
+    /// Compatibility helper for the old streaming API: finish with a partial output byte.
+    pub fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError> {
+        let mut output: u8 = 0;
+        self.squeeze_partial_byte_final_out(num_bits, &mut output)?;
+        Ok(output)
+    }
+
+    /// Compatibility helper for the old streaming API: finish with a partial output byte.
+    pub fn squeeze_partial_byte_final_out(
+        mut self,
+        num_bits: usize,
+        output: &mut u8,
+    ) -> Result<(), HashError> {
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
+        }
+
+        *output = 0;
+
+        let mut buf = [0u8; 1];
+        self.squeeze_out(&mut buf);
+
+        *output = buf[0].reverse_bits() & ((0xFF00u16 >> num_bits) as u8);
+        Ok(())
     }
 
     /// Returns [`KDFError::HashError`] wrapping a [`HashError::InvalidState`] if this object has
@@ -274,122 +388,102 @@ impl<PARAMS: SHAKEParams> Default for SHAKEInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
-    fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
-        self.hash_internal(data, result_len)
+impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
+    fn block_bitlen(&self) -> usize {
+        1600 - ((PARAMS::SIZE as usize) << 1)
     }
 
-    fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        // hash_internal_out zeroizes `output` before writing.
-        self.hash_internal_out(data, output)
+    fn output_len(&self) -> usize {
+        Self::nominal_output_len()
     }
 
-    /// This can throw a [`HashError::InvalidState`] if called after squeezing has begun,
-    /// but is safe to consider infallible otherwise -- IE feel free to use `.unwrap()` or `.expect()`
-    /// on the result if you are confident that your code cannot call `absorb` after squeezing.
-    ///
-    /// A rejected call leaves the SHAKE object untouched so the output stream continues consistently.
-    /// IE it is safe to attempt to feed in more input and do nothing if the absorb fails
-    /// ("safe" in the sense that it won't panic, but it may still produce an incorrect output which
-    /// could be insecure in the sense of being predictable or low-entropy).
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError> {
-        // A sponge XOF cannot return to absorbing once squeezing has begun (FIPS 202 defines SHAKE as
-        // a single function of the whole message; re-absorbing would be an unapproved duplex).
-        if self.keccak.squeezing {
-            return Err(HashError::InvalidState("cannot absorb after squeezing has begun"));
-        }
-        self.keccak.absorb(data);
-        Ok(())
+    fn hash(self, data: &[u8]) -> Vec<u8> {
+        self.hash_internal(data, Self::nominal_output_len())
     }
 
-    /// Switches to squeezing.
-    fn absorb_last_partial_byte(
-        &mut self,
+    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        output.fill(0);
+        let n = core::cmp::min(output.len(), Self::nominal_output_len());
+        self.hash_internal_out(data, &mut output[..n])
+    }
+
+    fn do_update(&mut self, data: &[u8]) {
+        self.absorb(data).expect("cannot absorb after squeezing has begun")
+    }
+
+    fn do_final(self) -> Vec<u8> {
+        self.into_squeezer().do_final(Self::nominal_output_len())
+    }
+
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        output.fill(0);
+        let n = core::cmp::min(output.len(), Self::nominal_output_len());
+        self.into_squeezer().do_final_out(&mut output[..n])
+    }
+
+    fn do_final_partial_bits(
+        self,
         partial_byte: u8,
         num_partial_bits: usize,
-    ) -> Result<(), HashError> {
-        // Same phase rule as absorb(): reject a partial-byte absorb once squeezing has begun. Checked
-        // before any state mutation so a rejected call leaves the sponge untouched.
-        if self.keccak.squeezing {
-            return Err(HashError::InvalidState("cannot absorb after squeezing has begun"));
-        }
-        // A partial byte has at most 7 bits; 0 means the message ends on a byte boundary.
-        if num_partial_bits > 7 {
-            return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
-        }
-        // Mutants note: This is just bit-setting into empty space.
-        // It works the same regardless of whether it's OR or XOR.
-        // The public convention puts the message bits in the most significant bits of partial_byte,
-        // leading bit first (ASN.1 BIT STRING order, X.690 s. 8.6.2.1). Keccak absorbs a byte
-        // LSB-first: FIPS 202 Algorithm 10 (h2b) step 3 sets message bit T[8i + j] = b_ij, the bit
-        // of weight 2^j in byte i. So reverse the bit order and keep the low num_partial_bits bits.
-        let message_bits = (partial_byte.reverse_bits() as u16) & ((1 << num_partial_bits) - 1);
-        let mut final_input: u16 = message_bits | (0x0F << num_partial_bits);
-        let mut final_bits = num_partial_bits + 4;
-
-        if final_bits >= 8 {
-            self.keccak.absorb(&[final_input as u8]);
-            final_bits -= 8;
-            final_input >>= 8;
-        }
-
-        // Infallible: guarded above (not squeezing), the queue is byte-aligned here, and final_bits is
-        // in 0..=7 by construction.
-        self.keccak.absorb_bits(final_input as u8, final_bits).expect("Absorb failed.");
-
-        Ok(())
+    ) -> Result<Vec<u8>, HashError> {
+        let squeezer = self.into_squeezer_partial_bits(partial_byte, num_partial_bits)?;
+        Ok(squeezer.do_final(Self::nominal_output_len()))
     }
 
-    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> {
-        let mut out: Vec<u8> = vec![0u8; num_bytes];
-        self.squeeze_out(&mut out);
-        out
-    }
-
-    fn squeeze_out(&mut self, output: &mut [u8]) -> usize {
+    fn do_final_partial_bits_out(
+        self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> Result<usize, HashError> {
         output.fill(0);
-
-        if !self.keccak.squeezing {
-            self.keccak.absorb_bits(0x0F, 4).expect("Absorb_bits failed");
-        };
-
-        self.keccak.squeeze(output)
-    }
-
-    fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError> {
-        let mut output: u8 = 0;
-        self.squeeze_partial_byte_final_out(num_bits, &mut output)?;
-        Ok(output)
-    }
-
-    /// Result is the number of bits squezed into `output`.
-    fn squeeze_partial_byte_final_out(
-        mut self,
-        num_bits: usize,
-        output: &mut u8,
-    ) -> Result<(), HashError> {
-        // A partial byte has at most 7 bits; 0 means no bits are requested. Checked before the shift
-        // below, which would overflow for num_bits >= 8.
-        if num_bits > 7 {
-            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
-        }
-
-        *output = 0;
-
-        // Via squeeze_out() so the SHAKE "1111" suffix (FIPS 202 s. 6.2) is applied on a first squeeze.
-        let mut buf = [0u8; 1];
-        self.squeeze_out(&mut buf);
-
-        // Keccak emits the bits of an output byte LSB-first (FIPS 202 Algorithm 11, b2h: output bit
-        // T[8i + j] has weight 2^j), and the public convention returns them as the final octet of an
-        // ASN.1 BIT STRING (X.690 s. 8.6.2.1): first bit in the MSB, unused low bits zero. So reverse
-        // the bit order and keep the top num_bits bits. The mask is built in u16 so that num_bits == 0
-        // cannot overflow (0xFF00 >> 0 truncates to 0x00).
-        *output = buf[0].reverse_bits() & ((0xFF00u16 >> num_bits) as u8);
-        Ok(())
+        let n = core::cmp::min(output.len(), Self::nominal_output_len());
+        let squeezer = self.into_squeezer_partial_bits(partial_byte, num_partial_bits)?;
+        Ok(squeezer.do_final_out(&mut output[..n]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
         SecurityStrength::from_bits(PARAMS::SIZE as usize)
+    }
+}
+
+impl<PARAMS: SHAKEParams> XOF for SHAKEInternal<PARAMS> {
+    type Squeezer = SHAKESqueezer<PARAMS>;
+
+    fn into_squeezer(mut self) -> Self::Squeezer {
+        if !self.keccak.squeezing {
+            self.keccak.absorb_bits(0x0F, 4).expect("Absorb_bits failed");
+        }
+        SHAKESqueezer { _phantomdata: core::marker::PhantomData, keccak: self.keccak }
+    }
+
+    fn into_squeezer_partial_bits(
+        mut self,
+        partial_byte: u8,
+        num_bits: usize,
+    ) -> Result<Self::Squeezer, HashError> {
+        self.absorb_last_partial_byte(partial_byte, num_bits)?;
+        Ok(SHAKESqueezer { _phantomdata: core::marker::PhantomData, keccak: self.keccak })
+    }
+
+    fn xof(self, data: &[u8], result_len: usize) -> Vec<u8> {
+        self.hash_internal(data, result_len)
+    }
+
+    fn xof_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        self.hash_internal_out(data, output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKESqueezer<PARAMS> {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_out(&mut out);
+        out
+    }
+
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        output.fill(0);
+        self.keccak.squeeze(output)
     }
 }
