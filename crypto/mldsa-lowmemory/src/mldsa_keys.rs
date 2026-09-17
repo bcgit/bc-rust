@@ -358,15 +358,16 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
     ) -> Polynomial {
         debug_assert!(idx < P::k);
 
-        // [Optimization Note]:
-        // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
-        // let mut s1 = self.compute_s1_row(0);
-        let mut s1_hat_i = s_unpack::<P, _>(s1_packed, 0);
-        s1_hat_i.ntt();
-
         let mut t_i = {
             let mut t_hat_i = expandA_elem(&self.rho, idx, 0);
-            t_hat_i.multiply_ntt(&s1_hat_i);
+            {
+                // [Optimization Note]:
+                // This is one of the places that a row of s1 can be re-computed instead of expanded from the compressed form.
+                // let mut s1 = self.compute_s1_row(0);
+                let mut s1_hat_i = s_unpack::<P, _>(s1_packed, 0);
+                s1_hat_i.ntt();
+                t_hat_i.multiply_ntt(&s1_hat_i);
+            }
 
             for col in 1..P::l {
                 // [Optimization Note]:
