@@ -15,9 +15,7 @@ use core::fmt::{self, Debug, Display, Formatter};
 use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_core::traits::{
-    AEADCipher, Algorithm, RNG, SecurityStrength, SuspendableKeyed, SymmetricCipher,
-};
+use bouncycastle_core::traits::{AEADCipher, Algorithm, RNG, SecurityStrength, SuspendableKeyed};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
@@ -457,9 +455,9 @@ impl Algorithm for AsconAead128 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-// Ascon-AEAD128 as a `SymmetricCipher`: the "basic" (non-AEAD) view. The init data is the 128-bit
-// nonce, and the ciphertext produced by these APIs is `Ascon ciphertext || 16-byte tag` (empty AAD).
-impl SymmetricCipher<KEY_LEN, NONCE_LEN> for AsconAead128 {
+// Ascon-AEAD128 as an `AEADCipher`. The "basic" (non-AEAD) view uses a 128-bit nonce as init data,
+// and the ciphertext produced by those APIs is `Ascon ciphertext || 16-byte tag` (empty AAD).
+impl AEADCipher<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128 {
     #[cfg(feature = "std")]
     fn encrypt(
         key: &KeyMaterial<KEY_LEN>,
@@ -523,10 +521,6 @@ impl SymmetricCipher<KEY_LEN, NONCE_LEN> for AsconAead128 {
         // `ciphertext` is `Ascon ciphertext || 16-byte tag`; `decrypt` splits it internally.
         Self::decrypt(key, &init_data, None, ciphertext, plaintext)
     }
-}
-
-// Ascon-AEAD128 as an `AEADCipher`: the full AEAD view with associated data and a separate tag.
-impl AEADCipher<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128 {
     #[cfg(feature = "std")]
     fn aead_encrypt(
         key: &KeyMaterial<KEY_LEN>,
