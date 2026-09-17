@@ -206,8 +206,8 @@ impl<P: MLKEMParams, const PK_LEN: usize> KEMPublicKey<PK_LEN> for MLKEMPublicKe
         if bytes.len() != PK_LEN {
             return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Self::pk_decode(&bytes_sized)
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Self::pk_decode(bytes_sized)
     }
 }
 
@@ -289,8 +289,8 @@ impl<P: MLKEMParams, PK: MLKEMPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: u
         if bytes.len() != PK_LEN {
             return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Self::pk_decode(&bytes_sized)
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Self::pk_decode(bytes_sized)
     }
 }
 
@@ -619,9 +619,9 @@ impl<
         if bytes.len() != SK_LEN {
             return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
         }
-        let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
+        let bytes_sized: &[u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 
-        Self::sk_decode(&bytes_sized)
+        Self::sk_decode(bytes_sized)
     }
 }
 
