@@ -30,6 +30,7 @@ use bouncycastle_ec::p521_sec1;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
@@ -132,13 +133,22 @@ impl SignaturePrivateKey<SK_LEN> for ECDSAP521PrivateKey {
         let array: [u8; SK_LEN] = bytes.try_into().map_err(|_| {
             SignatureError::DecodingError("ECDSA P-521 private key must be 66 bytes")
         })?;
-        let scalar = P521Scalar::from_be_bytes(&array);
-        if scalar == P521Scalar::from_limbs([0; 9]) {
+        // FIPS 186-5 §6.2: d is in [1, n-1], checked on the raw big-endian value *before* any
+        // reduction. `P521Scalar::from_be_bytes` reduces mod n, so checking afterwards would accept
+        // an out-of-range encoding as a different, perfectly valid key: `d = n + 1` would load as
+        // `d = 1`, giving one key two encodings and silently treating malformed input as well-
+        // formed. Comparing against the fixed public values 0 and n is a one-time validation of
+        // caller-supplied bytes at load time, not a computation performed repeatedly on a secret
+        // intermediate value, so branching on it leaks nothing beyond what the caller already knows
+        // from having supplied these exact bytes.
+        let limbs = p521_sec1::limbs_from_be_bytes(&array);
+        let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
+        if limbs == [0; 9] || borrow != 1 {
             return Err(SignatureError::DecodingError(
-                "ECDSA P-521 private key must be in [1, n-1], got 0",
+                "ECDSA P-521 private key must be in [1, n-1]",
             ));
         }
-        Ok(Self(scalar))
+        Ok(Self(P521Scalar::from_limbs(limbs)))
     }
 }
 
@@ -184,9 +194,11 @@ pub fn keygen() -> Result<(ECDSAP521PublicKey, ECDSAP521PrivateKey), SignatureEr
 pub fn keygen_from_rng(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAP521PublicKey, ECDSAP521PrivateKey), SignatureError> {
-    let mut bytes = [0u8; SK_LEN];
-    rng.next_bytes_out(&mut bytes).map_err(SignatureError::RNGError)?;
-    let d = reduce_wide_bits_mod_n_minus_1(&bytes);
+    // Raw DRBG output, reduced below into the private key / per-message secret: held in
+    // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+    let mut bytes = Secret::<[u8; SK_LEN]>::new();
+    rng.next_bytes_out(&mut *bytes).map_err(SignatureError::RNGError)?;
+    let d = reduce_wide_bits_mod_n_minus_1(&*bytes);
 
     let q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction and G has prime order n (cofactor h = 1), so [d]G is never

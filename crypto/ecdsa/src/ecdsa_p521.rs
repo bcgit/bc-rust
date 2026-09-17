@@ -20,6 +20,7 @@ use bouncycastle_ec::p521_scalar::{N_LIMBS, P521PublicScalar, P521Scalar, P521Sc
 use bouncycastle_ec::p521_sec1;
 use bouncycastle_ec::p521_wnaf::shamir_multiply;
 use bouncycastle_sha2::SHA512;
+use bouncycastle_utils::secret::Secret;
 
 /// Raw `r || s` signature length: two 66-byte field-width integers.
 pub const SIG_LEN: usize = 132;
@@ -97,9 +98,11 @@ impl ECDSAP521 {
         let h: [u8; 64] = SHA512::default().hash(msg)[..64].try_into().unwrap();
         let e = e_from_hash(&h);
 
-        let mut bytes = [0u8; SK_LEN];
-        rng.next_bytes_out(&mut bytes).map_err(SignatureError::RNGError)?;
-        let k = reduce_wide_bits_mod_n_minus_1(&bytes);
+        // Raw DRBG output, reduced below into the private key / per-message secret: held in
+        // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+        let mut bytes = Secret::<[u8; SK_LEN]>::new();
+        rng.next_bytes_out(&mut *bytes).map_err(SignatureError::RNGError)?;
+        let k = reduce_wide_bits_mod_n_minus_1(&*bytes);
 
         sign_with_k(sk, &e, k)
     }
@@ -204,7 +207,14 @@ impl SignatureVerifier<ECDSAP521PublicKey, PK_LEN, SIG_LEN> for ECDSAP521 {
         let pk = self.pk.ok_or(SignatureError::GenericError(
             "verify_final called on a sign-initialized ECDSAP521; call sign_final instead",
         ))?;
-        if sig.len() < SIG_LEN {
+        // Exactly SIG_LEN, not "at least": the raw encoding is two fixed-width integers and
+        // nothing else, so trailing bytes make this a different, malformed encoding rather than a
+        // valid signature in a roomy buffer. Accepting them would let anyone turn one valid
+        // signature into unlimited distinct byte strings that all verify -- malleability that
+        // breaks any caller treating the signature as an opaque, comparable blob. This matches how
+        // `SignaturePublicKey`/`SignaturePrivateKey::from_bytes` already reject an over-long
+        // encoding here (see `core-test-framework`'s own `test_boundary_conditions`).
+        if sig.len() != SIG_LEN {
             return Err(SignatureError::SignatureVerificationFailed);
         }
 

@@ -19,6 +19,7 @@ use bouncycastle_hmac::HMAC;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 const HLEN: usize = 32;
 
@@ -26,10 +27,16 @@ const _: () =
     assert!(HLEN * 8 == 256, "int2octets/bits2octets shortcuts assume hlen == qlen == 256");
 
 /// `HMAC_K(data)` (§3.1.1), `data` passed as multiple pieces so callers don't need to concatenate
-/// into one buffer first. `new_allow_weak_key`: every `K` used here is 32 synthetic bytes from this
-/// same construction (starting from `0x00...00` in step c), not an application key, so there is no
-/// real "security strength" for [`KeyMaterial::from_bytes`] to have under- or over-estimated.
-fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
+/// into one buffer first.
+///
+/// Returns a [`Secret`], not a bare array: every value this produces is HMAC_DRBG state derived
+/// from the private key, and the last one produced *is* `k`. Returning `Secret` means each is
+/// scrubbed when it is dropped -- including the previous `key`/`v` that [`generate_k`]'s next step
+/// overwrites -- without disturbing that function's one-line-per-RFC-step shape.
+/// `new_allow_weak_key`: every `K` used here is 32 synthetic bytes from this same construction
+/// (starting from `0x00...00` in step c), not an application key, so there is no real "security
+/// strength" for [`KeyMaterial::from_bytes`] to have under- or over-estimated.
+fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
         .expect("HLEN-byte key always fits");
     let mut hmac =
@@ -37,8 +44,8 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
     for piece in data {
         hmac.do_update(piece);
     }
-    let mut out = [0u8; HLEN];
-    hmac.do_final_out(&mut out).expect("HLEN-byte output buffer always fits HMAC-SHA256's output");
+    let mut out = Secret::<[u8; HLEN]>::new();
+    hmac.do_final_out(&mut *out).expect("HLEN-byte output buffer always fits HMAC-SHA256's output");
     out
 }
 
@@ -72,6 +79,19 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
 /// message hash `h1 = H(m)`.
 ///
+/// # What is scrubbed
+///
+/// `int2octets(d)`, `key` and `v` are all derived from the private key (and `v` ends up holding
+/// `k` itself), so all three live in [`Secret`] and are erased when this function returns rather
+/// than left on the stack for whatever runs next -- matching how `bouncycastle_mlkem` and
+/// `bouncycastle_mldsa` treat their own secret stack intermediates. `bits2octets(h1)` is not
+/// wrapped: it derives from the public message hash, not from `d`.
+///
+/// One copy is outside this function's reach: `d.to_be_bytes()` hands back a plain array by
+/// design (see [`P256Scalar::to_be_bytes`](bouncycastle_ec::p256_scalar::P256Scalar::to_be_bytes),
+/// whose own docs note it "momentarily holds the plain value ... the caller asked for the bytes"),
+/// so that transient is copied into the `Secret` above but the transient itself is not erased.
+///
 /// The rejection loop (step h.3, "otherwise ... loop") is the one place this crate's own
 /// constant-time rules permit branching on a value derived from a secret: per
 /// `local/ec_custom_curves_and_ecdsa_plan.md` §6.2, "a rejection loop is acceptable when a
@@ -80,34 +100,36 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// independent of the k finally used" -- and for P-256, `n` is within `2^-32` of `2^256`, so
 /// rejection happens with negligible probability regardless.
 pub fn generate_k(d: &P256Scalar, h1: &[u8; HLEN]) -> P256Scalar {
-    let int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
+    let mut int2octets_d = Secret::<[u8; HLEN]>::new();
+    *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
     let bits2octets_h1 = bits2octets(h1);
 
     // step c
-    let mut key = [0u8; HLEN];
+    let mut key = Secret::<[u8; HLEN]>::new();
     // step b
-    let mut v = [0x01u8; HLEN];
+    let mut v = Secret::<[u8; HLEN]>::new();
+    *v = [0x01u8; HLEN];
 
     // step d
-    key = hmac_k(&key, &[&v, &[0x00], &int2octets_d, &bits2octets_h1]);
+    key = hmac_k(&key, &[&*v, &[0x00], &*int2octets_d, &bits2octets_h1]);
     // step e
-    v = hmac_k(&key, &[&v]);
+    v = hmac_k(&key, &[&*v]);
     // step f
-    key = hmac_k(&key, &[&v, &[0x01], &int2octets_d, &bits2octets_h1]);
+    key = hmac_k(&key, &[&*v, &[0x01], &*int2octets_d, &bits2octets_h1]);
     // step g
-    v = hmac_k(&key, &[&v]);
+    v = hmac_k(&key, &[&*v]);
 
     // step h
     loop {
         // step h.1-h.2: T = HMAC_K(V) suffices in one round since tlen == qlen == HLEN*8 (see
         // module docs)
-        v = hmac_k(&key, &[&v]);
+        v = hmac_k(&key, &[&*v]);
         if candidate_in_range(&v) {
             // in [1, n-1] already: from_limbs's reduction is a no-op safety net, not a real reduce
             return P256Scalar::from_limbs(p256_sec1::limbs_from_be_bytes(&v));
         }
-        key = hmac_k(&key, &[&v, &[0x00]]);
-        v = hmac_k(&key, &[&v]);
+        key = hmac_k(&key, &[&*v, &[0x00]]);
+        v = hmac_k(&key, &[&*v]);
     }
 }
 

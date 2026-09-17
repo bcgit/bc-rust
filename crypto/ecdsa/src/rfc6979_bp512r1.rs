@@ -21,6 +21,7 @@ use bouncycastle_hmac::HMAC;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 const HLEN: usize = 64;
 
@@ -28,7 +29,9 @@ const _: () =
     assert!(HLEN * 8 == 512, "int2octets/bits2octets shortcuts assume hlen == qlen == 512");
 
 /// `HMAC_K(data)` (§3.1.1). See [`crate::rfc6979::hmac_k`]'s docs.
-fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
+/// As [`crate::rfc6979::hmac_k`], including why this returns a [`Secret`] rather than a bare
+/// array: see that function's docs and [`generate_k`]'s "What is scrubbed" section.
+fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
         .expect("HLEN-byte key always fits");
     let mut hmac =
@@ -36,8 +39,8 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
     for piece in data {
         hmac.do_update(piece);
     }
-    let mut out = [0u8; HLEN];
-    hmac.do_final_out(&mut out).expect("HLEN-byte output buffer always fits HMAC-SHA512's output");
+    let mut out = Secret::<[u8; HLEN]>::new();
+    hmac.do_final_out(&mut *out).expect("HLEN-byte output buffer always fits HMAC-SHA512's output");
     out
 }
 
@@ -67,34 +70,36 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs for the rejection-loop
 /// constant-time argument, which applies unchanged here.
 pub fn generate_k(d: &Bp512r1Scalar, h1: &[u8; HLEN]) -> Bp512r1Scalar {
-    let int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
+    let mut int2octets_d = Secret::<[u8; HLEN]>::new();
+    *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
     let bits2octets_h1 = bits2octets(h1);
 
     // step c
-    let mut key = [0u8; HLEN];
+    let mut key = Secret::<[u8; HLEN]>::new();
     // step b
-    let mut v = [0x01u8; HLEN];
+    let mut v = Secret::<[u8; HLEN]>::new();
+    *v = [0x01u8; HLEN];
 
     // step d
-    key = hmac_k(&key, &[&v, &[0x00], &int2octets_d, &bits2octets_h1]);
+    key = hmac_k(&key, &[&*v, &[0x00], &*int2octets_d, &bits2octets_h1]);
     // step e
-    v = hmac_k(&key, &[&v]);
+    v = hmac_k(&key, &[&*v]);
     // step f
-    key = hmac_k(&key, &[&v, &[0x01], &int2octets_d, &bits2octets_h1]);
+    key = hmac_k(&key, &[&*v, &[0x01], &*int2octets_d, &bits2octets_h1]);
     // step g
-    v = hmac_k(&key, &[&v]);
+    v = hmac_k(&key, &[&*v]);
 
     // step h
     loop {
         // step h.1-h.2: T = HMAC_K(V) suffices in one round since tlen == qlen == HLEN*8 (see
         // module docs)
-        v = hmac_k(&key, &[&v]);
+        v = hmac_k(&key, &[&*v]);
         if candidate_in_range(&v) {
             // in [1, n-1] already: from_limbs's reduction is a no-op safety net, not a real reduce
             return Bp512r1Scalar::from_limbs(bp512r1_sec1::limbs_from_be_bytes(&v));
         }
-        key = hmac_k(&key, &[&v, &[0x00]]);
-        v = hmac_k(&key, &[&v]);
+        key = hmac_k(&key, &[&*v, &[0x00]]);
+        v = hmac_k(&key, &[&*v]);
     }
 }
 
