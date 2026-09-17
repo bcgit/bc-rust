@@ -124,6 +124,37 @@ impl P521JacobianPoint {
         result = select_point(other_is_infinity, self, &result);
         result
     }
+
+    /// `self + other` for points that are **public**, branching on the exceptional cases instead
+    /// of computing every candidate and masking.
+    ///
+    /// [`Self::add`] must evaluate the doubling candidate on every call, because on secret inputs
+    /// it cannot branch on whether the doubling case applies -- that costs a full point doubling
+    /// (roughly a third of the addition) on every addition, whether or not it is ever used. This
+    /// version pays it only when the operands really are the same point, which for a scalar
+    /// multiplier over distinct precomputed multiples is essentially never.
+    ///
+    /// Restricted to `pub(crate)` and used only by [`crate::p521_wnaf`], whose scalars are
+    /// [`crate::p521_scalar::P521PublicScalar`] and whose points are a signer's public key and
+    /// the curve's own base point: every value it branches on is already known to an attacker. Do
+    /// not call this on anything derived from a private key or a per-message secret -- the
+    /// constant-time [`Self::add`] exists for that, and the scalar type split is what keeps the
+    /// two multipliers from being confused for one another.
+    pub(crate) fn add_vartime(&self, other: &Self) -> Self {
+        if self.is_infinity().to_bool() {
+            return *other;
+        }
+        if other.is_infinity().to_bool() {
+            return *self;
+        }
+
+        let (generic, h, r) = self.generic_add(other);
+        if h.is_zero().to_bool() {
+            // Same affine x: either the same point (double it) or its negation (sum is infinity).
+            return if r.is_zero().to_bool() { self.double() } else { Self::INFINITY };
+        }
+        generic
+    }
 }
 
 fn select_point(
@@ -142,4 +173,37 @@ fn select_limbs(cond: Condition<u64>, a: &[u64; 9], b: &[u64; 9]) -> [u64; 9] {
     let mut out = [0u64; 9];
     ct::conditional_select(cond, a, b, &mut out);
     out
+}
+
+// `add_vartime` is `pub(crate)` -- deliberately unreachable from outside the crate, since calling
+// it on a secret point would undo the constant-time discipline [`P521JacobianPoint::add`] exists
+// for -- so no integration test can reach it. Its whole contract is that it computes the same group
+// law as `add`, differing only in *how* it gets there, so that is what is pinned here: agreement on
+// every exceptional case, including the ones a scalar multiplier over distinct precomputed
+// multiples essentially never reaches by chance (a point added to itself, and a point added to its
+// own negation). QUALITY_AND_STYLE's private-function carve-out applies.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
+
+    #[test]
+    fn add_vartime_agrees_with_add_on_every_case() {
+        let g = P521JacobianPoint::from_affine(
+            P521FieldElement::from_limbs(G_X_LIMBS),
+            P521FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        // G, 2G, -G and the identity cover all four of `add`'s exceptional cases pairwise, plus
+        // the ordinary one (e.g. G + 2G).
+        let points = [g, g.double(), g.negate(), P521JacobianPoint::INFINITY];
+        for a in points {
+            for b in points {
+                assert_eq!(
+                    a.add_vartime(&b).to_affine(),
+                    a.add(&b).to_affine(),
+                    "add_vartime disagrees with add"
+                );
+            }
+        }
+    }
 }

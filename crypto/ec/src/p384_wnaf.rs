@@ -34,10 +34,10 @@ pub fn shamir_multiply(
     for i in (0..WNAF_LEN).rev() {
         r = r.double();
         if let Some(add_g) = lookup_signed(&table_g, du[i]) {
-            r = r.add(&add_g);
+            r = r.add_vartime(&add_g);
         }
         if let Some(add_q) = lookup_signed(&table_q, dv[i]) {
-            r = r.add(&add_q);
+            r = r.add_vartime(&add_q);
         }
     }
     r
@@ -92,7 +92,7 @@ fn odd_multiples(p: &P384JacobianPoint) -> [P384JacobianPoint; ODD_MULTIPLE_COUN
     let mut cur = *p;
     for entry in table.iter_mut() {
         *entry = cur;
-        cur = cur.add(&double_p);
+        cur = cur.add_vartime(&double_p);
     }
     table
 }
