@@ -12,6 +12,29 @@
 //! `local/ec_custom_curves_and_ecdsa_plan.md` §6 and §9 for the rest of the plan (SM2, CLI wiring,
 //! benches).
 //!
+//! # Memory Footprint
+//!
+//! The following table lists the size of the on-disk bytes encoding and the in-memory struct size
+//! of each curve's key objects:
+//!
+//! | Key Object            | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
+//! |------------------------|-----------------|--------------------|------------------|--------------------|
+//! | ECDSA P-256            | 65              | 64                 | 32               | 32                 |
+//! | ECDSA P-384            | 97              | 96                 | 48               | 48                 |
+//! | ECDSA P-521            | 133             | 144                | 66               | 72                 |
+//! | ECDSA secp256k1        | 65              | 64                 | 32               | 32                 |
+//! | ECDSA brainpoolP256r1  | 65              | 64                 | 32               | 32                 |
+//! | ECDSA brainpoolP384r1  | 97              | 96                 | 48               | 48                 |
+//! | ECDSA brainpoolP512r1  | 129             | 128                | 64               | 64                 |
+//!
+//! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`; the
+//! "on disk" sizes are each curve's `PK_LEN`/`SK_LEN`. P-521's odd numbers come from its 521-bit
+//! (not byte-aligned) field: a coordinate needs 66 bytes on disk (`ceil(521/8)`) but a `P521FieldElement`
+//! is stored in 9 `u64` limbs (72 bytes) rather than a tighter packing. These numbers are produced
+//! by `mem_usage_benches`' `bench_ecdsa_mem_usage` binary's `print_struct_sizes()`; that binary is
+//! also the stack-usage measurement harness (see its own doc comment for the `valgrind`/`massif`
+//! invocation).
+//!
 //! # Security Considerations
 //!
 //! - **The private key `d` and the per-message secret `k` are never handled in variable time.**
