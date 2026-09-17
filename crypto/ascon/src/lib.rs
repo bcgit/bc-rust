@@ -15,6 +15,7 @@
 //! ```
 //! use bouncycastle_ascon::ascon_hash256::AsconHash256;
 //! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::XOF;
 //!
 //! // One-shot:
 //! let digest = AsconHash256::digest(b"hello world");
@@ -73,7 +74,7 @@
 //! use bouncycastle_ascon::ascon_xof128::AsconXof128;
 //! use bouncycastle_core::traits::XOF;
 //!
-//! let out = AsconXof128::new().hash_xof(b"input", 64);
+//! let out = AsconXof128::new().xof(b"input", 64);
 //! assert_eq!(out.len(), 64);
 //! ```
 //!
