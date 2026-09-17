@@ -419,16 +419,18 @@ fn bench_mldsa44_sign() {
 
 /// Same as bench_mldsa44_sign(), but with a pre-expanded private key.
 ///
-/// The matrix A_hat is expanded up-front and held inside the MLDSA44PrivateKeyExpanded, which is
-/// what makes repeated signatures with the same key cheaper -- at the cost of the memory the
-/// expanded key occupies for as long as it is held. Both the expansion and the signature are
-/// inside the measurement.
+/// The matrix A_hat is expanded up-front and handed to the signature, which is what makes repeated
+/// signatures with the same key cheaper -- at the cost of the memory A_hat occupies for as long
+/// as it is held.
 ///
-/// Note: unlike bench_mldsa44_sign(), this measurement includes the RNG that sources the signing
-/// nonce; there is no deterministic entry point that takes an expanded private key.
+/// Only the signature is measured, not the expansion: building an MLDSA44PrivateKeyExpanded
+/// inside this function would put its own peak (which exceeds a whole signature) into the
+/// measurement, the way a keygen would. This calls the same entry point as bench_mldsa44_sign(),
+/// differing only in passing Some(&a_hat) instead of None, so the two are comparable.
+///
 fn bench_mldsa44_sign_expanded_sk() {
     use bouncycastle::mldsa::{
-        MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PrivateKeyExpanded, MLDSATrait,
+        MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
     eprintln!("MLDSA44/Sign_with_expanded_key");
@@ -619,8 +621,9 @@ fn bench_mldsa44_sign_expanded_sk() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
-    let sig = MLDSA44::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+    let a_hat = sk.A_hat();
+    let mu = MLDSA44::compute_mu_from_sk(&sk, msg, None).unwrap();
+    let sig = MLDSA44::sign_mu_deterministic(&sk, Some(&a_hat), &mu, [0u8; 32]).unwrap();
     print!("{:x?}", sig);
 }
 
@@ -949,16 +952,18 @@ fn bench_mldsa65_sign() {
 
 /// Same as bench_mldsa65_sign(), but with a pre-expanded private key.
 ///
-/// The matrix A_hat is expanded up-front and held inside the MLDSA65PrivateKeyExpanded, which is
-/// what makes repeated signatures with the same key cheaper -- at the cost of the memory the
-/// expanded key occupies for as long as it is held. Both the expansion and the signature are
-/// inside the measurement.
+/// The matrix A_hat is expanded up-front and handed to the signature, which is what makes repeated
+/// signatures with the same key cheaper -- at the cost of the memory A_hat occupies for as long
+/// as it is held.
 ///
-/// Note: unlike bench_mldsa65_sign(), this measurement includes the RNG that sources the signing
-/// nonce; there is no deterministic entry point that takes an expanded private key.
+/// Only the signature is measured, not the expansion: building an MLDSA65PrivateKeyExpanded
+/// inside this function would put its own peak (which exceeds a whole signature) into the
+/// measurement, the way a keygen would. This calls the same entry point as bench_mldsa65_sign(),
+/// differing only in passing Some(&a_hat) instead of None, so the two are comparable.
+///
 fn bench_mldsa65_sign_expanded_sk() {
     use bouncycastle::mldsa::{
-        MLDSA65, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PrivateKeyExpanded, MLDSATrait,
+        MLDSA65, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSAPrivateKeyTrait, MLDSATrait,
     };
 
     eprintln!("MLDSA65/Sign_with_expanded_key");
@@ -1248,8 +1253,9 @@ fn bench_mldsa65_sign_expanded_sk() {
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
-    let sig = MLDSA65::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+    let a_hat = sk.A_hat();
+    let mu = MLDSA65::compute_mu_from_sk(&sk, msg, None).unwrap();
+    let sig = MLDSA65::sign_mu_deterministic(&sk, Some(&a_hat), &mu, [0u8; 32]).unwrap();
     print!("{:x?}", sig);
 }
 
@@ -1636,15 +1642,17 @@ fn bench_mldsa87_sign() {
 
 /// Same as bench_mldsa87_sign(), but with a pre-expanded private key.
 ///
-/// The matrix A_hat is expanded up-front and held inside the MLDSA87PrivateKeyExpanded, which is
-/// what makes repeated signatures with the same key cheaper -- at the cost of the memory the
-/// expanded key occupies for as long as it is held. Both the expansion and the signature are
-/// inside the measurement.
+/// The matrix A_hat is expanded up-front and handed to the signature, which is what makes repeated
+/// signatures with the same key cheaper -- at the cost of the memory A_hat occupies for as long
+/// as it is held.
 ///
-/// Note: unlike bench_mldsa87_sign(), this measurement includes the RNG that sources the signing
-/// nonce; there is no deterministic entry point that takes an expanded private key.
+/// Only the signature is measured, not the expansion: building an MLDSA87PrivateKeyExpanded
+/// inside this function would put its own peak (which exceeds a whole signature) into the
+/// measurement, the way a keygen would. This calls the same entry point as bench_mldsa87_sign(),
+/// differing only in passing Some(&a_hat) instead of None, so the two are comparable.
+///
 fn bench_mldsa87_sign_expanded_sk() {
-    use bouncycastle::mldsa::{MLDSA87, MLDSA87PrivateKey, MLDSA87PrivateKeyExpanded, MLDSATrait};
+    use bouncycastle::mldsa::{MLDSA87, MLDSA87PrivateKey, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA87/Sign_with_expanded_key");
 
@@ -1991,8 +1999,9 @@ fn bench_mldsa87_sign_expanded_sk() {
     ])
     .unwrap();
 
-    let sk_expanded = MLDSA87PrivateKeyExpanded::from(&sk);
-    let sig = MLDSA87::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+    let a_hat = sk.A_hat();
+    let mu = MLDSA87::compute_mu_from_sk(&sk, msg, None).unwrap();
+    let sig = MLDSA87::sign_mu_deterministic(&sk, Some(&a_hat), &mu, [0u8; 32]).unwrap();
     print!("{:x?}", sig);
 }
 
