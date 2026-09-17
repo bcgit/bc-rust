@@ -1,195 +1,108 @@
-//! HMAC-based Extract-and-Expand Key Derivation Function (HKDF) as per RFC5859, as allowed by
-//! NIST SP 800-56Cr2.
+//! The generic HMAC-based Extract-and-Expand Key Derivation Function (HKDF) construction, as per
+//! RFC 5869, as allowed by NIST SP 800-56Cr2.
 //!
-//! # Usage
+//! This is a utility crate and is not intended to be used directly. It provides [`HKDF`] -- the
+//! construction, generic over any struct that implements [`Hash`] and [`HashAlgParams`], the extension
+//! point through which a hash declares the metadata from which the HKDF instance is built.
+//! The library provides the following concrete instantiations of HKDF:
 //!
-//! Since HKDF uses `HMAC<HASH>` as its underlying primitive, most of what is said in the [`HMAC`] crate docs
-//! about instantiating HMAC objects applies here as well. Unlike HMAC, an HKDF object is created without
-//! an initial key, and will self-initialize the internal HMAC object as part of the [`HKDF::extract`] phase.
+//! | Hash family | Instantiations                                                |
+//! |-------------|---------------------------------------------------------------|
+//! | SHA-2       | `bouncycastle_sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA512`     |
 //!
+//! # Instantiating HKDF over a hash
 //!
-//! # Examples
-//! ## Constructing an object
+//! HKDF uses HMAC as its underlying primitive, so it works with any hash that HMAC works with:
+//! [`HKDF`] needs only [`Hash`] + [`HashAlgParams`] + [`Default`]. Unlike HMAC there is no additional
+//! HKDF params trait to implement -- HKDF has no per-hash OIDs and derives its name from nothing --
+//! so an instantiation is just a type alias plus, by convention, a name constant and a suspended-state
+//! length.
 //!
-//! HMAC objects can be constructed with any underlying hash function that implements [`Hash`].
-//! Type aliases are provided for the common HKDF-HASH algorithms.
+//! What the alias has to supply is [`HKDF`]'s two const parameters:
 //!
-//! The following object instantiations are equivalent:
+//! * `HASH_STATE_LEN` -- the hash's own suspended-state length, i.e. the `N` in
+//!   `H: Suspendable<N>`.
+//! * `HKDF_STATE_LEN` -- this HKDF's suspended-state length, which is always `HASH_STATE_LEN + 14`.
 //!
-//! ```
-//! use bouncycastle_hkdf::HKDF_SHA256;
+//! Both are const parameters of the struct rather than being derived from the hash because
+//! [`SuspendableKeyed`] takes its length as a const generic, and naming `HASH_STATE_LEN + 14` in that
+//! position requires the unstable `generic_const_exprs` feature. Carrying both on the struct is what
+//! lets a single blanket [`SuspendableKeyed`] impl serve every hash while still pinning the two
+//! lengths together per concrete type. They are given no defaults on purpose: there is no value that
+//! is correct for more than one hash, so each instantiation states them. Getting the pair wrong is a
+//! compile error at the point of use, not a silent mis-sizing -- the blanket impl only applies when
+//! `HASH_STATE_LEN` really is the hash's `Suspendable` length.
 //!
-//! let hkdf = HKDF_SHA256::new();
-//! ```
-//! and
-//! ```
-//! use bouncycastle_hkdf::HKDF;
-//! use bouncycastle_sha2::SHA256;
+//! One limitation to be aware of when instantiating over a hash of your own: the extract phase
+//! writes its pseudorandom key into a [`MAX_HMAC_OUTPUT_LEN`]-byte buffer, so the hash's output
+//! length must not exceed that (64 bytes). See the note on that constant.
 //!
-//! let hkdf = HKDF::<SHA256>::new();
-//! ```
+//! ## Worked example
 //!
-//! ## Deriving a key via the [`KDF`] trait
-//! Being a Key Derivation Function (KDF), the objective of HKDF is to take input key material which is not
-//! directly usable for its intended purpose and transform into a suitable output key.
-//! Typically, this takes one or both of the following forms:
-//!
-//! * Starting with a seed and mixing in additional input to diversify the output key (ie make it unique). An example of this would be starting with a secret seed and mixing in a public ID or URL to generate keys which are unique per URL.
-//! * Starting with a full-entropy seed which is at the correct security level for the application, but which is not long enough. An example could be starting with a 128-bit seed and mixing it with the strings "read" and "write" to produce one AES-128 key for each of the two directions of a communication channel.
-//!
-//! The simplest usage is via the one-shot functions provided by the [`KDF`] trait.
+//! As an example, the `bouncycastle-sha2` crate instantiates HKDF-SHA256 and HKDF-SHA512 this way. The library does not ship
+//! HKDF-SHA384, so that makes a good illustration of adding one -- for a hash in this library or for
+//! a hash of your own, the shape is identical:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::{KDF };
-//! use bouncycastle_hkdf::HKDF_SHA256;
+//! use bouncycastle_core::traits::{KDF, SuspendableKeyed};
+//! use bouncycastle_hkdf::HKDF;
+//! use bouncycastle_sha2::{SHA384, SUSPENDED_SHA512_STATE_LEN};
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(
+//! // SHA-384 is a member of the SHA-512 family, so its suspended state is the SHA-512 one.
+//! const SUSPENDED_HKDF_SHA384_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN + 14;
+//!
+//! #[allow(non_camel_case_types)]
+//! pub type HKDF_SHA384 =
+//!     HKDF<SHA384, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>;
+//!
+//! pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
+//!
+//! // That is all it takes: the KDF trait and the extract/expand API are now available.
+//! let ikm = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::Seed).unwrap();
+//! let okm = HKDF_SHA384::new().derive_key(&ikm, b"extra input").unwrap();
 //!
-//! let hkdf = HKDF_SHA256::new();
-//! let key = hkdf.derive_key(&key, b"extra input").unwrap();
-//! ```
-//!
-//! [`KDF::derive_key`] will produce a key the same length as the underlying hash function.
-//! Longer output can be requested by instead using [`KDF::derive_key_out`] and providing a larger output buffer,
-//! which will be filled.
-//!
-//! As with other uses of [`KeyMaterialTrait`], the [`KDF::derive_key`] function will track the entropy of the input
-//! key material, and will set the entropy of the output key material accordingly.
-//!
-//! The [`KDF`] trait also provides the [`KDF::derive_key_from_multiple`] and [`KDF::derive_key_from_multiple_out`]
-//! functions, which allows for multiple inputs to be mixed into a single output key, and which allows
-//! for some advanced control of the underlying HKDF primitive.
-//!
-//!
-//! ## HKDF Extract-and-Expand
-//!
-//! The HKDF algorithm defined in RFC5896 and SP 800-56Cr2 is a two-step KDF, broken into an Extract step
-//! which essentially absorbs entropy from the input key material,
-//! and an Expand step which produces the output key material of any requested size.
-//! This interface is essentially a pre-cursor to the [`XOF`] API which was introduced with SHA3; the main
-//! difference being that HKDF-Expand needs to be told up-front how much output to produce, whereas XOFs
-//! can stream output as needed.
-//!
-//! Naturally, the full two-step HKDF-Extract and HKDF-Expand interface is provided by the [`HKDF`] struct,
-//! and exposes additional HKDF-specific parameters beyond what is exposed by the functions of the [`KDF`] trait.
-//!
-//! The usage pattern here is flexible, but generally follows the pattern of first calling [`HKDF::extract`]
-//! with a `salt` and an input key material `ikm`, which produces a pseudorandom key `prk`.
-//! The `prk` will have a [`KeyType`] and [`SecurityStrength`] that results from combining the two provided input keys,
-//! The `prk` may be! used directly as a full-entropy cryptographic key.
-//!
-//! Since the extract step may be called with any number of input keys, a streaming interface is provided
-//! whereby streaming mode in initialized with a call to [`HKDF::do_extract_init`], and then
-//! repeated calls to [`HKDF::do_extract_update_key`] and [`HKDF::do_extract_update_bytes`] may be made.
-//! Entropy from the inputs keys provided via [`HKDF::do_extract_update_key`] are credited towards the output key,
-//! while bytes provided via [`HKDF::do_extract_update_bytes`] are not.
-//! One restriction here is that once you start provided un-credited bytes via [`HKDF::do_extract_update_bytes`],
-//! no more calls to [`HKDF::do_extract_update_key`] may be made.
-//! The streaming API is completed with a call to either [`HKDF::do_extract_final`] or [`HKDF::do_extract_final_out`].
-//!
-//! The second stage, [`HKDF::expand_out`] stretches the `prk` into a longer output key, still of the same [`KeyType`]
-//! and [`SecurityStrength`].
-//!
-//! A typical flow looks like this:
-//!
-//! ```
-//! use bouncycastle_core::key_material::{KeyMaterialTrait, KeyMaterial256, KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::KDF;
-//! use bouncycastle_hkdf::{HKDF, HKDF_SHA256};
-//! use bouncycastle_sha2::{SHA256};
-//!
-//! // setup variables
+//! // ...and so is suspend/resume, because SHA-384 implements Suspendable and the two const
+//! // parameters above agree.
 //! let salt = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
-//!  let ikm = KeyMaterial256::from_bytes_as_type(
 //!             b"\x0f\x0e\x0d\x0c\x0b\x0a\x09\x08\x07\x06\x05\x04\x03\x02\x01\x00",
 //!             KeyType::MACKey).unwrap();
-//!
-//! let info = b"some extra context info";
-//!
-//!  // Use the streaming API to derive an output key of length 200 bytes.
-//!  let mut okm = KeyMaterial::<200>::new();
-//!  let mut hkdf = HKDF::<SHA256>::default();
-//!  hkdf.do_extract_init(&salt).unwrap();
-//!  hkdf.do_extract_update_bytes(ikm.ref_to_bytes()).unwrap();
-//!  let prk = hkdf.do_extract_final().unwrap();
-//!  HKDF_SHA256::expand_out(&prk, info, 200, &mut okm).unwrap();
-//! ```
-//!
-//! Various convenience wrapper functions are provided which can reduce the amount of boilerplate code
-//! for common cases.
-//! For example, the above code can be condensed to:
-//!
-//! ```
-//! use bouncycastle_core::key_material::{KeyMaterialTrait, KeyMaterial256, KeyMaterial, KeyType};
-//! use bouncycastle_hkdf::{HKDF_SHA256};
-//!
-//! // setup variables
-//! let salt = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
-//!  let ikm = KeyMaterial256::from_bytes_as_type(
-//!             b"\x0f\x0e\x0d\x0c\x0b\x0a\x09\x08\x07\x06\x05\x04\x03\x02\x01\x00",
-//!             KeyType::MACKey).unwrap();
-//!
-//! let info = b"some extra context info";
-//!
-//! // Use the one-shot API to derive an output key of length 200 bytes.
-//! let mut okm = KeyMaterial::<200>::new();
-//! let _bytes_written = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, info, 200, &mut okm).unwrap();
-//! ```
-//!
-//! # Suspending and resuming execution
-//!
-//! The *HKDF-Extract* phase supports a streaming API whereby any amount of additional input keying
-//! material can be provided either via [`HKDF::do_extract_update_key`] -- which will
-//! credit the entropy of the provided [`KeyMaterial`] -- or as raw uncredited bytes via
-//! [`HKDF::do_extract_update_bytes`].
-//!
-//! As such, The *HKDF-Extract* phase can be suspended to a cache and resumed later via the
-//! [`SuspendableKeyed`] trait.
-//!
-//! The HKDF algorithm is keyed by a `salt`, which is required twice: once at initialization and again
-//! during finalization. Suspension and resumption are supported via the [`SuspendableKeyed`] trait
-//! which requires the caller to store the salt securely and provide it again during resumption.
-//! Note that providing a different salt during resumption cannot be detected by the library and
-//! would silently produce a different PRK.
-//!
-//! ```rust
-//! use bouncycastle_hkdf::HKDF_SHA256;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::SuspendableKeyed;
-//!
-//! let salt = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//! let ikm_part1 = b"input keying material part 1";
-//! let ikm_part2 = b" ...and part 2";
-//!
-//! let mut hkdf = HKDF_SHA256::new();
+//! let mut hkdf = HKDF_SHA384::new();
 //! hkdf.do_extract_init(&salt).unwrap();
-//! hkdf.do_extract_update_bytes(ikm_part1).unwrap();
+//! hkdf.do_extract_update_bytes(b"part 1").unwrap();
+//! let suspended = hkdf.suspend();
+//! assert_eq!(suspended.len(), SUSPENDED_HKDF_SHA384_STATE_LEN);
 //!
-//! // suspend the in-progress extract (the salt is NOT included in the serialized state)
-//! let serialized_state = hkdf.suspend();
-//!
-//! // ...
-//! // do other things in the meantime
-//! // ...
-//!
-//! // ... later, possibly on another host: resume from the serialized state by re-supplying
-//! // the same salt (make sure you store it securely!).
-//! let mut hkdf = HKDF_SHA256::from_suspended(serialized_state, &salt).unwrap();
-//! hkdf.do_extract_update_bytes(ikm_part2).unwrap();
-//! let _prk = hkdf.do_extract_final().unwrap();
+//! let mut resumed = HKDF_SHA384::from_suspended(suspended, &salt).unwrap();
+//! resumed.do_extract_update_bytes(b"part 2").unwrap();
+//! let _prk = resumed.do_extract_final().unwrap();
 //! ```
-
+//!
+//! # Security Considerations
+//!
+//! These apply to every instantiation; `bouncycastle_sha2::hkdf` repeats the ones that matter most in
+//! day-to-day use.
+//!
+//! * HKDF is keyed by its `salt`, which keys the extract-phase HMAC. The salt is deliberately
+//!   excluded from the suspended state and must be re-supplied on resume; resuming with a different
+//!   salt cannot be detected and silently produces a different PRK.
+//! * Entropy is credited only for input supplied via [`HKDF::do_extract_update_key`]. Bytes supplied
+//!   via [`HKDF::do_extract_update_bytes`] are treated as uncredited context, so a PRK derived only
+//!   from raw bytes will not be tagged as full-entropy key material even if those bytes were random.
+//!   [`HKDF::do_extract_update_key`] is rejected after the first call to
+//!   [`HKDF::do_extract_update_bytes`], so that the input matches the ordering of the key-extraction
+//!   method in NIST SP 800-133r2 Section 6.3, `K = T(HMAC-hash(salt, K1 || ... || Kn || D1 || ...
+//!   || Dm), kLen)`, in which the component keys precede the other data. Note (h) of that method
+//!   permits other orderings, so this is a deliberate restriction of this API rather than a
+//!   requirement of the specification.
+//! * HKDF stretches key material but does not create entropy. The output key inherits the
+//!   [`SecurityStrength`] of its inputs: 200 bytes expanded from a 128-bit seed is 200 bytes at a
+//!   128-bit security level, not a 1600-bit key.
+//! * RFC 5869 Section 3.1 recommends a random salt where one is available. SP 800-56Cr2 permits an
+//!   all-zero salt, and the extract phase accepts one, but a salt that the caller believes to be
+//!   random and is not provides none of the benefit the recommendation is aimed at.
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
@@ -200,10 +113,9 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
-    Hash, HashAlgParams, KDF, MAC, SecurityStrength, SuspendableKeyed,
+    Hash, HashAlgParams, KDF, MAC, SecurityStrength, Suspendable, SuspendableKeyed,
 };
-use bouncycastle_hmac::{HMAC, SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA512_STATE_LEN};
-use bouncycastle_sha2::{SHA256, SHA512};
+use bouncycastle_hmac::HMAC;
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
 // Imports needed only for docs
@@ -223,25 +135,34 @@ use bouncycastle_core::traits::XOF;
 ///       and declare `prk: &mut KeyMaterial<H::OUTPUT_LEN>` instead of this hack.
 pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 
-/*** String constants ***/
-
-///
-pub const HKDF_SHA256_NAME: &str = "HKDF-SHA256";
-///
-pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
-
 /*** Types ***/
-/// Public type for HKDF using SHA256.
-#[allow(non_camel_case_types)]
-pub type HKDF_SHA256 = HKDF<SHA256>;
-/// Public type for HKDF using SHA512.
-#[allow(non_camel_case_types)]
-pub type HKDF_SHA512 = HKDF<SHA512>;
-
-/// Internal struct for HKDF.
-/// Can, in theory, be instantiated with hash functions other than the ones provided by this crate (even custom ones).
+/// The generic HKDF construction (RFC 5869).
+///
+/// Can be instantiated with hash functions other than the ones provided by this library (even custom
+/// ones). The concrete instantiations over the library's own hashes, along with their name constants,
+/// live in the hash crates -- see `bouncycastle_sha2::hkdf::HKDF_SHA256` and
+/// `bouncycastle_sha2::hkdf::HKDF_SHA512`.
+///
+/// # Const parameters
+///
+/// `HASH_STATE_LEN` is the suspended-state length of `H` (as in `H: Suspendable<HASH_STATE_LEN>`) and
+/// `HKDF_STATE_LEN` is this HKDF's own suspended-state length, which is always `HASH_STATE_LEN + 14`
+/// (see the [`SuspendableKeyed`] impl below for the layout that accounts for those 14 bytes).
+///
+/// Both are const parameters of the struct rather than being derived from `H` because `SuspendableKeyed`
+/// takes its length as a const generic, and naming `HASH_STATE_LEN + 14` in that position requires
+/// the `generic_const_exprs` feature. Carrying both on the struct is what lets a single blanket
+/// `SuspendableKeyed` impl serve every hash while still pinning the two lengths together per concrete
+/// type. They are deliberately given no defaults: there is no value that is correct for more than one
+/// hash, so each instantiation must state them.
+/// todo: once rust stabilizes generic_const_exprs, delete both const parameters and write the impl as
+///     `SuspendableKeyed<{HASH_STATE_LEN + 14}>` over `H: Suspendable<HASH_STATE_LEN>`.
 #[derive(Clone)]
-pub struct HKDF<H: Hash + HashAlgParams + Default> {
+pub struct HKDF<
+    H: Hash + HashAlgParams + Default,
+    const HASH_STATE_LEN: usize,
+    const HKDF_STATE_LEN: usize,
+> {
     // Optional because an HMAC cannot be constructed until a key is provided
     // to initialize it with.
     // None must correspond to a state of Uninitialized.
@@ -262,7 +183,11 @@ enum HkdfStates {
     Initialized = 1,
 
     /// [`HKDF::do_extract_update_key`] has been called, after which no more credited IKMs can be given.
-    /// This is in conformance with NIST SP 800-133 which requires all keys to come before other inputs.
+    /// This keeps the input in the order used by the key-extraction method of NIST SP 800-133r2
+    /// Section 6.3, `K = T(HMAC-hash(salt, K1 || ... || Kn || D1 || ... || Dm), kLen)`, in which the
+    /// component keys precede the other data. Note (h) of that method explicitly permits alternative
+    /// orderings ("including interleaving the keys and data"), so this ordering is conformant but is
+    /// a restriction this API chooses, not one the specification imposes.
     TakingAdditionalInfo = 2,
 }
 
@@ -319,37 +244,17 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     }
 }
 
-// Because this struct is not public, the tests have to go here.
-#[test]
-fn test_entropy_tracker() {
-    let mut entropy = HkdfEntropyTracker::<SHA256>::new();
-
-    assert_eq!(entropy.get_entropy(), 0);
-    assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
-
-    let key = KeyMaterial512::from_bytes_as_type(
-        b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-        KeyType::CryptographicRandom,
-    )
-    .unwrap();
-    entropy.credit_entropy(&key);
-    assert_eq!(entropy.get_entropy(), 16);
-    assert_eq!(entropy.is_fully_seeded(), false);
-    assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
-
-    entropy.credit_entropy(&key);
-    assert_eq!(entropy.get_entropy(), 32);
-    assert_eq!(entropy.is_fully_seeded(), true);
-    assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);
-}
-
-impl<H: Hash + HashAlgParams + Default> Default for HKDF<H> {
+impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    Default for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H: Hash + HashAlgParams + Default> HKDF<H> {
+impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+{
     /// Get a new, uninstantiated HKDF object.
     pub fn new() -> Self {
         Self { hmac: None, entropy: HkdfEntropyTracker::new(), state: HkdfStates::Uninitialized }
@@ -705,7 +610,9 @@ impl<H: Hash + HashAlgParams + Default> HKDF<H> {
 /// [`KDF::derive_key_from_multiple_out`], or by using the [`HKDF`] impl directly.
 ///
 /// Entropy tracking: this implementation will map entropy from the input keys to the output key.
-impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
+impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    KDF for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+{
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
     /// This provides a fixed-length output, which may be truncated as needed.
     fn derive_key(
@@ -727,7 +634,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        let bytes_written = HKDF::<H>::extract_and_expand_out(
+        let bytes_written = Self::extract_and_expand_out(
             &KeyMaterial::<0>::new(),
             key,
             additional_input,
@@ -765,7 +672,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        let mut hkdf = HKDF::<H>::new();
+        let mut hkdf = Self::new();
         let mut entropy = HkdfEntropyTracker::<H>::new();
 
         if keys.len() >= 1 {
@@ -784,7 +691,7 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
         let mut prk = KeyMaterial::<MAX_HMAC_OUTPUT_LEN>::new();
         _ = hkdf.do_extract_final_out(&mut prk)?;
         let bytes_written =
-            HKDF::<H>::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
+            Self::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
 
         key_material::do_hazardous_operations(output_key, |output_key| {
             output_key.set_key_type(entropy.get_output_key_type())?;
@@ -805,15 +712,10 @@ impl<H: Hash + HashAlgParams + Default> KDF for HKDF<H> {
     }
 }
 
-/// Length in bytes of the serialized state of [`HKDF_SHA256`].
-pub const SUSPENDED_HKDF_SHA256_STATE_LEN: usize = SUSPENDED_HMAC_SHA256_STATE_LEN + 14;
-/// Length in bytes of the serialized state of [`HKDF_SHA512`].
-pub const SUSPENDED_HKDF_SHA512_STATE_LEN: usize = SUSPENDED_HMAC_SHA512_STATE_LEN + 14;
-
 /// HKDF is *keyed by its salt* -- the salt keys the extract-phase HMAC -- so it implements
-/// [`SuspendableKeyed`] (not [`SerializableState`]). An in-progress
+/// [`SuspendableKeyed`] (not [`Suspendable`]). An in-progress
 /// extract operation can be suspended and resumed, but the salt is NOT written into the serialized
-/// state and must be re-supplied to [`SuspendableKeyed::from_serialized_state`].
+/// state and must be re-supplied to [`SuspendableKeyed::from_suspended`].
 ///
 /// Only the extract phase carries resumable state (expand is a one-shot static operation). As with
 /// HMAC, resuming with the wrong salt cannot be detected and will silently produce a wrong PRK.
@@ -822,108 +724,125 @@ pub const SUSPENDED_HKDF_SHA512_STATE_LEN: usize = SUSPENDED_HMAC_SHA512_STATE_L
 /// parsing anything else. This matters because the inner HMAC blob (which carries its own header) is
 /// absent before extract is initialized -- without HKDF's own header, a pre-init state would have no
 /// version tag at all. Using `B` = the inner HMAC blob length:
+///
+/// ```text
 ///   [0 .. 3)             HKDF library version header (checked on resume)
 ///   [3]                  inner-HMAC present flag (0 = extract not yet initialized)
 ///   [4 .. 4 + B)         the inner HMAC's SuspendableKeyed blob (salt excluded); zeroed when absent
 ///   [4 + B]              state-machine tag (see `HkdfStates`)
 ///   [5 + B .. 13 + B)    entropy counter (usize serialized as u64, little-endian)
 ///   [13 + B]             accumulated security strength (1-byte tag)
+/// ```
+///
 /// So the total per HKDF variant is the 3-byte version header + 11 bytes of HKDF bookkeeping
-/// (present flag, state tag, entropy counter, security strength) + the inner HMAC's blob = `B + 14`.
-macro_rules! impl_suspendable_keyed_state_for_hkdf {
-    // $hash: the concrete hash; $serialized_hmac_len: the inner HMAC's serialized-state length for that
-    // hash; $serialized_hkdf_len: the full HKDF serialized-state length (= 3 + 11 + $serialized_hmac_len).
-    ($hash:ty, $serialized_hmac_len:expr, $serialized_hkdf_len:expr) => {
-        impl SuspendableKeyed<{ $serialized_hkdf_len }> for HKDF<$hash> {
-            // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
-            // rather than a single concrete key type. The key is only used (by reference) to reload the key
-            // bytes at from_serialized_state, so dynamic dispatch here is negligible.
-            type Key = dyn KeyMaterialTrait;
+/// (present flag, state tag, entropy counter, security strength) + the inner HMAC's blob = `B + 14`,
+/// which is the relationship `HKDF_STATE_LEN == HASH_STATE_LEN + 14` asserted below.
+impl<H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> SuspendableKeyed<HKDF_STATE_LEN>
+    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+where
+    H: Hash + HashAlgParams + Default + Suspendable<HASH_STATE_LEN>,
+{
+    // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
+    // rather than a single concrete key type. The key is only used (by reference) to reload the key
+    // bytes at from_serialized_state, so dynamic dispatch here is negligible.
+    type Key = dyn KeyMaterialTrait;
 
-            fn suspend(self) -> [u8; $serialized_hkdf_len] {
-                debug_assert_eq!($serialized_hkdf_len, $serialized_hmac_len + 14);
-                let mut state = [0u8; $serialized_hkdf_len];
+    fn suspend(self) -> [u8; HKDF_STATE_LEN] {
+        debug_assert_eq!(HKDF_STATE_LEN, HASH_STATE_LEN + 14);
+        let mut state = [0u8; HKDF_STATE_LEN];
 
-                // HKDF's own library version header comes first: the inner HMAC blob is absent before
-                // extract is initialized, so we can't rely on its header being present.
-                add_lib_ver(&mut state);
+        // HKDF's own library version header comes first: the inner HMAC blob is absent before
+        // extract is initialized, so we can't rely on its header being present.
+        add_lib_ver(&mut state);
 
-                // The present flag, then (when present) the inner salt-keyed HMAC blob right after it.
-                if let Some(hmac) = self.hmac {
-                    state[3] = 1; // present flag
-                    state[4..4 + $serialized_hmac_len].copy_from_slice(&hmac.suspend());
-                }
-                // else None:
-                //  the presence flag = 0
-                //  the content = [u8; 0]
-                // which is how it already is, so nothing to do.
-
-                state[4 + $serialized_hmac_len] = self.state as u8;
-                state[5 + $serialized_hmac_len..13 + $serialized_hmac_len]
-                    .copy_from_slice(&(self.entropy.entropy as u64).to_le_bytes());
-                state[13 + $serialized_hmac_len] = self.entropy.security_strength as u8;
-
-                state
-            }
-
-            fn from_suspended(
-                state: [u8; $serialized_hkdf_len],
-                salt: &Self::Key,
-            ) -> Result<Self, SuspendableError> {
-                // Check HKDF's own version header before parsing anything else.
-                check_lib_ver(&state, None)?;
-
-                // Rebuild the salt-keyed HMAC (when present) by re-supplying the salt.
-                let hmac = match state[3] {
-                    0 => None,
-                    // infallible: the sub-slice is exactly $serialized_hmac_len bytes by const construction.
-                    1 => Some(HMAC::<$hash>::from_suspended(
-                        state[4..4 + $serialized_hmac_len].try_into().unwrap(),
-                        salt,
-                    )?),
-                    _ => return Err(SuspendableError::InvalidData),
-                };
-
-                let hkdf_state = HkdfStates::try_from(state[4 + $serialized_hmac_len])?;
-
-                // check that the hkdf_state aligns with the presence of an hmac
-                if
-                    // an hmac object should not be present in the init state.
-                    (hmac.is_some() && hkdf_state == HkdfStates::Uninitialized) ||
-                    // any other state must have an hmac object.
-                    (hmac.is_none() && hkdf_state != HkdfStates::Uninitialized)
-                {
-                    return Err(SuspendableError::InvalidData);
-                }
-
-                // infallible: the sub-slice is exactly 8 bytes by const construction.
-                let entropy = u64::from_le_bytes(
-                    state[5 + $serialized_hmac_len..13 + $serialized_hmac_len].try_into().unwrap(),
-                ) as usize;
-                let security_strength =
-                    SecurityStrength::try_from(state[13 + $serialized_hmac_len])?;
-
-                Ok(HKDF {
-                    hmac,
-                    entropy: HkdfEntropyTracker {
-                        _phantomhash: PhantomData,
-                        entropy,
-                        security_strength,
-                    },
-                    state: hkdf_state,
-                })
-            }
+        // The present flag, then (when present) the inner salt-keyed HMAC blob right after it.
+        if let Some(hmac) = self.hmac {
+            state[3] = 1; // present flag
+            state[4..4 + HASH_STATE_LEN].copy_from_slice(&hmac.suspend());
         }
-    };
+        // else None:
+        //  the presence flag = 0
+        //  the content = [u8; 0]
+        // which is how it already is, so nothing to do.
+
+        state[4 + HASH_STATE_LEN] = self.state as u8;
+        state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN]
+            .copy_from_slice(&(self.entropy.entropy as u64).to_le_bytes());
+        state[13 + HASH_STATE_LEN] = self.entropy.security_strength as u8;
+
+        state
+    }
+
+    fn from_suspended(
+        state: [u8; HKDF_STATE_LEN],
+        salt: &Self::Key,
+    ) -> Result<Self, SuspendableError> {
+        debug_assert_eq!(HKDF_STATE_LEN, HASH_STATE_LEN + 14);
+
+        // Check HKDF's own version header before parsing anything else.
+        check_lib_ver(&state, None)?;
+
+        // Rebuild the salt-keyed HMAC (when present) by re-supplying the salt.
+        let hmac = match state[3] {
+            0 => None,
+            // infallible: the sub-slice is exactly HASH_STATE_LEN bytes by const construction.
+            1 => Some(HMAC::<H>::from_suspended(
+                state[4..4 + HASH_STATE_LEN].try_into().unwrap(),
+                salt,
+            )?),
+            _ => return Err(SuspendableError::InvalidData),
+        };
+
+        let hkdf_state = HkdfStates::try_from(state[4 + HASH_STATE_LEN])?;
+
+        // Check that the hkdf_state aligns with the presence of an hmac: an hmac object should not
+        // be present in the init state, and any other state must have one.
+        if (hmac.is_some() && hkdf_state == HkdfStates::Uninitialized)
+            || (hmac.is_none() && hkdf_state != HkdfStates::Uninitialized)
+        {
+            return Err(SuspendableError::InvalidData);
+        }
+
+        // infallible: the sub-slice is exactly 8 bytes by const construction.
+        let entropy =
+            u64::from_le_bytes(state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN].try_into().unwrap())
+                as usize;
+        let security_strength = SecurityStrength::try_from(state[13 + HASH_STATE_LEN])?;
+
+        Ok(HKDF {
+            hmac,
+            entropy: HkdfEntropyTracker { _phantomhash: PhantomData, entropy, security_strength },
+            state: hkdf_state,
+        })
+    }
 }
 
-impl_suspendable_keyed_state_for_hkdf!(
-    SHA256,
-    SUSPENDED_HMAC_SHA256_STATE_LEN,
-    SUSPENDED_HKDF_SHA256_STATE_LEN
-);
-impl_suspendable_keyed_state_for_hkdf!(
-    SHA512,
-    SUSPENDED_HMAC_SHA512_STATE_LEN,
-    SUSPENDED_HKDF_SHA512_STATE_LEN
-);
+// Because this struct is not public, the tests have to go here.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bouncycastle_sha2::SHA256;
+
+    #[test]
+    fn test_entropy_tracker() {
+        let mut entropy = HkdfEntropyTracker::<SHA256>::new();
+
+        assert_eq!(entropy.get_entropy(), 0);
+        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
+
+        let key = KeyMaterial512::from_bytes_as_type(
+            b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+            KeyType::CryptographicRandom,
+        )
+        .unwrap();
+        entropy.credit_entropy(&key);
+        assert_eq!(entropy.get_entropy(), 16);
+        assert_eq!(entropy.is_fully_seeded(), false);
+        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
+
+        entropy.credit_entropy(&key);
+        assert_eq!(entropy.get_entropy(), 32);
+        assert_eq!(entropy.is_fully_seeded(), true);
+        assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);
+    }
+}

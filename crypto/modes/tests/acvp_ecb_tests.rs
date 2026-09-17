@@ -6,18 +6,18 @@
 //! matching the convention used by the other ACVP suites -- `cargo test` must stay green for someone
 //! who has only cloned this repository.
 //!
-//! `crypto/aes-lowmemory/tests/acvp_tests.rs` runs the same file against the permutation's block
+//! `crypto/aes/tests/acvp_tests.rs` runs the same file against the permutation's block
 //! methods; this file is what pins that the mode adds nothing and loses nothing on the way: every
 //! case is run through the `BlockCipherEncryptor` / `BlockCipherDecryptor` API in three groupings
 //! -- block by block, in pairs with a remainder, and the whole payload in one hook call (which for
-//! the 8-to-10-block cases reaches the eight-block path) -- in both directions.
+//! the cases of four or more blocks reaches the four-block path) -- in both directions.
 //!
 //! Unlike the CBC and CFB response files, the ECB one records `key`, `pt` and `ct` for every case,
 //! so it is read alone and each case is checked in both directions regardless of its group's
 //! declared direction. The MCT (Monte Carlo) groups carry a `resultsArray` defined by the ACVP AES
 //! specification rather than SP 800-38A and are skipped, with the count reported.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
@@ -77,7 +77,7 @@ enum Grouping {
     Single,
     /// Two blocks per call, with a one-block remainder for odd lengths.
     Pairs,
-    /// The whole payload in one hook call: eights, then pairs, then the remainder.
+    /// The whole payload in one hook call: fours, then pairs, then the remainder.
     Whole,
 }
 
@@ -132,9 +132,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<[u8; BLOCK_LEN]> {
     match key_bytes.len() {
-        16 => run_case::<Aes128, 16>(key_bytes, input, encrypt, grouping),
-        24 => run_case::<Aes192, 24>(key_bytes, input, encrypt, grouping),
-        32 => run_case::<Aes256, 32>(key_bytes, input, encrypt, grouping),
+        16 => run_case::<AES_128, 16>(key_bytes, input, encrypt, grouping),
+        24 => run_case::<AES_192, 24>(key_bytes, input, encrypt, grouping),
+        32 => run_case::<AES_256, 32>(key_bytes, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }
@@ -160,7 +160,7 @@ fn acvp_aes_ecb_through_the_mode_api() {
 
     let mut checked = 0usize;
     let mut multi_block = 0usize;
-    let mut eight_or_more = 0usize;
+    let mut four_or_more = 0usize;
     let mut skipped_mct = 0usize;
     let mut per_key_len: BTreeMap<usize, usize> = BTreeMap::new();
 
@@ -183,7 +183,7 @@ fn acvp_aes_ecb_through_the_mode_api() {
             let ct = to_blocks(&get("ct"));
             assert_eq!(pt.len(), ct.len(), "tcId {tc_id}: pt and ct differ in length");
             multi_block += usize::from(pt.len() > 1);
-            eight_or_more += usize::from(pt.len() >= 8);
+            four_or_more += usize::from(pt.len() >= 4);
 
             for grouping in [Grouping::Single, Grouping::Pairs, Grouping::Whole] {
                 assert_eq!(
@@ -211,11 +211,11 @@ fn acvp_aes_ecb_through_the_mode_api() {
     }
     println!(
         "ACVP AES-ECB via Ecb: {checked} AFT cases checked in three groupings each \
-         ({multi_block} multi-block, {eight_or_more} of eight or more blocks); {skipped_mct} MCT cases skipped"
+         ({multi_block} multi-block, {four_or_more} of four or more blocks); {skipped_mct} MCT cases skipped"
     );
 
     // Guard against a silently-empty or partial run.
     assert!(checked > 2000, "expected the full ACVP AFT set, only checked {checked}");
-    assert!(eight_or_more > 0, "expected cases that reach the eight-block path");
+    assert!(four_or_more > 0, "expected cases that reach the four-block path");
     assert_eq!(per_key_len.len(), 3, "expected all three key lengths");
 }

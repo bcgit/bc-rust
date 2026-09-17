@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod hmac_tests {
-    use bouncycastle_core::errors::{KeyMaterialError, MACError};
+    use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
@@ -10,9 +10,13 @@ mod hmac_tests {
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
     use bouncycastle_hex as hex;
     use bouncycastle_hmac::*;
+    use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
+    use bouncycastle_sha2::hmac::*;
     use bouncycastle_sha2::*;
+    use bouncycastle_sha3::hmac::*;
     use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
     use bouncycastle_sm3::SM3;
+    use bouncycastle_sm3::hmac::*;
 
     #[test]
     fn simple_tests() {
@@ -856,15 +860,19 @@ mod hmac_tests {
         assert_eq!(format!("{:?}", &hmac), "HMAC-SHA256 instance");
     }
 
-    /// Exercises the `keygen()` function of each HMAC type alias:
+    /// Exercises the `keygen_from_rng()` function of each HMAC type alias:
     ///   * the generated key must not be the all-zero array,
-    ///   * `keygen()` returns a ready-to-use `KeyType::MACKey` key, so that
+    ///   * `keygen_from_rng()` returns a ready-to-use `KeyType::MACKey` key, so that
     ///   * `HMAC::new(&key)` accepts the freshly generated key, without error.
+    ///
+    /// HashDRBG_SHA512 is used throughout because it is the only built-in DRBG that meets the
+    /// 256-bit strength that HMAC-SHA512 and HMAC-SHA3-512 claim; see `keygen_rejects_weak_rng`.
     macro_rules! keygen_test {
         ($test_name:ident, $hmac:ident, $n:literal) => {
             #[test]
             fn $test_name() {
-                let key = $hmac::keygen().expect("keygen should succeed");
+                let mut rng = HashDRBG_SHA512::new_from_os();
+                let key = $hmac::keygen_from_rng(&mut rng).expect("keygen_from_rng should succeed");
 
                 assert_eq!(key.key_len(), $n, "key should be the hash's output length");
                 assert_eq!(key.key_type(), KeyType::MACKey, "keygen should return a MAC key");
@@ -889,4 +897,23 @@ mod hmac_tests {
     keygen_test!(keygen_hmac_sha3_384, HMAC_SHA3_384, 48);
     keygen_test!(keygen_hmac_sha3_512, HMAC_SHA3_512, 64);
     keygen_test!(keygen_hmac_sm3, HMAC_SM3, 32);
+
+    /// `keygen_from_rng` must refuse an RNG whose security strength is below the strength the HMAC
+    /// claims, otherwise the returned key would be tagged stronger than the entropy behind it.
+    /// HashDRBG_SHA256 offers 128 bits, which is enough for HMAC-SHA256 but not for HMAC-SHA512.
+    #[test]
+    fn keygen_rejects_weak_rng() {
+        let mut weak_rng = HashDRBG_SHA256::new_from_os();
+        assert!(
+            matches!(
+                HMAC_SHA512::keygen_from_rng(&mut weak_rng),
+                Err(RNGError::SecurityStrengthInsufficientForAlgorithm)
+            ),
+            "a 128-bit RNG must not be accepted for a 256-bit HMAC"
+        );
+
+        let mut ok_rng = HashDRBG_SHA256::new_from_os();
+        HMAC_SHA256::keygen_from_rng(&mut ok_rng)
+            .expect("a 128-bit RNG is sufficient for a 128-bit HMAC");
+    }
 }

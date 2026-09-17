@@ -17,7 +17,7 @@
 //! checks that, which ties the mode to [`ElectronicCodeBook`] and confirms the transcription: a
 //! typo in either column would break the equality.
 
-use bouncycastle_aes_lowmemory::{Aes128, Aes192, Aes256};
+use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_hex as hex;
@@ -169,32 +169,32 @@ where
 
 #[test]
 fn f_1_1_ecb_aes128_encrypt() {
-    check_encrypt::<Aes128, 16>("F.1.1", KEY_128, &CIPHERTEXTS_128);
+    check_encrypt::<AES_128, 16>("F.1.1", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_1_2_ecb_aes128_decrypt() {
-    check_decrypt::<Aes128, 16>("F.1.2", KEY_128, &CIPHERTEXTS_128);
+    check_decrypt::<AES_128, 16>("F.1.2", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_1_3_ecb_aes192_encrypt() {
-    check_encrypt::<Aes192, 24>("F.1.3", KEY_192, &CIPHERTEXTS_192);
+    check_encrypt::<AES_192, 24>("F.1.3", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_1_4_ecb_aes192_decrypt() {
-    check_decrypt::<Aes192, 24>("F.1.4", KEY_192, &CIPHERTEXTS_192);
+    check_decrypt::<AES_192, 24>("F.1.4", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_1_5_ecb_aes256_encrypt() {
-    check_encrypt::<Aes256, 32>("F.1.5", KEY_256, &CIPHERTEXTS_256);
+    check_encrypt::<AES_256, 32>("F.1.5", KEY_256, &CIPHERTEXTS_256);
 }
 
 #[test]
 fn f_1_6_ecb_aes256_decrypt() {
-    check_decrypt::<Aes256, 32>("F.1.6", KEY_256, &CIPHERTEXTS_256);
+    check_decrypt::<AES_256, 32>("F.1.6", KEY_256, &CIPHERTEXTS_256);
 }
 
 /// Sec 6.1: `Cj = CIPH_K(Pj)`. Every tabulated ciphertext block is the raw permutation of the
@@ -213,7 +213,7 @@ where
 
 #[test]
 fn each_block_is_the_raw_permutation() {
-    check_raw::<Aes128, 16>("F.1.1", KEY_128, &CIPHERTEXTS_128);
-    check_raw::<Aes192, 24>("F.1.3", KEY_192, &CIPHERTEXTS_192);
-    check_raw::<Aes256, 32>("F.1.5", KEY_256, &CIPHERTEXTS_256);
+    check_raw::<AES_128, 16>("F.1.1", KEY_128, &CIPHERTEXTS_128);
+    check_raw::<AES_192, 24>("F.1.3", KEY_192, &CIPHERTEXTS_192);
+    check_raw::<AES_256, 32>("F.1.5", KEY_256, &CIPHERTEXTS_256);
 }

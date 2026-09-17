@@ -9,11 +9,11 @@ use bouncycastle_core::errors::{KeyMaterialError, PaddingError, SymmetricCipherE
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SecurityStrength,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    SimpleCipherDecryptor, SimpleCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
-    TestFrameworkBlockCipher, TestFrameworkSymmetricCipher,
+    TestFrameworkBlockCipher, TestFrameworkSimpleCipher,
 };
 use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 use bouncycastle_rng::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256};
@@ -105,11 +105,11 @@ fn toy_cipher_passes_core_test_framework() {
     TestFrameworkBlockCipher::new().test::<B, B, B, ToyCbc, ToyCbc>();
 }
 
-/// The padded adapters are the first implementors of `SymmetricCipherEncryptor` /
-/// `SymmetricCipherDecryptor`, so this is also what exercises those traits' provided one-shots.
+/// The padded adapters are the first implementors of `SimpleCipherEncryptor` /
+/// `SimpleCipherDecryptor`, so this is also what exercises those traits' provided one-shots.
 #[test]
 fn padded_adapters_pass_the_symmetric_cipher_framework() {
-    TestFrameworkSymmetricCipher::new().test_encryptor_decryptor::<B, B, B, Enc, Dec>();
+    TestFrameworkSimpleCipher::new().test_encryptor_decryptor::<B, B, B, Enc, Dec>();
 }
 
 #[test]
@@ -308,7 +308,7 @@ fn wrong_key_type_is_rejected_by_adapters() {
 /// `PaddingError`, at `encrypt_out` and at a streaming `do_final`.
 #[test]
 fn no_padding_adapters_pass_the_symmetric_cipher_framework() {
-    let mut framework = TestFrameworkSymmetricCipher::new();
+    let mut framework = TestFrameworkSimpleCipher::new();
     framework.required_alignment = B;
     framework.test_encryptor_decryptor::<B, B, B, EncNP, DecNP>();
 }

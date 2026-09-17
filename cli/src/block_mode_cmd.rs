@@ -1,9 +1,14 @@
-//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,cfb,ecb}`.
+//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,ecb}`.
 //!
 //! Everything here is mode-independent -- key loading, stdin framing, block-alignment enforcement,
 //! output formatting -- and is generic over the mode via [`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`]. `aes_cbc_cmd`, `aes_cfb_cmd` and `aes_ecb_cmd` are thin dispatchers
-//! over it, so the commands cannot drift apart on the parts that matter for correctness.
+//! [`BlockCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it, so the
+//! commands cannot drift apart on the parts that matter for correctness.
+//!
+//! The CFB and CTR commands are stream ciphers and live in [`crate::stream_mode_cmd`] instead;
+//! they share
+//! [`load_key`] and [`BlockModeAction`] with this module, so the key handling and the `encrypt` /
+//! `decrypt` spelling stay identical across all of them.
 //!
 //! # The IV travels in the ciphertext
 //!
@@ -25,8 +30,9 @@
 //!
 //! # Input must be block-aligned
 //!
-//! All these modes are defined only on whole blocks (SP 800-38A Sec 5.2), and these commands apply
-//! no padding, so input that is not a multiple of 16 bytes is rejected rather than silently padded.
+//! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
+//! commands apply no padding, so input that is not a multiple of 16 bytes is rejected rather than
+//! silently padded. (The CFB commands have no such requirement; see [`crate::stream_mode_cmd`].)
 //! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
 //!
@@ -64,13 +70,15 @@ pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum BlockModeAction {
     /// Encrypt stdin to stdout.
-    /// For CBC and CFB a freshly generated IV is written as the first 16 bytes of the output, so
-    /// that `decrypt` can read it back; ECB has no IV and writes none. Input length must be a
-    /// multiple of 16 bytes.
+    /// For CBC, CFB and CFB8 a freshly generated IV is written as the first 16 bytes of the
+    /// output, and for CTR a 12-byte nonce, so that `decrypt` can read it back; ECB has neither and
+    /// writes none. The `-cbc` and `-ecb` commands need the input to be a multiple of 16 bytes;
+    /// `-cfb`, `-cfb8` and `-ctr` take any length. See the individual subcommand's help.
     Encrypt,
     /// Decrypt stdin to stdout.
-    /// For CBC and CFB the first 16 bytes of input are taken as the IV, as written by `encrypt`;
-    /// ECB has no IV and reads none. The remaining length must be a multiple of 16 bytes.
+    /// For CBC, CFB and CFB8 the first 16 bytes of input are taken as the IV, and for CTR the
+    /// first 12 as the nonce, as written by `encrypt`; ECB has neither and reads none. See
+    /// `encrypt` for the input-length rule.
     Decrypt,
 }
 
@@ -138,9 +146,9 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
 
 /// Encrypts stdin to stdout under the mode `E`, writing the generated init data (the IV) first.
 ///
-/// `INIT_DATA_LEN` is the mode's: one block for CBC and CFB, 0 for ECB, in which case nothing is
-/// written ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "CFB128",
-/// "ECB"); it has no effect on the output.
+/// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
+/// ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "ECB"); it has no
+/// effect on the output.
 pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
@@ -176,7 +184,7 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 }
 
 /// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from the first
-/// `INIT_DATA_LEN` bytes of input -- one block for CBC and CFB, nothing for ECB.
+/// `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB.
 pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,

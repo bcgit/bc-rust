@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
+bouncycastle-hmac.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
@@ -15,4 +16,8 @@ bouncycastle-rng.workspace = true
 
 [[bench]]
 name = "sm3_benches"
+harness = false
+
+[[bench]]
+name = "hmac_sm3_benches"
 harness = false

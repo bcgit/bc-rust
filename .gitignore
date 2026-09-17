@@ -6,6 +6,11 @@ mutants.out*/
 .idea/
 .vscode/
 
+# editor swap / backup files
+*.swp
+*.swo
+*~
+
 # Claude Code: ignore personal/local state, but share team tooling
 # (skills, slash commands, subagents, and project settings.json).
 .claude/*

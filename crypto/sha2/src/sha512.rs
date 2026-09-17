@@ -1,4 +1,4 @@
-use crate::Sha512Family;
+use crate::SHA512InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable};
@@ -42,31 +42,105 @@ pub(crate) const SHA512_H0: [u64; 8] = [
     0x510E527FADE682D1, 0x9B05688C2B3E6C1F, 0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
 ];
 
+/// The truncations FIPS 180-4 s. 5.3.6 actually approves: "SHA-512/224 (t = 224) and SHA-512/256
+/// (t = 256) are approved hash algorithms. Other SHA-512/t hash algorithms with different t values
+/// may be specified in [SP 800-107] in the future as the need arises."
+pub(crate) const fn t_is_fips_approved(t: usize) -> bool {
+    t == 224 || t == 256
+}
+
+/// Rejects, at compile time, every `t` for which SHA-512/t is not defined or not representable
+/// here. See [`sha512t_h0`] for where each rule comes from; the multiple-of-8 rule is this crate's,
+/// the rest are FIPS 180-4 s. 5.3.6's.
+pub(crate) const fn check_t(t: usize) {
+    // FIPS 180-4 s. 5.3.6: "t is any positive integer ... such that t < 512".
+    assert!(t > 0, "FIPS 180-4 s. 5.3.6: t must be a positive integer");
+    assert!(t < 512, "FIPS 180-4 s. 5.3.6: t must be less than 512");
+    // FIPS 180-4 s. 5.3.6: "and t is not 384". SHA-384 is its own algorithm (s. 5.3.4 / s. 6.5)
+    // with an IV that is not the one this function would generate.
+    assert!(t != 384, "FIPS 180-4 s. 5.3.6: t must not be 384 -- use SHA384 instead");
+    // This crate's restriction, not the standard's: the digest must be a whole number of bytes.
+    assert!(t.is_multiple_of(8), "SHA-512/t here requires t to be a multiple of 8");
+}
+
+/// The number of decimal digits in `t`, i.e. the length of the "t" part of the ASCII string
+/// "SHA-512/t" that FIPS 180-4 s. 5.3.6 hashes. `t < 512`, so one, two or three.
+pub(crate) const fn t_digits(t: usize) -> usize {
+    if t >= 100 {
+        3
+    } else if t >= 10 {
+        2
+    } else {
+        1
+    }
+}
+
+/// This crate's algorithm name for SHA-512/t, `"SHA512/t"` with `t` in decimal -- `"SHA512/224"`,
+/// `"SHA512/256"`, `"SHA512/8"` -- returned NUL-padded to the longest form, with
+/// [`alg_name_len`] giving the significant prefix. Two pieces because
+/// [`Algorithm::ALG_NAME`](bouncycastle_core::traits::Algorithm::ALG_NAME) is a `&'static str` and
+/// a const generic cannot size the buffer to the digit count.
+///
+/// Note this is *not* the s. 5.3.6 spelling: the string the IV Generation Function hashes is
+/// "SHA-512/t", with the hyphen, and is built separately in [`sha512t_h0`]. This one follows the
+/// crate's existing names, [`SHA512_224_NAME`](crate::SHA512_224_NAME) and
+/// [`SHA512_256_NAME`](crate::SHA512_256_NAME), which it has to keep reproducing exactly.
+pub(crate) const fn alg_name_bytes(t: usize) -> [u8; ALG_NAME_BUF_LEN] {
+    let mut buf = [b'S', b'H', b'A', b'5', b'1', b'2', b'/', 0, 0, 0];
+    let mut i = 7;
+    if t >= 100 {
+        buf[i] = b'0' + (t / 100) as u8;
+        i += 1;
+    }
+    if t >= 10 {
+        buf[i] = b'0' + ((t / 10) % 10) as u8;
+        i += 1;
+    }
+    buf[i] = b'0' + (t % 10) as u8;
+    buf
+}
+
+/// Size of the [`alg_name_bytes`] buffer: `"SHA512/"` plus the most digits `t` can have.
+pub(crate) const ALG_NAME_BUF_LEN: usize = 7 + 3;
+
+/// The significant length of [`alg_name_bytes`]'s output for `t`.
+pub(crate) const fn alg_name_len(t: usize) -> usize {
+    7 + t_digits(t)
+}
+
 /// FIPS 180-4 s. 5.3.6 "SHA-512/t IV Generation Function": computes the initial hash value H(0)
 /// for SHA-512/t.
 ///
 /// Quoting the procedure:
 ///
 /// > Denote H(0)' to be the initial hash value of SHA-512 as specified in Section 5.3.5 above.
-/// > Denote H(0)'' to be the initial hash value computed below. H(0)'' is the IV for SHA-512/t.
 /// >
-/// > For i = 0 to 7 { Hi(0)' = Hi(0)' xor a5a5a5a5a5a5a5a5 (in hex). }
+/// > Denote H(0)'' to be the initial hash value computed below.
 /// >
-/// > H(0)'' = SHA-512("SHA-512/t") using H(0)' as the IV, where t is the specific truncation value.
+/// > H(0) is the IV for SHA-512/t.
+/// >
+/// > For i = 0 to 7 { Hi(0)'' = Hi(0)' xor a5a5a5a5a5a5a5a5(in hex). }
+/// >
+/// > H(0) = SHA-512 ("SHA-512/t") using H(0)'' as the IV, where t is the specific truncation value.
 ///
 /// where, per the same section, "t is any positive integer without a leading zero such that t < 512,
 /// and t is not 384", and "SHA-512/t" is the ASCII string with t written in decimal (so for t = 256
 /// the message is the 11 bytes `53 48 41 2D 35 31 32 2F 32 35 36`).
 ///
-/// This is a `const fn` so that the IV is computed at compile time; the results for t = 224 and
-/// t = 256 are checked at compile time against the words listed in s. 5.3.6.1 and s. 5.3.6.2 (see
-/// `lib.rs`). The message is at most 11 bytes, so the SHA-512 computation is always exactly one
-/// padded block (s. 5.1.2).
+/// Deliberate deviation from s. 5.3.6: `t` must additionally be a multiple of 8. The section
+/// allows "any positive integer" below 512, including values that are not a whole number of bytes,
+/// but [`Hash`](bouncycastle_core::traits::Hash) is byte-oriented -- `OUTPUT_LEN` is a byte count
+/// and `do_final_out` writes whole bytes -- so a t of, say, 100 bits has no representable digest
+/// here. BC Java's `SHA512tDigest` imposes the same restriction ("bitLength needs to be a multiple
+/// of 8"), so the two libraries accept exactly the same set of truncations.
+///
+/// This is a `const fn` so that the IV is computed at compile time, which is also what makes the
+/// rules above compile errors rather than panics: an unusable `t` fails the build at the point the
+/// parameter set is instantiated.
 pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
-    // FIPS 180-4 s. 5.3.6: "t is any positive integer without a leading zero such that t < 512, and t is not 384".
-    assert!(t > 0 && t < 512 && t != 384, "FIPS 180-4 s. 5.3.6: 0 < t < 512 and t != 384");
+    check_t(t);
 
-    // FIPS 180-4 s. 5.3.6: H(0)' = the SHA-512 initial hash value (s. 5.3.5), each word XOR a5a5a5a5a5a5a5a5.
+    // FIPS 180-4 s. 5.3.6: H(0)'' = H(0)', the SHA-512 initial hash value (s. 5.3.5), with each word XOR a5a5a5a5a5a5a5a5.
     let mut h = SHA512_H0;
     let mut i = 0;
     while i < 8 {
@@ -74,8 +148,9 @@ pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
         i += 1;
     }
 
-    // FIPS 180-4 s. 5.3.6: the message is the ASCII string "SHA-512/t" (at most 11 bytes, so one block).
-    // It is built directly in its padded form (s. 5.1.2) inside a single 1024-bit block (s. 5.2.2).
+    // FIPS 180-4 s. 5.3.6: the message is the ASCII string "SHA-512/t" (at most 11 bytes, so one
+    // block). It is built directly in its padded form (s. 5.1.2) inside a single 1024-bit block
+    // (s. 5.2.2).
     let mut block = [0u8; 128];
     let prefix = b"SHA-512/";
     let mut len = 0;
@@ -83,7 +158,10 @@ pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
         block[len] = prefix[len];
         len += 1;
     }
-    // FIPS 180-4 s. 5.3.6: t written in decimal "without a leading zero" (t < 512, so at most three digits).
+    // FIPS 180-4 s. 5.3.6: t written in decimal "without a leading zero" ("t is 256, but not
+    // 0256"). t < 512, so one, two or three digits, and the leading digit is emitted only when it
+    // is significant -- writing a fixed three digits would produce the "0256" spelling the section
+    // forbids, and hence the wrong IV, for every t below 100.
     if t >= 100 {
         block[len] = b'0' + (t / 100) as u8;
         len += 1;
@@ -106,7 +184,7 @@ pub(crate) const fn sha512t_h0(t: usize) -> [u64; 8] {
         i += 1;
     }
 
-    // FIPS 180-4 s. 5.3.6: H(0)'' = SHA-512("SHA-512/t") using H(0)' as the IV, i.e. one pass of s. 6.4.2.
+    // FIPS 180-4 s. 5.3.6: H(0) = SHA-512("SHA-512/t") using H(0)'' as the IV, i.e. one pass of s. 6.4.2.
     compress_block(&mut h, &block);
     h
 }
@@ -223,18 +301,18 @@ const fn compress_block(s: &mut [u64; 8], block: &[u8; 128]) {
     s[7] = s[7].wrapping_add(h);
 }
 
-pub(crate) struct Sha512State<PARAMS: Sha512Family> {
+pub(crate) struct Sha512State<PARAMS: SHA512InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     h: Secret<[u64; 8]>,
 }
 
-impl<PARAMS: Sha512Family> Clone for Sha512State<PARAMS> {
+impl<PARAMS: SHA512InitValue> Clone for Sha512State<PARAMS> {
     fn clone(&self) -> Self {
         Self { _params: core::marker::PhantomData, h: self.h.clone() }
     }
 }
 
-impl<PARAMS: Sha512Family> Sha512State<PARAMS> {
+impl<PARAMS: SHA512InitValue> Sha512State<PARAMS> {
     pub(crate) fn new() -> Self {
         let mut h = Secret::<[u64; 8]>::new();
         // FIPS 180-4 s. 6.4.1 step 1: set the initial hash value H(0) (s. 5.3.4 / 5.3.5 / 5.3.6 per variant).
@@ -253,7 +331,7 @@ impl<PARAMS: Sha512Family> Sha512State<PARAMS> {
 /// Internal struct for SHA512.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
-pub struct SHA512Internal<PARAMS: Sha512Family> {
+pub struct SHA512Internal<PARAMS: SHA512InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
     state: Sha512State<PARAMS>,
     // NOTE: FIPS 180-4 allows messages up to 2^128 bits; this counter supports 2^67 bits (2^64 bytes).
@@ -262,7 +340,7 @@ pub struct SHA512Internal<PARAMS: Sha512Family> {
     x_buf_off: usize,
 }
 
-impl<PARAMS: Sha512Family> Clone for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Clone for SHA512Internal<PARAMS> {
     fn clone(&self) -> Self {
         Self {
             _params: core::marker::PhantomData,
@@ -274,9 +352,41 @@ impl<PARAMS: Sha512Family> Clone for SHA512Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     /// Creates a new SHA512 instance, ready for use.
+    ///
+    /// Restricted to parameter sets that are approved hash algorithms. Every member of the family
+    /// but SHA-512/t is one; for SHA-512/t only t = 224 and t = 256 are (FIPS 180-4 s. 5.3.6), so
+    /// any other truncation is a compile error here and has to be asked for by name through
+    /// [`new_allow_unapproved_t`](Self::new_allow_unapproved_t).
     pub fn new() -> Self {
+        const {
+            assert!(
+                PARAMS::FIPS_APPROVED,
+                "this SHA-512/t truncation is not FIPS 180-4 approved (only t = 224 and t = 256 are); \
+                 use SHA512Internal::new_allow_unapproved_t() if that is deliberate"
+            )
+        };
+        Self::construct()
+    }
+
+    /// As [`new`](Self::new), but accepts the SHA-512/t truncations FIPS 180-4 s. 5.3.6 does not
+    /// approve.
+    ///
+    /// The IV Generation Function is defined for every `t` this crate accepts, and the resulting
+    /// hash is a perfectly well-formed SHA-512/t -- it is simply not one NIST has approved, so it
+    /// must not be used where an approved algorithm is required. Reaching for this constructor is
+    /// how that choice is made explicit; [`new`](Self::new) will not build for such a `t`, and
+    /// neither will anything that goes through `Default`, which keeps an unapproved truncation
+    /// from reaching generic code by accident.
+    ///
+    /// The `t` validity rules themselves are not relaxed: `t` must still be a positive multiple of
+    /// 8 below 512 and not 384, checked when the parameter set is instantiated.
+    pub fn new_allow_unapproved_t() -> Self {
+        Self::construct()
+    }
+
+    fn construct() -> Self {
         Self {
             _params: core::marker::PhantomData,
             state: Sha512State::<PARAMS>::new(),
@@ -287,7 +397,7 @@ impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     /// Pads and compresses the final block(s) as per FIPS 180-4 s. 5.1.2, then writes the digest.
     ///
     /// The `num_partial_bits` (0..=7, validated by the caller) trailing message bits are the most
@@ -298,7 +408,12 @@ impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
     ///
     /// Returns the number of bytes written (`min(output.len(), OUTPUT_LEN)`); a shorter output buffer
     /// truncates the digest, a longer one is zero-filled past the digest.
-    fn finalize(mut self, partial_byte: u8, num_partial_bits: usize, output: &mut [u8]) -> usize {
+    fn do_final_internal(
+        mut self,
+        partial_byte: u8,
+        num_partial_bits: usize,
+        output: &mut [u8],
+    ) -> usize {
         debug_assert!(num_partial_bits <= 7);
         output.fill(0);
 
@@ -352,18 +467,18 @@ impl<PARAMS: Sha512Family> SHA512Internal<PARAMS> {
     }
 }
 
-impl<PARAMS: Sha512Family> Default for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Default for SHA512Internal<PARAMS> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<PARAMS: Sha512Family> Algorithm for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Algorithm for SHA512Internal<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
-impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
         1024
@@ -389,8 +504,9 @@ impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
-        // byte_count is a u64 byte counter, so this supports messages up to 2^64 bytes (2^67 bits).
-        // Exceeding it is infeasible in practice; in debug builds the add panics, in release it wraps.
+        // FIPS 180-4 s. 5.1.2: do_final_internal writes the whole 128-bit field, carrying the top
+        // three bits of byte_count in bit_len_hi, so unlike SHA-256 nothing is lost to the shift.
+        // The limit is byte_count itself at 2^64 bytes, far inside the l < 2^128 bits of Table 1.
         self.byte_count += len as u64;
 
         let available = 128 - self.x_buf_off;
@@ -427,7 +543,7 @@ impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general padding.
-        self.finalize(0, 0, output)
+        self.do_final_internal(0, 0, output)
     }
 
     fn do_final_partial_bits(
@@ -453,7 +569,7 @@ impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
         if num_partial_bits > 7 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
-        Ok(self.finalize(partial_byte, num_partial_bits, output))
+        Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -464,7 +580,7 @@ impl<PARAMS: Sha512Family> Hash for SHA512Internal<PARAMS> {
 /// Length in bytes of the serialized state of SHA384, SHA512, SHA512/224 and SHA512/256.
 pub const SUSPENDED_SHA512_STATE_LEN: usize = 204;
 
-impl<PARAMS: Sha512Family> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
+impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512Internal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_SHA512_STATE_LEN] {
         debug_assert_eq!(SUSPENDED_SHA512_STATE_LEN, 204);
 
