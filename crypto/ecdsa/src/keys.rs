@@ -4,11 +4,13 @@ use crate::extra_bits::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::nat;
 use bouncycastle_ec::p256::P256FieldElement;
 use bouncycastle_ec::p256_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256_scalar::P256Scalar;
+use bouncycastle_ec::p256_scalar::{N_LIMBS, P256Scalar};
 use bouncycastle_ec::p256_sec1;
 use bouncycastle_rng::DefaultRNG;
+use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
@@ -64,18 +66,22 @@ impl SignaturePrivateKey<SK_LEN> for ECDSAP256PrivateKey {
         let array: [u8; SK_LEN] = bytes.try_into().map_err(|_| {
             SignatureError::DecodingError("ECDSA P-256 private key must be 32 bytes")
         })?;
-        let scalar = P256Scalar::from_be_bytes(&array);
-        // FIPS 186-5 §6.2: d is in [1, n-1]. Checking equality with the fixed public value 0 is a
-        // one-time validation of caller-supplied bytes at load time, not a computation performed
-        // repeatedly on a secret intermediate value, so branching on it (via `!=`, itself backed by
-        // P256Scalar's constant-time PartialEq) leaks nothing beyond what the caller already knows
+        // FIPS 186-5 §6.2: d is in [1, n-1], checked on the raw big-endian value *before* any
+        // reduction. `P256Scalar::from_be_bytes` reduces mod n, so checking afterwards would accept
+        // an out-of-range encoding as a different, perfectly valid key: `d = n + 1` would load as
+        // `d = 1`, giving one key two encodings and silently treating malformed input as well-
+        // formed. Comparing against the fixed public values 0 and n is a one-time validation of
+        // caller-supplied bytes at load time, not a computation performed repeatedly on a secret
+        // intermediate value, so branching on it leaks nothing beyond what the caller already knows
         // from having supplied these exact bytes.
-        if scalar == P256Scalar::from_limbs([0, 0, 0, 0]) {
+        let limbs = p256_sec1::limbs_from_be_bytes(&array);
+        let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
+        if limbs == [0; 4] || borrow != 1 {
             return Err(SignatureError::DecodingError(
-                "ECDSA P-256 private key must be in [1, n-1], got 0",
+                "ECDSA P-256 private key must be in [1, n-1]",
             ));
         }
-        Ok(Self(scalar))
+        Ok(Self(P256Scalar::from_limbs(limbs)))
     }
 }
 
@@ -123,9 +129,11 @@ pub fn keygen() -> Result<(ECDSAP256PublicKey, ECDSAP256PrivateKey), SignatureEr
 pub fn keygen_from_rng(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAP256PublicKey, ECDSAP256PrivateKey), SignatureError> {
-    let mut extra_bits = [0u8; EXTRA_BITS_DRBG_OUTPUT_LEN];
-    rng.next_bytes_out(&mut extra_bits).map_err(SignatureError::RNGError)?;
-    let d = reduce_wide_bits_mod_n_minus_1(&extra_bits);
+    // Raw DRBG output, reduced below into the private key / per-message secret: held in
+    // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+    let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
+    rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
+    let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
     let q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction (see reduce_wide_bits_mod_n_minus_1) and G has prime order

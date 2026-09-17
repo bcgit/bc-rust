@@ -18,6 +18,7 @@ use bouncycastle_ec::p384_scalar::{N_LIMBS, P384PublicScalar, P384Scalar, P384Sc
 use bouncycastle_ec::p384_sec1;
 use bouncycastle_ec::p384_wnaf::shamir_multiply;
 use bouncycastle_sha2::SHA384;
+use bouncycastle_utils::secret::Secret;
 
 /// Raw `r || s` signature length: two 48-byte field-width integers.
 pub const SIG_LEN: usize = 96;
@@ -92,8 +93,10 @@ impl ECDSAP384 {
         let h: [u8; 48] = SHA384::default().hash(msg)[..48].try_into().unwrap();
         let e = e_from_hash(&h);
 
-        let mut bytes = [0u8; SK_LEN];
-        rng.next_bytes_out(&mut bytes).map_err(SignatureError::RNGError)?;
+        // Raw DRBG output, reduced below into the private key / per-message secret: held in
+        // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+        let mut bytes = Secret::<[u8; SK_LEN]>::new();
+        rng.next_bytes_out(&mut *bytes).map_err(SignatureError::RNGError)?;
         let k = reduce_mod_n_minus_1_plus_one(p384_sec1::limbs_from_be_bytes(&bytes));
 
         sign_with_k(sk, &e, k)
@@ -199,7 +202,14 @@ impl SignatureVerifier<ECDSAP384PublicKey, PK_LEN, SIG_LEN> for ECDSAP384 {
         let pk = self.pk.ok_or(SignatureError::GenericError(
             "verify_final called on a sign-initialized ECDSAP384; call sign_final instead",
         ))?;
-        if sig.len() < SIG_LEN {
+        // Exactly SIG_LEN, not "at least": the raw encoding is two fixed-width integers and
+        // nothing else, so trailing bytes make this a different, malformed encoding rather than a
+        // valid signature in a roomy buffer. Accepting them would let anyone turn one valid
+        // signature into unlimited distinct byte strings that all verify -- malleability that
+        // breaks any caller treating the signature as an opaque, comparable blob. This matches how
+        // `SignaturePublicKey`/`SignaturePrivateKey::from_bytes` already reject an over-long
+        // encoding here (see `core-test-framework`'s own `test_boundary_conditions`).
+        if sig.len() != SIG_LEN {
             return Err(SignatureError::SignatureVerificationFailed);
         }
 

@@ -13,13 +13,16 @@ use bouncycastle_hmac::HMAC;
 use bouncycastle_sha2::SHA384;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 const HLEN: usize = 48;
 
 const _: () =
     assert!(HLEN * 8 == 384, "int2octets/bits2octets shortcuts assume hlen == qlen == 384");
 
-fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
+/// As [`crate::rfc6979::hmac_k`], including why this returns a [`Secret`] rather than a bare
+/// array: see that function's docs and [`generate_k`]'s "What is scrubbed" section.
+fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
         .expect("HLEN-byte key always fits");
     let mut hmac =
@@ -27,8 +30,8 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> [u8; HLEN] {
     for piece in data {
         hmac.do_update(piece);
     }
-    let mut out = [0u8; HLEN];
-    hmac.do_final_out(&mut out).expect("HLEN-byte output buffer always fits HMAC-SHA384's output");
+    let mut out = Secret::<[u8; HLEN]>::new();
+    hmac.do_final_out(&mut *out).expect("HLEN-byte output buffer always fits HMAC-SHA384's output");
     out
 }
 
@@ -55,24 +58,26 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
 /// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs.
 pub fn generate_k(d: &P384Scalar, h1: &[u8; HLEN]) -> P384Scalar {
-    let int2octets_d = d.to_be_bytes();
+    let mut int2octets_d = Secret::<[u8; HLEN]>::new();
+    *int2octets_d = d.to_be_bytes();
     let bits2octets_h1 = bits2octets(h1);
 
-    let mut key = [0u8; HLEN];
-    let mut v = [0x01u8; HLEN];
+    let mut key = Secret::<[u8; HLEN]>::new();
+    let mut v = Secret::<[u8; HLEN]>::new();
+    *v = [0x01u8; HLEN];
 
-    key = hmac_k(&key, &[&v, &[0x00], &int2octets_d, &bits2octets_h1]);
-    v = hmac_k(&key, &[&v]);
-    key = hmac_k(&key, &[&v, &[0x01], &int2octets_d, &bits2octets_h1]);
-    v = hmac_k(&key, &[&v]);
+    key = hmac_k(&key, &[&*v, &[0x00], &*int2octets_d, &bits2octets_h1]);
+    v = hmac_k(&key, &[&*v]);
+    key = hmac_k(&key, &[&*v, &[0x01], &*int2octets_d, &bits2octets_h1]);
+    v = hmac_k(&key, &[&*v]);
 
     loop {
-        v = hmac_k(&key, &[&v]);
+        v = hmac_k(&key, &[&*v]);
         if candidate_in_range(&v) {
             return P384Scalar::from_limbs(p384_sec1::limbs_from_be_bytes(&v));
         }
-        key = hmac_k(&key, &[&v, &[0x00]]);
-        v = hmac_k(&key, &[&v]);
+        key = hmac_k(&key, &[&*v, &[0x00]]);
+        v = hmac_k(&key, &[&*v]);
     }
 }
 
