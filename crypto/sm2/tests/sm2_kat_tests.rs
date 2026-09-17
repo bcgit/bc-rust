@@ -15,10 +15,21 @@
 //! with a matching `k` isn't reproducible through the public API. Verification has no such
 //! constraint: it only needs a public key and a signature, both computed once in Python and fixed
 //! here.
+//!
+//! `bc_java_sm2p256v1_vector_verifies` below is the exception, and the only vector here whose
+//! expected values did not originate with this workspace at all: it is BouncyCastle Java's own
+//! `SM2SignerTest.doSignerTestFpStandardSM3` case (`core/src/test/java/org/bouncycastle/crypto/
+//! test/SM2SignerTest.java`), on the same `sm2p256v1` curve with SM3. A separate implementation
+//! produced it, so it cross-checks this crate's domain constants, `ZA`, `e = SM3(ZA || M)` and the
+//! §5.2.3 verification equation against something external -- which the Python-generated vectors
+//! above, sharing this crate's own `ZA` and signing logic, cannot do. It was additionally
+//! reproduced from scratch (in Python, not checked in: affine group law, `hashlib.new("sm3")`,
+//! and the draft's published domain parameters) before being written here, so it rests on two
+//! independent derivations rather than on trusting either one.
 
-use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureVerifier};
 use bouncycastle_ec::sm2_sec1;
-use bouncycastle_sm2::keys::SM2PublicKey;
+use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey};
 use bouncycastle_sm2::sm2::SM2;
 
 fn pubkey_from_hex(x_hex: &str, y_hex: &str) -> SM2PublicKey {
@@ -137,4 +148,47 @@ fn known_answer_za_matches_independent_python_computation() {
         let za = bouncycastle_sm2::za::compute(id, &x, &y).unwrap();
         assert_eq!(bouncycastle_hex::encode(za), za_hex);
     }
+}
+
+/// BouncyCastle Java's `SM2SignerTest.doSignerTestFpStandardSM3` vector -- see this file's module
+/// docs for its provenance and why it is the one externally-sourced case here.
+///
+/// Unlike the vectors above it comes with its private key, so this also pins
+/// [`SM2PrivateKey::derive_pk`] (`PA = [dA]G`) and [`bouncycastle_sm2::za::compute`] against the
+/// same external source, not just the end-to-end verify result.
+#[test]
+fn bc_java_sm2p256v1_vector_verifies() {
+    const D_HEX: &str = "110e7973206f68c19ee5f7328c036f26911c8c73b4e4f36ae3291097f8984ffc";
+    const PA_X: &str = "d03d30dd01ca3422aeaccf9b88043b554659d3092b0a9e8cce3e8c4530a98cb7";
+    const PA_Y: &str = "9d705e6213eee145b748e36e274e5f101dc10d7bbc9dab9a04022e73b76e02cd";
+    const ZA_HEX: &str = "ad1c1335ec4bd951cbb4a2144b8247b78fbe47efce2203086f968be8b730393d";
+    const ID: &[u8] = b"sm2test@example.com";
+    const MSG: &[u8] = b"hi chappy";
+    const R: &str = "05890b9077b92e47b17a1ff42a814280e556afd92b4a98b9670bf8b1a274c2fa";
+    const S: &str = "e3abbb8db2b6ecd9b24eccea7f679fb9a4b1db52f4aa985e443ad73237fa1993";
+
+    let sk = SM2PrivateKey::from_bytes(&bouncycastle_hex::decode(D_HEX).unwrap())
+        .expect("bc-java's dA is in [1, n-1]");
+    let pk = sk.derive_pk();
+    assert_eq!(pk, pubkey_from_hex(PA_X, PA_Y), "PA = [dA]G disagrees with the external vector");
+
+    let (x, y) = (pk.encode()[1..33].to_vec(), pk.encode()[33..65].to_vec());
+    let x = bouncycastle_ec::sm2::Sm2FieldElement::from_limbs(sm2_sec1::limbs_from_be_bytes(
+        &x.try_into().unwrap(),
+    ));
+    let y = bouncycastle_ec::sm2::Sm2FieldElement::from_limbs(sm2_sec1::limbs_from_be_bytes(
+        &y.try_into().unwrap(),
+    ));
+    assert_eq!(
+        bouncycastle_hex::encode(bouncycastle_sm2::za::compute(ID, &x, &y).unwrap()),
+        ZA_HEX,
+        "ZA disagrees with the external vector"
+    );
+
+    let sig = sig_from_hex(R, S);
+    SM2::verify(&pk, MSG, Some(ID), &sig).expect("bc-java's signature must verify");
+
+    // and it must be specific to that identity and message
+    assert!(SM2::verify(&pk, MSG, Some(b"someone-else"), &sig).is_err());
+    assert!(SM2::verify(&pk, b"hi chappy!", Some(ID), &sig).is_err());
 }
