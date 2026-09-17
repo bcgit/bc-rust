@@ -2,7 +2,9 @@
 //! verification's `R' = [u]G + [v]Q` (FIPS 186-5 §6.4.2). Both scalars and both points are public
 //! -- `G` is the curve's fixed base point and `Q` a signer's public key -- so unlike
 //! [`crate::p256_comb`], this multiplier takes [`P256PublicScalar`], not [`crate::p256_scalar::P256Scalar`],
-//! and is written for speed, not constant time: it branches freely on the digits it computes.
+//! and is written for speed, not constant time: it branches freely on the digits it computes,
+//! and adds points with `add_vartime` rather than the constant-time `add` (see that method's
+//! docs for why that is both sound here and worth roughly a third of every point addition).
 //!
 //! # wNAF
 //!
@@ -56,10 +58,10 @@ pub fn shamir_multiply(
     for i in (0..WNAF_LEN).rev() {
         r = r.double();
         if let Some(add_g) = lookup_signed(&table_g, du[i]) {
-            r = r.add(&add_g);
+            r = r.add_vartime(&add_g);
         }
         if let Some(add_q) = lookup_signed(&table_q, dv[i]) {
-            r = r.add(&add_q);
+            r = r.add_vartime(&add_q);
         }
     }
     r
@@ -112,7 +114,7 @@ fn odd_multiples(p: &P256JacobianPoint) -> [P256JacobianPoint; ODD_MULTIPLE_COUN
     let mut cur = *p;
     for entry in table.iter_mut() {
         *entry = cur;
-        cur = cur.add(&double_p);
+        cur = cur.add_vartime(&double_p);
     }
     table
 }

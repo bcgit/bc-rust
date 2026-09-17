@@ -10,8 +10,8 @@
 //! [`Sm2JacobianPoint::double`] is the standard `a = -3` Jacobian doubling (`M = 3(X-Z^2)(X+Z^2)`,
 //! `S = 4XY^2`, `T = 8Y^4`, `X3 = M^2 - 2S`, `Y3 = M(S - X3) - T`, `Z3 = 2YZ`), and
 //! [`Sm2JacobianPoint::add`]'s generic-case formula is the standard Jacobian addition (`H = U1 -
-//! U2`, `R = S1 - S2`, `X3 = R^2 + H^3 - 2V`, `Y3 = R(V - X3) - S1*H^3`, `Z3 = H*Z1*Z2`, where `U1 =
-//! X1*Z2^2`, `S1 = Y1*Z2^3`, `U2 = X2*Z1^2`, `S2 = Y2*Z1^3`, `V = H^2*U1`).
+//! U2`, `R = S1 - S2`, `X3 = R^2 + H^3 - 2V`, `Y3 = R(V - X3) - S1*H^3`, `Z3 = H*Z1*Z2`, where `U1
+//! = X1*Z2^2`, `S1 = Y1*Z2^3`, `U2 = X2*Z1^2`, `S2 = Y2*Z1^3`, `V = H^2*U1`).
 //!
 //! Verified (not checked in) against the standard affine group law using SM2's own domain
 //! parameters, over 500 random on-curve points and their scaled (non-canonical-`Z`) Jacobian
@@ -144,6 +144,37 @@ impl Sm2JacobianPoint {
         result = select_point(other_is_infinity, self, &result);
         result
     }
+
+    /// `self + other` for points that are **public**, branching on the exceptional cases instead
+    /// of computing every candidate and masking.
+    ///
+    /// [`Self::add`] must evaluate the doubling candidate on every call, because on secret inputs
+    /// it cannot branch on whether the doubling case applies -- that costs a full point doubling
+    /// (roughly a third of the addition) on every addition, whether or not it is ever used. This
+    /// version pays it only when the operands really are the same point, which for a scalar
+    /// multiplier over distinct precomputed multiples is essentially never.
+    ///
+    /// Restricted to `pub(crate)` and used only by [`crate::sm2_wnaf`], whose scalars are
+    /// [`crate::sm2_scalar::Sm2PublicScalar`] and whose points are a signer's public key and
+    /// the curve's own base point: every value it branches on is already known to an attacker. Do
+    /// not call this on anything derived from a private key or a per-message secret -- the
+    /// constant-time [`Self::add`] exists for that, and the scalar type split is what keeps the
+    /// two multipliers from being confused for one another.
+    pub(crate) fn add_vartime(&self, other: &Self) -> Self {
+        if self.is_infinity().to_bool() {
+            return *other;
+        }
+        if other.is_infinity().to_bool() {
+            return *self;
+        }
+
+        let (generic, h, r) = self.generic_add(other);
+        if h.is_zero().to_bool() {
+            // Same affine x: either the same point (double it) or its negation (sum is infinity).
+            return if r.is_zero().to_bool() { self.double() } else { Self::INFINITY };
+        }
+        generic
+    }
 }
 
 /// Selects `a` if `cond` is TRUE, else `b`, over every coordinate of a point.
@@ -163,4 +194,37 @@ fn select_limbs(cond: Condition<u64>, a: &[u64; 4], b: &[u64; 4]) -> [u64; 4] {
     let mut out = [0u64; 4];
     ct::conditional_select(cond, a, b, &mut out);
     out
+}
+
+// `add_vartime` is `pub(crate)` -- deliberately unreachable from outside the crate, since calling
+// it on a secret point would undo the constant-time discipline [`Sm2JacobianPoint::add`] exists for
+// -- so no integration test can reach it. Its whole contract is that it computes the same group law
+// as `add`, differing only in *how* it gets there, so that is what is pinned here: agreement on
+// every exceptional case, including the ones a scalar multiplier over distinct precomputed
+// multiples essentially never reaches by chance (a point added to itself, and a point added to its
+// own negation). QUALITY_AND_STYLE's private-function carve-out applies.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
+
+    #[test]
+    fn add_vartime_agrees_with_add_on_every_case() {
+        let g = Sm2JacobianPoint::from_affine(
+            Sm2FieldElement::from_limbs(G_X_LIMBS),
+            Sm2FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        // G, 2G, -G and the identity cover all four of `add`'s exceptional cases pairwise, plus
+        // the ordinary one (e.g. G + 2G).
+        let points = [g, g.double(), g.negate(), Sm2JacobianPoint::INFINITY];
+        for a in points {
+            for b in points {
+                assert_eq!(
+                    a.add_vartime(&b).to_affine(),
+                    a.add(&b).to_affine(),
+                    "add_vartime disagrees with add"
+                );
+            }
+        }
+    }
 }

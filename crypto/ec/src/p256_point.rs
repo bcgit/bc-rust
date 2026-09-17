@@ -8,18 +8,18 @@
 //! [`P256JacobianPoint::double`] is the standard `a = -3` Jacobian doubling (`M = 3(X-Z^2)(X+Z^2)`,
 //! `S = 4XY^2`, `T = 8Y^4`, `X3 = M^2 - 2S`, `Y3 = M(S - X3) - T`, `Z3 = 2YZ`), and
 //! [`P256JacobianPoint::add`]'s generic-case formula is the standard Jacobian addition (`H = U1 -
-//! U2`, `R = S1 - S2`, `X3 = R^2 + H^3 - 2V`, `Y3 = R(V - X3) - S1*H^3`, `Z3 = H*Z1*Z2`, where `U1 =
-//! X1*Z2^2`, `S1 = Y1*Z2^3`, `U2 = X2*Z1^2`, `S2 = Y2*Z1^3`, `V = H^2*U1`) -- both ported from
+//! U2`, `R = S1 - S2`, `X3 = R^2 + H^3 - 2V`, `Y3 = R(V - X3) - S1*H^3`, `Z3 = H*Z1*Z2`, where `U1
+//! = X1*Z2^2`, `S1 = Y1*Z2^3`, `U2 = X2*Z1^2`, `S2 = Y2*Z1^3`, `V = H^2*U1`) -- both ported from
 //! bc-java's `SecP256R1Point.twice`/`.add`.
 //!
-//! bc-java's versions of these formulas are reached through `if` branches: same-point and
-//! opposite-point (negation) detection, and points already in affine form (`Z = 1`), are all
-//! handled by branching on `H == 0`, `R == 0`, `Z.isOne()`, etc. On a secret point (a private key's
-//! public point during signing, or an intermediate value in a scalar multiplication holding a
-//! secret scalar), branching on any of these is exactly the kind of secret-dependent control flow
-//! this workspace's constant-time rules forbid. So [`P256JacobianPoint::add`] instead computes the
-//! generic-add candidate and the doubling candidate *unconditionally*, computes the four exceptional
-//! conditions (`self` infinite, `other` infinite, same point, opposite point) as
+//! bc-java's versions of these formulas are reached through `if` branches: same-point and opposite-
+//! point (negation) detection, and points already in affine form (`Z = 1`), are all handled by
+//! branching on `H == 0`, `R == 0`, `Z.isOne()`, etc. On a secret point (a private key's public
+//! point during signing, or an intermediate value in a scalar multiplication holding a secret
+//! scalar), branching on any of these is exactly the kind of secret-dependent control flow this
+//! workspace's constant-time rules forbid. So [`P256JacobianPoint::add`] instead computes the
+//! generic-add candidate and the doubling candidate *unconditionally*, computes the four
+//! exceptional conditions (`self` infinite, `other` infinite, same point, opposite point) as
 //! [`Condition`] masks, and masks the correct candidate into the result -- never branching on which
 //! case applies. Verified (not checked in) against the affine group law in SP 800-186 Appendix
 //! A.1.1, over precomputed points and their scaled (non-canonical-`Z`) Jacobian representations,
@@ -151,6 +151,37 @@ impl P256JacobianPoint {
         result = select_point(other_is_infinity, self, &result);
         result
     }
+
+    /// `self + other` for points that are **public**, branching on the exceptional cases instead
+    /// of computing every candidate and masking.
+    ///
+    /// [`Self::add`] must evaluate the doubling candidate on every call, because on secret inputs
+    /// it cannot branch on whether the doubling case applies -- that costs a full point doubling
+    /// (roughly a third of the addition) on every addition, whether or not it is ever used. This
+    /// version pays it only when the operands really are the same point, which for a scalar
+    /// multiplier over distinct precomputed multiples is essentially never.
+    ///
+    /// Restricted to `pub(crate)` and used only by [`crate::p256_wnaf`], whose scalars are
+    /// [`crate::p256_scalar::P256PublicScalar`] and whose points are a signer's public key and
+    /// the curve's own base point: every value it branches on is already known to an attacker. Do
+    /// not call this on anything derived from a private key or a per-message secret -- the
+    /// constant-time [`Self::add`] exists for that, and the scalar type split is what keeps the
+    /// two multipliers from being confused for one another.
+    pub(crate) fn add_vartime(&self, other: &Self) -> Self {
+        if self.is_infinity().to_bool() {
+            return *other;
+        }
+        if other.is_infinity().to_bool() {
+            return *self;
+        }
+
+        let (generic, h, r) = self.generic_add(other);
+        if h.is_zero().to_bool() {
+            // Same affine x: either the same point (double it) or its negation (sum is infinity).
+            return if r.is_zero().to_bool() { self.double() } else { Self::INFINITY };
+        }
+        generic
+    }
 }
 
 /// Selects `a` if `cond` is TRUE, else `b`, over every coordinate of a point.
@@ -170,4 +201,37 @@ fn select_limbs(cond: Condition<u64>, a: &[u64; 4], b: &[u64; 4]) -> [u64; 4] {
     let mut out = [0u64; 4];
     ct::conditional_select(cond, a, b, &mut out);
     out
+}
+
+// `add_vartime` is `pub(crate)` -- deliberately unreachable from outside the crate, since calling
+// it on a secret point would undo the constant-time discipline [`P256JacobianPoint::add`] exists
+// for -- so no integration test can reach it. Its whole contract is that it computes the same group
+// law as `add`, differing only in *how* it gets there, so that is what is pinned here: agreement on
+// every exceptional case, including the ones a scalar multiplier over distinct precomputed
+// multiples essentially never reaches by chance (a point added to itself, and a point added to its
+// own negation). QUALITY_AND_STYLE's private-function carve-out applies.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::p256_domain::{G_X_LIMBS, G_Y_LIMBS};
+
+    #[test]
+    fn add_vartime_agrees_with_add_on_every_case() {
+        let g = P256JacobianPoint::from_affine(
+            P256FieldElement::from_limbs(G_X_LIMBS),
+            P256FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        // G, 2G, -G and the identity cover all four of `add`'s exceptional cases pairwise, plus
+        // the ordinary one (e.g. G + 2G).
+        let points = [g, g.double(), g.negate(), P256JacobianPoint::INFINITY];
+        for a in points {
+            for b in points {
+                assert_eq!(
+                    a.add_vartime(&b).to_affine(),
+                    a.add(&b).to_affine(),
+                    "add_vartime disagrees with add"
+                );
+            }
+        }
+    }
 }
