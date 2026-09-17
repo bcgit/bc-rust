@@ -1034,12 +1034,11 @@ impl<
                 Err(_) => return Err(SignatureError::SignatureVerificationFailed),
             };
 
-            let mut h_i = ZEROED_HINT_ROW;
-            if !unpack_h_row::<P, SIG_LEN>(row, sig, &mut h_i) {
-                // the encoded hint is malformed: out-of-order indices, more than OMEGA bits set,
-                // or nonzero padding
+            // `None` means the encoded hint is malformed: out-of-order indices, more than OMEGA
+            // bits set, or nonzero padding
+            let Some(h_i) = unpack_h_row::<P, SIG_LEN>(row, sig) else {
                 return Err(SignatureError::SignatureVerificationFailed);
-            }
+            };
 
             // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
             // ▷ reconstruction of signer’s commitment
