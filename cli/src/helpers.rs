@@ -1,7 +1,7 @@
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::traits::{Hash, SecurityStrength, XOF};
+use bouncycastle::core::traits::{Hash, SecurityStrength, XOF, XOFSqueezer};
 use bouncycastle::hex;
 use std::fs::File;
 use std::io;
@@ -58,6 +58,7 @@ pub(crate) fn read_from_file_or_stdin(filename: &Option<String>) -> Vec<u8> {
 pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
     // first flush stdout to ensure any buffered data is written
     io::stdout().flush().unwrap();
+
     if output_hex {
         for b in bytes.iter() {
             print!("{b:02x}");
@@ -69,6 +70,7 @@ pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
 
 pub(crate) fn write_bytes_or_hex_to_file(bytes: &[u8], filename: &str, output_hex: bool) {
     let mut file = File::create(filename).expect("Failed to create file");
+
     if output_hex {
         for b in bytes.iter() {
             file.write_all(format!("{b:02x}").as_bytes()).unwrap();
@@ -89,13 +91,15 @@ pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMater
                 // it was valid hex, but the wrong length
                 return Err(());
             }
+
             decoded_bytes[..SEED_LEN].try_into().unwrap()
         }
         Err(_) => {
-            // it's not hex, so take the fist SEED_LEN bytes of the raw binary
+            // it's not hex, so take the first SEED_LEN bytes of the raw binary
             if bytes.len() < SEED_LEN || bytes.len() > SEED_LEN + 1 {
                 return Err(());
             }
+
             bytes[..SEED_LEN].try_into().unwrap()
         }
     };
@@ -108,12 +112,14 @@ pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMater
         eprintln!(
             "Warning: low entropy seed provided. We'll still process it, but it may be insecure."
         );
+
         do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed)?;
             seed.set_security_strength(SecurityStrength::_256bit)
         })
         .unwrap();
     }
+
     Ok(seed)
 }
 
@@ -123,8 +129,10 @@ pub(crate) fn stream_hash(mut hasher: impl Hash, output_hex: bool) {
     let mut buf: [u8; 1024] = [0u8; 1024];
 
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+
     while bytes_read != 0 {
         hasher.do_update(&buf[..bytes_read]);
+
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
@@ -139,12 +147,14 @@ pub(crate) fn stream_xof(mut xof: impl XOF, output_len: usize, output_hex: bool)
     let mut buf: [u8; 1024] = [0u8; 1024];
 
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+
     while bytes_read != 0 {
-        xof.absorb(&buf[..bytes_read]).expect("absorb before squeeze is infallible");
+        xof.do_update(&buf[..bytes_read]);
+
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
-    let out = xof.squeeze(output_len);
+    let out = xof.into_squeezer().do_final(output_len);
     write_bytes_or_hex(&out, output_hex);
     println!();
 }

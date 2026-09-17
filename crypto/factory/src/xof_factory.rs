@@ -212,9 +212,7 @@ impl Hash for XOFFactory {
         match self {
             Self::SHAKE128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
             Self::SHAKE256(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
-            Self::AsconXof128(h) => {
-                h.do_final_partial_bits_out(partial_byte, num_bits, output)
-            }
+            Self::AsconXof128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
         }
     }
 
@@ -244,12 +242,12 @@ impl XOF for XOFFactory {
         num_bits: usize,
     ) -> Result<Self::Squeezer, HashError> {
         Ok(match self {
-            Self::SHAKE128(h) => XOFFactorySqueezer::SHAKE128(
-                h.into_squeezer_partial_bits(partial_byte, num_bits)?,
-            ),
-            Self::SHAKE256(h) => XOFFactorySqueezer::SHAKE256(
-                h.into_squeezer_partial_bits(partial_byte, num_bits)?,
-            ),
+            Self::SHAKE128(h) => {
+                XOFFactorySqueezer::SHAKE128(h.into_squeezer_partial_bits(partial_byte, num_bits)?)
+            }
+            Self::SHAKE256(h) => {
+                XOFFactorySqueezer::SHAKE256(h.into_squeezer_partial_bits(partial_byte, num_bits)?)
+            }
             Self::AsconXof128(h) => XOFFactorySqueezer::AsconXof128(
                 h.into_squeezer_partial_bits(partial_byte, num_bits)?,
             ),

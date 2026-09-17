@@ -30,13 +30,14 @@ mod bc_test_data {
 
     fn get_test_data(filename: &str) -> Result<String, ()> {
         let found: u8;
+
         if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
             found = 1;
         } else if Path::new(TEST_DATA_PATH).exists() {
             found = 2;
         } else {
             found = 3;
-        };
+        }
 
         // just print once
         TEST_DATA_CHECK.call_once(|| match found {
@@ -58,6 +59,7 @@ mod bc_test_data {
 
     fn decode_hex(value: &str) -> Vec<u8> {
         let clean = value.trim();
+
         if clean.is_empty() { Vec::new() } else { hex::decode(clean).expect("valid hex") }
     }
 
@@ -68,27 +70,34 @@ mod bc_test_data {
 
         for raw in contents.lines() {
             let line = raw.trim();
+
             if line.is_empty() {
                 if !current.is_empty() {
                     cases.push(std::mem::take(&mut current));
                 }
                 continue;
             }
+
             if line.starts_with('#') {
                 continue;
             }
+
             if let Some((key, value)) = line.split_once('=') {
                 let key = key.trim().to_string();
                 let value = value.trim().to_string();
+
                 if key == "Count" && !current.is_empty() {
                     cases.push(std::mem::take(&mut current));
                 }
+
                 current.insert(key, value);
             }
         }
+
         if !current.is_empty() {
             cases.push(current);
         }
+
         cases
     }
 
@@ -98,6 +107,7 @@ mod bc_test_data {
                 return v.as_str();
             }
         }
+
         panic!("missing field {names:?}; case had {:?}", case.keys().collect::<Vec<_>>());
     }
 
@@ -112,11 +122,13 @@ mod bc_test_data {
     fn key_material(key: &[u8; 16]) -> KeyMaterial<16> {
         let mut km =
             KeyMaterial::<16>::from_bytes_as_type(key, KeyType::SymmetricCipherKey).unwrap();
+
         do_hazardous_operations(&mut km, |k| {
             k.set_key_type(KeyType::SymmetricCipherKey)?;
             k.set_security_strength(SecurityStrength::_128bit)
         })
         .unwrap();
+
         km
     }
 
@@ -126,6 +138,7 @@ mod bc_test_data {
             Ok(c) => c,
             Err(()) => return,
         };
+
         let cases = parse_kat(&contents);
         assert!(!cases.is_empty(), "no AEAD cases parsed");
 
@@ -135,29 +148,36 @@ mod bc_test_data {
             let ad = decode_hex(field(case, &["AD", "A"]));
             let pt = decode_hex(field(case, &["PT", "P"]));
             let expected_ct = decode_hex(field(case, &["CT", "C"]));
+
             let ad_opt = if ad.is_empty() { None } else { Some(ad.as_slice()) };
 
             // One-shot encrypt.
             let mut ct = vec![0u8; pt.len() + 16];
             let n = AsconAead128::encrypt(&key, &nonce, ad_opt, &pt, &mut ct).unwrap();
             ct.truncate(n);
+
             assert_eq!(ct, expected_ct, "encrypt mismatch (Count {})", field(case, &["Count"]));
 
             // One-shot decrypt round-trip.
             let mut pt_out = vec![0u8; expected_ct.len()];
             let m = AsconAead128::decrypt(&key, &nonce, ad_opt, &expected_ct, &mut pt_out)
                 .expect("decrypt should authenticate");
+
             pt_out.truncate(m);
+
             assert_eq!(pt_out, pt, "decrypt mismatch (Count {})", field(case, &["Count"]));
 
             // Byte-at-a-time streaming encrypt/decrypt, through the inherent API.
             let mut enc = AsconAead128::new(&key, &nonce, ad_opt, true).unwrap();
             let mut stream_ct = pt.clone();
+
             for byte in stream_ct.iter_mut() {
                 enc.do_encrypt_update(core::slice::from_mut(byte));
             }
+
             let tag = enc.do_encrypt_final();
             stream_ct.extend_from_slice(&tag);
+
             assert_eq!(
                 stream_ct,
                 expected_ct,
@@ -167,10 +187,13 @@ mod bc_test_data {
 
             let mut dec = AsconAead128::new(&key, &nonce, ad_opt, false).unwrap();
             let mut stream_pt = expected_ct[..pt.len()].to_vec();
+
             for byte in stream_pt.iter_mut() {
                 dec.do_decrypt_update(core::slice::from_mut(byte));
             }
+
             dec.do_decrypt_final(&tag).expect("streaming decrypt should authenticate");
+
             assert_eq!(
                 stream_pt,
                 pt,
@@ -178,6 +201,7 @@ mod bc_test_data {
                 field(case, &["Count"])
             );
         }
+
         println!("Ascon-AEAD128: {} KAT cases passed", cases.len());
     }
 
@@ -187,12 +211,14 @@ mod bc_test_data {
             Ok(c) => c,
             Err(()) => return,
         };
+
         let cases = parse_kat(&contents);
         assert!(!cases.is_empty(), "no Hash256 cases parsed");
 
         for case in &cases {
             let msg = decode_hex(field(case, &["Msg"]));
             let expected = decode_hex(field(case, &["MD"]));
+
             assert_eq!(
                 AsconHash256::digest(&msg).as_slice(),
                 expected.as_slice(),
@@ -200,6 +226,7 @@ mod bc_test_data {
                 field(case, &["Count"])
             );
         }
+
         println!("Ascon-Hash256: {} KAT cases passed", cases.len());
     }
 
@@ -209,15 +236,19 @@ mod bc_test_data {
             Ok(c) => c,
             Err(()) => return,
         };
+
         let cases = parse_kat(&contents);
         assert!(!cases.is_empty(), "no XOF128 cases parsed");
 
         for case in &cases {
             let msg = decode_hex(field(case, &["Msg"]));
             let expected = decode_hex(field(case, &["MD", "Output"]));
-            let got = AsconXof128::new().hash_xof(&msg, expected.len());
+
+            let got = AsconXof128::new().xof(&msg, expected.len());
+
             assert_eq!(got, expected, "XOF128 mismatch (Count {})", field(case, &["Count"]));
         }
+
         println!("Ascon-XOF128: {} KAT cases passed", cases.len());
     }
 
@@ -227,6 +258,7 @@ mod bc_test_data {
             Ok(c) => c,
             Err(()) => return,
         };
+
         let cases = parse_kat(&contents);
         assert!(!cases.is_empty(), "no CXOF128 cases parsed");
 
@@ -234,9 +266,12 @@ mod bc_test_data {
             let msg = decode_hex(field(case, &["Msg"]));
             let z = decode_hex(field(case, &["Z", "Customization"]));
             let expected = decode_hex(field(case, &["MD", "Output"]));
-            let got = AsconCXof128::with_customization(&z).unwrap().hash_xof(&msg, expected.len());
+
+            let got = AsconCXof128::with_customization(&z).unwrap().xof(&msg, expected.len());
+
             assert_eq!(got, expected, "CXOF128 mismatch (Count {})", field(case, &["Count"]));
         }
+
         println!("Ascon-CXOF128: {} KAT cases passed", cases.len());
     }
 }

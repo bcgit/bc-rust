@@ -330,6 +330,9 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
     /// Perform Ascon-Hash256 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     AsconHash256 {
@@ -1320,6 +1323,7 @@ fn main() {
         }
         Some(Subcommands::CSHAKE256 { length, customization, function_name, x }) => {
             sha3_cmd::cshake_cmd(256, *length, function_name, customization, *x);
+        }
         Some(Subcommands::AsconHash256 { x }) => {
             ascon_cmd::hash256_cmd(*x);
         }

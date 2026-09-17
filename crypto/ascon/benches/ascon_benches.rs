@@ -26,12 +26,14 @@ fn bench_aead128_encrypt(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ascon::AsconAead128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
     group.bench_function(format!("{DATA_LEN} bytes -- ::encrypt()"), |b| {
         b.iter(|| {
             AsconAead128::encrypt(&key, &nonce, None, black_box(&data), &mut out).unwrap();
             black_box(&out);
         })
     });
+
     group.finish();
 }
 
@@ -41,12 +43,14 @@ fn bench_hash256(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ascon::AsconHash256");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
     group.bench_function(format!("{DATA_LEN} bytes -- ::hash_out()"), |b| {
         b.iter(|| {
             AsconHash256::new().hash_out(black_box(&data), &mut digest);
             black_box(&digest);
         })
     });
+
     group.finish();
 }
 
@@ -56,15 +60,17 @@ fn bench_xof128(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ascon::AsconXof128");
     group.throughput(Throughput::Bytes((DATA_LEN + out.len()) as u64));
+
     group.bench_function(
-        format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::hash_xof_out()"),
+        format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::xof_out()"),
         |b| {
             b.iter(|| {
-                AsconXof128::new().hash_xof_out(black_box(&data), &mut out);
+                AsconXof128::new().xof_out(black_box(&data), &mut out);
                 black_box(&out);
             })
         },
     );
+
     group.finish();
 }
 
@@ -75,17 +81,20 @@ fn bench_cxof128(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("ascon::AsconCXof128");
     group.throughput(Throughput::Bytes((DATA_LEN + out.len()) as u64));
+
     group.bench_function(
-        format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::hash_xof_out()"),
+        format!("input: {DATA_LEN} bytes, output: 64 bytes -- ::xof_out()"),
         |b| {
             b.iter(|| {
                 AsconCXof128::with_customization(customization)
                     .unwrap()
-                    .hash_xof_out(black_box(&data), &mut out);
+                    .xof_out(black_box(&data), &mut out);
+
                 black_box(&out);
             })
         },
     );
+
     group.finish();
 }
 
