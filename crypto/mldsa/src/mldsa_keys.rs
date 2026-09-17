@@ -244,8 +244,8 @@ impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(Self::pk_decode(&bytes_sized))
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Ok(Self::pk_decode(bytes_sized))
     }
 }
 
@@ -789,9 +789,9 @@ impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
+        let bytes_sized: &[u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 
-        Self::sk_decode(&bytes_sized)
+        Self::sk_decode(bytes_sized)
     }
 }
 
