@@ -36,3 +36,4 @@
       extension traits, so the call needs the `hazmat` import.
     * New cipher-related features `ElectronicCodeBook`, `KeyStream`, the `AES*Internal` types, `Ecb` and `AES_ECB_*`,
       and `CtrKeyStream` under their crates' `hazmat` modules.
+* Further reductions to the memory usage of the mldsa-lowmemory and mlkem-lowmemory crates. 
