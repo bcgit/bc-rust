@@ -102,59 +102,66 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     Some(Az_acc)
 }
 
+/// 𝐳 is written into `z_out`, and `true` returned. `false` means the norm check rejected this
+/// component, and `z_out` then holds a partial value that the caller must discard.
 pub(crate) fn compute_z_component<P: MLDSAParams>(
     s1: Polynomial,
     rho_p_p: &[u8; 64],
     c_hat: &Polynomial,
     kappa: u16,
     col: usize,
-) -> Option<Polynomial> {
+    z_out: &mut Polynomial,
+) -> bool {
     let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
-    let mut s1_hat = s1;
-    s1_hat.ntt();
-    s1_hat.multiply_ntt(c_hat);
-    let mut cs1 = s1_hat; // rename
-    cs1.inv_ntt();
-    let mut z = cs1;
-    z.add_ntt(&y);
 
-    if z.check_norm(P::gamma1_minus_beta) { None } else { Some(z) }
+    // 𝑐𝐬1 ← NTT−1(𝑐_hat ∘ NTT(𝐬1)), built in place in the caller's buffer.
+    *z_out = s1;
+    z_out.ntt();
+    z_out.multiply_ntt(c_hat);
+    z_out.inv_ntt();
+
+    // 𝐳 ← 𝐲 + 𝑐𝐬1
+    z_out.add_ntt(&y);
+
+    !z_out.check_norm(P::gamma1_minus_beta)
 }
 
 pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
     s2: Polynomial,
     w: &Polynomial,
     c_hat: &Polynomial,
-) -> Option<Polynomial> {
-    let mut s2_hat = s2;
-    s2_hat.ntt();
-    s2_hat.multiply_ntt(c_hat);
-    let mut cs2 = s2_hat; // rename
+    w0cs2_out: &mut Polynomial,
+) -> bool {
+    let mut cs2 = s2;
+    cs2.ntt();
+    cs2.multiply_ntt(c_hat);
     cs2.inv_ntt();
 
     // The shortcut of the Dilithium round-3 specification, Section 5.1
     // (https://pq-crystals.org/dilithium/data/dilithium-specification-round3-20210208.pdf): "instead
     // of computing (r1, r0) = Decompose_q(w − cs2, α) and checking whether ‖r0‖∞ < γ2 − β and
     // r1 = w1, it is equivalent to just check that ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part
-    // of w. If this check passes, w0 − cs2 is the low part of w − cs2." That is what the three
-    // lines below do: FIPS 204 Algorithm 7 lines 21 and 23 without a second Decompose.
-    let mut w0cs2 = *w;
-    w0cs2.low_bits_inplace::<P>();
-    w0cs2.sub(&cs2);
-    if w0cs2.check_norm(P::gamma2_minus_beta) { None } else { Some(w0cs2) }
+    // of w. If this check passes, w0 − cs2 is the low part of w − cs2." That is what the lines
+    // below do: FIPS 204 Algorithm 7 lines 21 and 23 without a second Decompose. `w` is still
+    // needed by the caller, so its low half is taken in the out-buffer.
+    *w0cs2_out = *w;
+    w0cs2_out.low_bits_inplace::<P>();
+    w0cs2_out.sub(&cs2);
+
+    !w0cs2_out.check_norm(P::gamma2_minus_beta)
 }
 
 pub(crate) fn compute_ct0_component<P: MLDSAParams>(
     t0_row: Polynomial,
     c_hat: &Polynomial,
-) -> Option<Polynomial> {
-    let mut t0_hat = t0_row;
-    t0_hat.ntt();
-    t0_hat.multiply_ntt(c_hat);
-    let mut ct0 = t0_hat; // rename
-    ct0.inv_ntt();
+    ct0_out: &mut Polynomial,
+) -> bool {
+    *ct0_out = t0_row;
+    ct0_out.ntt();
+    ct0_out.multiply_ntt(c_hat);
+    ct0_out.inv_ntt();
 
-    if ct0.check_norm(P::gamma2) { None } else { Some(ct0) }
+    !ct0_out.check_norm(P::gamma2)
 }
 
 /// Unpack a single s value from the packed representation.

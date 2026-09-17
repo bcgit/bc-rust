@@ -390,6 +390,7 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, RNG, SignatureSigner, SignatureVerifier, XOF, XOFSqueezer,
 };
 use bouncycastle_mldsa_common::aux_functions::{bitpack_gamma1_out, sample_in_ball};
+use bouncycastle_mldsa_common::polynomial::Polynomial;
 use core::marker::PhantomData;
 
 // imports needed just for docs
@@ -648,7 +649,8 @@ pub(crate) fn sign_internal<
         // 18-23 (z path): compute and encode each z polynomial directly into the caller buffer.
         let mut rejected = false;
         for col in 0..P::l {
-            let z = match compute_z_component::<P>(
+            let mut z = Polynomial::new();
+            if !compute_z_component::<P>(
                 // [Optimization Note]:
                 // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
                 // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
@@ -659,13 +661,11 @@ pub(crate) fn sign_internal<
                 &c_hat,
                 kappa,
                 col,
+                &mut z,
             ) {
-                Some(z) => z,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
             let start = z_offset + col * P::POLY_Z_PACKED_LEN;
             bitpack_gamma1_out::<P>(&z, &mut output[start..start + P::POLY_Z_PACKED_LEN]);
@@ -681,34 +681,32 @@ pub(crate) fn sign_internal<
         let mut hint_count = 0usize;
         for row in 0..P::k {
             let mut w = compute_w_row::<P>(sk.rho(), &rho_p_p, kappa, row);
-            let mut tmp = match compute_w0cs2_component::<P>(
+            let mut tmp = Polynomial::new();
+            if !compute_w0cs2_component::<P>(
                 // [Optimization Note]:
                 // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
                 // sk.compute_s2_row(row),
                 s_unpack::<P, _>(&s2_packed, row),
                 &w,
                 &c_hat,
+                &mut tmp,
             ) {
-                Some(tmp) => tmp,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
-            let ct0 = match compute_ct0_component::<P>(
+            let mut ct0 = Polynomial::new();
+            if !compute_ct0_component::<P>(
                 // [Optimization Note]:
                 // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
                 // sk.compute_t0_row(row), &c_hat) {
                 sk.compute_t0_row(row, &s1_packed, &s2_packed),
                 &c_hat,
+                &mut ct0,
             ) {
-                Some(ct0) => ct0,
-                None => {
-                    rejected = true;
-                    break;
-                }
-            };
+                rejected = true;
+                break;
+            }
 
             tmp.add_ntt(&ct0);
             tmp.conditional_add_q();
