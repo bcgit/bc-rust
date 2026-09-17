@@ -1377,7 +1377,9 @@ impl<
         if sig.len() != SIG_LEN {
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
-        Self::verify_mu(pk, &mu, &sig.try_into().unwrap())
+        // The length was checked above, so this conversion cannot fail.
+        let sig: &[u8; SIG_LEN] = sig.try_into().unwrap();
+        Self::verify_mu(pk, &mu, sig)
     }
 
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
@@ -1407,7 +1409,9 @@ impl<
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
 
-        Self::verify_mu(&self.pk.unwrap(), &mu, &sig.try_into().unwrap())
+        // The length was checked above, so this conversion cannot fail.
+        let sig: &[u8; SIG_LEN] = sig.try_into().unwrap();
+        Self::verify_mu(&self.pk.unwrap(), &mu, sig)
     }
 }
 
