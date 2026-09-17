@@ -14,4 +14,33 @@ bouncycastle-utils.workspace = true
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
+criterion.workspace = true
 serde_json = "1.0"
+
+[[bench]]
+name = "ecdsa_p256_benches"
+harness = false
+
+[[bench]]
+name = "ecdsa_p384_benches"
+harness = false
+
+[[bench]]
+name = "ecdsa_p521_benches"
+harness = false
+
+[[bench]]
+name = "ecdsa_p256k1_benches"
+harness = false
+
+[[bench]]
+name = "ecdsa_bp256r1_benches"
+harness = false
+
+[[bench]]
+name = "ecdsa_bp384r1_benches"
+harness = false
+
+[[bench]]
+name = "ecdsa_bp512r1_benches"
+harness = false
