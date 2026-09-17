@@ -80,3 +80,4 @@
   admits the SHA-3 hashes and KMAC as its function, and SHAKE not at all. HKDF over SHA-3 remains as
   `HKDF<SHA3_256>` and its siblings, written out; there is no alias or factory entry for it.
 
+* Further reductions to the memory usage of the mldsa-lowmemory and mlkem-lowmemory crates.

@@ -653,8 +653,8 @@ pub(crate) fn sign_internal<
                 // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
                 // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
                 // maybe because re-computing the intermediates adds more to the widest point of the alg?
-                // &sk.compute_s1_row(col),
-                &s_unpack::<P, _>(&s1_packed, col),
+                // sk.compute_s1_row(col),
+                s_unpack::<P, _>(&s1_packed, col),
                 &rho_p_p,
                 &c_hat,
                 kappa,
@@ -684,8 +684,8 @@ pub(crate) fn sign_internal<
             let mut tmp = match compute_w0cs2_component::<P>(
                 // [Optimization Note]:
                 // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // &sk.compute_s2_row(row),
-                &s_unpack::<P, _>(&s2_packed, row),
+                // sk.compute_s2_row(row),
+                s_unpack::<P, _>(&s2_packed, row),
                 &w,
                 &c_hat,
             ) {
@@ -699,8 +699,8 @@ pub(crate) fn sign_internal<
             let ct0 = match compute_ct0_component::<P>(
                 // [Optimization Note]:
                 // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                // &sk.compute_t0_row(row), &c_hat) {
-                &sk.compute_t0_row(row, &s1_packed, &s2_packed),
+                // sk.compute_t0_row(row), &c_hat) {
+                sk.compute_t0_row(row, &s1_packed, &s2_packed),
                 &c_hat,
             ) {
                 Some(ct0) => ct0,
@@ -787,7 +787,7 @@ pub(crate) fn verify_internal<
         let mut wp_approx = match compute_wp_approx_row::<P, SIG_LEN>(
             pk.rho(),
             sig,
-            &pk.unpack_t1_row(row),
+            pk.unpack_t1_row(row),
             &c_hat,
             row,
         ) {
