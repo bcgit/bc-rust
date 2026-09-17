@@ -783,7 +783,11 @@ pub(crate) fn sign_internal<
         cs2.inv_ntt();
 
         // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-        let mut r0 = w.sub_vector(&cs2).low_bits::<P>();
+        // 𝐰 is not read again below -- 𝐰1 was taken from it above -- so the subtraction and the
+        // LowBits both run in its buffer.
+        let mut r0 = w;
+        r0.sub_vector(&cs2);
+        r0.low_bits::<P>();
 
         // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
         //  ▷ validity checks
@@ -909,7 +913,8 @@ pub(crate) fn verify_internal<
             t1_shift_hat.ntt();
             t1_shift_hat.scalar_vector_ntt(&c_hat)
         };
-        let mut wp_approx = Az.sub_vector(&ct1);
+        let mut wp_approx = Az;
+        wp_approx.sub_vector(&ct1);
         // Bound-keeping step before NTT⁻¹, not in FIPS 204: see `Polynomial::reduce32`. Here it
         // is security-critical: 𝐳 and 𝐭1 are attacker-controlled, and without it a crafted
         // signature overflows the butterflies (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
