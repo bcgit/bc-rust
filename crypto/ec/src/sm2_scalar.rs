@@ -140,19 +140,20 @@ impl Sm2ScalarField {
     /// `self^-1 mod n`, or `0` if `self` is `0`. Fermat's little theorem (`n` is prime), by fixed
     /// square-then-conditionally-multiply over the public exponent `n-2` -- see
     /// [`crate::sm2::Sm2FieldElement::invert`]'s docs, which this mirrors exactly (branch-free,
-    /// same reasoning: `n-2` is a compile-time public constant, and the "conditionally" is a
-    /// branch-free mask, not a data-dependent branch).
+    /// same reasoning: `n-2` is a compile-time public constant, so the "conditionally" is an
+    /// ordinary `if` on a bit of that constant, not a branch on any secret).
     pub fn invert(&self) -> Self {
         let mut result = Self::ONE;
         for limb_idx in (0..4).rev() {
             let limb = N_MINUS_2_LIMBS[limb_idx];
             for bit in (0..64).rev() {
                 result = result.square();
-                let multiplied = result.mul(self);
-                let bit_is_set = Condition::<u64>::from_lsb((limb >> bit) & 1);
-                let mut selected = [0u64; 4];
-                ct::conditional_select(bit_is_set, &multiplied.0, &result.0, &mut selected);
-                result = Self(selected);
+                // `limb` is one word of a compile-time constant exponent and `bit` a loop
+                // index, so this branch is on public data only: the sequence of squarings and
+                // multiplications is fixed at compile time and identical on every call.
+                if (limb >> bit) & 1 == 1 {
+                    result = result.mul(self);
+                }
             }
         }
         result

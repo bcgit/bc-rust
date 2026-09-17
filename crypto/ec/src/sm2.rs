@@ -11,19 +11,41 @@
 //!
 //! # Reduction algorithm
 //!
-//! `p` has the Solinas-friendly identity `2^256 = p + C` where `C = 2^224 + 2^96 - 2^64 + 1` (i.e.
-//! `2^256 mod p = C`) -- the same shape of identity [`crate::p256`] exploits for its own (different)
-//! prime, just with different exponents and one sign flipped, so [`reduce`] below is the identical
-//! algorithm to that module's: split the 512-bit product into high and low 256-bit halves and
-//! replace `high * 2^256` with `high * C`, folding the high half back into the low one, repeated
-//! until the high half is exactly zero.
+//! `p` is a generalized Mersenne number, so -- exactly as for [`crate::p256`] -- a 512-bit product
+//! reduces to a fixed sum and difference of 256-bit terms assembled from the product's own 32-bit
+//! words, with no multiplication at all. [`reduce`] has the same shape as [`crate::p256::reduce`]
+//! and the same bias-fold-subtract structure; only the term table differs.
 //!
-//! Unlike P-256's `C < 2^224` (a clean 32-bit-boundary bound), this curve's `C` is `2^224 + 2^96 -
-//! 2^64 + 1`, whose bit length is 225, not 224 -- so the same "-32 bits net per fold" argument
-//! doesn't apply verbatim. Simulated directly in Python instead (not checked in): starting from a
-//! 512-bit product, 9 folds still suffice to guarantee the high half is exactly zero (verified
-//! over 50,000 random trials plus the `(p-1)*(p-1)` worst case), the same fold count as P-256's,
-//! just confirmed empirically here rather than by the same closed-form bit-length bound.
+//! **That table is derived here, not quoted.** SP 800-186 Appendix G.1 publishes such a table for
+//! each NIST prime, but SM2 is not a NIST curve and neither `draft-shen-sm2-ecdsa-02` nor GB/T
+//! 32918 gives one, so it was computed from `p` directly rather than taken from any document or
+//! from another implementation. The derivation is three lines and reproducible: writing the
+//! product as `A = (A15 || A14 || ... || A0)` in 32-bit words,
+//!
+//! ```text
+//! A mod p == A_low + sum_{j=0..7} A_{8+j} * M_j   (mod p),   M_j = 2^(256 + 32j) mod p
+//! ```
+//!
+//! and each `M_j`, written in balanced base `2^32`, turns out to have only the small signed
+//! coefficients below (`w0` least significant) -- which is exactly what makes the fold
+//! multiplication-free:
+//!
+//! ```text
+//!   M_0: +1  0 -1 +1  0  0  0 +1        M_4: +1 +1  0 +1 +1  0  0 +2
+//!   M_1: +1 +1 -1  0 +1  0  0 +1        M_5: +2 +1 -1 +2 +1 +1  0 +2
+//!   M_2: +1 +1  0  0  0 +1  0 +1        M_6: +2 +2 -1 +1 +2 +1 +1 +2
+//!   M_3: +1 +1  0 +1  0  0 +1 +1        M_7: +2 +2  0 +1 +1 +2 +1 +3
+//! ```
+//!
+//! Collecting those coefficients column by column gives [`reduce`]'s `S`/`D` terms: a coefficient
+//! of `+2` simply means that word appears in two `S` rows. The resulting expression was checked
+//! against Python's arbitrary-precision `%` over 300,000 random `a*b` products with `a, b < p`,
+//! plus `(p-1)*(p-1)`, `(p-1)*(p-2)` and the small cases, before being written here; the
+//! extreme-operand known answers in `sm2_field_tests.rs` pin the same corners from outside.
+//!
+//! The identity `2^256 = p + C` with `C = 2^224 + 2^96 - 2^64 + 1` (i.e. `2^256 mod p = C`)
+//! survives in two places: [`Sm2FieldElement::add`] uses it to correct a carry out of the top
+//! limb, and [`reduce`]'s final fold uses it on the accumulator's top limb.
 
 use crate::nat;
 use bouncycastle_utils::ct;
@@ -42,6 +64,14 @@ const C_LIMBS: [u64; 4] =
 /// its base to, per Fermat's little theorem.
 const P_MINUS_2_LIMBS: [u64; 4] =
     [0xfffffffffffffffd, 0xffffffff00000000, 0xffffffffffffffff, 0xfffffffeffffffff];
+
+/// `5p`, little-endian `u64` limbs -- the bias [`reduce`] starts its accumulator at so that
+/// subtracting its four `D` terms can never take it below zero. See [`reduce`] for why `5` is the
+/// right multiple.
+const FIVE_P_LIMBS: [u64; 5] = [
+    0xfffffffffffffffb, 0xfffffffb00000004, 0xffffffffffffffff, 0xfffffffaffffffff,
+    0x0000000000000004,
+];
 
 /// An element of the SM2 base field GF(p), always held in canonical reduced form (`< p`).
 #[derive(Clone, Copy, Debug)]
@@ -132,20 +162,24 @@ impl Sm2FieldElement {
     /// purposes. Other (constant time) algorithms that produce an equivalent result may be
     /// used."* The exponent `p-2` is a compile-time public constant, so the fixed
     /// square-then-conditionally-multiply sequence below takes the same path on every call
-    /// regardless of `self`; the "conditionally" is itself branch-free, selecting between the
-    /// multiplied and un-multiplied candidates by a mask rather than a data-dependent branch, so
-    /// no step of the computation branches on `self`.
+    /// regardless of `self`. The "conditionally" is an ordinary `if` on a bit of that constant,
+    /// not a mask: the condition is known at compile time, so which operations run -- and in what
+    /// order -- is fixed before `self` exists, and no step of the computation branches on `self`.
+    /// (An earlier version masked instead, multiplying on every bit and selecting the result.
+    /// That bought no additional secret-independence, since the bit was never secret, and cost a
+    /// full field multiplication per exponent bit.)
     pub fn invert(&self) -> Self {
         let mut result = Self::ONE;
         for limb_idx in (0..4).rev() {
             let limb = P_MINUS_2_LIMBS[limb_idx];
             for bit in (0..64).rev() {
                 result = result.square();
-                let multiplied = result.mul(self);
-                let bit_is_set = Condition::<u64>::from_lsb((limb >> bit) & 1);
-                let mut selected = [0u64; 4];
-                ct::conditional_select(bit_is_set, &multiplied.0, &result.0, &mut selected);
-                result = Self(selected);
+                // `limb` is one word of a compile-time constant exponent and `bit` a loop
+                // index, so this branch is on public data only: the sequence of squarings and
+                // multiplications is fixed at compile time and identical on every call.
+                if (limb >> bit) & 1 == 1 {
+                    result = result.mul(self);
+                }
             }
         }
         result
@@ -197,22 +231,117 @@ fn widening_mul(a: &[u64; 4], b: &[u64; 4]) -> [u64; 8] {
     result
 }
 
-/// Reduces an 8-limb (512-bit) value modulo `p`, per the fold described in the module docs.
+/// The 32-bit word `A_i` of the 512-bit product, numbered as the module docs' derivation does:
+/// `A = (A15 || A14 || ... || A0)`, each `A_i` a 32-bit integer, `A0` least significant.
+fn word(t: &[u64; 8], i: usize) -> u64 {
+    (t[i / 2] >> (32 * (i % 2))) & 0xffff_ffff
+}
+
+/// Assembles one of the module docs' 256-bit terms from its eight 32-bit words, least significant
+/// first (the reverse of the order the table in [`reduce`]'s comment prints them in).
+fn term(w: [u64; 8]) -> [u64; 4] {
+    [w[0] | (w[1] << 32), w[2] | (w[3] << 32), w[4] | (w[5] << 32), w[6] | (w[7] << 32)]
+}
+
+/// Zero-extends a 4-limb value to 5 limbs, for arithmetic against the 5-limb accumulator.
+fn widen(v: &[u64; 4]) -> [u64; 5] {
+    [v[0], v[1], v[2], v[3], 0]
+}
+
+/// `small * v`, one limb times a 4-limb value, as 5 limbs. Only ever called with a `small` that is
+/// a bounded, operand-independent count (see [`reduce`]), never a secret.
+fn mul_small(small: u64, v: &[u64; 4]) -> [u64; 5] {
+    let mut out = [0u64; 5];
+    let mut carry: u128 = 0;
+    for i in 0..4 {
+        let prod = (small as u128) * (v[i] as u128) + carry;
+        out[i] = prod as u64;
+        carry = prod >> 64;
+    }
+    out[4] = carry as u64;
+    out
+}
+
+/// Reduces an 8-limb (512-bit) value modulo `p`, per the term table derived in the module docs:
+///
+/// ```text
+/// B = T + S1 + S2 + ... + S13 - D1 - D2 - D3 - D4   (mod p)
+///
+///   T  = ( A7  || A6  || A5  || A4  || A3  || A2  || A1  || A0  )
+///   S1 = ( A8  || A11 || A10 || A9  || A8  || 0   || A9  || A8  )
+///   S2 = ( A9  || A14 || A13 || A12 || A11 || 0   || A10 || A9  )
+///   S3 = ( A10 || A15 || A14 || A13 || A12 || 0   || A11 || A10 )
+///   S4 = ( A11 || 0   || A15 || A14 || A13 || 0   || A12 || A11 )
+///   S5 = ( A12 || 0   || A15 || A14 || A13 || 0   || A13 || A12 )
+///   S6 = ( A12 || 0   || 0   || A15 || A14 || 0   || A14 || A13 )
+///   S7 = ( A13 || 0   || 0   || 0   || A15 || 0   || A14 || A13 )
+///   S8 = ( A13 || 0   || 0   || 0   || 0   || 0   || A15 || A14 )
+///   S9 = ( A14 || 0   || 0   || 0   || 0   || 0   || A15 || A14 )
+///   S10= ( A14 || 0   || 0   || 0   || 0   || 0   || 0   || A15 )
+///   S11= ( A15 || 0   || 0   || 0   || 0   || 0   || 0   || A15 )
+///   S12= ( A15 || 0   || 0   || 0   || 0   || 0   || 0   || 0   )
+///   S13= ( A15 || 0   || 0   || 0   || 0   || 0   || 0   || 0   )
+///   D1 = ( 0   || 0   || 0   || 0   || 0   || A8  || 0   || 0   )
+///   D2 = ( 0   || 0   || 0   || 0   || 0   || A9  || 0   || 0   )
+///   D3 = ( 0   || 0   || 0   || 0   || 0   || A13 || 0   || 0   )
+///   D4 = ( 0   || 0   || 0   || 0   || 0   || A14 || 0   || 0   )
+/// ```
+///
+/// **Precondition: `t < p^2`**, matching SP 800-186 §G.1's own precondition for the analogous NIST
+/// tables ("given an integer A less than m^2") and holding for every call site, since `mul` is the
+/// only one and it passes the product of two canonical (`< p`) field elements. The bounds below
+/// rest on it; a raw 512-bit value near `2^512` is *not* reduced correctly by this function.
+///
+/// Bounds. Each term is a 256-bit value, so `T + S1 + ... + S13 < 14*2^256` and `D1 + ... + D4 <
+/// 4*2^256`. Starting the accumulator at `5p` keeps it non-negative throughout (`5p > 4*2^256`,
+/// since `5p - 4*2^256 = 2^256 - 5*2^224 - ... > 0`) and bounded by `5p + 14*2^256 < 19*2^256`, so
+/// five limbs always suffice and the top limb is at most 18. Folding that limb back in via
+/// `2^256 ≡ C` adds `u_hi*C < 19*2^225 < 2^230`, leaving `V < 2^256 + 2^230`; since `p > 2^256 -
+/// 2^225`, `V - p < 2^230 + 2^225 < p`, so exactly one conditional subtraction finishes the job.
 fn reduce(t: &[u64; 8]) -> [u64; 4] {
-    let mut acc: [u64; 8] = *t;
-    for _ in 0..9 {
-        let hi: [u64; 4] = [acc[4], acc[5], acc[6], acc[7]];
-        let lo: [u64; 4] = [acc[0], acc[1], acc[2], acc[3]];
-        let product = widening_mul(&hi, &C_LIMBS);
-        let lo_extended: [u64; 8] = [lo[0], lo[1], lo[2], lo[3], 0, 0, 0, 0];
-        let (sum, carry) = nat::add(&product, &lo_extended);
-        debug_assert_eq!(carry, 0, "SM2 reduction fold overflowed 512 bits");
+    let a = |i: usize| word(t, i);
+
+    // The table above, each row read right to left.
+    let t_term = term([a(0), a(1), a(2), a(3), a(4), a(5), a(6), a(7)]);
+    let s1 = term([a(8), a(9), 0, a(8), a(9), a(10), a(11), a(8)]);
+    let s2 = term([a(9), a(10), 0, a(11), a(12), a(13), a(14), a(9)]);
+    let s3 = term([a(10), a(11), 0, a(12), a(13), a(14), a(15), a(10)]);
+    let s4 = term([a(11), a(12), 0, a(13), a(14), a(15), 0, a(11)]);
+    let s5 = term([a(12), a(13), 0, a(13), a(14), a(15), 0, a(12)]);
+    let s6 = term([a(13), a(14), 0, a(14), a(15), 0, 0, a(12)]);
+    let s7 = term([a(13), a(14), 0, a(15), 0, 0, 0, a(13)]);
+    let s8 = term([a(14), a(15), 0, 0, 0, 0, 0, a(13)]);
+    let s9 = term([a(14), a(15), 0, 0, 0, 0, 0, a(14)]);
+    let s10 = term([a(15), 0, 0, 0, 0, 0, 0, a(14)]);
+    let s11 = term([a(15), 0, 0, 0, 0, 0, 0, a(15)]);
+    let s12 = term([0, 0, 0, 0, 0, 0, 0, a(15)]);
+    let s13 = term([0, 0, 0, 0, 0, 0, 0, a(15)]);
+    let d1 = term([0, 0, a(8), 0, 0, 0, 0, 0]);
+    let d2 = term([0, 0, a(9), 0, 0, 0, 0, 0]);
+    let d3 = term([0, 0, a(13), 0, 0, 0, 0, 0]);
+    let d4 = term([0, 0, a(14), 0, 0, 0, 0, 0]);
+
+    let mut acc = FIVE_P_LIMBS;
+    for addend in [&t_term, &s1, &s2, &s3, &s4, &s5, &s6, &s7, &s8, &s9, &s10, &s11, &s12, &s13] {
+        let (sum, carry) = nat::add(&acc, &widen(addend));
+        debug_assert_eq!(carry, 0, "SM2 reduction accumulator overflowed 5 limbs");
         acc = sum;
     }
-    debug_assert_eq!([acc[4], acc[5], acc[6], acc[7]], [0, 0, 0, 0]);
+    for subtrahend in [&d1, &d2, &d3, &d4] {
+        let (diff, borrow) = nat::sub(&acc, &widen(subtrahend));
+        debug_assert_eq!(borrow, 0, "SM2 reduction accumulator went negative despite the 5p bias");
+        acc = diff;
+    }
+
+    // Fold the accumulator's top limb back in: `2^256 ≡ C (mod p)`.
+    debug_assert!(acc[4] <= 18, "SM2 reduction top limb exceeded its proven bound");
     let low: [u64; 4] = [acc[0], acc[1], acc[2], acc[3]];
-    let (diff, borrow) = nat::sub(&low, &P_LIMBS);
-    let mut result = [0u64; 4];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &low, &diff, &mut result);
-    result
+    let (v, carry) = nat::add(&mul_small(acc[4], &C_LIMBS), &widen(&low));
+    debug_assert_eq!(carry, 0, "SM2 reduction fold overflowed 5 limbs");
+
+    let (diff, borrow) = nat::sub(&v, &widen(&P_LIMBS));
+    let mut selected = [0u64; 5];
+    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &v, &diff, &mut selected);
+    debug_assert_eq!(selected[4], 0, "SM2 reduction left a value >= 2^256");
+    [selected[0], selected[1], selected[2], selected[3]]
 }
