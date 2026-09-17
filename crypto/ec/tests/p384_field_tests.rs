@@ -278,3 +278,101 @@ fn algebraic_identities_over_many_pseudorandom_values() {
         }
     }
 }
+
+/// Products chosen to drive `reduce`'s seven-limb accumulator's top limb across every value it
+/// can actually take (3 through 7 here; the bound proved in `reduce`'s own doc comment is 11),
+/// so the top-limb fold and the final conditional subtraction are both exercised at their
+/// extremes rather than only in the middle of their range. Ordinary pseudorandom operands almost
+/// never reach the ends: these were found by searching ~1,000,000 products, including ones biased
+/// towards all-ones high words. Expected values are Python's `(a * b) % p`, computed independently
+/// of this crate's arithmetic.
+///
+/// This replaces the in-module `reduce_handles_the_rare_post_two_fold_extra_bit` unit test, which
+/// pinned a failure mode of the previous iterated-fold reduction (a rare carry above `2^384` after
+/// exactly two folds). That code path no longer exists, and that test's input -- a raw 12-limb
+/// value close to `2^768` -- is outside the `t < p^2` precondition the current `reduce` documents,
+/// so it could not be carried over unchanged.
+#[test]
+fn known_answer_mul_at_the_reduction_bounds() {
+    let cases: [([u64; 6], [u64; 6], [u64; 6]); 5] = [
+        // top limb 3
+        (
+            [
+                0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000,
+            ],
+            [
+                0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000,
+            ],
+            [
+                0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000,
+            ],
+        ),
+        // top limb 4
+        (
+            [
+                0x00000000fffffffe, 0xffffffff00000000, 0xfffffffffffffffe, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff,
+            ],
+            [
+                0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000,
+            ],
+            [
+                0x00000000fffffffe, 0xffffffff00000000, 0xfffffffffffffffe, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff,
+            ],
+        ),
+        // top limb 5
+        (
+            [
+                0x00000000fffffffe, 0xffffffff00000000, 0xfffffffffffffffe, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff,
+            ],
+            [
+                0x00000000fffffffe, 0xffffffff00000000, 0xfffffffffffffffe, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff,
+            ],
+            [
+                0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000,
+            ],
+        ),
+        // top limb 6
+        (
+            [
+                0xbacbeddb7eea0596, 0x7e8ea0660052d037, 0xf7aaf673fb46bcf4, 0x87098a5d9fa8e4f9,
+                0xca88ea5329935120, 0xc366b9e6cd83ddc6,
+            ],
+            [
+                0x580a12619c5075c3, 0x384a158341144e13, 0x6a422b3b33a87fe8, 0xd825ddd3778819a8,
+                0x0ac1c96633471bc1, 0x80848cd3620a3f11,
+            ],
+            [
+                0x808d58feda4b3613, 0x92636cea1ec2f04f, 0x32474225dd9fdf1e, 0x91bc9b99dc03254c,
+                0xc64619e6770862bd, 0x19536cdb1e70ac25,
+            ],
+        ),
+        // top limb 7
+        (
+            [
+                0x20ed94753ac37e4e, 0x3124891b543422ac, 0xc79f52d2c078b659, 0xa41639f70ec6663a,
+                0xe64693456b9add20, 0xc729a2c644808f93,
+            ],
+            [
+                0x0d25af289450acfa, 0xa3e7f461767ab80d, 0x944c547f00d76385, 0xa40ce832090ac314,
+                0x259aa3cdc6083ce9, 0xb7f1365bbe074ed1,
+            ],
+            [
+                0xbb546ac08a86eb7d, 0xe1fae828114a744d, 0xb407f44e30b9bad9, 0x697806c9c6e74985,
+                0xd370fd0722d05bd6, 0x29040a4e5bde6cb3,
+            ],
+        ),
+    ];
+    for (a, b, expected) in cases {
+        assert_eq!(fe(a).mul(&fe(b)), fe(expected), "a = {a:x?}, b = {b:x?}");
+        assert_eq!(fe(b).mul(&fe(a)), fe(expected), "commuted: a = {a:x?}, b = {b:x?}");
+    }
+}

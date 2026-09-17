@@ -123,11 +123,12 @@ impl P256K1ScalarField {
             let limb = N_MINUS_2_LIMBS[limb_idx];
             for bit in (0..64).rev() {
                 result = result.square();
-                let multiplied = result.mul(self);
-                let bit_is_set = Condition::<u64>::from_lsb((limb >> bit) & 1);
-                let mut selected = [0u64; 4];
-                ct::conditional_select(bit_is_set, &multiplied.0, &result.0, &mut selected);
-                result = Self(selected);
+                // `limb` is one word of a compile-time constant exponent and `bit` a loop
+                // index, so this branch is on public data only: the sequence of squarings and
+                // multiplications is fixed at compile time and identical on every call.
+                if (limb >> bit) & 1 == 1 {
+                    result = result.mul(self);
+                }
             }
         }
         result
@@ -173,6 +174,30 @@ fn widening_mul(a: &[u64; 4], b: &[u64; 4]) -> [u64; 8] {
     result
 }
 
+/// `m * n`, one limb times the 4-limb modulus `n`, as the 5 limbs such a product can occupy.
+///
+/// This is exactly what each round of [`redc`]'s SOS reduction needs, and the shape
+/// [`crate::montgomery::redc`] has always used for the brainpool curves. Every hand-written scalar
+/// REDC in this crate previously formed it with the general 4x4 [`widening_mul`] against a
+/// zero-padded `[m, 0, ..., 0]` instead, asking for 16 limb multiplications where 4 are needed.
+///
+/// Whether that padding costs anything turns out to depend entirely on the width, measured rather
+/// than assumed: at four limbs the optimizer eliminates it completely (P-256 and secp256k1 time
+/// identically either way), but it stops doing so by six, where the padded form measured 3.2x
+/// slower per scalar multiplication for P-384 and 5.2x slower for P-521. All four are written this
+/// way regardless, so the four modules read alike and none of them asks for work it does not want.
+fn modulus_times_limb(m: u64) -> [u64; 5] {
+    let mut out = [0u64; 5];
+    let mut carry: u128 = 0;
+    for j in 0..4 {
+        let prod = (m as u128) * (N_LIMBS[j] as u128) + carry;
+        out[j] = prod as u64;
+        carry = prod >> 64;
+    }
+    out[4] = carry as u64;
+    out
+}
+
 /// Montgomery reduction (SOS method): given an 8-limb value `t < n*R`, returns `t * R^-1 mod n` as
 /// 4 limbs. See [`crate::p256_scalar::redc`]'s docs for the algorithm and the 9-limb-accumulator
 /// bound this mirrors (secp256k1's `n` is, like P-256's, close enough to `2^256` that `2n` can
@@ -184,10 +209,7 @@ fn redc(t: &[u64; 8]) -> [u64; 4] {
 
     for i in 0..4 {
         let m = acc[i].wrapping_mul(N_PRIME);
-        let mn = widening_mul(&[m, 0, 0, 0], &N_LIMBS);
-        debug_assert_eq!(mn[5], 0);
-        debug_assert_eq!(mn[6], 0);
-        debug_assert_eq!(mn[7], 0);
+        let mn = modulus_times_limb(m);
 
         let mut carry: u128 = 0;
         for j in 0..5 {

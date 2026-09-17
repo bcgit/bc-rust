@@ -7,23 +7,25 @@
 //!
 //! # Reduction algorithm
 //!
-//! `p` has the Solinas-friendly identity `2^256 = p + C` where `C = 2^224 - 2^192 - 2^96 + 1`
-//! (i.e. `2^256 mod p = C`); this is what makes P-256 a "custom curve" candidate at all (see the
-//! crate's design notes). bc-java's `SecP256R1Field.reduce` exploits this identity in a single
-//! pass over 32-bit words, because `p`'s special exponents (96, 192, 224) are all 32-bit-word
-//! boundaries. They are not 64-bit-limb boundaries (`96 = 64 + 32`, `224 = 3*64 + 32`), so a
-//! direct port to `u64` limbs would need to split limbs at 32-bit offsets. Instead, [`reduce`]
-//! applies the same `2^256 ≡ C` identity iteratively at 64-bit-limb granularity: split the
-//! 512-bit product into its high and low 256-bit halves and replace `high * 2^256` with
-//! `high * C`, folding the high half back into the low one. Worked out below (and confirmed
-//! against 40,000+ random trials plus the `(p-1)*(p-1)` worst case in
-//! `p256_reduce_explore2.py`, not checked in): each fold cannot grow the value's bit length by
-//! more than `224 - 256 = -32` bits net (since `C < 2^224`), so starting from a 512-bit product,
-//! 9 folds are enough to guarantee the high half is exactly zero, leaving a value less than `2p`
-//! that a single conditional subtraction reduces into `[0, p)`. This is slower than bc-java's
-//! single-pass, word-granular reduction (a later optimization, replaceable behind the same
-//! signature per CLAUDE.md's spec-deviation rule), but every step is a fixed, public-length loop
-//! over fixed-size arrays, so it stays trivially constant-time in the operands.
+//! `p` is a generalized Mersenne number, so a 512-bit product reduces without any multiplication
+//! at all: SP 800-186 (Feb 2023) Appendix G.1.2, "Curve P-256", gives `B = (T + 2S1 + 2S2 + S3 +
+//! S4 - D1 - D2 - D3 - D4) mod p`, where each of the nine terms is a 256-bit value assembled by
+//! concatenating 32-bit words of the product itself. [`reduce`] transcribes that expression
+//! directly, so a reviewer with G.1.2 open can match its nine terms to the document row by row.
+//!
+//! G.1's own preamble states both the precondition -- "given an integer A less than m^2" -- and
+//! the shape of the leftover work: "the integer sum or difference can be evaluated and the result
+//! reduced modulo m. The latter reduction can be accomplished by adding or subtracting a few
+//! copies of m." [`reduce`] carries the exact bound on how many copies that is here, and why,
+//! after biasing the accumulator by `5p` so it never goes negative, a single fold of the top limb
+//! plus a single conditional subtraction always lands in `[0, p)`.
+//!
+//! The one identity that outlives the reduction is `2^256 = p + C` where `C = 2^224 - 2^192 -
+//! 2^96 + 1` (i.e. `2^256 mod p = C`): [`P256FieldElement::add`] uses it to correct a carry out
+//! of the top limb, and [`reduce`]'s final fold uses it on the accumulator's top limb.
+//!
+//! Every step is a fixed, public-length loop over fixed-size arrays with a single masked select,
+//! so the whole routine is trivially constant-time in the operands.
 
 use crate::nat;
 use bouncycastle_utils::ct;
@@ -42,6 +44,14 @@ const C_LIMBS: [u64; 4] =
 /// its base to, per Fermat's little theorem.
 const P_MINUS_2_LIMBS: [u64; 4] =
     [0xfffffffffffffffd, 0x00000000ffffffff, 0x0000000000000000, 0xffffffff00000001];
+
+/// `5p`, little-endian `u64` limbs -- the bias [`reduce`] starts its accumulator at so that
+/// subtracting SP 800-186 §G.1.2's four `D` terms can never take it below zero. See [`reduce`]
+/// for why `5` is the right multiple.
+const FIVE_P_LIMBS: [u64; 5] = [
+    0xfffffffffffffffb, 0x00000004ffffffff, 0x0000000000000000, 0xfffffffb00000005,
+    0x0000000000000004,
+];
 
 /// An element of the P-256 base field GF(p), always held in canonical reduced form (`< p`).
 #[derive(Clone, Copy, Debug)]
@@ -132,20 +142,24 @@ impl P256FieldElement {
     /// purposes. Other (constant time) algorithms that produce an equivalent result may be
     /// used."* The exponent `p-2` is a compile-time public constant, so the fixed
     /// square-then-conditionally-multiply sequence below takes the same path on every call
-    /// regardless of `self`; the "conditionally" is itself branch-free, selecting between the
-    /// multiplied and un-multiplied candidates by a mask rather than a data-dependent branch, so
-    /// no step of the computation branches on `self`.
+    /// regardless of `self`. The "conditionally" is an ordinary `if` on a bit of that constant,
+    /// not a mask: the condition is known at compile time, so which operations run -- and in what
+    /// order -- is fixed before `self` exists, and no step of the computation branches on `self`.
+    /// (An earlier version masked instead, multiplying on every bit and selecting the result.
+    /// That bought no additional secret-independence, since the bit was never secret, and cost a
+    /// full field multiplication per exponent bit.)
     pub fn invert(&self) -> Self {
         let mut result = Self::ONE;
         for limb_idx in (0..4).rev() {
             let limb = P_MINUS_2_LIMBS[limb_idx];
             for bit in (0..64).rev() {
                 result = result.square();
-                let multiplied = result.mul(self);
-                let bit_is_set = Condition::<u64>::from_lsb((limb >> bit) & 1);
-                let mut selected = [0u64; 4];
-                ct::conditional_select(bit_is_set, &multiplied.0, &result.0, &mut selected);
-                result = Self(selected);
+                // `limb` is one word of a compile-time constant exponent and `bit` a loop
+                // index, so this branch is on public data only: the sequence of squarings and
+                // multiplications is fixed at compile time and identical on every call.
+                if (limb >> bit) & 1 == 1 {
+                    result = result.mul(self);
+                }
             }
         }
         result
@@ -197,22 +211,93 @@ fn widening_mul(a: &[u64; 4], b: &[u64; 4]) -> [u64; 8] {
     result
 }
 
-/// Reduces an 8-limb (512-bit) value modulo `p`, per the fold described in the module docs.
+/// The 32-bit word `A_i` of the 512-bit product, in SP 800-186 §G.1.2's numbering: that appendix
+/// writes the product as `A = (A15 || A14 || ... || A0)` with each `A_i` a 32-bit integer, `A0`
+/// least significant.
+fn word(t: &[u64; 8], i: usize) -> u64 {
+    (t[i / 2] >> (32 * (i % 2))) & 0xffff_ffff
+}
+
+/// Assembles one of §G.1.2's 256-bit terms from its eight 32-bit words. The document prints each
+/// term most significant word first (`( A15 || A14 || ... )`); this takes them least significant
+/// first, so each call site below reads its document row right to left.
+fn term(w: [u64; 8]) -> [u64; 4] {
+    [w[0] | (w[1] << 32), w[2] | (w[3] << 32), w[4] | (w[5] << 32), w[6] | (w[7] << 32)]
+}
+
+/// Zero-extends a 4-limb value to 5 limbs, for arithmetic against the 5-limb accumulator.
+fn widen(v: &[u64; 4]) -> [u64; 5] {
+    [v[0], v[1], v[2], v[3], 0]
+}
+
+/// `small * v`, one limb times a 4-limb value, as 5 limbs. Only ever called with a `small` that
+/// is a bounded, operand-independent count (see [`reduce`]), never a secret.
+fn mul_small(small: u64, v: &[u64; 4]) -> [u64; 5] {
+    let mut out = [0u64; 5];
+    let mut carry: u128 = 0;
+    for i in 0..4 {
+        let prod = (small as u128) * (v[i] as u128) + carry;
+        out[i] = prod as u64;
+        carry = prod >> 64;
+    }
+    out[4] = carry as u64;
+    out
+}
+
+/// Reduces an 8-limb (512-bit) value modulo `p`, per SP 800-186 §G.1.2 (see the module docs).
+///
+/// **Precondition: `t < p^2`**, which is G.1's own stated precondition ("given an integer A less
+/// than m^2") and holds for every call site, since `mul` is the only one and it passes the product
+/// of two canonical (`< p`) field elements. The bounds below all rest on it; a raw 512-bit value
+/// near `2^512` is *not* reduced correctly by this function.
+///
+/// Bounds. Each of the nine terms is a 256-bit value, so `T + 2*S1 + 2*S2 + S3 + S4 < 6*2^256`
+/// and `D1 + D2 + D3 + D4 < 4*2^256`. Starting the accumulator at `5p` therefore keeps it
+/// non-negative throughout (`5p > 4*2^256`, since `5p - 4*2^256 = 2^256 - 5*2^224 + ... > 0`) and
+/// bounded by `5p + 6*2^256 < 11*2^256`, so five limbs are always enough and the top limb `u_hi`
+/// is at most 10. Folding that top limb back in via `2^256 ≡ C` adds `u_hi*C < 11*2^224 < 2^228`,
+/// leaving `V < 2^256 + 2^228`; since `p > 2^256 - 2^224`, `V - p < 2^228 + 2^224 < p`, so exactly
+/// one conditional subtraction finishes the job.
 fn reduce(t: &[u64; 8]) -> [u64; 4] {
-    let mut acc: [u64; 8] = *t;
-    for _ in 0..9 {
-        let hi: [u64; 4] = [acc[4], acc[5], acc[6], acc[7]];
-        let lo: [u64; 4] = [acc[0], acc[1], acc[2], acc[3]];
-        let product = widening_mul(&hi, &C_LIMBS);
-        let lo_extended: [u64; 8] = [lo[0], lo[1], lo[2], lo[3], 0, 0, 0, 0];
-        let (sum, carry) = nat::add(&product, &lo_extended);
-        debug_assert_eq!(carry, 0, "P-256 reduction fold overflowed 512 bits");
+    let a = |i: usize| word(t, i);
+
+    // SP 800-186 §G.1.2's nine terms, each row read right to left from the document.
+    let t_term = term([a(0), a(1), a(2), a(3), a(4), a(5), a(6), a(7)]);
+    let s1 = term([0, 0, 0, a(11), a(12), a(13), a(14), a(15)]);
+    let s2 = term([0, 0, 0, a(12), a(13), a(14), a(15), 0]);
+    let s3 = term([a(8), a(9), a(10), 0, 0, 0, a(14), a(15)]);
+    let s4 = term([a(9), a(10), a(11), a(13), a(14), a(15), a(13), a(8)]);
+    let d1 = term([a(11), a(12), a(13), 0, 0, 0, a(8), a(10)]);
+    let d2 = term([a(12), a(13), a(14), a(15), 0, 0, a(9), a(11)]);
+    let d3 = term([a(13), a(14), a(15), a(8), a(9), a(10), 0, a(12)]);
+    let d4 = term([a(14), a(15), 0, a(9), a(10), a(11), 0, a(13)]);
+
+    // B + 5p = 5p + T + 2*S1 + 2*S2 + S3 + S4 - D1 - D2 - D3 - D4, over five limbs. `S1` and `S2`
+    // appear twice rather than being doubled, so every step is the same 5-limb add.
+    let mut acc = FIVE_P_LIMBS;
+    for addend in [&t_term, &s1, &s1, &s2, &s2, &s3, &s4] {
+        let (sum, carry) = nat::add(&acc, &widen(addend));
+        debug_assert_eq!(carry, 0, "P-256 reduction accumulator overflowed 5 limbs");
         acc = sum;
     }
-    debug_assert_eq!([acc[4], acc[5], acc[6], acc[7]], [0, 0, 0, 0]);
+    for subtrahend in [&d1, &d2, &d3, &d4] {
+        let (diff, borrow) = nat::sub(&acc, &widen(subtrahend));
+        debug_assert_eq!(
+            borrow, 0,
+            "P-256 reduction accumulator went negative despite the 5p bias"
+        );
+        acc = diff;
+    }
+
+    // Fold the accumulator's top limb back in: `2^256 ≡ C (mod p)`.
+    debug_assert!(acc[4] <= 10, "P-256 reduction top limb exceeded its proven bound");
     let low: [u64; 4] = [acc[0], acc[1], acc[2], acc[3]];
-    let (diff, borrow) = nat::sub(&low, &P_LIMBS);
-    let mut result = [0u64; 4];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &low, &diff, &mut result);
-    result
+    let (v, carry) = nat::add(&mul_small(acc[4], &C_LIMBS), &widen(&low));
+    debug_assert_eq!(carry, 0, "P-256 reduction fold overflowed 5 limbs");
+
+    let (diff, borrow) = nat::sub(&v, &widen(&P_LIMBS));
+    let mut selected = [0u64; 5];
+    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &v, &diff, &mut selected);
+    debug_assert_eq!(selected[4], 0, "P-256 reduction left a value >= 2^256");
+    [selected[0], selected[1], selected[2], selected[3]]
 }
