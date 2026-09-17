@@ -27,13 +27,19 @@
 //!
 //! | Key Object | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
 //! |------------|-----------------|--------------------|------------------|--------------------|
-//! | SM2        | 65              | 64                 | 32               | 32                 |
+//! | SM2        | 65              | 64                 | 32               | 96                 |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`; the
 //! "on disk" sizes are [`keys::PK_LEN`]/[`keys::SK_LEN`]. These numbers are produced by
 //! `mem_usage_benches`' `bench_sm2_mem_usage` binary's `print_struct_sizes()`; that binary is also
 //! the stack-usage measurement harness (see its own doc comment for the `valgrind`/`massif`
 //! invocation).
+//!
+//! An `SM2PrivateKey` is 96 bytes in memory against a 32-byte encoding because it carries the
+//! matching public key `PA` (two 32-byte field elements) alongside `dA`. That is not redundancy:
+//! `ZA` mixes `PA` into every signature, so without it each `sign` would have to recompute
+//! `[dA]G` and cost two fixed-base scalar multiplications instead of one. See
+//! [`keys::SM2PrivateKey`]'s own docs.
 //!
 //! # Security Considerations
 //!

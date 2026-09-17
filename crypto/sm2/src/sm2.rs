@@ -38,6 +38,16 @@
 //!
 //! The draft has no ASN.1/DER encoding for `(r, s)`; [`SIG_LEN`] is raw `r || s`, 64 bytes, each a
 //! 32-byte big-endian integer -- the same convention `bouncycastle-ecdsa` uses as its own default.
+//!
+//! # Extracting `x1` from a secret-derived `[k]G`
+//!
+//! `[k]G` (§5.1.3 step A4) is Jacobian-coordinate output of a *secret* scalar multiplication, so
+//! converting it to affine cannot use [`Sm2JacobianPoint::to_affine`] -- that function's own docs
+//! say it branches on infinity and is "not for use on a secret intermediate value".
+//! [`x_affine_of_signing_point`] instead always computes `X * Z^-2`, branch-free; see its docs for
+//! why `Z` is never zero here. This mirrors what every curve in `bouncycastle-ecdsa` does for the
+//! same step, and is what makes this crate's "never handled in variable time" claim for `k` (see
+//! [`crate`]'s Security Considerations) true of the signing path as a whole.
 
 use crate::extra_bits::reduce_wide_bits_mod_n_minus_1;
 use crate::keys::{EXTRA_BITS_DRBG_OUTPUT_LEN, PK_LEN, SK_LEN, SM2PrivateKey, SM2PublicKey};
@@ -45,6 +55,7 @@ use crate::za;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{Hash, RNG, SignatureVerifier, Signer};
 use bouncycastle_ec::nat;
+use bouncycastle_ec::sm2::Sm2FieldElement;
 use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
 use bouncycastle_ec::sm2_point::Sm2JacobianPoint;
 use bouncycastle_ec::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
@@ -52,6 +63,7 @@ use bouncycastle_ec::sm2_sec1;
 use bouncycastle_ec::sm2_wnaf::shamir_multiply;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sm3::SM3;
+use bouncycastle_utils::secret::Secret;
 
 /// Raw `r || s` signature length: two 32-byte field-width integers. See the module docs on why
 /// there is no DER alternative here.
@@ -75,6 +87,21 @@ fn e_from_hash(hash: SM3) -> Sm2ScalarField {
     Sm2ScalarField::from_limbs(sm2_sec1::limbs_from_be_bytes(&e_bytes))
 }
 
+/// `x * z^-2`, branch-free -- the affine `x1` of a point that came out of a *secret* scalar
+/// multiplication, mirroring `bouncycastle_ecdsa::ecdsa_p256`'s helper of the same name.
+///
+/// [`Sm2JacobianPoint::to_affine`] cannot be used here: its own docs say it branches on infinity
+/// and is "not for use on a secret intermediate value", and `[k]G` is exactly that. This always
+/// computes `X * Z^-2` instead, which is what `to_affine` does in its non-infinity case. `Z` is
+/// never `0` here, since `k` is in `[1, n-1]` by construction and `G` has prime order `n` (SM2's
+/// cofactor is `h = 1`), so `[k]G` is never the identity for any valid `k` -- that holds
+/// unconditionally, so skipping the infinity branch leaks nothing about which `k` was drawn. It
+/// also skips computing `y1`, which step A5 never uses.
+fn x_affine_of_signing_point(point: &Sm2JacobianPoint) -> Sm2FieldElement {
+    let z_inv = point.z.invert();
+    point.x.mul(&z_inv.mul(&z_inv))
+}
+
 /// §5.1.3 steps A4-A7, given `k` already generated (step A3) by one of `SM2`'s randomised methods.
 /// Returns `Err` for step A5's `r = 0`/`r + k = n` or step A6's `s = 0` -- see the module docs on
 /// this crate's retry convention.
@@ -86,7 +113,7 @@ fn sign_with_k(
     let k_field = Sm2ScalarField::from_secret(&k);
 
     let r_point = comb_multiply_base_point(&k); // step A4
-    let (x1, _) = r_point.to_affine().expect("[k]G is never infinity for k in [1, n-1]");
+    let x1 = x_affine_of_signing_point(&r_point); // step A4's x1
     let x1_field = Sm2ScalarField::from_limbs(x1.to_limbs());
     let r = e.add(&x1_field); // step A5
 
@@ -134,8 +161,9 @@ impl SM2 {
         id: &[u8],
         rng: &mut dyn RNG,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let q = comb_multiply_base_point(sk.scalar());
-        let (x, y) = q.to_affine().expect("[dA]G is never infinity for dA in [1, n-1]");
+        // PA is carried by the key, not recomputed: see SM2PrivateKey's docs on why deriving it
+        // here would double the cost of signing.
+        let (x, y) = sk.derive_pk().affine();
         let za = za::compute(id, &x, &y)?;
 
         let mut hash = SM3::new();
@@ -143,9 +171,11 @@ impl SM2 {
         hash.do_update(msg);
         let e = e_from_hash(hash);
 
-        let mut extra_bits = [0u8; EXTRA_BITS_DRBG_OUTPUT_LEN];
-        rng.next_bytes_out(&mut extra_bits).map_err(SignatureError::RNGError)?;
-        let k = reduce_wide_bits_mod_n_minus_1(&extra_bits);
+        // Raw DRBG output, reduced below into the private key / per-message secret: held in
+        // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+        let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
+        rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
+        let k = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
         sign_with_k(sk, &e, k)
     }
@@ -178,8 +208,8 @@ impl Signer<SM2PrivateKey, SK_LEN, SIG_LEN> for SM2 {
             "SM2 requires ctx to carry the signer's identity IDA (draft-shen-sm2-ecdsa-02 S5.1.2); \
              see bouncycastle-sm2's crate docs",
         ))?;
-        let q = comb_multiply_base_point(sk.scalar());
-        let (x, y) = q.to_affine().expect("[dA]G is never infinity for dA in [1, n-1]");
+        // PA is carried by the key, not recomputed: see SM2PrivateKey's docs.
+        let (x, y) = sk.derive_pk().affine();
         let za = za::compute(id, &x, &y)?;
 
         let mut hash = SM3::new();
@@ -198,9 +228,11 @@ impl Signer<SM2PrivateKey, SK_LEN, SIG_LEN> for SM2 {
         let e = e_from_hash(self.hash);
 
         let mut rng = DefaultRNG::default();
-        let mut extra_bits = [0u8; EXTRA_BITS_DRBG_OUTPUT_LEN];
-        rng.next_bytes_out(&mut extra_bits).map_err(SignatureError::RNGError)?;
-        let k = reduce_wide_bits_mod_n_minus_1(&extra_bits);
+        // Raw DRBG output, reduced below into the private key / per-message secret: held in
+        // `Secret` so it is scrubbed when this function returns rather than left on the stack.
+        let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
+        rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
+        let k = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
         sign_with_k(&sk, &e, k)
     }
@@ -245,7 +277,14 @@ impl SignatureVerifier<SM2PublicKey, PK_LEN, SIG_LEN> for SM2 {
         let pk = self.pk.ok_or(SignatureError::GenericError(
             "verify_final called on a sign-initialized SM2; call sign_final instead",
         ))?;
-        if sig.len() < SIG_LEN {
+        // Exactly SIG_LEN, not "at least": the raw encoding is two fixed-width integers and
+        // nothing else, so trailing bytes make this a different, malformed encoding rather than a
+        // valid signature in a roomy buffer. Accepting them would let anyone turn one valid
+        // signature into unlimited distinct byte strings that all verify -- malleability that
+        // breaks any caller treating the signature as an opaque, comparable blob. This matches how
+        // `SignaturePublicKey`/`SignaturePrivateKey::from_bytes` already reject an over-long
+        // encoding here (see `core-test-framework`'s own `test_boundary_conditions`).
+        if sig.len() != SIG_LEN {
             return Err(SignatureError::SignatureVerificationFailed);
         }
 
