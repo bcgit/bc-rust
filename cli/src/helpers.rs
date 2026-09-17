@@ -1,7 +1,7 @@
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::traits::{Hash, SecurityStrength, XOF};
+use bouncycastle::core::traits::{Hash, SecurityStrength, XOF, XOFSqueezer};
 use bouncycastle::hex;
 use std::fs::File;
 use std::io;
@@ -140,11 +140,11 @@ pub(crate) fn stream_xof(mut xof: impl XOF, output_len: usize, output_hex: bool)
 
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     while bytes_read != 0 {
-        xof.absorb(&buf[..bytes_read]).expect("absorb before squeeze is infallible");
+        xof.do_update(&buf[..bytes_read]);
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
-    let out = xof.squeeze(output_len);
+    let out = xof.into_squeezer().do_final(output_len);
     write_bytes_or_hex(&out, output_hex);
     println!();
 }

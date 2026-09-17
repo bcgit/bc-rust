@@ -13,7 +13,6 @@ use bouncycastle_utils::{max, min};
 /// Internal struct for SHA3.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
 /// provided and NIST-approved parameters.
-#[derive(Clone)]
 pub struct SHA3Internal<PARAMS: SHA3Params> {
     _params: core::marker::PhantomData<PARAMS>,
     keccak: KeccakInternal,
@@ -23,6 +22,18 @@ pub struct SHA3Internal<PARAMS: SHA3Params> {
 }
 
 // Note: zeroizing Drop is not necessary here because all the sensitive info is in KeccakDigest, which has one.
+
+impl<PARAMS: SHA3Params> Clone for SHA3Internal<PARAMS> {
+    fn clone(&self) -> Self {
+        Self {
+            _params: core::marker::PhantomData,
+            keccak: self.keccak.clone(),
+            kdf_key_type: self.kdf_key_type,
+            kdf_security_strength: self.kdf_security_strength,
+            kdf_entropy: self.kdf_entropy,
+        }
+    }
+}
 
 impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     /// Get a new SHA3 instance, ready for use.
