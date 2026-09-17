@@ -6,7 +6,7 @@ use crate::params::{
     GAMMA1_2_POW_17, GAMMA1_2_POW_19, GAMMA2_Q_MINUS_1_OVER_32, GAMMA2_Q_MINUS_1_OVER_88,
     MLDSAParams,
 };
-use crate::polynomial::Polynomial;
+use crate::polynomial::{HintRow, Polynomial, hint_set};
 use bouncycastle_core::traits::XOF;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
@@ -358,13 +358,17 @@ pub(crate) fn unpack_z_row<P: MLDSAParams, const SIG_LEN: usize>(
     if z.check_norm(P::gamma1_minus_beta) { Err(()) } else { Ok(z) }
 }
 /// Part of unpacking the sig value
+///
+/// The row is written into `out` and `true` returned. `false` means the encoded hint is malformed,
+/// and `out` then holds a partial row that the caller must discard.
 pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
     row: usize,
     sig: &[u8; SIG_LEN],
-) -> Option<Polynomial> {
+    out: &mut HintRow,
+) -> bool {
     debug_assert!(row < P::k);
 
-    let mut h = Polynomial::new();
+    out.fill(0);
 
     // skip over the other stuff in the encoded sig value
     let pos = P::C_TILDE_LEN + P::l * P::POLY_Z_PACKED_LEN;
@@ -386,7 +390,7 @@ pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
     if sig[pos + (P::omega as usize) + row] < (idx as u8)
         || sig[pos + (P::omega as usize) + row] > P::omega as u8
     {
-        return None;
+        return false;
     }
 
     // 6: First ← Index
@@ -398,10 +402,10 @@ pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
         //       ▷ malformed input
         // mutants note: don't have test vectors that exercise this condition
         if j > idx && sig[pos + j - 1] >= sig[pos + j] {
-            return None;
+            return false;
         }
         // 12: 𝐡[𝑖]_𝑦[Index] ← 1
-        h[sig[pos + j] as usize] = 1;
+        hint_set(out, sig[pos + j] as usize);
 
         // 13: Index ← Index + 1
         //  > done by for loop
@@ -413,12 +417,12 @@ pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(
         let idx = sig[pos + P::omega as usize + row] as usize;
         for j in idx..P::omega as usize {
             if sig[pos + j] != 0 {
-                return None;
+                return false;
             }
         }
     }
 
-    Some(h)
+    true
 }
 
 /// Algorithm 29 SampleInBall(𝜌)

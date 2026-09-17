@@ -392,7 +392,7 @@ use crate::low_memory_helpers::{
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPrivateKeyTrait};
 use crate::mldsa_keys::{MLDSAPublicKeyInternalTrait, MLDSAPublicKeyTrait};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
-use crate::polynomial::Polynomial;
+use crate::polynomial::{Polynomial, ZEROED_HINT_ROW, hint_get};
 use crate::{
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey,
     MLDSA87PublicKey,
@@ -908,7 +908,8 @@ impl<
                 tmp.conditional_add_q();
 
                 w.high_bits::<P>();
-                let (hint_row, weight) = tmp.make_hint_row::<P>(&w);
+                let mut hint_row = ZEROED_HINT_ROW;
+                let weight = tmp.make_hint_row::<P>(&w, &mut hint_row);
                 let next_hint_count = hint_count + weight as usize;
 
                 // mutants note: don't have a test vector that exercises this condition,
@@ -919,7 +920,7 @@ impl<
                 }
 
                 for idx in 0..N {
-                    if hint_row[idx] != 0 {
+                    if hint_get(&hint_row, idx) != 0 {
                         output[hint_offset + hint_count] = idx as u8;
                         hint_count += 1;
                     }
@@ -1033,11 +1034,12 @@ impl<
                 Err(_) => return Err(SignatureError::SignatureVerificationFailed),
             };
 
-            let h_i = match unpack_h_row::<P, SIG_LEN>(row, &sig) {
-                Some(h_i) => h_i,
-                // means there were more than OMEGA bits set in the hint
-                None => return Err(SignatureError::SignatureVerificationFailed),
-            };
+            let mut h_i = ZEROED_HINT_ROW;
+            if !unpack_h_row::<P, SIG_LEN>(row, sig, &mut h_i) {
+                // the encoded hint is malformed: out-of-order indices, more than OMEGA bits set,
+                // or nonzero padding
+                return Err(SignatureError::SignatureVerificationFailed);
+            }
 
             // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
             // ▷ reconstruction of signer’s commitment
