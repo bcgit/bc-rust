@@ -154,3 +154,105 @@ fn algebraic_identities_over_many_pseudorandom_values() {
         }
     }
 }
+
+/// Products chosen to drive `reduce`'s five-limb accumulator's top limb across every value
+/// it can actually take (4 through 17 here; the bound proved in `reduce`'s own doc comment is
+/// 18), so the top-limb fold and the final conditional subtraction are both
+/// exercised at their extremes rather than only in the middle of their range. Ordinary
+/// pseudorandom operands almost never reach the ends: these were found by searching ~900,000
+/// products, including ones biased towards all-ones high words. Expected values are Python's
+/// `(a * b) % p`, computed independently of this crate's arithmetic.
+#[test]
+fn known_answer_mul_at_the_reduction_bounds() {
+    // (a, b, a*b mod p), one per reachable top-limb value, ascending.
+    let cases: [([u64; 4], [u64; 4], [u64; 4]); 14] = [
+        // top limb 4
+        (
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // top limb 5
+        (
+            [0xfffffffffffffffe, 0xffffffff00000000, 0xffffffffffffffff, 0xfffffffeffffffff],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0xfffffffffffffffe, 0xffffffff00000000, 0xffffffffffffffff, 0xfffffffeffffffff],
+        ),
+        // top limb 6
+        (
+            [0x33acc967df52efc7, 0x4fc1db5f2d8f3e07, 0x3be79cc15726eb41, 0x4acdf8fb1f50e4ee],
+            [0xe698a0b713235314, 0x126146b6bd8dc7dc, 0x64b6da27c8fc0161, 0x40c2450df5c15810],
+            [0x202c17c130933e53, 0x93bb3a5c05e5ec9b, 0xf355099dc623c874, 0xbcf5484c97d86554],
+        ),
+        // top limb 7
+        (
+            [0x7030a50db754f89a, 0x8769ca02ea303e0d, 0x65e987940ba28ac9, 0x16cabd95e22dbc49],
+            [0xeaeecfb77a462a47, 0x200ada18f2088666, 0xd86c0bc0f4cee0ac, 0x58a43d2b2d2e7fc6],
+            [0xee7ac5c13d33448a, 0x1e5ac068ced0478d, 0x8e405143688797e9, 0x723010bdf644c241],
+        ),
+        // top limb 8
+        (
+            [0xc79c6ae82a4ddcd8, 0x32edb25757d1a11b, 0x51f24f89eb9d46ea, 0xd60bec7706f8e4f3],
+            [0x9b75cd625142260a, 0xbffedee5673265bf, 0x32737e9a11dd0076, 0x0c61cb71776a0c7d],
+            [0xe5fe086f5e8659dd, 0xbadd10879dc3bcad, 0xfb842ae9198d41d5, 0xeda9e6e9234a4780],
+        ),
+        // top limb 9
+        (
+            [0x6c15a5b7a31b9a88, 0xad60872bf7608860, 0x614e0ac60406e6c8, 0x3f35c1e61fcd76ff],
+            [0xfb2dc41468f25be3, 0x395bc78b8b245993, 0xff2fa10e3f16ca83, 0xfe188bb380f05577],
+            [0x7264eb6ad238cd0e, 0x201c0d755c2682dd, 0x482b8e0a56ae3670, 0xa782a032109e3bf9],
+        ),
+        // top limb 10
+        (
+            [0x3b8104488f2d8e22, 0x598dd6fa99c39428, 0xc161a8733a085adb, 0xffe7bdaff61a76c4],
+            [0xeb9029f855dc1b56, 0x38f25c15a4af1600, 0xa6f43ed979d8ede6, 0x2227407b18226e55],
+            [0x1f56e64ff2e30e9b, 0x590c81056d431a75, 0x5c73a8e0a26cbc09, 0x3438eb3dafc32768],
+        ),
+        // top limb 11
+        (
+            [0x42c7f4e1c0e0861c, 0xef54ec651388b2e2, 0xf4de87fa4830146c, 0x71e39cf9a0ce11e0],
+            [0xe949f0e05fd3df71, 0xa56faa8a75a9f029, 0xb642126f51468661, 0x82dc965565f17d15],
+            [0x47f79ca7ce88003b, 0xdcd3336c11ea2ca5, 0x37e16c292ff9cf37, 0xb1d7dda6fa4fda60],
+        ),
+        // top limb 12
+        (
+            [0xd8c527101686c8dd, 0x3969aaaea1ef7f3d, 0x12340033bd89d876, 0xbd01b5599f65d691],
+            [0xfad40f4becb9c562, 0xc31a25b3f569ad7e, 0xe1a9bf6a8a30bb6b, 0xbef2eb0a5a696886],
+            [0xdb635b24042727b1, 0x632417b5038d7677, 0xc0a0d36d47d08092, 0x553574b2d67ef0b6],
+        ),
+        // top limb 13
+        (
+            [0x6c77da1c15ab106b, 0x45389e945635d4a8, 0x72330b666db8f163, 0xe094e7425acc5486],
+            [0xf05a046171a9f871, 0xe41082c1e2b853a3, 0x68ed177d17a99c38, 0xc31c5e8e401cffae],
+            [0xa120e10e9e05550e, 0x85c78a523499599d, 0x53fefd01687260e6, 0x4776539506828316],
+        ),
+        // top limb 14
+        (
+            [0xfffffffffffffffe, 0xffffffff00000000, 0xffffffffffffffff, 0xfffffffeffffffff],
+            [0xfffffffffffffffe, 0xffffffff00000000, 0xffffffffffffffff, 0xfffffffeffffffff],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // top limb 15
+        (
+            [0x422e012c71efc130, 0xaf9f500c9b843cff, 0x35ed557e70de52b2, 0xf8117bd39a627a5d],
+            [0xc5e7878d071a87d9, 0xa9661930992c7856, 0xcfe94313890735ba, 0xd7f003fcc8760cb4],
+            [0xda27792522c7096a, 0x8d9c12d268e4bdd5, 0x78a6f489d79a2e93, 0x39c44b39d3676947],
+        ),
+        // top limb 16
+        (
+            [0x19f1eef25e979f0b, 0x98c338454a8ebf94, 0xd3ade626e6492ef2, 0xf6efa94e0854aa85],
+            [0x39b0369ebeb3d1ae, 0x88ff2fa60a290270, 0x86b7590537824835, 0xc5a61e2646e26036],
+            [0x9d545cf849a44895, 0x01a8480ed66873aa, 0x93408ccf38921617, 0x5f38ac6852629955],
+        ),
+        // top limb 17
+        (
+            [0x82b76b3e7be5d265, 0x53b7d7a65091ebbf, 0xd43a1492f17c0abc, 0xb44383d7925bfff9],
+            [0x428a7dcb2f5f4779, 0x7904375252397080, 0x41a1d2610e45d683, 0xfee086171cf0cf63],
+            [0x888fd29356771e3d, 0x4e88d54595b59b9a, 0x6e411bba9d44960d, 0x0c4c6fc746169b40],
+        ),
+    ];
+    for (a, b, expected) in cases {
+        assert_eq!(fe(a).mul(&fe(b)), fe(expected), "a = {a:x?}, b = {b:x?}");
+        assert_eq!(fe(b).mul(&fe(a)), fe(expected), "commuted: a = {a:x?}, b = {b:x?}");
+    }
+}

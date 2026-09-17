@@ -317,3 +317,75 @@ fn algebraic_identities_over_many_pseudorandom_values() {
         }
     }
 }
+
+/// Products chosen to drive `reduce`'s five-limb accumulator's top limb across every value
+/// it can actually take (1 through 9 here; the bound proved in `reduce`'s own doc comment is
+/// 10), so the top-limb fold and the final conditional subtraction are both
+/// exercised at their extremes rather than only in the middle of their range. Ordinary
+/// pseudorandom operands almost never reach the ends: these were found by searching ~900,000
+/// products, including ones biased towards all-ones high words. Expected values are Python's
+/// `(a * b) % p`, computed independently of this crate's arithmetic.
+#[test]
+fn known_answer_mul_at_the_reduction_bounds() {
+    // (a, b, a*b mod p), one per reachable top-limb value, ascending.
+    let cases: [([u64; 4], [u64; 4], [u64; 4]); 9] = [
+        // top limb 1
+        (
+            [0x58fda18e0072b4ba, 0x44018c6757092f67, 0x7062f82104dbadc2, 0x0a7d966209a1d185],
+            [0x93161ab002c04372, 0x174d12d89b2b20bf, 0xfbb4cfefefa03b81, 0xb7ddc0ed19cf8d01],
+            [0x935ada40df5ae4bf, 0xd5a16c6f4ca1fef1, 0x9d0f22d2d8914382, 0xe7f90b9f48d9a7b3],
+        ),
+        // top limb 2
+        (
+            [0xfb772112cb65c842, 0x41db6eaa2ea5e194, 0xfbb1efd470621edc, 0x544f46bad48f9cd5],
+            [0x2649ec804438f53e, 0xfc0d6b01caa16cdf, 0xcdb95778c363568d, 0x0b56828c2c3e364b],
+            [0x661d2c9be83dc368, 0xfc3f5e38d3070baa, 0x1d1b46edf440737b, 0xda71d6eabd80aff8],
+        ),
+        // top limb 3
+        (
+            [0x751b2b6317cce28e, 0x1009dff7c35e7ae8, 0xbd92d7ea34bb659d, 0xec3b3a0e66f030cc],
+            [0x33a7a72193341604, 0xca466c5c9ae313e5, 0x5d79d64eee2a1c11, 0x2f953e9ec92f953e],
+            [0x67f426047d0189bc, 0x7e67171716ad1c00, 0xbd91b78c95d2ae1a, 0xa17ef52678dc1098],
+        ),
+        // top limb 4
+        (
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // top limb 5
+        (
+            [0xfffffffffffffffe, 0x00000000ffffffff, 0x0000000000000000, 0xffffffff00000001],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+            [0xfffffffffffffffe, 0x00000000ffffffff, 0x0000000000000000, 0xffffffff00000001],
+        ),
+        // top limb 6
+        (
+            [0xfffffffffffffffe, 0x00000000ffffffff, 0x0000000000000000, 0xffffffff00000001],
+            [0xfffffffffffffffe, 0x00000000ffffffff, 0x0000000000000000, 0xffffffff00000001],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // top limb 7
+        (
+            [0xdbdfc1e46e11f548, 0xeaaeaebe8602b410, 0x2a8ee1d39908a543, 0xe22f0b7ad81ce33c],
+            [0x6d297469c7525a7d, 0x43d67cb4d6cbe027, 0xc5e7b049c2440291, 0xe2c9cf87f81b2c63],
+            [0xf2a043490662d4d6, 0x983a450f93a97874, 0xc30aa67280ab5047, 0x011daf973f427b64],
+        ),
+        // top limb 8
+        (
+            [0xe390dbb7431c878a, 0xc77a6c8a447ed952, 0x9fdc24b00b9c5271, 0xf7328f2aa0d3d780],
+            [0x659e1b082531fad2, 0xd72cfae78deffcb0, 0x7518c3238bf13cd5, 0xb69a873817fb6eb6],
+            [0x197970f8313456d2, 0x053282a408a86347, 0x5643727d8ddc2562, 0x3385fd2556779cdf],
+        ),
+        // top limb 9
+        (
+            [0x327b39c1b8049ba2, 0x3fda533bd0c4b27e, 0x650aa1bb8de979f1, 0xf8ef8bd33e88832d],
+            [0xf458f679da7bef0a, 0x1ef3292153ec1d6a, 0x1c754701380036f3, 0xeb534ed60f05a97a],
+            [0x8c36a1f722aff890, 0xcde36ea8979072c8, 0xfd71907eebc1a3f8, 0x05085278c330a849],
+        ),
+    ];
+    for (a, b, expected) in cases {
+        assert_eq!(fe(a).mul(&fe(b)), fe(expected), "a = {a:x?}, b = {b:x?}");
+        assert_eq!(fe(b).mul(&fe(a)), fe(expected), "commuted: a = {a:x?}, b = {b:x?}");
+    }
+}
