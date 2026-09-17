@@ -28,8 +28,9 @@ fixed.
 
 ## Toolchain
 
-- Uses Rust **nightly** (pinned in `rust-toolchain.toml`) — `core/src/lib.rs` uses `#![feature(adt_const_params)]`.
-- 2024 edition (set workspace-wide in the root `Cargo.toml`).
+- Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]`
+  gate, so nightly-only tooling (`-Z` flags and the like) is not available.
+- 2024 edition (set workspace-wide in the root `Cargo.toml`), which needs Rust 1.85 or later.
 
 ## Common commands
 

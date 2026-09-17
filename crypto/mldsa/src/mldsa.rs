@@ -880,7 +880,11 @@ impl<
             cs2.inv_ntt();
 
             // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-            let mut r0 = w.sub_vector(&cs2).low_bits::<P>();
+            // 𝐰 is not read again below -- 𝐰1 was taken from it above -- so the subtraction and the
+            // LowBits both run in its buffer.
+            let mut r0 = w;
+            r0.sub_vector(&cs2);
+            r0.low_bits::<P>();
 
             // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
@@ -1006,7 +1010,8 @@ impl<
                 t1_shift_hat.ntt();
                 t1_shift_hat.scalar_vector_ntt(&c_hat)
             };
-            let mut wp_approx = Az.sub_vector(&ct1);
+            let mut wp_approx = Az;
+            wp_approx.sub_vector(&ct1);
             wp_approx.inv_ntt();
             wp_approx.conditional_add_q();
 
@@ -1398,7 +1403,10 @@ impl<
                 cs2.inv_ntt();
 
                 // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-                let r0 = w.sub_vector(&cs2).low_bits::<P>();
+                // 𝐰 is not read again below; see the note at the matching step in sign_internal.
+                let mut r0 = w;
+                r0.sub_vector(&cs2);
+                r0.low_bits::<P>();
 
                 // while s2_hat is in scope, derive t0
                 let mut t = t_hat;
