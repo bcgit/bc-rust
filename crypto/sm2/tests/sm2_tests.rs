@@ -12,6 +12,8 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
+use bouncycastle_ec::sm2_scalar::N_LIMBS;
+use bouncycastle_ec::sm2_sec1::be_bytes_from_limbs;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 use bouncycastle_sm2::sm2::SM2;
@@ -197,16 +199,30 @@ fn sign_final_out_matches_sign_final() {
 }
 
 #[test]
-fn verify_accepts_oversized_signature_buffer_and_ignores_extra_bytes() {
+fn verify_rejects_signature_of_the_wrong_length() {
     let (pk, sk) = keygen().unwrap();
     let msg = b"message";
     let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
+    SM2::verify(&pk, msg, Some(ID), &sig).expect("the untampered signature must verify");
 
-    let mut too_long = vec![0u8; 66];
-    too_long[..64].copy_from_slice(&sig);
-    too_long[64] = 0xAA;
-    too_long[65] = 0xBB;
-    SM2::verify(&pk, msg, Some(ID), &too_long).unwrap();
+    // Trailing bytes must not be ignored: otherwise one valid signature yields unlimited distinct
+    // byte strings that all verify, which breaks any caller that compares or deduplicates
+    // signatures as opaque blobs.
+    for extra in 1..=3 {
+        let mut too_long = sig.to_vec();
+        too_long.extend(core::iter::repeat_n(0xAAu8, extra));
+        match SM2::verify(&pk, msg, Some(ID), &too_long) {
+            Err(SignatureError::SignatureVerificationFailed) => {}
+            other => panic!("{extra} trailing byte(s) should have failed, got {other:?}"),
+        }
+    }
+
+    for short in 1..=3 {
+        match SM2::verify(&pk, msg, Some(ID), &sig[..64 - short]) {
+            Err(SignatureError::SignatureVerificationFailed) => {}
+            other => panic!("{short} byte(s) short should have failed, got {other:?}"),
+        }
+    }
 }
 
 #[test]
@@ -280,6 +296,28 @@ fn private_key_rejects_zero() {
         Err(SignatureError::DecodingError(_)) => {}
         other => panic!("expected DecodingError, got {other:?}"),
     }
+}
+
+/// `draft-shen-sm2-ecdsa-02` §4 puts `dA` in `[1, n-1]`, so an encoding of `n` or above is not a
+/// key. Reducing such an encoding mod `n` rather than rejecting it would give one key many
+/// valid-looking encodings: `dA = n + 1` would load as `dA = 1`.
+#[test]
+fn private_key_rejects_values_at_or_above_the_group_order() {
+    let n = be_bytes_from_limbs(&N_LIMBS);
+
+    let mut n_plus_1 = n;
+    n_plus_1[31] += 1; // N_LIMBS[0] ends 0x23, so this never carries
+    for (name, bytes) in [("n", n), ("n + 1", n_plus_1), ("2^256 - 1", [0xffu8; 32])] {
+        match SM2PrivateKey::from_bytes(&bytes) {
+            Err(SignatureError::DecodingError(_)) => {}
+            other => panic!("dA = {name} should have been rejected, got {other:?}"),
+        }
+    }
+
+    let mut n_minus_1 = n;
+    n_minus_1[31] -= 1;
+    let sk = SM2PrivateKey::from_bytes(&n_minus_1).expect("dA = n - 1 is in range");
+    assert_eq!(sk.encode(), n_minus_1, "dA = n - 1 must round-trip unchanged");
 }
 
 #[test]
