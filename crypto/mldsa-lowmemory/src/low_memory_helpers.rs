@@ -43,8 +43,8 @@ pub(crate) fn compute_w_row<P: MLDSAParams>(
 pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     rho: &[u8; 32],
     sig: &[u8; SIG_LEN],
-    t1: &Polynomial,
-    c: &Polynomial,
+    t1: Polynomial,
+    c_hat: &Polynomial,
     idx: usize,
 ) -> Result<Polynomial, ()> {
     // Algorithm 8: line 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
@@ -72,15 +72,15 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
         Az_acc.add_ntt(&tmp);
     }
 
-    let ct1 = compute_ct1(t1.clone(), c.clone());
-    fn compute_ct1(mut t1_i: Polynomial, mut c: Polynomial) -> Polynomial {
-        t1_i.shift_left_d();
-        t1_i.ntt();
-        c.ntt();
-        t1_i.multiply_ntt(&c);
+    // NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑), computed in place in the buffer `t1` arrived in.
+    let ct1 = {
+        let mut ct1 = t1;
+        ct1.shift_left_d();
+        ct1.ntt();
+        ct1.multiply_ntt(c_hat);
 
-        t1_i
-    }
+        ct1
+    };
 
     Az_acc.sub(&ct1);
     Az_acc.inv_ntt();
@@ -90,14 +90,14 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
 }
 
 pub(crate) fn compute_z_component<P: MLDSAParams>(
-    s1: &Polynomial,
+    s1: Polynomial,
     rho_p_p: &[u8; 64],
     c_hat: &Polynomial,
     kappa: u16,
     col: usize,
 ) -> Result<Option<Polynomial>, SignatureError> {
     let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
-    let mut s1_hat = s1.clone();
+    let mut s1_hat = s1;
     s1_hat.ntt();
     s1_hat.multiply_ntt(c_hat);
     let mut cs1 = s1_hat; // rename
@@ -109,11 +109,11 @@ pub(crate) fn compute_z_component<P: MLDSAParams>(
 }
 
 pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
-    s2: &Polynomial,
+    s2: Polynomial,
     w: &Polynomial,
     c_hat: &Polynomial,
 ) -> Option<Polynomial> {
-    let mut s2_hat = s2.clone();
+    let mut s2_hat = s2;
     s2_hat.ntt();
     s2_hat.multiply_ntt(c_hat);
     let mut cs2 = s2_hat; // rename
@@ -132,10 +132,10 @@ pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
 }
 
 pub(crate) fn compute_ct0_component<P: MLDSAParams>(
-    t0_row: &Polynomial,
+    t0_row: Polynomial,
     c_hat: &Polynomial,
 ) -> Option<Polynomial> {
-    let mut t0_hat = t0_row.clone();
+    let mut t0_hat = t0_row;
     t0_hat.ntt();
     t0_hat.multiply_ntt(c_hat);
     let mut ct0 = t0_hat; // rename

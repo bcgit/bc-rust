@@ -849,8 +849,8 @@ impl<
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
                     // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
                     // maybe because re-computing the intermediates adds more to the widest point of the alg?
-                    // &sk.compute_s1_row(col),
-                    &s_unpack::<P, _>(&s1_packed, col),
+                    // sk.compute_s1_row(col),
+                    s_unpack::<P, _>(&s1_packed, col),
                     &rho_p_p,
                     &c_hat,
                     kappa,
@@ -880,8 +880,8 @@ impl<
                 let mut tmp = match compute_w0cs2_component::<P>(
                     // [Optimization Note]:
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                    // &sk.compute_s2_row(row),
-                    &s_unpack::<P, _>(&s2_packed, row),
+                    // sk.compute_s2_row(row),
+                    s_unpack::<P, _>(&s2_packed, row),
                     &w,
                     &c_hat,
                 ) {
@@ -895,8 +895,8 @@ impl<
                 let ct0 = match compute_ct0_component::<P>(
                     // [Optimization Note]:
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                    // &sk.compute_t0_row(row), &c_hat) {
-                    &sk.compute_t0_row(row, &s1_packed, &s2_packed),
+                    // sk.compute_t0_row(row), &c_hat) {
+                    sk.compute_t0_row(row, &s1_packed, &s2_packed),
                     &c_hat,
                 ) {
                     Some(ct0) => ct0,
@@ -1008,7 +1008,11 @@ impl<
         // skip because this function is being handed mu
 
         // 8: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
-        let c = sample_in_ball::<P>(&unpack_c_tilde::<P>(sig));
+        let mut c_hat = sample_in_ball::<P>(&unpack_c_tilde::<P>(sig));
+        // Deviation from the FIPS: line 9 below reads NTT(𝑐) inside the per-row expression, but 𝑐
+        // does not depend on the row, so it is transformed once here and the 𝑘 rows share it. Same
+        // value, 𝑘−1 fewer NTTs, and no per-row clone of 𝑐. The signer does the same at lines 16-17.
+        c_hat.ntt();
 
         // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
         // ▷ hash it; this should match 𝑐_tilde
@@ -1018,7 +1022,13 @@ impl<
         for row in 0..P::k {
             let mut wp_approx = match {
                 // 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
-                compute_wp_approx_row::<P, SIG_LEN>(pk.rho(), sig, &pk.unpack_t1_row(row), &c, row)
+                compute_wp_approx_row::<P, SIG_LEN>(
+                    pk.rho(),
+                    sig,
+                    pk.unpack_t1_row(row),
+                    &c_hat,
+                    row,
+                )
             } {
                 Ok(wp_approx) => wp_approx,
                 // means the norm check on z failed
