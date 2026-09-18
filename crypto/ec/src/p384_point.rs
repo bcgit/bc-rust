@@ -121,6 +121,55 @@ impl P384JacobianPoint {
         result
     }
 
+    /// `self + other` for an `other` given in **affine** coordinates (`Z2 = 1`), or the identity
+    /// when `other_is_infinity` is TRUE (`x2`/`y2` are then ignored). The same group law and the
+    /// same branch-free discipline as [`Self::add`] -- generic-add and doubling candidates computed
+    /// unconditionally, the exceptional cases masked in -- but with `Z2 = 1` the generic formula
+    /// simplifies: `U1 = X1`, `S1 = Y1` and `Z3 = H * Z1`, which drops five of its sixteen field
+    /// multiplications. The fixed-base comb multiplier adds a table entry to its accumulator on
+    /// every round, and every table entry is affine or the identity, so it is the caller this
+    /// exists for; `pub(crate)` because a caller has to know its point really has `Z = 1`.
+    pub(crate) fn add_affine(
+        &self,
+        x2: &P384FieldElement,
+        y2: &P384FieldElement,
+        other_is_infinity: Condition<u64>,
+    ) -> Self {
+        let self_is_infinity = self.is_infinity();
+
+        // The generic mixed addition, computed unconditionally: `U1 = X1`, `S1 = Y1`.
+        let z1_sq = self.z.mul(&self.z);
+        let u2 = x2.mul(&z1_sq);
+        let s2 = y2.mul(&self.z).mul(&z1_sq);
+        let h = self.x.sub(&u2); // U1 - U2
+        let r = self.y.sub(&s2); // S1 - S2
+        let h_squared = h.mul(&h);
+        let g = h_squared.mul(&h); // H^3
+        let v = h_squared.mul(&self.x); // H^2 * U1
+        let g_neg = g.negate();
+        let acc = self.y.mul(&g_neg); // -S1 * H^3
+        let g2 = g_neg.add(&v).add(&v); // 2V - H^3
+        let x3 = r.mul(&r).sub(&g2); // R^2 + H^3 - 2V
+        let y3 = acc.add(&v.sub(&x3).mul(&r)); // -S1*H^3 + (V - X3)*R
+        let z3 = h.mul(&self.z); // H * Z1 * Z2 with Z2 = 1
+        let generic = Self { x: x3, y: y3, z: z3 };
+
+        let h_is_zero = h.is_zero();
+        let r_is_zero = r.is_zero();
+        let is_same_point = h_is_zero & r_is_zero;
+        let is_opposite_point = h_is_zero & !r_is_zero;
+        let doubled = self.double();
+        let other = Self { x: *x2, y: *y2, z: P384FieldElement::ONE };
+
+        // Same priority order as `add`: the identity cases override everything else.
+        let mut result = generic;
+        result = select_point(is_opposite_point, &Self::INFINITY, &result);
+        result = select_point(is_same_point, &doubled, &result);
+        result = select_point(self_is_infinity, &other, &result);
+        result = select_point(other_is_infinity, self, &result);
+        result
+    }
+
     /// `self + other` for points that are **public**, branching on the exceptional cases instead
     /// of computing every candidate and masking.
     ///
@@ -194,6 +243,37 @@ fn select_limbs(cond: Condition<u64>, a: &[u64; 6], b: &[u64; 6]) -> [u64; 6] {
 mod tests {
     use super::*;
     use crate::p384_domain::{G_X_LIMBS, G_Y_LIMBS};
+
+    #[test]
+    fn add_affine_agrees_with_add_on_every_case() {
+        let g = P384JacobianPoint::from_affine(
+            P384FieldElement::from_limbs(G_X_LIMBS),
+            P384FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        // A non-canonical-Z representation of G as well: `add_affine` reads `self.z`, so `self`
+        // must not be assumed affine even though `other` is.
+        let z = P384FieldElement::from_limbs(G_Y_LIMBS);
+        let z2 = z.mul(&z);
+        let scaled_g = P384JacobianPoint { x: g.x.mul(&z2), y: g.y.mul(&z2.mul(&z)), z };
+        let selves = [g, g.double(), g.negate(), P384JacobianPoint::INFINITY, scaled_g];
+        let others = [g, g.double(), g.negate()];
+        for a in selves {
+            for b in others {
+                let (bx, by) = b.to_affine().unwrap();
+                assert_eq!(
+                    a.add_affine(&bx, &by, Condition::<u64>::FALSE).to_affine(),
+                    a.add(&b).to_affine(),
+                    "add_affine disagrees with add"
+                );
+            }
+            // The identity flag must win regardless of the coordinates passed alongside it.
+            assert_eq!(
+                a.add_affine(&g.x, &g.y, Condition::<u64>::TRUE).to_affine(),
+                a.to_affine(),
+                "add_affine with the identity flag must return self"
+            );
+        }
+    }
 
     #[test]
     fn add_vartime_agrees_with_add_on_every_case() {

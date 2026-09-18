@@ -42,14 +42,15 @@ pub fn comb_multiply_base_point(k: &P521Scalar) -> P521JacobianPoint {
             j -= D as isize;
         }
         r = r.double();
-        r = r.add(&table_lookup(secret_index));
+        let (x, y, is_infinity) = table_lookup(secret_index);
+        r = r.add_affine(&x, &y, is_infinity);
     }
     r
 }
 
 /// Looks up comb table entry `secret_index`, scanning every one of the [`TABLE_SIZE`] entries
 /// under a mask. See [`crate::p256_comb::table_lookup`]'s docs.
-fn table_lookup(secret_index: usize) -> P521JacobianPoint {
+fn table_lookup(secret_index: usize) -> (P521FieldElement, P521FieldElement, Condition<u64>) {
     let mut x_limbs = [0u64; 9];
     let mut y_limbs = [0u64; 9];
     for i in 0..TABLE_SIZE {
@@ -61,17 +62,12 @@ fn table_lookup(secret_index: usize) -> P521JacobianPoint {
         ct::conditional_select(is_this_entry, &COMB_TABLE_Y[i], &y_limbs, &mut next_y);
         y_limbs = next_y;
     }
+    // Entry 0 is the point at infinity; every other entry is affine (Z == 1). The accumulator's
+    // `add_affine` takes the identity as a flag rather than as a `Z == 0` coordinate.
     let is_infinity = Condition::<u64>::is_equal(secret_index as u64, 0);
-    let mut z_limbs = [0u64; 9];
-    ct::conditional_select(
+    (
+        P521FieldElement::from_internal_limbs(x_limbs),
+        P521FieldElement::from_internal_limbs(y_limbs),
         is_infinity,
-        &P521FieldElement::ZERO.internal_limbs(),
-        &P521FieldElement::ONE.internal_limbs(),
-        &mut z_limbs,
-    );
-    P521JacobianPoint {
-        x: P521FieldElement::from_internal_limbs(x_limbs),
-        y: P521FieldElement::from_internal_limbs(y_limbs),
-        z: P521FieldElement::from_internal_limbs(z_limbs),
-    }
+    )
 }
