@@ -165,10 +165,17 @@ impl TestFrameworkSignature {
         assert_eq!(bytes_written, SIG_LEN);
         VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val).unwrap();
 
-        // the ::verify API should accept a sig value that's too long and just ignore the extra bytes
+        // A signature with trailing bytes is a different, malformed encoding, not a valid one in
+        // a roomy buffer: accepting it would let anyone mint unlimited distinct byte strings that
+        // all verify. Implementations report this either as a length error or as a plain
+        // verification failure; both are rejections, and either is fine.
         let mut sig_val_too_long = vec![1u8; SIG_LEN + 2];
         sig_val_too_long[..SIG_LEN].copy_from_slice(&sig_val);
-        VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val).unwrap();
+        match VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val_too_long) {
+            Err(SignatureError::LengthError(_))
+            | Err(SignatureError::SignatureVerificationFailed) => (),
+            other => panic!("a signature with trailing bytes must be rejected, got {other:?}"),
+        }
     }
 
     /// Test all the members of traits [`PHSigner`] and [`PHSignatureVerifier`] against the given input-output pair.
