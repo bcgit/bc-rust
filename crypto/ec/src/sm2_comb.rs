@@ -57,7 +57,8 @@ pub fn comb_multiply_base_point(k: &Sm2Scalar) -> Sm2JacobianPoint {
             j -= D as isize;
         }
         r = r.double();
-        r = r.add(&table_lookup(secret_index));
+        let (x, y, is_infinity) = table_lookup(secret_index);
+        r = r.add_affine(&x, &y, is_infinity);
     }
     r
 }
@@ -65,7 +66,7 @@ pub fn comb_multiply_base_point(k: &Sm2Scalar) -> Sm2JacobianPoint {
 /// Looks up comb table entry `secret_index`, scanning every one of the [`TABLE_SIZE`] entries
 /// under a mask so the index never steers which memory is read. See
 /// [`crate::p256_comb::table_lookup`]'s docs for the bc-java pattern this mirrors.
-fn table_lookup(secret_index: usize) -> Sm2JacobianPoint {
+fn table_lookup(secret_index: usize) -> (Sm2FieldElement, Sm2FieldElement, Condition<u64>) {
     let mut x_limbs = [0u64; 4];
     let mut y_limbs = [0u64; 4];
     for i in 0..TABLE_SIZE {
@@ -77,18 +78,12 @@ fn table_lookup(secret_index: usize) -> Sm2JacobianPoint {
         ct::conditional_select(is_this_entry, &COMB_TABLE_Y[i], &y_limbs, &mut next_y);
         y_limbs = next_y;
     }
-    // Entry 0 is the point at infinity (Z == 0); every other entry is affine (Z == 1).
+    // Entry 0 is the point at infinity; every other entry is affine (Z == 1). The accumulator's
+    // `add_affine` takes the identity as a flag rather than as a `Z == 0` coordinate.
     let is_infinity = Condition::<u64>::is_equal(secret_index as u64, 0);
-    let mut z_limbs = [0u64; 4];
-    ct::conditional_select(
+    (
+        Sm2FieldElement::from_internal_limbs(x_limbs),
+        Sm2FieldElement::from_internal_limbs(y_limbs),
         is_infinity,
-        &Sm2FieldElement::ZERO.internal_limbs(),
-        &Sm2FieldElement::ONE.internal_limbs(),
-        &mut z_limbs,
-    );
-    Sm2JacobianPoint {
-        x: Sm2FieldElement::from_internal_limbs(x_limbs),
-        y: Sm2FieldElement::from_internal_limbs(y_limbs),
-        z: Sm2FieldElement::from_internal_limbs(z_limbs),
-    }
+    )
 }
