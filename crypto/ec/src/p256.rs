@@ -170,28 +170,43 @@ impl P256FieldElement {
     /// `self^-1 mod p`, or `0` if `self` is `0`.
     ///
     /// Computed as `self^(p-2) mod p` (Fermat's little theorem: `self^(p-1) = 1` for `self != 0`,
-    /// FIPS 186-5 Appendix B.1, whose reference algorithm this deliberately does not use --
-    /// its own text sanctions the substitution: *"The algorithm given below is for reference
-    /// purposes. Other (constant time) algorithms that produce an equivalent result may be
-    /// used."* The exponent `p-2` is a compile-time public constant, so the fixed
-    /// square-then-conditionally-multiply sequence below takes the same path on every call
-    /// regardless of `self`. The "conditionally" is an ordinary `if` on a bit of that constant,
-    /// not a mask: the condition is known at compile time, so which operations run -- and in what
-    /// order -- is fixed before `self` exists, and no step of the computation branches on `self`.
-    /// (An earlier version masked instead, multiplying on every bit and selecting the result.
-    /// That bought no additional secret-independence, since the bit was never secret, and cost a
-    /// full field multiplication per exponent bit.)
+    /// FIPS 186-5 Appendix B.1, whose reference algorithm this deliberately does not use -- its
+    /// own text sanctions the substitution: *"The algorithm given below is for reference purposes.
+    /// Other (constant time) algorithms that produce an equivalent result may be used."*), by a
+    /// fixed 4-bit-window exponentiation: a table of `self^0 .. self^15` (14 multiplications),
+    /// then for each nibble of `p - 2` from the top, four squarings and one multiplication by the
+    /// table entry the nibble selects, skipped when the nibble is zero. That is `bits - 1`
+    /// squarings either way, but at most `14 + bits/4` multiplications instead of one per set bit
+    /// -- roughly half as many for these exponents -- against the bit-at-a-time version this
+    /// replaces.
+    ///
+    /// Constant time in `self`: the exponent is a compile-time public constant, so which nibbles
+    /// are zero -- hence which table entries are read, and in what order -- is fixed before `self`
+    /// exists. Indexing the table by a nibble of that constant is not a secret-dependent memory
+    /// access, and the `if` on it is a branch on public data, exactly as the bit test it replaces
+    /// was. No step branches on or indexes by `self`.
     pub fn invert(&self) -> Self {
+        // self^0 .. self^15, indexed by nibble value.
+        let mut table = [Self::ONE; 16];
+        table[1] = *self;
+        for i in 2..16 {
+            table[i] = table[i - 1].mul(self);
+        }
+
         let mut result = Self::ONE;
         for limb_idx in (0..4).rev() {
             let limb = P_MINUS_2_LIMBS[limb_idx];
-            for bit in (0..64).rev() {
-                result = result.square();
-                // `limb` is one word of a compile-time constant exponent and `bit` a loop
-                // index, so this branch is on public data only: the sequence of squarings and
-                // multiplications is fixed at compile time and identical on every call.
-                if (limb >> bit) & 1 == 1 {
-                    result = result.mul(self);
+            for nibble_idx in (0..16).rev() {
+                for _ in 0..4 {
+                    result = result.square();
+                }
+                // `limb` is one word of a compile-time constant exponent and `nibble_idx` a loop
+                // index, so both the index into `table` and this branch depend on public data
+                // only: the sequence of operations is fixed at compile time and identical on every
+                // call.
+                let nibble = ((limb >> (4 * nibble_idx)) & 0xf) as usize;
+                if nibble != 0 {
+                    result = result.mul(&table[nibble]);
                 }
             }
         }
