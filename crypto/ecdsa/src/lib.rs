@@ -157,6 +157,8 @@ pub mod extra_bits;
 pub mod extra_bits_bp256r1;
 pub mod extra_bits_bp384r1;
 pub mod extra_bits_bp512r1;
+pub mod extra_bits_p256k1;
+pub mod extra_bits_p384;
 pub mod keys;
 pub mod keys_bp256r1;
 pub mod keys_bp384r1;
