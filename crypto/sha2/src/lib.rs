@@ -47,36 +47,29 @@
 //!
 //! See [hkdf]
 //!
-//! # Memory Usage
+//! # Cloning mid-stream
 //!
-//! No heap memory is used by the algorithms themselves; the `Vec<u8>`-returning convenience methods
-//! allocate only the output buffer, and the `*_out` variants allocate nothing.
+//! Sometimes it is necessary to clone the state of the hash function after absorbing some input, for
+//! example, if you have absorbed a large file and need to hash it with two different trailer suffixes.
 //!
-//! | Object                                                   | Size (bytes) |
-//! |----------------------------------------------------------|--------------|
-//! | `SHA224`, `SHA256`                                       | 112          |
-//! | `SHA384`, `SHA512`                                       | 208          |
-//! | Suspended `SHA224`/`SHA256` state                        | 108          |
-//! | Suspended `SHA384`/`SHA512` state                        | 204          |
+//! The [`SHA256Internal`] and [`SHA512Internal`] structs impl [`Clone`] for this purpose.
 //!
-//! The object holds the 8-word chaining value plus one block of buffered input. The compression
-//! function additionally uses a 64-word (SHA-256 family, 256 bytes) or 80-word (SHA-512 family,
-//! 640 bytes) message schedule on the stack for the duration of a call.
+//! ```rust
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha2 as sha2;
 //!
-//! # Security Considerations
+//! let mut sha2 = sha2::SHA256::new();
+//! sha2.do_update(b"Some input");
+//! // Clone it so that we can finish this instance, and then continue feeding in more input.
+//! let mut sha2_2 = sha2.clone();
 //!
-//! * SHA-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively.
-//! * SHA-2 is a Merkle–Damgård construction and is therefore subject to length-extension:
-//!   `H(k || m)` is not a secure MAC. Use HMAC ([`crate::hmac`]) for keyed hashing.
-//! * SHA-224 and SHA-384 are truncations of SHA-256 and SHA-512 with distinct initial values, and
-//!   are not vulnerable to length extension in the same direct way, but should still not be used as
-//!   `H(k || m)` MACs.
-//! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
-//!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
-//!   locals during compression are not zeroized.
-//! * The implementation contains no data-dependent branches or table lookups.
-//! * Messages up to 2^64 bytes are supported (FIPS 180-4 permits 2^64 bits for SHA-224/256 and
-//!   2^128 bits for SHA-384/512; the SHA-512 family limit here is 2^67 bits).
+//! // Finish the first instance
+//! let output: Vec<u8> = sha2.do_final();
+//!
+//! // Feed more into the second instance then squeeze it
+//! sha2_2.do_update(b"Some more input");
+//! let output2 = sha2_2.do_final();
+//! ```
 //!
 //! # Suspending and resuming execution
 //!
@@ -108,6 +101,37 @@
 //! sha2_resumed.do_update(msg_part2);
 //! let h: Vec<u8> = sha2_resumed.do_final();
 //! ```
+//!
+//! # Memory Usage
+//!
+//! No heap memory is used by the algorithms themselves; the `Vec<u8>`-returning convenience methods
+//! allocate only the output buffer, and the `*_out` variants allocate nothing.
+//!
+//! | Object                                                   | Size (bytes) |
+//! |----------------------------------------------------------|--------------|
+//! | `SHA224`, `SHA256`                                       | 112          |
+//! | `SHA384`, `SHA512`                                       | 208          |
+//! | Suspended `SHA224`/`SHA256` state                        | 108          |
+//! | Suspended `SHA384`/`SHA512` state                        | 204          |
+//!
+//! The object holds the 8-word chaining value plus one block of buffered input. The compression
+//! function additionally uses a 64-word (SHA-256 family, 256 bytes) or 80-word (SHA-512 family,
+//! 640 bytes) message schedule on the stack for the duration of a call.
+//!
+//! # Security Considerations
+//!
+//! * SHA-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively.
+//! * SHA-2 is a Merkle–Damgård construction and is therefore subject to length-extension:
+//!   `H(k || m)` is not a secure MAC. Use HMAC ([`crate::hmac`]) for keyed hashing.
+//! * SHA-224 and SHA-384 are truncations of SHA-256 and SHA-512 with distinct initial values, and
+//!   are not vulnerable to length extension in the same direct way, but should still not be used as
+//!   `H(k || m)` MACs.
+//! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
+//!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
+//!   locals during compression are not zeroized.
+//! * The implementation contains no data-dependent branches or table lookups.
+//! * Messages up to 2^64 bytes are supported (FIPS 180-4 permits 2^64 bits for SHA-224/256 and
+//!   2^128 bits for SHA-384/512; the SHA-512 family limit here is 2^67 bits).
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]

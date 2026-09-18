@@ -744,21 +744,22 @@ mod hkdf_tests {
         // A helper that exercises the full round-trip for one HKDF variant. A concrete `&KeyMaterial128`
         // works for `do_extract_init` (which wants a `Sized` `&impl KeyMaterialTrait`) and coerces to
         // `&dyn KeyMaterialTrait` for the serialization APIs.
-        fn round_trip<const HASH_LEN: usize, const LEN: usize, H>(
+        fn round_trip<const HASH_LEN: usize, const LEN: usize, H, P>(
             salt: &KeyMaterial128,
             part1: &[u8],
             part2: &[u8],
         ) where
             H: Hash + HashAlgParams + Default,
-            HKDF<H, HASH_LEN, LEN>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
+            P: bouncycastle_hmac::HMACParams,
+            HKDF<H, P, HASH_LEN, LEN>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
         {
-            let hkdf = HKDF::<H, HASH_LEN, LEN>::new();
+            let hkdf = HKDF::<H, P, HASH_LEN, LEN>::new();
 
             // it can be serialized pre-init, which is kinda a no-op, but at least it works.
             let serialized_state = hkdf.suspend();
             assert_eq!(serialized_state.len(), LEN);
             let mut hkdf =
-                HKDF::<H, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
+                HKDF::<H, P, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
 
             hkdf.do_extract_init(salt).unwrap();
             hkdf.do_extract_update_bytes(part1).unwrap();
@@ -775,19 +776,25 @@ mod hkdf_tests {
 
             // resume (re-supplying the salt), feed the identical remaining IKM, and compare PRKs
             let mut resumed =
-                HKDF::<H, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
+                HKDF::<H, P, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
             resumed.do_extract_update_bytes(part2).unwrap();
             let prk_resumed = resumed.do_extract_final().unwrap();
 
             assert_eq!(prk.ref_to_bytes(), prk_resumed.ref_to_bytes());
         }
 
-        round_trip::<SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN, SHA256>(
-            &salt, part1, part2,
-        );
-        round_trip::<SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN, SHA512>(
-            &salt, part1, part2,
-        );
+        round_trip::<
+            SUSPENDED_SHA256_STATE_LEN,
+            SUSPENDED_HKDF_SHA256_STATE_LEN,
+            SHA256,
+            bouncycastle_sha2::hmac::HMAC_SHA256Params,
+        >(&salt, part1, part2);
+        round_trip::<
+            SUSPENDED_SHA512_STATE_LEN,
+            SUSPENDED_HKDF_SHA512_STATE_LEN,
+            SHA512,
+            bouncycastle_sha2::hmac::HMAC_SHA512Params,
+        >(&salt, part1, part2);
 
         // Test the guard for invalid states
         // testing just on HKDF_SHA256
