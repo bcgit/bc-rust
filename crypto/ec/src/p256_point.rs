@@ -1,7 +1,7 @@
 //! Branch-free Jacobian-coordinate point arithmetic on the P-256 curve `y^2 = x^3 - 3x + b`.
 //!
 //! A point `(X, Y, Z)` represents the affine point `(X/Z^2, Y/Z^3)`; `Z = 0` is the point at
-//! infinity, represented canonically as `(1, 1, 0)` (matching bc-java's convention).
+//! infinity, represented canonically as `(1, 1, 0)`.
 //!
 //! # Formulas
 //!
@@ -9,15 +9,14 @@
 //! `S = 4XY^2`, `T = 8Y^4`, `X3 = M^2 - 2S`, `Y3 = M(S - X3) - T`, `Z3 = 2YZ`), and
 //! [`P256JacobianPoint::add`]'s generic-case formula is the standard Jacobian addition (`H = U1 -
 //! U2`, `R = S1 - S2`, `X3 = R^2 + H^3 - 2V`, `Y3 = R(V - X3) - S1*H^3`, `Z3 = H*Z1*Z2`, where `U1
-//! = X1*Z2^2`, `S1 = Y1*Z2^3`, `U2 = X2*Z1^2`, `S2 = Y2*Z1^3`, `V = H^2*U1`) -- both ported from
-//! bc-java's `SecP256R1Point.twice`/`.add`.
+//! = X1*Z2^2`, `S1 = Y1*Z2^3`, `U2 = X2*Z1^2`, `S2 = Y2*Z1^3`, `V = H^2*U1`).
 //!
-//! bc-java's versions of these formulas are reached through `if` branches: same-point and opposite-
-//! point (negation) detection, and points already in affine form (`Z = 1`), are all handled by
-//! branching on `H == 0`, `R == 0`, `Z.isOne()`, etc. On a secret point (a private key's public
-//! point during signing, or an intermediate value in a scalar multiplication holding a secret
-//! scalar), branching on any of these is exactly the kind of secret-dependent control flow this
-//! workspace's constant-time rules forbid. So [`P256JacobianPoint::add`] instead computes the
+//! A textbook implementation of these formulas reaches same-point and opposite-point (negation)
+//! detection, and points already in affine form (`Z = 1`), through `if` branches -- on `H == 0`,
+//! `R == 0`, `Z.is_one()`, etc. On a secret point (a private key's public point during signing, or
+//! an intermediate value in a scalar multiplication holding a secret scalar), branching on any of
+//! these is exactly the kind of secret-dependent control flow this workspace's constant-time rules
+//! forbid. So [`P256JacobianPoint::add`] instead computes the
 //! generic-add candidate and the doubling candidate *unconditionally*, computes the four
 //! exceptional conditions (`self` infinite, `other` infinite, same point, opposite point) as
 //! [`Condition`] masks, and masks the correct candidate into the result -- never branching on which
