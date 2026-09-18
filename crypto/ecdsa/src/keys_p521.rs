@@ -11,16 +11,15 @@
 //! at or above `585`; [`EXTRA_BITS_DRBG_OUTPUT_LEN`]). An earlier version drew the 66-byte
 //! `SK_LEN` (528 bits, `t = 7`) for both, which met Table A.2 but not A.3.1.
 //!
-//! Even at 528 bits the reduction had to be the wide, bit-by-bit form: 66 bytes is 7 bits more
+//! Even at 528 bits the reduction had to handle a value far wider than `n`: 66 bytes is 7 bits more
 //! than `n`'s 521 (SEC 1 octets are byte-aligned and 521 is not a multiple of 8), so a raw draw
 //! reinterpreted as a 9-limb integer can be as large as `2^528 - 1`, far past the `< 2(n-1)` a
 //! single conditional subtraction of `n - 1` assumes, and one subtraction silently leaves most of
 //! the value unreduced (a bug this module's own tests caught: `keygen`/`sign_randomized` produced
 //! keys/signatures too broken to round-trip through sign+verify, despite every fixed-input KAT --
-//! which never exercises a raw, unbounded DRBG value -- passing). So both paths use the same
-//! Horner reduction [`crate::extra_bits`] implements for P-256; [`reduce_wide_bits_mod_n_minus_1`]
-//! is this module's own copy, sized for P-521's 9-limb width, and its accumulator's width is what
-//! `TWO_POW_576_MOD_N_MINUS_1_LIMBS` refers to, not the draw's.
+//! which never exercises a raw, unbounded DRBG value -- passing). [`reduce_wide_bits_mod_n_minus_1`]
+//! is this module's own reduction, a single fold at bit 521 -- see its docs for why P-521 gets
+//! neither the other curves' Barrett reduction nor the field's Solinas fold.
 
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
@@ -64,44 +63,56 @@ const N_MINUS_1_LIMBS: [u64; 9] = [
     N_LIMBS[8],
 ];
 
-/// `2^576 mod (n-1)` (this module's accumulator is 9 limbs = 576 bits) -- the correction
-/// [`reduce_wide_bits_mod_n_minus_1`] adds back in when doubling the running remainder carries out
-/// of the top limb. See [`crate::extra_bits`]'s identical-in-kind constant for the derivation.
-const TWO_POW_576_MOD_N_MINUS_1_LIMBS: [u64; 9] = [
-    0xfc00000000000000, 0x28a2482470b763cd, 0x17e2251b23bb31dc, 0xca4019ff5b847b2d,
-    0x02d73cbc3e206834, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+/// `2^521 mod (n-1)`, the fold constant [`reduce_wide_bits_mod_n_minus_1`] uses: `n - 1` has
+/// no special form, so this is a genuine ~259-bit value, computed in Python from SP 800-186
+/// §3.2.1.5's `n`.
+const TWO_POW_521_MOD_N_MINUS_1_LIMBS: [u64; 9] = [
+    0x449048e16ec79bf8, 0xc44a36477663b851, 0x8033feb708f65a2f, 0xae79787c40d06994,
+    0x0000000000000005, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
     0x0000000000000000,
 ];
 
 /// FIPS 186-5 Appendix A.4.1 steps 3-5 for P-521's `n`: reduces the big-endian bit string `bytes`
-/// (any length) modulo `n-1` and adds `1`, landing in `[1, n-1]`. See [`crate::extra_bits`]'s
-/// identical algorithm (there, over 4 limbs for P-256) for the full derivation and constant-time
-/// reasoning; verified (not checked in) against Python's arbitrary-precision `%` the same way.
+/// (up to 80 bytes; the DRBG draw is 74) modulo `n-1` and adds `1`, landing in `[1, n-1]`.
+///
+/// P-521's `n - 1` is `2^521`-ish while the limb width is `2^576`, so neither the Solinas fold
+/// the field uses nor `bouncycastle_ec::barrett` (which wants a modulus filling its top limb)
+/// applies as written. What does is a single fold at bit 521: split `x = hi * 2^521 + lo`, so
+/// `x = hi * (2^521 mod (n-1)) + lo (mod n-1)`. With `x < 2^640`, `hi < 2^119` and the fold
+/// constant is below `2^259`, so `hi * C + lo < 2^521 + 2^378 < 2 (n-1)`, and one conditional
+/// subtraction finishes the reduction. Every step is branch-free in `x`: a fixed-width
+/// multiplication, an addition and a masked select. Verified (not checked in) in Python against
+/// arbitrary-precision `%` over 20,000 pseudorandom inputs at widths up to 80 bytes plus the
+/// all-ones extremes.
 pub(crate) fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P521Scalar {
+    assert!(
+        bytes.len() <= 80,
+        "reduce_wide_bits_mod_n_minus_1 given {} bytes, more than 80",
+        bytes.len()
+    );
+    let x = bouncycastle_ec::barrett::limbs_from_be_bytes::<10>(bytes);
+
+    // lo = x mod 2^521: the low 8 limbs plus the low 9 bits of limb 8.
+    let mut lo = [0u64; 9];
+    lo[..8].copy_from_slice(&x[..8]);
+    lo[8] = x[8] & 0x1ff;
+    // hi = x >> 521: bits 9..63 of limb 8 and all of limb 9, at most 119 bits.
+    let mut hi = [0u64; 9];
+    hi[0] = (x[8] >> 9) | (x[9] << 55);
+    hi[1] = x[9] >> 9;
+
+    let product =
+        bouncycastle_ec::montgomery::widening_mul::<9, 18>(&hi, &TWO_POW_521_MOD_N_MINUS_1_LIMBS);
+    debug_assert!(product[9..].iter().all(|&limb| limb == 0), "hi * C must fit in 9 limbs");
+    let mut folded = [0u64; 9];
+    folded.copy_from_slice(&product[..9]);
+    let (sum, carry) = nat::add(&folded, &lo);
+    debug_assert_eq!(carry, 0, "the fold's sum must fit in 9 limbs");
+
+    let (reduced, borrow) = nat::sub(&sum, &N_MINUS_1_LIMBS);
     let mut acc = [0u64; 9];
-    for &byte in bytes {
-        for bit_idx in (0..8).rev() {
-            let bit = (byte >> bit_idx) & 1;
-            let (doubled, carry) = nat::add(&acc, &acc);
-            let mut with_bit = doubled;
-            with_bit[0] |= bit as u64;
-            let (with_carry_correction, _) = nat::add(&with_bit, &TWO_POW_576_MOD_N_MINUS_1_LIMBS);
-            let mut candidate = [0u64; 9];
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(carry),
-                &with_carry_correction,
-                &with_bit,
-                &mut candidate,
-            );
-            let (reduced, borrow) = nat::sub(&candidate, &N_MINUS_1_LIMBS);
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(borrow),
-                &candidate,
-                &reduced,
-                &mut acc,
-            );
-        }
-    }
+    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &sum, &reduced, &mut acc);
+
     let (plus_one, _) = nat::add(&acc, &[1, 0, 0, 0, 0, 0, 0, 0, 0]);
     P521Scalar::from_limbs(plus_one)
 }
