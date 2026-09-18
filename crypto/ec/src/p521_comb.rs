@@ -65,13 +65,13 @@ fn table_lookup(secret_index: usize) -> P521JacobianPoint {
     let mut z_limbs = [0u64; 9];
     ct::conditional_select(
         is_infinity,
-        &P521FieldElement::ZERO.to_limbs(),
-        &P521FieldElement::ONE.to_limbs(),
+        &P521FieldElement::ZERO.internal_limbs(),
+        &P521FieldElement::ONE.internal_limbs(),
         &mut z_limbs,
     );
     P521JacobianPoint {
-        x: P521FieldElement::from_limbs(x_limbs),
-        y: P521FieldElement::from_limbs(y_limbs),
-        z: P521FieldElement::from_limbs(z_limbs),
+        x: P521FieldElement::from_internal_limbs(x_limbs),
+        y: P521FieldElement::from_internal_limbs(y_limbs),
+        z: P521FieldElement::from_internal_limbs(z_limbs),
     }
 }

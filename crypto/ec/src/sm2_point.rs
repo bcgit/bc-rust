@@ -183,9 +183,21 @@ fn select_point(
     b: &Sm2JacobianPoint,
 ) -> Sm2JacobianPoint {
     Sm2JacobianPoint {
-        x: Sm2FieldElement::from_limbs(select_limbs(cond, &a.x.to_limbs(), &b.x.to_limbs())),
-        y: Sm2FieldElement::from_limbs(select_limbs(cond, &a.y.to_limbs(), &b.y.to_limbs())),
-        z: Sm2FieldElement::from_limbs(select_limbs(cond, &a.z.to_limbs(), &b.z.to_limbs())),
+        x: Sm2FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.x.internal_limbs(),
+            &b.x.internal_limbs(),
+        )),
+        y: Sm2FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.y.internal_limbs(),
+            &b.y.internal_limbs(),
+        )),
+        z: Sm2FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.z.internal_limbs(),
+            &b.z.internal_limbs(),
+        )),
     }
 }
 

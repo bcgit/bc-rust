@@ -62,13 +62,13 @@ fn table_lookup(secret_index: usize) -> Bp256r1JacobianPoint {
     let mut z_limbs = [0u64; 4];
     ct::conditional_select(
         is_infinity,
-        &Bp256r1FieldElement::ZERO.to_limbs(),
-        &Bp256r1FieldElement::ONE.to_limbs(),
+        &Bp256r1FieldElement::ZERO.internal_limbs(),
+        &Bp256r1FieldElement::ONE.internal_limbs(),
         &mut z_limbs,
     );
     Bp256r1JacobianPoint {
         x: Bp256r1FieldElement::from_limbs(x_limbs),
         y: Bp256r1FieldElement::from_limbs(y_limbs),
-        z: Bp256r1FieldElement::from_limbs(z_limbs),
+        z: Bp256r1FieldElement::from_internal_limbs(z_limbs),
     }
 }
