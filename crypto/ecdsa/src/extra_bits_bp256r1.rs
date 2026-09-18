@@ -7,8 +7,9 @@
 //!
 //! # Why brainpoolP256r1 needs this at all
 //!
-//! Unlike P-384/P-521/secp256k1 (each needing only a single conditional subtraction of `n-1` on
-//! exactly-`n`-width input, per those curves' own `keys_*.rs` docs), brainpoolP256r1's `n` is not
+//! Unlike P-384/P-521/secp256k1 (whose `n` is so close to a power of two that Appendix A.4.1's
+//! bias bound holds with no extra bits, and which draw them only because Appendix A.3.1 demands
+//! `t >= 64` -- see `crate::extra_bits_p384`'s docs), brainpoolP256r1's `n` is not
 //! close to a power of two: `2^256 - n` is about a third of `2^256`, not a small remainder. FIPS
 //! 186-5 Appendix A.4.1 step 2's bias-bound check (`2ρ(1-ρ)(n-1) > ε·N`, `ε = 2^-64`) was
 //! evaluated directly (in Python, against `n`'s actual value, not assumed by analogy to any other

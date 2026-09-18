@@ -7,8 +7,10 @@
 //!
 //! # Why brainpoolP512r1 needs this at all
 //!
-//! Like both other brainpool curves in this crate (and unlike P-384/P-521/secp256k1), this
-//! curve's `n` is not close to a power of two. FIPS 186-5 Appendix A.4.1 step 2's bias-bound check
+//! Like both other brainpool curves in this crate (and unlike P-384/P-521/secp256k1, whose `n`
+//! passes Appendix A.4.1's bound with no extra bits and which draw them only for Appendix
+//! A.3.1's `t >= 64` -- see `crate::extra_bits_p384`'s docs), this curve's `n` is not close to a
+//! power of two. FIPS 186-5 Appendix A.4.1 step 2's bias-bound check
 //! (`2ρ(1-ρ)(n-1) > ε·N`, `ε = 2^-64`) was evaluated directly (in Python, against `n`'s actual
 //! value) for `N = 2^l` at increasing `l`: `l = 512` (matching `n`'s own bit length) fails the
 //! check, and the smallest passing `l` is `575`; this crate uses `l = 576` (72 bytes,
