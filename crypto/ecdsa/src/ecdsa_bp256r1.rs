@@ -23,8 +23,8 @@ use bouncycastle_ec::nat;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::secret::Secret;
 
-/// Raw `r || s` signature length: two 32-byte field-width integers (the plan's §6.4 choice of
-/// default encoding). [`ECDSABp256r1::sign_der`]/[`ECDSABp256r1::verify_der`] offer the RFC 3279
+/// Raw `r || s` signature length: two 32-byte field-width integers, the default encoding.
+/// [`ECDSABp256r1::sign_der`]/[`ECDSABp256r1::verify_der`] offer the RFC 3279
 /// §2.2.3 DER `SEQUENCE { r, s }` alternative via [`crate::der`], for interop that needs it.
 pub const SIG_LEN: usize = 64;
 
