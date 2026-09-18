@@ -21,7 +21,7 @@
 //!
 //! `X` is DRBG output destined to become a secret `d` or `k` once step 3 adds `1`, so this is
 //! exactly the kind of "value derived from a private scalar" this workspace's constant-time rules
-//! (`bouncycastle_ec`'s crate docs, rule 1) forbid branching on. [`reduce_wide_bits_mod_n_minus_1`]
+//! (see `bouncycastle_ec`'s crate docs) forbid branching on. [`reduce_wide_bits_mod_n_minus_1`]
 //! is [`bouncycastle_ec::barrett`]'s constant-time Barrett reduction with `m = n - 1`: two
 //! fixed-width multiplications and three masked conditional subtractions, none of which branches
 //! or indexes on `X`. (An earlier version reduced `X` one bit at a time with a doubling and a
