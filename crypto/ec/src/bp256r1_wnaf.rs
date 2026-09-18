@@ -3,14 +3,24 @@
 //! module's docs for the full derivation and verification methodology -- with the limb count
 //! swapped for brainpoolP256r1's (`WNAF_LEN = 257`, one more than `n`'s 256-bit length, same
 //! margin as P-256's own `257 = 256 + 1`).
+//!
+//! `G`'s odd multiples are a compile-time affine table (`bp256r1_wnaf_table`, width 7) added by mixed
+//! addition; only `Q`'s table is built per call. See [`crate::p256_wnaf`].
 
 use crate::bp256r1::Bp256r1FieldElement;
-use crate::bp256r1_domain::{G_X_LIMBS, G_Y_LIMBS};
 use crate::bp256r1_point::Bp256r1JacobianPoint;
 use crate::bp256r1_scalar::Bp256r1PublicScalar;
+use crate::bp256r1_wnaf_table::{G_ODD_MULTIPLES_X, G_ODD_MULTIPLES_Y};
 use crate::nat;
 
+/// Window for `Q`, whose odd multiples are computed per call: 8 point additions to build the
+/// table, one addition per ~6 digits to use it.
 const WIDTH: usize = 5;
+/// Window for `G`, whose odd multiples are a compile-time table
+/// ([`G_ODD_MULTIPLES_X`]/[`G_ODD_MULTIPLES_Y`]): nothing to build, so the widest window a
+/// signed `i8` digit allows, giving one addition per ~8 digits instead of ~6, and every one of
+/// them a mixed addition against an affine entry.
+const G_WIDTH: usize = 7;
 const WNAF_LEN: usize = 257;
 // Mutating this expression (e.g. `WIDTH - 2` -> `+ 2`) only grows the table `odd_multiples` builds
 // and `lookup_signed` reads from; the actual digit range `compute_wnaf` can produce is bounded by
@@ -23,21 +33,16 @@ pub fn shamir_multiply(
     v: &Bp256r1PublicScalar,
     q: &Bp256r1JacobianPoint,
 ) -> Bp256r1JacobianPoint {
-    let du = compute_wnaf(u.to_limbs());
-    let dv = compute_wnaf(v.to_limbs());
+    let du = compute_wnaf(u.to_limbs(), G_WIDTH);
+    let dv = compute_wnaf(v.to_limbs(), WIDTH);
 
-    let g = Bp256r1JacobianPoint::from_affine(
-        Bp256r1FieldElement::from_limbs(G_X_LIMBS),
-        Bp256r1FieldElement::from_limbs(G_Y_LIMBS),
-    );
-    let table_g = odd_multiples(&g);
     let table_q = odd_multiples(q);
 
     let mut r = Bp256r1JacobianPoint::INFINITY;
     for i in (0..WNAF_LEN).rev() {
         r = r.double();
-        if let Some(add_g) = lookup_signed(&table_g, du[i]) {
-            r = r.add_vartime(&add_g);
+        if let Some((x, y)) = lookup_signed_g(du[i]) {
+            r = r.add_vartime_affine(&x, &y);
         }
         if let Some(add_q) = lookup_signed(&table_q, dv[i]) {
             r = r.add_vartime(&add_q);
@@ -57,9 +62,9 @@ fn shr1(limbs: &[u64; 4]) -> [u64; 4] {
     ]
 }
 
-/// The width-[`WIDTH`] wNAF digits of `k`, LSB-first; unused trailing entries are `0`. Not
+/// The width-`width` wNAF digits of `k` (`width` at most 7, so a digit fits an `i8`), LSB-first; unused trailing entries are `0`. Not
 /// constant time: only ever called on public scalars (see the module docs).
-fn compute_wnaf(k_limbs: [u64; 4]) -> [i8; WNAF_LEN] {
+fn compute_wnaf(k_limbs: [u64; 4], width: usize) -> [i8; WNAF_LEN] {
     let mut digits = [0i8; WNAF_LEN];
     let mut k = k_limbs;
     let mut pos = 0;
@@ -71,9 +76,9 @@ fn compute_wnaf(k_limbs: [u64; 4]) -> [i8; WNAF_LEN] {
             // step below actually rely on. A degenerate mask just makes this compute a
             // non-minimal (but still exactly reconstructing `k`) signed-digit sequence -- see
             // `crate::p521_wnaf`'s identical case for the full argument and verification.
-            let mut digit = (k[0] & ((1 << WIDTH) - 1)) as i16;
-            if digit >= 1 << (WIDTH - 1) {
-                digit -= 1 << WIDTH;
+            let mut digit = (k[0] & ((1 << width) - 1)) as i16;
+            if digit >= 1 << (width - 1) {
+                digit -= 1 << width;
             }
             k = if digit >= 0 {
                 let (new_k, borrow) = nat::sub(&k, &[digit as u64, 0, 0, 0]);
@@ -124,4 +129,16 @@ fn lookup_signed(
     } else {
         Some(table[(-digit as usize - 1) / 2].negate())
     }
+}
+
+/// `digit * G` for a width-[`G_WIDTH`] digit, read from the compile-time table of odd multiples
+/// of `G` as affine coordinates (negating `y` for a negative digit), or `None` for digit `0`.
+fn lookup_signed_g(digit: i8) -> Option<(Bp256r1FieldElement, Bp256r1FieldElement)> {
+    if digit == 0 {
+        return None;
+    }
+    let index = (digit.unsigned_abs() as usize - 1) / 2;
+    let x = Bp256r1FieldElement::from_limbs(G_ODD_MULTIPLES_X[index]);
+    let y = Bp256r1FieldElement::from_limbs(G_ODD_MULTIPLES_Y[index]);
+    Some(if digit > 0 { (x, y) } else { (x, y.negate()) })
 }

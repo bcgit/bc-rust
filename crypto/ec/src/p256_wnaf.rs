@@ -14,8 +14,12 @@
 //! computes this the standard way: while the running value is nonzero, if it's odd, take
 //! `digit = value mod 2^w`, recentre it into `(-2^(w-1), 2^(w-1)]` if it's `>= 2^(w-1)`, and
 //! subtract it off (a small, `< 2^w`, signed adjustment -- a single-limb add or subtract of the
-//! 4-limb value); then shift right by one bit regardless. Width `w = 5` is used here, giving 8
-//! precomputed odd multiples per point ([`ODD_MULTIPLE_COUNT`]).
+//! 4-limb value); then shift right by one bit regardless. Width `w = 5` is used for `Q`, giving 8
+//! precomputed odd multiples ([`ODD_MULTIPLE_COUNT`]) built per call.
+//!
+//! `G` is the curve's constant, so its odd multiples are a compile-time table of affine points
+//! ([`G_ODD_MULTIPLES_X`]/[`G_ODD_MULTIPLES_Y`], width 7 -- [`G_WIDTH`]) and every `[u]G` digit
+//! is a mixed addition; only `Q`'s table (width 5) is built per call.
 //!
 //! [`shamir_multiply`] runs both scalars' wNAF digit sequences through the same doubling loop
 //! (Shamir's trick): one doubling per digit position serves both `[u]G` and `[v]Q` at once, adding
@@ -30,11 +34,18 @@
 
 use crate::nat;
 use crate::p256::P256FieldElement;
-use crate::p256_domain::{G_X_LIMBS, G_Y_LIMBS};
 use crate::p256_point::P256JacobianPoint;
 use crate::p256_scalar::P256PublicScalar;
+use crate::p256_wnaf_table::{G_ODD_MULTIPLES_X, G_ODD_MULTIPLES_Y};
 
+/// Window for `Q`, whose odd multiples are computed per call: 8 point additions to build the
+/// table, one addition per ~6 digits to use it.
 const WIDTH: usize = 5;
+/// Window for `G`, whose odd multiples are a compile-time table
+/// ([`G_ODD_MULTIPLES_X`]/[`G_ODD_MULTIPLES_Y`]): nothing to build, so the widest window a
+/// signed `i8` digit allows, giving one addition per ~8 digits instead of ~6, and every one of
+/// them a mixed addition against an affine entry.
+const G_WIDTH: usize = 7;
 const WNAF_LEN: usize = 257;
 const ODD_MULTIPLE_COUNT: usize = 1 << (WIDTH - 2);
 
@@ -44,21 +55,16 @@ pub fn shamir_multiply(
     v: &P256PublicScalar,
     q: &P256JacobianPoint,
 ) -> P256JacobianPoint {
-    let du = compute_wnaf(u.to_limbs());
-    let dv = compute_wnaf(v.to_limbs());
+    let du = compute_wnaf(u.to_limbs(), G_WIDTH);
+    let dv = compute_wnaf(v.to_limbs(), WIDTH);
 
-    let g = P256JacobianPoint::from_affine(
-        P256FieldElement::from_limbs(G_X_LIMBS),
-        P256FieldElement::from_limbs(G_Y_LIMBS),
-    );
-    let table_g = odd_multiples(&g);
     let table_q = odd_multiples(q);
 
     let mut r = P256JacobianPoint::INFINITY;
     for i in (0..WNAF_LEN).rev() {
         r = r.double();
-        if let Some(add_g) = lookup_signed(&table_g, du[i]) {
-            r = r.add_vartime(&add_g);
+        if let Some((x, y)) = lookup_signed_g(du[i]) {
+            r = r.add_vartime_affine(&x, &y);
         }
         if let Some(add_q) = lookup_signed(&table_q, dv[i]) {
             r = r.add_vartime(&add_q);
@@ -76,17 +82,17 @@ fn shr1(limbs: &[u64; 4]) -> [u64; 4] {
     ]
 }
 
-/// The width-[`WIDTH`] wNAF digits of `k`, LSB-first; unused trailing entries are `0`. Not
+/// The width-`width` wNAF digits of `k` (`width` at most 7, so a digit fits an `i8`), LSB-first; unused trailing entries are `0`. Not
 /// constant time: only ever called on public scalars (see the module docs).
-fn compute_wnaf(k_limbs: [u64; 4]) -> [i8; WNAF_LEN] {
+fn compute_wnaf(k_limbs: [u64; 4], width: usize) -> [i8; WNAF_LEN] {
     let mut digits = [0i8; WNAF_LEN];
     let mut k = k_limbs;
     let mut pos = 0;
     while k != [0, 0, 0, 0] {
         if k[0] & 1 == 1 {
-            let mut digit = (k[0] & ((1 << WIDTH) - 1)) as i16;
-            if digit >= 1 << (WIDTH - 1) {
-                digit -= 1 << WIDTH;
+            let mut digit = (k[0] & ((1 << width) - 1)) as i16;
+            if digit >= 1 << (width - 1) {
+                digit -= 1 << width;
             }
             k = if digit >= 0 {
                 let (new_k, borrow) = nat::sub(&k, &[digit as u64, 0, 0, 0]);
@@ -132,4 +138,16 @@ fn lookup_signed(
     } else {
         Some(table[(-digit as usize - 1) / 2].negate())
     }
+}
+
+/// `digit * G` for a width-[`G_WIDTH`] digit, read from the compile-time table of odd multiples
+/// of `G` as affine coordinates (negating `y` for a negative digit), or `None` for digit `0`.
+fn lookup_signed_g(digit: i8) -> Option<(P256FieldElement, P256FieldElement)> {
+    if digit == 0 {
+        return None;
+    }
+    let index = (digit.unsigned_abs() as usize - 1) / 2;
+    let x = P256FieldElement::from_limbs(G_ODD_MULTIPLES_X[index]);
+    let y = P256FieldElement::from_limbs(G_ODD_MULTIPLES_Y[index]);
+    Some(if digit > 0 { (x, y) } else { (x, y.negate()) })
 }
