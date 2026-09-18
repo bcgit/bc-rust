@@ -302,3 +302,19 @@ fn square_agrees_with_mul() {
         assert_eq!(a.square(), a.mul(&a), "square disagrees with mul for {limbs:x?}");
     }
 }
+
+/// `zeroize` is the signing path's way of not leaving `d`, `k` or `k^-1` legible on the stack
+/// (see the method's own docs for why this type is not wrapped in `Secret` instead). Whether the
+/// volatile write survives optimization cannot be observed from Rust; that the value is actually
+/// cleared can be, and is what would break if the method were ever reduced to a no-op.
+#[test]
+fn zeroize_clears_the_value() {
+    let mut a = fe([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    assert_ne!(a, P521ScalarField::ZERO, "precondition: the value starts non-zero");
+    a.zeroize();
+    assert_eq!(a, P521ScalarField::ZERO, "zeroize must leave the value at zero");
+
+    // and it is idempotent, so a caller scrubbing twice on overlapping paths is harmless
+    a.zeroize();
+    assert_eq!(a, P521ScalarField::ZERO);
+}
