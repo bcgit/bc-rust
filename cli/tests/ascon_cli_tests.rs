@@ -3,7 +3,7 @@
 //!
 //! These drive the built `bc-rust` binary as a subprocess, because the behaviour worth testing is
 //! the command-line contract itself -- KAT-level correctness through the pipe, the `ciphertext ||
-//! tag` layout, `--key-file`/`--nonce-file` loading, AAD, and exit codes -- none of which is
+//! tag` layout, generated nonce prefixing, `--key-file`/`--nonce-file` loading, AAD, and exit codes -- none of which is
 //! reachable from the library API, which `crypto/ascon/tests/*.rs` already covers directly.
 //!
 //! The KAT values below are taken from the embedded vectors already pinned in
@@ -23,6 +23,8 @@ const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
 /// The NIST LWC AEAD KAT convention uses key == nonce for the embedded vectors (see
 /// `crypto/ascon/tests/aead128_tests.rs`'s `aead128_embedded_kat`).
 const KEY_HEX: &str = "000102030405060708090a0b0c0d0e0f";
+const NONCE_LEN: usize = 16;
+const TAG_LEN: usize = 16;
 
 /// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and returns the completed output.
 ///
@@ -182,15 +184,18 @@ fn ascon_aead128_matches_the_embedded_kat_for_an_empty_message() {
 }
 
 /// Encrypt then `--decrypt` round-trips a multi-KB payload, byte for byte, and the ciphertext is
-/// exactly the plaintext plus the 16-byte tag.
+/// exactly the generated nonce plus the plaintext plus the 16-byte tag.
 #[test]
 fn ascon_aead128_encrypt_then_decrypt_round_trips() {
     let plaintext = pseudo_random(4096, 0xC0FFEE);
-    let ciphertext = run_ok(&["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX], &plaintext);
-    assert_eq!(ciphertext.len(), plaintext.len() + 16, "ciphertext is plaintext plus the tag");
+    let ciphertext = run_ok(&["ascon-aead128", "--key", KEY_HEX], &plaintext);
+    assert_eq!(
+        ciphertext.len(),
+        plaintext.len() + NONCE_LEN + TAG_LEN,
+        "ciphertext is nonce plus plaintext plus the tag"
+    );
 
-    let recovered =
-        run_ok(&["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--decrypt"], &ciphertext);
+    let recovered = run_ok(&["ascon-aead128", "--key", KEY_HEX, "--decrypt"], &ciphertext);
     assert_eq!(recovered, plaintext);
 }
 
@@ -198,14 +203,9 @@ fn ascon_aead128_encrypt_then_decrypt_round_trips() {
 #[test]
 fn ascon_aead128_associated_data_round_trips() {
     let plaintext = pseudo_random(256, 7);
-    let ciphertext = run_ok(
-        &["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--ad", "deadbeef"],
-        &plaintext,
-    );
-    let recovered = run_ok(
-        &["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--ad", "deadbeef", "--decrypt"],
-        &ciphertext,
-    );
+    let ciphertext = run_ok(&["ascon-aead128", "--key", KEY_HEX, "--ad", "deadbeef"], &plaintext);
+    let recovered =
+        run_ok(&["ascon-aead128", "--key", KEY_HEX, "--ad", "deadbeef", "--decrypt"], &ciphertext);
     assert_eq!(recovered, plaintext);
 }
 
@@ -214,14 +214,9 @@ fn ascon_aead128_associated_data_round_trips() {
 #[test]
 fn ascon_aead128_wrong_associated_data_is_rejected() {
     let plaintext = pseudo_random(64, 11);
-    let ciphertext = run_ok(
-        &["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--ad", "deadbeef"],
-        &plaintext,
-    );
-    let stderr = run_err(
-        &["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--ad", "cafebabe", "--decrypt"],
-        &ciphertext,
-    );
+    let ciphertext = run_ok(&["ascon-aead128", "--key", KEY_HEX, "--ad", "deadbeef"], &plaintext);
+    let stderr =
+        run_err(&["ascon-aead128", "--key", KEY_HEX, "--ad", "cafebabe", "--decrypt"], &ciphertext);
     assert!(stderr.contains("authentication failed"), "stderr: {stderr}");
 }
 
@@ -231,12 +226,10 @@ fn ascon_aead128_wrong_associated_data_is_rejected() {
 #[test]
 fn ascon_aead128_a_flipped_ciphertext_byte_is_rejected() {
     let plaintext = pseudo_random(64, 1);
-    let mut ciphertext =
-        run_ok(&["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX], &plaintext);
-    ciphertext[0] ^= 0x01;
+    let mut ciphertext = run_ok(&["ascon-aead128", "--key", KEY_HEX], &plaintext);
+    ciphertext[NONCE_LEN] ^= 0x01;
 
-    let stderr =
-        run_err(&["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--decrypt"], &ciphertext);
+    let stderr = run_err(&["ascon-aead128", "--key", KEY_HEX, "--decrypt"], &ciphertext);
     assert!(stderr.contains("authentication failed"), "stderr: {stderr}");
 }
 
@@ -244,20 +237,32 @@ fn ascon_aead128_a_flipped_ciphertext_byte_is_rejected() {
 #[test]
 fn ascon_aead128_a_flipped_tag_byte_is_rejected() {
     let plaintext = pseudo_random(64, 2);
-    let mut ciphertext =
-        run_ok(&["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX], &plaintext);
+    let mut ciphertext = run_ok(&["ascon-aead128", "--key", KEY_HEX], &plaintext);
     let last = ciphertext.len() - 1;
     ciphertext[last] ^= 0x01;
 
-    let stderr =
-        run_err(&["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--decrypt"], &ciphertext);
+    let stderr = run_err(&["ascon-aead128", "--key", KEY_HEX, "--decrypt"], &ciphertext);
     assert!(stderr.contains("authentication failed"), "stderr: {stderr}");
 }
 
-/// Decrypt input shorter than the 16-byte tag is rejected before any tag check is attempted,
-/// including the empty-input case.
+/// Decrypt input shorter than the generated 16-byte nonce is rejected before any tag check is
+/// attempted, including the empty-input case.
 #[test]
-fn ascon_aead128_decrypt_input_shorter_than_the_tag_is_rejected() {
+fn ascon_aead128_decrypt_input_shorter_than_the_nonce_is_rejected() {
+    for len in [0usize, 1, 15] {
+        let stderr = run_err(
+            &["ascon-aead128", "--key", KEY_HEX, "--decrypt"],
+            &pseudo_random(len, len as u32 + 1),
+        );
+        assert!(
+            stderr.contains("shorter than the 16-byte nonce"),
+            "len {len}: stderr should explain the missing nonce: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn ascon_aead128_explicit_nonce_decrypt_input_shorter_than_the_tag_is_rejected() {
     for len in [0usize, 1, 15] {
         let stderr = run_err(
             &["ascon-aead128", "--key", KEY_HEX, "--nonce", KEY_HEX, "--decrypt"],
@@ -268,6 +273,17 @@ fn ascon_aead128_decrypt_input_shorter_than_the_tag_is_rejected() {
             "len {len}: stderr should explain the missing tag: {stderr}"
         );
     }
+}
+
+#[test]
+fn ascon_aead128_each_invocation_uses_a_fresh_nonce() {
+    let plaintext = pseudo_random(32, 19);
+    let a = run_ok(&["ascon-aead128", "--key", KEY_HEX], &plaintext);
+    let b = run_ok(&["ascon-aead128", "--key", KEY_HEX], &plaintext);
+
+    assert_eq!(a.len(), plaintext.len() + NONCE_LEN + TAG_LEN);
+    assert_eq!(b.len(), plaintext.len() + NONCE_LEN + TAG_LEN);
+    assert_ne!(&a[..NONCE_LEN], &b[..NONCE_LEN], "the CLI reused a nonce");
 }
 
 /// `--key-file`/`--nonce-file` accept binary content, not just hex, the same as the AES commands'
