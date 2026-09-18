@@ -94,8 +94,8 @@
 //! | MLDSA65_lowmemory/Sign    | 27.9 (124.7)                | 490        (2,400)  |
 //! | MLDSA87_lowmemory/Sign    | 31.6 (182.6)                | 330        (1,700)  |
 //! | MLDSA44_lowmemory/Verify  | 15.2 (74.3)                 | 11,200     (13,200) |
-//! | MLDSA65_lowmemory/Verify  | 15.9 (120.4)                | 6,400      (8,000)  |
-//! | MLDSA87_lowmemory/Verify  | 17.8 (191.8)                | 3,700      (4,800)  |
+//! | MLDSA65_lowmemory/Verify  | 19.1 (120.6)                | 6,400      (8,000)  |
+//! | MLDSA87_lowmemory/Verify  | 22.3 (193.3)                | 3,700      (4,800)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
@@ -105,6 +105,8 @@
 //! absolute performance measurements.
 //!
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
+//! Measurements include the public key and signature buffer, which is a realistic setting, but
+//! numbers would be lower if those were on the heap and excluded from the measurement.
 //! Actual values may vary based on build configuration and target architecture.
 //! The peak also depends on how the compiler lays out the measured function's stack frame relative
 //! to its caller and whether it elides copies at the call boundary, which is outside
