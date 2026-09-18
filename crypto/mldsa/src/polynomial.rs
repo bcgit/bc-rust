@@ -1,7 +1,7 @@
 //! Represents a polynomial over the ML-DSA ring.
 
 use crate::aux_functions::{
-    ZETAS, conditional_add_q, high_bits, low_bits, make_hint, montgomery_reduce,
+    ZETAS, conditional_add_q, high_bits, low_bits, make_hint, montgomery_reduce, reduce32,
 };
 use crate::mldsa::{N, d, q};
 use crate::params::{GAMMA2_Q_MINUS_1_OVER_32, GAMMA2_Q_MINUS_1_OVER_88, MLDSAParams};
@@ -52,6 +52,14 @@ impl Polynomial {
     pub(crate) fn reduce(&mut self) {
         for i in 0..N {
             self[i] = montgomery_reduce(self[i] as i64);
+        }
+    }
+
+    /// Reduces every coefficient to |𝑐| < 𝑞 without changing its residue. See [`reduce32`] for when
+    /// this is required; note that [`Self::reduce`] is a *Montgomery* reduction and is not a substitute.
+    pub(crate) fn reduce32(&mut self) {
+        for x in self.coeffs.iter_mut() {
+            *x = reduce32(*x);
         }
     }
 
@@ -219,6 +227,17 @@ impl Polynomial {
     /// Input: 𝑤_hat = (𝑤_hat[0], … , 𝑤_hat[255]) ∈ 𝑇𝑞.
     /// Output: Polynomial 𝑤(𝑋) = Σ_{j=0}^{255} 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
     pub(crate) fn inv_ntt(&mut self) {
+        // A core input condition on the InverseNTT is that every input
+        // coefficient must satisfy |𝑤| < 𝑞 for the sums to stay within an i32.
+        // The reason this is required is because Algorithm 42's butterflies (steps 13-14)
+        // run 8 levels without reducing, leading to an i32 overflow if the input was out-of-range.
+        // Callers must pass them through `reduce32` first.
+        // Note that only a crafted input, such as (Wycheproof mldsa_87_verify tcId 240/241) will trigger this.
+        debug_assert!(
+            self.coeffs.iter().all(|c| c.abs() < q),
+            "inv_ntt input coefficient not reduced below q; call reduce32() first"
+        );
+
         let mut m: usize = N;
         let mut len: usize = 1;
 

@@ -50,6 +50,14 @@ impl Polynomial {
         }
     }
 
+    /// Reduces every coefficient to |𝑐| < 𝑞 without changing its residue. See [`reduce32`] for when
+    /// this is required for security reasons; note that [`Self::reduce`] is a *Montgomery* reduction and is not a substitute.
+    pub(crate) fn reduce32(&mut self) {
+        for x in self.coeffs.iter_mut() {
+            *x = reduce32(*x);
+        }
+    }
+
     /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
     /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
     /// Note: result could be up to 2q.
@@ -228,6 +236,17 @@ impl Polynomial {
     /// Output: Polynomial 𝑤(𝑋) = ∑255
     /// 𝑗=0 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
     pub(crate) fn inv_ntt(&mut self) {
+        // A core input condition on the InverseNTT is that every input
+        // coefficient must satisfy |𝑤| < 𝑞 for the sums to stay within an i32.
+        // The reason this is required is because Algorithm 42's butterflies (steps 13-14)
+        // run 8 levels without reducing, leading to an i32 overflow if the input was out-of-range.
+        // Callers must pass them through `reduce32` first.
+        // Note that only a crafted input, such as (Wycheproof mldsa_87_verify tcId 240/241) will trigger this.
+        debug_assert!(
+            self.coeffs.iter().all(|c| c.abs() < q),
+            "inv_ntt input coefficient not reduced below q; call reduce32() first"
+        );
+
         let mut m: usize = N;
         let mut len: usize = 1;
 
@@ -292,6 +311,20 @@ pub(crate) fn conditional_add_q(a: i32) -> i32 {
     a + ((a >> 31) & q)
 }
 
+/// Plain (non-Montgomery) reduction: for 𝑎 ≤ 2^31 − 2^22 − 1 returns 𝑟 ≡ 𝑎 (mod 𝑞) with |𝑟| ≤ 6283008 < 𝑞.
+/// `reduce32` in the reference implementation (pq-crystals/dilithium, ref/reduce.c).
+///
+/// This is not in FIPS 204 since it assumes all arithmetic is done mod q.
+/// In this implementation, sums of Montgomery products are left unreduced, but `inv_ntt` (Algorithm 42)
+/// needs |input| < 𝑞 to stay within an `i32`, so this is applied to those sums first. Omitting it before
+/// the verifier's NTT⁻¹ is exploitable (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
+pub(crate) fn reduce32(a: i32) -> i32 {
+    // The reference implementation's stated input bound; above it `a + 2^22` overflows.
+    debug_assert!(a <= i32::MAX - (1 << 22));
+    let t = (a + (1 << 22)) >> 23;
+    a - t * q
+}
+
 #[test]
 /// These are the results it's giving; I'm not sure if these are "correct" or not.
 fn test_conditional_add_q() {
@@ -336,3 +369,40 @@ const ZETAS: [i32; 256] = [
     -2235985, -420899, -2286327, 183443, -976891, 1612842, -3545687, -554416, 3919660, -48306,
     -1362209, 3937738, 1400424, -846154, 1976782,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_reduce32() {
+        // congruent to the input mod q, and within the reference implementation's stated output range
+        for &a in &[
+            0,
+            1,
+            -1,
+            q - 1,
+            q,
+            q + 1,
+            -q,
+            -q - 1,
+            8 * q,
+            -8 * q,
+            6283008,
+            -6283008,
+            i32::MIN,
+            i32::MAX - (1 << 22),
+        ] {
+            let r = reduce32(a);
+            assert!((-6283008..=6283008).contains(&r), "reduce32({a}) = {r} out of range");
+            assert_eq!(
+                (r as i64 - a as i64).rem_euclid(q as i64),
+                0,
+                "reduce32({a}) = {r} not congruent"
+            );
+            assert!(r.abs() < q);
+        }
+        // the largest sum inv_ntt may see: (l + 1) products each in (-q, q), for l = 7
+        assert!(reduce32(8 * q - 8).abs() < q);
+        assert!(reduce32(-(8 * q - 8)).abs() < q);
+    }
+}
