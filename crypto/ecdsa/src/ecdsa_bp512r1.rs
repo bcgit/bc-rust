@@ -245,13 +245,14 @@ impl SignatureVerifier<ECDSABp512r1PublicKey, PK_LEN, SIG_LEN> for ECDSABp512r1 
             return Err(SignatureError::SignatureVerificationFailed);
         }
         let r = Bp512r1ScalarField::from_limbs(r_limbs);
-        let s = Bp512r1ScalarField::from_limbs(s_limbs);
 
         let mut h = [0u8; 64];
         self.hash.do_final_out(&mut h);
         let e = e_from_hash(&h); // steps 2-3
 
-        let s_inv = s.invert(); // step 4
+        // `s` is part of the signature, so its inverse is taken in variable time on the public
+        // scalar type; the constant-time `invert` is for the signer's `k`.
+        let s_inv = Bp512r1PublicScalar::from_limbs(s_limbs).invert_vartime(); // step 4
         let u = e.mul(&s_inv); // step 5
         let v = r.mul(&s_inv);
 
