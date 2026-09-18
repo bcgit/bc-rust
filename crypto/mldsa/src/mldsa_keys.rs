@@ -589,6 +589,8 @@ impl<const k: usize, const l: usize, const eta: usize, const SK_LEN: usize, cons
             let A_hat = expandA::<k, l>(&self.rho);
 
             let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
+            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+            t_ntt.reduce32();
             t_ntt.inv_ntt();
             t_ntt
         };

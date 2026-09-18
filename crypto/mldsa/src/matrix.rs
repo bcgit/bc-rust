@@ -133,6 +133,12 @@ impl<const LEN: usize> Vector<LEN> {
         }
     }
 
+    pub(crate) fn reduce32(&mut self) {
+        for i in 0..LEN {
+            self[i].reduce32();
+        }
+    }
+
     pub(crate) fn ntt(&mut self) {
         for i in 0..LEN {
             self[i].ntt();

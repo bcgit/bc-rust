@@ -491,6 +491,8 @@ impl<
                 A_elem.multiply_ntt(&s1_hat);
                 t_hat_i.add_ntt(&A_elem);
             }
+            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+            t_hat_i.reduce32();
             t_hat_i.inv_ntt();
 
             t_hat_i
