@@ -93,7 +93,7 @@
 //!
 //! | Key Object | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
 //! |------------|-----------------|--------------------|------------------|--------------------|
-//! | SM2        | 65              | 64                 | 32               | 96                 |
+//! | SM2        | 65              | 64                 | 32               | 128                |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`; the
 //! "on disk" sizes are [`keys::PK_LEN`]/[`keys::SK_LEN`]. These numbers are produced by
@@ -101,11 +101,14 @@
 //! the stack-usage measurement harness (see its own doc comment for the `valgrind`/`massif`
 //! invocation).
 //!
-//! An `SM2PrivateKey` is 96 bytes in memory against a 32-byte encoding because it carries the
-//! matching public key `PA` (two 32-byte field elements) alongside `dA`. That is not redundancy:
-//! `ZA` mixes `PA` into every signature, so without it each `sign` would have to recompute
-//! `[dA]G` and cost two fixed-base scalar multiplications instead of one. See
-//! [`keys::SM2PrivateKey`]'s own docs.
+//! An `SM2PrivateKey` is 128 bytes in memory against a 32-byte encoding because it carries two
+//! values derived from `dA` alongside it: the matching public key `PA` (two 32-byte field
+//! elements) and `(1 + dA)^-1 mod n` (32 bytes, held in `Secret` like `dA` itself). Neither is
+//! redundancy: `ZA` mixes `PA` into every signature, so without it each `sign` would have to
+//! recompute `[dA]G` and cost two fixed-base scalar multiplications instead of one; and step A6
+//! divides by `1 + dA` on every signature, so without the cached inverse each `sign` paid a
+//! constant-time inversion for a value that never changes. See [`keys::SM2PrivateKey`]'s own
+//! docs.
 //!
 //! # Security Considerations
 //!

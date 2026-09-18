@@ -133,7 +133,9 @@ fn sign_with_k(
     }
 
     let mut d_field = Sm2ScalarField::from_secret(sk.scalar());
-    let mut one_plus_d_inv = Sm2ScalarField::ONE.add(&d_field).invert();
+    // (1 + dA)^-1 is cached on the key (see SM2PrivateKey's docs): it depends only on dA, and
+    // recomputing it here was a constant-time inversion per signature.
+    let mut one_plus_d_inv = Sm2ScalarField::from_secret(sk.one_plus_d_inv());
     let s = one_plus_d_inv.mul(&k_field.sub(&r.mul(&d_field))); // step A6
 
     // `k_field`, `d_field` and `(1 + dA)^-1` all reveal `k` or `dA`; nothing below needs them, and
