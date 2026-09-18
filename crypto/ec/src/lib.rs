@@ -137,7 +137,10 @@
 //! The dominant *stack* cost is not these types but the fixed-base comb tables, which are `const`
 //! data rather than stack: 64 entries of two field elements per curve (4 KiB for a 256-bit curve,
 //! 9 KiB for P-521). [`p256_comb::comb_multiply_base_point`] scans all 64 entries under a mask on
-//! every round, so that table is read in full regardless of the scalar -- see its docs.
+//! every round, so that table is read in full regardless of the scalar -- see its docs. The
+//! variable-time multiplier keeps a second, smaller `const` table per curve: the 32 odd multiples
+//! of `G` its width-7 window over `G` indexes (2 KiB for a 256-bit curve, 4.5 KiB for P-521),
+//! read by public digit and so with no scan.
 //!
 //! # Security Considerations
 //!
@@ -166,6 +169,7 @@ pub mod bp256r1_point;
 pub mod bp256r1_scalar;
 pub mod bp256r1_sec1;
 pub mod bp256r1_wnaf;
+pub(crate) mod bp256r1_wnaf_table;
 pub mod bp384r1;
 pub mod bp384r1_comb;
 pub(crate) mod bp384r1_comb_table;
@@ -174,6 +178,7 @@ pub mod bp384r1_point;
 pub mod bp384r1_scalar;
 pub mod bp384r1_sec1;
 pub mod bp384r1_wnaf;
+pub(crate) mod bp384r1_wnaf_table;
 pub mod bp512r1;
 pub mod bp512r1_comb;
 pub(crate) mod bp512r1_comb_table;
@@ -182,6 +187,7 @@ pub mod bp512r1_point;
 pub mod bp512r1_scalar;
 pub mod bp512r1_sec1;
 pub mod bp512r1_wnaf;
+pub(crate) mod bp512r1_wnaf_table;
 pub mod inverse_vartime;
 pub mod montgomery;
 pub mod nat;
@@ -193,6 +199,7 @@ pub mod p256_point;
 pub mod p256_scalar;
 pub mod p256_sec1;
 pub mod p256_wnaf;
+pub(crate) mod p256_wnaf_table;
 pub mod p256k1;
 pub mod p256k1_comb;
 pub(crate) mod p256k1_comb_table;
@@ -201,6 +208,7 @@ pub mod p256k1_point;
 pub mod p256k1_scalar;
 pub mod p256k1_sec1;
 pub mod p256k1_wnaf;
+pub(crate) mod p256k1_wnaf_table;
 pub mod p384;
 pub mod p384_comb;
 pub(crate) mod p384_comb_table;
@@ -209,6 +217,7 @@ pub mod p384_point;
 pub mod p384_scalar;
 pub mod p384_sec1;
 pub mod p384_wnaf;
+pub(crate) mod p384_wnaf_table;
 pub mod p521;
 pub mod p521_comb;
 pub(crate) mod p521_comb_table;
@@ -217,6 +226,7 @@ pub mod p521_point;
 pub mod p521_scalar;
 pub mod p521_sec1;
 pub mod p521_wnaf;
+pub(crate) mod p521_wnaf_table;
 pub mod sm2;
 pub mod sm2_comb;
 pub(crate) mod sm2_comb_table;
@@ -225,3 +235,4 @@ pub mod sm2_point;
 pub mod sm2_scalar;
 pub mod sm2_sec1;
 pub mod sm2_wnaf;
+pub(crate) mod sm2_wnaf_table;
