@@ -10,8 +10,13 @@
 //!
 //! # Why SM2 needs this at all
 //!
-//! Like every brainpool curve on this branch (and unlike P-384/P-521/secp256k1), SM2's `n` is not
-//! close to a power of two. FIPS 186-5 Appendix A.4.1 step 2's bias-bound check
+//! SM2's `n` sits about `2^225` below `2^256` -- the same distance P-256's `n` keeps from its
+//! power of two (about `2^224`), and for the same reason not close enough: a 256-bit DRBG output
+//! reduced mod `n - 1` would land in `[0, 2^256 - n)` about twice as often as anywhere else,
+//! which is the bias FIPS 186-5's Table A.2 gives P-256 its 288/352-bit entries to dilute. (The
+//! brainpool curves need the extra bits for a different reason -- their `n` is nowhere near a
+//! power of two -- while P-384, P-521 and secp256k1 need none, their `n` being within a relative
+//! `2^-128` or closer of one.) FIPS 186-5 Appendix A.4.1 step 2's bias-bound check
 //! (`2ρ(1-ρ)(n-1) > ε·N`, `ε = 2^-64`) was evaluated directly (in Python, against `n`'s actual
 //! value from `draft-shen-sm2-ecdsa-02` Appendix D) for `N = 2^l` at increasing `l`: `l = 256`
 //! (matching `n`'s own bit length) fails the check, and the smallest passing `l` is `319`; this
