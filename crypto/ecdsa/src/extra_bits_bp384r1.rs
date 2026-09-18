@@ -18,54 +18,40 @@
 //! smallest passing `l` is `445`; this crate uses `l = 448` (56 bytes, byte-aligned, three bits of
 //! margin above the minimum) as [`crate::keys_bp384r1::EXTRA_BITS_DRBG_OUTPUT_LEN`].
 //!
-//! Verified (not checked in) against Python's arbitrary-precision `%` operator: 5000 random trials
-//! of `bits2int(X) mod (n-1)` for bit strings from 8 to 456 bits, confirming both the reduction's
-//! correctness and that a single conditional subtraction per bit always suffices.
+//! The reduction itself is [`bouncycastle_ec::barrett`]'s constant-time Barrett reduction with
+//! `m = n - 1` (see [`crate::extra_bits`]'s docs for the constant-time argument); `extra_bits_bp384r1_tests.rs`
+//! pins known answers computed in Python and cross-checks it against the bit-serial algorithm this
+//! module used to implement, kept there as an independent reference.
 
+use bouncycastle_ec::barrett;
 use bouncycastle_ec::bp384r1_scalar::{Bp384r1Scalar, N_LIMBS};
 use bouncycastle_ec::nat;
-use bouncycastle_utils::ct;
-use bouncycastle_utils::ct::Condition;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction
 /// never borrows out of the low limb.
 const N_MINUS_1_LIMBS: [u64; 6] =
     [N_LIMBS[0] - 1, N_LIMBS[1], N_LIMBS[2], N_LIMBS[3], N_LIMBS[4], N_LIMBS[5]];
 
-/// `2^384 mod (n-1)` -- the correction [`reduce_wide_bits_mod_n_minus_1`] adds back in when
-/// doubling the running remainder carries out of the top limb.
-const TWO_POW_384_MOD_N_MINUS_1_LIMBS: [u64; 6] = [
-    0xc477cdfd16fb9a9c, 0x30c5495094803cef, 0xe0e9919353fbda58, 0xead08ef612aba94c,
-    0xf0a29081af19be20, 0x7346e17d5cc792d7,
+/// `floor(2^768 / (n-1)) - 2^384`: the low limbs of Barrett's `mu` for `m = n - 1` (whose top
+/// limb is `mu`'s only other bit -- see [`bouncycastle_ec::barrett`]), computed in Python from
+/// RFC 5639 §3.4's `n`.
+const MU_LOW_LIMBS: [u64; 6] = [
+    0x600adcccf8a71f8d, 0x189fdb467a652109, 0xc506f2fe165031e7, 0xdda2c449cae56ee1,
+    0xff25adfd3cc6fa65, 0xd1b575b16d8ec6b8,
 ];
 
-/// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the brainpoolP384r1 curve order: reduces the
-/// big-endian bit string `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`.
+/// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the curve order: reduces the big-endian bit string
+/// `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`. `bytes` may be up to `95` bytes
+/// -- `2^760 < (n-1) * 2^384`, Barrett's precondition -- which covers the 56-byte DRBG
+/// output this crate draws with room to spare; a longer input is a programming error and panics.
 pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> Bp384r1Scalar {
-    let mut acc = [0u64; 6];
-    for &byte in bytes {
-        for bit_idx in (0..8).rev() {
-            let bit = (byte >> bit_idx) & 1;
-            let (doubled, carry) = nat::add(&acc, &acc);
-            let mut with_bit = doubled;
-            with_bit[0] |= bit as u64;
-            let (with_carry_correction, _) = nat::add(&with_bit, &TWO_POW_384_MOD_N_MINUS_1_LIMBS);
-            let mut candidate = [0u64; 6];
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(carry),
-                &with_carry_correction,
-                &with_bit,
-                &mut candidate,
-            );
-            let (reduced, borrow) = nat::sub(&candidate, &N_MINUS_1_LIMBS);
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(borrow),
-                &candidate,
-                &reduced,
-                &mut acc,
-            );
-        }
-    }
-    let (plus_one, _) = nat::add(&acc, &[1, 0, 0, 0, 0, 0]);
+    assert!(
+        bytes.len() < 96,
+        "reduce_wide_bits_mod_n_minus_1 given {} bytes, more than 95",
+        bytes.len()
+    );
+    let t = barrett::limbs_from_be_bytes::<12>(bytes);
+    let reduced = barrett::reduce::<6, 12, 7>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS);
+    let (plus_one, _) = nat::add(&reduced, &[1, 0, 0, 0, 0, 0]);
     Bp384r1Scalar::from_limbs(plus_one)
 }

@@ -22,62 +22,42 @@
 //! `X` is DRBG output destined to become a secret `d` or `k` once step 3 adds `1`, so this is
 //! exactly the kind of "value derived from a private scalar" this workspace's constant-time rules
 //! (`bouncycastle_ec`'s crate docs, rule 1) forbid branching on. [`reduce_wide_bits_mod_n_minus_1`]
-//! processes `X` one bit at a time, doubling the running remainder and conditionally subtracting
-//! `n-1` (a single [`ct::conditional_select`], never a branch) -- the same "double, mask-select one
-//! subtraction" shape [`bouncycastle_ec::p256_scalar::P256ScalarField::add`] uses for `mod n`,
-//! adapted to a different modulus and to processing extra input bits one at a time instead of
-//! adding two already-reduced operands.
+//! is [`bouncycastle_ec::barrett`]'s constant-time Barrett reduction with `m = n - 1`: two
+//! fixed-width multiplications and three masked conditional subtractions, none of which branches
+//! or indexes on `X`. (An earlier version reduced `X` one bit at a time with a doubling and a
+//! masked subtraction per bit; correct, but 352 rounds of it cost more than a field inversion on
+//! every key generation and randomised signature.)
 //!
-//! Verified (not checked in) against Python's arbitrary-precision `%` operator: 3000 random trials
-//! of `bits2int(X) mod (n-1)` for bit strings from 8 to 352 bits, confirming both the reduction's
-//! correctness and that a single conditional subtraction per bit always suffices (the running
-//! remainder, doubled plus the carry-out correction, is always `< 2*(n-1)`).
+//! `extra_bits_tests.rs` pins known answers computed in Python and cross-checks the reduction
+//! against that bit-serial algorithm, kept there as an independent reference, over pseudorandom
+//! inputs of every width up to the maximum.
 
+use bouncycastle_ec::barrett;
 use bouncycastle_ec::nat;
 use bouncycastle_ec::p256_scalar::{N_LIMBS, P256Scalar};
-use bouncycastle_utils::ct;
-use bouncycastle_utils::ct::Condition;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (SP 800-186 §3.2.1.3's `n`), so the
 /// subtraction never borrows out of the low limb.
 const N_MINUS_1_LIMBS: [u64; 4] = [N_LIMBS[0] - 1, N_LIMBS[1], N_LIMBS[2], N_LIMBS[3]];
 
-/// `2^256 mod (n-1)`, i.e. `2^256 - (n-1)` (a single subtraction: `n-1 < 2^256`) -- the correction
-/// [`reduce_wide_bits_mod_n_minus_1`] adds back in when doubling the running remainder carries out
-/// of the top limb.
-const TWO_POW_256_MOD_N_MINUS_1_LIMBS: [u64; 4] =
-    [0x0c46353d039cdab0, 0x4319055258e8617b, 0x0000000000000000, 0x00000000ffffffff];
+/// `floor(2^512 / (n-1)) - 2^256`: the low limbs of Barrett's `mu` for `m = n - 1` (whose top
+/// limb is `mu`'s only other bit -- see [`bouncycastle_ec::barrett`]), computed in Python from
+/// SP 800-186 §3.2.1.3's `n`.
+const MU_LOW_LIMBS: [u64; 4] =
+    [0x012ffd85eedf9bff, 0x43190552df1a6c21, 0xfffffffeffffffff, 0x00000000ffffffff];
 
-/// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the P-256 curve order: reduces the big-endian bit
-/// string `bytes` (any length; only the DRBG's own output length matters for the bias bound Step 2
-/// checks, which holds by construction for the 352-bit `l` [`crate::keys`] and
-/// [`crate::ecdsa_p256`] both use -- see the module docs) modulo `n-1` and adds `1`, landing in
-/// `[1, n-1]`.
+/// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the curve order: reduces the big-endian bit string
+/// `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`. `bytes` may be up to `63` bytes
+/// -- `2^504 < (n-1) * 2^256`, Barrett's precondition -- which covers the 44-byte DRBG
+/// output this crate draws with room to spare; a longer input is a programming error and panics.
 pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P256Scalar {
-    let mut acc = [0u64; 4];
-    for &byte in bytes {
-        for bit_idx in (0..8).rev() {
-            let bit = (byte >> bit_idx) & 1;
-            let (doubled, carry) = nat::add(&acc, &acc);
-            let mut with_bit = doubled;
-            with_bit[0] |= bit as u64;
-            let (with_carry_correction, _) = nat::add(&with_bit, &TWO_POW_256_MOD_N_MINUS_1_LIMBS);
-            let mut candidate = [0u64; 4];
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(carry),
-                &with_carry_correction,
-                &with_bit,
-                &mut candidate,
-            );
-            let (reduced, borrow) = nat::sub(&candidate, &N_MINUS_1_LIMBS);
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(borrow),
-                &candidate,
-                &reduced,
-                &mut acc,
-            );
-        }
-    }
-    let (plus_one, _) = nat::add(&acc, &[1, 0, 0, 0]);
+    assert!(
+        bytes.len() < 64,
+        "reduce_wide_bits_mod_n_minus_1 given {} bytes, more than 63",
+        bytes.len()
+    );
+    let t = barrett::limbs_from_be_bytes::<8>(bytes);
+    let reduced = barrett::reduce::<4, 8, 5>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS);
+    let (plus_one, _) = nat::add(&reduced, &[1, 0, 0, 0]);
     P256Scalar::from_limbs(plus_one)
 }
