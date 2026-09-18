@@ -339,10 +339,11 @@ impl<P: MLDSAParams> Display for MLDSAPublicKeyExpanded<'_, P> {
 impl<'k, P: MLDSAParams> From<&'k MLDSAPublicKey<P>> for MLDSAPublicKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated verifications under the same public key.
     fn from(pk: &'k MLDSAPublicKey<P>) -> Self {
-        // Expand straight into the struct's matrix, so only one copy of it exists.
-        let mut expanded = Self { pk, A_hat: P::MatrixA::new() };
-        expandA::<P>(&pk.rho, &mut expanded.A_hat);
-        expanded
+        // Struct literal as the return expression, so the result is built in the caller's slot.
+        // Building `Self` in a local and mutating it leaves a second full copy in this frame.
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&pk.rho, &mut A_hat);
+        Self { pk, A_hat }
     }
 }
 
@@ -897,10 +898,11 @@ impl<P: MLDSAParams> Display for MLDSAPrivateKeyExpanded<'_, P> {
 impl<'k, P: MLDSAParams> From<&'k MLDSAPrivateKey<P>> for MLDSAPrivateKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated signatures under the same private key.
     fn from(sk: &'k MLDSAPrivateKey<P>) -> Self {
-        // Expand straight into the struct's matrix, so only one copy of it exists.
-        let mut expanded = Self { sk, A_hat: P::MatrixA::new() };
-        expandA::<P>(&sk.rho, &mut expanded.A_hat);
-        expanded
+        // Struct literal as the return expression, so the result is built in the caller's slot.
+        // Building `Self` in a local and mutating it leaves a second full copy in this frame.
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&sk.rho, &mut A_hat);
+        Self { sk, A_hat }
     }
 }
 
