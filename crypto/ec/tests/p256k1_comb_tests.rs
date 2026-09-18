@@ -57,3 +57,14 @@ fn edge_case_k_equals_n_minus_1() {
         [0x63b82f6f04ef2777, 0x02e84bb7597aabe6, 0xa25b0403f1eef757, 0xb7c52588d95c3b9a],
     );
 }
+
+/// `k = 0` is the one scalar for which `[k]G` is the identity: every comb digit is `0`, so every
+/// round selects table entry `0` (the infinity sentinel) and the accumulator never leaves
+/// `INFINITY`. Nothing in the signing path can produce it (`k` is in `[1, n-1]` by construction),
+/// which is exactly why it needs pinning here rather than being left to chance.
+#[test]
+fn edge_case_k_equals_zero_is_infinity() {
+    let result = comb_multiply_base_point(&scalar([0u64; 4]));
+    assert!(result.is_infinity().to_bool());
+    assert!(result.to_affine().is_none());
+}

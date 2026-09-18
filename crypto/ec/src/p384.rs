@@ -123,7 +123,6 @@ impl P384FieldElement {
         Self(reduce(&widening_mul(&self.0, &other.0)))
     }
 
-    /// `self^2 mod p`.
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
     /// [`widening_square`].
     ///

@@ -516,3 +516,46 @@ fn zeroize_clears_the_value() {
     a.zeroize();
     assert_eq!(a, Bp512r1ScalarField::ZERO);
 }
+
+/// `is_zero` on the scalar field, pinned for both truth values and across every limb position
+/// (see the field test of the same name for why); it is the check behind `negate`'s `0 -> 0`
+/// special case.
+#[test]
+fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
+    assert!(Bp512r1ScalarField::ZERO.is_zero().to_bool());
+    assert!(fe(bouncycastle_ec::bp512r1_scalar::N_LIMBS).is_zero().to_bool(), "n reduces to 0");
+    assert!(!Bp512r1ScalarField::ONE.is_zero().to_bool());
+    for limb_idx in 0..8 {
+        let mut limbs = [0u64; 8];
+        limbs[limb_idx] = 1;
+        assert!(!fe(limbs).is_zero().to_bool(), "a set bit in limb {limb_idx} must be seen");
+    }
+}
+
+/// `n - 1`, the largest canonical scalar, is the worst case for REDC's final conditional
+/// subtraction and for `add`'s carry correction, and was absent from every known-answer set
+/// above (whose values are pseudorandom, so never near `n`). Expected values follow from
+/// `(n-1)^2 == 1` and `(n-1) + (n-1) == n - 2` in the field, computed from `n` in Python.
+#[test]
+fn known_answer_at_n_minus_1() {
+    let n_minus_1_limbs: [u64; 8] = [
+        0xb58796829ca90068, 0x1db1d381085ddadd, 0x418661197fac1047, 0x553e5c414ca92619,
+        0xd6639cca70330870, 0xcb308db3b3c9d20e, 0x3fd4e6ae33c9fc07, 0xaadd9db8dbe9c48b,
+    ];
+    let n_minus_1 = fe(n_minus_1_limbs);
+    let n_minus_2 = fe([
+        0xb58796829ca90067, 0x1db1d381085ddadd, 0x418661197fac1047, 0x553e5c414ca92619,
+        0xd6639cca70330870, 0xcb308db3b3c9d20e, 0x3fd4e6ae33c9fc07, 0xaadd9db8dbe9c48b,
+    ]);
+
+    assert_eq!(n_minus_1.to_limbs(), n_minus_1_limbs, "Montgomery round trip of n-1");
+    assert_eq!(Bp512r1PublicScalar::from_limbs(n_minus_1_limbs).to_limbs(), n_minus_1_limbs);
+    assert_eq!(n_minus_1.add(&n_minus_1), n_minus_2, "(n-1) + (n-1) == n-2");
+    assert_eq!(n_minus_1.add(&Bp512r1ScalarField::ONE), Bp512r1ScalarField::ZERO, "(n-1) + 1 == 0");
+    assert_eq!(Bp512r1ScalarField::ZERO.sub(&Bp512r1ScalarField::ONE), n_minus_1, "0 - 1 == n-1");
+    assert_eq!(n_minus_1.mul(&n_minus_1), Bp512r1ScalarField::ONE, "(n-1)^2 == 1");
+    assert_eq!(n_minus_1.square(), Bp512r1ScalarField::ONE, "(n-1)^2 == 1, via square");
+    assert_eq!(n_minus_1.negate(), Bp512r1ScalarField::ONE, "-(n-1) == 1");
+    assert_eq!(n_minus_1.invert(), n_minus_1, "(n-1)^-1 == n-1");
+    assert_eq!(Bp512r1ScalarField::ONE.invert(), Bp512r1ScalarField::ONE, "1^-1 == 1");
+}

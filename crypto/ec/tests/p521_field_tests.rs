@@ -338,3 +338,194 @@ fn square_agrees_with_mul() {
         assert_eq!(a.square(), a.mul(&a), "square disagrees with mul for {limbs:x?}");
     }
 }
+
+/// `is_zero` is the mask every exceptional-case select in this crate's point arithmetic keys
+/// off (infinity detection, the `H == 0` / `R == 0` same-point and opposite-point cases), and
+/// otherwise exercised only through those selects. Both truth values are pinned here, with
+/// the nonzero side walked across every limb position so a mask that inspected only some limbs
+/// would be caught.
+#[test]
+fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
+    assert!(P521FieldElement::ZERO.is_zero().to_bool());
+    assert!(fe(bouncycastle_ec::p521::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
+    assert!(!P521FieldElement::ONE.is_zero().to_bool());
+    for limb_idx in 0..9 {
+        let mut limbs = [0u64; 9];
+        limbs[limb_idx] = 1;
+        assert!(!fe(limbs).is_zero().to_bool(), "a set bit in limb {limb_idx} must be seen");
+    }
+}
+
+/// `add`'s carry-out correction and `sub`'s borrow correction, pinned at the operands that force
+/// them: `(p-1) + (p-1)` is the largest sum two canonical elements can form, and `0 - 1` the
+/// smallest difference. The expected values are `p - 2` and `p - 1` themselves (computed from
+/// `p` in Python), so this is a check of the wrap-around handling, not of the digits of `p`.
+#[test]
+fn known_answer_add_carry_and_sub_borrow_at_the_extremes() {
+    let p_minus_1 = fe([
+        0xfffffffffffffffe, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+        0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+        0x00000000000001ff,
+    ]);
+    let p_minus_2 = fe([
+        0xfffffffffffffffd, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+        0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+        0x00000000000001ff,
+    ]);
+    let two = fe([
+        0x0000000000000002, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+        0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+        0x0000000000000000,
+    ]);
+
+    assert_eq!(p_minus_1.add(&p_minus_1), p_minus_2, "(p-1) + (p-1) == p-2");
+    assert_eq!(p_minus_1.add(&P521FieldElement::ONE), P521FieldElement::ZERO, "(p-1) + 1 == 0");
+    assert_eq!(P521FieldElement::ZERO.sub(&P521FieldElement::ONE), p_minus_1, "0 - 1 == p-1");
+    assert_eq!(P521FieldElement::ONE.sub(&p_minus_1), two, "1 - (p-1) == 2");
+    assert_eq!(p_minus_1.negate(), P521FieldElement::ONE, "-(p-1) == 1");
+    assert_eq!(P521FieldElement::ONE.invert(), P521FieldElement::ONE, "1^-1 == 1");
+    assert_eq!(p_minus_1.invert(), p_minus_1, "(p-1)^-1 == p-1, since (p-1)^2 == 1");
+}
+
+/// Products at the reduction's extremes rather than in the middle of its range, the same class
+/// of check `p256_field_tests.rs`/`p384_field_tests.rs`/`sm2_field_tests.rs` already carry and
+/// this curve did not: `(p-1)^2` and `(p-1)(p-2)` (the largest products two canonical elements
+/// can form), operands within `2^64` of `p`, and operands with the top bit set. Expected values
+/// are Python's `(a * b) % p`, computed independently of this crate's arithmetic
+/// (`random.seed(20260918)` for the pseudorandom operands).
+#[test]
+fn known_answer_mul_at_the_reduction_bounds() {
+    let cases: [([u64; 9], [u64; 9], [u64; 9]); 7] = [
+        // (p-1)^2 == 1
+        (
+            [
+                0xfffffffffffffffe, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0xfffffffffffffffe, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000,
+            ],
+        ),
+        // (p-1)(p-2) == 2
+        (
+            [
+                0xfffffffffffffffe, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0xfffffffffffffffd, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0x0000000000000002, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000,
+            ],
+        ),
+        // (p-1) * 2^(bits-1) == p - 2^(bits-1)
+        (
+            [
+                0xfffffffffffffffe, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000100,
+            ],
+            [
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000000ff,
+            ],
+        ),
+        // both operands within 2^64 of p
+        (
+            [
+                0xb122a0b01e939352, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0xd88def3c21b98f23, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0x31b01cefe60714ac, 0x0c26dd43c9f82aba, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000,
+            ],
+        ),
+        // both operands within 2^64 of p
+        (
+            [
+                0xf315ee0261d4b798, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0x64b1d0d0007c0705, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff,
+                0x00000000000001ff,
+            ],
+            [
+                0x9bf784140a1d7c96, 0x07d5aa976f3513e2, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000,
+                0x0000000000000000,
+            ],
+        ),
+        // both operands with the top bit set
+        (
+            [
+                0x6e63c6bbea7082bb, 0xd22cc93d5a21e76c, 0xa0dbe54bcdb2f7cb, 0xa8c5e4ca5347a8d3,
+                0x5bad1998281ff5a4, 0xbd0325a0d3d545e4, 0x8c806bda1c0c4b43, 0x5e96526496fe66ac,
+                0x000000000000011f,
+            ],
+            [
+                0x37bb2c7c190c5b04, 0xdc528dfd30b9df11, 0x561993c90be7b6f0, 0x2ea5d8b1d76b6c45,
+                0xda9b6732aab17048, 0x4a1aa8b29a612687, 0x3c3dd306f7772c1c, 0xa0ca82769b2831e8,
+                0x00000000000001c2,
+            ],
+            [
+                0x200dc6bca4512d5f, 0xa1d8fbb9571990d8, 0x5d1b9d6437792d0b, 0x997e20eb51eae882,
+                0x3c3636ba1b5d85f8, 0x819b6bf32325eef8, 0x93dbeb22a8656147, 0xa1940a58dc0e865e,
+                0x000000000000019e,
+            ],
+        ),
+        // both operands with the top bit set
+        (
+            [
+                0xaf7088097f55e903, 0x8e581673473c58f9, 0xaae64e123971ea1c, 0x7e9ad2be8bd62f1b,
+                0x81a2b599fe27ff63, 0x8e426b5910999ef7, 0x337e0ac8281bf0fb, 0x3ea808d1210c096c,
+                0x00000000000001a5,
+            ],
+            [
+                0x28a550a89905d51d, 0x60c2abda1d6524d7, 0x6b3ff74c431643d4, 0x0f69fb5a42f1a376,
+                0x4645b3fbe987802e, 0x8c1260cd82f83971, 0x2a1d57fa3de42173, 0x09a3149642f3827e,
+                0x00000000000001e7,
+            ],
+            [
+                0x5ae5c8c3efee0a33, 0x9995143d8f4bd505, 0xfea8df171b8bd60f, 0x264256831b8916b6,
+                0xf4868cc125af95da, 0x9e2375949e1d32ad, 0x5ab64ea04020cd71, 0x7964125674dfcc19,
+                0x0000000000000036,
+            ],
+        ),
+    ];
+    for (a, b, expected) in cases {
+        assert_eq!(fe(a).mul(&fe(b)), fe(expected), "a = {a:x?}, b = {b:x?}");
+        assert_eq!(fe(b).mul(&fe(a)), fe(expected), "commuted: a = {a:x?}, b = {b:x?}");
+        assert_eq!(fe(a).square(), fe(a).mul(&fe(a)), "square at the same extreme: a = {a:x?}");
+    }
+}
