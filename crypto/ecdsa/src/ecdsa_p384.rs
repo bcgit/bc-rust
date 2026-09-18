@@ -228,13 +228,14 @@ impl SignatureVerifier<ECDSAP384PublicKey, PK_LEN, SIG_LEN> for ECDSAP384 {
             return Err(SignatureError::SignatureVerificationFailed);
         }
         let r = P384ScalarField::from_limbs(r_limbs);
-        let s = P384ScalarField::from_limbs(s_limbs);
 
         let mut h = [0u8; 48];
         self.hash.do_final_out(&mut h);
         let e = e_from_hash(&h);
 
-        let s_inv = s.invert();
+        // `s` is part of the signature, so its inverse is taken in variable time on the public
+        // scalar type; the constant-time `invert` is for the signer's `k`.
+        let s_inv = P384PublicScalar::from_limbs(s_limbs).invert_vartime();
         let u = e.mul(&s_inv);
         let v = r.mul(&s_inv);
 

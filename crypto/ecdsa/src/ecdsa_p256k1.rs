@@ -238,13 +238,14 @@ impl SignatureVerifier<ECDSASecp256K1PublicKey, PK_LEN, SIG_LEN> for ECDSASecp25
             return Err(SignatureError::SignatureVerificationFailed);
         }
         let r = P256K1ScalarField::from_limbs(r_limbs);
-        let s = P256K1ScalarField::from_limbs(s_limbs);
 
         let mut h = [0u8; 32];
         self.hash.do_final_out(&mut h);
         let e = e_from_hash(&h); // steps 2-3
 
-        let s_inv = s.invert(); // step 4
+        // `s` is part of the signature, so its inverse is taken in variable time on the public
+        // scalar type; the constant-time `invert` is for the signer's `k`.
+        let s_inv = P256K1PublicScalar::from_limbs(s_limbs).invert_vartime(); // step 4
         let u = e.mul(&s_inv); // step 5
         let v = r.mul(&s_inv);
 
