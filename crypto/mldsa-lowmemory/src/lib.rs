@@ -90,12 +90,12 @@
 //! | MLDSA44_lowmemory/KeyGen  | 12.3 (62.3)                 | 11,700     (11,400) |
 //! | MLDSA65_lowmemory/KeyGen  | 14.8 (93.9)                 | 6,800      (7,000)  |
 //! | MLDSA87_lowmemory/KeyGen  | 16.8 (141.4)                | 3,900      (4,200)  |
-//! | MLDSA44_lowmemory/Sign    | 22.3 (84.0)                 | 990        (3,400)  |
-//! | MLDSA65_lowmemory/Sign    | 27.9 (124.7)                | 490        (2,400)  |
-//! | MLDSA87_lowmemory/Sign    | 31.6 (182.6)                | 330        (1,700)  |
-//! | MLDSA44_lowmemory/Verify  | 15.2 (52.7)                 | 11,200     (13,200) |
-//! | MLDSA65_lowmemory/Verify  | 19.1 (81.3)                 | 6,400      (8,000)  |
-//! | MLDSA87_lowmemory/Verify  | 22.3 (123.7)                | 3,700      (4,800)  |
+//! | MLDSA44_lowmemory/Sign    | 22.3 (86.5)                 | 990        (3,400)  |
+//! | MLDSA65_lowmemory/Sign    | 27.9 (128.0)                | 490        (2,400)  |
+//! | MLDSA87_lowmemory/Sign    | 31.6 (187.3)                | 330        (1,700)  |
+//! | MLDSA44_lowmemory/Verify  | 15.2 (56.4)                 | 11,200     (13,200) |
+//! | MLDSA65_lowmemory/Verify  | 19.1 (86.2)                 | 6,400      (8,000)  |
+//! | MLDSA87_lowmemory/Verify  | 22.3 (130.0)                | 3,700      (4,800)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!

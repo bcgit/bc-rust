@@ -757,6 +757,25 @@ impl<
         Ok((pk, sk))
     }
 
+    /// [`Self::sign_internal`] for a caller that has no pre-expanded 𝐀_hat: expands it here and
+    /// signs.
+    ///
+    /// `#[inline(never)]` matters: the matrix is up to 56 kB, and if this were inlined into the
+    /// `match` that chooses between a pre-expanded and a freshly expanded 𝐀_hat, the slot would be
+    /// allocated in that caller's frame on both paths, charging expanded-key callers for a matrix
+    /// they never use.
+    #[inline(never)]
+    fn sign_internal_expanding_a_hat(
+        sk: &SK,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let mut A_hat = P::MatrixA::new();
+        sk.expand_A_hat_into(&mut A_hat);
+        Self::sign_internal(sk, &A_hat, mu, rnd, output)
+    }
+
     /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
     /// modified to take an externally-computed mu instead of M', and to take the public matrix A_hat
     fn sign_internal(
@@ -946,6 +965,19 @@ impl<
             sig_encode::<P, SIG_LEN>(&sig_val_c_tilde, &sig_val_z, &sig_val_h, output);
 
         Ok(bytes_written)
+    }
+
+    /// [`Self::verify_internal`] for a caller that has no pre-expanded 𝐀_hat: expands it here and
+    /// verifies. See [`Self::sign_internal_expanding_a_hat`] for why this is `#[inline(never)]`.
+    #[inline(never)]
+    fn verify_internal_expanding_a_hat(
+        pk: &PK,
+        mu: &[u8; 64],
+        sig: &[u8; SIG_LEN],
+    ) -> Result<(), SignatureError> {
+        let mut A_hat = P::MatrixA::new();
+        pk.expand_A_hat_into(&mut A_hat);
+        Self::verify_internal(pk, &A_hat, mu, sig)
     }
 
     /// Algorithm 8 ML-DSA.Verify_internal(𝑝𝑘, 𝑀′, 𝜎)
@@ -1189,11 +1221,7 @@ impl<
 
         match A_hat {
             Some(A_hat) => Self::sign_internal(sk, A_hat, mu, rnd, output),
-            None => {
-                let mut A_hat = P::MatrixA::new();
-                sk.expand_A_hat_into(&mut A_hat);
-                Self::sign_internal(sk, &A_hat, mu, rnd, output)
-            }
+            None => Self::sign_internal_expanding_a_hat(sk, mu, rnd, output),
         }
     }
     fn sign_mu_deterministic_from_seed(
@@ -1538,11 +1566,7 @@ impl<
     ) -> Result<(), SignatureError> {
         match A_hat {
             Some(A_hat) => Self::verify_internal(pk, A_hat, mu, sig),
-            None => {
-                let mut A_hat = P::MatrixA::new();
-                pk.expand_A_hat_into(&mut A_hat);
-                Self::verify_internal(pk, &A_hat, mu, sig)
-            }
+            None => Self::verify_internal_expanding_a_hat(pk, mu, sig),
         }
     }
 }

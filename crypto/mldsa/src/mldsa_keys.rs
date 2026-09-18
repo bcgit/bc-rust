@@ -373,10 +373,11 @@ impl<
     /// Fully expands the intermediate values needed for performing multiple encaps operations
     /// against the same public key, which causes the MLKEMPublicKey struct to take up
     fn from(pk: &PK) -> Self {
-        // Build the struct first and expand straight into its matrix, so only one copy exists.
-        let mut expanded = Self { pk: pk.clone(), A_hat: P::MatrixA::new() };
-        expanded.pk.expand_A_hat_into(&mut expanded.A_hat);
-        expanded
+        // Struct literal as the return expression, so the result is built in the caller's slot.
+        // Building `Self` in a local and mutating it leaves a second full copy in this frame.
+        let mut A_hat = P::MatrixA::new();
+        pk.expand_A_hat_into(&mut A_hat);
+        Self { pk: pk.clone(), A_hat }
     }
 }
 
@@ -387,9 +388,10 @@ impl<
 > MLDSAPublicKeyTrait<P, PK_LEN> for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
 {
     fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
-        let mut expanded = Self { pk: PK::pk_decode(pk), A_hat: P::MatrixA::new() };
-        expanded.pk.expand_A_hat_into(&mut expanded.A_hat);
-        expanded
+        let pk = PK::pk_decode(pk);
+        let mut A_hat = P::MatrixA::new();
+        pk.expand_A_hat_into(&mut A_hat);
+        Self { pk, A_hat }
     }
 
     fn A_hat(&self) -> P::MatrixA {
@@ -900,12 +902,12 @@ impl<
     /// Fully expands the intermediate values needed for performing multiple encaps operations
     /// against the same public key, which causes the MLKEMPublicKey struct to take up
     fn from(sk: &SK) -> Self {
-        // Expand straight from the private key's rho into the struct's matrix: one copy, and no
-        // detour through derive_pk(), which would expand the matrix a second time.
-        let mut expanded =
-            Self { _phantom: core::marker::PhantomData, sk: sk.clone(), A_hat: P::MatrixA::new() };
-        expanded.sk.expand_A_hat_into(&mut expanded.A_hat);
-        expanded
+        // Expand straight from the private key's rho, with no detour through derive_pk(), which
+        // would expand the matrix a second time. Struct literal as the return expression so the
+        // result is built in the caller's slot.
+        let mut A_hat = P::MatrixA::new();
+        sk.expand_A_hat_into(&mut A_hat);
+        Self { _phantom: core::marker::PhantomData, sk: sk.clone(), A_hat }
     }
 }
 
@@ -958,12 +960,9 @@ impl<
     }
 
     fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
-        let mut expanded = Self {
-            _phantom: core::marker::PhantomData,
-            sk: SK::sk_decode(sk)?,
-            A_hat: P::MatrixA::new(),
-        };
-        expanded.sk.expand_A_hat_into(&mut expanded.A_hat);
-        Ok(expanded)
+        let sk = SK::sk_decode(sk)?;
+        let mut A_hat = P::MatrixA::new();
+        sk.expand_A_hat_into(&mut A_hat);
+        Ok(Self { _phantom: core::marker::PhantomData, sk, A_hat })
     }
 }
