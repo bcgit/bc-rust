@@ -16,14 +16,14 @@
 //! check, and the smallest passing `l` is `575`; this crate uses `l = 576` (72 bytes,
 //! byte-aligned) as [`crate::keys_bp512r1::EXTRA_BITS_DRBG_OUTPUT_LEN`].
 //!
-//! Verified (not checked in) against Python's arbitrary-precision `%` operator: 5000 random trials
-//! of `bits2int(X) mod (n-1)` for bit strings from 8 to 584 bits, confirming both the reduction's
-//! correctness and that a single conditional subtraction per bit always suffices.
+//! The reduction itself is [`bouncycastle_ec::barrett`]'s constant-time Barrett reduction with
+//! `m = n - 1` (see [`crate::extra_bits`]'s docs for the constant-time argument); `extra_bits_bp512r1_tests.rs`
+//! pins known answers computed in Python and cross-checks it against the bit-serial algorithm this
+//! module used to implement, kept there as an independent reference.
 
+use bouncycastle_ec::barrett;
 use bouncycastle_ec::bp512r1_scalar::{Bp512r1Scalar, N_LIMBS};
 use bouncycastle_ec::nat;
-use bouncycastle_utils::ct;
-use bouncycastle_utils::ct::Condition;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction
 /// never borrows out of the low limb.
@@ -38,40 +38,26 @@ const N_MINUS_1_LIMBS: [u64; 8] = [
     N_LIMBS[7],
 ];
 
-/// `2^512 mod (n-1)` -- the correction [`reduce_wide_bits_mod_n_minus_1`] adds back in when
-/// doubling the running remainder carries out of the top limb.
-const TWO_POW_512_MOD_N_MINUS_1_LIMBS: [u64; 8] = [
-    0x4a78697d6356ff98, 0xe24e2c7ef7a22522, 0xbe799ee68053efb8, 0xaac1a3beb356d9e6,
-    0x299c63358fccf78f, 0x34cf724c4c362df1, 0xc02b1951cc3603f8, 0x5522624724163b74,
+/// `floor(2^1024 / (n-1)) - 2^512`: the low limbs of Barrett's `mu` for `m = n - 1` (whose top
+/// limb is `mu`'s only other bit -- see [`bouncycastle_ec::barrett`]), computed in Python from
+/// RFC 5639 §3.4's `n`.
+const MU_LOW_LIMBS: [u64; 8] = [
+    0x2fafac64db57db3a, 0x0eaf0d9015d5c4ce, 0x9ff38f5f59ee4710, 0xdb9470c61a235d44,
+    0x666ad8f2f5bf92f7, 0x8373af60cc44ef09, 0x15d5ea2f03461e1e, 0x7f8d7f4ed6daeb8a,
 ];
 
-/// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the brainpoolP512r1 curve order: reduces the
-/// big-endian bit string `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`.
+/// FIPS 186-5 Appendix A.4.1 steps 3-5 for `n` = the curve order: reduces the big-endian bit string
+/// `bytes` modulo `n-1` and adds `1`, landing in `[1, n-1]`. `bytes` may be up to `127` bytes
+/// -- `2^1016 < (n-1) * 2^512`, Barrett's precondition -- which covers the 72-byte DRBG
+/// output this crate draws with room to spare; a longer input is a programming error and panics.
 pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> Bp512r1Scalar {
-    let mut acc = [0u64; 8];
-    for &byte in bytes {
-        for bit_idx in (0..8).rev() {
-            let bit = (byte >> bit_idx) & 1;
-            let (doubled, carry) = nat::add(&acc, &acc);
-            let mut with_bit = doubled;
-            with_bit[0] |= bit as u64;
-            let (with_carry_correction, _) = nat::add(&with_bit, &TWO_POW_512_MOD_N_MINUS_1_LIMBS);
-            let mut candidate = [0u64; 8];
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(carry),
-                &with_carry_correction,
-                &with_bit,
-                &mut candidate,
-            );
-            let (reduced, borrow) = nat::sub(&candidate, &N_MINUS_1_LIMBS);
-            ct::conditional_select(
-                Condition::<u64>::from_lsb(borrow),
-                &candidate,
-                &reduced,
-                &mut acc,
-            );
-        }
-    }
-    let (plus_one, _) = nat::add(&acc, &[1, 0, 0, 0, 0, 0, 0, 0]);
+    assert!(
+        bytes.len() < 128,
+        "reduce_wide_bits_mod_n_minus_1 given {} bytes, more than 127",
+        bytes.len()
+    );
+    let t = barrett::limbs_from_be_bytes::<16>(bytes);
+    let reduced = barrett::reduce::<8, 16, 9>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS);
+    let (plus_one, _) = nat::add(&reduced, &[1, 0, 0, 0, 0, 0, 0, 0]);
     Bp512r1Scalar::from_limbs(plus_one)
 }
