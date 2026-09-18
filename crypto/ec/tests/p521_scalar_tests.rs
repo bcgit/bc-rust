@@ -363,3 +363,63 @@ fn known_answer_at_n_minus_1() {
     assert_eq!(n_minus_1.invert(), n_minus_1, "(n-1)^-1 == n-1");
     assert_eq!(P521ScalarField::ONE.invert(), P521ScalarField::ONE, "1^-1 == 1");
 }
+
+/// The variable-time inverse on the public scalar type must agree with the constant-time
+/// [`P521ScalarField::invert`] everywhere: on the known-answer values (whose inverses are pinned above
+/// from Python), on `0` (both return `0` by convention), `1`, `n - 1`, and on pseudorandom
+/// values -- including ones with long runs of zero bits, which are where the binary algorithm
+/// takes its longest halving chains.
+#[test]
+fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
+    let n_minus_1 = {
+        let mut l = bouncycastle_ec::p521_scalar::N_LIMBS;
+        l[0] -= 1;
+        l
+    };
+    let mut one = [0u64; 9];
+    one[0] = 1;
+    // Values whose low limb is exactly 1 with higher limbs set: odd, so the binary algorithm must
+    // not halve them, yet indistinguishable from `1` by their low limb alone. A halving test that
+    // looked at more than the lowest bit (or at the wrong limb) breaks the `u == x1 * a` invariant
+    // on exactly these and nowhere the pseudorandom inputs below would reach.
+    let mut low_limb_one_a = [0u64; 9];
+    low_limb_one_a[0] = 1;
+    low_limb_one_a[1] = 1;
+    let mut low_limb_one_b = [0u64; 9];
+    low_limb_one_b[0] = 1;
+    low_limb_one_b[8] = 1;
+    let mut low_limb_one_c = [0u64; 9];
+    low_limb_one_c[0] = 1;
+    low_limb_one_c[1] = u64::MAX;
+    let mut fixed: Vec<[u64; 9]> =
+        vec![[0u64; 9], one, n_minus_1, low_limb_one_a, low_limb_one_b, low_limb_one_c];
+    fixed.extend([VALS_0, VALS_1, VALS_2]);
+    for limbs in fixed {
+        assert_eq!(
+            bouncycastle_ec::p521_scalar::P521PublicScalar::from_limbs(limbs).invert_vartime(),
+            fe(limbs).invert(),
+            "limbs = {limbs:x?}"
+        );
+    }
+    assert_eq!(
+        bouncycastle_ec::p521_scalar::P521PublicScalar::from_limbs([0u64; 9]).invert_vartime(),
+        P521ScalarField::ZERO,
+        "0^-1 == 0 by convention, matching invert"
+    );
+
+    let mut rng = Xorshift64(0x1AC0_B5EC_0000_0009);
+    for i in 0..500 {
+        let mut limbs = rng.next_limbs();
+        if i % 4 == 0 {
+            // Sparse values: clear the low half of each limb so `u`/`v` shed many bits per step.
+            for limb in limbs.iter_mut() {
+                *limb &= 0xffff_ffff_0000_0000;
+            }
+        }
+        assert_eq!(
+            bouncycastle_ec::p521_scalar::P521PublicScalar::from_limbs(limbs).invert_vartime(),
+            fe(limbs).invert(),
+            "limbs = {limbs:x?}"
+        );
+    }
+}

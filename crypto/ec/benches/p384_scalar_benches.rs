@@ -36,6 +36,11 @@ fn bench_p384_scalar(c: &mut Criterion) {
         bencher.iter(|| black_box(black_box(x).mul(black_box(&y))))
     });
     group.bench_function("invert", |bencher| bencher.iter(|| black_box(black_box(x).invert())));
+    // Variable-time inverse on the public scalar type (verification's `s^-1`).
+    let x_public = P384PublicScalar::from_limbs(A_LIMBS);
+    group.bench_function("invert_vartime", |bencher| {
+        bencher.iter(|| black_box(black_box(x_public).invert_vartime()))
+    });
     group.finish();
 }
 

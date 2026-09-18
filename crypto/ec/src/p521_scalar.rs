@@ -446,6 +446,16 @@ impl P521PublicScalar {
     pub fn to_limbs(&self) -> [u64; 9] {
         self.0
     }
+
+    /// `self^-1 mod n` in **variable time**, as a [`P521ScalarField`] ready for the arithmetic
+    /// that follows, or `0` for `0`. For ECDSA verification's `s` (FIPS 186-5 §6.4.2 step 4),
+    /// which is part of the signature and so already public; nothing derived from a private key
+    /// or a per-message secret may reach this, which is why it lives on the public scalar type
+    /// and not on [`P521ScalarField`], whose `invert` is the constant-time one. See
+    /// [`crate::inverse_vartime`].
+    pub fn invert_vartime(&self) -> P521ScalarField {
+        P521ScalarField::from_limbs(crate::inverse_vartime::mod_inverse(&self.0, &N_LIMBS))
+    }
 }
 
 // `redc`'s carry-propagation loop (`while carry != 0` above) is a genuinely reachable branch --
