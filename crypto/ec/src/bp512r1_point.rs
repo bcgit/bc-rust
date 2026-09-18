@@ -229,6 +229,40 @@ impl Bp512r1JacobianPoint {
         }
         generic
     }
+    /// `self + (x2, y2)` for a **public**, affine `other` (`Z2 = 1`): [`Self::add_vartime`]'s
+    /// early-exit structure over [`Self::add_affine`]'s mixed formula, for the variable-time
+    /// multiplier's fixed side, whose precomputed multiples of `G` are stored affine.
+    /// `pub(crate)` for both of the reasons its two parents are.
+    pub(crate) fn add_vartime_affine(
+        &self,
+        x2: &Bp512r1FieldElement,
+        y2: &Bp512r1FieldElement,
+    ) -> Self {
+        if self.is_infinity().to_bool() {
+            return Self::from_affine(*x2, *y2);
+        }
+
+        let z1_sq = self.z.mul(&self.z);
+        let u2 = x2.mul(&z1_sq);
+        let s2 = y2.mul(&self.z).mul(&z1_sq);
+        let h = self.x.sub(&u2); // U1 - U2, with U1 = X1
+        let r = self.y.sub(&s2); // S1 - S2, with S1 = Y1
+        if h.is_zero().to_bool() {
+            // Same affine x: either the same point (double it) or its negation (sum is infinity).
+            return if r.is_zero().to_bool() { self.double() } else { Self::INFINITY };
+        }
+
+        let h_squared = h.mul(&h);
+        let g = h_squared.mul(&h); // H^3
+        let v = h_squared.mul(&self.x); // H^2 * U1
+        let g_neg = g.negate();
+        let acc = self.y.mul(&g_neg); // -S1 * H^3
+        let g2 = g_neg.add(&v).add(&v); // 2V - H^3
+        let x3 = r.mul(&r).sub(&g2);
+        let y3 = acc.add(&v.sub(&x3).mul(&r));
+        let z3 = h.mul(&self.z); // H * Z1, with Z2 = 1
+        Self { x: x3, y: y3, z: z3 }
+    }
 }
 
 fn select_point(
@@ -310,6 +344,27 @@ mod tests {
                 a.to_affine(),
                 "add_affine with the identity flag must return self"
             );
+        }
+    }
+
+    #[test]
+    fn add_vartime_affine_agrees_with_add_on_every_case() {
+        let g = Bp512r1JacobianPoint::from_affine(
+            Bp512r1FieldElement::from_limbs(G_X_LIMBS),
+            Bp512r1FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        let z = Bp512r1FieldElement::from_limbs(G_Y_LIMBS);
+        let z2 = z.mul(&z);
+        let scaled_g = Bp512r1JacobianPoint { x: g.x.mul(&z2), y: g.y.mul(&z2.mul(&z)), z };
+        for a in [g, g.double(), g.negate(), Bp512r1JacobianPoint::INFINITY, scaled_g] {
+            for b in [g, g.double(), g.negate()] {
+                let (bx, by) = b.to_affine().unwrap();
+                assert_eq!(
+                    a.add_vartime_affine(&bx, &by).to_affine(),
+                    a.add(&b).to_affine(),
+                    "add_vartime_affine disagrees with add"
+                );
+            }
         }
     }
 
