@@ -4,18 +4,13 @@
 //!
 //! # DRBG output length
 //!
-//! Unlike P-256 (which needs 96 bits of headroom beyond its 256-bit order for Appendix A.4.1's
-//! bias bound -- FIPS 186-5 Table A.2's "Recommended" column gives 352), secp256k1 isn't a NIST
-//! curve so there is no Table A.2 entry for it; applying A.4.1's own general criterion
-//! directly (step 2's `2ρ(1-ρ)(n-1) > ε·N` check, `ε = 2⁻⁶⁴`) to secp256k1's `n` shows it holds
-//! already at `l = 256` (no headroom at all needed): `n` is `2²⁵⁶ − 2^128`-ish, close enough to
-//! `2²⁵⁶` that `N mod (n-1)` is tiny, making the bias negligible -- computed directly in Python,
-//! not assumed by analogy to any NIST curve's table entry. So key generation and the randomised
-//! per-message secret both request exactly 32 bytes and reduce with a single conditional
-//! subtraction of `n - 1` (mirroring [`bouncycastle_ec::p256k1_scalar`]'s own `reduce_once` shape,
-//! the same pattern [`crate::keys_p384`] uses for the same reason), rather than
-//! [`crate::extra_bits`]'s bit-by-bit wide reduction.
+//! secp256k1's `n` is within `2^129` of `2^256`, so Appendix A.4.1's bias bound already holds at
+//! 256 bits and key generation would need no headroom. But Appendix A.3.1 -- the randomised
+//! per-message secret -- requires `N + t` bits with `t >= 64` regardless, so both draws are 320
+//! bits (40 bytes) and go through [`crate::extra_bits_p256k1`]'s wide reduction; see that
+//! module's docs for the reasoning and for why key generation uses the same draw.
 
+use crate::extra_bits_p256k1::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
@@ -25,8 +20,6 @@ use bouncycastle_ec::p256k1_comb::comb_multiply_base_point;
 use bouncycastle_ec::p256k1_scalar::{N_LIMBS, P256K1Scalar};
 use bouncycastle_ec::p256k1_sec1;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_utils::ct;
-use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -40,19 +33,10 @@ pub const SK_LEN: usize = 32;
 /// form.
 pub const PK_LEN: usize = 65;
 
-/// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction
-/// never borrows out of the low limb.
-const N_MINUS_1_LIMBS: [u64; 4] = [N_LIMBS[0] - 1, N_LIMBS[1], N_LIMBS[2], N_LIMBS[3]];
-
-/// FIPS 186-5 Appendix A.4.1 steps 3-5 for secp256k1's `n`, given exactly-`n`-width input (see the
-/// module docs for why no wider DRBG output is needed here): `x mod (n-1)`, then `x + 1`.
-pub(crate) fn reduce_mod_n_minus_1_plus_one(limbs: [u64; 4]) -> P256K1Scalar {
-    let (diff, borrow) = nat::sub(&limbs, &N_MINUS_1_LIMBS);
-    let mut reduced = [0u64; 4];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut reduced);
-    let (plus_one, _) = nat::add(&reduced, &[1, 0, 0, 0]);
-    P256K1Scalar::from_limbs(plus_one)
-}
+/// Requested output length, in bytes, from the DRBG for FIPS 186-5 Appendix A.2.1 key generation
+/// and Appendix A.3.1 randomised per-message secret generation: `N + t` with `N = 256` and
+/// `t = 64`, the minimum A.3.1 step 2 accepts, giving 320 bits. See the module docs.
+pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 
 /// An ECDSA secp256k1 private key: FIPS 186-5 §6.2's `d`, `d` in `[1, n-1]`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -153,9 +137,9 @@ pub fn keygen_from_rng(
 ) -> Result<(ECDSASecp256K1PublicKey, ECDSASecp256K1PrivateKey), SignatureError> {
     // Raw DRBG output, reduced below into the private key / per-message secret: held in
     // `Secret` so it is scrubbed when this function returns rather than left on the stack.
-    let mut bytes = Secret::<[u8; SK_LEN]>::new();
-    rng.next_bytes_out(&mut *bytes).map_err(SignatureError::RNGError)?;
-    let d = reduce_mod_n_minus_1_plus_one(p256k1_sec1::limbs_from_be_bytes(&bytes));
+    let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
+    rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
+    let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
     let q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction and G has prime order n (cofactor h = 1), so [d]G is never
@@ -163,42 +147,4 @@ pub fn keygen_from_rng(
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
 
     Ok((ECDSASecp256K1PublicKey { x, y }, ECDSASecp256K1PrivateKey(d)))
-}
-
-// `reduce_mod_n_minus_1_plus_one` is `pub(crate)`, not exposed outside the crate, and its numeric
-// correctness (specifically, that `N_MINUS_1_LIMBS` really is `n - 1` and not `n` or `n + 1`) isn't
-// independently pinned by `keygen`/`sign_randomized`'s own tests, which check validity (a produced
-// key/signature works), not exact values -- see `crate::keys_p384`'s identical gap and fix. A KAT
-// here, computed independently in Python, closes it.
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn reduce_mod_n_minus_1_plus_one_matches_kats() {
-        let x: [u64; 4] =
-            [0x310022084564664a, 0xb0525afa51a26b8a, 0x0b049ab71dbafb06, 0x72d50095457ed571];
-        let expected = P256K1Scalar::from_limbs([
-            0x310022084564664b, 0xb0525afa51a26b8a, 0x0b049ab71dbafb06, 0x72d50095457ed571,
-        ]);
-        assert_eq!(reduce_mod_n_minus_1_plus_one(x), expected);
-
-        // x = n - 1: (n-1) mod (n-1) = 0, +1 = 1.
-        assert_eq!(
-            reduce_mod_n_minus_1_plus_one(N_MINUS_1_LIMBS),
-            P256K1Scalar::from_limbs([1, 0, 0, 0])
-        );
-
-        // x = n - 2: the largest residue mod (n-1), so +1 gives n - 1, the top of the output
-        // interval.
-        let mut n_minus_2 = N_MINUS_1_LIMBS;
-        n_minus_2[0] -= 1; // N_LIMBS[0] is odd, so n - 1 is even and this never borrows
-        assert_eq!(
-            reduce_mod_n_minus_1_plus_one(n_minus_2),
-            P256K1Scalar::from_limbs(N_MINUS_1_LIMBS)
-        );
-
-        // x = n: n mod (n-1) = 1, +1 = 2.
-        assert_eq!(reduce_mod_n_minus_1_plus_one(N_LIMBS), P256K1Scalar::from_limbs([2, 0, 0, 0]));
-    }
 }

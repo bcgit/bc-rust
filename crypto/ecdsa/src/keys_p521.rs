@@ -2,22 +2,25 @@
 //! shape to [`crate::keys_p384`] -- see that module's docs for the general reasoning -- with
 //! P-521's types and SEC 1 encoding widths substituted.
 //!
-//! # Reduction needs `extra_bits`'s wide form after all
+//! # DRBG output length, and why the reduction is the wide form
 //!
-//! Unlike P-384 (whose 48-byte `SK_LEN` matches its 6-limb/384-bit native width exactly), P-521's
-//! 66-byte `SK_LEN` is **528** bits -- 7 more than `n`'s 521, since SEC 1 octets are byte-aligned
-//! and 521 is not a multiple of 8. A single conditional subtraction of `n - 1` (as
-//! [`crate::keys_p384::reduce_mod_n_minus_1_plus_one`] uses) assumes the input is already within a
-//! factor of 2 of `n`; raw DRBG bytes reinterpreted as a 9-limb integer can be as large as `2^528 -
-//! 1`, far past that, and one subtraction silently leaves most of the value unreduced (a bug this
-//! module's own tests caught: `keygen`/`sign_randomized` produced keys/signatures too broken to
-//! round-trip through sign+verify, despite every fixed-input KAT -- which never exercises a raw,
-//! unbounded DRBG value -- passing). So key generation and the randomised per-message secret both
-//! go through [`crate::extra_bits`]'s bit-by-bit Horner reduction instead, the same machinery
-//! P-256 already needs for the analogous reason (there, because its DRBG output is deliberately
-//! wider than `n`'s width for bias-reduction headroom; here, because byte-alignment alone already
-//! makes it wider). [`reduce_wide_bits_mod_n_minus_1`] is this module's own copy, sized for
-//! P-521's 9-limb width.
+//! FIPS 186-5 Table A.2 gives `p521` a required and recommended DRBG output of 521 bits for key
+//! generation: `n` is within `2^260` of `2^521`, so the reduction's bias is negligible with no
+//! headroom. But Appendix A.3.1 -- the randomised per-message secret -- requires `N + t` bits with
+//! `t >= 64` regardless, so both draws are `N + 71 = 592` bits (74 bytes, the byte-aligned width
+//! at or above `585`; [`EXTRA_BITS_DRBG_OUTPUT_LEN`]). An earlier version drew the 66-byte
+//! `SK_LEN` (528 bits, `t = 7`) for both, which met Table A.2 but not A.3.1.
+//!
+//! Even at 528 bits the reduction had to be the wide, bit-by-bit form: 66 bytes is 7 bits more
+//! than `n`'s 521 (SEC 1 octets are byte-aligned and 521 is not a multiple of 8), so a raw draw
+//! reinterpreted as a 9-limb integer can be as large as `2^528 - 1`, far past the `< 2(n-1)` a
+//! single conditional subtraction of `n - 1` assumes, and one subtraction silently leaves most of
+//! the value unreduced (a bug this module's own tests caught: `keygen`/`sign_randomized` produced
+//! keys/signatures too broken to round-trip through sign+verify, despite every fixed-input KAT --
+//! which never exercises a raw, unbounded DRBG value -- passing). So both paths use the same
+//! Horner reduction [`crate::extra_bits`] implements for P-256; [`reduce_wide_bits_mod_n_minus_1`]
+//! is this module's own copy, sized for P-521's 9-limb width, and its accumulator's width is what
+//! `TWO_POW_576_MOD_N_MINUS_1_LIMBS` refers to, not the draw's.
 
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::SignatureError;
@@ -40,6 +43,12 @@ pub const SK_LEN: usize = 66;
 /// Encoded length of a P-521 public key in the canonical uncompressed form (SEC 1 §2.3.3,
 /// `04 || X || Y`); [`ECDSAP521PublicKey::from_bytes`] also accepts the 67-byte compressed form.
 pub const PK_LEN: usize = 133;
+
+/// Requested output length, in bytes, from the DRBG for FIPS 186-5 Appendix A.2.1 key generation
+/// and Appendix A.3.1 randomised per-message secret generation: the smallest whole number of bytes
+/// holding `N + t` bits with `N = 521` and `t = 64`, i.e. `ceil(585 / 8) = 74` bytes (`t = 71`).
+/// See the module docs.
+pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 74;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction
 /// never borrows out of the low limb.
@@ -196,9 +205,9 @@ pub fn keygen_from_rng(
 ) -> Result<(ECDSAP521PublicKey, ECDSAP521PrivateKey), SignatureError> {
     // Raw DRBG output, reduced below into the private key / per-message secret: held in
     // `Secret` so it is scrubbed when this function returns rather than left on the stack.
-    let mut bytes = Secret::<[u8; SK_LEN]>::new();
-    rng.next_bytes_out(&mut *bytes).map_err(SignatureError::RNGError)?;
-    let d = reduce_wide_bits_mod_n_minus_1(&*bytes);
+    let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
+    rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
+    let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
     let q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction and G has prime order n (cofactor h = 1), so [d]G is never
@@ -217,6 +226,19 @@ pub fn keygen_from_rng(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn known_answer_all_ff_at_the_drbg_width() {
+        // 74 bytes of 0xff: the width keygen and sign_randomized actually draw. Expected value is
+        // Python's ((2^592 - 1) % (n - 1)) + 1.
+        let input = [0xffu8; EXTRA_BITS_DRBG_OUTPUT_LEN];
+        let expected: [u64; 9] = [
+            0x0000000000000000, 0x482470b763cdfc00, 0x251b23bb31dc28a2, 0x19ff5b847b2d17e2,
+            0x3cbc3e206834ca40, 0x00000000000002d7, 0x0000000000000000, 0x0000000000000000,
+            0x0000000000000000,
+        ];
+        assert_eq!(reduce_wide_bits_mod_n_minus_1(&input), P521Scalar::from_limbs(expected));
+    }
 
     #[test]
     fn known_answer_all_ff() {
