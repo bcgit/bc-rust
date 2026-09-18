@@ -145,11 +145,13 @@
 //! secret value, per this workspace's constant-time rules. See [`p256`]'s module docs for the
 //! field's specific reduction algorithm and the reasoning behind it.
 //!
-//! Two deliberate exceptions, both marked in their own docs, both reachable only through a type
+//! Three deliberate exceptions, all marked in their own docs, all reachable only through a type
 //! that says so: [`p256_wnaf::shamir_multiply`] and its siblings take
 //! [`p256_scalar::P256PublicScalar`] and branch freely, because verification operates entirely on
-//! public data; and `JacobianPoint::to_affine` branches on the point being the identity, so it is
-//! for output boundaries on already-public points, not for secret intermediates.
+//! public data; `P256PublicScalar::invert_vartime` and its siblings invert a public scalar
+//! (verification's `s`) by the binary extended Euclidean algorithm in [`inverse_vartime`], for
+//! the same reason; and `JacobianPoint::to_affine` branches on the point being the identity, so
+//! it is for output boundaries on already-public points, not for secret intermediates.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -179,6 +181,7 @@ pub mod bp512r1_point;
 pub mod bp512r1_scalar;
 pub mod bp512r1_sec1;
 pub mod bp512r1_wnaf;
+pub mod inverse_vartime;
 pub mod montgomery;
 pub mod nat;
 pub mod p256;
