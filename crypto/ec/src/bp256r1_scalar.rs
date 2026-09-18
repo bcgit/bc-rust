@@ -137,19 +137,32 @@ impl Bp256r1ScalarField {
         Self::from_limbs(*secret.limbs())
     }
 
-    /// `self^-1 mod n`, or `0` if `self` is `0`. Fermat's little theorem, by fixed
-    /// square-then-conditionally-multiply over the public exponent `n-2`.
+    /// `self^-1 mod n`, or `0` if `self` is `0`. Fermat's little theorem (`n` is prime) over the
+    /// public exponent `n-2`, by the same fixed 4-bit-window exponentiation as
+    /// [`crate::p256::P256FieldElement::invert`] -- see its docs for the constant-time argument.
     pub fn invert(&self) -> Self {
+        // self^0 .. self^15, indexed by nibble value.
+        let mut table = [Self::ONE; 16];
+        table[1] = *self;
+        for i in 2..16 {
+            table[i] = table[i - 1].mul(self);
+        }
+
         let mut result = Self::ONE;
         for limb_idx in (0..4).rev() {
             let limb = N_MINUS_2_LIMBS[limb_idx];
-            for bit in (0..64).rev() {
-                result = result.square();
-                let multiplied = result.mul(self);
-                let bit_is_set = Condition::<u64>::from_lsb((limb >> bit) & 1);
-                let mut selected = [0u64; 4];
-                ct::conditional_select(bit_is_set, &multiplied.0, &result.0, &mut selected);
-                result = Self(selected);
+            for nibble_idx in (0..16).rev() {
+                for _ in 0..4 {
+                    result = result.square();
+                }
+                // `limb` is one word of a compile-time constant exponent and `nibble_idx` a loop
+                // index, so both the index into `table` and this branch depend on public data
+                // only: the sequence of operations is fixed at compile time and identical on every
+                // call.
+                let nibble = ((limb >> (4 * nibble_idx)) & 0xf) as usize;
+                if nibble != 0 {
+                    result = result.mul(&table[nibble]);
+                }
             }
         }
         result

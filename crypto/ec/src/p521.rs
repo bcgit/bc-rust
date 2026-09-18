@@ -154,19 +154,34 @@ impl P521FieldElement {
         Self(reduce(&widening_square(&self.0)))
     }
 
-    /// `self^-1 mod p`, or `0` if `self` is `0`. Fermat's little theorem.
+    /// `self^-1 mod p`, or `0` if `self` is `0`. Fermat's little theorem over the public
+    /// exponent `p-2`, by the same fixed 4-bit-window exponentiation as
+    /// [`crate::p256::P256FieldElement::invert`] -- see its docs for the constant-time argument.
     pub fn invert(&self) -> Self {
+        // self^0 .. self^15, indexed by nibble value.
+        let mut table = [Self::ONE; 16];
+        table[1] = *self;
+        for i in 2..16 {
+            table[i] = table[i - 1].mul(self);
+        }
+
         let mut result = Self::ONE;
         for limb_idx in (0..9).rev() {
             let limb = P_MINUS_2_LIMBS[limb_idx];
-            let bit_count = if limb_idx == 8 { 9 } else { 64 };
-            for bit in (0..bit_count).rev() {
-                result = result.square();
-                // `limb` is one word of a compile-time constant exponent and `bit` a loop
-                // index, so this branch is on public data only: the sequence of squarings and
-                // multiplications is fixed at compile time and identical on every call.
-                if (limb >> bit) & 1 == 1 {
-                    result = result.mul(self);
+            // The top limb holds only 9 bits of the exponent, in nibbles 0..=2; its higher
+            // nibbles are zero and are skipped rather than spent on squarings of `1`.
+            let nibbles = if limb_idx == 8 { 3 } else { 16 };
+            for nibble_idx in (0..nibbles).rev() {
+                for _ in 0..4 {
+                    result = result.square();
+                }
+                // `limb` is one word of a compile-time constant exponent and `nibble_idx` a loop
+                // index, so both the index into `table` and this branch depend on public data
+                // only: the sequence of operations is fixed at compile time and identical on every
+                // call.
+                let nibble = ((limb >> (4 * nibble_idx)) & 0xf) as usize;
+                if nibble != 0 {
+                    result = result.mul(&table[nibble]);
                 }
             }
         }
