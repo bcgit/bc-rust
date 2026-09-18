@@ -1,33 +1,110 @@
 //! Shared parser for the legacy (pre-ACVP, 2011-era) NIST CAVP `.rsp` text format used by
-//! `ECDSA_SigVer.rsp`, `ECDSA_PKV.rsp` and `ECDSA_KeyPair.rsp` in `bc-test-data/crypto/cavp/` --
-//! distinct from the newer JSON ACVP format the `aes`/`modes`/`mldsa`/`mlkem` crates' own
-//! `bc-test-data.rs` files parse. Each test binary that includes this module uses a subset of it.
+//! `ECDSA_SigVer.rsp`, `ECDSA_PKV.rsp`, `ECDSA_KeyPair.rsp` and `ECDSA_SigGen.txt` in
+//! `bc-test-data/crypto/cavp/` -- distinct from the newer JSON ACVP format the
+//! `aes`/`modes`/`mldsa`/`mlkem` crates' own `bc-test-data.rs` files parse. Each test binary that
+//! includes this module uses a subset of it.
+//!
+//! Unlike those other suites, a missing `bc-test-data` checkout is a test **failure** here, not a
+//! warning and a vacuous pass: these files are the only external check on this crate's signing
+//! and verification against NIST's own values, and a green run that never read them would be
+//! indistinguishable from one that did. Clone `bc-test-data` next to this repository (and symlink
+//! it at `/tmp/bc-test-data` for `cargo mutants`, whose copied tree resolves the relative path
+//! there -- see `CLAUDE.md`).
 
 #![allow(dead_code)]
 
+use bouncycastle_core::errors::RNGError;
+use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::traits::{RNG, SecurityStrength};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
-use std::sync::Once;
 
 const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto/cavp";
 const TEST_DATA_PATH: &str = "../bc-test-data/crypto/cavp";
 
-static TEST_DATA_CHECK: Once = Once::new();
+/// Returns the contents of `filename` from `bc-test-data/crypto/cavp/`. Panics, failing the test,
+/// if the repo is not checked out or the file is missing -- see the module docs for why this suite
+/// does not skip.
+pub fn get_test_data(filename: &str) -> String {
+    let dir = [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH]
+        .into_iter()
+        .find(|d| Path::new(d).exists())
+        .unwrap_or_else(|| {
+            panic!(
+                "bc-test-data not found (looked in {TEST_DATA_PATH_RELATIVE:?} and \
+                 {TEST_DATA_PATH:?}); the ECDSA CAVP suites require it rather than skipping"
+            )
+        });
+    fs::read_to_string(format!("{dir}/{filename}"))
+        .unwrap_or_else(|e| panic!("failed to read CAVP vector file {dir}/{filename}: {e}"))
+}
 
-/// Returns the contents of `filename` from `bc-test-data/crypto/cavp/`, or `None` (after a
-/// one-time warning) if the repo is not checked out -- same convention as every other CAVP/ACVP
-/// suite in this workspace, so `cargo test` stays green for someone who has only cloned this repo.
-pub fn get_test_data(filename: &str) -> Option<String> {
-    let dir = [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH].into_iter().find(|d| Path::new(d).exists());
-    TEST_DATA_CHECK.call_once(|| match dir {
-        Some(d) => println!("bc-test-data found at: {d:?}"),
-        None => {
-            println!("WARNING: bc-test-data directory not found; ECDSA CAVP tests will be skipped")
+/// An [`RNG`] that hands out one fixed big-endian value, zero-padded on the left to whatever width
+/// is asked for. This is how `ECDSA_SigGen.txt`'s per-message secret `k` is injected: every
+/// curve's `sign_randomized` draws its DRBG bytes and reduces them per FIPS 186-5 Appendix A.4.1
+/// (`x mod (n-1)`, then `+ 1`), so an RNG returning `k - 1` -- which is `< n - 1`, making the
+/// reduction the identity -- produces exactly `k`, through the public API and with no test-only
+/// hook in the crate. Only `next_bytes_out`/`next_bytes` are meaningful; nothing in the signing
+/// path calls the rest.
+pub struct FixedBytesRng {
+    value_be: Vec<u8>,
+}
+
+impl FixedBytesRng {
+    pub fn new(value_be: Vec<u8>) -> Self {
+        Self { value_be }
+    }
+}
+
+impl RNG for FixedBytesRng {
+    fn add_seed_keymaterial(&mut self, _seed: &dyn KeyMaterialTrait) -> Result<(), RNGError> {
+        Ok(())
+    }
+
+    fn next_int(&mut self) -> Result<u32, RNGError> {
+        unimplemented!("FixedBytesRng only serves next_bytes_out")
+    }
+
+    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
+        let mut out = vec![0u8; len];
+        self.next_bytes_out(&mut out)?;
+        Ok(out)
+    }
+
+    fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        assert!(
+            out.len() >= self.value_be.len(),
+            "requested {} bytes but the fixed value is {} bytes wide",
+            out.len(),
+            self.value_be.len()
+        );
+        let pad = out.len() - self.value_be.len();
+        out[..pad].fill(0);
+        out[pad..].copy_from_slice(&self.value_be);
+        Ok(out.len())
+    }
+
+    fn fill_keymaterial_out(&mut self, _out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
+        unimplemented!("FixedBytesRng only serves next_bytes_out")
+    }
+
+    fn security_strength(&self) -> SecurityStrength {
+        SecurityStrength::_256bit
+    }
+}
+
+/// Big-endian `value - 1` in place. Only ever called on a CAVP `k`, which is in `[1, n-1]` and so
+/// never zero; panics rather than wrap if it is.
+pub fn decrement_be(value: &mut [u8]) {
+    for byte in value.iter_mut().rev() {
+        if *byte > 0 {
+            *byte -= 1;
+            return;
         }
-    });
-    let dir = dir?;
-    Some(fs::read_to_string(format!("{dir}/{filename}")).expect("failed to read CAVP vector file"))
+        *byte = 0xff;
+    }
+    panic!("decrement_be called on zero");
 }
 
 /// One `Key = value`-line record, plus the `[...]` section header it fell under.

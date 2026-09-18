@@ -15,22 +15,26 @@ use std::path::Path;
 const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
 const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
 
-fn get_test_data(filename: &str) -> Option<String> {
+/// Panics, failing the test, if the wycheproof clone is missing: these suites are the only
+/// adversarial check on this crate's verification, and a green run that never read them would be
+/// indistinguishable from one that did. (For `cargo mutants`, symlink the clone at
+/// `/tmp/wycheproof`; its copied tree resolves the relative path there.)
+fn get_test_data(filename: &str) -> String {
     for dir in [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH] {
         let path = format!("{dir}/{filename}");
         if Path::new(&path).exists() {
-            return Some(fs::read_to_string(path).unwrap());
+            return fs::read_to_string(path).unwrap();
         }
     }
-    println!("WARNING: wycheproof directory not found; ecdsa_secp521r1_sha512_p1363 test skipped");
-    None
+    panic!(
+        "wycheproof not found (looked for {filename} in {TEST_DATA_PATH_RELATIVE:?} and \
+         {TEST_DATA_PATH:?}); these suites require it rather than skipping"
+    );
 }
 
 #[test]
 fn ecdsa_secp521r1_sha512_p1363_test() {
-    let Some(contents) = get_test_data("ecdsa_secp521r1_sha512_p1363_test.json") else {
-        return;
-    };
+    let contents = get_test_data("ecdsa_secp521r1_sha512_p1363_test.json");
     let doc: Value = serde_json::from_str(&contents).unwrap();
 
     let mut num_tests = 0usize;
@@ -74,9 +78,7 @@ fn ecdsa_secp521r1_sha512_p1363_test() {
 /// [`ECDSAP521::verify_der`].
 #[test]
 fn ecdsa_secp521r1_sha512_der_test() {
-    let Some(contents) = get_test_data("ecdsa_secp521r1_sha512_test.json") else {
-        return;
-    };
+    let contents = get_test_data("ecdsa_secp521r1_sha512_test.json");
     let doc: Value = serde_json::from_str(&contents).unwrap();
 
     let mut num_tests = 0usize;
