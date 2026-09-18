@@ -98,6 +98,8 @@
 //! absolute performance measurements.
 //!
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
+//! Measurements include the public key and signature buffer, which is a realistic setting, but
+//! numbers would be lower if those were on the heap and excluded from the measurement.
 //! Actual values may vary based on build configuration and target architecture.
 //! The peak also depends on how the compiler lays out the measured function's stack frame relative
 //! to its caller and whether it elides copies at the call boundary, which is outside
