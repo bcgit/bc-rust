@@ -46,8 +46,7 @@ impl P256JacobianPoint {
         Self { x: P256FieldElement::ONE, y: P256FieldElement::ONE, z: P256FieldElement::ZERO };
 
     /// Builds a Jacobian point from affine coordinates (`Z = 1`). Does not check that `(x, y)` is
-    /// actually on the curve -- see the crate's SEC 1 encoding/validation work (not yet
-    /// implemented) for that.
+    /// actually on the curve -- see [`crate::p256_sec1`] for that.
     pub fn from_affine(x: P256FieldElement, y: P256FieldElement) -> Self {
         Self { x, y, z: P256FieldElement::ONE }
     }

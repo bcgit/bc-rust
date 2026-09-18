@@ -195,6 +195,11 @@ mod tests {
     use super::*;
 
     #[test]
+    fn p_is_3_mod_4() {
+        assert_eq!(P_LIMBS[0] & 0b11, 3);
+    }
+
+    #[test]
     fn limbs_less_than_p_boundary_cases() {
         assert!(limbs_less_than_p(&[0, 0, 0, 0]));
 

@@ -124,7 +124,6 @@ impl Sm2ScalarField {
         Self(redc(&widening_mul(&self.0, &other.0)))
     }
 
-    /// `self^2 mod n`.
     /// Overwrites this value with zero, through a write the compiler may not elide.
     ///
     /// For the signing path, where a value of this type holds `d`, `k` or `k^-1` and would

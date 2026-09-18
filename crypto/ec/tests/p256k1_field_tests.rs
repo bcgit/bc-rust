@@ -233,3 +233,100 @@ fn square_agrees_with_mul() {
         assert_eq!(a.square(), a.mul(&a), "square disagrees with mul for {limbs:x?}");
     }
 }
+
+/// `is_zero` is the mask every exceptional-case select in this crate's point arithmetic keys
+/// off (infinity detection, the `H == 0` / `R == 0` same-point and opposite-point cases), and
+/// otherwise exercised only through those selects. Both truth values are pinned here, with
+/// the nonzero side walked across every limb position so a mask that inspected only some limbs
+/// would be caught.
+#[test]
+fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
+    assert!(P256K1FieldElement::ZERO.is_zero().to_bool());
+    assert!(fe(bouncycastle_ec::p256k1::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
+    assert!(!P256K1FieldElement::ONE.is_zero().to_bool());
+    for limb_idx in 0..4 {
+        let mut limbs = [0u64; 4];
+        limbs[limb_idx] = 1;
+        assert!(!fe(limbs).is_zero().to_bool(), "a set bit in limb {limb_idx} must be seen");
+    }
+}
+
+/// `add`'s carry-out correction and `sub`'s borrow correction, pinned at the operands that force
+/// them: `(p-1) + (p-1)` is the largest sum two canonical elements can form, and `0 - 1` the
+/// smallest difference. The expected values are `p - 2` and `p - 1` themselves (computed from
+/// `p` in Python), so this is a check of the wrap-around handling, not of the digits of `p`.
+#[test]
+fn known_answer_add_carry_and_sub_borrow_at_the_extremes() {
+    let p_minus_1 =
+        fe([0xfffffffefffffc2e, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff]);
+    let p_minus_2 =
+        fe([0xfffffffefffffc2d, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff]);
+    let two = fe([0x0000000000000002, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000]);
+
+    assert_eq!(p_minus_1.add(&p_minus_1), p_minus_2, "(p-1) + (p-1) == p-2");
+    assert_eq!(p_minus_1.add(&P256K1FieldElement::ONE), P256K1FieldElement::ZERO, "(p-1) + 1 == 0");
+    assert_eq!(P256K1FieldElement::ZERO.sub(&P256K1FieldElement::ONE), p_minus_1, "0 - 1 == p-1");
+    assert_eq!(P256K1FieldElement::ONE.sub(&p_minus_1), two, "1 - (p-1) == 2");
+    assert_eq!(p_minus_1.negate(), P256K1FieldElement::ONE, "-(p-1) == 1");
+    assert_eq!(P256K1FieldElement::ONE.invert(), P256K1FieldElement::ONE, "1^-1 == 1");
+    assert_eq!(p_minus_1.invert(), p_minus_1, "(p-1)^-1 == p-1, since (p-1)^2 == 1");
+}
+
+/// Products at the reduction's extremes rather than in the middle of its range, the same class
+/// of check `p256_field_tests.rs`/`p384_field_tests.rs`/`sm2_field_tests.rs` already carry and
+/// this curve did not: `(p-1)^2` and `(p-1)(p-2)` (the largest products two canonical elements
+/// can form), operands within `2^64` of `p`, and operands with the top bit set. Expected values
+/// are Python's `(a * b) % p`, computed independently of this crate's arithmetic
+/// (`random.seed(20260918)` for the pseudorandom operands).
+#[test]
+fn known_answer_mul_at_the_reduction_bounds() {
+    let cases: [([u64; 4], [u64; 4], [u64; 4]); 7] = [
+        // (p-1)^2 == 1
+        (
+            [0xfffffffefffffc2e, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xfffffffefffffc2e, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0x0000000000000001, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // (p-1)(p-2) == 2
+        (
+            [0xfffffffefffffc2e, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xfffffffefffffc2d, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0x0000000000000002, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // (p-1) * 2^(bits-1) == p - 2^(bits-1)
+        (
+            [0xfffffffefffffc2e, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x8000000000000000],
+            [0xfffffffefffffc2f, 0xffffffffffffffff, 0xffffffffffffffff, 0x7fffffffffffffff],
+        ),
+        // both operands within 2^64 of p
+        (
+            [0x602e662b710ddd97, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xd50f78c27657bf0f, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xe3915864fb4e0b00, 0x1ace8c2a3ef88d00, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // both operands within 2^64 of p
+        (
+            [0xfbce55e93e856489, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0xf0fc20c2dcd7c584, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff],
+            [0x77ae56237cd04fe2, 0x003ef93483f7b6de, 0x0000000000000000, 0x0000000000000000],
+        ),
+        // both operands with the top bit set
+        (
+            [0xdfa7b2ef07145e3e, 0xc0a3b3952a340c8f, 0xb8032ba581982589, 0x83ecd0900edcab66],
+            [0x1cfe03616a76bac0, 0xe47884359ee58544, 0xd9279db7cd8bdeac, 0xd007c87d51d030dd],
+            [0x9bbe80289abe2572, 0x43e7c0d1df4dd384, 0x40ffed7a3158451b, 0x38af19b041b3c9c2],
+        ),
+        // both operands with the top bit set
+        (
+            [0xe76634fa4c5de998, 0x3ed37b9872aebec2, 0xb4ca47f81e911e82, 0xe6688cf86f78dd4b],
+            [0xb5e03e4b503b7594, 0x0a20973673003543, 0x6f155ffa3ec1be68, 0xf95fc497ff1a57ee],
+            [0x50b1b28cd4621d6d, 0x5de9bfa26a81ee07, 0xdcd792e32a10cd3e, 0xcdac627a36e71fd3],
+        ),
+    ];
+    for (a, b, expected) in cases {
+        assert_eq!(fe(a).mul(&fe(b)), fe(expected), "a = {a:x?}, b = {b:x?}");
+        assert_eq!(fe(b).mul(&fe(a)), fe(expected), "commuted: a = {a:x?}, b = {b:x?}");
+        assert_eq!(fe(a).square(), fe(a).mul(&fe(a)), "square at the same extreme: a = {a:x?}");
+    }
+}

@@ -148,8 +148,6 @@ impl Sm2FieldElement {
         Self(reduce(&widening_mul(&self.0, &other.0)))
     }
 
-    /// `self^2 mod p`. Not (yet) a dedicated squaring routine -- see the crate's design notes on
-    /// why correctness comes before that optimization.
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
     /// [`widening_square`].
     ///

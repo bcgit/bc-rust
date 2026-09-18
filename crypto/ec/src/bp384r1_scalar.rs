@@ -114,7 +114,6 @@ impl Bp384r1ScalarField {
         Self(Self::finish_redc(&t))
     }
 
-    /// `self^2 mod n`.
     /// Overwrites this value with zero, through a write the compiler may not elide.
     ///
     /// For the signing path, where a value of this type holds `d`, `k` or `k^-1` and would

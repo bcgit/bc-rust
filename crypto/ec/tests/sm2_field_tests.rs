@@ -287,3 +287,41 @@ fn square_agrees_with_mul() {
         assert_eq!(a.square(), a.mul(&a), "square disagrees with mul for {limbs:x?}");
     }
 }
+
+/// `is_zero` is the mask every exceptional-case select in this crate's point arithmetic keys
+/// off (infinity detection, the `H == 0` / `R == 0` same-point and opposite-point cases), and
+/// otherwise exercised only through those selects. Both truth values are pinned here, with
+/// the nonzero side walked across every limb position so a mask that inspected only some limbs
+/// would be caught.
+#[test]
+fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
+    assert!(Sm2FieldElement::ZERO.is_zero().to_bool());
+    assert!(fe(bouncycastle_ec::sm2::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
+    assert!(!Sm2FieldElement::ONE.is_zero().to_bool());
+    for limb_idx in 0..4 {
+        let mut limbs = [0u64; 4];
+        limbs[limb_idx] = 1;
+        assert!(!fe(limbs).is_zero().to_bool(), "a set bit in limb {limb_idx} must be seen");
+    }
+}
+
+/// `add`'s carry-out correction and `sub`'s borrow correction, pinned at the operands that force
+/// them: `(p-1) + (p-1)` is the largest sum two canonical elements can form, and `0 - 1` the
+/// smallest difference. The expected values are `p - 2` and `p - 1` themselves (computed from
+/// `p` in Python), so this is a check of the wrap-around handling, not of the digits of `p`.
+#[test]
+fn known_answer_add_carry_and_sub_borrow_at_the_extremes() {
+    let p_minus_1 =
+        fe([0xfffffffffffffffe, 0xffffffff00000000, 0xffffffffffffffff, 0xfffffffeffffffff]);
+    let p_minus_2 =
+        fe([0xfffffffffffffffd, 0xffffffff00000000, 0xffffffffffffffff, 0xfffffffeffffffff]);
+    let two = fe([0x0000000000000002, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000]);
+
+    assert_eq!(p_minus_1.add(&p_minus_1), p_minus_2, "(p-1) + (p-1) == p-2");
+    assert_eq!(p_minus_1.add(&Sm2FieldElement::ONE), Sm2FieldElement::ZERO, "(p-1) + 1 == 0");
+    assert_eq!(Sm2FieldElement::ZERO.sub(&Sm2FieldElement::ONE), p_minus_1, "0 - 1 == p-1");
+    assert_eq!(Sm2FieldElement::ONE.sub(&p_minus_1), two, "1 - (p-1) == 2");
+    assert_eq!(p_minus_1.negate(), Sm2FieldElement::ONE, "-(p-1) == 1");
+    assert_eq!(Sm2FieldElement::ONE.invert(), Sm2FieldElement::ONE, "1^-1 == 1");
+    assert_eq!(p_minus_1.invert(), p_minus_1, "(p-1)^-1 == p-1, since (p-1)^2 == 1");
+}
