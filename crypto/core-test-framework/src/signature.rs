@@ -103,11 +103,11 @@ impl TestFrameworkSignature {
         // test the sign_out interface
         // fn sign_out(sk: &SK, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError>;
 
-        // Success case
+        // Success case: what sign_out wrote must itself verify (not merely have the right length)
         let mut output = [0u8; SIG_LEN];
         let bytes_written = SIGNER::sign_out(&sk, msg, None, &mut output).unwrap();
         assert_eq!(bytes_written, SIG_LEN);
-        VERIFIER::verify(&pk, msg, None, &sig_val).unwrap();
+        VERIFIER::verify(&pk, msg, None, &output).unwrap();
 
         // test with a large message
         let sig = SIGNER::sign(&sk, DUMMY_SEED, None).unwrap();
