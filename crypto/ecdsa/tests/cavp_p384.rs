@@ -1,6 +1,6 @@
 //! NIST CAVP legacy vectors for P-384/SHA-384, from `bc-test-data/crypto/cavp/`. Identical in shape
-//! to `cavp_p256.rs` -- see that file's docs for the full reasoning (why `ECDSA_SigGen.rsp` isn't
-//! read separately, and how `ECDSA_KeyPair.rsp`'s `(d, Q)` pairs are checked through the public API
+//! to `cavp_p256.rs` -- see that file's docs for the full reasoning (how `ECDSA_SigGen.txt`'s `k`
+//! is injected, and how `ECDSA_KeyPair.rsp`'s `(d, Q)` pairs are checked through the public API
 //! rather than by reaching into `bouncycastle_ec` directly) -- with P-384's types and field width
 //! substituted.
 
@@ -11,7 +11,10 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_ecdsa::ecdsa_p384::{ECDSAP384, SIG_LEN};
 use bouncycastle_ecdsa::keys_p384::{ECDSAP384PrivateKey, ECDSAP384PublicKey};
-use cavp_common::{Record, get_test_data, hex_bytes, hex_field, parse_records, result_is_pass};
+use cavp_common::{
+    FixedBytesRng, Record, decrement_be, get_test_data, hex_bytes, hex_field, parse_records,
+    result_is_pass,
+};
 
 const FIELD_WIDTH: usize = 48;
 const SECTION: &str = "P-384,SHA-384";
@@ -37,7 +40,7 @@ fn signature_bytes(r: &[u8], s: &[u8]) -> [u8; SIG_LEN] {
 
 #[test]
 fn cavp_sigver() {
-    let Some(content) = get_test_data("ECDSA_SigVer.rsp") else { return };
+    let content = get_test_data("ECDSA_SigVer.rsp");
     let records: Vec<Record> = parse_records(&content)
         .into_iter()
         .filter(|r| r.section == SECTION && r.fields.contains_key("Result"))
@@ -67,7 +70,7 @@ fn cavp_sigver() {
 
 #[test]
 fn cavp_pkv() {
-    let Some(content) = get_test_data("ECDSA_PKV.rsp") else { return };
+    let content = get_test_data("ECDSA_PKV.rsp");
     let records: Vec<Record> = parse_records(&content)
         .into_iter()
         .filter(|r| r.section == KEY_SECTION && r.fields.contains_key("Result"))
@@ -86,7 +89,7 @@ fn cavp_pkv() {
 
 #[test]
 fn cavp_keypair_consistency() {
-    let Some(content) = get_test_data("ECDSA_KeyPair.rsp") else { return };
+    let content = get_test_data("ECDSA_KeyPair.rsp");
     let records: Vec<Record> = parse_records(&content)
         .into_iter()
         .filter(|r| r.section == KEY_SECTION && r.fields.contains_key("d"))
@@ -106,5 +109,42 @@ fn cavp_keypair_consistency() {
         let sig = ECDSAP384::sign(&sk, msg, None).expect("signing with a valid key must succeed");
         ECDSAP384::verify(&pk, msg, None, &sig)
             .expect("Q must be [d]G for this (d, Q) pair to verify");
+    }
+}
+
+/// `ECDSA_SigGen.txt` -- NIST's `SigGen.txt` from `186-4ecdsatestvectors.zip`, the form of the
+/// SigGen vectors that carries `d` and the per-message secret `k`, which the response-file form
+/// `ECDSA_SigGen.rsp` omits. `k` is injected through [`FixedBytesRng`] and `sign_randomized`
+/// (see that type's docs for why an RNG returning `k - 1` yields exactly `k`), so this pins
+/// signing output against NIST's values through the public API. RFC 6979's own vectors pin the
+/// deterministic path; this is the only NIST check on the randomised one.
+#[test]
+fn cavp_siggen() {
+    let content = get_test_data("ECDSA_SigGen.txt");
+    let records: Vec<Record> = parse_records(&content)
+        .into_iter()
+        .filter(|r| r.section == SECTION && r.fields.contains_key("k"))
+        .collect();
+    assert!(!records.is_empty(), "no P-384 SigGen records with k found");
+
+    for record in &records {
+        let msg = hex_bytes(&record.fields, "Msg");
+        let d = hex_field(&record.fields, "d", FIELD_WIDTH);
+        let qx = hex_field(&record.fields, "Qx", FIELD_WIDTH);
+        let qy = hex_field(&record.fields, "Qy", FIELD_WIDTH);
+        let mut k_minus_1 = hex_field(&record.fields, "k", FIELD_WIDTH);
+        decrement_be(&mut k_minus_1);
+        let r = hex_field(&record.fields, "R", FIELD_WIDTH);
+        let s = hex_field(&record.fields, "S", FIELD_WIDTH);
+
+        let sk = ECDSAP384PrivateKey::from_bytes(&d).expect("CAVP d must be a valid private key");
+        let pk = ECDSAP384PublicKey::from_bytes(&uncompressed_pk(&qx, &qy))
+            .expect("CAVP Q must be a valid public key");
+
+        let mut rng = FixedBytesRng::new(k_minus_1);
+        let sig = ECDSAP384::sign_randomized(&sk, &msg, &mut rng)
+            .expect("signing with a valid key and k must succeed");
+        assert_eq!(sig, signature_bytes(&r, &s), "mismatch for record {:?}", record.fields);
+        ECDSAP384::verify(&pk, &msg, None, &sig).expect("NIST's own signature must verify");
     }
 }
