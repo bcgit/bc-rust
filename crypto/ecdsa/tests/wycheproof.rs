@@ -14,6 +14,12 @@
 //! bytes, non-minimal lengths, wrong tags) and edge-case `r`/`s` coverage, not KATs for signature
 //! generation (RFC 6979's own Appendix A.2.5 vectors, exercised in `rfc6979_vectors_tests.rs`,
 //! cover that).
+//!
+//! Verdicts: `valid` must verify and `invalid` must not; a vector marked `acceptable` (none in the
+//! v1 files today) fails the test outright rather than being treated as either, so that adding
+//! such vectors forces a per-flag decision here. `ecdsa_secp256k1_sha256_bitcoin_test.json` is
+//! deliberately not read by the secp256k1 suite: its `SignatureMalleabilityBitcoin` vectors
+//! require rejecting `s > n/2`, a Bitcoin consensus rule rather than part of ECDSA.
 
 use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
 use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
@@ -70,7 +76,21 @@ fn ecdsa_secp256r1_sha256_p1363_test() {
             let tc_id = test["tcId"].as_u64().unwrap();
             let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
             let sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
-            let expect_valid = test["result"].as_str().unwrap() == "valid";
+            // Only two of wycheproof's three verdicts are decided here. "acceptable" marks a
+            // vector that is valid under some readings of the specification and not others (its
+            // `flags` say which), and whether this implementation should accept such a vector is
+            // a decision to record per flag, not to default either way -- so an "acceptable"
+            // vector fails the test until someone makes it. The v1 files this suite reads carry
+            // none; this is what turns a future upgrade that adds some into a loud failure.
+            let flags = &test["flags"];
+            let expect_valid = match test["result"].as_str().unwrap() {
+                "valid" => true,
+                "invalid" => false,
+                other => panic!(
+                    "tcId {tc_id}: result {other:?} with flags {flags} needs an explicit \
+                     accept/reject decision in this test"
+                ),
+            };
             if expect_valid {
                 num_valid += 1;
             } else {
@@ -81,7 +101,7 @@ fn ecdsa_secp256r1_sha256_p1363_test() {
             assert_eq!(
                 result.is_some(),
                 expect_valid,
-                "tcId {tc_id}: expected valid={expect_valid}, comment={:?}",
+                "tcId {tc_id}: expected valid={expect_valid}, flags {flags}, comment={:?}",
                 test["comment"]
             );
         }
@@ -117,7 +137,21 @@ fn ecdsa_secp256r1_sha256_der_test() {
             let tc_id = test["tcId"].as_u64().unwrap();
             let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
             let sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
-            let expect_valid = test["result"].as_str().unwrap() == "valid";
+            // Only two of wycheproof's three verdicts are decided here. "acceptable" marks a
+            // vector that is valid under some readings of the specification and not others (its
+            // `flags` say which), and whether this implementation should accept such a vector is
+            // a decision to record per flag, not to default either way -- so an "acceptable"
+            // vector fails the test until someone makes it. The v1 files this suite reads carry
+            // none; this is what turns a future upgrade that adds some into a loud failure.
+            let flags = &test["flags"];
+            let expect_valid = match test["result"].as_str().unwrap() {
+                "valid" => true,
+                "invalid" => false,
+                other => panic!(
+                    "tcId {tc_id}: result {other:?} with flags {flags} needs an explicit \
+                     accept/reject decision in this test"
+                ),
+            };
             if expect_valid {
                 num_valid += 1;
             } else {
@@ -129,7 +163,7 @@ fn ecdsa_secp256r1_sha256_der_test() {
             assert_eq!(
                 result.is_some(),
                 expect_valid,
-                "tcId {tc_id}: expected valid={expect_valid}, comment={:?}",
+                "tcId {tc_id}: expected valid={expect_valid}, flags {flags}, comment={:?}",
                 test["comment"]
             );
         }
