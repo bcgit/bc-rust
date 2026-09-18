@@ -80,18 +80,6 @@
 //! ## Algorithm Peak Memory Usage
 //! The table below shows peak memory usage of the ML-DSA algorithms and the rough performance (throughput) impact.
 //!
-//! Measuring peak application memory usage can be a bit tricky, and the numbers obtained depend heavily on how the
-//! measurement harness is designed. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
-//! over-estimate so that any deployment within an existing application will use incrementally less additional memory
-//! than the amount stated here.
-//!
-//! Our measurement methodology is to compile a simple standalone HelloWorld application that only calls the function under test
-//! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
-//! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
-//! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 7.7 kB, since that is the measured peak memory usage of a do-nothing
-//! HelloWorld rust application in the same harness.
-//!
 //! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
 //! | MLDSA44_lowmemory/KeyGen  | 12.6 (113.8)                | 11,800     (11,300) |
