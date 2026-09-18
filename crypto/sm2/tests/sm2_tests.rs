@@ -362,3 +362,71 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
     assert_eq!(sk1, sk2);
     assert_eq!(pk1, pk2);
 }
+
+/// `draft-shen-sm2-ecdsa-02` §5.2.2 step B1: `r'` and `s'` must each be in `[1, n-1]`, rejected
+/// rather than reduced. Each half of a valid signature is replaced in turn by `0`, by `n`, and by
+/// the all-ones pattern; the untouched half stays valid, so only the range check can be what
+/// rejects the result.
+#[test]
+fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"range-checked r and s";
+    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
+    SM2::verify(&pk, msg, Some(ID), &sig).expect("the untampered signature must verify");
+
+    let n = be_bytes_from_limbs(&N_LIMBS);
+    for (name, bad) in [("0", [0u8; 32]), ("n", n), ("2^256 - 1", [0xffu8; 32])] {
+        for (half, offset) in [("r", 0usize), ("s", 32usize)] {
+            let mut tampered = sig;
+            tampered[offset..offset + 32].copy_from_slice(&bad);
+            match SM2::verify(&pk, msg, Some(ID), &tampered) {
+                Err(SignatureError::SignatureVerificationFailed) => {}
+                other => panic!("{half} = {name} should have been rejected, got {other:?}"),
+            }
+        }
+    }
+}
+
+/// `draft-shen-sm2-ecdsa-02` §5.2.2 step B4: `t = (r' + s') mod n`, and `t = 0` fails verification
+/// outright. `s' = n - r'` is in `[1, n-1]` (so it passes step B1) and is the one value that makes
+/// `t` zero -- a signature that would otherwise reach the point multiplication with `[0]PA`.
+#[test]
+fn verify_rejects_s_equal_to_n_minus_r() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"t = r + s must not be zero";
+    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
+
+    let r_limbs = bouncycastle_ec::sm2_sec1::limbs_from_be_bytes(&sig[..32].try_into().unwrap());
+    let (n_minus_r, borrow) = bouncycastle_ec::nat::sub(&N_LIMBS, &r_limbs);
+    assert_eq!(borrow, 0, "r is in [1, n-1], so n - r never borrows");
+
+    let mut tampered = sig;
+    tampered[32..].copy_from_slice(&be_bytes_from_limbs(&n_minus_r));
+    match SM2::verify(&pk, msg, Some(ID), &tampered) {
+        Err(SignatureError::SignatureVerificationFailed) => {}
+        other => panic!("expected SignatureVerificationFailed, got {other:?}"),
+    }
+}
+
+/// `ZA` encodes `IDA`'s bit length as the two-byte `ENTLA` (§5.1.2), so an identity of 8191 bytes
+/// (65528 bits) is the longest that fits and 8192 bytes (65536 bits) is the shortest that does
+/// not. The limit applies on both sides, since verification computes `ZA` too.
+#[test]
+fn identity_longer_than_entla_can_encode_is_rejected() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"message";
+
+    let longest = vec![0x41u8; 8191];
+    let sig = SM2::sign(&sk, msg, Some(&longest)).expect("8191 bytes fits in ENTLA");
+    SM2::verify(&pk, msg, Some(&longest), &sig).unwrap();
+
+    let too_long = vec![0x41u8; 8192];
+    match SM2::sign(&sk, msg, Some(&too_long)) {
+        Err(SignatureError::GenericError(_)) => {}
+        other => panic!("expected GenericError on sign, got {other:?}"),
+    }
+    match SM2::verify(&pk, msg, Some(&too_long), &sig) {
+        Err(SignatureError::GenericError(_)) => {}
+        other => panic!("expected GenericError on verify, got {other:?}"),
+    }
+}
