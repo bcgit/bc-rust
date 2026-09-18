@@ -605,7 +605,8 @@ impl<P: MLDSAParams> MLDSA<P> {
         let t_hat = {
             // scope for s1_hat
             // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&rho, &mut A_hat);
 
             // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
             //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
@@ -866,8 +867,12 @@ pub(crate) fn verify_internal<
     // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
     //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
     // 3: if 𝐡 = ⊥ then return false
-    let (c_tilde, z, h) =
-        sig_decode::<P, SIG_LEN>(sig).ok_or(SignatureError::SignatureVerificationFailed)?;
+    let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
+    let mut z = P::VecL::new();
+    let mut h = P::VecK::new();
+    if !sig_decode::<P, SIG_LEN>(sig, &mut c_tilde, &mut z, &mut h) {
+        return Err(SignatureError::SignatureVerificationFailed);
+    }
 
     // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
     if z.check_norm(P::gamma1_minus_beta) {

@@ -133,7 +133,9 @@ impl<P: MLDSAParams> MLDSAPublicKey<P> {
 
     /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded keys cache it.
     pub(crate) fn A_hat(&self) -> P::MatrixA {
-        expandA::<P>(&self.rho)
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        A_hat
     }
 }
 
@@ -337,7 +339,10 @@ impl<P: MLDSAParams> Display for MLDSAPublicKeyExpanded<'_, P> {
 impl<'k, P: MLDSAParams> From<&'k MLDSAPublicKey<P>> for MLDSAPublicKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated verifications under the same public key.
     fn from(pk: &'k MLDSAPublicKey<P>) -> Self {
-        Self { pk, A_hat: pk.A_hat() }
+        // Expand straight into the struct's matrix, so only one copy of it exists.
+        let mut expanded = Self { pk, A_hat: P::MatrixA::new() };
+        expandA::<P>(&pk.rho, &mut expanded.A_hat);
+        expanded
     }
 }
 
@@ -467,7 +472,9 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
 
     /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded key caches it.
     pub(crate) fn A_hat(&self) -> P::MatrixA {
-        expandA::<P>(&self.rho)
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        A_hat
     }
 
     /// Algorithm 25 skDecode(𝑠𝑘)
@@ -708,7 +715,8 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSAPrivateKey<P> {
             // scope for A_hat
             // 3: 𝐀 ← ExpandA(𝜌)
             //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&self.rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&self.rho, &mut A_hat);
 
             let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
             // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
@@ -889,7 +897,10 @@ impl<P: MLDSAParams> Display for MLDSAPrivateKeyExpanded<'_, P> {
 impl<'k, P: MLDSAParams> From<&'k MLDSAPrivateKey<P>> for MLDSAPrivateKeyExpanded<'k, P> {
     /// Expands the public matrix A once, for repeated signatures under the same private key.
     fn from(sk: &'k MLDSAPrivateKey<P>) -> Self {
-        Self { sk, A_hat: sk.A_hat() }
+        // Expand straight into the struct's matrix, so only one copy of it exists.
+        let mut expanded = Self { sk, A_hat: P::MatrixA::new() };
+        expandA::<P>(&sk.rho, &mut expanded.A_hat);
+        expanded
     }
 }
 
