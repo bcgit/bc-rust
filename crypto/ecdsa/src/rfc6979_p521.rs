@@ -13,8 +13,8 @@
 //! - Step h.2's "while `tlen < qlen`" loop runs **twice**: one `HMAC_K(V)` gives only 512 bits,
 //!   short of the 521 needed, so a second round is required, giving `T` of length 1024 bits.
 //! - Step h.3's `bits2int(T)` then keeps the **leftmost 521 bits** of that 1024-bit `T` (RFC 6979
-//!   §2.3.2): the first 66 bytes, with the last byte's low 7 bits cleared (bit 520 is the only bit
-//!   of that byte inside the leftmost-521-bit window) -- see [`bits2int_521`].
+//!   §2.3.2), i.e. the value `T >> 503`: the first 66 bytes of `T` shifted right by the 7 bits
+//!   by which 528 exceeds 521 -- see [`bits2int_521`] for why a shift, not a mask, is required.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::MAC;
@@ -32,6 +32,17 @@ const HLEN: usize = 64;
 
 /// `rlen = 8*ceil(qlen/8)` for P-521's `qlen = 521`: the width `int2octets`/`bits2octets` produce.
 const RLEN: usize = 66;
+
+/// `qlen`, P-521's order's bit length (SP 800-186 §3.2.1.5).
+const QLEN: usize = 521;
+
+// The widths every step of this module is specialised to, pinned the way the other six copies pin
+// their `hlen == qlen` shortcut: two `HMAC_K(V)` rounds are exactly enough (`HLEN * 8 < QLEN <= 2
+// * HLEN * 8`), `RLEN` really is `ceil(QLEN / 8)`, and [`bits2int_521`]'s shift is the 7 bits by
+// which `RLEN * 8` exceeds `QLEN`.
+const _: () = assert!(HLEN * 8 < QLEN && QLEN <= 2 * HLEN * 8, "step h.2 needs exactly two rounds");
+const _: () = assert!(RLEN == QLEN.div_ceil(8), "RLEN must be ceil(qlen / 8)");
+const _: () = assert!(RLEN * 8 - QLEN == 7, "bits2int_521's shift is RLEN * 8 - QLEN");
 
 fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)

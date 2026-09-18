@@ -5,8 +5,8 @@
 //! # DRBG output length
 //!
 //! Unlike P-256 (which needs 96 bits of headroom beyond its 256-bit order for Appendix A.4.1's
-//! bias bound -- SP 800-186 Table A.2's "Recommended" column gives 352), secp256k1 isn't a NIST
-//! curve so there is no SP 800-186 table entry for it; applying A.4.1's own general criterion
+//! bias bound -- FIPS 186-5 Table A.2's "Recommended" column gives 352), secp256k1 isn't a NIST
+//! curve so there is no Table A.2 entry for it; applying A.4.1's own general criterion
 //! directly (step 2's `2ρ(1-ρ)(n-1) > ε·N` check, `ε = 2⁻⁶⁴`) to secp256k1's `n` shows it holds
 //! already at `l = 256` (no headroom at all needed): `n` is `2²⁵⁶ − 2^128`-ish, close enough to
 //! `2²⁵⁶` that `N mod (n-1)` is tiny, making the bias negligible -- computed directly in Python,
@@ -187,6 +187,15 @@ mod tests {
         assert_eq!(
             reduce_mod_n_minus_1_plus_one(N_MINUS_1_LIMBS),
             P256K1Scalar::from_limbs([1, 0, 0, 0])
+        );
+
+        // x = n - 2: the largest residue mod (n-1), so +1 gives n - 1, the top of the output
+        // interval.
+        let mut n_minus_2 = N_MINUS_1_LIMBS;
+        n_minus_2[0] -= 1; // N_LIMBS[0] is odd, so n - 1 is even and this never borrows
+        assert_eq!(
+            reduce_mod_n_minus_1_plus_one(n_minus_2),
+            P256K1Scalar::from_limbs(N_MINUS_1_LIMBS)
         );
 
         // x = n: n mod (n-1) = 1, +1 = 2.

@@ -246,6 +246,27 @@ mod tests {
     }
 
     #[test]
+    fn known_answer_at_the_n_minus_1_boundary() {
+        // n - 1 is the modulus of Appendix A.4.1 step 4 itself, so it reduces to 0 and step 5
+        // makes it 1; n - 2 is the largest residue and comes out as n - 1, the top of the
+        // output interval.
+        let n_minus_1 = p521_sec1::be_bytes_from_limbs(&N_MINUS_1_LIMBS);
+        let mut expected_one = [0u64; 9];
+        expected_one[0] = 1;
+        assert_eq!(
+            reduce_wide_bits_mod_n_minus_1(&n_minus_1),
+            P521Scalar::from_limbs(expected_one)
+        );
+
+        let mut n_minus_2 = n_minus_1;
+        n_minus_2[SK_LEN - 1] -= 1; // n - 1 is even (n is prime), so this never borrows
+        assert_eq!(
+            reduce_wide_bits_mod_n_minus_1(&n_minus_2),
+            P521Scalar::from_limbs(N_MINUS_1_LIMBS)
+        );
+    }
+
+    #[test]
     fn known_answer_all_zero_yields_one() {
         let input = [0u8; SK_LEN];
         let mut expected = [0u64; 9];
