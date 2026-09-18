@@ -110,26 +110,38 @@ fn sign_with_k(
     e: &Sm2ScalarField,
     k: Sm2Scalar,
 ) -> Result<[u8; SIG_LEN], SignatureError> {
-    let k_field = Sm2ScalarField::from_secret(&k);
+    let mut k_field = Sm2ScalarField::from_secret(&k);
 
     let r_point = comb_multiply_base_point(&k); // step A4
     let x1 = x_affine_of_signing_point(&r_point); // step A4's x1
     let x1_field = Sm2ScalarField::from_limbs(x1.to_limbs());
     let r = e.add(&x1_field); // step A5
 
-    let r_plus_k = r.add(&k_field);
+    // `r + k` is as sensitive as `k`: `r` is published in the signature, so anyone holding both
+    // recovers `k` by subtraction. It is scrubbed on both ways out of the check below.
+    let mut r_plus_k = r.add(&k_field);
     // Astronomically unlikely for any real k/e (r, r+k range over ~2^256 values each); this
     // comparison is the draft's own mandated success/failure branch on the just-computed public
     // output r, not a constant-time violation on a secret intermediate.
-    if r_is_zero_or_r_plus_k_is_zero(&r, &r_plus_k) {
+    let r_out_of_range = r_is_zero_or_r_plus_k_is_zero(&r, &r_plus_k);
+    r_plus_k.zeroize();
+    if r_out_of_range {
+        k_field.zeroize();
         return Err(SignatureError::GenericError(
             "SM2 signature generation produced r = 0 or r + k = n; regenerate k and retry",
         ));
     }
 
-    let d_field = Sm2ScalarField::from_secret(sk.scalar());
-    let one_plus_d_inv = Sm2ScalarField::ONE.add(&d_field).invert();
+    let mut d_field = Sm2ScalarField::from_secret(sk.scalar());
+    let mut one_plus_d_inv = Sm2ScalarField::ONE.add(&d_field).invert();
     let s = one_plus_d_inv.mul(&k_field.sub(&r.mul(&d_field))); // step A6
+
+    // `k_field`, `d_field` and `(1 + dA)^-1` all reveal `k` or `dA`; nothing below needs them, and
+    // scrubbing here covers both the error return and the success return. `k` itself is a `Secret`
+    // and scrubs when it drops; `e`, `r` and `s` are public by construction.
+    k_field.zeroize();
+    d_field.zeroize();
+    one_plus_d_inv.zeroize();
 
     if s == Sm2ScalarField::ZERO {
         return Err(SignatureError::GenericError(

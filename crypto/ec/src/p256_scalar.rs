@@ -125,6 +125,22 @@ impl P256ScalarField {
     }
 
     /// `self^2 mod n`.
+    /// Overwrites this value with zero, through a write the compiler may not elide.
+    ///
+    /// For the signing path, where a value of this type holds `d`, `k` or `k^-1` and would
+    /// otherwise stay legible on the stack after the signature is returned. This type is `Copy`
+    /// and carries public values too (verification's `u`, `v`, `e`, `r`, `s`), so it is not
+    /// wrapped in [`bouncycastle_utils::secret::Secret`] -- that would cost its `Copy`, its `const
+    /// ZERO`/`ONE`, and a scrub on every intermediate including the public ones. The trade is that
+    /// scrubbing is the caller's job, on every path out of the function; see
+    /// `bouncycastle_ecdsa`'s `sign_with_k` for the intended use.
+    ///
+    /// This does not reach values the compiler kept in registers or spilled itself, and is
+    /// defence in depth rather than a guarantee.
+    pub fn zeroize(&mut self) {
+        bouncycastle_utils::secret::zeroize_in_place(&mut self.0);
+    }
+
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
     /// [`widening_square`].
     ///
