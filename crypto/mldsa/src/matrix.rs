@@ -37,8 +37,11 @@ pub struct Matrix<const k: usize, const l: usize> {
 }
 
 impl<const k: usize, const l: usize> Matrix<k, l> {
-    pub(crate) fn new() -> Self {
-        Self { elems: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
+    /// A repeat expression, not `array::map`: `map` builds the whole matrix in a temporary and
+    /// copies it into place, which for ML-DSA-87 is a 56 kB copy that the optimizer does not
+    /// always elide.
+    pub(crate) const fn new() -> Self {
+        Self { elems: [[Polynomial::new(); l]; k] }
     }
 
     /// Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)

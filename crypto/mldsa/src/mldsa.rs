@@ -711,7 +711,8 @@ impl<
         let t_hat = {
             // scope for s1_hat
             // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&rho, &mut A_hat);
 
             // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
             //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
@@ -963,7 +964,10 @@ impl<
         // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
         //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
         // 3: if 𝐡 = ⊥ then return false
-        let (c_tilde, z, h) = sig_decode::<P, SIG_LEN>(&sig)
+        let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
+        let mut z = P::VecL::new();
+        let mut h = P::VecK::new();
+        sig_decode::<P, SIG_LEN>(sig, &mut c_tilde, &mut z, &mut h)
             .map_err(|_| SignatureError::SignatureVerificationFailed)?;
 
         // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
@@ -1185,7 +1189,11 @@ impl<
 
         match A_hat {
             Some(A_hat) => Self::sign_internal(sk, A_hat, mu, rnd, output),
-            None => Self::sign_internal(sk, &sk.A_hat(), mu, rnd, output),
+            None => {
+                let mut A_hat = P::MatrixA::new();
+                sk.expand_A_hat_into(&mut A_hat);
+                Self::sign_internal(sk, &A_hat, mu, rnd, output)
+            }
         }
     }
     fn sign_mu_deterministic_from_seed(
@@ -1289,7 +1297,8 @@ impl<
         // as 20 or even 80 times. So moving expandA() inside the loop would be a pretty drastic speed-for-memory tradeoff
         // whose generality falls out of the scope of this implementation.
         // It is left as an optimization that can be made by users that require further reduction of memory usage
-        let A_hat = expandA::<P>(&rho);
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&rho, &mut A_hat);
 
         // Alg 7; 8: 𝜅 ← 0
         //  ▷ initialize counter 𝜅
@@ -1516,7 +1525,9 @@ impl<
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
-        Self::verify_mu(&pk.pk, Some(&pk.A_hat()), &mu, sig)
+        // Borrow the matrix the expanded key already holds rather than calling `pk.A_hat()`,
+        // which returns a clone. The optimizer elides that clone today, but nothing guarantees it.
+        Self::verify_mu(&pk.pk, Some(&pk.A_hat), &mu, sig)
     }
 
     fn verify_mu(
@@ -1527,7 +1538,11 @@ impl<
     ) -> Result<(), SignatureError> {
         match A_hat {
             Some(A_hat) => Self::verify_internal(pk, A_hat, mu, sig),
-            None => Self::verify_internal(pk, &pk.A_hat(), mu, sig),
+            None => {
+                let mut A_hat = P::MatrixA::new();
+                pk.expand_A_hat_into(&mut A_hat);
+                Self::verify_internal(pk, &A_hat, mu, sig)
+            }
         }
     }
 }
@@ -1891,7 +1906,7 @@ impl<
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
-        Self::verify_mu(pk, Some(&pk.A_hat()), &mu, sig)
+        Self::verify_mu(pk, None, &mu, sig)
     }
 
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
@@ -1919,7 +1934,7 @@ impl<
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
-        Self::verify_mu(pk, Some(&pk.A_hat()), &mu, sig)
+        Self::verify_mu(pk, None, &mu, sig)
     }
 }
 

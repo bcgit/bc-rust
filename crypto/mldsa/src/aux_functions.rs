@@ -421,14 +421,23 @@ pub(crate) fn sig_encode<P: MLDSAParams, const SIG_LEN: usize>(
 /// Reverses the procedure sigEncode.
 /// Input: Signature 𝜎 ∈ 𝔹𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘.
 /// Output: 𝑐 ∈ 𝔹𝜆/4, 𝐳 ∈ 𝑅ℓ with coefficients in \[−𝛾1 + 1, 𝛾1], 𝐡 ∈ 𝑅𝑘, or ⊥.
-///   Output: (c_tilde, z, h)
+///
+/// Deviation from the FIPS: the outputs (c_tilde, z, h) are written into the caller's buffers
+/// instead of being returned. Together they are several kB, and when this function is not inlined
+/// a by-value return leaves up to three copies of them live at once (the local, the return slot
+/// and the destructured bindings). `Err(())` is ⊥; the buffers then hold a partial decode that the
+/// caller must not use.
 pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
     sig: &[u8; SIG_LEN],
-) -> Result<(P::SigCTilde, P::VecL, P::VecK), ()> {
+    c_tilde: &mut P::SigCTilde,
+    z: &mut P::VecL,
+    h: &mut P::VecK,
+) -> Result<(), ()> {
     debug_assert_eq!(SIG_LEN, P::SIG_LEN);
-    let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-    let mut z = P::VecL::new();
-    let mut h = P::VecK::new();
+    // HintBitUnpack below only ever sets bits, so 𝐡 has to start out all-zero.
+    for h_i in h.elems_mut().iter_mut() {
+        h_i.coeffs.fill(0);
+    }
 
     let mut pos: usize = 0;
 
@@ -485,7 +494,7 @@ pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
         }
     }
 
-    Ok((c_tilde, z, h))
+    Ok(())
 }
 
 /// Algorithm 29 SampleInBall(𝜌)
@@ -657,16 +666,16 @@ pub(crate) fn rej_bounded_poly<P: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) 
 /// in other words: derives the public matrix from the public seed.
 /// Input: A seed 𝜌 ∈ 𝔹32 .̂
 /// Output: Matrix Â ∈ (𝑇𝑞)𝑘×ℓ .
-pub(crate) fn expandA<P: MLDSAParams>(rho: &[u8; 32]) -> P::MatrixA {
-    let mut A_hat = P::MatrixA::new();
-
+///
+/// Deviation from the FIPS: 𝐀_hat is written into the caller's matrix instead of being returned.
+/// Every element is overwritten, so `A_hat` need not be zeroed. A by-value return keeps a second
+/// full copy of the matrix (up to 56 kB) alive in this frame while the caller's copy is filled.
+pub(crate) fn expandA<P: MLDSAParams>(rho: &[u8; 32], A_hat: &mut P::MatrixA) {
     for r in 0..P::k {
         for s in 0..P::l {
             A_hat.set_elem(r, s, rej_ntt_poly(rho, &[s as u8, r as u8]));
         }
     }
-
-    A_hat
 }
 
 /// Algorithm 33 ExpandS(𝜌)
