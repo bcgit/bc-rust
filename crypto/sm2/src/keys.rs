@@ -13,7 +13,7 @@ use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::nat;
 use bouncycastle_ec::sm2::Sm2FieldElement;
 use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
-use bouncycastle_ec::sm2_scalar::{N_LIMBS, Sm2Scalar};
+use bouncycastle_ec::sm2_scalar::{N_LIMBS, Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::sm2_sec1;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::secret::Secret;
@@ -52,11 +52,24 @@ pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 /// from 32 bytes to 96 -- `PA` is two field elements -- which the crate docs' Memory Footprint
 /// table records. `PA` is public data and is deliberately *not* wrapped in
 /// [`bouncycastle_utils::secret::Secret`]; only `dA` is.
+///
+/// # Why `(1 + dA)^-1` is carried too
+///
+/// `draft-shen-sm2-ecdsa-02` §5.1.3 step A6 divides by `1 + dA`, and that inverse depends on the
+/// key alone, not on the message or `k`. Recomputing it per signature was a constant-time
+/// Fermat inversion each time -- roughly the same cost as `to_affine`'s field inversion, about a
+/// tenth of a signature on P-256-class hardware -- for a value that never changes. It is computed
+/// once, in [`SM2PrivateKey::from_validated_scalar`], and held in [`Sm2Scalar`], the same
+/// [`bouncycastle_utils::secret::Secret`] wrapper as `dA`: anyone holding `(1 + dA)^-1` recovers
+/// `dA` by inverting and subtracting one, so it is exactly as sensitive. That is 32 more bytes in
+/// memory (128 in all, per the crate docs' Memory Footprint table).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SM2PrivateKey {
     d: Sm2Scalar,
     /// `PA = [dA]G`, cached at construction; see the type's docs.
     pk: SM2PublicKey,
+    /// `(1 + dA)^-1 mod n`, cached at construction; see the type's docs.
+    one_plus_d_inv: Sm2Scalar,
 }
 
 impl SM2PrivateKey {
@@ -67,12 +80,31 @@ impl SM2PrivateKey {
         // dA is in [1, n-1] by construction (every caller validates first) and G has prime order n
         // (h = 1), so [dA]G is never the identity.
         let (x, y) = q.to_affine().expect("[dA]G is never infinity for dA in [1, n-1]");
-        Self { d, pk: SM2PublicKey { x, y } }
+
+        // (1 + dA)^-1, once per key rather than once per signature (see the type's docs). The
+        // three scalar-field intermediates reveal dA and are scrubbed, the same way sign_with_k
+        // scrubs its own; the cached value itself goes into a Secret. (For dA = n - 1 the inverse
+        // is of 0 and comes out 0, which makes every signature's s = 0 and fail step A6 exactly as
+        // it did when the inverse was computed per signature.)
+        let mut d_field = Sm2ScalarField::from_secret(&d);
+        let mut one_plus_d = Sm2ScalarField::ONE.add(&d_field);
+        let mut inverse = one_plus_d.invert();
+        let one_plus_d_inv = Sm2Scalar::from_limbs(inverse.to_limbs());
+        d_field.zeroize();
+        one_plus_d.zeroize();
+        inverse.zeroize();
+
+        Self { d, pk: SM2PublicKey { x, y }, one_plus_d_inv }
     }
 
     /// The wrapped scalar, for this crate's own sign implementation to compute with.
     pub(crate) fn scalar(&self) -> &Sm2Scalar {
         &self.d
+    }
+
+    /// The cached `(1 + dA)^-1 mod n` (see the type's docs), for step A6 of signing.
+    pub(crate) fn one_plus_d_inv(&self) -> &Sm2Scalar {
+        &self.one_plus_d_inv
     }
 
     /// The matching public key `PA = [dA]G`. Free: it was computed when this key was created or
