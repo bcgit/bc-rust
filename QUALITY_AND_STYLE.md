@@ -29,6 +29,13 @@ meant to be held as `dyn` -- the hash, XOF, cipher, MAC, KEM and signature worke
 `where Self: Sized` on any receiver-less or provided by-value method, so the streaming core stays dispatchable through
 `&mut dyn`.
 
+The library in general is meant to serve both embedded systems as well as workstations and servers. In a no std, no
+alloc build all variables are stack variables which warrants particular attention to memory hygiene. A Claude Fable
+skill is available in `.claude/skills/memory-hygiene-in-rust` to assist with this. Note that "memory hygiene" (good
+coding practices that reduce stack usage at no performance cast) can apply to all crates and is different from "low
+memory" (such as the mldsa-lowmemory crate), which uses a different algorithm that trades significant performance loss
+for significant reduction in memory footprint.
+
 # Quality
 
 ## Tests
@@ -67,6 +74,9 @@ streaming APIs that use the same core algorithm implementation.
 
 Bouncy Castle Rust cares about the peak stack memory usage of its algorithms. Crates should be accompanied by a memory
 usage test harness in `/mem_usage_benches`.
+
+There is a Claude Fable skill for performing zero-cost memory hygiene cleanup in
+`.claude/skills/memory-hygiene-in-rust/`.
 
 # Style
 
