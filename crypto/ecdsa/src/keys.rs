@@ -24,9 +24,9 @@ pub const SK_LEN: usize = 32;
 pub const PK_LEN: usize = 65;
 
 /// Requested output length, in bytes, from the DRBG for FIPS 186-5 Appendix A.2.1 key generation
-/// and Appendix A.3.1 randomised per-message secret generation: SP 800-186's Table A.2
-/// "Recommended" column for a P-256-sized prime is 352 bits, i.e. `N + t` with `N = 256` and `t =
-/// 96 >= 64`.
+/// and Appendix A.3.1 randomised per-message secret generation: FIPS 186-5 Table A.2 (in
+/// Appendix A.2.1) gives 352 bits in its "Recommended" column for `p256`, i.e. `N + t` with `N =
+/// 256` and `t = 96 >= 64`.
 pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 44;
 
 /// An ECDSA P-256 private key: FIPS 186-5 §6.2's `d`, `d` in `[1, n-1]`, held in

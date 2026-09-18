@@ -360,3 +360,26 @@ fn round_trips_over_many_pseudorandom_widths_and_values() {
         }
     }
 }
+
+#[test]
+fn decode_rejects_empty_integer_content() {
+    // X.690 §8.3.1: an INTEGER's content is one or more octets, so `02 00` is malformed on its own
+    // (unlike `decode_rejects_negative_integer`, where the empty second INTEGER sits behind a
+    // negative first one that is rejected before it is ever reached). The second INTEGER is
+    // well-formed, so the empty first one is the only thing that can be rejecting this.
+    let malformed: [u8; 7] = [0x30, 0x05, 0x02, 0x00, 0x02, 0x01, 0x09];
+    let mut r_out = [0u8; 1];
+    let mut s_out = [0u8; 1];
+    assert!(decode(&malformed, &mut r_out, &mut s_out).is_none());
+}
+
+#[test]
+fn decode_rejects_sequence_content_not_exactly_filled_by_the_two_integers() {
+    // The SEQUENCE's declared length matches the buffer (so this is neither truncation nor
+    // trailing bytes after the SEQUENCE), and both INTEGERs are well-formed, but two more bytes
+    // sit inside the SEQUENCE after them: `Ecdsa-Sig-Value` has exactly two components.
+    let malformed: [u8; 10] = [0x30, 0x08, 0x02, 0x01, 0x07, 0x02, 0x01, 0x09, 0x05, 0x00];
+    let mut r_out = [0u8; 1];
+    let mut s_out = [0u8; 1];
+    assert!(decode(&malformed, &mut r_out, &mut s_out).is_none());
+}

@@ -243,3 +243,51 @@ fn verify_rejects_signature_of_the_wrong_length() {
         }
     }
 }
+
+/// FIPS 186-5 §6.4.2 step 1: `r` and `s` must each be in `[1, n-1]`, and an out-of-range value is
+/// rejected rather than reduced. Each half of a valid signature is replaced in turn by `0`, by
+/// `n`, and by the all-ones pattern; the untouched half stays valid, so only the range check can
+/// be what rejects the result. The wycheproof suites cover this too, but only for the curves
+/// and encodings they happen to include, and not by name.
+#[test]
+fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"range-checked r and s";
+    let sig = ECDSAP256::sign(&sk, msg, None).unwrap();
+    ECDSAP256::verify(&pk, msg, None, &sig).expect("the untampered signature must verify");
+
+    let n = bouncycastle_ec::p256_sec1::be_bytes_from_limbs(&bouncycastle_ec::p256_scalar::N_LIMBS);
+    for (name, bad) in [("0", [0u8; 32]), ("n", n), ("2^256 - 1", [0xffu8; 32])] {
+        for (half, offset) in [("r", 0usize), ("s", 32usize)] {
+            let mut tampered = sig;
+            tampered[offset..offset + 32].copy_from_slice(&bad);
+            match ECDSAP256::verify(&pk, msg, None, &tampered) {
+                Err(SignatureError::SignatureVerificationFailed) => {}
+                other => panic!("{half} = {name} should have been rejected, got {other:?}"),
+            }
+        }
+    }
+}
+
+/// One `ECDSAP256` value serves both the [`Signer`] and [`SignatureVerifier`] streaming APIs, holding
+/// whichever key its `_init` was given. Finishing with the other trait's `_final` is a caller
+/// error and must be reported as one, not panic and not produce output.
+#[test]
+fn sign_final_on_verify_initialized_state_errors() {
+    let (pk, _) = keygen().unwrap();
+    let v = ECDSAP256::verify_init(&pk, None).unwrap();
+    match v.sign_final() {
+        Err(SignatureError::GenericError(_)) => {}
+        other => panic!("expected GenericError, got {other:?}"),
+    }
+}
+
+#[test]
+fn verify_final_on_sign_initialized_state_errors() {
+    let (_, sk) = keygen().unwrap();
+    let s = ECDSAP256::sign_init(&sk, None).unwrap();
+    match s.verify_final(&[0u8; 64]) {
+        Err(SignatureError::GenericError(_)) => {}
+        other => panic!("expected GenericError, got {other:?}"),
+    }
+}

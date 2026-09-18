@@ -5,7 +5,7 @@
 //! # DRBG output length
 //!
 //! Unlike P-256 (which needs 96 bits of headroom beyond its 256-bit order for A.4.1's bias bound
-//! -- SP 800-186 Table A.2's "Recommended" column gives 352), P-384's Table A.2 entry gives
+//! -- FIPS 186-5 Table A.2's "Recommended" column gives 352), P-384's Table A.2 entry gives
 //! **384** for both the "Required" and "Recommended" columns: no headroom beyond `n`'s own 384-bit
 //! width is needed for the bias to be negligible. So key generation and the randomised
 //! per-message secret both request exactly 48 bytes and reduce with a single conditional
@@ -189,6 +189,15 @@ mod tests {
         assert_eq!(
             reduce_mod_n_minus_1_plus_one(n_minus_1),
             P384Scalar::from_limbs([1, 0, 0, 0, 0, 0])
+        );
+
+        // x = n - 2: the largest residue mod (n-1), so +1 gives n - 1, the top of the output
+        // interval.
+        let mut n_minus_2 = N_MINUS_1_LIMBS;
+        n_minus_2[0] -= 1; // N_LIMBS[0] is odd, so n - 1 is even and this never borrows
+        assert_eq!(
+            reduce_mod_n_minus_1_plus_one(n_minus_2),
+            P384Scalar::from_limbs(N_MINUS_1_LIMBS)
         );
 
         // x = n: n mod (n-1) = 1, +1 = 2.
