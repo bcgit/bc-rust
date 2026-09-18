@@ -157,6 +157,7 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod barrett;
 pub mod bp256r1;
 pub mod bp256r1_comb;
 pub(crate) mod bp256r1_comb_table;
