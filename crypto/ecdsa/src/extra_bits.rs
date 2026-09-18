@@ -10,7 +10,7 @@
 //! 2. `x = x mod (n-1)`.
 //! 3. `x = x + 1`.
 //!
-//! `X` here is 352 bits (44 bytes -- SP 800-186's Table A.2 "Recommended" output length for a
+//! `X` here is 352 bits (44 bytes -- FIPS 186-5 Table A.2's "Recommended" output length for a
 //! DRBG feeding a P-256 private key or per-message secret, `l = N + t` with `N = 256` and `t = 96
 //! >= 64`), 96 bits wider than the 4-limb (256-bit) width every other value in this workspace's
 //! P-256 arithmetic is sized for. `bouncycastle_ec::p256_scalar` reduces mod `n`, not `n-1`, and

@@ -184,3 +184,105 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
     assert_eq!(sk1, sk2);
     assert_eq!(pk1, pk2);
 }
+
+/// FIPS 186-5 §6.2 puts `d` in `[1, n-1]`, so an encoding of `n` or anything above it is not a
+/// key. Reducing such an encoding mod `n` instead of rejecting it would give a single key two (in
+/// fact, unboundedly many) valid-looking encodings: `d = n + 1` would load as `d = 1`.
+#[test]
+fn private_key_rejects_values_at_or_above_the_group_order() {
+    let n = bouncycastle_ec::bp384r1_sec1::be_bytes_from_limbs(
+        &bouncycastle_ec::bp384r1_scalar::N_LIMBS,
+    );
+    let mut n_plus_1 = n;
+    n_plus_1[47] += 1; // n's last byte is well below 0xff, so this never carries
+
+    for (name, bytes) in [("n", n), ("n + 1", n_plus_1), ("2^384 - 1", [0xffu8; 48])] {
+        match ECDSABp384r1PrivateKey::from_bytes(&bytes) {
+            Err(SignatureError::DecodingError(_)) => {}
+            other => panic!("d = {name} should have been rejected, got {other:?}"),
+        }
+    }
+
+    // n - 1 is the largest valid d and must still load, and must not collide with any of the above.
+    let mut n_minus_1 = n;
+    n_minus_1[47] -= 1; // n is odd, so this never borrows
+    let sk = ECDSABp384r1PrivateKey::from_bytes(&n_minus_1).expect("d = n - 1 is in range");
+    assert_eq!(sk.encode(), n_minus_1, "d = n - 1 must round-trip unchanged");
+}
+
+/// The raw encoding is exactly `r || s`; anything longer or shorter is a different, malformed
+/// encoding, not a signature in a roomy buffer. Accepting trailing bytes would turn one valid
+/// signature into unlimited distinct byte strings that all verify.
+#[test]
+fn verify_rejects_signature_of_the_wrong_length() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"length-checked signature";
+    let sig = ECDSABp384r1::sign(&sk, msg, None).unwrap();
+    ECDSABp384r1::verify(&pk, msg, None, &sig).expect("the untampered signature must verify");
+
+    for extra in 1..=3 {
+        let mut too_long = sig.to_vec();
+        too_long.extend(core::iter::repeat_n(0xAAu8, extra));
+        match ECDSABp384r1::verify(&pk, msg, None, &too_long) {
+            Err(SignatureError::SignatureVerificationFailed) => {}
+            other => panic!("{extra} trailing byte(s) should have failed, got {other:?}"),
+        }
+    }
+
+    for short in 1..=3 {
+        match ECDSABp384r1::verify(&pk, msg, None, &sig[..96 - short]) {
+            Err(SignatureError::SignatureVerificationFailed) => {}
+            other => panic!("{short} byte(s) short should have failed, got {other:?}"),
+        }
+    }
+}
+
+/// FIPS 186-5 §6.4.2 step 1: `r` and `s` must each be in `[1, n-1]`, and an out-of-range value is
+/// rejected rather than reduced. Each half of a valid signature is replaced in turn by `0`, by
+/// `n`, and by the all-ones pattern; the untouched half stays valid, so only the range check can
+/// be what rejects the result. The wycheproof suites cover this too, but only for the curves
+/// and encodings they happen to include, and not by name.
+#[test]
+fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"range-checked r and s";
+    let sig = ECDSABp384r1::sign(&sk, msg, None).unwrap();
+    ECDSABp384r1::verify(&pk, msg, None, &sig).expect("the untampered signature must verify");
+
+    let n = bouncycastle_ec::bp384r1_sec1::be_bytes_from_limbs(
+        &bouncycastle_ec::bp384r1_scalar::N_LIMBS,
+    );
+    for (name, bad) in [("0", [0u8; 48]), ("n", n), ("2^384 - 1", [0xffu8; 48])] {
+        for (half, offset) in [("r", 0usize), ("s", 48usize)] {
+            let mut tampered = sig;
+            tampered[offset..offset + 48].copy_from_slice(&bad);
+            match ECDSABp384r1::verify(&pk, msg, None, &tampered) {
+                Err(SignatureError::SignatureVerificationFailed) => {}
+                other => panic!("{half} = {name} should have been rejected, got {other:?}"),
+            }
+        }
+    }
+}
+
+/// One `ECDSABp384r1` value serves both the [`Signer`] and [`SignatureVerifier`] streaming APIs, holding
+/// whichever key its `_init` was given. Finishing with the other trait's `_final` is a caller
+/// error and must be reported as one, not panic and not produce output.
+#[test]
+fn sign_final_on_verify_initialized_state_errors() {
+    let (pk, _) = keygen().unwrap();
+    let v = ECDSABp384r1::verify_init(&pk, None).unwrap();
+    match v.sign_final() {
+        Err(SignatureError::GenericError(_)) => {}
+        other => panic!("expected GenericError, got {other:?}"),
+    }
+}
+
+#[test]
+fn verify_final_on_sign_initialized_state_errors() {
+    let (_, sk) = keygen().unwrap();
+    let s = ECDSABp384r1::sign_init(&sk, None).unwrap();
+    match s.verify_final(&[0u8; 96]) {
+        Err(SignatureError::GenericError(_)) => {}
+        other => panic!("expected GenericError, got {other:?}"),
+    }
+}

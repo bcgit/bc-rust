@@ -37,3 +37,27 @@ fn known_answer_all_zero_yields_one() {
     expected[31] = 1;
     assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), expected);
 }
+
+/// The two boundaries of Appendix A.4.1's own arithmetic: `n - 1` is the modulus of step 4, so it
+/// reduces to `0` and step 5 makes it `1`; `n - 2` is the largest residue, so it comes out as
+/// `n - 1`, the top of the `[1, n-1]` output interval. Both inputs are left-padded to the DRBG
+/// output width this module is fed with.
+#[test]
+fn known_answer_at_the_n_minus_1_boundary() {
+    let n = bouncycastle_ec::bp256r1_sec1::be_bytes_from_limbs(
+        &bouncycastle_ec::bp256r1_scalar::N_LIMBS,
+    );
+    let mut n_minus_1 = n;
+    n_minus_1[31] -= 1; // n is odd, so neither of these subtractions borrows
+    let mut n_minus_2 = n;
+    n_minus_2[31] -= 2;
+
+    let mut input = [0u8; 40];
+    input[8..].copy_from_slice(&n_minus_1);
+    let mut one = [0u8; 32];
+    one[31] = 1;
+    assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), one, "n - 1 -> 1");
+
+    input[8..].copy_from_slice(&n_minus_2);
+    assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), n_minus_1, "n - 2 -> n - 1");
+}
