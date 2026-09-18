@@ -50,24 +50,33 @@
 //! assert_eq!(&pt, plaintext);
 //! ```
 //!
-//! Authenticated encryption (streaming, in place):
+//! Authenticated encryption (streaming, detached tag):
 //! ```
-//! use bouncycastle_ascon::ascon_aead128::AsconAead128;
+//! use bouncycastle_ascon::ascon_aead128::{AsconAead128Decryptor, AsconAead128Encryptor};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let nonce = [1u8; 16];
 //!
-//! let mut buf = *b"secret message!!"; // transformed in place
-//! let mut enc = AsconAead128::new(&key, &nonce, Some(b"associated data"), true).unwrap();
-//! enc.do_encrypt_update(&mut buf); // now ciphertext
-//! let tag = enc.do_encrypt_final();
+//! let plaintext = b"secret message!!";
+//! let (mut enc, nonce) = AsconAead128Encryptor::do_encrypt_init(&key).unwrap();
+//! enc.do_update_aad(b"associated data").unwrap();
+//! let mut ciphertext = [0u8; 16];
+//! enc.do_update_out(plaintext, &mut ciphertext).unwrap();
+//! let mut final_buf = [0u8; 0];
+//! let (_, tag) = enc.do_encrypt_final(&mut final_buf).unwrap();
 //!
-//! let mut dec = AsconAead128::new(&key, &nonce, Some(b"associated data"), false).unwrap();
-//! dec.do_decrypt_update(&mut buf); // now plaintext again, but not yet authenticated
-//! dec.do_decrypt_final(&tag).unwrap(); // now authenticated
-//! assert_eq!(&buf, b"secret message!!");
+//! let mut dec = AsconAead128Decryptor::do_decrypt_init(&key, &nonce).unwrap();
+//! dec.do_update_aad(b"associated data").unwrap();
+//! let mut recovered = [0u8; 16];
+//! dec.do_update_out(&ciphertext, &mut recovered).unwrap();
+//! dec.do_decrypt_final(&tag, &mut final_buf).unwrap(); // now authenticated
+//! assert_eq!(&recovered, plaintext);
 //! ```
+//!
+//! For the inline `ciphertext || tag` layout, wrap the pair in
+//! [`bouncycastle_core::tagged_aead::TaggedEncryptor`] /
+//! [`bouncycastle_core::tagged_aead::TaggedDecryptor`].
 //!
 //! Extendable output:
 //! ```
@@ -109,10 +118,11 @@
 //!   plaintext rejected. The one-shot APIs ([`ascon_aead128::AsconAead128::decrypt`] and the
 //!   `AEADCipher` trait impl) zeroize their output buffer before returning that
 //!   error. The streaming API ([`ascon_aead128::AsconAead128::do_decrypt_update`] /
-//!   [`ascon_aead128::AsconAead128::do_decrypt_final`]) does not: plaintext bytes are necessarily
-//!   written to the caller's buffer *before* the tag can be checked, so an application streaming a
-//!   large plaintext must have a way to cancel the operation or transaction if finalization returns
-//!   an error.
+//!   [`ascon_aead128::AsconAead128::do_decrypt_final`] or
+//!   [`ascon_aead128::AsconAead128Decryptor::do_decrypt_final`]) does not: plaintext bytes are
+//!   necessarily written to the caller's buffer *before* the tag can be checked, so an application
+//!   streaming a large plaintext must have a way to cancel the operation or transaction if
+//!   finalization returns an error.
 
 // `bouncycastle-core` still uses `Vec` internally (see the TODO at the top of
 // crypto/core/src/lib.rs), which blocks this crate from being `#![no_std]` as long as it depends

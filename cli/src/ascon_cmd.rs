@@ -1,7 +1,9 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::ascon_aead128::{AsconAead128, AsconAead128Decryptor};
+use bouncycastle::ascon::ascon_aead128::{
+    AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
+};
 use bouncycastle::ascon::ascon_cxof128::AsconCXof128;
 use bouncycastle::ascon::ascon_hash256::AsconHash256;
 use bouncycastle::ascon::ascon_xof128::AsconXof128;
@@ -9,8 +11,8 @@ use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::tagged_aead::TaggedDecryptor;
-use bouncycastle::core::traits::{SecurityStrength, SimpleCipherDecryptor};
+use bouncycastle::core::tagged_aead::{TaggedDecryptor, TaggedEncryptor};
+use bouncycastle::core::traits::{SecurityStrength, SimpleCipherDecryptor, SimpleCipherEncryptor};
 use bouncycastle::hex;
 
 use crate::helpers;
@@ -27,6 +29,23 @@ fn load_bytes(value: &Option<String>, value_file: &Option<String>, label: &str) 
     } else {
         eprintln!("Error: {label} must be supplied.");
         exit(-1)
+    }
+}
+
+fn load_optional_bytes(
+    value: &Option<String>,
+    value_file: &Option<String>,
+    label: &str,
+) -> Option<Vec<u8>> {
+    if let Some(file) = value_file {
+        Some(helpers::read_from_file(file))
+    } else {
+        value.as_ref().map(|v| {
+            hex::decode(v).unwrap_or_else(|_| {
+                eprintln!("Error: {label} is not valid hex.");
+                exit(-1)
+            })
+        })
     }
 }
 
@@ -99,7 +118,8 @@ pub(crate) fn aead128_cmd(
     output_hex: bool,
 ) {
     let key = load_key_material(&require_16(load_bytes(key, key_file, "key"), "key"));
-    let nonce = require_16(load_bytes(nonce, nonce_file, "nonce"), "nonce");
+    let nonce =
+        load_optional_bytes(nonce, nonce_file, "nonce").map(|bytes| require_16(bytes, "nonce"));
     let ad_bytes = match ad {
         Some(v) => hex::decode(v).unwrap_or_else(|_| {
             eprintln!("Error: associated data is not valid hex.");
@@ -110,13 +130,53 @@ pub(crate) fn aead128_cmd(
     let ad_opt = if ad_bytes.is_empty() { None } else { Some(ad_bytes.as_slice()) };
 
     if decrypt {
-        aead128_decrypt_stream(&key, &nonce, ad_opt, output_hex);
+        aead128_decrypt_stream(&key, nonce.as_ref(), ad_opt, output_hex);
     } else {
-        aead128_encrypt_stream(&key, &nonce, ad_opt, output_hex);
+        aead128_encrypt_stream(&key, nonce.as_ref(), ad_opt, output_hex);
     }
 }
 
 fn aead128_encrypt_stream(
+    key: &KeyMaterial<16>,
+    nonce: Option<&[u8; 16]>,
+    ad_opt: Option<&[u8]>,
+    output_hex: bool,
+) {
+    if let Some(nonce) = nonce {
+        aead128_encrypt_stream_with_explicit_nonce(key, nonce, ad_opt, output_hex);
+        return;
+    }
+
+    let (mut cipher, nonce) = <TaggedEncryptor<AsconAead128Encryptor> as SimpleCipherEncryptor<
+        16,
+        16,
+        16,
+    >>::do_encrypt_init(key)
+    .unwrap();
+    if let Some(ad) = ad_opt {
+        cipher.do_update_aad::<16, 16, 16>(ad).unwrap();
+    }
+
+    helpers::write_bytes_or_hex(&nonce, output_hex);
+
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+        if n == 0 {
+            break;
+        }
+        let mut out = [0u8; 1024];
+        let written = cipher.do_update_out(&buf[..n], &mut out).unwrap();
+        helpers::write_bytes_or_hex(&out[..written], output_hex);
+    }
+    let (tag, tag_len) = cipher.do_final().unwrap();
+    helpers::write_bytes_or_hex(&tag[..tag_len], output_hex);
+    if output_hex {
+        println!();
+    }
+}
+
+fn aead128_encrypt_stream_with_explicit_nonce(
     key: &KeyMaterial<16>,
     nonce: &[u8; 16],
     ad_opt: Option<&[u8]>,
@@ -145,17 +205,31 @@ fn aead128_encrypt_stream(
 /// the last 16 bytes it has seen as soon as it is known not to be the tag.
 fn aead128_decrypt_stream(
     key: &KeyMaterial<16>,
-    nonce: &[u8; 16],
+    nonce: Option<&[u8; 16]>,
     ad_opt: Option<&[u8]>,
     output_hex: bool,
 ) {
     const CHUNK: usize = 1024;
+    let nonce = match nonce {
+        Some(nonce) => *nonce,
+        None => {
+            let mut nonce = [0u8; 16];
+            if let Err(e) = io::stdin().read_exact(&mut nonce) {
+                if e.kind() == io::ErrorKind::UnexpectedEof {
+                    eprintln!("Error: ciphertext is shorter than the 16-byte nonce.");
+                    exit(-1);
+                }
+                panic!("Failed to read from stdin: {e}");
+            }
+            nonce
+        }
+    };
 
     let mut cipher = <TaggedDecryptor<AsconAead128Decryptor, 16> as SimpleCipherDecryptor<
         16,
         16,
         16,
-    >>::do_decrypt_init(key, nonce)
+    >>::do_decrypt_init(key, &nonce)
     .unwrap();
     if let Some(ad) = ad_opt {
         cipher.do_update_aad::<16, 16>(ad).unwrap();
@@ -168,10 +242,10 @@ fn aead128_decrypt_stream(
             break;
         }
         let expect = cipher.update_out_len(n);
-        let mut out = vec![0u8; expect];
+        let mut out = [0u8; CHUNK];
         // infallible: `out` is sized exactly to `update_out_len`, the only length
         // `IncorrectOutputBufferLength` could complain about.
-        let written = cipher.do_update_out(&buf[..n], &mut out).unwrap();
+        let written = cipher.do_update_out(&buf[..n], &mut out[..expect]).unwrap();
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
 

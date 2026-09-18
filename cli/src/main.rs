@@ -386,11 +386,11 @@ enum Subcommands {
         #[arg(long)]
         key_file: Option<String>,
 
-        /// The 128-bit nonce in hex. Must be unique per encryption under a given key.
+        /// The 128-bit nonce in hex. Optional hazardous override for deterministic vectors.
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing the 128-bit nonce in hex or binary.
+        /// A file containing an optional 128-bit nonce in hex or binary.
         #[arg(long)]
         nonce_file: Option<String>,
 
@@ -1246,6 +1246,16 @@ enum Subcommands {
 }
 
 fn main() {
+    std::thread::Builder::new()
+        .name("bc-rust-main".to_string())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(run)
+        .expect("failed to start CLI thread")
+        .join()
+        .expect("CLI thread panicked");
+}
+
+fn run() {
     let cli = Cli::parse();
 
     match &cli.subcommands {

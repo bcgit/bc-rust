@@ -187,7 +187,7 @@ pub trait AEADCipherDecryptor<
 
     /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
     /// given `input_len` more bytes of ciphertext. Depends on what is already buffered; identically
-    /// `0` for a cipher that never holds anything back, such as Ascon-AEAD128.
+    /// `input_len` for a cipher that never holds anything back, such as Ascon-AEAD128.
     fn update_out_len(&self, input_len: usize) -> usize;
 
     /// Streaming: consumes `ciphertext`, writing every plaintext byte that can be released so far
@@ -402,7 +402,7 @@ pub trait AEADCipherEncryptor<
 
     /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
     /// given `input_len` more bytes of plaintext. Depends on what is already buffered; identically
-    /// `0` for a cipher that never holds anything back, such as Ascon-AEAD128.
+    /// `input_len` for a cipher that never holds anything back, such as Ascon-AEAD128.
     fn update_out_len(&self, input_len: usize) -> usize;
 
     /// Streaming: consumes `plaintext`, writing every ciphertext byte that can be produced so far
@@ -463,7 +463,8 @@ pub trait AEADCipherEncryptor<
         let written = enc.do_update_out(plaintext, ciphertext)?;
         let mut final_buf = [0u8; FINAL_LEN];
         let (final_len, tag) = enc.do_encrypt_final(&mut final_buf)?;
-        // `encrypt_out_len` bounds `written + final_len`, so this fits in `ciphertext[..needed]`.
+        // Implementors with FINAL_LEN > 0 must override `encrypt_out_len` so this fits in
+        // `ciphertext[..needed]`.
         ciphertext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
         Ok((nonce, written + final_len, tag))
     }

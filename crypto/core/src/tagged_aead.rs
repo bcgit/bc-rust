@@ -102,7 +102,11 @@ where
     fn do_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         let mut nothing = [0u8; 0];
         let (flushed, tag) = self.0.do_encrypt_final(&mut nothing)?;
-        debug_assert_eq!(flushed, 0, "FINAL_LEN = 0 on the AEADCipherEncryptor bound");
+        if flushed != 0 {
+            return Err(SymmetricCipherError::GenericError(
+                "AEAD with FINAL_LEN = 0 flushed data at finalization",
+            ));
+        }
         Ok((tag, TAG_LEN))
     }
 

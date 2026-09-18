@@ -106,6 +106,15 @@ fn xof128_prefix_property_and_streaming() {
 }
 
 #[test]
+fn xof128_hash_view_metadata() {
+    let x = AsconXof128::new();
+
+    assert_eq!(x.block_bitlen(), 64);
+    assert_eq!(x.output_len(), 32);
+    assert_eq!(x.hash(b"").len(), 32);
+}
+
+#[test]
 fn xof128_byte_at_a_time_matches_one_shot() {
     let msg = pattern(40);
 
@@ -132,29 +141,43 @@ fn xof128_unsupported_partial_input_returns_err() {
 
     assert!(AsconXof128::new().do_final_partial_bits(0x80, 0).is_ok());
 
-    // Genuine partial-byte input is intentionally unsupported.
-    assert!(matches!(
-        AsconXof128::new().into_squeezer_partial_bits(0xA0, 3),
-        Err(HashError::InvalidInput(_))
-    ));
+    for num_bits in [3usize, 7] {
+        assert!(matches!(
+            AsconXof128::new().into_squeezer_partial_bits(0xA0, num_bits),
+            Err(HashError::InvalidInput(_))
+        ));
 
-    assert!(matches!(
-        AsconXof128::new().do_final_partial_bits(0xA0, 3),
-        Err(HashError::InvalidInput(_))
-    ));
+        assert!(matches!(
+            AsconXof128::new().do_final_partial_bits(0xA0, num_bits),
+            Err(HashError::InvalidInput(_))
+        ));
 
-    let mut out = [0u8; 32];
+        let mut out = [0u8; 32];
 
-    assert!(matches!(
-        AsconXof128::new().do_final_partial_bits_out(0xA0, 3, &mut out),
-        Err(HashError::InvalidInput(_))
-    ));
+        assert!(matches!(
+            AsconXof128::new().do_final_partial_bits_out(0xA0, num_bits, &mut out),
+            Err(HashError::InvalidInput(_))
+        ));
+    }
 
-    // Eight bits is not a partial byte.
-    assert!(matches!(
-        AsconXof128::new().into_squeezer_partial_bits(0xFF, 8),
-        Err(HashError::InvalidLength(_))
-    ));
+    for num_bits in [8usize, 9] {
+        assert!(matches!(
+            AsconXof128::new().into_squeezer_partial_bits(0xFF, num_bits),
+            Err(HashError::InvalidLength(_))
+        ));
+
+        assert!(matches!(
+            AsconXof128::new().do_final_partial_bits(0xFF, num_bits),
+            Err(HashError::InvalidLength(_))
+        ));
+
+        let mut out = [0u8; 32];
+
+        assert!(matches!(
+            AsconXof128::new().do_final_partial_bits_out(0xFF, num_bits, &mut out),
+            Err(HashError::InvalidLength(_))
+        ));
+    }
 }
 
 #[test]

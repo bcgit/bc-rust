@@ -605,6 +605,11 @@ fn aead128_encryptor_decryptor_trait_framework() {
         .test_encryptor_decryptor::<16, 16, 16, 0, AsconAead128Encryptor, AsconAead128Decryptor>();
 }
 
+#[test]
+fn aead_framework_buffering_toy() {
+    TestFrameworkAEADCipher::new().test_buffering_toy();
+}
+
 /// The inline-tag adapter ([`TaggedEncryptor`]/[`TaggedDecryptor`]) over the same
 /// [`AsconAead128Encryptor`]/[`AsconAead128Decryptor`] pair must pass the unrelated
 /// [`SimpleCipherEncryptor`]/[`SimpleCipherDecryptor`] conformance suite -- proof that adapting an
