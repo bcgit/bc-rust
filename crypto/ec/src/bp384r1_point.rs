@@ -13,9 +13,18 @@
 //! using brainpoolP384r1's actual `A`, before being ported here.
 
 use crate::bp384r1::Bp384r1FieldElement;
-use crate::bp384r1_domain::A_LIMBS;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+
+/// The curve coefficient `A` in the field's Montgomery representation (`A * 2^384 mod p`),
+/// computed in Python from RFC 5639 §3.4's `A` and pinned against
+/// [`Bp384r1FieldElement::from_limbs`] by this module's tests. [`Bp384r1JacobianPoint::double`]
+/// needs `A` on every call; converting the plain `A_LIMBS` into Montgomery form each time cost a
+/// full field multiplication per doubling.
+const A_MONTGOMERY_LIMBS: [u64; 6] = [
+    0xdb26b895466c3c99, 0x75d7f3fef157b07b, 0x936771b9d7f10db4, 0xe7ffe9e535529374,
+    0x400a8fdf42b00c60, 0x7c338021a2e8c0d1,
+];
 
 /// A point on the brainpoolP384r1 curve in Jacobian coordinates.
 #[derive(Clone, Copy, Debug)]
@@ -67,7 +76,7 @@ impl Bp384r1JacobianPoint {
     /// `2 * self`, via the general-`a` doubling formula ("dbl-2007-bl") described in the module
     /// docs.
     pub fn double(&self) -> Self {
-        let a = Bp384r1FieldElement::from_limbs(A_LIMBS);
+        let a = Bp384r1FieldElement::from_internal_limbs(A_MONTGOMERY_LIMBS);
         let xx = self.x.mul(&self.x); // XX = X1^2
         let yy = self.y.mul(&self.y); // YY = Y1^2
         let yyyy = yy.mul(&yy); // YYYY = YY^2
@@ -179,9 +188,21 @@ fn select_point(
     b: &Bp384r1JacobianPoint,
 ) -> Bp384r1JacobianPoint {
     Bp384r1JacobianPoint {
-        x: Bp384r1FieldElement::from_limbs(select_limbs(cond, &a.x.to_limbs(), &b.x.to_limbs())),
-        y: Bp384r1FieldElement::from_limbs(select_limbs(cond, &a.y.to_limbs(), &b.y.to_limbs())),
-        z: Bp384r1FieldElement::from_limbs(select_limbs(cond, &a.z.to_limbs(), &b.z.to_limbs())),
+        x: Bp384r1FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.x.internal_limbs(),
+            &b.x.internal_limbs(),
+        )),
+        y: Bp384r1FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.y.internal_limbs(),
+            &b.y.internal_limbs(),
+        )),
+        z: Bp384r1FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.z.internal_limbs(),
+            &b.z.internal_limbs(),
+        )),
     }
 }
 
@@ -201,6 +222,15 @@ fn select_limbs(cond: Condition<u64>, a: &[u64; 6], b: &[u64; 6]) -> [u64; 6] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bp384r1_domain::A_LIMBS;
+
+    #[test]
+    fn a_montgomery_constant_is_a_in_montgomery_form() {
+        assert_eq!(
+            Bp384r1FieldElement::from_internal_limbs(A_MONTGOMERY_LIMBS),
+            Bp384r1FieldElement::from_limbs(A_LIMBS)
+        );
+    }
     use crate::bp384r1_domain::{G_X_LIMBS, G_Y_LIMBS};
 
     #[test]

@@ -82,13 +82,13 @@ fn table_lookup(secret_index: usize) -> Sm2JacobianPoint {
     let mut z_limbs = [0u64; 4];
     ct::conditional_select(
         is_infinity,
-        &Sm2FieldElement::ZERO.to_limbs(),
-        &Sm2FieldElement::ONE.to_limbs(),
+        &Sm2FieldElement::ZERO.internal_limbs(),
+        &Sm2FieldElement::ONE.internal_limbs(),
         &mut z_limbs,
     );
     Sm2JacobianPoint {
-        x: Sm2FieldElement::from_limbs(x_limbs),
-        y: Sm2FieldElement::from_limbs(y_limbs),
-        z: Sm2FieldElement::from_limbs(z_limbs),
+        x: Sm2FieldElement::from_internal_limbs(x_limbs),
+        y: Sm2FieldElement::from_internal_limbs(y_limbs),
+        z: Sm2FieldElement::from_internal_limbs(z_limbs),
     }
 }
