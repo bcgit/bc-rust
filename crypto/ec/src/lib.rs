@@ -3,17 +3,17 @@
 //! This crate is the "custom curve" math substrate: fixed-width limb arithmetic ([`nat`]) and,
 //! per curve, a base-field implementation with a reduction tailored to that curve's prime.
 //!
-//! It deliberately does not support a runtime-described generic curve (bc-java's `ECCurve.Fp`
-//! equivalent), and that is a constant-time decision rather than a scope one. Field arithmetic on
-//! a secret value has to run in the same time whatever the value is, which needs limbs of a fixed
-//! width known at compile time; a `BigInteger`-shaped value leaks the magnitude of a secret
-//! through the length of its own internal representation, quite apart from its arithmetic being
-//! variable-time. bc-java says as much about its own generic path, in `ECConstantTimeMultiplier`'s
-//! class comment: the guarantee "stops at the field layer", because under a generic `ECCurve.Fp`
-//! "the field operations under the point arithmetic are BigInteger-based and their timing can vary
-//! with operand values". So the custom path is not an optimisation here -- it is the only path on
-//! which constant-time signing is achievable at all. The cost, accepted deliberately, is that
-//! curves are types chosen at compile time and the supported set is fixed by what is implemented.
+//! It deliberately does not support a runtime-described generic curve, and that is a
+//! constant-time decision rather than a scope one. Field arithmetic on a secret value has to run
+//! in the same time whatever the value is, which needs limbs of a fixed width known at compile
+//! time; a `BigInteger`-shaped value leaks the magnitude of a secret through the length of its own
+//! internal representation, quite apart from its arithmetic being variable-time. So the custom
+//! path is not an optimisation here -- it is the only path on which constant-time signing is
+//! achievable at all. The cost, accepted deliberately, is that curves are types chosen at compile
+//! time and the supported set is fixed by what is implemented.
+//!
+//! This crate's custom-curve arithmetic, and the Brainpool and SM2 curves alongside it, are based
+//! on BC Java's (`org.bouncycastle.math.ec.custom`) equivalent per-curve implementations.
 //!
 //! # Usage Examples
 //!

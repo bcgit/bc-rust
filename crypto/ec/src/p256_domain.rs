@@ -1,5 +1,4 @@
-//! P-256 domain parameters, NIST SP 800-186 (Feb 2023) §3.2.1.3, cross-checked byte-for-byte
-//! against bc-java's `SecP256R1Curve`/`SecP256R1Point` constants. `p` and `a = -3` live in
+//! P-256 domain parameters, NIST SP 800-186 (Feb 2023) §3.2.1.3. `p` and `a = -3` live in
 //! [`crate::p256`] (the `a = -3` shortcut is baked directly into
 //! [`crate::p256_point::P256JacobianPoint::double`]); `n` lives in [`crate::p256_scalar`]. This
 //! module holds the rest: the curve coefficient `b` and the base point `G`.

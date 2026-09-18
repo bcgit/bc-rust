@@ -1,12 +1,12 @@
 //! Fixed-base comb scalar multiplication: `[k]G` for P-256's base point `G`, with `k` secret.
 //!
-//! This is bc-java's `FixedPointCombMultiplier`/`FixedPointUtil` algorithm (width 6, matching its
-//! choice for fields over 250 bits), simplified: bc-java's version starts its accumulator at a
-//! nonzero "offset" point and subtracts it at the end, specifically to avoid ever handing its
-//! point-add the identity element -- its generic `ECPoint.add`/`.twice` aren't constant-time in
-//! that case. [`crate::p256_point::P256JacobianPoint::add`] already handles the identity
-//! branch-free (see its module docs), so that dance isn't needed here: the accumulator starts at
-//! [`P256JacobianPoint::INFINITY`] and the algorithm is the plain comb.
+//! This is the standard fixed-point comb multiplication algorithm, width 6 (the standard choice
+//! for fields over 250 bits), simplified: a generic-curve implementation typically starts its
+//! accumulator at a nonzero "offset" point and subtracts it at the end, specifically to avoid ever
+//! handing a generic point-add the identity element, since a generic `add`/`double` usually isn't
+//! constant-time in that case. [`crate::p256_point::P256JacobianPoint::add`] already handles the
+//! identity branch-free (see its module docs), so that dance isn't needed here: the accumulator
+//! starts at [`P256JacobianPoint::INFINITY`] and the algorithm is the plain comb.
 //!
 //! # The comb
 //!
@@ -70,8 +70,7 @@ pub fn comb_multiply_base_point(k: &P256Scalar) -> P256JacobianPoint {
 
 /// Looks up comb table entry `secret_index` as affine coordinates plus an is-the-identity flag,
 /// scanning every one of the [`TABLE_SIZE`] entries
-/// under a mask so the index never steers which memory is read (bc-java's
-/// `SecP256R1Curve.createCacheSafeLookupTable` pattern, cited in the crate's design notes).
+/// under a mask so the index never steers which memory is read: a cache-safe lookup table.
 fn table_lookup(secret_index: usize) -> (P256FieldElement, P256FieldElement, Condition<u64>) {
     let mut x_limbs = [0u64; 4];
     let mut y_limbs = [0u64; 4];
