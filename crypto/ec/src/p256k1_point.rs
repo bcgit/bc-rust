@@ -171,9 +171,21 @@ fn select_point(
     b: &P256K1JacobianPoint,
 ) -> P256K1JacobianPoint {
     P256K1JacobianPoint {
-        x: P256K1FieldElement::from_limbs(select_limbs(cond, &a.x.to_limbs(), &b.x.to_limbs())),
-        y: P256K1FieldElement::from_limbs(select_limbs(cond, &a.y.to_limbs(), &b.y.to_limbs())),
-        z: P256K1FieldElement::from_limbs(select_limbs(cond, &a.z.to_limbs(), &b.z.to_limbs())),
+        x: P256K1FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.x.internal_limbs(),
+            &b.x.internal_limbs(),
+        )),
+        y: P256K1FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.y.internal_limbs(),
+            &b.y.internal_limbs(),
+        )),
+        z: P256K1FieldElement::from_internal_limbs(select_limbs(
+            cond,
+            &a.z.internal_limbs(),
+            &b.z.internal_limbs(),
+        )),
     }
 }
 

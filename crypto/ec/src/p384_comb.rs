@@ -60,13 +60,13 @@ fn table_lookup(secret_index: usize) -> P384JacobianPoint {
     let mut z_limbs = [0u64; 6];
     ct::conditional_select(
         is_infinity,
-        &P384FieldElement::ZERO.to_limbs(),
-        &P384FieldElement::ONE.to_limbs(),
+        &P384FieldElement::ZERO.internal_limbs(),
+        &P384FieldElement::ONE.internal_limbs(),
         &mut z_limbs,
     );
     P384JacobianPoint {
-        x: P384FieldElement::from_limbs(x_limbs),
-        y: P384FieldElement::from_limbs(y_limbs),
-        z: P384FieldElement::from_limbs(z_limbs),
+        x: P384FieldElement::from_internal_limbs(x_limbs),
+        y: P384FieldElement::from_internal_limbs(y_limbs),
+        z: P384FieldElement::from_internal_limbs(z_limbs),
     }
 }

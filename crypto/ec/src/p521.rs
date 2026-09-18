@@ -76,6 +76,29 @@ impl P521FieldElement {
         self.0
     }
 
+    /// The limbs exactly as this type stores them: the canonical value itself, so this is
+    /// [`Self::to_limbs`] by another name. Paired with [`Self::from_internal_limbs`] so the
+    /// crate's point arithmetic can select between the coordinates of two existing points without
+    /// re-reducing each one.
+    pub(crate) fn internal_limbs(&self) -> [u64; 9] {
+        self.0
+    }
+
+    /// Wraps limbs already in this type's stored representation (see [`Self::internal_limbs`]),
+    /// skipping the reduction and conversion [`Self::from_limbs`] performs. Only for values that
+    /// came out of another element of this type, or a constant computed in that representation:
+    /// the masked selects in the point arithmetic, and the comb table's infinity sentinel. Not
+    /// exposed, since an out-of-range value would break every equality and reduction assumption
+    /// downstream; the range is checked in debug builds.
+    pub(crate) fn from_internal_limbs(limbs: [u64; 9]) -> Self {
+        debug_assert_eq!(
+            crate::nat::sub(&limbs, &P_LIMBS).1,
+            1,
+            "from_internal_limbs given a value >= p"
+        );
+        Self(limbs)
+    }
+
     /// TRUE iff this element is the additive identity.
     pub fn is_zero(&self) -> Condition<u64> {
         nat::is_zero(&self.0)
