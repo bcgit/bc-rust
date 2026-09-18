@@ -1,5 +1,5 @@
 //! The checked-in fixed-base comb table for `[k]G` (P-384's base point `G`), width 6, same choice
-//! as [`crate::p256_comb_table`] (bc-java's `FixedPointUtil` width for fields over 250 bits). See
+//! as [`crate::p256_comb_table`] (the standard width for fields over 250 bits). See
 //! [`crate::p384_comb`] for the multiplier that uses this table.
 //!
 //! `COMB_TABLE_X[i]`/`COMB_TABLE_Y[i]` are the affine `(x, y)` coordinates of the `i`-th table

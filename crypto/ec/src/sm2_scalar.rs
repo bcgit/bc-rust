@@ -369,8 +369,8 @@ fn reduce_once(limbs: [u64; 4]) -> [u64; 4] {
 /// conversion from `Sm2Scalar` to [`Sm2PublicScalar`]: the crate's constant-time and
 /// variable-time scalar multipliers take `&Sm2Scalar` and `&Sm2PublicScalar` respectively, so a
 /// caller cannot pass a secret scalar to the variable-time multiplier by accident -- the type
-/// system forbids it, rather than relying on a reviewer to notice (the design plan's §5, §7 rule
-/// 4). `Clone`/`Debug`/`PartialEq`/`Eq` forward to [`Secret`]'s own impls (`Debug` redacting,
+/// system forbids it, rather than relying on a reviewer to notice. `Clone`/`Debug`/`PartialEq`/`Eq`
+/// forward to [`Secret`]'s own impls (`Debug` redacting,
 /// `PartialEq` constant-time), which is what `core::traits::SignaturePrivateKey`'s bound needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sm2Scalar(Secret<[u64; 4]>);

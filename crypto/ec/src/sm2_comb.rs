@@ -65,7 +65,7 @@ pub fn comb_multiply_base_point(k: &Sm2Scalar) -> Sm2JacobianPoint {
 
 /// Looks up comb table entry `secret_index`, scanning every one of the [`TABLE_SIZE`] entries
 /// under a mask so the index never steers which memory is read. See
-/// [`crate::p256_comb::table_lookup`]'s docs for the bc-java pattern this mirrors.
+/// [`crate::p256_comb::table_lookup`]'s docs for the cache-safe lookup pattern this mirrors.
 fn table_lookup(secret_index: usize) -> (Sm2FieldElement, Sm2FieldElement, Condition<u64>) {
     let mut x_limbs = [0u64; 4];
     let mut y_limbs = [0u64; 4];

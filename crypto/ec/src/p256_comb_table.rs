@@ -1,7 +1,6 @@
-//! The checked-in fixed-base comb table for `[k]G` (P-256's base point `G`), width 6, matching
-//! bc-java's `FixedPointUtil` choice for fields over 250 bits (`SecP256R1Curve`'s custom-curve
-//! path uses the same width). See [`crate::p256_comb`] for the multiplier that uses this table and
-//! the algorithm it implements.
+//! The checked-in fixed-base comb table for `[k]G` (P-256's base point `G`), width 6, the standard
+//! choice for fields over 250 bits. See [`crate::p256_comb`] for the multiplier that uses this
+//! table and the algorithm it implements.
 //!
 //! `COMB_TABLE_X[i]`/`COMB_TABLE_Y[i]` are the affine `(x, y)` coordinates of the `i`-th table
 //! entry, as little-endian `u64` limbs; entry `0` is the point at infinity (`x = y = 0`, which is
