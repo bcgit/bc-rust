@@ -39,8 +39,7 @@ impl Sm2JacobianPoint {
         Self { x: Sm2FieldElement::ONE, y: Sm2FieldElement::ONE, z: Sm2FieldElement::ZERO };
 
     /// Builds a Jacobian point from affine coordinates (`Z = 1`). Does not check that `(x, y)` is
-    /// actually on the curve -- see the crate's SEC 1 encoding/validation work (not yet
-    /// implemented) for that.
+    /// actually on the curve -- see [`crate::sm2_sec1`] for that.
     pub fn from_affine(x: Sm2FieldElement, y: Sm2FieldElement) -> Self {
         Self { x, y, z: Sm2FieldElement::ONE }
     }

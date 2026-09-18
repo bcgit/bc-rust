@@ -111,7 +111,6 @@ impl Bp256r1FieldElement {
         Self(Self::finish_redc(&t))
     }
 
-    /// `self^2 mod p`.
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
     /// [`montgomery::widening_square`]. Used by the exponentiation loops, not by point
     /// arithmetic; see [`crate::p256::P256FieldElement::square`] for the measurement behind that

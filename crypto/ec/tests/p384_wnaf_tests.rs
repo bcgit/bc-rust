@@ -137,3 +137,44 @@ fn cross_checked_against_the_comb_multiplier_over_many_pseudorandom_scalars() {
         assert_eq!(via_comb.to_affine(), via_wnaf.to_affine(), "k = {k_limbs:x?}");
     }
 }
+
+/// Every other test in this file uses one fixed `Q = dG`. The three `Q` values here each take a
+/// path that one cannot: `Q = infinity` makes every `[v]Q` digit an addition of the identity,
+/// `Q = G` makes the two precomputed odd-multiple tables identical (so the interleaved
+/// additions hit the same-point case of `add_vartime`), and `Q = -G` makes them negatives of
+/// each other (the opposite-point case, and with `u == v` a final result of infinity). Expected
+/// values come from the fixed-base comb multiplier on the combined scalar, which is pinned by
+/// its own known-answer tests.
+#[test]
+fn edge_case_q_is_infinity_g_or_minus_g() {
+    let g = P384JacobianPoint::from_affine(
+        P384FieldElement::from_limbs(bouncycastle_ec::p384_domain::G_X_LIMBS),
+        P384FieldElement::from_limbs(bouncycastle_ec::p384_domain::G_Y_LIMBS),
+    );
+    let mut u = [0u64; 6];
+    u[0] = 12345;
+    let mut v = [0u64; 6];
+    v[0] = 6789;
+    let mut u_plus_v = [0u64; 6];
+    u_plus_v[0] = 19134;
+    let mut u_minus_v = [0u64; 6];
+    u_minus_v[0] = 5556;
+    let via_comb = |k: [u64; 6]| comb_multiply_base_point(&P384Scalar::from_limbs(k)).to_affine();
+
+    // [u]G + [v]infinity == [u]G
+    assert_eq!(
+        shamir_multiply(&scalar(u), &scalar(v), &P384JacobianPoint::INFINITY).to_affine(),
+        via_comb(u)
+    );
+    // [u]G + [v]G == [u+v]G
+    assert_eq!(shamir_multiply(&scalar(u), &scalar(v), &g).to_affine(), via_comb(u_plus_v));
+    // [u]G + [v](-G) == [u-v]G
+    assert_eq!(
+        shamir_multiply(&scalar(u), &scalar(v), &g.negate()).to_affine(),
+        via_comb(u_minus_v)
+    );
+    // [u]G + [u](-G) == infinity
+    assert!(shamir_multiply(&scalar(u), &scalar(u), &g.negate()).is_infinity().to_bool());
+    // [0]G + [v]G == [v]G: the G table is never consulted, only Q's
+    assert_eq!(shamir_multiply(&scalar([0u64; 6]), &scalar(v), &g).to_affine(), via_comb(v));
+}

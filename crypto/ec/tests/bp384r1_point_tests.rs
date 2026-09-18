@@ -95,3 +95,21 @@ fn scaled_z_representation_still_adds_correctly() {
     let scaled_sum = scaled.add(&g.double()).to_affine().unwrap();
     assert_eq!(canonical_sum, scaled_sum);
 }
+
+/// `is_infinity` was previously only ever asserted true. The false side is pinned on the base
+/// point and on values derived from it, and doubling the identity must stay at the identity
+/// (`double` is total, per its docs, and the comb multiplier's accumulator starts there).
+#[test]
+fn is_infinity_is_false_for_finite_points_and_infinity_doubles_to_itself() {
+    let g = g();
+    assert!(!g.is_infinity().to_bool(), "G is not the identity");
+    assert!(!g.double().is_infinity().to_bool(), "2G is not the identity");
+    assert!(!g.negate().is_infinity().to_bool(), "-G is not the identity");
+    assert!(!g.add(&g.double()).is_infinity().to_bool(), "3G is not the identity");
+
+    let inf = Bp384r1JacobianPoint::INFINITY;
+    assert!(inf.double().is_infinity().to_bool(), "2 * infinity == infinity");
+    assert!(inf.double().to_affine().is_none());
+    assert!(inf.negate().is_infinity().to_bool(), "-infinity == infinity");
+    assert!(inf.double().add(&g).to_affine().is_some(), "2 * infinity + G == G, a finite point");
+}
