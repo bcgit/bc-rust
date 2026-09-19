@@ -49,6 +49,27 @@
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
+//! RSA-1024 verification, the other major usage pattern: no private key or signer exists for this
+//! size at all (see `# Scope` above), only verification against a signature produced elsewhere --
+//! here, one of Wycheproof's own genuine `rsa_pkcs1_1024_sig_gen_test.json` signatures
+//! (`tests/rsa_1024_tests.rs` has the full, sourced provenance):
+//!
+//! ```
+//! use bouncycastle_rsa::rsa_1024::{Rsa1024PublicKey, pkcs1_v1_5_verify_sha256};
+//! # const N: [u64; 16] = [0xd00343468eaacfbf, 0xb7c7044cc202dcca, 0x9686f30f478db649, 0x5179b54951fff6aa, 0xbabb14f550d5d0dd, 0x5405db7c5c8f4cf6, 0x9816e2eda41fd7b9, 0xb31b6abd805bace9, 0xb909dd0f4c6014f2, 0x9c8a5810b6d05990, 0x40760d1f23fe9250, 0x90adb011a919575a, 0x45e48572113cab28, 0xcb9ca9ec12000fc8, 0x91b4fcaf62a14595, 0xac9048a7a4f560af];
+//! let sig: [u8; 128] = bouncycastle_hex::decode("41339884a9b3940e8488d666bb158063c6a2a2717cae7f564834a876fcbf7098ecf3acbfabf37d38a8e6127b1e313744f1f896e165efdaea0b2e7673867842b9e94db0868ed9a92bcdcb370a4e20ff275c82595e4400a8b9e9f12482f014846b48216f321266ae6ae6338dbcdc41b711e483e6e3e728772e7f9f5ef95c30196b").unwrap().try_into().unwrap();
+//! let msg = [0u8; 20]; // Wycheproof's own genuine message for this signature.
+//! let pk = Rsa1024PublicKey::new(&N, 0x10001)?;
+//! pkcs1_v1_5_verify_sha256(&pk, &msg, &sig)?;
+//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
+//! ```
+//!
+//! RSASSA-PSS-SHAKE128/256 (RFC 8702 §3.2.1, [`rsa_2048::pss_shake128_sign`]/`_verify` and
+//! siblings at RSA-3072/4096) follow the exact same `sign`/`sign_with_salt`/`verify` shape as
+//! `pss_sign_sha256`/`pss_verify_sha256` above, just with a different function name per §5's
+//! recommended pairing (SHAKE128 at 2048/3072, SHAKE256 at 4096) -- see [`rsa_2048`]'s own docs
+//! rather than a second, near-identical example here.
+//!
 //! # Status
 //!
 //! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus), [`keys`]
@@ -66,6 +87,61 @@
 //! `mgf1`), wired up for the pairings RFC 8702 §5 recommends: SHAKE128 with RSA-2048/3072
 //! ([`rsa_2048`], [`rsa_3072`]) and SHAKE256 with RSA-4096 ([`rsa_4096`]), each validated against
 //! its own genuine Wycheproof `rsa_pss_*_shake*_test.json` vectors.
+//!
+//! # Memory Usage
+//!
+//! | Key Object       | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
+//! |-------------------|------------------|--------------------|------------------|--------------------|
+//! | RSA-1024 (verify-only) | 132        | 136                | --               | --                 |
+//! | RSA-1536 (verify-only) | 196        | 200                | --               | --                 |
+//! | RSA-2048          | 260              | 264                | 640              | 896                |
+//! | RSA-3072          | 388              | 392                | 960              | 1344               |
+//! | RSA-4096          | 516              | 520                | 1280             | 1792               |
+//! | RSA-8192          | 1028             | 1032               | 2560             | 3584               |
+//!
+//! All values are in bytes. "On disk" is [`keys::RsaPublicKey::encode`]/[`keys::RsaPrivateKey::encode`]'s
+//! raw layout (`n || e`, and `p || q || dP || dQ || qInv` respectively); "in memory" is
+//! `core::mem::size_of`. A signature is the same size as the modulus itself (`K_LEN = 8 * L`
+//! bytes: 128/192/256/384/512/1024 for 1024/1536/2048/3072/4096/8192). These numbers are produced
+//! by `mem_usage_benches`' `bench_rsa_mem_usage` binary's `print_key_sizes()`; that binary is also
+//! the stack-usage measurement harness (see its own doc comment for the `valgrind`/`massif`
+//! invocation) -- only one representative (scheme, hash) pairing is profiled there per modulus
+//! size, since stack usage is dominated by the modulus's own limb count `L`, not by which hash or
+//! scheme fed into RSASP1/RSAVP1's modular exponentiation.
+//!
+//! # Security Considerations
+//!
+//! - **RSASP1 (private-key signing) is not blinded against its input.** [`modexp`]'s `mod_pow` is
+//!   constant-time in the *exponent* (the CRT exponents `dP`/`dQ`), which defeats a pure timing
+//!   attack, but neither it nor `rsa_core::rsasp1` multiplies the message by a random blinding
+//!   factor before exponentiating and removes it afterward. An attacker able to mount a
+//!   chosen-message physical side-channel attack (power or cache analysis, not just wall-clock
+//!   timing) against many signatures under the same key may still be able to recover information
+//!   about `p`/`q`/`dP`/`dQ`, per Kocher (1996) and Boneh & Brumley (2003) -- see [`modexp`]'s own
+//!   docs for the exact boundary of what is and is not covered.
+//! - **This crate does not generate or validate primality of `p`/`q`.** [`keys::RsaPrivateKey::from_crt_components`]
+//!   checks that `p`/`q` are odd and distinct and that `dP`/`dQ`/`qInv` are in range, but it has no
+//!   way to check that `p` and `q` are actually prime (that would need a primality test this crate
+//!   does not implement) or that `e` is coprime to `λ(n)`. Supplying non-prime or otherwise
+//!   malformed CRT components produces a key that computes *something*, silently, rather than
+//!   being rejected -- validating the inputs' number-theoretic properties before construction is
+//!   entirely the caller's responsibility.
+//! - **RSASSA-PSS's salt comes from the caller's RNG.** Unlike ECDSA's per-message secret `k`, a
+//!   repeated or predictable PSS salt does not hand an attacker the private key by itself (there
+//!   is no algebraic relation analogous to ECDSA's nonce-reuse equation), but PSS's
+//!   random-oracle security argument (RFC 8017 §8.1, Appendix A.2.3's references) assumes the
+//!   salt is drawn fresh and unpredictably each time. Signing with a low-quality or unseeded RNG
+//!   weakens that argument even though it will not directly leak `d`.
+//! - **RSA-1024 and RSA-1536 are legacy sizes, exposed for verification only.** Both fall below
+//!   the 112-bit security level NIST SP 800-131A requires for new use (RSA-1024 offers roughly
+//!   80 bits, RSA-1536 roughly 96); this crate offers no way to sign with either (see `# Scope`)
+//!   precisely so they can only be used to check signatures against legacy/third-party data, not
+//!   to produce new ones.
+//! - **RSASSA-PSS's salt length is fixed to the hash's own output length** (RFC 8017 §9.1 note
+//!   4's "typical" choice) rather than being caller-configurable. A verifier that expects a
+//!   different salt length (including the zero-length salt some other implementations default
+//!   to) will not interoperate with signatures this crate produces, and this crate's own verifier
+//!   will reject signatures made with a different salt length.
 
 #![no_std]
 #![forbid(unsafe_code)]
