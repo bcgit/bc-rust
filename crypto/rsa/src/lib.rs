@@ -33,6 +33,18 @@
 //!
 //! // A signature does not verify against a different message.
 //! assert!(pkcs1_v1_5_verify_sha256(&pk, b"a different message", &signature).is_err());
+//!
+//! // RSASSA-PSS is randomized (a fresh salt each time), so two signatures of the same message
+//! // differ, but both verify.
+//! use bouncycastle_rsa::rsa_2048::{pss_sign_sha256, pss_verify_sha256};
+//! use bouncycastle_rng::DefaultRNG;
+//!
+//! let mut rng = DefaultRNG::default();
+//! let sig_a = pss_sign_sha256(&sk, b"the message to sign", &mut rng)?;
+//! let sig_b = pss_sign_sha256(&sk, b"the message to sign", &mut rng)?;
+//! assert_ne!(sig_a, sig_b);
+//! pss_verify_sha256(&pk, b"the message to sign", &sig_a)?;
+//! pss_verify_sha256(&pk, b"the message to sign", &sig_b)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
@@ -40,10 +52,9 @@
 //!
 //! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus), [`keys`]
 //! (the CRT key types), the CRT-based RSASP1/RSAVP1 primitives (crate-private, in `rsa_core`),
-//! and RSASSA-PKCS1-v1_5 ([`rsassa_pkcs1_v1_5`], wired up for RSA-2048/SHA-256 in [`rsa_2048`])
-//! are implemented, validated against genuine Wycheproof RSA-2048/SHA-256 vectors (both
-//! `rsa_pkcs1_2048_sig_gen_test.json` and `rsa_signature_2048_sha256_test.json`). RSASSA-PSS,
-//! the remaining modulus sizes, and the remaining hash functions are not yet.
+//! RSASSA-PKCS1-v1_5 ([`rsassa_pkcs1_v1_5`]), and RSASSA-PSS ([`rsassa_pss`]) are implemented,
+//! both wired up for RSA-2048/SHA-256 in [`rsa_2048`] and validated against genuine Wycheproof
+//! vectors. The remaining modulus sizes and the remaining hash functions are not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -51,8 +62,11 @@
 
 mod codec;
 mod emsa_pkcs1_v1_5;
+mod emsa_pss;
 pub mod keys;
+mod mgf1;
 pub mod modexp;
 pub mod rsa_2048;
 mod rsa_core;
 pub mod rsassa_pkcs1_v1_5;
+pub mod rsassa_pss;
