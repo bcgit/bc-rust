@@ -4,9 +4,11 @@
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsassa_pkcs1_v1_5;
 use crate::rsassa_pss;
+use crate::rsassa_pss_shake;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_sha3::SHAKE128;
 
 /// An RSA-3072 private key (`p`, `q` each 1536 bits).
 pub type Rsa3072PrivateKey = RsaPrivateKey<48, 24>;
@@ -161,4 +163,39 @@ pub fn pss_verify_sha512(
     signature: &[u8; 384],
 ) -> Result<(), SignatureError> {
     rsassa_pss::verify::<SHA512, 64, 68, 64, 136, 319, 48, 96, 97, 384>(pk, message, signature)
+}
+
+/// RSASSA-PSS-SHAKE128 (`id-RSASSA-PSS-SHAKE128`, RFC 8702 §3.2.1) signing: SHAKE128 as both the
+/// message hash and, natively rather than through MGF1, the mask generation function, with a
+/// 32-byte salt drawn fresh from `rng`. RFC 8702 §5 recommends this pairing for a 2048- or
+/// 3072-bit RSA modulus. See [`rsassa_pss_shake::sign`] for what each error means.
+pub fn pss_shake128_sign(
+    sk: &Rsa3072PrivateKey,
+    message: &[u8],
+    rng: &mut dyn RNG,
+) -> Result<[u8; 384], SignatureError> {
+    rsassa_pss_shake::sign::<SHAKE128, 32, 32, 72, 351, 48, 96, 97, 24, 48, 49, 384>(
+        sk, message, rng,
+    )
+}
+
+/// As [`pss_shake128_sign`], but with the salt supplied directly instead of drawn from an RNG.
+pub fn pss_shake128_sign_with_salt(
+    sk: &Rsa3072PrivateKey,
+    message: &[u8],
+    salt: &[u8; 32],
+) -> Result<[u8; 384], SignatureError> {
+    rsassa_pss_shake::sign_with_salt::<SHAKE128, 32, 32, 72, 351, 48, 96, 97, 24, 48, 49, 384>(
+        sk, message, salt,
+    )
+}
+
+/// RSASSA-PSS-SHAKE128 (RFC 8702 §3.2.1) verification. See [`rsassa_pss_shake::verify`] for what
+/// each error means.
+pub fn pss_shake128_verify(
+    pk: &Rsa3072PublicKey,
+    message: &[u8],
+    signature: &[u8; 384],
+) -> Result<(), SignatureError> {
+    rsassa_pss_shake::verify::<SHAKE128, 32, 32, 72, 351, 48, 96, 97, 384>(pk, message, signature)
 }
