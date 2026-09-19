@@ -2,12 +2,12 @@
 //!
 //! # Why circuits and not tables
 //!
-//! Sec 2.4.2 defines the four S-boxes by 256-entry tables, and BC Java's `ARIAEngine` stores them
-//! as such (OpenSSL's `aria.c` as four 1 KiB `u32` tables with part of the diffusion folded in). A
-//! table indexed by a byte of the state is indexed by *secret data*, and on any CPU with a data
-//! cache the access pattern -- hence the timing -- depends on that secret. That is the standard
-//! cache-timing side channel of every table-driven block cipher, and it cannot be closed while
-//! keeping the lookup.
+//! Sec 2.4.2 defines the four S-boxes by 256-entry tables, and a straightforward implementation
+//! stores them as such (OpenSSL's `aria.c` as four 1 KiB `u32` tables with part of the diffusion
+//! folded in). A table indexed by a byte of the state is indexed by *secret data*, and on any CPU
+//! with a data cache the access pattern -- hence the timing -- depends on that secret. That is the
+//! standard cache-timing side channel of every table-driven block cipher, and it cannot be closed
+//! while keeping the lookup.
 //!
 //! So this module has no tables (outside its tests). It computes the same four functions with AND,
 //! XOR, XNOR and NOT gates applied to the bit-planes of [`crate::bitslice`]. Every operation is a

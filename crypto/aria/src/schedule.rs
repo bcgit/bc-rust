@@ -6,8 +6,8 @@
 //! Decryption round keys are derived from them (Sec 2.2: `dk1 = ek{n+1}`, `dk{i} = A(ek{n+2-i})`
 //! for `i = 2 .. n`, `dk{n+1} = ek1`), and this port derives them *at use*: one application of the
 //! diffusion layer `A` per round, cheap next to the substitution layer, rather than a second
-//! stored schedule. BC Java's `ARIAEngine` instead lays the keys out for the direction requested
-//! at `init`.
+//! stored schedule, unlike a direction-aware engine that lays the keys out differently per
+//! direction at initialisation.
 //!
 //! # Layout
 //!
@@ -87,7 +87,7 @@ impl ARIAParams for ARIA256Params {
 }
 
 /// `C1, C2, C3` (Sec 2.2): "the first 128*3 bits of the fractional part of 1/PI". Transcribed from
-/// the text of RFC 5794; identical to the `C` array of BC Java's `ARIAEngine`.
+/// the text of RFC 5794.
 pub(crate) const C: [u128; 3] = [
     0x517c_c1b7_2722_0a94_fe13_abe8_fa9a_6ee0,
     0x6db1_4acc_9e21_c820_ff28_b1d5_ef5d_e2b0,
