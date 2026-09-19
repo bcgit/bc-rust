@@ -410,11 +410,45 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
 /// * Collision resistance: finding two inputs that yield the same output is computationally difficult.
 /// * Preimage resistance: from a given output, finding an input that generates it is computationally difficult.
 /// * Second preimage resistance: given an input, finding another input that yields the same output is computationally difficult.
-pub trait Hash: Algorithm + Default {
+///
+/// # Construction is not part of this trait
+///
+/// There is deliberately no `Default` supertrait. Feeding bytes in and finalising is one concern;
+/// making an instance is another, and not every implementor has a canonical zero-argument one --
+/// a keyed construction such as KMAC (SP 800-185 Sec 4) has no meaningful default, and requiring
+/// one would exclude it from this trait and from [`XOF`] with it.
+///
+/// Generic code that needs to *build* a hasher asks for it: `fn digest<H: Hash + Default>(..)`.
+/// That is what `HMAC` and the shared test framework already do, so the bound sits where the
+/// requirement actually is rather than on every implementor.
+///
+/// # Forking is part of this trait
+///
+/// `Clone` *is* a supertrait: a hash mid-stream can be copied, and the copy continues independently
+/// from the same absorbed prefix. That is how a running hash of a common prefix is finished several
+/// ways -- a transcript hash checkpointed at each handshake message, HMAC's inner and outer states
+/// held ready across many MACs under one key, or a Merkle node whose prefix is shared by its
+/// siblings -- without re-absorbing the prefix each time. Every implementor is a fixed-size state
+/// plus a small buffer, so the derive is the right implementation; the shared test framework checks
+/// that a clone and its original finish to the same digest, and diverge once fed different input.
+pub trait Hash: Algorithm + Clone {
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
 
     /// The size of the output in bytes.
+    ///
+    /// # This is not always part of the function's identity
+    ///
+    /// For most hashes the length is bound into the computation, so asking for a different length
+    /// gives a different function rather than more or fewer bytes of the same one. TupleHash and
+    /// KMAC are built that way deliberately -- SP 800-185 absorbs `right_encode(L)` before
+    /// squeezing.
+    ///
+    /// A [`XOF`] is the exception. Its length is chosen at the point of output and is *not* an
+    /// input to the computation, so this returns a nominal length only -- 32 bytes for SHAKE128 --
+    /// and two outputs of different lengths share their leading bytes. Generic code over `Hash`
+    /// must therefore not infer "different `output_len` implies unrelated output"; see the
+    /// discussion on [`XOF`].
     fn output_len(&self) -> usize;
 
     /// A static one-shot API that hashes the provided data.
@@ -1743,91 +1777,143 @@ where
     }
 }
 
-/// Extensible Output Functions (XOFs) are similar to hash functions, except that they can produce output of arbitrary length.
-/// The naming used for the functions of this trait are borrowed from the SHA3-style sponge constructions that split XOF operation
-/// into two phases: an absorb phase in which an arbitrary amount of input is provided to the XOF,
-/// and then a squeeze phase in which an arbitrary amount of output is extracted.
-/// Once squeezing begins, no more input can be absorbed.
+/// The squeezing phase of an [`XOF`]: a value that produces output and can no longer take input.
 ///
-/// XOFs are _similar to_ hash functions, but are not hash functions for one technical but important reason:
-/// since the amount of output to produce is not provided to the XOF in advance, it cannot be used to
-/// diversify the XOF output streams.
-/// In other words, the overlapping parts of their outputs will be the same!
-/// For example, consider two XOFs that absorb the same input data, one that is squeezed to produce 32 bytes,
-/// and the other to produce 1 kb; both outputs will be identical in their first 32 bytes.
-/// This could lead to loss of security in a number of ways, for example distinguishing attacks where
-/// it is sufficient for the attacker to know that two values came from the same input, even if the
-/// attacker cannot learn what that input was. This is attack is often sufficient, for example,
-/// to break anonymity-preserving technology.
-/// Applications that require the arbitrary-length output of an XOF, but also care about these
-/// distinguishing attacks should consider adding a cryptographic salt to diversify the inputs.
+/// This is the type [`XOF::into_squeezer`] hands back. Absorbing and squeezing are separate types
+/// rather than separate states of one type, so "no more input once output has begun" is a fact the
+/// compiler enforces rather than a rule the documentation asks callers to follow, and so there is
+/// no "absorbed after squeezing" error to raise or to test for.
 ///
-/// # State and Absorb-after-Squeeze
-/// This trait makes the design choice that an XOF consists of an absorb phase followed by a squeeze phase.
-/// This means that once the XOF has begun squeezing, attempting to absorb more will return
-/// [`HashError::InvalidState`] and leave the object usable for further squeezing.
+/// Output is one continuous stream: successive calls continue where the last left off, so reading
+/// 16 bytes twice gives the same 32 bytes as reading 32 once.
 ///
-/// Without this restriction, the [`XOF::absorb_last_partial_byte`] API cannot function correctly.
+/// [`do_final`](Self::do_final) means something weaker here than on [`Hash`] and [`MAC`]. On those
+/// it is load-bearing -- the only way to get output, and it must consume the value because
+/// finalizing pads the state. A squeeze has nothing to finalize, so it produces exactly the bytes
+/// [`do_output`](Self::do_output) would and differs only in taking ownership: it is how a caller
+/// says "this read is my last", and it ends the stream at the point of the call rather than
+/// leaving a `mut` binding alive for the rest of the scope.
 ///
-/// If Absorb-after-Squeeze becomes necessary to support in the future, then these design choices can be revisited.
-pub trait XOF: Default {
-    /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
-    fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8>;
+/// # Being the last read can be an input to the function
+///
+/// For SHAKE and cSHAKE the bytes do not depend on how much of the stream is taken, so `do_final`
+/// really is just `do_output` plus ownership, which is what the default does. That is not
+/// universal. The SP 800-185 functions end their absorbed input with `right_encode(L)`, and their
+/// XOF forms (s. 4.3.1, 5.3.1 and 6.3.1) differ from the fixed-length ones only in putting 0 there
+/// -- so an implementation can leave `L` unchosen until it knows how the caller intends to read.
+/// A `do_final` that is also the *first* read says both how many bytes are wanted and that there
+/// will be no more, which is exactly `L`; such an implementation binds it and produces the
+/// fixed-length function (KMAC, TupleHash, ParallelHash) rather than a prefix of the XOF stream.
+///
+/// After a [`do_output`](Self::do_output) there is nothing left to choose -- `right_encode(0)` is
+/// in the sponge and a length bound into a sponge cannot be revised -- so `do_final` then just
+/// ends the stream that read began. Implementors that have no such choice to make should keep the
+/// default.
+pub trait XOFSqueezer {
+    /// Produces the next `num_bytes` bytes of the output stream.
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8>;
 
-    /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
-    /// Fills the provided output slice.
-    /// The entire output buffer is zeroized before the output is written.
-    fn hash_xof_out(self, data: &[u8], output: &mut [u8]) -> usize;
+    /// As [`do_output`](Self::do_output), filling the caller's buffer, which is zeroized first.
+    /// Returns the number of bytes written.
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize;
 
-    /// Absorb some amount of input.
-    fn absorb(&mut self, data: &[u8]) -> Result<(), HashError>;
-
-    /// The same as [`XOF::absorb`], but allows for supplying a partial byte as the last input.
-    /// The partial byte is taken as it arrives in the final octet of an ASN.1 BIT STRING
-    /// (X.690 s. 8.6.2.1): the `num_bits` message bits are the most significant bits of
-    /// `partial_byte`, leading bit first, and the low `8 - num_bits` bits (the BIT STRING's "unused
-    /// bits") are ignored. This is the same convention as [`Hash::do_final_partial_bits`]; see there
-    /// for the relationship to the FIPS 202 Appendix B.1 bit order and to the NIST test vector files.
-    /// 0 is a valid value and means the message ends on a byte boundary (equivalent to [`XOF::absorb`]).
-    /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
+    /// Produces the last `num_bytes` bytes of the output stream and ends the object.
     ///
-    /// Unlike [`XOF::absorb`], this switches the XOF from Absorbing mode into Squeezing mode because
-    /// absorbing more input after absorbing a partial byte is undefined behaviour.
-    fn absorb_last_partial_byte(
-        &mut self,
+    /// Consumes self, so this must be the final call to this object. The default is a plain last
+    /// read -- the bytes [`do_output`](Self::do_output) would give, continuing from wherever
+    /// earlier reads left the stream. An implementation with an output length still to bind
+    /// overrides it to bind `num_bytes` when nothing has been read yet; see the trait docs.
+    fn do_final(mut self, num_bytes: usize) -> Vec<u8>
+    where
+        Self: Sized,
+    {
+        self.do_output(num_bytes)
+    }
+
+    /// As [`do_final`](Self::do_final), filling the caller's buffer, which is zeroized first.
+    /// Returns the number of bytes written.
+    ///
+    /// Defaulted as [`do_final`](Self::do_final) is.
+    fn do_final_out(mut self, output: &mut [u8]) -> usize
+    where
+        Self: Sized,
+    {
+        self.do_output_out(output)
+    }
+}
+
+/// Extendable-Output Functions (XOFs): hashes whose output length is chosen by the caller.
+///
+/// `XOF: Hash`, so SHAKE128 and SHAKE256 *are* hashes and can be used wherever one is wanted. As a
+/// hash, a XOF has a nominal output length -- [`Hash::output_len`], which for SHAKE is twice the
+/// security strength, 32 bytes for SHAKE128 and 64 for SHAKE256 -- and [`Hash::do_final`] produces
+/// exactly that many bytes. This trait adds the ability to ask for a different number.
+///
+/// # Absorb, then squeeze
+///
+/// A sponge takes input, then produces output, and cannot go back. Here that is expressed in the
+/// types: [`into_squeezer`](Self::into_squeezer) consumes the XOF and returns an [`XOFSqueezer`], so
+/// after output has begun there is no value left on which to call [`Hash::do_update`]. Nothing
+/// returns an "absorbed after squeezing" error because nothing can reach that state.
+///
+/// # A XOF is not a hash, cryptographically
+///
+/// It satisfies the trait, but the output length is not an input to the computation, so it cannot
+/// diversify the output. Two XOFs given the same input, one read for 32 bytes and one for 1 KiB,
+/// agree on their first 32 bytes. An attacker who only needs to know that two values came from the
+/// same input -- enough to break an anonymity property -- learns it from the overlap. Where that
+/// matters, salt the input.
+pub trait XOF: Hash {
+    /// The squeezing state this XOF turns into.
+    type Squeezer: XOFSqueezer;
+
+    /// Ends the input phase and begins producing output.
+    ///
+    /// The phase change is in the type: what comes back takes no more input.
+    fn into_squeezer(self) -> Self::Squeezer;
+
+    /// As [`into_squeezer`](Self::into_squeezer), with a final partial **byte** of input.
+    ///
+    /// The partial byte arrives as the final octet of an ASN.1 BIT STRING (X.690 s. 8.6.2.1): the
+    /// `num_bits` message bits are the most significant bits of `partial_byte`, leading bit first,
+    /// and the low `8 - num_bits` "unused" bits are ignored. Same convention as
+    /// [`Hash::do_final_partial_bits`]. `num_bits` of 0 means the message ended on a byte boundary
+    /// and is equivalent to [`into_squeezer`](Self::into_squeezer).
+    ///
+    /// # Errors
+    /// [`HashError::InvalidLength`] if `num_bits` is not in `0..=7`.
+    fn into_squeezer_partial_bits(
+        self,
         partial_byte: u8,
         num_bits: usize,
-    ) -> Result<(), HashError>;
+    ) -> Result<Self::Squeezer, HashError>;
 
-    /// Can be called multiple times.
-    fn squeeze(&mut self, num_bytes: usize) -> Vec<u8>;
+    /// One-shot: absorbs `data` and produces `result_len` bytes.
+    ///
+    /// A one-shot names its length and never comes back, so this is
+    /// [`XOFSqueezer::do_final`]'s reading of the stream, not
+    /// [`do_output`](XOFSqueezer::do_output)'s: where an implementation binds the length it is
+    /// asked for, this binds `result_len`. For SHAKE and cSHAKE the two are the same bytes.
+    ///
+    /// The default absorbs and reads in the obvious way; override it only where the type can do
+    /// better, as SHAKE does.
+    fn xof(mut self, data: &[u8], result_len: usize) -> Vec<u8>
+    where
+        Self: Sized,
+    {
+        self.do_update(data);
+        self.into_squeezer().do_final(result_len)
+    }
 
-    /// Can be called multiple times.
-    /// Fills the provided output slice.
-    /// The entire output buffer is zeroized before the output is written.
-    fn squeeze_out(&mut self, output: &mut [u8]) -> usize;
-
-    /// Squeezes a partial byte (`num_bits` in `0..=7`) from the XOF.
-    /// The bits are returned as they would be placed in the final octet of an ASN.1 BIT STRING
-    /// (X.690 s. 8.6.2.1): in the most significant `num_bits` bits of the returned u8, first output
-    /// bit first, with the low `8 - num_bits` "unused" bits zero. This matches the input convention of
-    /// [`XOF::absorb_last_partial_byte`]. (FIPS 202 Appendix B.1 orders the bits of an output byte
-    /// LSB-first; the implementation converts.)
-    /// 0 is a valid value and requests no bits, so the result is `0x00`.
-    /// `num_bits` must be in `0..=7`; larger values return [`HashError::InvalidLength`].
-    /// This is a final call and consumes self.
-    fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError>;
-
-    /// The same as [`XOF::squeeze_partial_byte_final`], but writes into the provided output byte.
-    /// The output byte is zeroized before the result is written.
-    fn squeeze_partial_byte_final_out(
-        self,
-        num_bits: usize,
-        output: &mut u8,
-    ) -> Result<(), HashError>;
-
-    /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
-    // todo: we should do a refactor to make [Algorithm] be a `security_strength()` function instead of constant,
-    //      then have `RNG: Algorithm`, then delete this function.
-    fn max_security_strength(&self) -> SecurityStrength;
+    /// One-shot: absorbs `data` and fills `output`, which is zeroized first. Returns the number of
+    /// bytes written.
+    ///
+    /// A final read of `output.len()` bytes, and defaulted as [`xof`](Self::xof) is.
+    fn xof_out(mut self, data: &[u8], output: &mut [u8]) -> usize
+    where
+        Self: Sized,
+    {
+        self.do_update(data);
+        self.into_squeezer().do_final_out(output)
+    }
 }
