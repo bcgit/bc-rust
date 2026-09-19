@@ -129,6 +129,100 @@ fn mont_square<const L: usize, const L2: usize, const L21: usize>(
     redc_normalize::<L, L2, L21>(&t, modulus, n_prime)
 }
 
+fn to_montgomery<const L: usize, const L2: usize, const L21: usize>(
+    a: &[u64; L],
+    ctx: &MontgomeryContext<L>,
+) -> [u64; L] {
+    let t = montgomery::widening_mul::<L, L2>(a, &ctx.r2_mod_n);
+    redc_normalize::<L, L2, L21>(&t, &ctx.modulus, ctx.n_prime)
+}
+
+fn from_montgomery<const L: usize, const L2: usize, const L21: usize>(
+    a_bar: &[u64; L],
+    ctx: &MontgomeryContext<L>,
+) -> [u64; L] {
+    let mut padded = [0u64; L2];
+    padded[..L].copy_from_slice(a_bar);
+    redc_normalize::<L, L2, L21>(&padded, &ctx.modulus, ctx.n_prime)
+}
+
+/// `a * b mod ctx.modulus()`, for plain (non-Montgomery) `a`, `b`. Only `b` needs converting into
+/// Montgomery form: `REDC(a * (b*R)) = a*b*R*R^-1 mod n = a*b mod n`, the same one-sided-conversion
+/// trick [`mod_pow`] itself doesn't need (it stays in Montgomery form throughout its ladder).
+/// `a` need only fit in `L` limbs, not be `< ctx.modulus()`, by the same `T < n*R` argument
+/// [`to_montgomery`] relies on -- see the module docs' note on [`montgomery::redc`]'s precondition.
+pub fn mul_mod<const L: usize, const L2: usize, const L21: usize>(
+    a: &[u64; L],
+    b: &[u64; L],
+    ctx: &MontgomeryContext<L>,
+) -> [u64; L] {
+    let b_bar = to_montgomery::<L, L2, L21>(b, ctx);
+    let t = montgomery::widening_mul::<L, L2>(a, &b_bar);
+    redc_normalize::<L, L2, L21>(&t, &ctx.modulus, ctx.n_prime)
+}
+
+/// `(a - b) mod modulus` for `a, b < modulus`, in constant time with respect to `modulus`: RSA's
+/// CRT recombination (RFC 8017 §5.2.1 step 2.b.3) needs `(s1 - s2) mod p`, and `p` is private key
+/// material, so -- unlike [`double_mod_n`]'s public-modulus reasoning -- this must not branch on
+/// it.
+pub fn sub_mod<const N: usize>(a: &[u64; N], b: &[u64; N], modulus: &[u64; N]) -> [u64; N] {
+    let (diff, borrow) = nat::sub(a, b);
+    let (corrected, _) = nat::add(&diff, modulus);
+    let mask = Condition::<u64>::from_lsb(borrow);
+    ct_select_array(mask, &corrected, &diff)
+}
+
+/// `x mod modulus` for `x < 2 * modulus`, in constant time with respect to `modulus`. RSA's CRT
+/// recombination needs `s2 mod p` before it can subtract (RFC 8017 §5.2.1 step 2.b.3), and
+/// `s2 < q < 2p` whenever `p` and `q` are the same bit length, which
+/// [`crate::keys::RsaPrivateKey::from_crt_components`] requires of every key it builds.
+pub fn reduce_once<const N: usize>(x: &[u64; N], modulus: &[u64; N]) -> [u64; N] {
+    let (diff, borrow) = nat::sub(x, modulus);
+    let subtract = Condition::<u64>::from_lsb(borrow ^ 1);
+    ct_select_array(subtract, &diff, x)
+}
+
+/// `(acc * 2 + bit) mod modulus` for `acc < modulus` and odd `modulus`, in constant time: see
+/// [`reduce_wide`] for why (the modulus can be secret, unlike [`pow2_mod`]'s).
+fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64; N]) -> [u64; N] {
+    let mut doubled = [0u64; N];
+    let mut carry = bit;
+    for i in 0..N {
+        let next_carry = acc[i] >> 63;
+        doubled[i] = (acc[i] << 1) | carry;
+        carry = next_carry;
+    }
+    // Same accepted OR/XOR equivalence as `redc_normalize`, by the identical argument: `doubled`'s
+    // true value is `2*acc + bit < 2*modulus` (`acc < modulus`), so `carry == 1` (the bit that
+    // overflowed the top limb) forces the stored `doubled < 2*modulus - 2^(64N) < modulus`, i.e.
+    // `borrow == 1` (the other mask FALSE) whenever `carry == 1`.
+    let (diff, borrow) = nat::sub(&doubled, modulus);
+    let subtract = Condition::<u64>::from_lsb(carry) | Condition::<u64>::from_lsb(borrow ^ 1);
+    ct_select_array(subtract, &diff, &doubled)
+}
+
+/// `value mod modulus` for a `WIDE`-limb `value` and a `NARROW`-limb odd `modulus` (`WIDE >
+/// NARROW`), in constant time with respect to `modulus`. Unlike [`pow2_mod`]/[`double_mod_n`],
+/// which assume a *public* modulus (true of RSA's own `n`), this brings a message down to one CRT
+/// prime's width (RFC 8017 §5.2.1 step 2.b.1's `m^dP mod p` needs `m mod p` first, since `m` can
+/// be as wide as `n`), and the primes are private key material: branching on their value here
+/// would leak them the same way branching on the exponent would leak `d`. Bit-serial schoolbook
+/// long division: every one of `value`'s `64 * WIDE` bits contributes one constant-time
+/// doubling-and-conditional-subtract step.
+pub fn reduce_wide<const WIDE: usize, const NARROW: usize>(
+    value: &[u64; WIDE],
+    modulus: &[u64; NARROW],
+) -> [u64; NARROW] {
+    let mut acc = [0u64; NARROW];
+    for limb_index in (0..WIDE).rev() {
+        for bit_index in (0..64u32).rev() {
+            let bit = (value[limb_index] >> bit_index) & 1;
+            acc = ct_shift_in_bit_mod(&acc, bit, modulus);
+        }
+    }
+    acc
+}
+
 /// Precomputed Montgomery constants for a runtime-supplied odd modulus `n`, `L` limbs wide.
 ///
 /// Unlike every curve modulus in `bouncycastle-ec`, `n` here is not known until the key is
@@ -176,16 +270,8 @@ pub fn mod_pow<const L: usize, const L2: usize, const L21: usize>(
 ) -> [u64; L] {
     debug_assert_eq!(nat::sub(base, &ctx.modulus).1, 1, "mod_pow needs base < modulus");
 
-    let mut base_padded = [0u64; L2];
-    base_padded[..L].copy_from_slice(base);
-    let base_bar = redc_normalize::<L, L2, L21>(
-        &montgomery::widening_mul::<L, L2>(base, &ctx.r2_mod_n),
-        &ctx.modulus,
-        ctx.n_prime,
-    );
-
     let mut r0 = ctx.r_mod_n;
-    let mut r1 = base_bar;
+    let mut r1 = to_montgomery::<L, L2, L21>(base, ctx);
 
     for limb_index in (0..L).rev() {
         for bit_index in (0..64u32).rev() {
@@ -199,7 +285,5 @@ pub fn mod_pow<const L: usize, const L2: usize, const L21: usize>(
         }
     }
 
-    let mut r0_padded = [0u64; L2];
-    r0_padded[..L].copy_from_slice(&r0);
-    redc_normalize::<L, L2, L21>(&r0_padded, &ctx.modulus, ctx.n_prime)
+    from_montgomery::<L, L2, L21>(&r0, ctx)
 }
