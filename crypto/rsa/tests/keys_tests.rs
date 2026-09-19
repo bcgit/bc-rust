@@ -127,3 +127,43 @@ fn public_key_rejects_even_modulus() {
     even_n[0] &= !1;
     assert!(matches!(RsaPublicKey::<32>::new(&even_n, 3), Err(SignatureError::DecodingError(_))));
 }
+
+#[test]
+fn public_key_encode_round_trips() {
+    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let bytes: [u8; 260] = pk.encode::<256, 260>();
+    let decoded = RsaPublicKey::<32>::from_bytes::<256, 260>(&bytes).expect("must decode");
+    assert_eq!(decoded, pk);
+}
+
+#[test]
+fn public_key_from_bytes_rejects_even_modulus() {
+    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let mut bytes: [u8; 260] = pk.encode::<256, 260>();
+    bytes[255] &= !1; // clear n's low bit (last byte, big-endian)
+    assert!(matches!(
+        RsaPublicKey::<32>::from_bytes::<256, 260>(&bytes),
+        Err(SignatureError::DecodingError(_))
+    ));
+}
+
+#[test]
+fn private_key_encode_round_trips() {
+    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let bytes: [u8; 640] = sk.encode::<128, 640>();
+    let decoded = RsaPrivateKey::<32, 16>::from_bytes::<128, 640>(&bytes).expect("must decode");
+    assert_eq!(decoded, sk);
+}
+
+#[test]
+fn private_key_from_bytes_rejects_equal_primes() {
+    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let mut bytes: [u8; 640] = sk.encode::<128, 640>();
+    // Overwrite q (the second 128-byte field) with p, making the two primes equal.
+    let p_field = bytes[..128].to_vec();
+    bytes[128..256].copy_from_slice(&p_field);
+    assert!(matches!(
+        RsaPrivateKey::<32, 16>::from_bytes::<128, 640>(&bytes),
+        Err(SignatureError::DecodingError(_))
+    ));
+}
