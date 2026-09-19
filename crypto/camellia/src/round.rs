@@ -40,9 +40,9 @@ pub(crate) fn f1(f_in: u64, ke: u64) -> u64 {
 /// F_OUT = (y1 << 56) | (y2 << 48) | ... | y8
 /// ```
 ///
-/// Computed as BC Java's `camelliaF2` does, on the two 32-bit halves `u = (t1, t2, t3, t4)` and
-/// `v = (t5, t6, t7, t8)` with five rotations and four XORs instead of forty byte XORs. It is the
-/// same map: expanding the rotations byte by byte gives exactly the eight sums above, and
+/// Computed on the two 32-bit halves `u = (t1, t2, t3, t4)` and `v = (t5, t6, t7, t8)` with five
+/// rotations and four XORs instead of forty byte XORs. It is the same map: expanding the
+/// rotations byte by byte gives exactly the eight sums above, and
 /// `test_p_matches_the_rfc_formula` checks it on every single-bit input (which, `p` being linear,
 /// determines it) and on random ones.
 #[inline(always)]

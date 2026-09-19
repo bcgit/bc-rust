@@ -29,8 +29,8 @@ pub const LANES: usize = 4;
 /// redacted from `Debug`. There is no direction flag and no initialisation state: decryption is
 /// encryption with the subkeys read in the swapped order of Sec 2.3.3, so both directions work
 /// from the same stored schedule, and a constructed value is always ready to use -- there is no
-/// `init()` or `reset()`. This is the one structural departure from BC Java's `CamelliaEngine`,
-/// which lays the subkeys out for the direction its `init(forEncryption, ..)` call asks for.
+/// `init()` or `reset()`, unlike an engine that lays the subkeys out differently depending on the
+/// direction it is initialised for.
 pub struct Camellia<P: CamelliaParams> {
     schedule: Secret<P::Schedule>,
 }

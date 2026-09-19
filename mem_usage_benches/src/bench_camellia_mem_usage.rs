@@ -24,8 +24,8 @@
 //! -- the persistent 208 bytes (Camellia-128) or 272 bytes (Camellia-192/256) of subkeys -- and the
 //! confirmation that per-call work is the four-block working state (two 64-bit halves per block,
 //! 64 bytes), the eight 32-bit S-box planes (32 bytes) plus their copy during the byte rotations,
-//! and circuit temporaries. There are no lookup tables; BC Java's `CamelliaEngine` adds 4 KiB of tables
-//! and `CamelliaLightEngine` 256 bytes on top of these numbers.
+//! and circuit temporaries. There are no lookup tables; a table-driven engine adds anywhere from
+//! 256 bytes to 4 KiB of tables on top of these numbers.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
