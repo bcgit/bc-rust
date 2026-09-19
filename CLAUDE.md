@@ -28,8 +28,9 @@ fixed.
 
 ## Toolchain
 
-- Uses Rust **nightly** (pinned in `rust-toolchain.toml`) — `core/src/lib.rs` uses `#![feature(adt_const_params)]`.
-- 2024 edition (set workspace-wide in the root `Cargo.toml`).
+- Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]`
+  gate, so nightly-only tooling (`-Z` flags and the like) is not available.
+- 2024 edition (set workspace-wide in the root `Cargo.toml`), which needs Rust 1.85 or later.
 
 ## Common commands
 
@@ -108,6 +109,13 @@ Repo mechanics behind those rules, which the documents don't spell out:
 - **CLI commands stream.** The `cli/` binary is stdin→stdout with ~1 KB buffers so commands compose in shell
   pipelines; preserve that when adding subcommands.
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
+- **Comments describe the code that is there, not the road that led to it.** Do not add a comment
+  explaining a transient design decision — an approach that was tried and abandoned, what an earlier
+  version did, why one formulation was chosen over another that is no longer present — or describing
+  a design the code does not use. Such comments are noise: they age badly, and a reader has to work
+  out that they describe nothing in front of them. A comment that explains why the present code is
+  the way it is, and that a naive edit would break it (a spec step, an invariant, a constraint), is
+  wanted; a comment narrating how it got that way is not.
 
 ## Working from specifications
 

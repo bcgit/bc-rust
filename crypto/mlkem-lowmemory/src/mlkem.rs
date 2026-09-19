@@ -201,8 +201,7 @@ impl<
     /// correctly-sized [`KeyMaterial512`] using [`KeyMaterialTrait::truncate`].
     pub(crate) fn keygen_internal(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError> {
         let sk = SK::from_keymaterial(seed)?;
-        let pk = sk.pk();
-        let pk = PK::new(pk.t_hat_packed, pk.rho); // stupid conversion, but it gets around these overly-generified rust types
+        let pk = PK::new(sk.t_hat_packed(), *sk.rho());
         Ok((pk, sk))
     }
 
@@ -330,7 +329,9 @@ impl<
     /// Input: decryption key dkPKE ∈ 𝔹384𝑘.
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: message 𝑚 ∈ 𝔹32 .
-    fn pke_decrypt(dk: &SK, ct: [u8; CT_LEN]) -> [u8; 32] {
+    /// The ciphertext is borrowed rather than taken by value: at ML-KEM-1024 it is 1568 bytes, and
+    /// an owned parameter would put a second copy of it on the stack alongside the caller's.
+    fn pke_decrypt(dk: &SK, ct: &[u8; CT_LEN]) -> [u8; 32] {
         // 1: 𝑐1 ← 𝑐[0 ∶ 32𝑑𝑢𝑘]
         // 3: 𝐮′ ← Decompress_𝑑𝑢(ByteDecode_𝑑𝑢(𝑐1))
 
@@ -344,7 +345,7 @@ impl<
             let mut v1 = {
                 let mut s_hat_i = dk.compute_s_hat_row(0);
                 {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(0, &ct);
+                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(0, ct);
                     u_prime_i.ntt();
                     s_hat_i.base_mult_montgomery(&u_prime_i);
                 }
@@ -356,7 +357,7 @@ impl<
             for i in 1..P::k {
                 let mut s_hat_i = dk.compute_s_hat_row(i);
                 {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(i, &ct);
+                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(i, ct);
                     u_prime_i.ntt();
                     s_hat_i.base_mult_montgomery(&u_prime_i);
                 }
@@ -372,7 +373,7 @@ impl<
         let w = {
             // second half of
             // 6: 𝑤 ← 𝑣′ − NTT−1(𝐬_hat^T ∘ NTT(𝐮′))
-            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(&ct);
+            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(ct);
 
             v_prime.sub(&v1);
             v_prime.poly_reduce();
@@ -390,7 +391,8 @@ impl<
     /// Input: decapsulation key dk ∈ 𝔹768𝑘+96 .
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
-    fn decaps_internal(dk: &SK, c: [u8; CT_LEN]) -> [u8; MLKEM_SS_LEN] {
+    /// The ciphertext is borrowed rather than taken by value; see the note on [`Self::pke_decrypt`].
+    fn decaps_internal(dk: &SK, c: &[u8; CT_LEN]) -> [u8; MLKEM_SS_LEN] {
         // I have tried to keep this as clean as possible for correspondence with the FIPS,
         // but I have moved things around so that I can use unnamed scopes to limit how many
         // stack variables are alive at the same time.
@@ -402,7 +404,7 @@ impl<
         // Nothing to do since dk is already decoded.
 
         // 5: 𝑚′ ← K-PKE.Decrypt(dkPKE, 𝑐)
-        let m_prime = Self::pke_decrypt(&dk, c);
+        let m_prime = Self::pke_decrypt(dk, c);
 
         // Compute the trial shared secret key
         // 6: (𝐾′, 𝑟′) ← G(𝑚′‖ℎ)̄
@@ -432,7 +434,7 @@ impl<
             let mut K_bar: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
             let mut j = J::new();
             j.absorb(dk.z()).expect("absorb before squeeze is infallible");
-            j.absorb(&c).expect("absorb before squeeze is infallible");
+            j.absorb(c).expect("absorb before squeeze is infallible");
             let bytes_written = j.squeeze_out(&mut *K_bar);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
 
@@ -447,7 +449,7 @@ impl<
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
         let mut K_out = [0u8; MLKEM_SS_LEN];
-        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes(&c, &c_prime));
+        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes(c, &c_prime));
 
         K_out
     }
@@ -636,7 +638,11 @@ impl<
             return Err(KEMError::LengthError("Invalid ciphertext length"));
         }
 
-        let ss_bytes = Self::decaps_internal(sk, ct.try_into().unwrap());
+        // The length was checked above, so the conversion to a fixed-size reference cannot fail.
+        // Converting to `&[u8; CT_LEN]` rather than `[u8; CT_LEN]` borrows the caller's
+        // ciphertext instead of copying it onto this stack frame.
+        let ct: &[u8; CT_LEN] = ct.try_into().unwrap();
+        let ss_bytes = Self::decaps_internal(sk, ct);
 
         let mut ss_keymaterial =
             KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;

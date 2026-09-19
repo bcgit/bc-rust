@@ -147,6 +147,10 @@ pub(crate) trait MLDSAPublicKeyInternalTrait<P: MLDSAParams, const PK_LEN: usize
 
     /// Get a ref to t1
     fn t1(&self) -> &P::VecK;
+
+    /// Algorithm 32 ExpandA(𝜌), written into `out`. Prefer this over [`MLDSAPublicKeyTrait::A_hat`]
+    /// internally: it fills the caller's matrix in place instead of returning a copy.
+    fn expand_A_hat_into(&self, out: &mut P::MatrixA);
 }
 
 impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyTrait<P, PK_LEN>
@@ -174,7 +178,9 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyTrait<P, PK_LEN>
     }
 
     fn A_hat(&self) -> P::MatrixA {
-        expandA::<P>(&self.rho)
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        A_hat
     }
 
     fn compute_tr(&self) -> [u8; 64] {
@@ -194,6 +200,10 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyInternalTrait<P, PK_LEN>
 
     fn t1(&self) -> &P::VecK {
         &self.t1
+    }
+
+    fn expand_A_hat_into(&self, out: &mut P::MatrixA) {
+        expandA::<P>(&self.rho, out);
     }
 }
 
@@ -218,8 +228,8 @@ impl<P: MLDSAParams, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for MLDSAPu
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(&bytes_sized))
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(bytes_sized))
     }
 }
 
@@ -298,8 +308,8 @@ impl<
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(&bytes_sized))
+        let bytes_sized: &[u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
+        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(bytes_sized))
     }
 }
 
@@ -363,8 +373,10 @@ impl<
     /// Fully expands the intermediate values needed for performing multiple encaps operations
     /// against the same public key, which causes the MLKEMPublicKey struct to take up
     fn from(pk: &PK) -> Self {
-        let A_hat = pk.A_hat();
-
+        // Struct literal as the return expression, so the result is built in the caller's slot.
+        // Building `Self` in a local and mutating it leaves a second full copy in this frame.
+        let mut A_hat = P::MatrixA::new();
+        pk.expand_A_hat_into(&mut A_hat);
         Self { pk: pk.clone(), A_hat }
     }
 }
@@ -376,9 +388,10 @@ impl<
 > MLDSAPublicKeyTrait<P, PK_LEN> for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
 {
     fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
-        let pk1 = PK::pk_decode(pk);
-        let A_hat = pk1.A_hat();
-        Self { pk: pk1, A_hat }
+        let pk = PK::pk_decode(pk);
+        let mut A_hat = P::MatrixA::new();
+        pk.expand_A_hat_into(&mut A_hat);
+        Self { pk, A_hat }
     }
 
     fn A_hat(&self) -> P::MatrixA {
@@ -542,6 +555,9 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<
     fn s1_hat(&self) -> &P::VecL;
     /// Get a ref to s2
     fn s2_hat(&self) -> &P::VecK;
+    /// Algorithm 32 ExpandA(𝜌), written into `out`. Prefer this over [`MLDSAPrivateKeyTrait::A_hat`]
+    /// internally: it fills the caller's matrix in place instead of returning a copy.
+    fn expand_A_hat_into(&self, out: &mut P::MatrixA);
     /// Get a ref to t0
     fn t0_hat(&self) -> &P::VecK;
 }
@@ -561,7 +577,9 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
     }
 
     fn A_hat(&self) -> P::MatrixA {
-        expandA::<P>(&self.rho)
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        A_hat
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN> {
@@ -571,7 +589,8 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
             // scope for A_hat
             // 3: 𝐀 ← ExpandA(𝜌)
             //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&self.rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&self.rho, &mut A_hat);
 
             let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
             t_ntt.inv_ntt();
@@ -699,6 +718,9 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
     fn s2_hat(&self) -> &P::VecK {
         &self.s2_hat
     }
+    fn expand_A_hat_into(&self, out: &mut P::MatrixA) {
+        expandA::<P>(&self.rho, out);
+    }
 
     fn t0_hat(&self) -> &P::VecK {
         &self.t0_hat
@@ -728,9 +750,9 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> SignaturePrivateK
                 "Provided key bytes are the incorrect length",
             ));
         }
-        let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
+        let bytes_sized: &[u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 
-        <Self as MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN>>::sk_decode(&bytes_sized)
+        <Self as MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN>>::sk_decode(bytes_sized)
     }
 }
 
@@ -880,9 +902,11 @@ impl<
     /// Fully expands the intermediate values needed for performing multiple encaps operations
     /// against the same public key, which causes the MLKEMPublicKey struct to take up
     fn from(sk: &SK) -> Self {
-        let A_hat =
-            <MLDSAPublicKey<P, PK_LEN> as MLDSAPublicKeyTrait<P, PK_LEN>>::A_hat(&sk.derive_pk());
-
+        // Expand straight from the private key's rho, with no detour through derive_pk(), which
+        // would expand the matrix a second time. Struct literal as the return expression so the
+        // result is built in the caller's slot.
+        let mut A_hat = P::MatrixA::new();
+        sk.expand_A_hat_into(&mut A_hat);
         Self { _phantom: core::marker::PhantomData, sk: sk.clone(), A_hat }
     }
 }
@@ -928,7 +952,7 @@ impl<
     }
 
     fn A_hat(&self) -> P::MatrixA {
-        self.sk.A_hat()
+        self.A_hat.clone()
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN> {
@@ -936,10 +960,9 @@ impl<
     }
 
     fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
-        let sk1 = SK::sk_decode(sk)?;
-        let A_hat =
-            <MLDSAPublicKey<P, PK_LEN> as MLDSAPublicKeyTrait<P, PK_LEN>>::A_hat(&sk1.derive_pk());
-
-        Ok(Self { _phantom: core::marker::PhantomData, sk: sk1, A_hat })
+        let sk = SK::sk_decode(sk)?;
+        let mut A_hat = P::MatrixA::new();
+        sk.expand_A_hat_into(&mut A_hat);
+        Ok(Self { _phantom: core::marker::PhantomData, sk, A_hat })
     }
 }
