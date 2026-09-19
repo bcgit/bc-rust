@@ -102,8 +102,7 @@
 //! | Object                                          | Size (bytes) |
 //! |-------------------------------------------------|--------------|
 //! | `SHA224`, `SHA256`                              | 112          |
-//! | `SHA384`, `SHA512`                              | 208          |
-//! | `SHA512t<T>` (incl. `SHA512_224`, `SHA512_256`) | 208          |
+//! | `SHA384`, `SHA512` (incl. `SHA512_t` instances  | 208          |
 //! | Suspended `SHA224`/`SHA256` state               | 108          |
 //! | Suspended `SHA384`/`SHA512`/`SHA512t<T>` state  | 204          |
 //!
@@ -190,9 +189,12 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// SHA-512/256, as approved hash algorithms. This type implements the family as the section
 /// defines it, with one narrowing of this crate's own: `T` must be a multiple of 8, because
 /// [`Hash`] produces whole bytes. So `T` may be any multiple of 8 from 8 to 504 other than 384;
-/// t = 384 is excluded by the standard because SHA-384 is its own algorithm (s. 5.3.4) with an
-/// initial hash value that is not the one the IV Generation Function would produce. Anything else
-/// is a compile error naming the rule it broke:
+/// t = 384 is carved out because SHA-384 (s. 5.3.4) is already "SHA-512 truncated to 384 bits" --
+/// same compression function, same 384-bit output -- but predates SHA-512/t and has its own fixed
+/// initial hash value rather than one produced by the IV Generation Function below. Letting
+/// `T = 384` through here would derive a second, different 384-bit hash under a name already
+/// taken, so the standard reserves 384 for SHA-384 instead. Anything else is a compile error
+/// naming the rule it broke:
 ///
 /// ```compile_fail
 /// use bouncycastle_sha2::SHA512t;
@@ -385,7 +387,7 @@ impl SHA512InitValue for SHA512Params {
 /// * FIPS 180-4 s. 5.3.6's own rule, "t is any positive integer without a leading zero such that
 ///   t < 512, and t is not 384";
 /// * this crate's additional requirement that `T` be a multiple of 8, since the digest has to be a
-///   whole number of bytes. See `sha512t_h0` in `sha512.rs` for why.
+///   whole number of bytes.
 ///
 /// See [`SHA512t`] for the accepted range and for what the t-specific initial hash value is.
 #[derive(Clone)]
