@@ -4,14 +4,13 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-# `std` gates the ergonomic, allocating (`Vec`-returning) one-shot APIs. It is on by
-# default today; a future `--no-default-features` build is what will let `core` become
-# `#![no_std]` (see the TODO at the top of `src/lib.rs`).
-default = ["std"]
-std = []
+default = ["alloc"]
+alloc = [
+    "bouncycastle-rng/alloc"
+]
 
 [dependencies]
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-rng.workspace = true
+bouncycastle-rng = { workspace = true, default-features = false }

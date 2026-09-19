@@ -3,8 +3,17 @@ name = "bouncycastle-hmac"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-core-test-framework/alloc",
+    "bouncycastle-rng/alloc",
+    "bouncycastle-sha2/alloc",
+]
+
 [dependencies]
-bouncycastle-core.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 # bouncycastle-sha2, -sha3 and -rng are dev-dependencies so that the tests, benches and doc examples
@@ -12,9 +21,9 @@ bouncycastle-utils.workspace = true
 # dev-dependencies.
 # todo -- we're about to change that and move them to their respective crates in the next phase.
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 criterion.workspace = true
 bouncycastle-hex.workspace = true
-bouncycastle-rng.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-rng = { workspace = true, default-features = false }
+bouncycastle-sha2 = { workspace = true, default-features = false }
 bouncycastle-sha3.workspace = true

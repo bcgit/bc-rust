@@ -1,6 +1,10 @@
 //! Generic behaviour tests for anything that implements [`Hash`].
 
+// Imports needed for alloc
+#[allow(unused_imports)]
 use bouncycastle_core::errors::HashError;
+// end of imports needed for alloc
+
 use bouncycastle_core::traits::{Hash, HashAlgParams};
 
 /// Instance of the test framework.
@@ -28,44 +32,68 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
-        /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
-        let output_vec = H::default().hash(input);
-        assert_eq!(output_vec, expected_output);
+        #[cfg(feature = "alloc")]
+        {
+            /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
+            let output_vec = H::default().hash(input);
+            assert_eq!(output_vec, expected_output);
+        }
 
         /*** fn hash_out(self, data: &[u8], output: &mut [u8]) -> Result<usize, HashError> ***/
         let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
         H::default().hash_out(input, &mut output_buf);
         assert_eq!(output_buf, expected_output);
 
-        /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
-        /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
+        /*** fn hash_array<const N: usize>(self, data: &[u8]) -> [u8; N]  (no_std alternative) ***/
+        // Use N = 64, the maximum output length across all hashes; hash_array zero-pads the tail
+        // beyond output_len, so the digest lands in the first OUTPUT_LEN bytes.
+        let arr: [u8; 64] = H::default().hash_array(input);
+        assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "hash_array digest mismatch");
+        assert!(arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0), "hash_array tail not zero-padded");
 
+        /*** fn do_final_array<const N: usize>(self) -> [u8; N]  (no_std alternative) ***/
         let mut message_digest = H::default();
         message_digest.do_update(input);
-        let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+        let arr: [u8; 64] = message_digest.do_final_array();
+        assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "do_final_array digest mismatch");
+        assert!(
+            arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0),
+            "do_final_array tail not zero-padded"
+        );
 
-        for length in 1..output_buf.len() {
-            let mut truncated = vec![0_u8; length];
+        // todo: may require no_std equivalent
+        #[cfg(feature = "alloc")]
+        {
+            /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
+            /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
 
             let mut message_digest = H::default();
             message_digest.do_update(input);
-            message_digest.do_final_out(&mut truncated);
+            let output_buf = message_digest.do_final();
+            assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
-            assert_eq!(
-                &expected_output[0..length],
-                &truncated,
-                "Incorrect output for input (update_byte) / truncated: {length}"
-            );
-        }
+            for length in 1..output_buf.len() {
+                let mut truncated = vec![0_u8; length];
 
-        /*** Test breaking the message into multiple do_update's ***/
-        let mut message_digest = H::default();
-        for chunk in input.chunks(16) {
-            message_digest.do_update(chunk);
+                let mut message_digest = H::default();
+                message_digest.do_update(input);
+                message_digest.do_final_out(&mut truncated);
+
+                assert_eq!(
+                    &expected_output[0..length],
+                    &truncated,
+                    "Incorrect output for input (update_byte) / truncated: {length}"
+                );
+            }
+
+            /*** Test breaking the message into multiple do_update's ***/
+            let mut message_digest = H::default();
+            for chunk in input.chunks(16) {
+                message_digest.do_update(chunk);
+            }
+            let output_buf = message_digest.do_final();
+            assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
         }
-        let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
         /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
         /*** fn do_final_out(self, output: &mut [u8]) -> Result<usize, HashError> ***/
@@ -93,6 +121,8 @@ impl TestFrameworkHash {
             );
         }
 
+        // todo: may require no_std equivalent
+        #[cfg(feature = "alloc")]
         if self.enable_partial_byte_tests {
             /*** Testing: ***/
             /*** fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)-> Result<Vec<u8>, HashError>; ***/

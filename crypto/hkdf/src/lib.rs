@@ -613,6 +613,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     KDF for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
+    #[cfg(feature = "alloc")]
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
     /// This provides a fixed-length output, which may be truncated as needed.
     fn derive_key(
@@ -644,6 +645,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         Ok(bytes_written)
     }
 
+    #[cfg(feature = "alloc")]
     /// As with [`KDF::derive_key`] and [`KDF::derive_key_out`],
     /// This invokes HKDF in the extract_and_expand mode and maps the provided keys in the following way:
     /// - The first (0'th) key is used as the salt for HKDF.extract.

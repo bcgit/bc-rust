@@ -3,16 +3,24 @@ name = "bouncycastle-rng"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["alloc"]
+alloc = [
+    "bouncycastle-core/alloc",
+    "bouncycastle-core-test-framework/alloc",
+    "bouncycastle-sha2/alloc",
+]
+
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-sha2 = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 # external
 getrandom = "0.4.0-rc.1"
 
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 criterion.workspace = true
 
 [[bench]]
