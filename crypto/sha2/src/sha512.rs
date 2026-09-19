@@ -42,13 +42,6 @@ pub(crate) const SHA512_H0: [u64; 8] = [
     0x510E527FADE682D1, 0x9B05688C2B3E6C1F, 0x1F83D9ABFB41BD6B, 0x5BE0CD19137E2179,
 ];
 
-/// The truncations FIPS 180-4 s. 5.3.6 actually approves: "SHA-512/224 (t = 224) and SHA-512/256
-/// (t = 256) are approved hash algorithms. Other SHA-512/t hash algorithms with different t values
-/// may be specified in [SP 800-107] in the future as the need arises."
-pub(crate) const fn t_is_fips_approved(t: usize) -> bool {
-    t == 224 || t == 256
-}
-
 /// Rejects, at compile time, every `t` for which SHA-512/t is not defined or not representable
 /// here. See [`sha512t_h0`] for where each rule comes from; the multiple-of-8 rule is this crate's,
 /// the rest are FIPS 180-4 s. 5.3.6's.
@@ -325,7 +318,7 @@ impl<PARAMS: SHA512InitValue> Sha512State<PARAMS> {
 
 /// Internal struct for SHA512.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
-/// provided and NIST-approved parameters.
+/// parameter sets this crate provides.
 #[derive(Clone)]
 pub struct SHA512Internal<PARAMS: SHA512InitValue> {
     _params: core::marker::PhantomData<PARAMS>,
@@ -338,39 +331,7 @@ pub struct SHA512Internal<PARAMS: SHA512InitValue> {
 
 impl<PARAMS: SHA512InitValue> SHA512Internal<PARAMS> {
     /// Creates a new SHA512 instance, ready for use.
-    ///
-    /// Restricted to parameter sets that are approved hash algorithms. Every member of the family
-    /// but SHA-512/t is one; for SHA-512/t only t = 224 and t = 256 are (FIPS 180-4 s. 5.3.6), so
-    /// any other truncation is a compile error here and has to be asked for by name through
-    /// [`new_allow_unapproved_t`](Self::new_allow_unapproved_t).
     pub fn new() -> Self {
-        const {
-            assert!(
-                PARAMS::FIPS_APPROVED,
-                "this SHA-512/t truncation is not FIPS 180-4 approved (only t = 224 and t = 256 are); \
-                 use SHA512Internal::new_allow_unapproved_t() if that is deliberate"
-            )
-        };
-        Self::construct()
-    }
-
-    /// As [`new`](Self::new), but accepts the SHA-512/t truncations FIPS 180-4 s. 5.3.6 does not
-    /// approve.
-    ///
-    /// The IV Generation Function is defined for every `t` this crate accepts, and the resulting
-    /// hash is a perfectly well-formed SHA-512/t -- it is simply not one NIST has approved, so it
-    /// must not be used where an approved algorithm is required. Reaching for this constructor is
-    /// how that choice is made explicit; [`new`](Self::new) will not build for such a `t`, and
-    /// neither will anything that goes through `Default`, which keeps an unapproved truncation
-    /// from reaching generic code by accident.
-    ///
-    /// The `t` validity rules themselves are not relaxed: `t` must still be a positive multiple of
-    /// 8 below 512 and not 384, checked when the parameter set is instantiated.
-    pub fn new_allow_unapproved_t() -> Self {
-        Self::construct()
-    }
-
-    fn construct() -> Self {
         Self {
             _params: core::marker::PhantomData,
             state: Sha512State::<PARAMS>::new(),
