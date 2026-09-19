@@ -102,8 +102,7 @@
 //! | Object                                          | Size (bytes) |
 //! |-------------------------------------------------|--------------|
 //! | `SHA224`, `SHA256`                              | 112          |
-//! | `SHA384`, `SHA512`                              | 208          |
-//! | `SHA512t<T>` (incl. `SHA512_224`, `SHA512_256`) | 208          |
+//! | `SHA384`, `SHA512` (incl. `SHA512_t` instances  | 208          |
 //! | Suspended `SHA224`/`SHA256` state               | 108          |
 //! | Suspended `SHA384`/`SHA512`/`SHA512t<T>` state  | 204          |
 //!
