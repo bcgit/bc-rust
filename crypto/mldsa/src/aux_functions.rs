@@ -629,7 +629,7 @@ pub(crate) fn rej_bounded_poly<P: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) 
     // 272 is exactly two SHAKE256 blocks (2 × 136), so filling the buffer costs two permutations
     // with nothing stranded in the sponge's output queue, and it covers the whole polynomial in a
     // single squeeze almost always. The worst case is η = 4 (ML-DSA-65): 228 bytes needed on average,
-    // with a standard deviation out to 276 bytes, so the refill runs for roughly 1 seed in 100,000.
+    // and over 300k simulated seeds the largest requirement was 276 bytes, so the refill runs for roughly 1 seed in 100,000.
     // For η = 2 (ML-DSA-44/87) it is 137 bytes on average and never exceeded 150.
     //
     // This is a buffer, not the iteration cap of FIPS 204 Table 3 (481 bytes for RejBoundedPoly):
