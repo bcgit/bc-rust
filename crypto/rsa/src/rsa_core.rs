@@ -11,7 +11,7 @@
 //! multi-prime RSA, so there is nothing here to extend to `u > 2`.
 
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
-use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_once, reduce_wide, sub_mod};
+use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide, sub_mod};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
@@ -73,10 +73,13 @@ pub(crate) fn rsasp1<
     let s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, sk.d_p(), &ctx_p);
     let s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, sk.d_q(), &ctx_q);
 
-    // Step 2.b.3: `h = (s1 - s2) * qInv mod p`. `s2 < q`, and `q < 2p` because
-    // `RsaPrivateKey::from_crt_components` requires `p` and `q` to be the same bit length (see
-    // that type's docs), so one constant-time conditional subtraction reduces it mod `p`.
-    let s2_mod_p = reduce_once::<HALF>(&s2, sk.p());
+    // Step 2.b.3: `h = (s1 - s2) * qInv mod p`, which needs `s2` reduced mod `p` first. RFC 8017
+    // does not require `p` and `q` to be close in magnitude (only that both are the modulus's two
+    // prime factors), so `s2 < q` gives no useful bound relative to `p` in general -- see
+    // `RsaPrivateKey`'s docs. `reduce_wide` (built for exactly this: reducing a value wider than
+    // its target modulus, constant-time in that modulus) handles the general case; it does not
+    // require its first width to exceed its second.
+    let s2_mod_p = reduce_wide::<HALF, HALF>(&s2, sk.p());
     let diff = sub_mod::<HALF>(&s1, &s2_mod_p, sk.p());
     let h = mul_mod::<HALF, HALF2, HALF21>(&diff, sk.q_inv(), &ctx_p);
 

@@ -56,15 +56,15 @@ impl<const L: usize> RsaPublicKey<L> {
 /// (see [`Self::from_crt_components`]) rather than expressed in the type, because stable Rust has
 /// no way to compute one const generic from another.
 ///
-/// # Why `p` and `q` must be the same bit length
-///
-/// RFC 8017's CRT recombination (§5.2.1 step 2.b.3) computes `h = (s1 - s2) * qInv mod p`, which
-/// needs `s2` (a residue mod `q`) reduced mod `p` first. This crate does that with a single
-/// constant-time conditional subtraction ([`crate::modexp::reduce_once`]), which is only correct
-/// when `s2 < 2p`, i.e. `q < 2p` -- guaranteed whenever `p` and `q` occupy the same number of bits
-/// (true of any balanced RSA key, which every real-world generator produces), but not true in
-/// general for two arbitrary primes. [`Self::from_crt_components`] enforces exactly that: both
-/// primes' top limb must have its top bit set.
+/// `p` and `q` need not be the same bit length: RFC 8017 §3.2 requires only that both are prime
+/// and `p * q = n`, nothing about their relative magnitude. An earlier version of this type
+/// required equal bit length anyway, so its CRT recombination could reduce one residue mod the
+/// other prime with a single conditional subtraction (valid only when the smaller prime's residue
+/// is `< 2 *` the larger prime, which equal bit length guarantees but does not itself require).
+/// [`crate::modexp::reduce_wide`]'s general bit-serial reduction handles any magnitude
+/// relationship instead, at the same asymptotic cost this crate already pays to reduce the
+/// `n`-width message down to each prime's width, so the extra restriction bought nothing and is
+/// not reimposed here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RsaPrivateKey<const L: usize, const HALF: usize> {
     p: Secret<[u64; HALF]>,
@@ -84,10 +84,8 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
     /// * `L != 2 * HALF` (a caller programming error -- every concrete instantiation in this
     ///   crate pairs a fixed `L` with a fixed `HALF`, so this cannot happen through the crate's
     ///   own public API, only through an explicit, wrong turbofish);
-    /// * `p` or `q` is even, equal to each other, or not exactly `HALF * 64` bits (top bit of the
-    ///   top limb clear) -- see the type's docs for why equal bit length matters. There is no
-    ///   separate all-zero check: a zero value's low limb is `0`, which the oddness check already
-    ///   rejects.
+    /// * `p` or `q` is even or equal to each other. There is no separate all-zero check: a zero
+    ///   value's low limb is `0`, which the oddness check already rejects.
     /// * `dP >= p`, `dQ >= q`, or `qInv >= p` (RFC 8017 §3.2: `dP`/`dQ`/`qInv` are each "a
     ///   positive integer less than" their modulus).
     pub fn from_crt_components(
@@ -100,7 +98,6 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
         if L != 2 * HALF {
             return Err(SignatureError::DecodingError("RSA modulus width must be 2 * prime width"));
         }
-        let top_bit_set = |x: &[u64; HALF]| x[HALF - 1] >> 63 == 1;
         if p[0] & 1 == 0 {
             return Err(SignatureError::DecodingError("p must be odd"));
         }
@@ -109,12 +106,6 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
         }
         if p == q {
             return Err(SignatureError::DecodingError("p and q must be distinct"));
-        }
-        if !top_bit_set(p) {
-            return Err(SignatureError::DecodingError("p must be exactly HALF * 64 bits"));
-        }
-        if !top_bit_set(q) {
-            return Err(SignatureError::DecodingError("q must be exactly HALF * 64 bits"));
         }
         if nat::sub(d_p, p).1 != 1 {
             return Err(SignatureError::DecodingError("dP must be less than p"));
