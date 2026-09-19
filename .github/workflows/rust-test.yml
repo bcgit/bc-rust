@@ -19,18 +19,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Check out bc-test-data
-        uses: actions/checkout@v4
-        with:
-          repository: bcgit/bc-test-data
-          path: ../bc-test-data
-
-      - name: Check out wycheproof
-        uses: actions/checkout@v4
-        with:
-          repository: C2SP/wycheproof
-          path: ../wycheproof
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
