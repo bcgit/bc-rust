@@ -172,16 +172,6 @@ pub fn sub_mod<const N: usize>(a: &[u64; N], b: &[u64; N], modulus: &[u64; N]) -
     ct_select_array(mask, &corrected, &diff)
 }
 
-/// `x mod modulus` for `x < 2 * modulus`, in constant time with respect to `modulus`. RSA's CRT
-/// recombination needs `s2 mod p` before it can subtract (RFC 8017 §5.2.1 step 2.b.3), and
-/// `s2 < q < 2p` whenever `p` and `q` are the same bit length, which
-/// [`crate::keys::RsaPrivateKey::from_crt_components`] requires of every key it builds.
-pub fn reduce_once<const N: usize>(x: &[u64; N], modulus: &[u64; N]) -> [u64; N] {
-    let (diff, borrow) = nat::sub(x, modulus);
-    let subtract = Condition::<u64>::from_lsb(borrow ^ 1);
-    ct_select_array(subtract, &diff, x)
-}
-
 /// `(acc * 2 + bit) mod modulus` for `acc < modulus` and odd `modulus`, in constant time: see
 /// [`reduce_wide`] for why (the modulus can be secret, unlike [`pow2_mod`]'s).
 fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64; N]) -> [u64; N] {
@@ -201,14 +191,19 @@ fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64;
     ct_select_array(subtract, &diff, &doubled)
 }
 
-/// `value mod modulus` for a `WIDE`-limb `value` and a `NARROW`-limb odd `modulus` (`WIDE >
-/// NARROW`), in constant time with respect to `modulus`. Unlike [`pow2_mod`]/[`double_mod_n`],
-/// which assume a *public* modulus (true of RSA's own `n`), this brings a message down to one CRT
-/// prime's width (RFC 8017 §5.2.1 step 2.b.1's `m^dP mod p` needs `m mod p` first, since `m` can
-/// be as wide as `n`), and the primes are private key material: branching on their value here
-/// would leak them the same way branching on the exponent would leak `d`. Bit-serial schoolbook
-/// long division: every one of `value`'s `64 * WIDE` bits contributes one constant-time
-/// doubling-and-conditional-subtract step.
+/// `value mod modulus` for a `WIDE`-limb `value` and a `NARROW`-limb odd `modulus`, in constant
+/// time with respect to `modulus`. Unlike [`pow2_mod`]/[`double_mod_n`], which assume a *public*
+/// modulus (true of RSA's own `n`), this brings a value down to a CRT prime's width and the primes
+/// are private key material: branching on their value here would leak them the same way branching
+/// on the exponent would leak `d`. Used two ways in RSA's CRT recombination (RFC 8017 §5.2.1 step
+/// 2.b): with `WIDE > NARROW`, to reduce the `n`-width message `m` down to `m mod p` before
+/// exponentiating (step 2.b.1); and with `WIDE == NARROW`, to reduce `s2` (a residue mod `q`) down
+/// to `s2 mod p` before the CRT subtraction (step 2.b.3) -- `s2 < q` gives no useful bound
+/// relative to `p` in general (RFC 8017 does not require `p` and `q` to be close in magnitude),
+/// so this does not special-case a single conditional subtraction the way [`double_mod_n`] does
+/// for the (public, and by construction `< n`) doubling case. Bit-serial schoolbook long division:
+/// every one of `value`'s `64 * WIDE` bits contributes one constant-time doubling-and-conditional-
+/// subtract step.
 pub fn reduce_wide<const WIDE: usize, const NARROW: usize>(
     value: &[u64; WIDE],
     modulus: &[u64; NARROW],
