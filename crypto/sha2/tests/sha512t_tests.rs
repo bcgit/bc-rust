@@ -9,7 +9,7 @@
 //! # Where the expected values come from
 //!
 //! FIPS 180-4 publishes H(0) for t = 224 and t = 256 only (s. 5.3.6.1 / s. 5.3.6.2, pinned by
-//! `sha512t_h0_tests.rs`) and no digests at all for the unapproved truncations. The known-answer
+//! `sha512t_h0_tests.rs`) and no digests at all for any other truncation. The known-answer
 //! values below were therefore generated with BC Java's `org.bouncycastle.crypto.digests
 //! .SHA512tDigest`, an independent implementation of the same section, over the FIPS 180-4
 //! Appendix C sample messages. The two approved truncations are in the table as well, so a change
@@ -20,7 +20,18 @@
 //! Generation Function -- including which decimal branch it took -- as well as the truncation.
 
 use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
-use bouncycastle_sha2::{SHA512_224, SHA512_256, SHA512t, SHA512tParams};
+use bouncycastle_sha2::{SHA512_224, SHA512_224_NAME, SHA512_256, SHA512_256_NAME, SHA512t};
+
+// The generic name and output length must keep reproducing exactly what the two approved
+// truncations had when they were spelled out by hand. These hold at compile time, so a regression
+// fails the build of this test crate rather than a test in it; `alg_name_spells_t_in_decimal` and
+// `output_len_is_t_over_eight` below are the runtime half that `cargo mutants` can see fail.
+const _: () = assert!(matches!(<SHA512_224 as Algorithm>::ALG_NAME.as_bytes(), b"SHA512/224"));
+const _: () = assert!(matches!(<SHA512_256 as Algorithm>::ALG_NAME.as_bytes(), b"SHA512/256"));
+const _: () = assert!(matches!(SHA512_224_NAME.as_bytes(), b"SHA512/224"));
+const _: () = assert!(matches!(SHA512_256_NAME.as_bytes(), b"SHA512/256"));
+const _: () = assert!(<SHA512_224 as HashAlgParams>::OUTPUT_LEN == 28);
+const _: () = assert!(<SHA512_256 as HashAlgParams>::OUTPUT_LEN == 32);
 
 /// FIPS 180-4 Appendix C.1 / C.2 sample message.
 const ABC: &[u8] = b"abc";
@@ -33,10 +44,7 @@ fn from_hex(s: &str) -> Vec<u8> {
 }
 
 /// Drives one `SHA512t<T>` through the whole [`Hash`] surface and checks every route agrees with
-/// `expected_hex`.
-///
-/// `construct` is passed in because the ordinary constructor is gated: an unapproved truncation
-/// has to come from `new_allow_unapproved_t()`, so the two cases cannot share one call.
+/// `expected_hex`. `construct` builds a fresh instance for each route.
 fn check<H: Hash + HashAlgParams + Algorithm>(
     construct: impl Fn() -> H,
     input: &[u8],
@@ -87,50 +95,49 @@ fn check<H: Hash + HashAlgParams + Algorithm>(
     }
 }
 
-/// BC Java `SHA512tDigest` cross-check, for the truncations FIPS 180-4 s. 5.3.6 does not approve.
+/// BC Java `SHA512tDigest` cross-check, for the truncations FIPS 180-4 publishes no values for.
 ///
 /// The `t` values span all three decimal branches of the IV Generation Function's "SHA-512/t"
 /// string: one digit (8), two digits (16, 24, 88, 96) and three (104, 264, 504).
-macro_rules! unapproved_kat {
+macro_rules! sha512t_kat {
     ($name:ident, $t:literal, $empty:literal, $abc:literal, $two_block:literal) => {
         #[test]
         fn $name() {
-            let make = || SHA512t::<$t>::new_allow_unapproved_t();
-            check(make, b"", $empty);
-            check(make, ABC, $abc);
-            check(make, TWO_BLOCK, $two_block);
+            check(SHA512t::<$t>::new, b"", $empty);
+            check(SHA512t::<$t>::new, ABC, $abc);
+            check(SHA512t::<$t>::new, TWO_BLOCK, $two_block);
         }
     };
 }
 
-unapproved_kat!(sha512_t8, 8, "79", "c5", "8d");
-unapproved_kat!(sha512_t16, 16, "b44e", "1768", "e8d7");
-unapproved_kat!(sha512_t24, 24, "2f8a89", "1e17ce", "765639");
-unapproved_kat!(
+sha512t_kat!(sha512_t8, 8, "79", "c5", "8d");
+sha512t_kat!(sha512_t16, 16, "b44e", "1768", "e8d7");
+sha512t_kat!(sha512_t24, 24, "2f8a89", "1e17ce", "765639");
+sha512t_kat!(
     sha512_t88, 88, "f0a49fbe063fd7fba2bf3b", "8194668ea596265aef4ef5", "c040324022ed56c0badf79"
 );
-unapproved_kat!(
+sha512t_kat!(
     sha512_t96,
     96,
     "44ab9c7c3eb2da370d2c0ed7",
     "67246fd8d90dca7009449ad5",
     "c75100023425182c76253d0a"
 );
-unapproved_kat!(
+sha512t_kat!(
     sha512_t104,
     104,
     "47f922a2d2508feb288af79a30",
     "456045a75a5d7e0ea4af09dfce",
     "64fc045733525b8c29376fc6be"
 );
-unapproved_kat!(
+sha512t_kat!(
     sha512_t264,
     264,
     "78180c9a54d1c1f5bd3b941cfec4ee2cded5663ed7bf535ecd964518515174db49",
     "888cfb35a25f524f8d17a1bb97134a9a6850b0ff269f1eb26ae038c22cd47f4c58",
     "873b4bd852e7e441c406e49b1caa88f76bfc4b95d373f783350398db4b4a3e5909"
 );
-unapproved_kat!(
+sha512t_kat!(
     sha512_t504,
     504,
     "6c46fed4cb277417c5f2d88b19a88a9a010e9e81a24d4a38d818c84a1aa3b88dd115f9550869eb097001fe0e8315b1d6f04124215f095e0be7ca94f99cdc6a",
@@ -139,8 +146,8 @@ unapproved_kat!(
 );
 
 /// The two approved truncations must keep producing exactly what they did before `SHA512t` became
-/// generic, through the ordinary (ungated) constructor. These are the published SHA-512/224 and
-/// SHA-512/256 values, and they agree with the same BC Java run that produced the table above.
+/// generic. These are the published SHA-512/224 and SHA-512/256 values, and they agree with the
+/// same BC Java run that produced the table above.
 #[test]
 fn approved_truncations_are_unchanged() {
     check(SHA512_224::new, b"", "6ed0dd02806fa89e25de060c19d3ac86cabb87d6a0ddd05c333b84f4");
@@ -170,8 +177,8 @@ fn the_named_aliases_are_the_generic_type() {
 #[test]
 fn one_million_a() {
     let million = vec![b'a'; 1_000_000];
-    check(SHA512t::<8>::new_allow_unapproved_t, &million, "32");
-    check(SHA512t::<96>::new_allow_unapproved_t, &million, "0e1f626963a870088bab77da");
+    check(SHA512t::<8>::new, &million, "32");
+    check(SHA512t::<96>::new, &million, "0e1f626963a870088bab77da");
     check(SHA512_224::new, &million, "37ab331d76f0d36de422bd0edeb22a28accd487b7a8453ae965dd287");
     check(
         SHA512_256::new,
@@ -179,7 +186,7 @@ fn one_million_a() {
         "9a59a052930187a97038cae692f30708aa6491923ef5194394dc68d56c74fb21",
     );
     check(
-        SHA512t::<504>::new_allow_unapproved_t,
+        SHA512t::<504>::new,
         &million,
         "f94e0eb099411d073274d87a908531ce7faa8591b28f56d86694e056ab0477f03af082453f5f44ec75c67ac58843fedd44429b0aa3322277b32b04e8a0586c",
     );
@@ -224,7 +231,7 @@ fn output_len_is_t_over_eight() {
     // BLOCK_LEN does not vary with t: FIPS 180-4 Figure 1, block size 1024 bits.
     assert_eq!(<SHA512t<8> as HashAlgParams>::BLOCK_LEN, 128);
     assert_eq!(<SHA512t<504> as HashAlgParams>::BLOCK_LEN, 128);
-    assert_eq!(SHA512t::<8>::new_allow_unapproved_t().block_bitlen(), 1024);
+    assert_eq!(SHA512t::<8>::new().block_bitlen(), 1024);
 }
 
 /// Collision resistance is t/2 bits, rounded down to a modelled level, and the two approved
@@ -246,39 +253,9 @@ fn security_strength_is_half_of_t() {
         <SHA512t<224> as Algorithm>::MAX_SECURITY_STRENGTH
     );
     assert_eq!(
-        SHA512t::<504>::new_allow_unapproved_t().max_security_strength(),
+        SHA512t::<504>::new().max_security_strength(),
         <SHA512t<504> as Algorithm>::MAX_SECURITY_STRENGTH
     );
-}
-
-/// Only t = 224 and t = 256 are approved (FIPS 180-4 s. 5.3.6). `FIPS_APPROVED` is what
-/// `SHA512Internal::new` gates on, so it decides which truncations need
-/// `new_allow_unapproved_t()`; the compile-time half of this is the `const _` assertions in
-/// `lib.rs`, which `cargo mutants` cannot see fail.
-#[test]
-fn only_224_and_256_are_approved() {
-    // Looped rather than asserted one by one so the value reaches the assertion through a binding:
-    // `assert!(SHA512tParams::<224>::FIPS_APPROVED)` is a constant, which clippy's
-    // `assertions_on_constants` would have us fold into a `const` block -- and a const assertion is
-    // exactly what `cargo mutants` cannot see fail. The const-block half already exists in lib.rs;
-    // this is the half that has to stay observable at runtime.
-    for approved in [SHA512tParams::<224>::FIPS_APPROVED, SHA512tParams::<256>::FIPS_APPROVED] {
-        assert!(approved, "t = 224 and t = 256 are FIPS 180-4 approved");
-    }
-
-    for approved in [
-        SHA512tParams::<8>::FIPS_APPROVED,
-        SHA512tParams::<16>::FIPS_APPROVED,
-        SHA512tParams::<96>::FIPS_APPROVED,
-        SHA512tParams::<104>::FIPS_APPROVED,
-        SHA512tParams::<216>::FIPS_APPROVED,
-        SHA512tParams::<232>::FIPS_APPROVED,
-        SHA512tParams::<248>::FIPS_APPROVED,
-        SHA512tParams::<264>::FIPS_APPROVED,
-        SHA512tParams::<504>::FIPS_APPROVED,
-    ] {
-        assert!(!approved, "only t = 224 and t = 256 are FIPS 180-4 approved");
-    }
 }
 
 /// A shorter output buffer truncates and a longer one is zero-filled past the digest, for a
@@ -288,11 +265,11 @@ fn output_buffer_shorter_and_longer_than_the_digest() {
     let full = from_hex("44ab9c7c3eb2da370d2c0ed7"); // SHA512/96("")
 
     let mut short = [0u8; 5];
-    assert_eq!(SHA512t::<96>::new_allow_unapproved_t().hash_out(b"", &mut short), 5);
+    assert_eq!(SHA512t::<96>::new().hash_out(b"", &mut short), 5);
     assert_eq!(short, full[..5]);
 
     let mut long = [0xAAu8; 20];
-    assert_eq!(SHA512t::<96>::new_allow_unapproved_t().hash_out(b"", &mut long), 12);
+    assert_eq!(SHA512t::<96>::new().hash_out(b"", &mut long), 12);
     assert_eq!(&long[..12], &full[..]);
     assert_eq!(&long[12..], &[0u8; 8], "past the digest the buffer is zero-filled");
 }
