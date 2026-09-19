@@ -4,7 +4,9 @@
 //! (not from recall), so this file is the record of that cross-check rather than a duplicate of
 //! it: see each case's comment for how it was produced.
 
-use bouncycastle_rsa::modexp::{MontgomeryContext, mod_pow, mont_n_prime};
+use bouncycastle_rsa::modexp::{
+    MontgomeryContext, mod_pow, mont_n_prime, mul_mod, reduce_wide, sub_mod,
+};
 
 /// `n' = -n0^-1 mod 2^64` must satisfy `n0 * n' ≡ -1 (mod 2^64)` -- the exact identity
 /// [`bouncycastle_ec::montgomery::redc`] relies on. Checked directly by wrapping multiplication,
@@ -157,4 +159,52 @@ fn kat_l32_2048_bit() {
 fn even_modulus_is_rejected() {
     let n: [u64; 1] = [4];
     assert!(MontgomeryContext::<1>::new(&n).is_none());
+}
+
+/// `reduce_wide` with `WIDE = 4 > NARROW = 2`, RSA's own use for reducing an `n`-width message
+/// down to a CRT prime's width (RFC 8017 §5.2.1 step 2.b.1). Via Python's `%`.
+#[test]
+fn reduce_wide_wider_value() {
+    let value: [u64; 4] =
+        [0x8899aabbccddeeff, 0x0011223344556677, 0xfedcba9876543210, 0x123456789abcdef0];
+    let modulus: [u64; 2] = [0xffffffffffffff61, 0xffffffffffffffff];
+    let expected: [u64; 2] = [0xd3b18f6d4b290dc4, 0x4e92d71b5fa3de25];
+    assert_eq!(reduce_wide::<4, 2>(&value, &modulus), expected);
+}
+
+/// `reduce_wide` with `WIDE == NARROW`, deliberately far outside the `< 2 * modulus` bound a
+/// single conditional subtraction would need: `value` is about 4.9 billion times `modulus`. RSA's
+/// CRT recombination (step 2.b.3, `s2 mod p`) uses exactly this shape, and RFC 8017 does not
+/// bound how large `q`'s residues can be relative to `p` (see `RsaPrivateKey`'s docs) -- this is
+/// the case that matters, not the same-limb-count part of the signature. Via Python's `%`.
+#[test]
+fn reduce_wide_same_width_but_far_outside_double_the_modulus() {
+    let value: [u64; 2] = [0xfffffffffffffffd, 0xfffffffffffffffe];
+    let modulus: [u64; 2] = [0x0000000000000101, 0x00000000deadbeef];
+    let expected: [u64; 2] = [0xfffffed88afbe598, 0x00000000a6a2b0b3];
+    assert_eq!(reduce_wide::<2, 2>(&value, &modulus), expected);
+}
+
+/// `sub_mod` when `a < b` (the difference must wrap around by adding the modulus once). Via
+/// Python's `%`.
+#[test]
+fn sub_mod_wraps_when_a_less_than_b() {
+    let a: [u64; 2] = [0x0000000000000005, 0x0000000000000000];
+    let b: [u64; 2] = [0x0000000000003039, 0x0000000000000000];
+    let n: [u64; 2] = [0xffffffffffffff61, 0xffffffffffffffff];
+    let expected: [u64; 2] = [0xffffffffffffcf2d, 0xffffffffffffffff];
+    assert_eq!(sub_mod::<2>(&a, &b, &n), expected);
+}
+
+/// `mul_mod` with `a >= modulus` -- only `b` is required to be pre-reduced (see the function's
+/// docs on why `a` need not be). Via Python's `%`.
+#[test]
+fn mul_mod_with_unreduced_first_operand() {
+    let a: [u64; 2] = [0xfffffffffffffffd, 0xfffffffffffffffe];
+    let b: [u64; 2] = [0x23456789abcdef01, 0x0000000000000001];
+    let n: [u64; 2] = [0xffffffffffffff61, 0xffffffffffffffff];
+    let expected: [u64; 2] = [0x7e4b17e4b17da35e, 0xdcba9876543211b0];
+
+    let ctx = MontgomeryContext::<2>::new(&n).expect("modulus is odd");
+    assert_eq!(mul_mod::<2, 4, 5>(&a, &b, &ctx), expected);
 }

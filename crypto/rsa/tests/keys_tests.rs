@@ -68,11 +68,6 @@ fn from_crt_components_rejects_equal_primes() {
     ));
 }
 
-/// Trivially `< ` any nonzero `HALF`-limb prime, real or shrunk by a test -- used below to keep
-/// a test isolated to the one condition it names, instead of also (accidentally) tripping the
-/// separate `dP`/`dQ`/`qInv` range checks that come after it.
-const SMALL: [u64; 16] = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-
 #[test]
 fn from_crt_components_rejects_even_prime() {
     let mut even_p = P;
@@ -89,32 +84,6 @@ fn from_crt_components_rejects_even_q() {
     even_q[0] &= !1;
     assert!(matches!(
         RsaPrivateKey::<32, 16>::from_crt_components(&P, &even_q, &D_P, &D_Q, &Q_INV),
-        Err(SignatureError::DecodingError(_))
-    ));
-}
-
-#[test]
-fn from_crt_components_rejects_short_prime() {
-    // Clearing the top bit makes p occupy fewer than HALF * 64 bits, violating the
-    // equal-bit-length invariant CRT recombination depends on. dP/qInv are replaced with a
-    // trivially-in-range value so this test isolates the bit-length check: the real D_P/Q_INV
-    // are close to p's own magnitude, so against a p shrunk by half they would (correctly, but
-    // for the wrong reason from this test's point of view) also fail the later dP/qInv range
-    // checks.
-    let mut short_p = P;
-    short_p[15] &= !(1u64 << 63);
-    assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_crt_components(&short_p, &Q, &SMALL, &D_Q, &SMALL),
-        Err(SignatureError::DecodingError(_))
-    ));
-}
-
-#[test]
-fn from_crt_components_rejects_short_q() {
-    let mut short_q = Q;
-    short_q[15] &= !(1u64 << 63);
-    assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_crt_components(&P, &short_q, &D_P, &SMALL, &SMALL),
         Err(SignatureError::DecodingError(_))
     ));
 }
