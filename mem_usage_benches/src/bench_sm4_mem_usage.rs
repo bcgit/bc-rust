@@ -22,8 +22,8 @@
 //! Like AES, SM4 has no interesting stack profile: peak usage is a small constant plus the round
 //! keys. The number worth recording in the crate docs is what `print_struct_sizes` prints -- the
 //! persistent 128 bytes of round keys -- and the confirmation that per-call work is the four-block
-//! working state (64 bytes), the eight `u16` S-box planes (16 bytes) and circuit temporaries. There are
-//! no lookup tables; BC Java's `SM4Engine` adds a 256-byte table on top of these numbers.
+//! working state (64 bytes), the eight `u16` S-box planes (16 bytes) and circuit temporaries. There
+//! are no lookup tables; a table-driven engine adds a 256-byte table on top of these numbers.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]

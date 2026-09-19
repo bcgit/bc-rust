@@ -112,12 +112,12 @@
 //!
 //! ## Why not a lookup table
 //!
-//! Sec 6.2.3 presents the S-box as a table (Figure 1), and BC Java's `SM4Engine` stores it as one.
-//! A table indexed by a byte of the state is indexed by secret data, so on any CPU with a data
-//! cache the memory access pattern, and hence the timing, depends on the key and the data. That
-//! is the classic cache-timing attack on table-driven block ciphers, and it is not fixable while
-//! the lookup remains -- in the cipher or in the key schedule, whose `T'` also goes through the
-//! S-box.
+//! Sec 6.2.3 presents the S-box as a table (Figure 1), and a straightforward implementation
+//! stores it as one. A table indexed by a byte of the state is indexed by secret data, so on any
+//! CPU with a data cache the memory access pattern, and hence the timing, depends on the key and
+//! the data. That is the classic cache-timing attack on table-driven block ciphers, and it is not
+//! fixable while the lookup remains -- in the cipher or in the key schedule, whose `T'` also goes
+//! through the S-box.
 //!
 //! ## The S-box as a circuit
 //!
@@ -137,22 +137,22 @@
 //! planes, runs the circuit once,
 //! transposes back, and finishes the round per block. The blocks never mix. Everything else in
 //! the round -- the XORs, the five rotations of `L` -- is already constant-time on words, so the
-//! rest of the engine is the straightforward word-oriented port of BC Java, with the roles of the
-//! four state words rotating instead of the words moving (BC Java's `F0`..`F3`).
+//! rest of the engine is a straightforward word-oriented implementation, with the roles of the
+//! four state words rotating each round rather than the words themselves moving.
 //!
-//! Beyond the S-box, the port differs from the Java engine in three ways: one stored schedule
-//! serves both directions (Java expands the key in reverse when initialised for decryption); the
-//! block methods are infallible (the run-time buffer and initialisation checks are compile-time
-//! facts here); and [`ElectronicCodeBook::new`](bouncycastle_core::traits::ElectronicCodeBook::new) requires a key tagged as a symmetric cipher key of at least
+//! Beyond the S-box, this port stores one schedule that serves both directions (a direction-aware
+//! engine typically expands the key in reverse when initialised for decryption); the block methods
+//! are infallible (the run-time buffer and initialisation checks are compile-time facts here); and
+//! [`ElectronicCodeBook::new`](bouncycastle_core::traits::ElectronicCodeBook::new) requires a key tagged as a symmetric cipher key of at least
 //! 128-bit strength, as every cipher in this workspace does.
 //!
 //! ## Why "lowmemory"
 //!
-//! Two things. First, no table: BC Java's `SM4Engine` carries a 256-byte S-box indexed by secret
-//! data; here the S-box is code. Second, the working set. Eight `u32` planes would take eight
-//! blocks per pass and double the throughput, but every per-call buffer -- the block state and the
-//! planes -- would double with them. Four lanes over `u16` planes keep the whole per-call working
-//! state near 100 bytes.
+//! Two things. First, no table: a table-driven engine typically carries a 256-byte S-box indexed
+//! by secret data; here the S-box is code. Second, the working set. Eight `u32` planes would take
+//! eight blocks per pass and double the throughput, but every per-call buffer -- the block state
+//! and the planes -- would double with them. Four lanes over `u16` planes keep the whole per-call
+//! working state near 100 bytes.
 //!
 //! # Memory Usage
 //!
@@ -168,7 +168,7 @@
 //! which the compiler keeps in registers. Measure with
 //! `cargo run --release -p mem_usage_benches --bin bench_sm4_mem_usage`.
 //!
-//! For comparison, BC Java's `SM4Engine` carries a 256-byte table on top of the same schedule.
+//! For comparison, a table-driven engine carries a 256-byte table on top of the same schedule.
 //!
 //! # Security Considerations
 //!
@@ -204,16 +204,15 @@
 //!
 //! # Provenance
 //!
-//! * **Source implementation: Bouncy Castle Java `org.bouncycastle.crypto.engines.SM4Engine`**,
-//!   whose `FK` and `CK` tables, round structure and key schedule this crate reproduces, and
-//!   whose S-box table is the reference the circuit is verified against. A direct transcription
-//!   of the Java engine lives in the tests (`tests/common/mod.rs`) and the engine is checked
-//!   against it on thousands of inputs.
+//! * **Source engine.** The `FK` and `CK` tables, round structure and key schedule this crate
+//!   reproduces, and the S-box table the circuit is verified against, come from the reference
+//!   engine named at the top of this page. A direct transcription of it lives in the tests
+//!   (`tests/common/mod.rs` and `tests/bc_java_tests.rs`), and this engine is checked against it on
+//!   thousands of inputs.
 //! * **Normative reference: GB/T 32907-2016**, read via `draft-ribose-cfrg-sm4-10`, "The SM4
 //!   Blockcipher Algorithm And Its Modes Of Operations" (Tse, Wong, Saarinen; CFRG, April 2018).
 //!   Every function cites its section. The S-box and `CK` tables were extracted mechanically from
-//!   the text of the draft and found byte-for-byte identical to BC Java's; `CK` is additionally
-//!   re-derived from its defining formula in a test.
+//!   the text of the draft; `CK` is additionally re-derived from its defining formula in a test.
 //! * **The non-linear section of the S-box circuit** is from the 113-gate straight-line program
 //!   `SLP_AES_113.txt` in Peralta's circuit collection, described in J. Boyar and R. Peralta, "A
 //!   new combinational logic minimization technique with applications to cryptology",
@@ -225,9 +224,8 @@
 //!   licence), as in the AES crate.
 //! * Verified against every value in the draft's Appendix A.1 -- Examples 1 through 6, including
 //!   all 32 round keys and all 32 per-round outputs of Examples 1 and 4, and the two 1,000,000-fold
-//!   iterated ciphertexts -- the SM4-ECB and SM4-CBC vectors of Appendix A.2.1 and A.2.2, and the
-//!   vectors of BC Java's `SM4Test` (core and provider), which are GB/T 32907-2016's own two
-//!   examples as republished at <https://eprint.iacr.org/2008/329.pdf>.
+//!   iterated ciphertexts -- the SM4-ECB and SM4-CBC vectors of Appendix A.2.1 and A.2.2, plus
+//!   GB/T 32907-2016's own two examples as republished at <https://eprint.iacr.org/2008/329.pdf>.
 
 #![no_std]
 #![forbid(unsafe_code)]
