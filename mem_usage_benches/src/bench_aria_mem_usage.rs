@@ -24,8 +24,8 @@
 //! prints -- the persistent 208, 240 or 272 bytes of round keys -- and the confirmation that per-call
 //! work is the four-block working state (four 32-bit words per block, 64 bytes), the four class
 //! words being substituted (16 bytes), the eight 16-bit S-box planes (16 bytes), one round key and
-//! circuit temporaries. There are no lookup tables; BC Java's `ARIAEngine` adds 1 KiB of S-box
-//! tables and 256 bytes of diffusion masks on top of these numbers.
+//! circuit temporaries. There are no lookup tables; a straightforward implementation adds 1 KiB of
+//! S-box tables and 256 bytes of diffusion masks on top of these numbers.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]

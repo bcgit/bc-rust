@@ -27,9 +27,8 @@ pub const LANES: usize = 4;
 /// decryption uses the same rounds with the decryption round keys of Sec 2.2 (`dk1 = ek{n+1}`,
 /// `dk{i} = A(ek{n+2-i})`, `dk{n+1} = ek1`), which are derived from the stored encryption keys as
 /// each round needs them, so both directions work from one stored schedule and a constructed
-/// value is always ready to use -- there is no `init()` or `reset()`. This is the one structural
-/// departure from BC Java's `ARIAEngine`, which lays the keys out for the direction its
-/// `init(forEncryption, ..)` call asks for.
+/// value is always ready to use -- there is no `init()` or `reset()`, unlike an engine that lays
+/// the keys out differently depending on the direction it is initialised for.
 pub struct ARIA<P: ARIAParams> {
     schedule: Secret<P::Schedule>,
 }
