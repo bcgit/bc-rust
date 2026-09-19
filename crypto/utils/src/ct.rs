@@ -609,3 +609,27 @@ pub fn conditional_copy_bytes<const LEN: usize>(
         out[i] = core::hint::black_box(a[i] & mask) | core::hint::black_box(b[i] & !mask);
     }
 }
+
+/// Conditionally selects between two limb arrays without branching: writes `a` into `out` if
+/// `cond` is TRUE, otherwise `b`. Every limb is written under the mask, regardless of `cond`, so
+/// the operation takes the same path irrespective of which array is selected.
+pub fn conditional_select<const L: usize>(
+    cond: Condition<u64>,
+    a: &[u64; L],
+    b: &[u64; L],
+    out: &mut [u64; L],
+) {
+    for i in 0..L {
+        out[i] = cond.select(a[i], b[i]);
+    }
+}
+
+/// Conditionally swaps two limb arrays in place without branching: if `cond` is TRUE, `a` and
+/// `b` are exchanged; otherwise both are left unchanged. Every limb is written either way.
+pub fn conditional_swap<const L: usize>(cond: Condition<u64>, a: &mut [u64; L], b: &mut [u64; L]) {
+    for i in 0..L {
+        let (new_a, new_b) = cond.swap(a[i], b[i]);
+        a[i] = new_a;
+        b[i] = new_b;
+    }
+}
