@@ -59,6 +59,13 @@
 //! and validated against genuine vectors: Wycheproof for every size except 8192, which it has no
 //! key material for at all (cross-checked against BC Java instead); see each `rsa_*.rs` module's
 //! own tests for the specifics at each size.
+//!
+//! RSASSA-PSS-SHAKE128 and RSASSA-PSS-SHAKE256 (RFC 8702 §3.2.1 -- SHAKE128/SHAKE256 used
+//! natively as both the message hash and the mask generation function, in place of a hash+MGF1
+//! split) are also implemented ([`rsassa_pss_shake`], built on `emsa_pss_shake` rather than
+//! `mgf1`), wired up for the pairings RFC 8702 §5 recommends: SHAKE128 with RSA-2048/3072
+//! ([`rsa_2048`], [`rsa_3072`]) and SHAKE256 with RSA-4096 ([`rsa_4096`]), each validated against
+//! its own genuine Wycheproof `rsa_pss_*_shake*_test.json` vectors.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -67,6 +74,7 @@
 mod codec;
 mod emsa_pkcs1_v1_5;
 mod emsa_pss;
+mod emsa_pss_shake;
 pub mod keys;
 mod mgf1;
 pub mod modexp;
@@ -79,3 +87,4 @@ pub mod rsa_8192;
 mod rsa_core;
 pub mod rsassa_pkcs1_v1_5;
 pub mod rsassa_pss;
+pub mod rsassa_pss_shake;

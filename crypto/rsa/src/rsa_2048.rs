@@ -10,9 +10,11 @@
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsassa_pkcs1_v1_5;
 use crate::rsassa_pss;
+use crate::rsassa_pss_shake;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_sha3::SHAKE128;
 
 /// An RSA-2048 private key (`p`, `q` each 1024 bits).
 pub type Rsa2048PrivateKey = RsaPrivateKey<32, 16>;
@@ -171,4 +173,40 @@ pub fn pss_verify_sha512(
     signature: &[u8; 256],
 ) -> Result<(), SignatureError> {
     rsassa_pss::verify::<SHA512, 64, 68, 64, 136, 191, 32, 64, 65, 256>(pk, message, signature)
+}
+
+/// RSASSA-PSS-SHAKE128 (`id-RSASSA-PSS-SHAKE128`, RFC 8702 §3.2.1) signing: SHAKE128 as both the
+/// message hash and, natively rather than through MGF1, the mask generation function, with a
+/// 32-byte salt drawn fresh from `rng` for each signature. RFC 8702 §5 recommends this pairing for
+/// a 2048- or 3072-bit RSA modulus. See [`rsassa_pss_shake::sign`] for what each error means.
+pub fn pss_shake128_sign(
+    sk: &Rsa2048PrivateKey,
+    message: &[u8],
+    rng: &mut dyn RNG,
+) -> Result<[u8; 256], SignatureError> {
+    rsassa_pss_shake::sign::<SHAKE128, 32, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256>(
+        sk, message, rng,
+    )
+}
+
+/// As [`pss_shake128_sign`], but with the salt supplied directly instead of drawn from an RNG --
+/// deterministic, for testing against a known salt. See [`rsassa_pss_shake::sign_with_salt`].
+pub fn pss_shake128_sign_with_salt(
+    sk: &Rsa2048PrivateKey,
+    message: &[u8],
+    salt: &[u8; 32],
+) -> Result<[u8; 256], SignatureError> {
+    rsassa_pss_shake::sign_with_salt::<SHAKE128, 32, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256>(
+        sk, message, salt,
+    )
+}
+
+/// RSASSA-PSS-SHAKE128 (RFC 8702 §3.2.1) verification. See [`rsassa_pss_shake::verify`] for what
+/// each error means.
+pub fn pss_shake128_verify(
+    pk: &Rsa2048PublicKey,
+    message: &[u8],
+    signature: &[u8; 256],
+) -> Result<(), SignatureError> {
+    rsassa_pss_shake::verify::<SHAKE128, 32, 32, 72, 223, 32, 64, 65, 256>(pk, message, signature)
 }
