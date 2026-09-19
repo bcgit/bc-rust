@@ -1,7 +1,9 @@
 //! RSA-3072 against Wycheproof: `rsa_pkcs1_3072_sig_gen_test.json` (sign), `rsa_signature_3072_
 //! sha{256,384,512}_test.json` (verify, all three hashes), and `rsa_pss_3072_sha256_mgf1_32_test.json`
 //! (PSS verify; no matching-hash-and-MGF PSS vector file exists for SHA-384/512 at this size, so
-//! those are self-consistency only, following `rsa_2048_pss_sha384_sha512_tests.rs`'s precedent).
+//! those are self-consistency only, following `rsa_2048_pss_sha384_sha512_tests.rs`'s precedent --
+//! including its fixed-salt-round-trip-plus-rejection and RNG-freshness test shape, so every
+//! `pss_sign_sha{256,384,512}[_with_salt]` function is actually exercised at least once).
 //!
 //! `p`/`q`/`dP`/`dQ`/`qInv` were recovered from `rsa_pkcs1_3072_sig_gen_test.json`'s SHA-256
 //! group's `(n, e, d)` via the same factoring-from-d method as RSA-2048's key (see
@@ -13,8 +15,9 @@ use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_3072::{
     Rsa3072PrivateKey, Rsa3072PublicKey, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384,
     pkcs1_v1_5_sign_sha512, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
-    pkcs1_v1_5_verify_sha512, pss_sign_sha256, pss_sign_sha384_with_salt, pss_sign_sha512,
-    pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
+    pkcs1_v1_5_verify_sha512, pss_sign_sha256, pss_sign_sha256_with_salt, pss_sign_sha384,
+    pss_sign_sha384_with_salt, pss_sign_sha512, pss_sign_sha512_with_salt, pss_verify_sha256,
+    pss_verify_sha384, pss_verify_sha512,
 };
 use serde_json::Value;
 use std::fs;
@@ -132,27 +135,86 @@ fn pkcs1_v1_5_sha384_and_sha512_round_trip() {
     pkcs1_v1_5_verify_sha512(&pk, b"hello", &sig512).unwrap();
 }
 
+/// Mutation testing found that `pss_sign_sha256_with_salt`, `pss_sign_sha384` (the RNG variant),
+/// `pss_sign_sha512_with_salt`, and `pss_verify_sha384`/`pss_verify_sha512`'s rejection paths were
+/// never exercised at this modulus size (only the RNG or `_with_salt` half of each hash was
+/// called, and no test asserted a wrong message is rejected for SHA-384/512): a
+/// whole-function-body mutant replacing any of them with a constant still passed the whole suite.
+/// Split into six tests, one per (hash, salt source) pairing, matching
+/// `rsa_2048_pss_sha384_sha512_tests.rs`'s own shape so every function is called and every
+/// rejection path is checked.
 #[test]
-fn pss_sha256_sha384_sha512_round_trip() {
+fn pss_sha256_fixed_salt_round_trips() {
+    let sk = genuine_key();
+    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let salt = [0x22u8; 32];
+    let sig = pss_sign_sha256_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
+    pss_verify_sha256(&pk, b"hello", &sig).expect("must verify");
+    assert!(pss_verify_sha256(&pk, b"goodbye", &sig).is_err());
+}
+
+#[test]
+fn pss_sha256_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
     let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
+    let sig_a = pss_sign_sha256(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b = pss_sign_sha256(&sk, b"hello", &mut rng).expect("signing must succeed");
+    assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
+    pss_verify_sha256(&pk, b"hello", &sig_a).expect("sig_a must verify");
+    pss_verify_sha256(&pk, b"hello", &sig_b).expect("sig_b must verify");
+}
 
-    let sig256 = pss_sign_sha256(&sk, b"hello", &mut rng).unwrap();
-    pss_verify_sha256(&pk, b"hello", &sig256).unwrap();
+#[test]
+fn pss_sha384_fixed_salt_round_trips() {
+    let sk = genuine_key();
+    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let salt = [0x11u8; 48];
+    let sig = pss_sign_sha384_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
+    pss_verify_sha384(&pk, b"hello", &sig).expect("must verify");
+    assert!(pss_verify_sha384(&pk, b"goodbye", &sig).is_err());
+}
 
-    let salt384 = [0x11u8; 48];
-    let sig384 = pss_sign_sha384_with_salt(&sk, b"hello", &salt384).unwrap();
-    pss_verify_sha384(&pk, b"hello", &sig384).unwrap();
+#[test]
+fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
+    let sk = genuine_key();
+    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let mut rng = DefaultRNG::default();
+    let sig_a = pss_sign_sha384(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b = pss_sign_sha384(&sk, b"hello", &mut rng).expect("signing must succeed");
+    assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
+    pss_verify_sha384(&pk, b"hello", &sig_a).expect("sig_a must verify");
+    pss_verify_sha384(&pk, b"hello", &sig_b).expect("sig_b must verify");
+}
 
-    let sig512 = pss_sign_sha512(&sk, b"hello", &mut rng).unwrap();
-    pss_verify_sha512(&pk, b"hello", &sig512).unwrap();
+#[test]
+fn pss_sha512_fixed_salt_round_trips() {
+    let sk = genuine_key();
+    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let salt = [0x33u8; 64];
+    let sig = pss_sign_sha512_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
+    pss_verify_sha512(&pk, b"hello", &sig).expect("must verify");
+    assert!(pss_verify_sha512(&pk, b"goodbye", &sig).is_err());
+}
+
+#[test]
+fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
+    let sk = genuine_key();
+    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let mut rng = DefaultRNG::default();
+    let sig_a = pss_sign_sha512(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b = pss_sign_sha512(&sk, b"hello", &mut rng).expect("signing must succeed");
+    assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
+    pss_verify_sha512(&pk, b"hello", &sig_a).expect("sig_a must verify");
+    pss_verify_sha512(&pk, b"hello", &sig_b).expect("sig_b must verify");
 }
 
 fn run_pkcs1_v1_5_verify_vectors(
     filename: &str,
     verify: impl Fn(&Rsa3072PublicKey, &[u8], &[u8; 384]) -> bool,
     expected_sha: &str,
+    expected_valid: usize,
+    expected_invalid: usize,
 ) {
     let doc: Value = serde_json::from_str(&get_test_data(filename)).expect("valid JSON");
     let mut num_valid = 0usize;
@@ -198,8 +260,8 @@ fn run_pkcs1_v1_5_verify_vectors(
         }
     }
     assert_eq!(num_missing_null, 1);
-    assert_eq!(num_valid, 8, "for {filename}");
-    assert_eq!(num_invalid, 250, "for {filename}");
+    assert_eq!(num_valid, expected_valid, "for {filename}");
+    assert_eq!(num_invalid, expected_invalid, "for {filename}");
 }
 
 #[test]
@@ -208,6 +270,38 @@ fn rsa_signature_3072_sha256_wycheproof_vectors() {
         "rsa_signature_3072_sha256_test.json",
         |pk, msg, sig| pkcs1_v1_5_verify_sha256(pk, msg, sig).is_ok(),
         "SHA-256",
+        8,
+        250,
+    );
+}
+
+/// Mutation testing found `pkcs1_v1_5_verify_sha384` had no rejection-path coverage at this
+/// modulus size (only SHA-256's real vector file was wired up, despite this file's own module
+/// docs already claiming all three hashes): a whole-function-body mutant that always returned
+/// `Ok(())` still passed the whole suite.
+#[test]
+fn rsa_signature_3072_sha384_wycheproof_vectors() {
+    run_pkcs1_v1_5_verify_vectors(
+        "rsa_signature_3072_sha384_test.json",
+        |pk, msg, sig| pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok(),
+        "SHA-384",
+        7,
+        251,
+    );
+}
+
+/// As [`rsa_signature_3072_sha384_wycheproof_vectors`], for `pkcs1_v1_5_verify_sha512`. This
+/// file's `rsa_signature_3072_sha512_test.json` has a second, one-test group (a `SmallSignature`/
+/// `SmallPublicKey` edge case under its own key), which `run_pkcs1_v1_5_verify_vectors` already
+/// handles by deriving `pk` fresh per group -- hence one more `valid` than SHA-384's file.
+#[test]
+fn rsa_signature_3072_sha512_wycheproof_vectors() {
+    run_pkcs1_v1_5_verify_vectors(
+        "rsa_signature_3072_sha512_test.json",
+        |pk, msg, sig| pkcs1_v1_5_verify_sha512(pk, msg, sig).is_ok(),
+        "SHA-512",
+        8,
+        251,
     );
 }
 

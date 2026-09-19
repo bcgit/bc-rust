@@ -116,6 +116,11 @@ fn decode_digest_info<H: Hash + HashAlgParams + AlgorithmOID + Default, const H_
     let Some(inner_len) = short_form_len(t, pos) else { return false };
     pos += 1;
     let inner_end = pos + inner_len;
+    // Mutating this `>` to `>=` is an accepted equivalent, not a gap: the boundary it would
+    // additionally reject (`inner_end == t.len()`) leaves no room after the AlgorithmIdentifier
+    // for the OCTET STRING tag a genuine DigestInfo always has, so `t.get(pos) != Some(&0x04)`
+    // below (reached once `pos` advances to `inner_end`) already rejects it -- one check later,
+    // same outcome.
     if inner_end > t.len() {
         return false;
     }
@@ -403,5 +408,23 @@ mod tests {
         let em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 62>(b"hello");
         assert_eq!(em[2..2 + 8], [0xff; 8], "this construction must exercise ps_len == 8 exactly");
         assert!(emsa_pkcs1_v1_5_verify::<SHA256, 32, 62>(b"hello", &em));
+    }
+
+    /// RFC 8017 §9.2 step 2: `EM`'s block type byte (`em[1]`) must be exactly `0x01`. `em[0]`
+    /// stays correct (`0x00`) so this exercises only the block-type half of the check.
+    #[test]
+    fn verify_rejects_wrong_block_type() {
+        let mut em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        em[1] = 0x02;
+        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+    }
+
+    /// RFC 8017 §9.2 step 2: `EM`'s leading byte (`em[0]`) must be exactly `0x00`. `em[1]` stays
+    /// correct (`0x01`) so this exercises only the leading-byte half of the check.
+    #[test]
+    fn verify_rejects_wrong_leading_byte() {
+        let mut em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        em[0] = 0x01;
+        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
     }
 }
