@@ -15,6 +15,8 @@ mod hmac_tests {
     use bouncycastle_sha2::*;
     use bouncycastle_sha3::hmac::*;
     use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+    use bouncycastle_sm3::SM3;
+    use bouncycastle_sm3::hmac::*;
 
     #[test]
     fn simple_tests() {
@@ -77,6 +79,12 @@ mod hmac_tests {
         _ = HMAC::<SHA512>::new(&key).unwrap();
         _ = HMAC_SHA512::new(&key).unwrap();
 
+        _ = HMAC::<SHA512_224>::new(&key).unwrap();
+        _ = HMAC_SHA512_224::new(&key).unwrap();
+
+        _ = HMAC::<SHA512_256>::new(&key).unwrap();
+        _ = HMAC_SHA512_256::new(&key).unwrap();
+
         _ = HMAC::<SHA3_224>::new(&key).unwrap();
         _ = HMAC_SHA3_224::new(&key).unwrap();
 
@@ -88,6 +96,9 @@ mod hmac_tests {
 
         _ = HMAC::<SHA3_512>::new(&key).unwrap();
         _ = HMAC_SHA3_512::new(&key).unwrap();
+
+        _ = HMAC::<SM3>::new(&key).unwrap();
+        _ = HMAC_SM3::new(&key).unwrap();
     }
 
     #[test]
@@ -282,10 +293,111 @@ mod hmac_tests {
         assert_eq!(HMAC_SHA256::ALG_NAME, HMAC_SHA256_NAME);
         assert_eq!(HMAC_SHA384::ALG_NAME, HMAC_SHA384_NAME);
         assert_eq!(HMAC_SHA512::ALG_NAME, HMAC_SHA512_NAME);
+        assert_eq!(HMAC_SHA512_224::ALG_NAME, HMAC_SHA512_224_NAME);
+        assert_eq!(HMAC_SHA512_256::ALG_NAME, HMAC_SHA512_256_NAME);
+        assert_eq!(HMAC_SHA512_224_NAME, "HMAC-SHA512/224");
+        assert_eq!(HMAC_SHA512_256_NAME, "HMAC-SHA512/256");
+        assert_eq!(HMAC_SHA512_224::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
+        assert_eq!(HMAC_SHA512_256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(HMAC_SHA3_224::ALG_NAME, HMAC_SHA3_224_NAME);
         assert_eq!(HMAC_SHA3_256::ALG_NAME, HMAC_SHA3_256_NAME);
         assert_eq!(HMAC_SHA3_384::ALG_NAME, HMAC_SHA3_384_NAME);
         assert_eq!(HMAC_SHA3_512::ALG_NAME, HMAC_SHA3_512_NAME);
+        assert_eq!(HMAC_SM3::ALG_NAME, HMAC_SM3_NAME);
+    }
+
+    #[cfg(test)]
+    mod acvp_sha512t {
+        use super::*;
+
+        /// NIST ACVP known-answer tests for HMAC-SHA2-512/224, from the ACVP-Server repository
+        /// (gen-val/json-files/HMAC-SHA2-512-224-2.0/internalProjection.json, vsId 0).
+        /// The published vectors only carry MACs truncated to at most 160 bits (ACVP "macLen"), so the
+        /// leading bytes of the full 224-bit MAC are compared. The second case uses a key longer than the
+        /// 1024-bit block, which exercises the RFC 2104 pre-hashing of the key.
+        #[test]
+        fn hmac_sha512_224() {
+            // tgId 1, tcId 106: 45-byte key, MAC truncated to 160 bits
+            let key = KeyMaterial::<45>::from_bytes_as_type(
+                &hex::decode("a0b7276557f6880d151ea5e147fa2c29daf3104fda96ff8ee440f69e2c07a74b6eb38751fe54b08f9f4a84d1d7").unwrap(),
+                KeyType::MACKey,
+            )
+            .unwrap();
+            let msg = hex::decode("2579f5df03e0fccde2b515944d88dc81ca3b4a20517cdc54170559f0d2f889e2f543eacf8a84b34563d0139351ea9a77399d274c5c6c1b0f488063b7255f9df648667fe800151ef288a68d6c8c24d57abd7e4f70eed149752beae4a9763cebf03c").unwrap();
+            let expected = hex::decode("6e927067f724d4fedc96b310c5115979e8dde8a4").unwrap();
+            let full = HMAC_SHA512_224::new(&key).unwrap().mac(&msg);
+            assert_eq!(full.len(), 28);
+            assert_eq!(&full[..20], &expected[..]);
+            // the same vector through the streaming API in uneven chunks
+            let mut mac = HMAC_SHA512_224::new(&key).unwrap();
+            for chunk in msg.chunks(13) {
+                mac.do_update(chunk);
+            }
+            assert_eq!(mac.do_final(), full);
+
+            // tgId 1, tcId 110: 247-byte key (longer than the block, so pre-hashed), MAC truncated to 160 bits
+            let key = KeyMaterial::<247>::from_bytes_as_type(
+                &hex::decode("0791758d5d91b0108e885039e997dc32c41a0f986b1820d1f8c4c3da0ae6d88da58d91e1732942bb401eddc59ba1a39ee6cca8824705619873e9b6a04cf02e6b4debdb8c35c3fe6d9c569ecdb193baaf6510ca39522679811ac7a57297df11deeb8e58555108aeb106faa8c0867c5f185b4e7f5ece1afaa5412d95e47505684517254911ac15fde56e99534ccbbaaeb0ab1a77ff252903359f046b4eed1d4b5a47747b352c0b33d24da587d24f9aaaac7b8301c05fb0ba925a761cdfe74b8af66ca3e776662a33addad6b0dfbc5dabbce3529a7813b7fd2feae25f5fb80da8fd844430fb578eff15fb15775cdfa575b9d6d5ed90490f3a").unwrap(),
+                KeyType::MACKey,
+            )
+            .unwrap();
+            let msg = hex::decode("dedb0cc1c2a9b960d3").unwrap();
+            let expected = hex::decode("9cf6def15b5ead939e1fda675b52147a01a6ccb6").unwrap();
+            let full = HMAC_SHA512_224::new(&key).unwrap().mac(&msg);
+            assert_eq!(full.len(), 28);
+            assert_eq!(&full[..20], &expected[..]);
+            // the same vector through the streaming API in uneven chunks
+            let mut mac = HMAC_SHA512_224::new(&key).unwrap();
+            for chunk in msg.chunks(13) {
+                mac.do_update(chunk);
+            }
+            assert_eq!(mac.do_final(), full);
+        }
+
+        /// NIST ACVP known-answer tests for HMAC-SHA2-512/256, from the ACVP-Server repository
+        /// (gen-val/json-files/HMAC-SHA2-512-256-2.0/internalProjection.json, vsId 0).
+        /// The published vectors only carry MACs truncated to at most 160 bits (ACVP "macLen"), so the
+        /// leading bytes of the full 256-bit MAC are compared. The second case uses a key longer than the
+        /// 1024-bit block, which exercises the RFC 2104 pre-hashing of the key.
+        #[test]
+        fn hmac_sha512_256() {
+            // tgId 1, tcId 147: 55-byte key, MAC truncated to 160 bits
+            let key = KeyMaterial::<55>::from_bytes_as_type(
+                &hex::decode("4915691891f05dec5569ca75819daac897aaeeebb2fb04e7fc696d076feccef399f0eea660a7de4b7bb6ef7829a5f82feed70b35b40458").unwrap(),
+                KeyType::MACKey,
+            )
+            .unwrap();
+            let msg = hex::decode("").unwrap();
+            let expected = hex::decode("7857d4737760e127f1533185c6ad183ac4e10bd9").unwrap();
+            let full = HMAC_SHA512_256::new(&key).unwrap().mac(&msg);
+            assert_eq!(full.len(), 32);
+            assert_eq!(&full[..20], &expected[..]);
+            // the same vector through the streaming API in uneven chunks
+            let mut mac = HMAC_SHA512_256::new(&key).unwrap();
+            for chunk in msg.chunks(13) {
+                mac.do_update(chunk);
+            }
+            assert_eq!(mac.do_final(), full);
+
+            // tgId 1, tcId 106: 245-byte key (longer than the block, so pre-hashed), MAC truncated to 160 bits
+            let key = KeyMaterial::<245>::from_bytes_as_type(
+                &hex::decode("98d135e3cc6dffc2524a8a6c186cd0584eede3a734148b453199f71154bb3b96a315a037597c72f5081a17b2ef9990c065c2aaa65226c939098f603e6307dd69fc7906a82c361af89336cefe4d95d491d85b193125380fa9becd6e7475052cd7196447c32b681b7ef3cfde62d087067703d5438fdff6ce443c321048b50ec771999f85540cd8671cebf828f37d4cdbce1523823d77c5769fb8549b938406771cc35caeac561b9b8613ba5556958799d8c5954e2c2a8ace484bdc6fa75e7ad7404ebe7b1724a164634fadc8450dc27b28fcfa0e5c46c5da3e73d34dba7fea33db00631811b096d2d4f194f204c9421b9996ef929156").unwrap(),
+                KeyType::MACKey,
+            )
+            .unwrap();
+            let msg =
+                hex::decode("9268f10c36fd3366012e841260e60227a968f6c8546dee6abc83b3").unwrap();
+            let expected = hex::decode("3288232187dcf1ea421f5c12bdeb4fd9d0a0a25b").unwrap();
+            let full = HMAC_SHA512_256::new(&key).unwrap().mac(&msg);
+            assert_eq!(full.len(), 32);
+            assert_eq!(&full[..20], &expected[..]);
+            // the same vector through the streaming API in uneven chunks
+            let mut mac = HMAC_SHA512_256::new(&key).unwrap();
+            for chunk in msg.chunks(13) {
+                mac.do_update(chunk);
+            }
+            assert_eq!(mac.do_final(), full);
+        }
     }
 
     #[cfg(test)]
@@ -605,6 +717,65 @@ mod hmac_tests {
         }
     }
 
+    /// HMAC-SM3 known answers. There is no RFC 4231 equivalent for SM3, so these reuse the RFC 4231
+    /// keys/messages (cases 1, 2 and 6) with expected values generated by
+    /// `openssl dgst -sm3 -mac HMAC` and independently confirmed with bc-java's
+    /// `HMac(new SM3Digest())`, plus a zero-length key.
+    #[test]
+    fn hmac_sm3_known_answers() {
+        use bouncycastle_core::key_material::KeyMaterial;
+        let test_framework = TestFrameworkMAC::new();
+
+        // RFC4231 Test Case 1 key/message
+        test_framework.test_mac::<HMAC_SM3>(
+            &KeyMaterial::<20>::from_bytes_as_type(
+                &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
+                KeyType::MACKey,
+            )
+            .unwrap(),
+            b"Hi There",
+            &hex::decode("51b00d1fb49832bfb01c3ce27848e59f871d9ba938dc563b338ca964755cce70")
+                .unwrap(),
+        );
+        // RFC4231 Test Case 2 key/message
+        test_framework.test_mac::<HMAC_SM3>(
+            &KeyMaterial::<4>::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
+            b"what do ya want for nothing?",
+            &hex::decode("2e87f1d16862e6d964b50a5200bf2b10b764faa9680a296a2405f24bec39f882")
+                .unwrap(),
+        );
+        // RFC4231 Test Case 6 key/message: key larger than the 64-byte block, so it is hashed first
+        test_framework.test_mac::<HMAC_SM3>(
+            &KeyMaterial::<131>::from_bytes_as_type(&[0xaa; 131], KeyType::MACKey).unwrap(),
+            b"Test Using Larger Than Block-Size Key - Hash Key First",
+            &hex::decode("b4fd844e13342002f0b2e0690ea7741f1497d993a70494cea601e657bedf67a0")
+                .unwrap(),
+        );
+
+        // zero-length key (weak; needs new_allow_weak_key)
+        let mut zero_length_key = KeyMaterial256::default();
+        key_material::do_hazardous_operations(&mut zero_length_key, |k| {
+            k.set_key_type(KeyType::MACKey)
+        })
+        .unwrap();
+        let mut mac = HMAC_SM3::new_allow_weak_key(&zero_length_key).unwrap();
+        mac.do_update(b"abc");
+        assert_eq!(
+            mac.do_final(),
+            hex::decode("36525058ca466791502435c910517f1a7e86613d5f35ac1f18a94def0eaac81f")
+                .unwrap()
+        );
+
+        assert_eq!(
+            HMAC_SM3::new(
+                &KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap()
+            )
+            .unwrap()
+            .output_len(),
+            32
+        );
+    }
+
     #[test]
     fn suspendable_keyed_state() {
         use bouncycastle_core::errors::SuspendableError;
@@ -660,7 +831,10 @@ mod hmac_tests {
 
         round_trip(HMAC_SHA256::new(&key).unwrap(), &key, msg);
         round_trip(HMAC_SHA512::new(&key).unwrap(), &key, msg);
+        round_trip(HMAC_SHA512_224::new(&key).unwrap(), &key, msg);
+        round_trip(HMAC_SHA512_256::new(&key).unwrap(), &key, msg);
         round_trip(HMAC_SHA3_256::new(&key).unwrap(), &key, msg);
+        round_trip(HMAC_SM3::new(&key).unwrap(), &key, msg);
 
         // test suspend / resume with a key larger than block size
         let long_key =
@@ -716,10 +890,13 @@ mod hmac_tests {
     keygen_test!(keygen_hmac_sha256, HMAC_SHA256, 32);
     keygen_test!(keygen_hmac_sha384, HMAC_SHA384, 48);
     keygen_test!(keygen_hmac_sha512, HMAC_SHA512, 64);
+    keygen_test!(keygen_hmac_sha512_224, HMAC_SHA512_224, 28);
+    keygen_test!(keygen_hmac_sha512_256, HMAC_SHA512_256, 32);
     keygen_test!(keygen_hmac_sha3_224, HMAC_SHA3_224, 28);
     keygen_test!(keygen_hmac_sha3_256, HMAC_SHA3_256, 32);
     keygen_test!(keygen_hmac_sha3_384, HMAC_SHA3_384, 48);
     keygen_test!(keygen_hmac_sha3_512, HMAC_SHA3_512, 64);
+    keygen_test!(keygen_hmac_sm3, HMAC_SM3, 32);
 
     /// `keygen_from_rng` must refuse an RNG whose security strength is below the strength the HMAC
     /// claims, otherwise the returned key would be tagged stronger than the entropy behind it.

@@ -244,7 +244,7 @@
 //!   MAC; see the suspend/resume section above.
 //! * A key longer than the hash's block length is pre-hashed down to the output length (RFC 2104
 //!   Section 2), so very long keys add no strength beyond that point.
-use crate::{SHA224, SHA256, SHA384, SHA512};
+use crate::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use crate::{SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{HashAlgParams, SecurityStrength};
@@ -267,6 +267,10 @@ pub const HMAC_SHA256_NAME: &str = "HMAC-SHA256";
 pub const HMAC_SHA384_NAME: &str = "HMAC-SHA384";
 ///
 pub const HMAC_SHA512_NAME: &str = "HMAC-SHA512";
+///
+pub const HMAC_SHA512_224_NAME: &str = "HMAC-SHA512/224";
+///
+pub const HMAC_SHA512_256_NAME: &str = "HMAC-SHA512/256";
 
 /*** Type aliases ***/
 /// Public type for HMAC using SHA224.
@@ -321,6 +325,32 @@ impl HMACParams for SHA512 {
         &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0b];
 }
 
+/// Public type for HMAC using SHA512/224.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA512_224 = HMAC<SHA512_224, { <SHA512_224 as HashAlgParams>::BLOCK_LEN }>;
+impl HMACParams for SHA512_224 {
+    type MACKey = KeyMaterial<{ <SHA512_224 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA512_224_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
+    /// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-224 { digestAlgorithm 12 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 12];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0c];
+}
+
+/// Public type for HMAC using SHA512/256.
+#[allow(non_camel_case_types)]
+pub type HMAC_SHA512_256 = HMAC<SHA512_256, { <SHA512_256 as HashAlgParams>::BLOCK_LEN }>;
+impl HMACParams for SHA512_256 {
+    type MACKey = KeyMaterial<{ <SHA512_256 as HashAlgParams>::OUTPUT_LEN }>;
+    const HMAC_ALG_NAME: &'static str = HMAC_SHA512_256_NAME;
+    const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// Defined in RFC 8018 Appendix B.1.2: id-hmacWithSHA512-256 { digestAlgorithm 13 }
+    const HMAC_OID: &'static [u32] = &[1, 2, 840, 113549, 2, 13];
+    const HMAC_OID_DER: &'static [u8] =
+        &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0d];
+}
+
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and
 // must be re-supplied on resume -- so each of these is the underlying hash's own state length.
@@ -332,3 +362,7 @@ pub const SUSPENDED_HMAC_SHA256_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
 pub const SUSPENDED_HMAC_SHA384_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
 /// Length in bytes of the serialized state of [`HMAC_SHA512`].
 pub const SUSPENDED_HMAC_SHA512_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
+/// Length in bytes of the serialized state of [`HMAC_SHA512_224`].
+pub const SUSPENDED_HMAC_SHA512_224_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
+/// Length in bytes of the serialized state of [`HMAC_SHA512_256`].
+pub const SUSPENDED_HMAC_SHA512_256_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;

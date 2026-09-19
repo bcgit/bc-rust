@@ -99,7 +99,7 @@ impl TestFrameworkHash {
             /*** fn do_final_partial_bits_out(self, partial_byte: u8, num_bits: usize, output: &mut [u8]) -> Result<usize, HashError>; ***/
             // A known-answer test for these needs a different expected output from the rest of this
 
-            // Helper: the digest of `input` finished with the low `num_bits` bits of `partial_byte`.
+            // Helper: the digest of `input` finished with the top `num_bits` bits of `partial_byte`.
             let partial_digest = |partial_byte: u8, num_bits: usize| -> Vec<u8> {
                 let mut message_digest = H::default();
                 message_digest.do_update(input);
@@ -119,17 +119,18 @@ impl TestFrameworkHash {
                 );
             }
 
-            // "The num_bits message bits are taken from the least significant bits of
-            //     partial_byte": the unused high bits are not part of the message, and so must not
-            //     change the output.
+            // "the num_bits message bits are the most significant bits of partial_byte ... and the
+            //     low 8 - num_bits bits (the BIT STRING's "unused bits") are ignored": so the unused
+            //     low bits are not part of the message, and must not change the output.
             for num_bits in 0..=7 {
-                // no overflow: 1u8 << 7 == 0x80
-                let mask = (1u8 << num_bits) - 1;
+                // the used bits are the top num_bits; built in u16 so that num_bits == 0 cannot overflow
+                let mask = (0xFF00u16 >> num_bits) as u8;
                 for partial_byte in [0x00u8, 0x5A, 0xA5, 0xFF] {
                     assert_eq!(
                         partial_digest(partial_byte, num_bits),
                         partial_digest(partial_byte & mask, num_bits),
-                        "bits above num_bits = {num_bits} must be ignored / partial_byte: {partial_byte:#04X}"
+                        "the low 8 - num_bits = {} bits must be ignored / partial_byte: {partial_byte:#04X}",
+                        8 - num_bits
                     );
                 }
             }
@@ -184,11 +185,14 @@ impl TestFrameworkHash {
 
             // Each (num_bits, partial_byte) pair is a distinct message, and so must produce a
             //     distinct digest. This is what catches an implementation that silently drops the
-            //     partial bits, or absorbs the wrong number of them.
+            //     partial bits, or absorbs the wrong number of them. The num_bits message bits are
+            //     enumerated in the top bits of the byte (the shift is done in u16 so that
+            //     num_bits == 0, an 8-bit shift, cannot overflow).
             let mut partial_outputs: Vec<Vec<u8>> = Vec::new();
             for num_bits in 0..=7 {
-                for partial_byte in 0..(1u16 << num_bits) {
-                    partial_outputs.push(partial_digest(partial_byte as u8, num_bits));
+                for message_bits in 0..(1u16 << num_bits) {
+                    let partial_byte = (message_bits << (8 - num_bits)) as u8;
+                    partial_outputs.push(partial_digest(partial_byte, num_bits));
                 }
             }
             let num_partial_outputs = partial_outputs.len();

@@ -126,7 +126,7 @@ impl TestFrameworkXOF {
                 );
             }
 
-            // Helper: the output stream of `input` finished with the low `num_bits` bits of
+            // Helper: the output stream of `input` finished with the top `num_bits` bits of
             // `partial_byte`.
             let partial_absorb_output = |partial_byte: u8, num_bits: usize| -> Vec<u8> {
                 let mut xof = X::default();
@@ -147,17 +147,18 @@ impl TestFrameworkXOF {
                 );
             }
 
-            // "The num_bits message bits are taken from the least significant bits of
-            //     partial_byte".
-            // So the unused high bits are not part of the message and must not change the output.
+            // "the num_bits message bits are the most significant bits of partial_byte ... and the
+            //     low 8 - num_bits bits (the BIT STRING's "unused bits") are ignored".
+            // So the unused low bits are not part of the message and must not change the output.
             for num_bits in 0..=7 {
-                // no overflow: 1u8 << 7 == 0x80
-                let mask = (1u8 << num_bits) - 1;
+                // the used bits are the top num_bits; built in u16 so that num_bits == 0 cannot overflow
+                let mask = (0xFF00u16 >> num_bits) as u8;
                 for partial_byte in [0x00u8, 0x5A, 0xA5, 0xFF] {
                     assert_eq!(
                         partial_absorb_output(partial_byte, num_bits),
                         partial_absorb_output(partial_byte & mask, num_bits),
-                        "bits above num_bits = {num_bits} must be ignored / partial_byte: {partial_byte:#04X}"
+                        "the low 8 - num_bits = {} bits must be ignored / partial_byte: {partial_byte:#04X}",
+                        8 - num_bits
                     );
                 }
             }
@@ -179,14 +180,16 @@ impl TestFrameworkXOF {
 
             /*** fn squeeze_partial_byte_final(self, num_bits: usize) -> Result<u8, HashError> ***/
             /*** fn squeeze_partial_byte_final_out(self, num_bits: usize, output: &mut u8) -> Result<(), HashError> ***/
-            // "The bits are returned in the least significant num_bits bits of the returned u8, with
-            //     the remaining high bits zero."
-            // They are the bits of the next byte of the output stream, which `expected_output` gives
-            // us: after squeezing `split` bytes, the next byte is expected_output[split].
+            // "in the most significant num_bits bits of the returned u8, first output bit first, with
+            //     the low 8 - num_bits "unused" bits zero."
+            // They are the first bits of the next byte of the output stream, which `expected_output`
+            // gives us: after squeezing `split` bytes, the next byte is expected_output[split]. In
+            // that byte the first output bit is the LSB (FIPS 202 B.1 / the byte-oriented stream), so
+            // the expected partial byte is the bit-reversal of it, masked to the top num_bits bits.
             let split = expected_output.len() / 2;
             for num_bits in 0..=7 {
-                // no overflow: 1u8 << 7 == 0x80
-                let mask = (1u8 << num_bits) - 1;
+                // the used bits are the top num_bits; built in u16 so that num_bits == 0 cannot overflow
+                let mask = (0xFF00u16 >> num_bits) as u8;
 
                 let mut xof = X::default();
                 xof.absorb(input).expect("absorb() before any squeeze must succeed");
@@ -197,13 +200,13 @@ impl TestFrameworkXOF {
 
                 assert_eq!(
                     partial_byte,
-                    expected_output[split] & mask,
-                    "the squeezed bits must be the low bits of the next output byte / num_bits: {num_bits}"
+                    expected_output[split].reverse_bits() & mask,
+                    "the squeezed bits must be the first bits of the next output byte, MSB-first / num_bits: {num_bits}"
                 );
                 assert_eq!(
                     partial_byte & !mask,
                     0x00,
-                    "the unused high bits of the result must be zero / num_bits: {num_bits}"
+                    "the unused low bits of the result must be zero / num_bits: {num_bits}"
                 );
 
                 // "The same as XOF::squeeze_partial_byte_final, but writes into the provided output

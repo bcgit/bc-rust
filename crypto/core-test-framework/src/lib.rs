@@ -14,6 +14,7 @@
 // properly document everything.
 #![forbid(missing_docs)]
 
+pub mod electronic_code_book;
 pub mod hash;
 pub mod kdf;
 pub mod kem;
