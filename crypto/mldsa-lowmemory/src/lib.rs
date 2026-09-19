@@ -110,7 +110,7 @@
 //! Actual values may vary based on build configuration and target architecture.
 //! The peak also depends on how the compiler lays out the measured function's stack frame relative
 //! to its caller and whether it elides copies at the call boundary, which is outside
-//! the library's control. The memory benchmarking framework included in the library attempts to
+//! the library's control.
 //! This effect is small for the low-memory crates (well under 1 kB) and larger for the full implementations
 //! in parentheses (a few kB), so treat the latter as approximate.
 //!
