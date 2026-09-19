@@ -14,12 +14,15 @@
 //!
 //! # Status
 //!
-//! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus) is
-//! implemented. The RSA-specific layers on top of it -- keys, CRT, PKCS#1 v1.5 and PSS -- are
-//! not yet.
+//! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus), [`keys`]
+//! (the CRT key types), and the CRT-based RSASP1/RSAVP1 primitives (crate-private, in
+//! `rsa_core`) are implemented. PKCS#1 v1.5 and PSS, the schemes that make those primitives safe
+//! to expose, are not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod keys;
 pub mod modexp;
+mod rsa_core;
