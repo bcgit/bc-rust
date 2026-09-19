@@ -53,8 +53,8 @@
 //! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus), [`keys`]
 //! (the CRT key types), the CRT-based RSASP1/RSAVP1 primitives (crate-private, in `rsa_core`),
 //! RSASSA-PKCS1-v1_5 ([`rsassa_pkcs1_v1_5`]), and RSASSA-PSS ([`rsassa_pss`]) are implemented,
-//! both wired up for RSA-2048/SHA-256 in [`rsa_2048`] and validated against genuine Wycheproof
-//! vectors. The remaining modulus sizes and the remaining hash functions are not yet.
+//! wired up for RSA-2048 with SHA-256, SHA-384, and SHA-512 in [`rsa_2048`] and validated against
+//! genuine Wycheproof vectors. The remaining modulus sizes are not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]
