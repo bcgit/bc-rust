@@ -14,8 +14,12 @@
 //!
 //! # Status
 //!
-//! Scaffold only -- no algorithms are implemented yet.
+//! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus) is
+//! implemented. The RSA-specific layers on top of it -- keys, CRT, PKCS#1 v1.5 and PSS -- are
+//! not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
+
+pub mod modexp;
