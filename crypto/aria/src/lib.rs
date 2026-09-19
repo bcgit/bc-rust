@@ -119,9 +119,10 @@
 //!
 //! ## Why not a lookup table
 //!
-//! Sec 2.4.2 presents the S-boxes as tables, and BC Java's `ARIAEngine` stores the four 256-byte
-//! tables. A table indexed by a byte of the state is indexed by secret data, so on any CPU with a
-//! data cache the memory access pattern, and hence the timing, depends on the key and the data.
+//! Sec 2.4.2 presents the S-boxes as tables, and a straightforward implementation stores the four
+//! 256-byte tables. A table indexed by a byte of the state is indexed by secret data, so on any
+//! CPU with a data cache the memory access pattern, and hence the timing, depends on the key and
+//! the data.
 //! That is the classic cache-timing attack on table-driven block ciphers, and it is not fixable
 //! while the lookup remains -- in the cipher or in the key schedule, whose three `FO`/`FE` calls go
 //! through the S-boxes too.
@@ -146,17 +147,19 @@
 //! word XORs, three fixed byte permutations, six word XORs again), a decomposition verified against
 //! the sixteen equations of Sec 2.4.3 rather than recalled; see the `round` module.
 //!
-//! Beyond the S-boxes, the port differs from the Java engine in three ways: one stored schedule
-//! serves both directions (Java lays the keys out for the direction requested at `init`; here the
-//! decryption keys of Sec 2.2 are derived from the stored encryption keys as each round needs
-//! them); the block methods are infallible (the run-time buffer and initialisation checks are
-//! compile-time facts here); and the constructors require a key tagged as a symmetric cipher key
-//! of at least the strength its length implies, as every cipher in this workspace does.
+//! Beyond the S-boxes, this crate stores one schedule that serves both directions (a
+//! direction-aware engine typically lays the keys out differently per direction at
+//! initialisation; here the decryption keys of Sec 2.2 are derived from the stored encryption
+//! keys as each round needs them); the block methods are infallible (the run-time buffer and
+//! initialisation checks are compile-time facts here); and the constructors require a key tagged
+//! as a symmetric cipher key of at least the strength its length implies, as every cipher in this
+//! workspace does.
 //!
 //! ## Why "lowmemory"
 //!
-//! Two things. First, no tables: BC Java's `ARIAEngine` carries four 256-byte S-boxes indexed by
-//! secret data (and OpenSSL's `aria.c` 4 KiB of combined tables); here the S-boxes are code.
+//! Two things. First, no tables: a straightforward implementation carries four 256-byte S-boxes
+//! indexed by secret data (and OpenSSL's `aria.c` 4 KiB of combined tables); here the S-boxes are
+//! code.
 //! Second, the working set. Eight `u32` planes would take eight blocks per pass and double the
 //! throughput, but every per-call buffer -- the block state, the planes -- would double with them.
 //! Four lanes over `u16` planes keep the whole per-call working state near 100 bytes.
@@ -177,8 +180,8 @@
 //! key (16 bytes) and the circuits' temporaries, most of which the compiler keeps in registers.
 //! Measure with `cargo run --release -p mem_usage_benches --bin bench_aria_mem_usage`.
 //!
-//! For comparison, BC Java's `ARIAEngine` carries 1 KiB of S-box tables on top of a round-key
-//! array of the same size as here (plus 256 bytes of diffusion masks).
+//! For comparison, a straightforward implementation carries 1 KiB of S-box tables on top of a
+//! round-key array of the same size as here (plus 256 bytes of diffusion masks).
 //!
 //! # Security Considerations
 //!
@@ -216,16 +219,14 @@
 //!
 //! # Provenance
 //!
-//! * **Source implementation: Bouncy Castle Java `org.bouncycastle.crypto.engines.ARIAEngine`**,
-//!   whose constants, byte-array `A`, `SL1`/`SL2`, `FO`/`FE` and key schedule this crate
-//!   reproduces, and whose S-box tables are the reference the circuits are verified against. A
-//!   direct transcription of the Java engine, including its fused multiply-broadcast round, lives
-//!   in the tests (`tests/common/mod.rs`) and the engine is checked against it on thousands of
-//!   inputs.
+//! * **Source engine.** The constants, byte-array `A`, `SL1`/`SL2`, `FO`/`FE` and key schedule
+//!   this crate reproduces, and the S-box tables the circuits are verified against, come from
+//!   Bouncy Castle Java's `ARIAEngine`. A direct transcription of it, including its fused
+//!   multiply-broadcast round, lives in the tests (`tests/common/mod.rs`) and this engine is
+//!   checked against it on thousands of inputs.
 //! * **Normative reference: RFC 5794**, "A Description of the ARIA Encryption Algorithm" (Lee,
 //!   Lee, Kim, Kwon, Kim; March 2010). Every function cites its section. The S-box tables, the
-//!   diffusion equations and the constants were extracted mechanically from the text of the RFC
-//!   and found identical to BC Java's.
+//!   diffusion equations and the constants were extracted mechanically from the text of the RFC.
 //! * **The non-linear section of the S-box circuits** is from the 113-gate straight-line program
 //!   `SLP_AES_113.txt` in Peralta's circuit collection, described in J. Boyar and R. Peralta, "A
 //!   new combinational logic minimization technique with applications to cryptology",
@@ -235,8 +236,9 @@
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every
 //!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB and CBC vectors of
 //!   OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test vectors (10 blocks under
-//!   each key length); the vectors and invariants of BC Java's `ARIATest`; and the transcription
-//!   of `ARIAEngine` on thousands of keys and blocks in every lane, both directions.
+//!   each key length); the vectors and invariants of `tests/bc_java_tests.rs`; and the
+//!   transcription of the source engine on thousands of keys and blocks in every lane, both
+//!   directions.
 
 #![no_std]
 #![forbid(unsafe_code)]
