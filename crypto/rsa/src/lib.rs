@@ -8,9 +8,10 @@
 //! # Scope
 //!
 //! Signature schemes only -- no RSAES-OAEP or RSAES-PKCS1-v1_5 encryption. Modulus sizes 2048
-//! through 8192 bits support both signing and verification; 1024-bit moduli support verification
-//! only, enforced by the absence of a private-key/signer type for that size rather than a runtime
-//! check.
+//! through 8192 bits ([`rsa_2048`], [`rsa_3072`], [`rsa_4096`], [`rsa_8192`]) support both signing
+//! and verification; 1024- and 1536-bit moduli ([`rsa_1024`], [`rsa_1536`]) support verification
+//! only, enforced by the absence of a private-key/signer type for those sizes rather than a
+//! runtime check.
 //!
 //! # Usage Examples
 //!
@@ -53,8 +54,11 @@
 //! [`modexp`] (constant-time modular exponentiation over a runtime-supplied modulus), [`keys`]
 //! (the CRT key types), the CRT-based RSASP1/RSAVP1 primitives (crate-private, in `rsa_core`),
 //! RSASSA-PKCS1-v1_5 ([`rsassa_pkcs1_v1_5`]), and RSASSA-PSS ([`rsassa_pss`]) are implemented,
-//! wired up for RSA-2048 with SHA-256, SHA-384, and SHA-512 in [`rsa_2048`] and validated against
-//! genuine Wycheproof vectors. The remaining modulus sizes are not yet.
+//! with SHA-256, SHA-384, and SHA-512 wired up for every modulus size this crate offers -- 1024
+//! and 1536 (verification only, per `# Scope` above) and 2048/3072/4096/8192 (both directions) --
+//! and validated against genuine vectors: Wycheproof for every size except 8192, which it has no
+//! key material for at all (cross-checked against BC Java instead); see each `rsa_*.rs` module's
+//! own tests for the specifics at each size.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -66,7 +70,12 @@ mod emsa_pss;
 pub mod keys;
 mod mgf1;
 pub mod modexp;
+pub mod rsa_1024;
+pub mod rsa_1536;
 pub mod rsa_2048;
+pub mod rsa_3072;
+pub mod rsa_4096;
+pub mod rsa_8192;
 mod rsa_core;
 pub mod rsassa_pkcs1_v1_5;
 pub mod rsassa_pss;
