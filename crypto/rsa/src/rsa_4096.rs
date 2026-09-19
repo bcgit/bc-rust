@@ -4,9 +4,11 @@
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsassa_pkcs1_v1_5;
 use crate::rsassa_pss;
+use crate::rsassa_pss_shake;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use bouncycastle_sha3::SHAKE256;
 
 /// An RSA-4096 private key (`p`, `q` each 2048 bits).
 pub type Rsa4096PrivateKey = RsaPrivateKey<64, 32>;
@@ -165,4 +167,41 @@ pub fn pss_verify_sha512(
     signature: &[u8; 512],
 ) -> Result<(), SignatureError> {
     rsassa_pss::verify::<SHA512, 64, 68, 64, 136, 447, 64, 128, 129, 512>(pk, message, signature)
+}
+
+/// RSASSA-PSS-SHAKE256 (`id-RSASSA-PSS-SHAKE256`, RFC 8702 §3.2.1) signing: SHAKE256 as both the
+/// message hash and, natively rather than through MGF1, the mask generation function, with a
+/// 64-byte salt drawn fresh from `rng`. RFC 8702 §5 recommends this pairing for a 4096-bit or
+/// larger RSA modulus. See [`rsassa_pss_shake::sign`] for what each error means.
+pub fn pss_shake256_sign(
+    sk: &Rsa4096PrivateKey,
+    message: &[u8],
+    rng: &mut dyn RNG,
+) -> Result<[u8; 512], SignatureError> {
+    rsassa_pss_shake::sign::<SHAKE256, 64, 64, 136, 447, 64, 128, 129, 32, 64, 65, 512>(
+        sk, message, rng,
+    )
+}
+
+/// As [`pss_shake256_sign`], but with the salt supplied directly instead of drawn from an RNG.
+pub fn pss_shake256_sign_with_salt(
+    sk: &Rsa4096PrivateKey,
+    message: &[u8],
+    salt: &[u8; 64],
+) -> Result<[u8; 512], SignatureError> {
+    rsassa_pss_shake::sign_with_salt::<SHAKE256, 64, 64, 136, 447, 64, 128, 129, 32, 64, 65, 512>(
+        sk, message, salt,
+    )
+}
+
+/// RSASSA-PSS-SHAKE256 (RFC 8702 §3.2.1) verification. See [`rsassa_pss_shake::verify`] for what
+/// each error means.
+pub fn pss_shake256_verify(
+    pk: &Rsa4096PublicKey,
+    message: &[u8],
+    signature: &[u8; 512],
+) -> Result<(), SignatureError> {
+    rsassa_pss_shake::verify::<SHAKE256, 64, 64, 136, 447, 64, 128, 129, 512>(
+        pk, message, signature,
+    )
 }
