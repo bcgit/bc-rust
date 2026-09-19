@@ -119,8 +119,8 @@
 //!
 //! ## Why not a lookup table
 //!
-//! Sec 2.4.1 presents `SBOX1` as a table, and BC Java's engines store tables -- `CamelliaEngine`
-//! four 1 KiB tables with `P` folded in, `CamelliaLightEngine` one 256-byte table. A table indexed
+//! Sec 2.4.1 presents `SBOX1` as a table, and a table-driven implementation stores one -- some
+//! fold `P` into four 1 KiB tables, others use a single 256-byte table. A table indexed
 //! by a byte of the state is indexed by secret data, so on any CPU with a data cache the memory
 //! access pattern, and hence the timing, depends on the key and the data. That is the classic
 //! cache-timing attack on table-driven block ciphers, and it is not fixable while the lookup
@@ -150,20 +150,19 @@
 //! never mix. Everything else in
 //! the cipher -- `P`, `FL`, `FLINV`, the whitening -- is XOR, AND and OR with key words, and
 //! rotations, all already constant-time on words, so the rest of the engine is a direct,
-//! spec-literal port: 64-bit halves as in the RFC rather than the 32-bit quarters of BC Java,
-//! and `P` computed with the Java engine's five-rotation trick, which is checked against the
-//! RFC's byte formulas in a test.
+//! spec-literal implementation: 64-bit halves as the RFC defines them, and `P` computed with a
+//! five-rotation form that is checked against the RFC's byte formulas in a test.
 //!
-//! Beyond the S-box, the port differs from the Java engines in three ways: one stored schedule
-//! serves both directions (Java lays the subkeys out for the direction requested at `init`); the
-//! block methods are infallible (the run-time buffer and initialisation checks are compile-time
-//! facts here); and the constructors require a key tagged as a symmetric cipher key of at least
-//! the strength its length implies, as every cipher in this workspace does.
+//! Beyond the S-box, this crate stores one schedule that serves both directions (a
+//! direction-aware engine typically lays the subkeys out differently per direction at
+//! initialisation); the block methods are infallible (the run-time buffer and initialisation
+//! checks are compile-time facts here); and the constructors require a key tagged as a symmetric
+//! cipher key of at least the strength its length implies, as every cipher in this workspace does.
 //!
 //! ## Why "lowmemory"
 //!
-//! Two things. First, no tables: BC Java's `CamelliaEngine` carries 4 KiB of them and even the
-//! `CamelliaLightEngine` 256 bytes, all indexed by secret data; here the S-box is code. Second,
+//! Two things. First, no tables: a table-driven implementation carries anywhere from 256 bytes to
+//! 4 KiB of them, indexed by secret data; here the S-box is code. Second,
 //! the working set. Eight `u64` planes would take eight blocks per pass and double the throughput
 //! on a 64-bit machine, but every per-call buffer -- the block state, the planes, their copy during
 //! the byte rotations -- would double with them. Four lanes over `u32` planes keep the whole
@@ -188,8 +187,8 @@
 //! registers.
 //! Measure with `cargo run --release -p mem_usage_benches --bin bench_camellia_mem_usage`.
 //!
-//! For comparison, BC Java's `CamelliaEngine` carries 4 KiB of tables and `CamelliaLightEngine`
-//! 256 bytes, both on top of a 272-byte subkey array sized for the largest key.
+//! For comparison, a table-driven implementation carries anywhere from 256 bytes to 4 KiB of
+//! tables on top of a 272-byte subkey array sized for the largest key.
 //!
 //! # Security Considerations
 //!
@@ -226,16 +225,14 @@
 //!
 //! # Provenance
 //!
-//! * **Source implementation: Bouncy Castle Java `org.bouncycastle.crypto.engines.CamelliaEngine`
-//!   and `CamelliaLightEngine`**, whose `SIGMA` constants, `camelliaF2` linear layer,
-//!   `camelliaFLs` and subkey layout this crate reproduces, and whose `SBOX1` table is the
-//!   reference the circuit is verified against. A direct transcription of `CamelliaLightEngine`
-//!   lives in the tests (`tests/common/mod.rs`) and the engine is checked against it on thousands
-//!   of inputs.
+//! * **Source engine.** The `SIGMA` constants, `camelliaF2` linear layer, `camelliaFLs` and
+//!   subkey layout this crate reproduces, and the `SBOX1` table the circuit is verified against,
+//!   come from Bouncy Castle Java's `CamelliaEngine` and `CamelliaLightEngine`. A direct
+//!   transcription of `CamelliaLightEngine` lives in the tests (`tests/common/mod.rs`) and this
+//!   engine is checked against it on thousands of inputs.
 //! * **Normative reference: RFC 3713**, "A Description of the Camellia Encryption Algorithm"
 //!   (Matsui, Nakajima, Moriai; April 2004). Every function cites its section. The `SBOX1` table
-//!   and the `Sigma` constants were extracted mechanically from the text of the RFC and found
-//!   identical to BC Java's.
+//!   and the `Sigma` constants were extracted mechanically from the text of the RFC.
 //! * **The non-linear section of the S-box circuit** is from the 113-gate straight-line program
 //!   `SLP_AES_113.txt` in Peralta's circuit collection, described in J. Boyar and R. Peralta, "A
 //!   new combinational logic minimization technique with applications to cryptology",
@@ -244,7 +241,7 @@
 //!   licence), as in the AES and SM4 crates.
 //! * Verified against the three vectors of RFC 3713 Appendix A; all 3840 vectors of NTT's
 //!   CRYPTREC test-vector file `t_camellia.txt` (ten keys per key length, 128 single-bit
-//!   plaintexts each), both directions; the nine vectors of BC Java's `CamelliaTest` (RFC 3713
+//!   plaintexts each), both directions; the nine vectors of `tests/bc_java_tests.rs` (RFC 3713
 //!   and NESSIE); the CBC vectors of OpenSSL's `evpciph_camellia.txt` through the CBC aliases;
 //!   and the transcription of `CamelliaLightEngine` on thousands of keys and blocks in every lane.
 

@@ -6,9 +6,9 @@
 //! six FL/FLINV keys `ke1 .. ke4` / `ke1 .. ke6` -- 26 words (208 bytes) for a 128-bit key, 34
 //! words (272 bytes) for 192- and 256-bit keys. It is computed once by [`expand`] and stored in a
 //! [`Secret`]. Decryption uses the same words in the swapped order of Sec 2.3.3, so there is no
-//! second schedule: BC Java's `CamelliaEngine` writes the subkeys into decryption positions when
-//! initialised for decryption (`decroldq`); this port stores the encryption order and lets
-//! [`crate::Camellia::decrypt_4blocks`] index it the other way.
+//! second schedule: this crate stores the encryption order and lets
+//! [`crate::Camellia::decrypt_4blocks`] index it the other way, rather than writing the subkeys
+//! into decryption positions when initialised for decryption.
 //!
 //! # Layout
 //!
@@ -135,8 +135,7 @@ impl CamelliaParams for Camellia256Params {
 }
 
 /// `Sigma1 .. Sigma6` (Sec 2.2), "used as 'keys' in the F-function" when deriving `KA` and `KB`.
-/// Transcribed from the text of RFC 3713; word-for-word the `SIGMA` array of BC Java's engines
-/// (which holds them as 32-bit halves).
+/// Transcribed from the text of RFC 3713.
 pub(crate) const SIGMA: [u64; 6] = [
     0xA09E_667F_3BCC_908B, 0xB67A_E858_4CAA_73B2, 0xC6EF_372F_E94F_82BE, 0x54FF_53A5_F1D3_6F1C,
     0x10E5_27FA_DE68_2D1D, 0xB056_88C2_B3E6_C1FD,
