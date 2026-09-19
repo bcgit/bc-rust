@@ -120,6 +120,9 @@ pub trait VectorTrait:
     /// Montgomery-reduces every coefficient.
     fn reduce(&mut self);
 
+    /// Plainly reduces every coefficient to |𝑐| < 𝑞; see `Polynomial::reduce32`.
+    fn reduce32(&mut self);
+
     /// Applies Algorithm 41 NTT(𝑤) to every coordinate.
     fn ntt(&mut self);
 
@@ -235,6 +238,12 @@ impl<const LEN: usize> VectorTrait for Vector<LEN> {
     fn reduce(&mut self) {
         for i in 0..LEN {
             self[i].reduce();
+        }
+    }
+
+    fn reduce32(&mut self) {
+        for i in 0..LEN {
+            self[i].reduce32();
         }
     }
 

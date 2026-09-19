@@ -34,6 +34,8 @@ pub(crate) fn compute_w_row<P: MLDSAParams>(
         acc.add_ntt(&tmp);
     }
 
+    // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+    acc.reduce32();
     acc.inv_ntt();
     acc.conditional_add_q();
     acc
@@ -83,6 +85,10 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     }
 
     Az_acc.sub(&ct1);
+    // Bound-keeping step before NTT⁻¹, not in FIPS 204: see `Polynomial::reduce32`. Here it is
+    // security-critical: 𝐳 and 𝐭1 are attacker-controlled, and without it a crafted signature
+    // overflows the butterflies (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
+    Az_acc.reduce32();
     Az_acc.inv_ntt();
     Az_acc.conditional_add_q();
 
