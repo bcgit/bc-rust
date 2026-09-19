@@ -8,6 +8,7 @@
 //! `(n, d)` pair, is not supported -- every real RSA private key ships as the CRT form because
 //! CRT-based signing (RFC 8017 §5.2.1 step 2.b) is the only signing path this crate implements.
 
+use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
@@ -47,6 +48,35 @@ impl<const L: usize> RsaPublicKey<L> {
     /// The public exponent `e`.
     pub fn e(&self) -> u32 {
         self.e
+    }
+
+    /// Encodes as `n || e`: `n` as `N_BYTES = 8 * L` big-endian bytes (RFC 8017 §4.1's I2OSP),
+    /// then `e` as 4 big-endian bytes. Not an RFC 8017 or ASN.1 format -- this crate has no DER
+    /// encoder/decoder -- just a fixed-width raw layout [`Self::from_bytes`] round-trips, for
+    /// `cli/src/rsa_cmd.rs` to read and write public keys as files.
+    pub fn encode<const N_BYTES: usize, const PK_LEN: usize>(&self) -> [u8; PK_LEN] {
+        debug_assert_eq!(N_BYTES, 8 * L, "RsaPublicKey::encode needs N_BYTES == 8 * L");
+        debug_assert_eq!(PK_LEN, N_BYTES + 4, "RsaPublicKey::encode needs PK_LEN == N_BYTES + 4");
+        let mut out = [0u8; PK_LEN];
+        out[..N_BYTES].copy_from_slice(&be_bytes_from_limbs::<L, N_BYTES>(&self.n));
+        out[N_BYTES..].copy_from_slice(&self.e.to_be_bytes());
+        out
+    }
+
+    /// Decodes [`Self::encode`]'s layout, validated the same way [`Self::new`] validates `(n, e)`.
+    pub fn from_bytes<const N_BYTES: usize, const PK_LEN: usize>(
+        bytes: &[u8; PK_LEN],
+    ) -> Result<Self, SignatureError> {
+        debug_assert_eq!(N_BYTES, 8 * L, "RsaPublicKey::from_bytes needs N_BYTES == 8 * L");
+        debug_assert_eq!(
+            PK_LEN,
+            N_BYTES + 4,
+            "RsaPublicKey::from_bytes needs PK_LEN == N_BYTES + 4"
+        );
+        let n_bytes: [u8; N_BYTES] = bytes[..N_BYTES].try_into().expect("N_BYTES-byte slice");
+        let n = limbs_from_be_bytes::<L, N_BYTES>(&n_bytes);
+        let e_bytes: [u8; 4] = bytes[N_BYTES..].try_into().expect("4-byte slice");
+        Self::new(&n, u32::from_be_bytes(e_bytes))
     }
 }
 
@@ -160,5 +190,66 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
 
     pub(crate) fn q_inv(&self) -> &[u64; HALF] {
         &self.q_inv
+    }
+
+    /// Encodes as `p || q || dP || dQ || qInv`, each `HALF_BYTES = 8 * HALF` big-endian bytes. Not
+    /// an RFC 8017 or ASN.1 format -- see [`RsaPublicKey::encode`]'s docs for why -- just a
+    /// fixed-width raw layout [`Self::from_bytes`] round-trips, for `cli/src/rsa_cmd.rs` to read
+    /// and write private keys as files.
+    pub fn encode<const HALF_BYTES: usize, const SK_LEN: usize>(&self) -> [u8; SK_LEN] {
+        debug_assert_eq!(
+            HALF_BYTES,
+            8 * HALF,
+            "RsaPrivateKey::encode needs HALF_BYTES == 8 * HALF"
+        );
+        debug_assert_eq!(
+            SK_LEN,
+            5 * HALF_BYTES,
+            "RsaPrivateKey::encode needs SK_LEN == 5 * HALF_BYTES"
+        );
+        let mut out = [0u8; SK_LEN];
+        out[..HALF_BYTES].copy_from_slice(&be_bytes_from_limbs::<HALF, HALF_BYTES>(&self.p));
+        out[HALF_BYTES..2 * HALF_BYTES]
+            .copy_from_slice(&be_bytes_from_limbs::<HALF, HALF_BYTES>(&self.q));
+        out[2 * HALF_BYTES..3 * HALF_BYTES]
+            .copy_from_slice(&be_bytes_from_limbs::<HALF, HALF_BYTES>(&self.d_p));
+        out[3 * HALF_BYTES..4 * HALF_BYTES]
+            .copy_from_slice(&be_bytes_from_limbs::<HALF, HALF_BYTES>(&self.d_q));
+        out[4 * HALF_BYTES..]
+            .copy_from_slice(&be_bytes_from_limbs::<HALF, HALF_BYTES>(&self.q_inv));
+        out
+    }
+
+    /// Decodes [`Self::encode`]'s layout, validated the same way
+    /// [`Self::from_crt_components`] validates its five components.
+    pub fn from_bytes<const HALF_BYTES: usize, const SK_LEN: usize>(
+        bytes: &[u8; SK_LEN],
+    ) -> Result<Self, SignatureError> {
+        debug_assert_eq!(
+            HALF_BYTES,
+            8 * HALF,
+            "RsaPrivateKey::from_bytes needs HALF_BYTES == 8 * HALF"
+        );
+        debug_assert_eq!(
+            SK_LEN,
+            5 * HALF_BYTES,
+            "RsaPrivateKey::from_bytes needs SK_LEN == 5 * HALF_BYTES"
+        );
+        let p_bytes: [u8; HALF_BYTES] = bytes[..HALF_BYTES].try_into().expect("HALF_BYTES bytes");
+        let q_bytes: [u8; HALF_BYTES] =
+            bytes[HALF_BYTES..2 * HALF_BYTES].try_into().expect("HALF_BYTES bytes");
+        let d_p_bytes: [u8; HALF_BYTES] =
+            bytes[2 * HALF_BYTES..3 * HALF_BYTES].try_into().expect("HALF_BYTES bytes");
+        let d_q_bytes: [u8; HALF_BYTES] =
+            bytes[3 * HALF_BYTES..4 * HALF_BYTES].try_into().expect("HALF_BYTES bytes");
+        let q_inv_bytes: [u8; HALF_BYTES] =
+            bytes[4 * HALF_BYTES..].try_into().expect("HALF_BYTES bytes");
+
+        let p = limbs_from_be_bytes::<HALF, HALF_BYTES>(&p_bytes);
+        let q = limbs_from_be_bytes::<HALF, HALF_BYTES>(&q_bytes);
+        let d_p = limbs_from_be_bytes::<HALF, HALF_BYTES>(&d_p_bytes);
+        let d_q = limbs_from_be_bytes::<HALF, HALF_BYTES>(&d_q_bytes);
+        let q_inv = limbs_from_be_bytes::<HALF, HALF_BYTES>(&q_inv_bytes);
+        Self::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
     }
 }

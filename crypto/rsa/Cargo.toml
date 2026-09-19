@@ -16,3 +16,27 @@ bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 criterion.workspace = true
 serde_json = "1.0"
+
+[[bench]]
+name = "rsa_1024_benches"
+harness = false
+
+[[bench]]
+name = "rsa_1536_benches"
+harness = false
+
+[[bench]]
+name = "rsa_2048_benches"
+harness = false
+
+[[bench]]
+name = "rsa_3072_benches"
+harness = false
+
+[[bench]]
+name = "rsa_4096_benches"
+harness = false
+
+[[bench]]
+name = "rsa_8192_benches"
+harness = false
