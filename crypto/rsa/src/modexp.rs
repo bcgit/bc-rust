@@ -27,9 +27,9 @@
 //! secret). It is not blinded against the message/base: an attacker who can also mount a
 //! chosen-message physical side-channel attack (power/cache analysis, not just timing) may still
 //! learn about `d` from repeated calls with related bases, per Kocher (1996) and Boneh & Brumley
-//! (2003). RSA's private-key signing operation (a later addition to this crate) applies
-//! message blinding on top of this primitive; this module does not do that itself; it is a
-//! general-purpose engine, not the full defence.
+//! (2003). Neither this module nor [`crate::rsa_core`]'s CRT-based `rsasp1` (the only caller that
+//! exponentiates with a secret exponent) applies message blinding on top of it -- see the crate's
+//! own `# Security Considerations` for what that means for this crate's signing operation.
 
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;

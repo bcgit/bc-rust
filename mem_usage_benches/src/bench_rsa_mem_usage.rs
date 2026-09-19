@@ -34,39 +34,49 @@ use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_81
 
 const MSG: &[u8] = b"peak stack usage of RSA sign/verify, held constant across every modulus size";
 
-/// This prints the on-disk encoded length of each modulus size's private/public keys and
-/// signatures (`bouncycastle_rsa` has no in-memory key struct exposed here to `size_of` across
-/// modules the way ECDSA's mem usage bench does, since each RSA key type is a distinct
-/// `RsaPrivateKey<L, HALF>`/`RsaPublicKey<L>` monomorphization -- the byte lengths below are what
-/// actually varies with modulus size).
+/// This prints the on-disk encoded length and the in-memory struct size of each modulus size's
+/// private/public keys, and each modulus size's signature length. This is the source for the
+/// table in `bouncycastle_rsa`'s own crate docs' `# Memory Usage` section.
 fn print_key_sizes() {
+    use core::mem::size_of;
+
     println!("\nRSA-1024 (verification only)");
-    println!("public key on disk (n || e): {} bytes", 8 * 16 + 4);
-    println!("signature: {} bytes", 8 * 16);
+    println!("public key on disk (n || e): {} bytes", 132);
+    println!("size_of<Rsa1024PublicKey>: {} bytes", size_of::<rsa_1024::Rsa1024PublicKey>());
+    println!("signature: {} bytes", 128);
 
     println!("\nRSA-1536 (verification only)");
-    println!("public key on disk (n || e): {} bytes", 8 * 24 + 4);
-    println!("signature: {} bytes", 8 * 24);
+    println!("public key on disk (n || e): {} bytes", 196);
+    println!("size_of<Rsa1536PublicKey>: {} bytes", size_of::<rsa_1536::Rsa1536PublicKey>());
+    println!("signature: {} bytes", 192);
 
     println!("\nRSA-2048");
-    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 5 * 8 * 16);
-    println!("public key on disk (n || e): {} bytes", 8 * 32 + 4);
-    println!("signature: {} bytes", 8 * 32);
+    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 640);
+    println!("size_of<Rsa2048PrivateKey>: {} bytes", size_of::<rsa_2048::Rsa2048PrivateKey>());
+    println!("public key on disk (n || e): {} bytes", 260);
+    println!("size_of<Rsa2048PublicKey>: {} bytes", size_of::<rsa_2048::Rsa2048PublicKey>());
+    println!("signature: {} bytes", 256);
 
     println!("\nRSA-3072");
-    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 5 * 8 * 24);
-    println!("public key on disk (n || e): {} bytes", 8 * 48 + 4);
-    println!("signature: {} bytes", 8 * 48);
+    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 960);
+    println!("size_of<Rsa3072PrivateKey>: {} bytes", size_of::<rsa_3072::Rsa3072PrivateKey>());
+    println!("public key on disk (n || e): {} bytes", 388);
+    println!("size_of<Rsa3072PublicKey>: {} bytes", size_of::<rsa_3072::Rsa3072PublicKey>());
+    println!("signature: {} bytes", 384);
 
     println!("\nRSA-4096");
-    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 5 * 8 * 32);
-    println!("public key on disk (n || e): {} bytes", 8 * 64 + 4);
-    println!("signature: {} bytes", 8 * 64);
+    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 1280);
+    println!("size_of<Rsa4096PrivateKey>: {} bytes", size_of::<rsa_4096::Rsa4096PrivateKey>());
+    println!("public key on disk (n || e): {} bytes", 516);
+    println!("size_of<Rsa4096PublicKey>: {} bytes", size_of::<rsa_4096::Rsa4096PublicKey>());
+    println!("signature: {} bytes", 512);
 
     println!("\nRSA-8192");
-    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 5 * 8 * 64);
-    println!("public key on disk (n || e): {} bytes", 8 * 128 + 4);
-    println!("signature: {} bytes", 8 * 128);
+    println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 2560);
+    println!("size_of<Rsa8192PrivateKey>: {} bytes", size_of::<rsa_8192::Rsa8192PrivateKey>());
+    println!("public key on disk (n || e): {} bytes", 1028);
+    println!("size_of<Rsa8192PublicKey>: {} bytes", size_of::<rsa_8192::Rsa8192PublicKey>());
+    println!("signature: {} bytes", 1024);
 }
 
 /// This exists that /usr/bin/time can be used to measure the base memory footprint of the cargo bench harness
