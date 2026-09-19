@@ -26,8 +26,8 @@ pub const LANES: usize = 4;
 /// redacted from `Debug`. There is no direction flag and no initialisation state: decryption is
 /// encryption with the round keys read backwards (Sec 7.2), so both directions work from the same
 /// stored schedule, and a constructed value is always ready to use -- there is no `init()` or
-/// `reset()`. This is the one structural departure from BC Java's `SM4Engine`, which expands the
-/// key in the order its `init(forEncryption, ..)` call asks for.
+/// `reset()`, unlike an engine that expands the key differently depending on the direction it is
+/// initialised for.
 pub struct SM4 {
     rk: Secret<RoundKeys>,
 }
@@ -154,9 +154,8 @@ fn l(b: u32) -> u32 {
 /// `T(.) = L(tau(.))` (Sec 6.2). Each round consumes the oldest of four live words and produces
 /// one new one. Instead of sliding the window, the *roles* of the four slots rotate: in round `i`
 /// the oldest word is in slot `i mod 4`, and after four rounds the slots are back in their
-/// starting roles -- BC Java's `F0`/`F1`/`F2`/`F3` structure, written as one loop. The literal
-/// one-round-at-a-time form is in `tests::literal_rounds`, which pins every intermediate `X_i` of
-/// Appendix A.1.1 and A.1.4 and agrees with this function.
+/// starting roles. The literal one-round-at-a-time form is in `tests::literal_rounds`, which pins
+/// every intermediate `X_i` of Appendix A.1.1 and A.1.4 and agrees with this function.
 ///
 /// The four blocks are processed together only because `tau` is: the argument
 /// `X_{i+1} xor X_{i+2} xor X_{i+3} xor rk_i` is formed per block, all four go through the
@@ -203,7 +202,7 @@ fn rounds(blocks: &mut [Block; LANES], rk: impl Fn(usize) -> u32) {
 }
 
 impl Algorithm for SM4 {
-    /// `"SM4"`, as BC Java's `SM4Engine.getAlgorithmName()` reports it.
+    /// `"SM4"`.
     const ALG_NAME: &'static str = "SM4";
     /// 128 bits: the one key length SM4 has (Sec 4). Sec 12 positions it as "an alternative to
     /// AES-128".
