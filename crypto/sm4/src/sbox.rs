@@ -3,11 +3,11 @@
 //!
 //! # Why a circuit and not a table
 //!
-//! Sec 6.2.3 presents the S-box as a 256-entry lookup table (Figure 1), and BC Java's `SM4Engine`
-//! stores it as one. A table indexed by a byte of the state is indexed by *secret data*, and on
-//! any CPU with a data cache the access pattern -- hence the timing -- depends on that secret.
-//! That is the standard cache-timing side channel of every table-driven block cipher, and it
-//! cannot be closed while keeping the lookup.
+//! Sec 6.2.3 presents the S-box as a 256-entry lookup table (Figure 1), and a straightforward
+//! implementation stores it as one. A table indexed by a byte of the state is indexed by *secret
+//! data*, and on any CPU with a data cache the access pattern -- hence the timing -- depends on
+//! that secret. That is the standard cache-timing side channel of every table-driven block cipher,
+//! and it cannot be closed while keeping the lookup.
 //!
 //! So this module has no table (outside its tests). It computes the same function as Figure 1
 //! with AND, XOR, XNOR and NOT gates applied to the bit-planes of [`crate::bitslice`]. Every
