@@ -1,0 +1,15 @@
+[package]
+name = "bouncycastle-rsa"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-ec.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+criterion.workspace = true
