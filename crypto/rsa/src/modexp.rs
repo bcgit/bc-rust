@@ -179,6 +179,9 @@ fn ct_shift_in_bit_mod<const N: usize>(acc: &[u64; N], bit: u64, modulus: &[u64;
     let mut carry = bit;
     for i in 0..N {
         let next_carry = acc[i] >> 63;
+        // Mutating this `|` to `^` is an accepted equivalent, not a gap: `acc[i] << 1` always has
+        // bit 0 clear (a left shift's incoming bit), and `carry` is 0 or 1, so OR-ing it into that
+        // always-clear bit and XOR-ing it produce identical results.
         doubled[i] = (acc[i] << 1) | carry;
         carry = next_carry;
     }

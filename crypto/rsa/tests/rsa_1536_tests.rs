@@ -94,12 +94,13 @@ fn pkcs1_v1_5_sha512_accepts_genuine_sig_gen_signatures() {
     });
 }
 
-#[test]
-fn pkcs1_v1_5_rejects_wrong_message() {
+fn run_sig_gen_group_rejects_wrong_message(
+    sha: &str,
+    verify: impl Fn(&Rsa1536PublicKey, &[u8], &[u8; 192]) -> bool,
+) {
     let doc: Value =
         serde_json::from_str(&get_test_data("rsa_pkcs1_1536_sig_gen_test.json")).unwrap();
-    let group =
-        doc["testGroups"].as_array().unwrap().iter().find(|g| g["sha"] == "SHA-256").unwrap();
+    let group = doc["testGroups"].as_array().unwrap().iter().find(|g| g["sha"] == sha).unwrap();
     let n: [u64; 24] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
@@ -107,7 +108,29 @@ fn pkcs1_v1_5_rejects_wrong_message() {
     let test = &group["tests"][0];
     let sig_bytes = hex_decode(test["sig"].as_str().unwrap()).unwrap();
     let sig: [u8; 192] = sig_bytes.try_into().unwrap();
-    assert!(
-        pkcs1_v1_5_verify_sha256(&pk, b"a message this signature was not made for", &sig).is_err()
-    );
+    assert!(!verify(&pk, b"a message this signature was not made for", &sig));
+}
+
+#[test]
+fn pkcs1_v1_5_sha256_rejects_wrong_message() {
+    run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
+        pkcs1_v1_5_verify_sha256(pk, msg, sig).is_ok()
+    });
+}
+
+/// Mutation testing found that `pkcs1_v1_5_verify_sha384`/`_sha512` had no rejection-path test of
+/// their own (only `verify_sha256`'s did) -- a whole-function-body mutant that always returned
+/// `Ok(())` still passed the whole suite for either.
+#[test]
+fn pkcs1_v1_5_sha384_rejects_wrong_message() {
+    run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
+        pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok()
+    });
+}
+
+#[test]
+fn pkcs1_v1_5_sha512_rejects_wrong_message() {
+    run_sig_gen_group_rejects_wrong_message("SHA-512", |pk, msg, sig| {
+        pkcs1_v1_5_verify_sha512(pk, msg, sig).is_ok()
+    });
 }
