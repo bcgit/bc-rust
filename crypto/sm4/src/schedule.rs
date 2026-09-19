@@ -3,12 +3,12 @@
 //!
 //! The schedule is the 32 round keys `rk_0 .. rk_31`, one 32-bit word each, so 128 bytes. It is
 //! computed once by [`expand`] and stored in a [`Secret`]. Decryption uses the same words in the
-//! reverse order (Sec 7.2), so there is no second schedule: BC Java's `SM4Engine` expands the key
-//! into `rk[31 - i]` when initialised for decryption because its engine has a direction; this
-//! port stores the encryption order and lets [`crate::SM4::decrypt_block`] index it backwards.
+//! reverse order (Sec 7.2), so there is no second schedule: this crate stores the encryption order
+//! and lets [`crate::SM4::decrypt_block`] index it backwards, rather than expanding a second copy
+//! for decryption.
 //!
-//! Every word is big-endian, as in BC Java (`Pack.bigEndianToInt`) and as the worked examples in
-//! Appendix A.1 require: with the Example 1 key `01 23 45 67 ...`, `MK_0` is `0x01234567`.
+//! Every word is big-endian, as the worked examples in Appendix A.1 require: with the Example 1
+//! key `01 23 45 67 ...`, `MK_0` is `0x01234567`.
 //!
 //! # Constant-time
 //!
@@ -31,8 +31,7 @@ pub(crate) const FK: [u32; 4] = [0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc]
 ///
 /// Defined by `ck_{i,j} = (4i + j) x 7 (mod 256)` for byte `j` of `CK_i`; the table is the
 /// spec's own listing of those values, extracted mechanically from the text of the draft, and
-/// `test_ck_matches_its_defining_formula` re-derives every word. It is word-for-word the `CK`
-/// array in BC Java's `SM4Engine`.
+/// `test_ck_matches_its_defining_formula` re-derives every word.
 pub(crate) const CK: [u32; 32] = [
     0x00070e15, 0x1c232a31, 0x383f464d, 0x545b6269, 0x70777e85, 0x8c939aa1, 0xa8afb6bd, 0xc4cbd2d9,
     0xe0e7eef5, 0xfc030a11, 0x181f262d, 0x343b4249, 0x50575e65, 0x6c737a81, 0x888f969d, 0xa4abb2b9,
@@ -40,13 +39,13 @@ pub(crate) const CK: [u32; 32] = [
     0xa0a7aeb5, 0xbcc3cad1, 0xd8dfe6ed, 0xf4fb0209, 0x10171e25, 0x2c333a41, 0x484f565d, 0x646b7279,
 ];
 
-/// `L'(B) = B xor (B <<< 13) xor (B <<< 23)` (Sec 6.2.2). BC Java's `L_ap`.
+/// `L'(B) = B xor (B <<< 13) xor (B <<< 23)` (Sec 6.2.2).
 #[inline(always)]
 fn l_prime(b: u32) -> u32 {
     b ^ b.rotate_left(13) ^ b.rotate_left(23)
 }
 
-/// `T'(.) = L'(tau(.))` (Sec 6.2): the permutation `T` with `L` replaced by `L'`. BC Java's `T_ap`.
+/// `T'(.) = L'(tau(.))` (Sec 6.2): the permutation `T` with `L` replaced by `L'`.
 ///
 /// `tau` works on four words at once; the one word here is placed in every lane, and lane 0 is
 /// read back. All four lanes then hold the same result, which `test_t_prime_lanes_agree` checks.
@@ -66,9 +65,7 @@ fn t_prime(z: u32) -> u32 {
 ///
 /// Only the four most recent `K` words are ever read, so they are kept in a sliding four-word
 /// window rather than a 36-word array; `test_round_keys_match_appendix_a_1_1` and
-/// `test_round_keys_match_appendix_a_1_4` pin every one of the 32 outputs. BC Java computes the
-/// first four round keys out of `K` and the rest out of `rk[i-4..i]`, which is the same recurrence
-/// with the window held in the output array.
+/// `test_round_keys_match_appendix_a_1_4` pin every one of the 32 outputs.
 pub(crate) fn expand(key: &[u8; 16]) -> Secret<RoundKeys> {
     // MK_0 .. MK_3, then K_i = MK_i xor FK_i. Held in a Secret so the window is scrubbed on return.
     let mut k = Secret::<[u32; 4]>::new();
