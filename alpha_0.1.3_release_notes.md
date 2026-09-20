@@ -18,11 +18,13 @@
     * `core` gains the streaming AEAD split: `AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN,
       FINAL_LEN>` and `AEADCipherDecryptor<...>`, with AAD updates, exact `update_out_len`,
       detached tags, one-shot helpers and a `FINAL_LEN` flush buffer for implementations that hold
-      data back.
+      data back. The older single-type `core::traits::AEADCipher`, which this splits and which had
+      no implementors, is removed, along with its `core-test-framework` suites
+      (`TestFrameworkAEADCipher::test` / `::test_plain_one_shots`).
     * Testing covers the ASCON NIST LWC KAT sweeps from `bc-test-data` (1089 AEAD128, 1025
       Hash256, 1025 XOF128 and 1089 CXOF128 cases when the data repository is present), plus
-      embedded always-on vectors. Mutation testing for `bouncycastle-ascon` reports 735 mutants,
-      618 caught, 111 unviable and 6 missed; the six survivors are the sponge boundary and
+      embedded always-on vectors. Mutation testing for `bouncycastle-ascon` reports 655 mutants,
+      558 caught, 91 unviable and 6 missed; the six survivors are the sponge boundary and
       `set_state_byte` OR/XOR equivalences documented at their sites.
 
 ## Minor features / bug fixes
