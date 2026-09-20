@@ -11,7 +11,7 @@
 //! `bouncycastle_modes::Ctr` over the SM4 permutation, which
 //! `crypto/sm4/tests/stream_mode_tests.rs` pins against the Sec 8.7.1 equations.
 
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
 
 /// The path to the binary under test, resolved by cargo.
@@ -33,12 +33,16 @@ fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
         .spawn()
         .expect("failed to spawn bc-rust");
 
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin piped")
-        .write_all(stdin_bytes)
-        .expect("failed to write to stdin");
+    // The error-path tests hand a rejected key to a command that `exit`s before it ever reads
+    // stdin, so this write races the child's exit and sometimes loses -- reliably so on a loaded
+    // CI runner. That is an expected outcome, not a harness failure: `wait_with_output` still
+    // returns the exit status and stderr, which is all those tests assert on. Any other write
+    // error is a real problem and still panics.
+    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+        Err(e) => panic!("failed to write to stdin: {e}"),
+    }
 
     child.wait_with_output().expect("failed to wait for bc-rust")
 }
