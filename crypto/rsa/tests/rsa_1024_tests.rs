@@ -6,9 +6,12 @@
 //! what `rsa_signature_*_test.json` files provide at every other size, just recovered from a
 //! differently-shaped file because Wycheproof has no dedicated `rsa_signature_1024_*.json`.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1024::{
-    Rsa1024PublicKey, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
+    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, Rsa1024PublicKey,
+    pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
 };
 use serde_json::Value;
 use std::fs;
@@ -126,4 +129,68 @@ fn pkcs1_v1_5_sha384_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
         pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok()
     });
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+//
+// No `Signer` exists at this size (see `rsa_1024.rs`'s docs and its `compile_fail` doctest), so
+// `core-test-framework`'s signature suite -- which needs one -- cannot run here; the
+// `SignatureVerifier` and `SignaturePublicKey` impls are checked directly against the same
+// genuine Wycheproof material as the free functions.
+
+#[test]
+fn trait_verify_accepts_genuine_sig_gen_signatures() {
+    run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
+        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
+    });
+    run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
+        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
+    });
+}
+
+#[test]
+fn trait_verify_rejects_wrong_message() {
+    run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
+        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
+    });
+    run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
+        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
+    });
+}
+
+/// RFC 8017 §8.2.2 step 1 through the trait's `&[u8]` signature: a truncated genuine signature
+/// is "invalid signature", never accepted.
+#[test]
+fn trait_verify_rejects_truncated_signature() {
+    run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
+        matches!(
+            RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, &sig[..127]),
+            Err(SignatureError::SignatureVerificationFailed)
+        )
+    });
+}
+
+#[test]
+fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
+    let doc: Value =
+        serde_json::from_str(&get_test_data("rsa_pkcs1_1024_sig_gen_test.json")).unwrap();
+    let group = &doc["testGroups"][0];
+    let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
+    let e =
+        u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
+    let pk = Rsa1024PublicKey::new(&n, e).unwrap();
+
+    let bytes = pk.encode();
+    assert_eq!(bytes.len(), PK_LEN);
+    assert_eq!(Rsa1024PublicKey::from_bytes(&bytes).unwrap(), pk);
+    assert!(matches!(
+        Rsa1024PublicKey::from_bytes(&bytes[..PK_LEN - 1]),
+        Err(SignatureError::DecodingError(_))
+    ));
+    let mut too_long = bytes.to_vec();
+    too_long.push(0);
+    assert!(matches!(
+        Rsa1024PublicKey::from_bytes(&too_long),
+        Err(SignatureError::DecodingError(_))
+    ));
 }

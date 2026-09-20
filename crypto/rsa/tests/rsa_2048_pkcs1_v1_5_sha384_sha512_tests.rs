@@ -13,9 +13,13 @@
 //! to SHA-256), while the verify side -- where the real risk is a wrong OID or digest length for
 //! the hash in question -- is checked against all of Wycheproof's real vectors for both hashes.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::Signer;
+use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_2048::{
-    Rsa2048PrivateKey, Rsa2048PublicKey, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
+    PK_LEN, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, Rsa2048PrivateKey,
+    Rsa2048PublicKey, SIG_LEN, SK_LEN, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
     pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
 };
 use serde_json::Value;
@@ -196,5 +200,53 @@ fn rsa_signature_sha512_wycheproof_vectors() {
         259,
         8,
         250,
+    );
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureError> {
+    let sk = genuine_key();
+    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+/// `core-test-framework`'s conformance suite for the SHA-384 and SHA-512 pairings (deterministic,
+/// `ctx` ignored). The exhaustive bit-flip pass runs in `rsa_2048_pkcs1_v1_5_tests.rs`'s SHA-256
+/// suite, over the same generic code.
+#[test]
+fn pkcs1_v1_5_sha384_sha512_trait_conformance_suite() {
+    let framework = TestFrameworkSignature::new(true, false);
+    framework.test_signature::<
+        Rsa2048PublicKey,
+        Rsa2048PrivateKey,
+        RSASSA_PKCS1_v1_5_SHA384,
+        RSASSA_PKCS1_v1_5_SHA384,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+    framework.test_signature::<
+        Rsa2048PublicKey,
+        Rsa2048PrivateKey,
+        RSASSA_PKCS1_v1_5_SHA512,
+        RSASSA_PKCS1_v1_5_SHA512,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+}
+
+#[test]
+fn pkcs1_v1_5_sha384_sha512_trait_matches_free_functions() {
+    let (_, sk) = fixed_keypair().unwrap();
+    let msg = b"same message, both APIs";
+    assert_eq!(
+        RSASSA_PKCS1_v1_5_SHA384::sign(&sk, msg, None).unwrap(),
+        pkcs1_v1_5_sign_sha384(&sk, msg).unwrap()
+    );
+    assert_eq!(
+        RSASSA_PKCS1_v1_5_SHA512::sign(&sk, msg, None).unwrap(),
+        pkcs1_v1_5_sign_sha512(&sk, msg).unwrap()
     );
 }

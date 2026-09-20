@@ -3,11 +3,14 @@
 //! self-consistency round trip for signing (reusing the genuine RSA-3072 key
 //! `rsa_3072_tests.rs` recovered), and all of Wycheproof's real vectors for verification.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_3072::{
-    Rsa3072PrivateKey, Rsa3072PublicKey, pss_shake128_sign, pss_shake128_sign_with_salt,
-    pss_shake128_verify,
+    PK_LEN, RSASSA_PSS_SHAKE128, Rsa3072PrivateKey, Rsa3072PublicKey, SIG_LEN, SK_LEN,
+    pss_shake128_sign, pss_shake128_sign_with_salt, pss_shake128_verify,
 };
 use serde_json::Value;
 use std::fs;
@@ -169,4 +172,34 @@ fn rsa_pss_3072_shake128_wycheproof_vectors() {
     assert_eq!(num_tests, 114);
     assert_eq!(num_valid, 69);
     assert_eq!(num_invalid, 45);
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa3072PublicKey, Rsa3072PrivateKey), SignatureError> {
+    let sk = genuine_key();
+    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+#[test]
+fn pss_shake128_trait_conformance_suite() {
+    TestFrameworkSignature::new(false, false).test_signature::<
+        Rsa3072PublicKey,
+        Rsa3072PrivateKey,
+        RSASSA_PSS_SHAKE128,
+        RSASSA_PSS_SHAKE128,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+}
+
+#[test]
+fn pss_shake128_trait_and_free_functions_cross_verify() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"PSS-SHAKE128 at RSA-3072, both APIs";
+    pss_shake128_verify(&pk, msg, &RSASSA_PSS_SHAKE128::sign(&sk, msg, None).unwrap()).unwrap();
+    let from_free = pss_shake128_sign(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    RSASSA_PSS_SHAKE128::verify(&pk, msg, None, &from_free).unwrap();
 }
