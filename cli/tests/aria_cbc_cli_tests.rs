@@ -9,7 +9,7 @@
 //! are KISA's published ARIA test vectors: a 10-block message under each key length; see
 //! `crypto/aria/tests/kisa_vectors_tests.rs`.
 
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
 
 /// The path to the binary under test, resolved by cargo.
@@ -40,12 +40,16 @@ fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
         .spawn()
         .expect("failed to spawn bc-rust");
 
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin piped")
-        .write_all(stdin_bytes)
-        .expect("failed to write to stdin");
+    // The error-path tests hand a rejected key to a command that `exit`s before it ever reads
+    // stdin, so this write races the child's exit and sometimes loses -- reliably so on a loaded
+    // CI runner. That is an expected outcome, not a harness failure: `wait_with_output` still
+    // returns the exit status and stderr, which is all those tests assert on. Any other write
+    // error is a real problem and still panics.
+    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+        Err(e) => panic!("failed to write to stdin: {e}"),
+    }
 
     child.wait_with_output().expect("failed to wait for bc-rust")
 }
@@ -143,6 +147,16 @@ fn a_key_of_the_wrong_length_is_rejected() {
     assert!(err.contains("ARIA-192 needs a 24-byte key, got 16 bytes"), "stderr was: {err}");
     let err = run_err(&["aria256-cbc", "encrypt", "--key", KEY_192], &[0u8; 16]);
     assert!(err.contains("ARIA-256 needs a 32-byte key, got 24 bytes"), "stderr was: {err}");
+}
+
+/// The harness above must survive a write that loses the race with the child's exit. This pins it
+/// deterministically: the key is rejected so `aria128-cbc` exits before reading a byte, and
+/// the payload is far larger than any pipe buffer, so the write is certain to get EPIPE rather
+/// than merely likely to.
+#[test]
+fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
+    let err = run_err(&["aria128-cbc", "encrypt", "--key", KEY_256], &vec![0u8; 4 * 1024 * 1024]);
+    assert!(err.contains("ARIA-128 needs a 16-byte key"), "stderr was: {err}");
 }
 
 /// Unaligned input is rejected, as for the AES commands.
