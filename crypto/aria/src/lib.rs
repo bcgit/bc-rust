@@ -69,11 +69,21 @@
 //! assert_eq!(blocks, original);
 //! ```
 //!
-//! ## CBC mode
+//! ## Modes of operation
 //!
 //! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
-//! provides [`ARIA_CBC_128`], [`ARIA_CBC_192`] and [`ARIA_CBC_256`] as aliases that fill in the
-//! const parameters, leaving the direction and the padding scheme as the type parameters:
+//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
+//! makes: [`ARIA_CBC_128`], [`ARIA_CBC_192`] and [`ARIA_CBC_256`] for CBC (NIST SP 800-38A
+//! Sec 6.2), which take the direction **and a padding scheme**, and [`ARIA_CFB_128`] / `_192` /
+//! `_256` for CFB128 (Sec 6.3), which take only the direction. [`ARIA_CFB8_128`] / `_192` / `_256`
+//! give CFB8, the `s = 8` segment size, which is a different and non-interoperable mode costing one
+//! ARIA call per byte, and [`ARIA_CTR_128`] / `_192` / `_256` give CTR (Sec 6.5) with a 12-byte
+//! nonce and a 4-byte counter.
+//!
+//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
+//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
+//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
+//! [`ARIA_CBC_128`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_aria::ARIA_CBC_256;
@@ -98,8 +108,31 @@
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!
+//! The stream modes take any length and return the initialisation data the same way:
+//!
+//! ```
+//! use bouncycastle_aria::ARIA_CTR_256;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Encrypting};
+//!
+//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
+//! let plaintext = [0x5Au8; 50];
+//! let mut data = plaintext;
+//!
+//! // The nonce is generated for you and returned; there is no API for supplying one.
+//! let (written, nonce) = ARIA_CTR_256::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! assert_eq!(written, 50);
+//! assert_ne!(data, plaintext);
+//!
+//! ARIA_CTR_256::<Decrypting>::decrypt(&key, &nonce, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
+//! ```
+//!
 //! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
+//! name `bouncycastle_modes::Cbc` directly; that is what the CBC aliases wrap.
 //!
 //! There is no one-shot static on the permutation, because `ARIA_128::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
@@ -234,9 +267,9 @@
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
 //!   licence), as in the AES, SM4 and Camellia crates.
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every
-//!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB and CBC vectors of
-//!   OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test vectors (10 blocks under
-//!   each key length); the vectors and invariants of `tests/bc_java_tests.rs`; and the
+//!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB, CBC, CFB128, CFB8
+//!   and CTR vectors of OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test vectors
+//!   (10 blocks under each key length); the vectors and invariants of `tests/bc_java_tests.rs`; and the
 //!   transcription of the source engine on thousands of keys and blocks in every lane, both
 //!   directions.
 
@@ -247,10 +280,16 @@
 mod aria;
 mod bitslice;
 mod cbc;
+mod cfb;
+mod cfb8;
+mod ctr;
 mod round;
 mod sbox;
 mod schedule;
 
 pub use aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN, LANES};
 pub use cbc::{ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
+pub use cfb::{ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256};
+pub use cfb8::{ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256};
+pub use ctr::{ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, CTR_NONCE_LEN};
 pub use schedule::ARIAParams;
