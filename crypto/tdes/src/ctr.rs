@@ -55,7 +55,7 @@ pub const CTR_NONCE_LEN: usize = 6;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let nonce = TDES_CTR::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, nonce) = TDES_CTR::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// assert_eq!(nonce.len(), 6);
 /// assert_ne!(data, message);
 /// TDES_CTR::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
