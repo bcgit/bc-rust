@@ -37,7 +37,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let nonce = AES_CTR_128::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, nonce) = AES_CTR_128::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
 /// AES_CTR_128::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, message);
@@ -67,7 +67,7 @@ pub type AES_CTR_128<Dir> = Ctr<AES_128, Dir, 16, BLOCK_LEN, CTR_NONCE_LEN>;
 ///
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let nonce = AES_CTR_192::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, nonce) = AES_CTR_192::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// AES_CTR_192::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
@@ -84,7 +84,7 @@ pub type AES_CTR_192<Dir> = Ctr<AES_192, Dir, 24, BLOCK_LEN, CTR_NONCE_LEN>;
 ///
 /// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let nonce = AES_CTR_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, nonce) = AES_CTR_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// AES_CTR_256::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
