@@ -15,6 +15,9 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
 mod sm4_cbc_cmd;
+mod sm4_cfb8_cmd;
+mod sm4_cfb_cmd;
+mod sm4_ctr_cmd;
 mod stream_mode_cmd;
 
 use crate::block_mode_cmd::BlockModeAction;
@@ -980,6 +983,89 @@ enum Subcommands {
         x: bool,
     },
 
+    /// SM4 in CFB128 mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.3 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// The segment size is the full block: draft-ribose-cfrg-sm4-10 calls this SM4-CFB-128. Its
+    /// 8-bit variant is a different, non-interoperable mode; use `sm4-cfb8` for that.
+    ///
+    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; the key and block
+    /// are both 16 bytes, as for AES-128.
+    SM4_CFB {
+        action: BlockModeAction,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 in CFB8 mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// The segment size is one byte. This is a DIFFERENT, NON-INTEROPERABLE mode from the CFB128 of
+    /// `sm4-cfb`: the two ciphertexts agree only on their first byte. It also costs one SM4 call
+    /// per byte, sixteen times the work of `sm4-cfb`, so prefer that unless a byte-granular
+    /// self-synchronising stream is required or the format demands CFB8.
+    ///
+    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; the key and block
+    /// are both 16 bytes, as for AES-128.
+    SM4_CFB8 {
+        action: BlockModeAction,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 in CTR mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
+    /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
+    /// repeating keystream. On `encrypt` the nonce is written as the FIRST 12 BYTES of the output
+    /// and on `decrypt` it is read back from there -- 12, not the 16 the other modes write.
+    ///
+    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings, including why a
+    /// repeated nonce is fatal and why CTR is the most malleable mode here; the key and block are
+    /// both 16 bytes, as for AES-128.
+    SM4_CTR {
+        action: BlockModeAction,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -1326,6 +1412,15 @@ fn main() {
         }
         Some(Subcommands::SM4_CBC { action, key, key_file, x }) => {
             sm4_cbc_cmd::sm4_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::SM4_CFB { action, key, key_file, x }) => {
+            sm4_cfb_cmd::sm4_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::SM4_CFB8 { action, key, key_file, x }) => {
+            sm4_cfb8_cmd::sm4_cfb8_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::SM4_CTR { action, key, key_file, x }) => {
+            sm4_ctr_cmd::sm4_ctr_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::AES128_CFB { action, key, key_file, x }) => {
             aes_cfb_cmd::aes128_cfb_cmd(action, key, key_file, *x);
