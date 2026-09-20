@@ -27,7 +27,7 @@
   `tagged_do_aead_decrypt_final` take it back off the end of one.
 * ASCON testing covers the NIST LWC KAT sweeps from `bc-test-data` (1089 AEAD128, 1025 Hash256,
   1025 XOF128 and 1089 CXOF128 cases when the data repository is present), plus embedded always-on
-  vectors. Mutation testing for `bouncycastle-ascon` reports 655 mutants, 558 caught, 91 unviable
+  vectors. Mutation testing for `bouncycastle-ascon` reports 661 mutants, 558 caught, 97 unviable
   and 6 missed; the six survivors are the sponge boundary and `set_state_byte` OR/XOR equivalences
   documented at their sites.
 
