@@ -21,7 +21,7 @@
 //! ECB passes its two and `INIT_DATA_LEN = 0`. This is the same device as `bouncycastle-aes`'s.
 
 use crate::{BLOCK_LEN, KEY_LEN};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, Padding};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding};
 use bouncycastle_modes::{Decrypting, Encrypting};
 use bouncycastle_padding::{PaddedDecryptor, PaddedEncryptor};
 
@@ -36,7 +36,7 @@ pub trait PaddedMode<Enc, Dec, Pad, const INIT_DATA_LEN: usize>
 where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    Pad: Padding<BLOCK_LEN>,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The padded type for this direction: a [`PaddedEncryptor`] over `Enc`, or a
     /// [`PaddedDecryptor`] over `Dec`.
@@ -48,7 +48,7 @@ impl<Enc, Dec, Pad, const INIT_DATA_LEN: usize> PaddedMode<Enc, Dec, Pad, INIT_D
 where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    Pad: Padding<BLOCK_LEN>,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Mode = PaddedEncryptor<Enc, Pad, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
 }
@@ -58,7 +58,7 @@ impl<Enc, Dec, Pad, const INIT_DATA_LEN: usize> PaddedMode<Enc, Dec, Pad, INIT_D
 where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    Pad: Padding<BLOCK_LEN>,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Mode = PaddedDecryptor<Dec, Pad, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
 }
