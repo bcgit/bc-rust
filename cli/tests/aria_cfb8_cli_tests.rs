@@ -2,11 +2,11 @@
 //!
 //! They share their key loader, streaming loops and error paths with the `aes*-cfb8` commands
 //! (`cli/src/stream_mode_cmd.rs`), and `aes_cfb8_cli_tests.rs` covers those exhaustively. This
-//! file pins what is specific to ARIA: the known-answer vectors, the three key lengths, and that the
-//! commands exist and round-trip at any length.
+//! file pins what is specific to ARIA: the known-answer vectors, the three key lengths, and
+//! that the commands exist and round-trip at any length.
 //!
-//! Vectors are the `ARIA-*-CFB8` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2), which are KISA's
-//! published ARIA test vectors; see `crypto/aria/tests/stream_mode_tests.rs`.
+//! Vectors are the `ARIA-*-CFB8` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2),
+//! which are KISA's published ARIA test vectors; see `crypto/aria/tests/stream_mode_tests.rs`.
 
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
@@ -211,10 +211,10 @@ fn a_key_of_the_wrong_length_is_rejected() {
 }
 
 /// The harness above must survive a write that loses the race with the child's exit. This pins it
-/// deterministically: the key is rejected so `aria128-cfb8` exits before reading a byte, and the payload
-/// is far larger than any pipe buffer, so the write is certain to get EPIPE rather than merely
-/// likely to. It guards the `run` helper that every test in this file -- and, copy for copy, the
-/// sibling cfb and ctr suites -- depends on.
+/// deterministically: the key is rejected so `aria128-cfb8` exits before reading a byte, and
+/// the payload is far larger than any pipe buffer, so the write is certain to get EPIPE rather
+/// than merely likely to. It guards the `run` helper that every test in this file -- and, copy
+/// for copy, the sibling cfb and ctr suites -- depends on.
 #[test]
 fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
     let err = run_err(&["aria128-cfb8", "encrypt", "--key", KEY_256], &vec![0u8; 4 * 1024 * 1024]);
