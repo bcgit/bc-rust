@@ -542,7 +542,8 @@ fn one_shots_agree_with_the_streaming_api() {
         let streamed = enc(&mut pinned_encryptor(iv), &plaintext);
 
         let mut buf = plaintext.clone();
-        let iv_b = ToyCfb::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(iv), &mut buf).unwrap();
+        let (_, iv_b) =
+            ToyCfb::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(iv), &mut buf).unwrap();
         assert_eq!(iv_b, iv);
         assert_eq!(buf, streamed, "len {len}: one-shot must equal streaming");
         ToyCfb::<Decrypting>::decrypt(&key, &iv, &mut buf).unwrap();
@@ -550,7 +551,7 @@ fn one_shots_agree_with_the_streaming_api() {
 
         // The OS-RNG variant round-trips too.
         let mut buf = plaintext.clone();
-        let iv_fresh = ToyCfb::<Encrypting>::encrypt(&key, &mut buf).unwrap();
+        let (_, iv_fresh) = ToyCfb::<Encrypting>::encrypt(&key, &mut buf).unwrap();
         assert_ne!(buf, plaintext);
         ToyCfb::<Decrypting>::decrypt(&key, &iv_fresh, &mut buf).unwrap();
         assert_eq!(buf, plaintext);
@@ -740,7 +741,8 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let iv = ToyCfb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+        let (n, iv) = ToyCfb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+        assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         // Only meaningful once the message is long enough that agreeing with the keystream by
         // chance is negligible: a 1-byte message coincides with its own ciphertext whenever the
