@@ -21,6 +21,10 @@
   The older single-type `core::traits::AEADCipher`, which this splits and which had no
   implementors, is removed, along with its `core-test-framework` suites
   (`TestFrameworkAEADCipher::test` / `::test_plain_one_shots`).
+  Mutation testing of the pair's defaults (`traits.rs`, scoped to `AEADCipher{En,De}cryptor` and
+  tested through `bouncycastle-core` + `bouncycastle-ascon`) reports 116 mutants, 95 caught, 19
+  unviable and 2 missed, the two being `written + final_len` -> `written - final_len` in
+  `encrypt_out_rng`, equivalent while every implementor has `FINAL_LEN = 0`.
 * The same pair carries the inline `ciphertext || tag` layout that most wire formats and files
   use, as four default methods rather than a separate adapter type: `tagged_encrypt` /
   `tagged_do_aead_encrypt_final` append the tag to the ciphertext stream, and `tagged_decrypt` /
