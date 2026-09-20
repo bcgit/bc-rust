@@ -1,4 +1,4 @@
-//! Block padding schemes implementing [`bouncycastle_core::traits::Padding`].
+//! Block padding schemes implementing [`bouncycastle_core::traits::BlockCipherPadding`].
 //!
 //! * [`PKCS7`] — the padding scheme of RFC 5652 §6.3.
 //! * [`NoPadding`] — adds nothing and refuses to: for data that must already be a whole number of
@@ -12,23 +12,23 @@
 //! # Usage Examples
 //!
 //! ```
-//! use bouncycastle_core::traits::Padding;
+//! use bouncycastle_core::traits::BlockCipherPadding;
 //! use bouncycastle_padding::PKCS7;
 //!
 //! // 5 data bytes in a 16-byte block: pad with 11 bytes of value 0x0b.
 //! let mut block = [0u8; 16];
 //! block[..5].copy_from_slice(b"hello");
-//! <PKCS7 as Padding<16>>::pad(&mut block, 5).unwrap();
+//! <PKCS7 as BlockCipherPadding<16>>::pad(&mut block, 5).unwrap();
 //! assert_eq!(&block[..5], b"hello");
 //! assert_eq!(&block[5..], &[0x0b; 11]);
 //!
 //! // Unpadding recovers the data length.
-//! let data_len = <PKCS7 as Padding<16>>::unpad(&block).unwrap();
+//! let data_len = <PKCS7 as BlockCipherPadding<16>>::unpad(&block).unwrap();
 //! assert_eq!(data_len, 5);
 //!
 //! // A block that is not well-formed padding is rejected.
 //! block[15] = 0x00;
-//! assert!(<PKCS7 as Padding<16>>::unpad(&block).is_err());
+//! assert!(<PKCS7 as BlockCipherPadding<16>>::unpad(&block).is_err());
 //! ```
 //!
 //! `NoPadding` never writes a byte: asking it to is the error that tells the caller their data was
@@ -36,13 +36,13 @@
 //!
 //! ```
 //! use bouncycastle_core::errors::PaddingError;
-//! use bouncycastle_core::traits::Padding;
+//! use bouncycastle_core::traits::BlockCipherPadding;
 //! use bouncycastle_padding::NoPadding;
 //!
 //! let mut block = [0x42u8; 16];
-//! assert_eq!(<NoPadding as Padding<16>>::pad(&mut block, 5), Err(PaddingError::PaddingNotPermitted));
+//! assert_eq!(<NoPadding as BlockCipherPadding<16>>::pad(&mut block, 5), Err(PaddingError::PaddingNotPermitted));
 //! assert_eq!(block, [0x42u8; 16], "nothing was written");
-//! assert_eq!(<NoPadding as Padding<16>>::unpad(&block), Ok(16));
+//! assert_eq!(<NoPadding as BlockCipherPadding<16>>::unpad(&block), Ok(16));
 //! ```
 //!
 //! # Memory Usage
@@ -77,7 +77,7 @@ pub use padded::{PaddedDecryptor, PaddedEncryptor};
 pub use padded_mode::PaddedMode;
 
 use bouncycastle_core::errors::PaddingError;
-use bouncycastle_core::traits::Padding;
+use bouncycastle_core::traits::BlockCipherPadding;
 use bouncycastle_utils::ct::Condition;
 
 /// RFC 5652 §6.3 padding (the CMS successor to PKCS #7): "the input shall be padded at the trailing
@@ -85,7 +85,7 @@ use bouncycastle_utils::ct::Condition;
 /// `0 < k < 256`, enforced at compile time.
 pub struct PKCS7;
 
-impl<const BLOCK_LEN: usize> Padding<BLOCK_LEN> for PKCS7 {
+impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for PKCS7 {
     /// RFC 5652 §6.3 always adds at least one octet, so an aligned input gets a whole extra block
     /// of padding (`pad(block, 0)`); otherwise the last block could not be unpadded unambiguously.
     const ALWAYS_PADS: bool = true;
@@ -142,23 +142,23 @@ impl<const BLOCK_LEN: usize> Padding<BLOCK_LEN> for PKCS7 {
     }
 }
 
-/// The absence of padding, as a [`Padding`] scheme: for data that must already be a whole number of
-/// blocks.
+/// The absence of padding, as a [`BlockCipherPadding`] scheme: for data that must already be a
+/// whole number of blocks.
 ///
 /// `pad` never writes anything -- it returns [`PaddingError::PaddingNotPermitted`] whenever it is
 /// called, because being called means there was a partial block to pad -- and `unpad` reports the
-/// whole block as data. Since [`ALWAYS_PADS`](Padding::ALWAYS_PADS) is `false`, a [`PaddedEncryptor`]
-/// over it emits no final block for an aligned message and fails at `do_final` for an unaligned one,
-/// and a [`PaddedDecryptor`] releases every block as data. The adapters thereby turn "the caller must
-/// supply whole blocks" into a checked error instead of a silent assumption, which is what this
-/// scheme is for: interoperating with formats that are defined on whole blocks (and, when used with
-/// ECB, with the raw block-by-block operation they specify) while keeping the arbitrary-length API
-/// shape.
+/// whole block as data. Since [`ALWAYS_PADS`](BlockCipherPadding::ALWAYS_PADS) is `false`, a
+/// [`PaddedEncryptor`] over it emits no final block for an aligned message and fails at
+/// `do_final` for an unaligned one, and a [`PaddedDecryptor`] releases every block as data. The
+/// adapters thereby turn "the caller must supply whole blocks" into a checked error instead of a
+/// silent assumption, which is what this scheme is for: interoperating with formats that are
+/// defined on whole blocks (and, when used with ECB, with the raw block-by-block operation they
+/// specify) while keeping the arbitrary-length API shape.
 ///
 /// It offers nothing that authentication would; see the crate's "Security Considerations".
 pub struct NoPadding;
 
-impl<const BLOCK_LEN: usize> Padding<BLOCK_LEN> for NoPadding {
+impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for NoPadding {
     /// Adds nothing to aligned data: an aligned message is finished with no final block.
     const ALWAYS_PADS: bool = false;
 

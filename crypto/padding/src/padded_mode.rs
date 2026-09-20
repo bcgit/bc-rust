@@ -23,7 +23,7 @@
 //! same way.
 
 use crate::{PaddedDecryptor, PaddedEncryptor};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, Padding};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding};
 use bouncycastle_modes::{Decrypting, Encrypting};
 
 /// Projects a direction marker onto the padded adapter for that direction.
@@ -43,7 +43,7 @@ pub trait PaddedMode<
 > where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    Pad: Padding<BLOCK_LEN>,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The padded type for this direction: a [`PaddedEncryptor`] over `Enc`, or a
     /// [`PaddedDecryptor`] over `Dec`.
@@ -55,7 +55,7 @@ impl<Enc, Dec, Pad, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
 where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    Pad: Padding<BLOCK_LEN>,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Mode = PaddedEncryptor<Enc, Pad, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
 }
@@ -65,7 +65,7 @@ impl<Enc, Dec, Pad, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
 where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    Pad: Padding<BLOCK_LEN>,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Mode = PaddedDecryptor<Dec, Pad, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
 }
