@@ -607,6 +607,19 @@ impl TestFrameworkAEADCipher {
                     }
                     other => panic!("encrypt_out_rng into a short buffer: {other:?}"),
                 }
+                // ...and one with room to spare must be accepted: without this the guard can be
+                // flipped to `>` and every short-buffer probe still "passes", because the error
+                // then comes from `do_update_out` behind it with the same variant and length.
+                let mut roomy = vec![0u8; need + 3];
+                let (_, n, _) = E::encrypt_out_rng(
+                    &key,
+                    &mut FixedSeedRNG::<NONCE_LEN>::new([0xA5u8; NONCE_LEN]),
+                    aad,
+                    msg,
+                    &mut roomy,
+                )
+                .unwrap();
+                assert_eq!(n, need, "encrypt_out_rng must write exactly encrypt_out_len bytes");
             }
             let need = D::decrypt_out_max_len(ct.len());
             if need > 0 {
@@ -1092,12 +1105,19 @@ impl TestFrameworkAEADCipher {
                 "len {len}: inline layout is the message plus a tag"
             );
 
-            let body = written - TAG_LEN;
+            // Stop a few bytes short of the tag as well, so the finalizer has real ciphertext to
+            // decrypt and not just a tag to check, and give it a buffer of exactly the length it
+            // asks for: that is what makes `update_out_len(..) + FINAL_LEN` observable, since with
+            // a generous buffer any arithmetic there would do.
+            let held_back = (TAG_LEN + 4).min(written);
+            let body = written - held_back;
             let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
             let mut pt = vec![0u8; written + HOLD_BACK];
             let mut got = dec.do_update_out(&inline[..body], &mut pt).unwrap();
-            got +=
-                dec.tagged_do_aead_decrypt_final(&inline[body..written], &mut pt[got..]).unwrap();
+            let need = dec.update_out_len(held_back - TAG_LEN) + HOLD_BACK;
+            got += dec
+                .tagged_do_aead_decrypt_final(&inline[body..written], &mut pt[got..got + need])
+                .unwrap();
             assert_eq!(&pt[..got], msg, "len {len}: inline streaming round trip");
 
             let mut one = vec![0u8; Enc::tagged_encrypt_out_len(len)];
