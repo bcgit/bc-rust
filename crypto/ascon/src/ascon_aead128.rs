@@ -11,8 +11,9 @@
 //! full 16-byte block has been absorbed, or at finalization.
 //!
 //! [`AsconAead128Encryptor`] / [`AsconAead128Decryptor`] adapt this type's direction-agnostic
-//! streaming API (a single [`AsconAead128`] value serves either direction, chosen by a runtime
-//! flag to [`AsconAead128::new`]) to [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], whose
+//! streaming API (a single [`AsconAead128`] value serves either direction, fixed at construction
+//! by [`AsconAead128::new_encrypting`] / [`AsconAead128::new_decrypting`]) to
+//! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], whose
 //! direction is fixed by the type: each newtype wraps an [`AsconAead128`] already constructed for
 //! its own direction and only ever calls that direction's inherent methods, so the wrong-direction
 //! panics inside [`AsconAead128::do_encrypt_update`] and friends are unreachable through them. See
@@ -93,7 +94,8 @@ impl StateMachine {
 /// An implementation of the Ascon-AEAD128 algorithm (NIST SP 800-232).
 ///
 /// A single instance performs one operation (encryption or decryption) under one (key, nonce) pair.
-/// See [`AsconAead128::new`] for the streaming workflow and [`AsconAead128::encrypt`] /
+/// See [`AsconAead128::new_encrypting`] for the streaming workflow and
+/// [`AsconAead128::encrypt`] /
 /// [`AsconAead128::decrypt`] for the one-shot APIs.
 #[derive(Clone)]
 pub struct AsconAead128 {
@@ -138,7 +140,7 @@ impl AsconAead128 {
     /// The one-shot APIs of main's cipher framework generate the init data / nonce internally, so
     /// Ascon's per-encryption nonce-uniqueness requirement (SP 800-232 R3) is satisfied by sourcing
     /// each nonce from a CSPRNG. Callers who need deterministic, caller-supplied nonces should use
-    /// the inherent streaming API ([`AsconAead128::new`]).
+    /// the inherent streaming API ([`AsconAead128::new_encrypting`]).
     fn fresh_nonce() -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
         let mut rng = HashDRBG_SHA512::new_from_os();
         let mut nonce = [0u8; NONCE_LEN];
@@ -146,12 +148,38 @@ impl AsconAead128 {
         Ok(nonce)
     }
 
-    /// Create a new streaming instance.
+    /// Creates a streaming instance for **encryption** under a caller-supplied nonce.
     /// * `key` is validated as a [`KeyType::SymmetricCipherKey`] with at least 128-bit strength.
-    /// * `nonce` is the 128-bit nonce. It **must** be unique per encryption under a given key.
+    /// * `nonce` is the 128-bit nonce. It **must** be unique per encryption under a given key;
+    ///   [`AsconAead128Encryptor`] generates one instead, which is the safer default.
     /// * `ad` is optional associated data (authenticated, not encrypted); processed immediately.
-    /// * `for_encryption` is true for encryption, false for decryption.
-    pub fn new(
+    ///
+    /// Only the `do_encrypt_*` methods may be called on the result; the decrypting ones panic.
+    pub fn new_encrypting(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        ad: Option<&[u8]>,
+    ) -> Result<Self, SymmetricCipherError> {
+        Self::new(key, nonce, ad, true)
+    }
+
+    /// Creates a streaming instance for **decryption** under the nonce the ciphertext was produced
+    /// with; see [`new_encrypting`](Self::new_encrypting) for the arguments.
+    ///
+    /// Only the `do_decrypt_*` methods may be called on the result; the encrypting ones panic.
+    pub fn new_decrypting(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        ad: Option<&[u8]>,
+    ) -> Result<Self, SymmetricCipherError> {
+        Self::new(key, nonce, ad, false)
+    }
+
+    /// The body of [`new_encrypting`](Self::new_encrypting) / [`new_decrypting`](Self::new_decrypting).
+    /// Private because a `bool` for the direction is not something the public API should ask a
+    /// caller to get right: every public entry point fixes it, either by name here or by type on
+    /// [`AsconAead128Encryptor`] / [`AsconAead128Decryptor`].
+    fn new(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         ad: Option<&[u8]>,

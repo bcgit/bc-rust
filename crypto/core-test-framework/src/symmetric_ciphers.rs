@@ -531,6 +531,58 @@ impl TestFrameworkAEADCipher {
             let pt3 = D::decrypt(&key, &nonce, aad, &ct, &tag).unwrap();
             assert_eq!(pt3, msg, "decrypt must agree with decrypt_out");
 
+            // the inline `ciphertext || tag` layout: `tagged_encrypt` must write exactly the
+            // separate-tag ciphertext with the tag appended, and both the one-shot and the
+            // streaming finalizer must round trip it.
+            let mut inline = vec![0u8; E::tagged_encrypt_out_len(len)];
+            let (inline_nonce, inline_len) =
+                E::tagged_encrypt(&key, aad, msg, &mut inline).unwrap();
+            assert_eq!(
+                inline_len,
+                E::encrypt_out_len(len) + TAG_LEN,
+                "tagged_encrypt must write the ciphertext plus the tag, len {len}"
+            );
+            let mut pt4 = vec![0u8; D::tagged_decrypt_out_max_len(inline_len)];
+            let pt4_len =
+                D::tagged_decrypt(&key, &inline_nonce, aad, &inline[..inline_len], &mut pt4)
+                    .unwrap();
+            assert_eq!(&pt4[..pt4_len], msg, "tagged one-shot round trip, len {len}");
+
+            let (mut enc5, nonce5) = E::do_encrypt_init(&key).unwrap();
+            enc5.do_update_aad(aad).unwrap();
+            // `+ FINAL_LEN`: the finalizer wants room for a full flush plus the tag at the tail,
+            // which it cannot know the size of before it runs.
+            let mut inline5 = vec![0u8; E::tagged_encrypt_out_len(len) + FINAL_LEN];
+            let mut written5 = enc5.do_update_out(msg, &mut inline5).unwrap();
+            written5 += enc5.tagged_do_aead_encrypt_final(&mut inline5[written5..]).unwrap();
+            assert_eq!(
+                written5, inline_len,
+                "tagged streaming must write as much as the one-shot, len {len}"
+            );
+            let body5 = written5 - TAG_LEN;
+            let mut dec5 = D::do_decrypt_init(&key, &nonce5).unwrap();
+            dec5.do_update_aad(aad).unwrap();
+            let mut pt5 = vec![0u8; written5 + FINAL_LEN];
+            let mut got5 = dec5.do_update_out(&inline5[..body5], &mut pt5).unwrap();
+            got5 += dec5
+                .tagged_do_aead_decrypt_final(&inline5[body5..written5], &mut pt5[got5..])
+                .unwrap();
+            assert_eq!(&pt5[..got5], msg, "tagged streaming round trip, len {len}");
+
+            // a stream that ends before a whole tag has been seen is not a short buffer, it is a
+            // failed decryption
+            if TAG_LEN > 0 {
+                let dec6 = D::do_decrypt_init(&key, &nonce5).unwrap();
+                let mut scratch = vec![0u8; written5 + FINAL_LEN];
+                assert!(
+                    matches!(
+                        dec6.tagged_do_aead_decrypt_final(&inline5[..TAG_LEN - 1], &mut scratch),
+                        Err(SymmetricCipherError::DecryptionFailed)
+                    ),
+                    "a tail shorter than the tag must be DecryptionFailed, len {len}"
+                );
+            }
+
             // too-short output buffers on the one-shots are refused with the required length,
             // before any work is done
             let need = E::encrypt_out_len(len);
@@ -638,16 +690,16 @@ impl TestFrameworkAEADCipher {
                 }
             }
 
-            let (mut dec, _) = {
+            let (mut dec, ct) = {
                 let (mut enc, nonce) = E::do_encrypt_init(&key).unwrap();
                 let mut ct = vec![0u8; enc.update_out_len(msg.len())];
                 enc.do_update_out(msg, &mut ct).unwrap();
                 (D::do_decrypt_init(&key, &nonce).unwrap(), ct)
             };
-            let need = dec.update_out_len(msg.len());
+            let need = dec.update_out_len(ct.len());
             if need > 0 {
                 let mut short = vec![0u8; need - 1];
-                match dec.do_update_out(msg, &mut short) {
+                match dec.do_update_out(&ct, &mut short) {
                     Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => {
                         assert_eq!(n, need)
                     }
@@ -1024,6 +1076,37 @@ impl TestFrameworkAEADCipher {
                 pt.extend_from_slice(&final_buf[..final_len]);
                 assert_eq!(pt, msg, "len {len} chunk {chunk}: round trip");
             }
+
+            // The inline `ciphertext || tag` layout, which is where a buffering cipher makes
+            // `tagged_do_aead_encrypt_final` do two things at once: flush the held-back bytes and
+            // then append the tag after them.
+            let (mut enc, nonce) = Enc::do_encrypt_init(&key).unwrap();
+            // `+ HOLD_BACK`: see the same sizing in `test_encryptor_decryptor`.
+            let mut inline = vec![0u8; Enc::tagged_encrypt_out_len(len) + HOLD_BACK];
+            let mut written = enc.do_update_out(msg, &mut inline).unwrap();
+            assert!(written < len || len == 0, "len {len}: the toy must be holding something back");
+            written += enc.tagged_do_aead_encrypt_final(&mut inline[written..]).unwrap();
+            assert_eq!(
+                written,
+                len + TAG_LEN,
+                "len {len}: inline layout is the message plus a tag"
+            );
+
+            let body = written - TAG_LEN;
+            let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
+            let mut pt = vec![0u8; written + HOLD_BACK];
+            let mut got = dec.do_update_out(&inline[..body], &mut pt).unwrap();
+            got +=
+                dec.tagged_do_aead_decrypt_final(&inline[body..written], &mut pt[got..]).unwrap();
+            assert_eq!(&pt[..got], msg, "len {len}: inline streaming round trip");
+
+            let mut one = vec![0u8; Enc::tagged_encrypt_out_len(len)];
+            let (one_nonce, one_len) = Enc::tagged_encrypt(&key, b"", msg, &mut one).unwrap();
+            assert_eq!(&one[..one_len], &inline[..written], "len {len}: one-shot must agree");
+            let mut back = vec![0u8; Dec::tagged_decrypt_out_max_len(one_len) + HOLD_BACK];
+            let back_len =
+                Dec::tagged_decrypt(&key, &one_nonce, b"", &one[..one_len], &mut back).unwrap();
+            assert_eq!(&back[..back_len], msg, "len {len}: inline one-shot round trip");
 
             // For any length past the hold-back window, at least one prefix of the input must be
             // held back rather than released immediately -- the property this whole test exists

@@ -168,7 +168,7 @@ mod bc_test_data {
             assert_eq!(pt_out, pt, "decrypt mismatch (Count {})", field(case, &["Count"]));
 
             // Byte-at-a-time streaming encrypt/decrypt, through the inherent API.
-            let mut enc = AsconAead128::new(&key, &nonce, ad_opt, true).unwrap();
+            let mut enc = AsconAead128::new_encrypting(&key, &nonce, ad_opt).unwrap();
             let mut stream_ct = pt.clone();
 
             for byte in stream_ct.iter_mut() {
@@ -185,7 +185,7 @@ mod bc_test_data {
                 field(case, &["Count"])
             );
 
-            let mut dec = AsconAead128::new(&key, &nonce, ad_opt, false).unwrap();
+            let mut dec = AsconAead128::new_decrypting(&key, &nonce, ad_opt).unwrap();
             let mut stream_pt = expected_ct[..pt.len()].to_vec();
 
             for byte in stream_pt.iter_mut() {

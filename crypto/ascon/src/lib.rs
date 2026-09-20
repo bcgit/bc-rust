@@ -74,9 +74,26 @@
 //! assert_eq!(&recovered, plaintext);
 //! ```
 //!
-//! For the inline `ciphertext || tag` layout, wrap the pair in
-//! [`bouncycastle_core::tagged_aead::TaggedEncryptor`] /
-//! [`bouncycastle_core::tagged_aead::TaggedDecryptor`].
+//! For the inline `ciphertext || tag` layout that most wire formats and files use, the same pair
+//! has [`bouncycastle_core::traits::AEADCipherEncryptor::tagged_encrypt`] /
+//! [`bouncycastle_core::traits::AEADCipherDecryptor::tagged_decrypt`] as one-shots, and
+//! `tagged_do_aead_encrypt_final` / `tagged_do_aead_decrypt_final` for streaming:
+//! ```
+//! use bouncycastle_ascon::ascon_aead128::{AsconAead128Decryptor, AsconAead128Encryptor};
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let plaintext = b"secret message!!";
+//!
+//! let mut inline = [0u8; 32]; // AsconAead128Encryptor::tagged_encrypt_out_len(16)
+//! let (nonce, len) = AsconAead128Encryptor::tagged_encrypt(&key, b"", plaintext, &mut inline).unwrap();
+//! assert_eq!(len, plaintext.len() + 16); // ciphertext || tag
+//!
+//! let mut recovered = [0u8; 16];
+//! let n = AsconAead128Decryptor::tagged_decrypt(&key, &nonce, b"", &inline[..len], &mut recovered).unwrap();
+//! assert_eq!(&recovered[..n], plaintext);
+//! ```
 //!
 //! Extendable output:
 //! ```

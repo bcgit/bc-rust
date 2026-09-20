@@ -7,25 +7,29 @@
     * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_GCM.
     * ASCON -- Ascon-AEAD128, Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 (NIST SP 800-232).
       `AsconAead128Encryptor` / `AsconAead128Decryptor` implement the generated-nonce
-      `AEADCipherEncryptor` / `AEADCipherDecryptor` pair, and `core::tagged_aead` adapts a
-      detached-tag AEAD to the common `ciphertext || tag` layout.
+      `AEADCipherEncryptor` / `AEADCipherDecryptor` pair; the inherent `AsconAead128` API keeps the
+      explicit-nonce, in-place streaming form (`new_encrypting` / `new_decrypting`).
     * `bouncycastle-ascon` is re-exported as `bouncycastle::ascon`; `Ascon-Hash256` and
       `Ascon-XOF128` are registered in the factories, and the CLI adds `ascon-hash256`,
       `ascon-xof128`, `ascon-cxof128` and `ascon-aead128`. The AEAD command generates and prefixes
       the nonce by default, with `--nonce`/`--nonce-file` retained for deterministic vectors.
       Streaming decrypt releases plaintext before the final tag check, so callers must discard any
       output if finalization or the CLI exit status reports authentication failure.
-    * `core` gains the streaming AEAD split: `AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN,
-      FINAL_LEN>` and `AEADCipherDecryptor<...>`, with AAD updates, exact `update_out_len`,
-      detached tags, one-shot helpers and a `FINAL_LEN` flush buffer for implementations that hold
-      data back. The older single-type `core::traits::AEADCipher`, which this splits and which had
-      no implementors, is removed, along with its `core-test-framework` suites
-      (`TestFrameworkAEADCipher::test` / `::test_plain_one_shots`).
-    * Testing covers the ASCON NIST LWC KAT sweeps from `bc-test-data` (1089 AEAD128, 1025
-      Hash256, 1025 XOF128 and 1089 CXOF128 cases when the data repository is present), plus
-      embedded always-on vectors. Mutation testing for `bouncycastle-ascon` reports 655 mutants,
-      558 caught, 91 unviable and 6 missed; the six survivors are the sponge boundary and
-      `set_state_byte` OR/XOR equivalences documented at their sites.
+* `core` gains the streaming AEAD split: `AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN,
+  FINAL_LEN>` and `AEADCipherDecryptor<...>`, with AAD updates, exact `update_out_len`, detached
+  tags, one-shot helpers and a `FINAL_LEN` flush buffer for implementations that hold data back.
+  The older single-type `core::traits::AEADCipher`, which this splits and which had no
+  implementors, is removed, along with its `core-test-framework` suites
+  (`TestFrameworkAEADCipher::test` / `::test_plain_one_shots`).
+* The same pair carries the inline `ciphertext || tag` layout that most wire formats and files
+  use, as four default methods rather than a separate adapter type: `tagged_encrypt` /
+  `tagged_do_aead_encrypt_final` append the tag to the ciphertext stream, and `tagged_decrypt` /
+  `tagged_do_aead_decrypt_final` take it back off the end of one.
+* ASCON testing covers the NIST LWC KAT sweeps from `bc-test-data` (1089 AEAD128, 1025 Hash256,
+  1025 XOF128 and 1089 CXOF128 cases when the data repository is present), plus embedded always-on
+  vectors. Mutation testing for `bouncycastle-ascon` reports 655 mutants, 558 caught, 91 unviable
+  and 6 missed; the six survivors are the sponge boundary and `set_state_byte` OR/XOR equivalences
+  documented at their sites.
 
 ## Minor features / bug fixes
 

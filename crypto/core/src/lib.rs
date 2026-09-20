@@ -9,5 +9,4 @@
 pub mod errors;
 pub mod key_material;
 pub mod suspendable_state;
-pub mod tagged_aead;
 pub mod traits;
