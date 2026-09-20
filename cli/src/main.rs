@@ -367,11 +367,23 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Ascon-AEAD128 authenticated encryption/decryption of the content provided on stdin.
-    /// Encrypts by default (stdin = plaintext, output = ciphertext||tag); with --decrypt the
-    /// reverse. Decryption fails with a non-zero exit status if the tag does not verify.
+    /// Ascon-AEAD128 authenticated encryption/decryption of the content provided on stdin
+    /// (NIST SP 800-232).
+    ///
+    /// On encrypt, a fresh nonce is generated and written as the FIRST 16 BYTES of the output,
+    /// followed by the ciphertext and then the 16-byte tag; on --decrypt the nonce is read back
+    /// from the first 16 bytes of the input, so the two compose directly in a pipeline. This is
+    /// the same convention the AES commands use for their IV. Decryption fails with a non-zero
+    /// exit status if the tag does not verify.
+    ///
+    /// --nonce/--nonce-file override that: the nonce is then neither written on encrypt nor read
+    /// on decrypt, and the stream is exactly ciphertext||tag in both directions. That override
+    /// exists for reproducing known-answer vectors; repeating a nonce under one key destroys both
+    /// the confidentiality and the authenticity of Ascon-AEAD128.
+    ///
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
+    ///
     /// Security note: decryption streams its output, so plaintext bytes are written to stdout
     /// before the authentication tag (the last 16 bytes of input) can be checked. Do not treat
     /// the output as authentic until this command exits with status 0; a non-zero exit means the
@@ -386,11 +398,12 @@ enum Subcommands {
         #[arg(long)]
         key_file: Option<String>,
 
-        /// The 128-bit nonce in hex. Optional hazardous override for deterministic vectors.
+        /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
+        /// stream (see above), and reusing one under a given key breaks the cipher.
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing an optional 128-bit nonce in hex or binary.
+        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
         #[arg(long)]
         nonce_file: Option<String>,
 
@@ -1245,6 +1258,12 @@ enum Subcommands {
     },
 }
 
+// The CLI body runs on a spawned thread with an explicit 8 MiB stack rather than directly on the
+// process's main thread, whose size this program does not control: on Linux it is `ulimit -s`
+// (8 MiB by default), and it can be a good deal smaller elsewhere or under a tightened limit. With
+// a 1 MiB main stack a debug build overflows during argument parsing -- in every subcommand, before
+// any algorithm runs -- so this is a property of the command tree, not of one algorithm's state.
+// 8 MiB is the usual Linux default; do not lower it without re-checking that case.
 fn main() {
     std::thread::Builder::new()
         .name("bc-rust-main".to_string())

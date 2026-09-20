@@ -119,10 +119,10 @@
 //!   `AEADCipher` trait impl) zeroize their output buffer before returning that
 //!   error. The streaming API ([`ascon_aead128::AsconAead128::do_decrypt_update`] /
 //!   [`ascon_aead128::AsconAead128::do_decrypt_final`] or
-//!   [`ascon_aead128::AsconAead128Decryptor::do_decrypt_final`]) does not: plaintext bytes are
-//!   necessarily written to the caller's buffer *before* the tag can be checked, so an application
-//!   streaming a large plaintext must have a way to cancel the operation or transaction if
-//!   finalization returns an error.
+//!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final`]) does not: plaintext
+//!   bytes are necessarily written to the caller's buffer *before* the tag can be checked, so an
+//!   application streaming a large plaintext must have a way to cancel the operation or
+//!   transaction if finalization returns an error.
 
 // `bouncycastle-core` still uses `Vec` internally (see the TODO at the top of
 // crypto/core/src/lib.rs), which blocks this crate from being `#![no_std]` as long as it depends
