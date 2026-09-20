@@ -15,9 +15,11 @@
 
 use bouncycastle_core::traits::XOF;
 
-/// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) with the mask generation function replaced by native SHAKE
-/// output (RFC 8702 §3.2.1). See the module docs for `emBits` and the salt argument.
-pub fn emsa_pss_encode_shake<
+/// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from step 3 onward with the mask generation function
+/// replaced by native SHAKE output (RFC 8702 §3.2.1), given steps 1-2's `mHash = Hash(M)` by the
+/// caller exactly as [`crate::emsa_pss::emsa_pss_encode_from_hash`] is. See the module docs for
+/// `emBits` and the salt argument.
+pub fn emsa_pss_encode_shake_from_hash<
     X: XOF + Default,
     const H_LEN: usize,
     const S_LEN: usize,
@@ -25,7 +27,7 @@ pub fn emsa_pss_encode_shake<
     const DB_LEN: usize,
     const K_LEN: usize,
 >(
-    message: &[u8],
+    m_hash: &[u8; H_LEN],
     salt: &[u8; S_LEN],
 ) -> [u8; K_LEN] {
     debug_assert_eq!(M_PRIME_LEN, 8 + H_LEN + S_LEN, "emsa_pss_encode_shake: M_PRIME_LEN mismatch");
@@ -35,13 +37,9 @@ pub fn emsa_pss_encode_shake<
         "emsa_pss_encode_shake: modulus too short for this hash/salt"
     );
 
-    // Steps 1-2: mHash = Hash(M).
-    let mut m_hash = [0u8; H_LEN];
-    X::default().hash_out(message, &mut m_hash);
-
     // Steps 5-6: M' = 8 zero octets || mHash || salt; H = Hash(M').
     let mut m_prime = [0u8; M_PRIME_LEN];
-    m_prime[8..8 + H_LEN].copy_from_slice(&m_hash);
+    m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(salt);
     let mut h = [0u8; H_LEN];
     X::default().hash_out(&m_prime, &mut h);
@@ -69,9 +67,10 @@ pub fn emsa_pss_encode_shake<
     em
 }
 
-/// EMSA-PSS-VERIFY (RFC 8017 §9.1.2) with the mask generation function replaced by native SHAKE
-/// output, as [`emsa_pss_encode_shake`].
-pub fn emsa_pss_verify_shake<
+/// EMSA-PSS-VERIFY (RFC 8017 §9.1.2) from step 4 onward with the mask generation function
+/// replaced by native SHAKE output, as [`emsa_pss_encode_shake_from_hash`], and step 2's
+/// `mHash = Hash(M)` supplied by the caller the same way.
+pub fn emsa_pss_verify_shake_from_hash<
     X: XOF + Default,
     const H_LEN: usize,
     const S_LEN: usize,
@@ -79,7 +78,7 @@ pub fn emsa_pss_verify_shake<
     const DB_LEN: usize,
     const K_LEN: usize,
 >(
-    message: &[u8],
+    m_hash: &[u8; H_LEN],
     em: &[u8; K_LEN],
 ) -> bool {
     // Step 4.
@@ -116,11 +115,9 @@ pub fn emsa_pss_verify_shake<
     let mut salt = [0u8; S_LEN];
     salt.copy_from_slice(&db[DB_LEN - S_LEN..]);
 
-    // Steps 12-14.
-    let mut m_hash = [0u8; H_LEN];
-    X::default().hash_out(message, &mut m_hash);
+    // Steps 12-14 (step 2's mHash is the caller's `m_hash`).
     let mut m_prime = [0u8; M_PRIME_LEN];
-    m_prime[8..8 + H_LEN].copy_from_slice(&m_hash);
+    m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(&salt);
     let mut h_prime = [0u8; H_LEN];
     X::default().hash_out(&m_prime, &mut h_prime);
@@ -130,14 +127,16 @@ pub fn emsa_pss_verify_shake<
 
 #[cfg(test)]
 mod tests {
-    //! `emsa_pss_encode_shake`/`emsa_pss_verify_shake` are crate-private (only
-    //! [`crate::rsassa_pss_shake`] needs them), so they are exercised here rather than from
+    //! `emsa_pss_encode_shake_from_hash`/`emsa_pss_verify_shake_from_hash` are crate-private
+    //! (only [`crate::rsassa_pss_shake`] needs them), so they are exercised here rather than from
     //! `tests/` -- the same "high-risk code that cannot be reached through the public API"
     //! exception `rsa_core`'s tests use. The KAT is a direct Python transliteration of RFC 8017
     //! SS9.1.1's own steps with RFC 8702 SS3.2.1's native-SHAKE mask substituted for MGF1 (not from
-    //! recall), using `hashlib.shake_128`.
+    //! recall), using `hashlib.shake_128`. The `encode`/`verify` helpers below add step 2's
+    //! `mHash = Hash(M)` back on top, so the tests can speak in terms of messages.
 
     use super::*;
+    use bouncycastle_core::traits::Hash;
     use bouncycastle_sha3::SHAKE128;
 
     const SALT: [u8; 32] = [
@@ -146,12 +145,18 @@ mod tests {
         0x1e, 0x1f,
     ];
 
+    fn m_hash(message: &[u8]) -> [u8; 32] {
+        let mut m_hash = [0u8; 32];
+        SHAKE128::default().hash_out(message, &mut m_hash);
+        m_hash
+    }
+
     fn encode(message: &[u8], salt: &[u8; 32]) -> [u8; 256] {
-        emsa_pss_encode_shake::<SHAKE128, 32, 32, 72, 223, 256>(message, salt)
+        emsa_pss_encode_shake_from_hash::<SHAKE128, 32, 32, 72, 223, 256>(&m_hash(message), salt)
     }
 
     fn verify(message: &[u8], em: &[u8; 256]) -> bool {
-        emsa_pss_verify_shake::<SHAKE128, 32, 32, 72, 223, 256>(message, em)
+        emsa_pss_verify_shake_from_hash::<SHAKE128, 32, 32, 72, 223, 256>(&m_hash(message), em)
     }
 
     #[test]
