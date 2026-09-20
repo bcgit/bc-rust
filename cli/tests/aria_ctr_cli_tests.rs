@@ -2,11 +2,11 @@
 //!
 //! They share their key loader, streaming loops and error paths with the `aes*-ctr` commands
 //! (`cli/src/stream_mode_cmd.rs`), and `aes_ctr_cli_tests.rs` covers those exhaustively. This
-//! file pins what is specific to ARIA: the known-answer vectors, the three key lengths, and that the
-//! commands exist and round-trip at any length.
+//! file pins what is specific to ARIA: the known-answer vectors, the three key lengths, and
+//! that the commands exist and round-trip at any length.
 //!
-//! Vectors are the `ARIA-*-CTR` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2), which are KISA's
-//! published ARIA test vectors; see `crypto/aria/tests/stream_mode_tests.rs`.
+//! Vectors are the `ARIA-*-CTR` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2),
+//! which are KISA's published ARIA test vectors; see `crypto/aria/tests/stream_mode_tests.rs`.
 
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
