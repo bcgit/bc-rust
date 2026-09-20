@@ -12,136 +12,6 @@ use crate::key_material::KeyMaterial;
 use crate::key_material::KeyType;
 // end of imports needed for docs
 
-/// The basic functions of an Authenticated Encryption with Addititional Data cipher.
-pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>:
-    Algorithm + Sized
-{
-    #[cfg(feature = "std")]
-    /// A one-shot API to encrypt some plaintext with the given key, with no additional
-    /// authenticated data.
-    ///
-    /// This and the three that follow were the whole of the former `SymmetricCipher` trait, which
-    /// every symmetric cipher was once expected to implement. They now live here, because an AEAD
-    /// is the only kind of cipher left that needs them: a block mode reaches the same shape through
-    /// [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] and the padding adapters, and a
-    /// stream mode gets those traits directly.
-    ///
-    /// These are meant to be simple, easy to use, secure and fool-proof, at the cost of producing a
-    /// ciphertext whose layout is this implementation's business: an AEAD has a tag to put
-    /// somewhere, and where it goes is not fixed here. See the documentation of the underlying
-    /// implementation before assuming another one will read it.
-    ///
-    /// Returns the generated nonce and the ciphertext as a `Vec<u8>`, so it needs the `std`
-    /// feature. For AAD, use [`aead_encrypt`](Self::aead_encrypt).
-    fn encrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        plaintext: &[u8],
-    ) -> Result<([u8; NONCE_LEN], Vec<u8>), SymmetricCipherError>;
-
-    /// As [`encrypt`](Self::encrypt), writing into a caller-supplied buffer so it is available
-    /// without `std`.
-    ///
-    /// See the documentation for the underlying implementation for how big the ciphertext buffer
-    /// must be; an AEAD needs room for the tag as well as the data. Returns the generated nonce and
-    /// the number of bytes written.
-    fn encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError>;
-
-    #[cfg(feature = "std")]
-    /// A one-shot API to decrypt what [`encrypt`](Self::encrypt) produced, with no additional
-    /// authenticated data. Returns the plaintext as a `Vec<u8>`, so it needs the `std` feature.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::DecryptionFailed`] if the ciphertext does not authenticate. This
-    /// view has no AAD and no separate tag to name, so it reports every authentication failure
-    /// this way rather than as [`SymmetricCipherError::AEADTagCheckFailed`], which is reserved for
-    /// [`aead_decrypt`](Self::aead_decrypt) / [`aead_decrypt_out`](Self::aead_decrypt_out); either
-    /// way, the caller learns only that decryption failed, not why.
-    fn decrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: [u8; NONCE_LEN],
-        ciphertext: &[u8],
-    ) -> Result<Vec<u8>, SymmetricCipherError>;
-
-    /// As [`decrypt`](Self::decrypt), writing into a caller-supplied buffer so it is available
-    /// without `std`. Returns the number of bytes written.
-    ///
-    /// # Errors
-    /// As [`decrypt`](Self::decrypt).
-    fn decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: [u8; NONCE_LEN],
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError>;
-
-    #[cfg(feature = "std")]
-    /// A one-shot API to encrypt some plaintext with the given key.
-    /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
-    /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
-    /// and any tampering with it will result in the decryption operation failing the tag check.
-    /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
-    /// Returns a tuple containing a generated nonce, the ciphertext and the tag.
-    fn aead_encrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        aad: &[u8],
-        plaintext: &[u8],
-    ) -> Result<([u8; NONCE_LEN], Vec<u8>, [u8; TAG_LEN]), SymmetricCipherError>;
-    /// A one-shot API to encrypt some plaintext with the given key.
-    /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
-    /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
-    /// and any tampering with it will result in the decryption operation failing the tag check.
-    /// Returns a tuple containing the randomly-generated nonce, number of bytes written to the ciphertext buffer, and the tag.
-    /// If you need a deterministic mode where you feed in the nonce, use the streaming API of [`BlockCipherEncryptor`]
-    /// or [`StreamCipherEncryptor`] as appropriate and feed the nonce into the IV field.
-    fn aead_encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError>;
-    /// Finishes a streaming encryption flow with an AEAD-specific `do_final()` that computes and
-    /// returns the authentication tag.
-    ///
-    /// An AEAD's own streaming API is [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], which has
-    /// this step (as [`AEADCipherEncryptor::do_encrypt_final`]) and an AAD phase of its own; this
-    /// method is for an implementor that streams through one of the unauthenticated cipher traits
-    /// -- [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] or [`StreamCipherEncryptor`] /
-    /// [`StreamCipherDecryptor`] -- and needs somewhere to put the tag.
-    fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError>;
-    #[cfg(feature = "std")]
-    /// A one-shot API to decrypt some ciphertext with the given key.
-    /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
-    fn aead_decrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<Vec<u8>, SymmetricCipherError>;
-    /// A one-shot API to decrypt some ciphertext with the given key.
-    /// This function takes a reference to the output buffer for the plaintext, and is therefore available in no_std.
-    /// See the documentation for the underlying implementation for details on providing a plaintext buffer of sufficient size;
-    /// typically the ciphertext is the same length as the plaintext, but some ciphers may have an expansion factor or require
-    /// extra space for a nonce or tag.
-    /// Returns the number of bytes written to the plaintext buffer.
-    fn aead_decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        tag: &[u8; TAG_LEN],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError>;
-    /// Finishes a streaming decryption flow by checking `tag`; the mirror of
-    /// [`do_aead_encrypt_final`](Self::do_aead_encrypt_final), and see it for when this is the
-    /// right finalizer rather than [`AEADCipherDecryptor::do_decrypt_final`].
-    fn do_aead_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError>;
-}
-
 /// The decryption half of an AEAD cipher's streaming API; see [`AEADCipherEncryptor`], whose notes
 /// on the AAD phase, buffering, and the `Result` all apply here too.
 ///
@@ -316,8 +186,8 @@ pub trait AEADCipherDecryptor<
 /// consumes the encryptor, flushes whatever ciphertext it was holding back into `output`, and
 /// returns the tag, which the recipient needs for [`AEADCipherDecryptor::do_decrypt_final`]. Where
 /// the tag travels -- appended to the ciphertext, carried in a separate field -- is the caller's
-/// choice, not this trait's; contrast [`AEADCipher`], whose one-shots pick a layout for you, and
-/// see `bouncycastle_core::tagged_aead` for an adapter that appends it.
+/// choice, not this trait's; see `bouncycastle_core::tagged_aead` for an adapter that appends it
+/// to the ciphertext.
 ///
 /// Encryption and decryption are separate traits, as with [`BlockCipherEncryptor`] /
 /// [`BlockCipherDecryptor`], so that the direction is encoded in the type. For an AEAD that also

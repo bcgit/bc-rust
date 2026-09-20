@@ -4,8 +4,10 @@
 //!   repo required). The full sweep lives in `bc_test_data.rs`.
 //! - Behavioral / contract tests (round-trips, streaming chunk-boundary equivalence, authentication
 //!   failures, determinism), driven through the inherent explicit-nonce API.
-//! - The shared `AEADCipher` conformance framework (`core-test-framework`), which exercises the
-//!   generic `AEADCipher` trait surface with internally-generated nonces.
+//! - The shared conformance framework (`core-test-framework`), which exercises the
+//!   `AEADCipherEncryptor`/`AEADCipherDecryptor` pair and, through `TaggedEncryptor`/
+//!   `TaggedDecryptor`, the `SimpleCipherEncryptor`/`SimpleCipherDecryptor` surface, both with
+//!   internally-generated nonces.
 
 use bouncycastle_ascon::ascon_aead128::{
     AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
@@ -243,13 +245,11 @@ fn aead_chunked_aad_matches_one_shot() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Trait-driven streaming sweep (this is what would have caught F1/F2)        */
+/* Streaming chunk sweep (this is what would have caught F1/F2)               */
 /* -------------------------------------------------------------------------- */
 
 #[test]
-fn aead_trait_streaming_sweep() {
-    use bouncycastle_core::traits::AEADCipher;
-
+fn aead_streaming_chunk_sweep() {
     let km = key_material(&KEY);
     for pt_len in 0..=40 {
         let pt = pattern(pt_len);
@@ -269,7 +269,7 @@ fn aead_trait_streaming_sweep() {
                     e.do_encrypt_update(&mut out[off..end]);
                     off = end;
                 }
-                let tag = e.do_aead_encrypt_final().unwrap();
+                let tag = e.do_encrypt_final();
                 assert_eq!(out, ct_ref_body, "pt_len={pt_len} ad_len={ad_len} chunk={chunk}");
                 assert_eq!(tag, tag_ref, "pt_len={pt_len} ad_len={ad_len} chunk={chunk}");
 
@@ -282,7 +282,7 @@ fn aead_trait_streaming_sweep() {
                     off = end;
                 }
                 let tag_arr: [u8; 16] = tag_ref.try_into().unwrap();
-                d.do_aead_decrypt_final(&tag_arr).unwrap();
+                d.do_decrypt_final(&tag_arr).unwrap();
                 assert_eq!(back, pt, "pt_len={pt_len} ad_len={ad_len} chunk={chunk}");
             }
         }
@@ -290,9 +290,7 @@ fn aead_trait_streaming_sweep() {
 }
 
 #[test]
-fn do_aead_decrypt_final_rejects_wrong_tag() {
-    use bouncycastle_core::traits::AEADCipher;
-
+fn do_decrypt_final_rejects_wrong_tag() {
     let km = key_material(&KEY);
     let pt = pattern(20);
     let mut d = AsconAead128::new(&km, &NONCE, None, false).unwrap();
@@ -300,167 +298,63 @@ fn do_aead_decrypt_final_rejects_wrong_tag() {
     d.do_decrypt_update(&mut buf);
     let wrong_tag = [0xFFu8; 16];
     assert!(matches!(
-        d.do_aead_decrypt_final(&wrong_tag),
+        d.do_decrypt_final(&wrong_tag),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
 }
 
 /* -------------------------------------------------------------------------- */
-/* std-only Vec-returning trait wrappers                                      */
+/* One-shot buffer-length contract                                            */
 /* -------------------------------------------------------------------------- */
 
-// `TestFrameworkAEADCipher` only exercises the `_out` (buffer-based)
-// entry points, so the `#[cfg(feature = "std")]` `Vec`-returning wrappers (`encrypt`, `decrypt`,
-// `aead_encrypt`, `aead_decrypt`) are otherwise never called by any test.
-#[test]
-fn aead128_std_vec_wrappers_round_trip() {
-    use bouncycastle_core::traits::AEADCipher;
-
-    let km = key_material(&KEY);
-    let msg = pattern(40);
-
-    let (nonce, ct) = <AsconAead128 as AEADCipher<16, 16, 16>>::encrypt(&km, &msg).unwrap();
-    assert_eq!(ct.len(), msg.len() + 16);
-    let pt = <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt(&km, nonce, &ct).unwrap();
-    assert_eq!(pt, msg);
-
-    let (nonce, ct, tag) =
-        <AsconAead128 as AEADCipher<16, 16, 16>>::aead_encrypt(&km, b"aad", &msg).unwrap();
-    assert_eq!(ct.len(), msg.len());
-    let pt = <AsconAead128 as AEADCipher<16, 16, 16>>::aead_decrypt(&km, &nonce, b"aad", &ct, &tag)
-        .unwrap();
-    assert_eq!(pt, msg);
-
-    // Tampering must still be rejected through these entry points too.
-    assert!(
-        <AsconAead128 as AEADCipher<16, 16, 16>>::aead_decrypt(
-            &km, &nonce, b"wrong-aad", &ct, &tag
-        )
-        .is_err()
-    );
-}
-
-// None of the length checks in the `AEADCipher` `_out` entry points are ever
-// triggered by `TestFrameworkAEADCipher` (which always pass a
-// generously-sized fixed buffer), nor by the inherent one-shot `encrypt`/`decrypt` tests above
-// (which always size their own buffer correctly). Exercise every one directly.
+// The length checks in the inherent one-shots are never triggered by the tests above, which all
+// size their own buffers correctly, so exercise each one directly -- including the two boundary
+// cases that must NOT be rejected.
 #[test]
 fn aead128_undersized_buffers_are_rejected() {
-    use bouncycastle_core::traits::AEADCipher;
-
     let km = key_material(&KEY);
     let msg = pattern(40);
 
-    // AEADCipher::encrypt_out: ciphertext buffer shorter than plaintext.len() + 16.
+    // encrypt: output buffer shorter than plaintext.len() + 16.
     let mut too_small = vec![0u8; msg.len() + 15];
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::encrypt_out(&km, &msg, &mut too_small) {
+    match AsconAead128::encrypt(&km, &NONCE, None, &msg, &mut too_small) {
         Err(SymmetricCipherError::IncorrectOutputBufferLength(_, needed)) => {
             assert_eq!(needed, msg.len() + 16);
         }
         other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
     }
 
-    // AEADCipher::decrypt / decrypt_out: ciphertext shorter than the 16-byte tag.
+    // decrypt: ciphertext shorter than the 16-byte tag, which is checked before the output buffer.
     let short = [0u8; 8];
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt(&km, NONCE, &short) {
-        Err(SymmetricCipherError::GenericError(_)) => {}
-        other => panic!("expected GenericError, got {other:?}"),
-    }
     let mut pt_buf = [0u8; 8];
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt_out(&km, NONCE, &short, &mut pt_buf) {
+    match AsconAead128::decrypt(&km, &NONCE, None, &short, &mut pt_buf) {
         Err(SymmetricCipherError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }
 
-    // AEADCipher::decrypt_out: valid-length ciphertext, but undersized plaintext buffer.
+    // decrypt: valid-length ciphertext, but an undersized plaintext buffer.
     let ct = enc_oneshot(&KEY, &NONCE, &[], &msg);
     let mut too_small_pt = vec![0u8; msg.len() - 1];
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt_out(&km, NONCE, &ct, &mut too_small_pt)
-    {
+    match AsconAead128::decrypt(&km, &NONCE, None, &ct, &mut too_small_pt) {
         Err(SymmetricCipherError::IncorrectOutputBufferLength(_, needed)) => {
             assert_eq!(needed, msg.len());
         }
         other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
     }
 
-    // decrypt / decrypt_out: ciphertext of exactly 16 bytes (an empty plaintext plus the tag) is
-    // the boundary case and must NOT be rejected as "too short".
+    // A ciphertext of exactly 16 bytes -- an empty plaintext plus its tag -- is the boundary case
+    // and must decrypt, not be rejected as shorter than the tag.
     let empty_ct = enc_oneshot(&KEY, &NONCE, &[], &[]);
     assert_eq!(empty_ct.len(), 16);
-    assert_eq!(
-        <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt(&km, NONCE, &empty_ct).unwrap(),
-        Vec::<u8>::new()
-    );
     let mut empty_pt_buf = [0u8; 0];
-    assert_eq!(
-        <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt_out(
-            &km, NONCE, &empty_ct, &mut empty_pt_buf
-        )
-        .unwrap(),
-        0
-    );
+    assert_eq!(AsconAead128::decrypt(&km, &NONCE, None, &empty_ct, &mut empty_pt_buf).unwrap(), 0);
 
-    // decrypt_out: a plaintext buffer *larger* than needed must succeed, not be rejected.
+    // An output buffer larger than needed must succeed, with only the recovered bytes written.
     let mut oversized_pt = vec![0xAAu8; msg.len() + 5];
-    let n =
-        <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt_out(&km, NONCE, &ct, &mut oversized_pt)
-            .unwrap();
+    let n = AsconAead128::decrypt(&km, &NONCE, None, &ct, &mut oversized_pt).unwrap();
     assert_eq!(n, msg.len());
     assert_eq!(&oversized_pt[..n], &msg[..]);
-
-    // AEADCipher::aead_encrypt_out: ciphertext buffer shorter than the plaintext.
-    let mut too_small = vec![0u8; msg.len() - 1];
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::aead_encrypt_out(
-        &km, b"aad", &msg, &mut too_small,
-    ) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, needed)) => {
-            assert_eq!(needed, msg.len());
-        }
-        other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
-    }
-
-    // AEADCipher::aead_decrypt_out: plaintext buffer shorter than the ciphertext.
-    let (nonce, ct, tag) =
-        <AsconAead128 as AEADCipher<16, 16, 16>>::aead_encrypt(&km, b"aad", &msg).unwrap();
-    let mut too_small_pt = vec![0u8; ct.len() - 1];
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::aead_decrypt_out(
-        &km, &nonce, b"aad", &ct, &tag, &mut too_small_pt,
-    ) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, needed)) => {
-            assert_eq!(needed, ct.len());
-        }
-        other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
-    }
-}
-
-// The plain (non-AEAD) view's `decrypt`/`decrypt_out` report an authentication failure as
-// `DecryptionFailed`, not `AEADTagCheckFailed` (see the comment on `AsconAead128`'s
-// `AEADCipher::decrypt_out` impl): this view has no separate tag to name, and the trait's own doc
-// comment says every implementor reports it this way. A mutant deleting that remapping would
-// otherwise survive, since nothing else in this file calls the plain view on a tampered
-// ciphertext.
-#[test]
-fn aead128_plain_view_reports_tamper_as_decryption_failed() {
-    use bouncycastle_core::traits::AEADCipher;
-
-    let km = key_material(&KEY);
-    let msg = pattern(40);
-    let ct = enc_oneshot(&KEY, &NONCE, &[], &msg);
-
-    let mut tampered = ct.clone();
-    tampered[0] ^= 0x01;
-
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt(&km, NONCE, &tampered) {
-        Err(SymmetricCipherError::DecryptionFailed) => {}
-        other => panic!("expected DecryptionFailed, got {other:?}"),
-    }
-
-    let mut pt_buf = vec![0u8; msg.len()];
-    match <AsconAead128 as AEADCipher<16, 16, 16>>::decrypt_out(&km, NONCE, &tampered, &mut pt_buf)
-    {
-        Err(SymmetricCipherError::DecryptionFailed) => {}
-        other => panic!("expected DecryptionFailed, got {other:?}"),
-    }
+    assert_eq!(&oversized_pt[n..], &[0xAAu8; 5]);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -580,17 +474,8 @@ fn do_decrypt_update_on_encryptor_panics() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* AEADCipher trait conformance (shared core-test-framework)                  */
+/* Trait conformance (shared core-test-framework)                             */
 /* -------------------------------------------------------------------------- */
-
-#[test]
-fn aead128_trait_framework() {
-    // Exercises the generic AEADCipher<16,16,16> surface: internally
-    // generated (random, distinct) nonces, key-type / key-strength enforcement, and the AEAD
-    // tamper-detection contract (modified ciphertext / AAD / tag must fail the tag check, and
-    // must never leave plaintext in the output buffer).
-    TestFrameworkAEADCipher::new().test::<16, 16, 16, AsconAead128>();
-}
 
 /// Exercises [`AEADCipherEncryptor`]/[`AEADCipherDecryptor`], the streaming pair
 /// [`AsconAead128Encryptor`]/[`AsconAead128Decryptor`] adapt [`AsconAead128`] to: `update_out_len`

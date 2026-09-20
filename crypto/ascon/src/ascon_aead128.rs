@@ -17,8 +17,8 @@
 //! its own direction and only ever calls that direction's inherent methods, so the wrong-direction
 //! panics inside [`AsconAead128::do_encrypt_update`] and friends are unreachable through them. See
 //! their docs for why a thin newtype pair rather than encoding the direction into `AsconAead128`
-//! itself: that would need a second, incompatible implementation of the single-type [`AEADCipher`]
-//! this module also provides, which needs both directions available on the one type.
+//! itself: the inherent API is deliberately one type serving both directions, which is what the
+//! in-place streaming and the explicit-nonce one-shots are built on.
 
 use core::fmt::{self, Debug, Display, Formatter};
 
@@ -26,8 +26,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCip
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
-    AEADCipher, AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SecurityStrength,
-    SuspendableKeyed,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SecurityStrength, SuspendableKeyed,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -474,169 +473,6 @@ impl AsconAead128 {
 impl Algorithm for AsconAead128 {
     const ALG_NAME: &'static str = "Ascon-AEAD128";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-}
-
-// Ascon-AEAD128 as an `AEADCipher`. `encrypt`/`encrypt_out`/`decrypt`/`decrypt_out` are the
-// "basic" (non-AEAD) view: the init data is the 128-bit nonce, and the ciphertext produced by
-// these APIs is `Ascon ciphertext || 16-byte tag` (empty AAD). `aead_*` are the full AEAD view
-// with associated data and a separate tag.
-impl AEADCipher<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128 {
-    #[cfg(feature = "std")]
-    fn encrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        plaintext: &[u8],
-    ) -> Result<([u8; NONCE_LEN], Vec<u8>), SymmetricCipherError> {
-        let mut ciphertext = vec![0u8; plaintext.len() + TAG_LEN];
-        let (nonce, written) = Self::encrypt_out(key, plaintext, &mut ciphertext)?;
-        ciphertext.truncate(written);
-        Ok((nonce, ciphertext))
-    }
-
-    fn encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
-        let _ = Self::checked_key(key)?;
-        let nonce = Self::fresh_nonce()?;
-        // No associated data for the plain, non-AEAD view; the tag is appended to `ciphertext`.
-        // `encrypt` itself checks that `ciphertext` is long enough.
-        let written = Self::encrypt(key, &nonce, None, plaintext, ciphertext)?;
-        Ok((nonce, written))
-    }
-
-    #[cfg(feature = "std")]
-    fn decrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: [u8; NONCE_LEN],
-        ciphertext: &[u8],
-    ) -> Result<Vec<u8>, SymmetricCipherError> {
-        if ciphertext.len() < TAG_LEN {
-            return Err(SymmetricCipherError::GenericError(
-                "Ascon-AEAD128 ciphertext shorter than tag",
-            ));
-        }
-        let mut plaintext = vec![0u8; ciphertext.len() - TAG_LEN];
-        let written = Self::decrypt_out(key, init_data, ciphertext, &mut plaintext)?;
-        plaintext.truncate(written);
-        Ok(plaintext)
-    }
-
-    fn decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: [u8; NONCE_LEN],
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        let _ = Self::checked_key(key)?;
-        if ciphertext.len() < TAG_LEN {
-            return Err(SymmetricCipherError::GenericError(
-                "Ascon-AEAD128 ciphertext shorter than tag",
-            ));
-        }
-        let pt_len = ciphertext.len() - TAG_LEN;
-        if plaintext.len() < pt_len {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "Ascon-AEAD128 plaintext buffer too small",
-                pt_len,
-            ));
-        }
-        // `ciphertext` is `Ascon ciphertext || 16-byte tag`; `decrypt` splits it internally.
-        // This plain, non-AEAD view has no AAD and so nothing that distinguishes an
-        // authentication failure from any other decryption failure; report both as
-        // `DecryptionFailed`, matching the trait's documented "the caller learns only that
-        // decryption failed". `AEADTagCheckFailed` is reserved for the AEAD view
-        // (`aead_decrypt`/`aead_decrypt_out`), which is honest about there being a separate tag.
-        Self::decrypt(key, &init_data, None, ciphertext, plaintext).map_err(|e| match e {
-            SymmetricCipherError::AEADTagCheckFailed => SymmetricCipherError::DecryptionFailed,
-            other => other,
-        })
-    }
-
-    #[cfg(feature = "std")]
-    fn aead_encrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        aad: &[u8],
-        plaintext: &[u8],
-    ) -> Result<([u8; NONCE_LEN], Vec<u8>, [u8; TAG_LEN]), SymmetricCipherError> {
-        let mut ciphertext = vec![0u8; plaintext.len()];
-        let (nonce, written, tag) = Self::aead_encrypt_out(key, aad, plaintext, &mut ciphertext)?;
-        ciphertext.truncate(written);
-        Ok((nonce, ciphertext, tag))
-    }
-
-    fn aead_encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        let _ = Self::checked_key(key)?;
-        if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "Ascon-AEAD128 ciphertext buffer too small",
-                plaintext.len(),
-            ));
-        }
-        let nonce = Self::fresh_nonce()?;
-        let aad_opt = if aad.is_empty() { None } else { Some(aad) };
-        let mut cipher = Self::new(key, &nonce, aad_opt, true)?;
-        ciphertext[..plaintext.len()].copy_from_slice(plaintext);
-        cipher.do_encrypt_update(&mut ciphertext[..plaintext.len()]);
-        let tag = cipher.do_encrypt_final();
-        Ok((nonce, plaintext.len(), tag))
-    }
-
-    fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        Ok(self.do_encrypt_final())
-    }
-
-    #[cfg(feature = "std")]
-    fn aead_decrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<Vec<u8>, SymmetricCipherError> {
-        let mut plaintext = vec![0u8; ciphertext.len()];
-        let written = Self::aead_decrypt_out(key, nonce, aad, ciphertext, tag, &mut plaintext)?;
-        plaintext.truncate(written);
-        Ok(plaintext)
-    }
-
-    fn aead_decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        tag: &[u8; TAG_LEN],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        let _ = Self::checked_key(key)?;
-        if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "Ascon-AEAD128 plaintext buffer too small",
-                ciphertext.len(),
-            ));
-        }
-        let aad_opt = if aad.is_empty() { None } else { Some(aad) };
-        let mut cipher = Self::new(key, nonce, aad_opt, false)?;
-        plaintext[..ciphertext.len()].copy_from_slice(ciphertext);
-        cipher.do_decrypt_update(&mut plaintext[..ciphertext.len()]);
-        match cipher.do_decrypt_final(tag) {
-            Ok(()) => Ok(ciphertext.len()),
-            Err(e) => {
-                // A failed tag check must not leave plaintext in the caller's buffer.
-                plaintext[..ciphertext.len()].fill(0);
-                Err(e)
-            }
-        }
-    }
-
-    fn do_aead_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
-        self.do_decrypt_final(tag)
-    }
 }
 
 /// Adapts [`AsconAead128`]'s encrypting direction to [`AEADCipherEncryptor`]; see the module docs

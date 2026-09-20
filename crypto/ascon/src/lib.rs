@@ -115,9 +115,9 @@
 //!   caller that needs a partial-byte final block should reach for SHA-3, which supports one.
 //! - **Decryption tag check failure:** a ciphertext decryption whose finalization returns
 //!   `Err(SymmetricCipherError::AEADTagCheckFailed)` must be treated as tampered, and the entire
-//!   plaintext rejected. The one-shot APIs ([`ascon_aead128::AsconAead128::decrypt`] and the
-//!   `AEADCipher` trait impl) zeroize their output buffer before returning that
-//!   error. The streaming API ([`ascon_aead128::AsconAead128::do_decrypt_update`] /
+//!   plaintext rejected. The one-shot APIs ([`ascon_aead128::AsconAead128::decrypt`] and
+//!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_out`]) zeroize their output buffer
+//!   before returning that error. The streaming API ([`ascon_aead128::AsconAead128::do_decrypt_update`] /
 //!   [`ascon_aead128::AsconAead128::do_decrypt_final`] or
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final`]) does not: plaintext
 //!   bytes are necessarily written to the caller's buffer *before* the tag can be checked, so an
