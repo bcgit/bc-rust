@@ -65,11 +65,20 @@
 //! assert_eq!(blocks, original);
 //! ```
 //!
-//! ## CBC mode
+//! ## Modes of operation
 //!
 //! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
-//! provides [`SM4_CBC`] as an alias that fills in the const parameters, with the direction left as
-//! the type parameter:
+//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
+//! makes. [`SM4_CBC`] is CBC (Sec 8.4; NIST SP 800-38A Sec 6.2), which takes the direction **and a
+//! padding scheme**; [`SM4_CFB`] is SM4-CFB-128 (Sec 8.5.1) and [`SM4_CFB8`] is SM4-CFB-8, the
+//! `s = 8` segment size, which is a different and non-interoperable mode costing one SM4 call per
+//! byte; [`SM4_CTR`] is CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter. Each of those
+//! three takes only the direction.
+//!
+//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
+//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
+//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
+//! [`SM4_CBC`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_sm4::SM4_CBC;
@@ -94,8 +103,31 @@
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!
+//! The stream modes take any length and return the initialisation data the same way:
+//!
+//! ```
+//! use bouncycastle_sm4::SM4_CTR;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Encrypting};
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
+//! let plaintext = [0x5Au8; 50];
+//! let mut data = plaintext;
+//!
+//! // The nonce is generated for you and returned; there is no API for supplying one.
+//! let (written, nonce) = SM4_CTR::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! assert_eq!(written, 50);
+//! assert_ne!(data, plaintext);
+//!
+//! SM4_CTR::<Decrypting>::decrypt(&key, &nonce, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
+//! ```
+//!
 //! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
+//! name `bouncycastle_modes::Cbc` directly; that is what the CBC aliases wrap.
 //!
 //! There is no one-shot static on the permutation, because `SM4::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
@@ -224,8 +256,11 @@
 //!   licence), as in the AES crate.
 //! * Verified against every value in the draft's Appendix A.1 -- Examples 1 through 6, including
 //!   all 32 round keys and all 32 per-round outputs of Examples 1 and 4, and the two 1,000,000-fold
-//!   iterated ciphertexts -- the SM4-ECB and SM4-CBC vectors of Appendix A.2.1 and A.2.2, plus
-//!   GB/T 32907-2016's own two examples as republished at <https://eprint.iacr.org/2008/329.pdf>.
+//!   iterated ciphertexts -- the SM4-ECB, SM4-CBC and SM4-CFB vectors of Appendix A.2.1, A.2.2 and
+//!   A.2.4, the SM4-CTR vectors of Appendix A.2.5 (through a reference built from the Sec 8.7.1
+//!   equations, which the [`SM4_CTR`] alias is then held to -- see `tests/stream_mode_tests.rs` for
+//!   why the published counter blocks are not ones the alias produces), plus GB/T 32907-2016's own
+//!   two examples as republished at <https://eprint.iacr.org/2008/329.pdf>.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -233,9 +268,15 @@
 
 mod bitslice;
 mod cbc;
+mod cfb;
+mod cfb8;
+mod ctr;
 mod sbox;
 mod schedule;
 mod sm4;
 
 pub use cbc::SM4_CBC;
+pub use cfb::SM4_CFB;
+pub use cfb8::SM4_CFB8;
+pub use ctr::{CTR_NONCE_LEN, SM4_CTR};
 pub use sm4::{BLOCK_LEN, KEY_LEN, LANES, SM4};
