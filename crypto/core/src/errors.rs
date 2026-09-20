@@ -183,7 +183,7 @@ pub enum SymmetricCipherError {
     StateError(&'static str),
 }
 
-/// Errors from a [`crate::traits::Padding`] scheme.
+/// Errors from a [`crate::traits::BlockCipherPadding`] scheme.
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PaddingError {

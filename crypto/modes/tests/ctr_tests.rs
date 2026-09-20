@@ -668,7 +668,8 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let nonce = ToyCtr::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+        let (n, nonce) = ToyCtr::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+        assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         if len >= 8 {
             assert_ne!(data, plaintext, "len {len}: the data must actually be encrypted");
