@@ -6,7 +6,7 @@
 //! literals (e.g. RSA-2048/SHA-256 in [`crate::rsa_2048`]) rather than a caller choosing them.
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
-use crate::emsa_pkcs1_v1_5::{emsa_pkcs1_v1_5_encode, emsa_pkcs1_v1_5_verify};
+use crate::emsa_pkcs1_v1_5::{emsa_pkcs1_v1_5_encode_from_hash, emsa_pkcs1_v1_5_verify_from_hash};
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsa_core::{rsasp1, rsavp1};
 use bouncycastle_core::errors::SignatureError;
@@ -14,10 +14,12 @@ use bouncycastle_core::traits::{AlgorithmOID, Hash, HashAlgParams};
 
 /// RSASSA-PKCS1-V1_5-SIGN (RFC 8017 §8.2.1): `S = I2OSP(RSASP1(K, OS2IP(EM)), k)`, where
 /// `EM = EMSA-PKCS1-V1_5-ENCODE(M, k)`. Step 1's two errors ("message too long" -- unreachable
-/// here, since [`emsa_pkcs1_v1_5_encode`]'s own length is fixed at compile time by `K_LEN`, never
-/// computed from `message`'s length -- and "RSA modulus too short") are folded into
-/// [`emsa_pkcs1_v1_5_encode`]'s `debug_assert`, not raised here as a runtime error, for the same
-/// reason given there.
+/// here, since the encoding's own length is fixed at compile time by `K_LEN`, never computed from
+/// `message`'s length -- and "RSA modulus too short") are folded into
+/// [`emsa_pkcs1_v1_5_encode_from_hash`]'s `debug_assert`, not raised here as a runtime error, for
+/// the same reason given there.
+///
+/// Hashes `message` (EMSA-PKCS1-v1_5 step 1) and hands the digest to [`sign_from_hash`].
 pub fn sign<
     H: Hash + HashAlgParams + AlgorithmOID + Default,
     const H_LEN: usize,
@@ -33,7 +35,31 @@ pub fn sign<
     sk: &RsaPrivateKey<L, HALF>,
     message: &[u8],
 ) -> Result<[u8; K_LEN], SignatureError> {
-    let em = emsa_pkcs1_v1_5_encode::<H, H_LEN, T_LEN, K_LEN>(message);
+    let mut digest = [0u8; H_LEN];
+    H::default().hash_out(message, &mut digest);
+    sign_from_hash::<H, H_LEN, T_LEN, L, L2, L21, HALF, HALF2, HALF21, K_LEN>(sk, &digest)
+}
+
+/// [`sign`] given the message's hash `digest` (`H`'s output over the message) instead of the
+/// message itself -- for a caller that hashed the message incrementally, such as a streaming
+/// `Signer`. The `H` bound is only what [`emsa_pkcs1_v1_5_encode_from_hash`] needs to build the
+/// `DigestInfo`; no hashing happens here.
+pub fn sign_from_hash<
+    H: HashAlgParams + AlgorithmOID,
+    const H_LEN: usize,
+    const T_LEN: usize,
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+    const K_LEN: usize,
+>(
+    sk: &RsaPrivateKey<L, HALF>,
+    digest: &[u8; H_LEN],
+) -> Result<[u8; K_LEN], SignatureError> {
+    let em = emsa_pkcs1_v1_5_encode_from_hash::<H, H_LEN, T_LEN, K_LEN>(digest);
     let m = limbs_from_be_bytes::<L, K_LEN>(&em);
     let s = rsasp1::<L, L2, L21, HALF, HALF2, HALF21>(sk, &m)?;
     Ok(be_bytes_from_limbs::<L, K_LEN>(&s))
@@ -52,6 +78,8 @@ pub fn sign<
 /// CAVP/wycheproof-style vectors needs to tell "malformed input" apart from "well-formed but
 /// wrong", the same distinction RFC 8017 itself draws by giving the range check its own error
 /// text.
+///
+/// Hashes `message` and hands the digest to [`verify_from_hash`].
 pub fn verify<
     H: Hash + HashAlgParams + AlgorithmOID + Default,
     const H_LEN: usize,
@@ -64,11 +92,30 @@ pub fn verify<
     message: &[u8],
     signature: &[u8; K_LEN],
 ) -> Result<(), SignatureError> {
+    let mut digest = [0u8; H_LEN];
+    H::default().hash_out(message, &mut digest);
+    verify_from_hash::<H, H_LEN, L, L2, L21, K_LEN>(pk, &digest, signature)
+}
+
+/// [`verify`] given the message's hash `digest` instead of the message -- the counterpart of
+/// [`sign_from_hash`], for a streaming `SignatureVerifier`.
+pub fn verify_from_hash<
+    H: AlgorithmOID,
+    const H_LEN: usize,
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const K_LEN: usize,
+>(
+    pk: &RsaPublicKey<L>,
+    digest: &[u8; H_LEN],
+    signature: &[u8; K_LEN],
+) -> Result<(), SignatureError> {
     let s = limbs_from_be_bytes::<L, K_LEN>(signature);
     let m = rsavp1::<L, L2, L21>(pk, &s)?;
     let em_prime = be_bytes_from_limbs::<L, K_LEN>(&m);
 
-    if emsa_pkcs1_v1_5_verify::<H, H_LEN, K_LEN>(message, &em_prime) {
+    if emsa_pkcs1_v1_5_verify_from_hash::<H, H_LEN, K_LEN>(digest, &em_prime) {
         Ok(())
     } else {
         Err(SignatureError::SignatureVerificationFailed)

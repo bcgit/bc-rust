@@ -1,10 +1,12 @@
 //! EMSA-PKCS1-v1_5 (RFC 8017 §9.2): deterministic signature encoding, generic over the hash
-//! function `H` via its [`Hash`]/[`HashAlgParams`]/[`AlgorithmOID`] impls (e.g.
+//! function `H` via its [`HashAlgParams`]/[`AlgorithmOID`] impls (e.g.
 //! `bouncycastle_sha2::SHA256`), and specialized to this crate's fixed-width keys: RFC 8017's
 //! `emLen` is always this crate's modulus byte length `K_LEN` (`8 * L`), never a generic
-//! caller-chosen length.
+//! caller-chosen length. Both operations take the message's already-computed hash rather than
+//! the message (step 1 of the encoding is the caller's), so that a streaming signer/verifier can
+//! hash incrementally and hand in the result; `H` is never instantiated here.
 
-use bouncycastle_core::traits::{AlgorithmOID, Hash, HashAlgParams};
+use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams};
 
 /// `T`, the DER encoding of `DigestInfo { digestAlgorithm, digest }` (RFC 8017 §9.2 step 2):
 ///
@@ -50,25 +52,26 @@ fn digest_info<H: AlgorithmOID + HashAlgParams, const H_LEN: usize, const T_LEN:
     t
 }
 
-/// EMSA-PKCS1-V1_5-ENCODE (RFC 8017 §9.2), with `emLen` fixed to `K_LEN` (see the module docs).
+/// EMSA-PKCS1-V1_5-ENCODE (RFC 8017 §9.2) from step 2 onward, with `emLen` fixed to `K_LEN` (see
+/// the module docs) and step 1's `H = Hash(M)` supplied by the caller as `digest`: the caller is
+/// either [`crate::rsassa_pkcs1_v1_5::sign`] hashing a whole message in one call, or a streaming
+/// `Signer` that hashed it incrementally -- this function itself never sees the message.
 ///
-/// Steps 1-2: hash `message` and wrap it in [`digest_info`]. Step 3's error ("intended encoded
-/// message length too short", `emLen < tLen + 11`) is a `debug_assert` here, not a runtime error:
-/// every (hash, modulus size) pairing this crate actually wires up has a modulus thousands of
-/// bits wider than any hash's `DigestInfo`, so it can only fire on a deliberately-wrong generic
-/// instantiation, never on real input. Steps 4-5 build `EM = 0x00 || 0x01 || PS || 0x00 || T`,
-/// where `PS` is `K_LEN - T_LEN - 3` bytes of `0xff` (at least 8, per step 3's bound).
-pub fn emsa_pkcs1_v1_5_encode<
-    H: Hash + HashAlgParams + AlgorithmOID + Default,
+/// Step 2 wraps `digest` in [`digest_info`]. Step 3's error ("intended encoded message length
+/// too short", `emLen < tLen + 11`) is a `debug_assert` here, not a runtime error: every (hash,
+/// modulus size) pairing this crate actually wires up has a modulus thousands of bits wider than
+/// any hash's `DigestInfo`, so it can only fire on a deliberately-wrong generic instantiation,
+/// never on real input. Steps 4-5 build `EM = 0x00 || 0x01 || PS || 0x00 || T`, where `PS` is
+/// `K_LEN - T_LEN - 3` bytes of `0xff` (at least 8, per step 3's bound).
+pub fn emsa_pkcs1_v1_5_encode_from_hash<
+    H: HashAlgParams + AlgorithmOID,
     const H_LEN: usize,
     const T_LEN: usize,
     const K_LEN: usize,
 >(
-    message: &[u8],
+    digest: &[u8; H_LEN],
 ) -> [u8; K_LEN] {
-    let mut digest = [0u8; H_LEN];
-    H::default().hash_out(message, &mut digest);
-    let t: [u8; T_LEN] = digest_info::<H, H_LEN, T_LEN>(&digest);
+    let t: [u8; T_LEN] = digest_info::<H, H_LEN, T_LEN>(digest);
 
     debug_assert!(K_LEN >= T_LEN + 11, "emsa_pkcs1_v1_5_encode: modulus too short for this hash");
 
@@ -81,24 +84,22 @@ pub fn emsa_pkcs1_v1_5_encode<
 }
 
 /// A single DER length octet in strict short form: `None` if the byte's top bit is set (BER's
-/// long form, always rejected here -- see [`emsa_pkcs1_v1_5_verify`]) or `bytes` doesn't reach
+/// long form, always rejected here -- see [`emsa_pkcs1_v1_5_verify_from_hash`]) or `bytes` doesn't reach
 /// `pos`.
 fn short_form_len(bytes: &[u8], pos: usize) -> Option<usize> {
     let len = *bytes.get(pos)? as usize;
     if len >= 0x80 { None } else { Some(len) }
 }
 
-/// Checks that `t` is a `DigestInfo` DER encoding (RFC 8017 §9.2 step 2) of `message`'s hash under
-/// `H`, tolerating both `AlgorithmIdentifier` shapes: `parameters NULL` (what [`digest_info`]
-/// always produces) and `parameters` ABSENT (not produced here, but present in the wild: the
-/// `AlgorithmIdentifier`'s `parameters` field is `ANY DEFINED BY algorithm`, and it needs none for
-/// a hash OID, so some implementations omit it) -- see [`emsa_pkcs1_v1_5_verify`]'s docs for why
-/// verification must accept it. Every other check is a strict requirement: a DER length must be
-/// single-byte short form, and no byte of `t` may go unaccounted for.
-fn decode_digest_info<H: Hash + HashAlgParams + AlgorithmOID + Default, const H_LEN: usize>(
-    t: &[u8],
-    message: &[u8],
-) -> bool {
+/// Checks that `t` is a `DigestInfo` DER encoding (RFC 8017 §9.2 step 2) of `digest` (the
+/// message's hash under `H`), tolerating both `AlgorithmIdentifier` shapes: `parameters NULL`
+/// (what [`digest_info`] always produces) and `parameters` ABSENT (not produced here, but present
+/// in the wild: the `AlgorithmIdentifier`'s `parameters` field is `ANY DEFINED BY algorithm`, and
+/// it needs none for a hash OID, so some implementations omit it) -- see
+/// [`emsa_pkcs1_v1_5_verify_from_hash`]'s docs for why verification must accept it. Every other
+/// check is a strict requirement: a DER length must be single-byte short form, and no byte of `t`
+/// may go unaccounted for.
+fn decode_digest_info<H: AlgorithmOID, const H_LEN: usize>(t: &[u8], digest: &[u8; H_LEN]) -> bool {
     let mut pos = 0;
     if t.first() != Some(&0x30) {
         return false;
@@ -141,9 +142,9 @@ fn decode_digest_info<H: Hash + HashAlgParams + AlgorithmOID + Default, const H_
     pos += 1;
     let Some(digest_len) = short_form_len(t, pos) else { return false };
     pos += 1;
-    // Mutating this `||` to `&&` is an accepted equivalent, not a gap: `t[pos..]` at line 145
-    // already fails its own comparison against `computed` (a fixed `[u8; H_LEN]`) whenever either
-    // half of this condition is true alone -- a `digest_len` that disagrees with `H_LEN` or a
+    // Mutating this `||` to `&&` is an accepted equivalent, not a gap: the final `t[pos..]`
+    // comparison against `digest` (a fixed `[u8; H_LEN]`) already fails whenever either half of
+    // this condition is true alone -- a `digest_len` that disagrees with `H_LEN` or a
     // `pos + digest_len` that disagrees with `t.len()` both show up as a slice/array length
     // mismatch there, which `PartialEq` for `[u8]` against `[u8; H_LEN]` treats as unequal without
     // panicking. This check exists to fail fast and by a clearer name, not because anything
@@ -152,26 +153,24 @@ fn decode_digest_info<H: Hash + HashAlgParams + AlgorithmOID + Default, const H_
         return false;
     }
 
-    let mut computed = [0u8; H_LEN];
-    H::default().hash_out(message, &mut computed);
-    t[pos..] == computed
+    t[pos..] == *digest
 }
 
-/// EMSA-PKCS1-v1_5 verification: RFC 8017 §8.2.2's own note describes this as an alternative to
-/// its step 4 ("apply a 'decoding' operation ... to recover the underlying hash value, and then
-/// compare it to a newly computed hash value") -- required here, rather than optional, because
-/// re-encoding `message` and comparing bytes (this crate's [`emsa_pkcs1_v1_5_encode`]) only ever
-/// produces one canonical `EM`, and [`decode_digest_info`] must accept two.
+/// EMSA-PKCS1-v1_5 verification of `em` against the message's hash `digest` (supplied by the
+/// caller, as for [`emsa_pkcs1_v1_5_encode_from_hash`]): RFC 8017 §8.2.2's own note describes
+/// this as an alternative to its step 4 ("apply a 'decoding' operation ... to recover the
+/// underlying hash value, and then compare it to a newly computed hash value") -- required here,
+/// rather than optional, because re-encoding the digest and comparing bytes (this crate's
+/// [`emsa_pkcs1_v1_5_encode_from_hash`]) only ever produces one canonical `EM`, and
+/// [`decode_digest_info`] must accept two. Checks `EM = 0x00 || 0x01 || PS || 0x00 || T`
+/// structurally (at least 8 bytes of `0xff` padding, then the separator), then hands `T` to
+/// [`decode_digest_info`].
 ///
 /// Confirmed against every forgery-shaped case in Wycheproof's `rsa_signature_2048_sha256_test.json`
 /// (`BerEncodedPadding`, `InvalidAsnInPadding`, `ModifiedPadding`, `WrongHash`, `InvalidPadding`,
 /// `ShortPadding`, `NoHash`), and its one `MissingNull` "acceptable" case.
-pub fn emsa_pkcs1_v1_5_verify<
-    H: Hash + HashAlgParams + AlgorithmOID + Default,
-    const H_LEN: usize,
-    const K_LEN: usize,
->(
-    message: &[u8],
+pub fn emsa_pkcs1_v1_5_verify_from_hash<H: AlgorithmOID, const H_LEN: usize, const K_LEN: usize>(
+    digest: &[u8; H_LEN],
     em: &[u8; K_LEN],
 ) -> bool {
     if em[0] != 0x00 || em[1] != 0x01 {
@@ -194,19 +193,37 @@ pub fn emsa_pkcs1_v1_5_verify<
         return false;
     }
 
-    decode_digest_info::<H, H_LEN>(&em[i + 1..], message)
+    decode_digest_info::<H, H_LEN>(&em[i + 1..], digest)
 }
 
 #[cfg(test)]
 mod tests {
-    //! `digest_info` is crate-private (only [`emsa_pkcs1_v1_5_encode`] needs it directly), so it
-    //! is exercised here rather than from `tests/` -- the same "high-risk code that cannot be
-    //! reached through the public API" exception `rsa_core`'s tests use, though `digest_info`
-    //! itself is not high-risk so much as inconvenient to reach any other way. The expected DER
-    //! prefixes are RFC 8017 §9.2 note 1's own literal byte strings for SHA-256/384/512.
+    //! `digest_info` is crate-private (only [`emsa_pkcs1_v1_5_encode_from_hash`] needs it
+    //! directly), so it is exercised here rather than from `tests/` -- the same "high-risk code
+    //! that cannot be reached through the public API" exception `rsa_core`'s tests use, though
+    //! `digest_info` itself is not high-risk so much as inconvenient to reach any other way. The
+    //! expected DER prefixes are RFC 8017 §9.2 note 1's own literal byte strings for
+    //! SHA-256/384/512.
 
     use super::*;
+    use bouncycastle_core::traits::Hash;
     use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+
+    /// The whole EMSA-PKCS1-V1_5-ENCODE over a message, SHA-256: step 1 here, the rest in
+    /// [`emsa_pkcs1_v1_5_encode_from_hash`] -- what `rsassa_pkcs1_v1_5::sign` does, restated
+    /// locally so these tests can speak in terms of messages.
+    fn encode<const K_LEN: usize>(message: &[u8]) -> [u8; K_LEN] {
+        let mut digest = [0u8; 32];
+        SHA256::default().hash_out(message, &mut digest);
+        emsa_pkcs1_v1_5_encode_from_hash::<SHA256, 32, 51, K_LEN>(&digest)
+    }
+
+    /// [`encode`]'s verification counterpart, SHA-256.
+    fn verify<const K_LEN: usize>(message: &[u8], em: &[u8; K_LEN]) -> bool {
+        let mut digest = [0u8; 32];
+        SHA256::default().hash_out(message, &mut digest);
+        emsa_pkcs1_v1_5_verify_from_hash::<SHA256, 32, K_LEN>(&digest, em)
+    }
 
     #[test]
     fn digest_info_matches_rfc8017_sha256_prefix() {
@@ -249,7 +266,7 @@ mod tests {
 
     #[test]
     fn encode_layout_is_00_01_ff_dot_dot_dot_00_t() {
-        let em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        let em = encode::<256>(b"hello");
         assert_eq!(em[0], 0x00);
         assert_eq!(em[1], 0x01);
         assert!(em[2..256 - 51 - 1].iter().all(|&b| b == 0xff));
@@ -259,33 +276,33 @@ mod tests {
 
     #[test]
     fn encode_is_deterministic() {
-        let a = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"same message");
-        let b = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"same message");
+        let a = encode::<256>(b"same message");
+        let b = encode::<256>(b"same message");
         assert_eq!(a, b);
     }
 
     #[test]
     fn encode_differs_for_different_messages() {
-        let a = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"message one");
-        let b = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"message two");
+        let a = encode::<256>(b"message one");
+        let b = encode::<256>(b"message two");
         assert_ne!(a, b);
     }
 
     #[test]
     fn verify_accepts_what_encode_produces() {
-        let em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
-        assert!(emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        let em = encode::<256>(b"hello");
+        assert!(verify::<256>(b"hello", &em));
     }
 
     #[test]
     fn verify_rejects_wrong_message() {
-        let em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"goodbye", &em));
+        let em = encode::<256>(b"hello");
+        assert!(!verify::<256>(b"goodbye", &em));
     }
 
     /// The `MissingNull` case Wycheproof's `rsa_signature_2048_sha256_test.json` marks
     /// "acceptable": a `DigestInfo` whose `AlgorithmIdentifier` omits the `NULL` parameters this
-    /// crate's own [`emsa_pkcs1_v1_5_encode`] always includes.
+    /// crate's own [`emsa_pkcs1_v1_5_encode_from_hash`] always includes.
     #[test]
     fn verify_accepts_digest_info_with_null_parameters_absent() {
         let mut digest = [0u8; 32];
@@ -311,7 +328,7 @@ mod tests {
         em[256 - 49 - 1] = 0x00;
         em[256 - 49..].copy_from_slice(&t);
 
-        assert!(emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(verify::<256>(b"hello", &em));
     }
 
     /// Wycheproof's `BerEncodedPadding`: a `DigestInfo` length re-encoded in BER long form (top
@@ -320,21 +337,21 @@ mod tests {
     /// Bleichenbacher-style forgeries exploit, regardless of what value it happens to encode.
     #[test]
     fn verify_rejects_ber_long_form_length() {
-        let mut em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        let mut em = encode::<256>(b"hello");
         let t_start = 256 - 51;
         assert_eq!(em[t_start], 0x30);
         assert_eq!(em[t_start + 1], 49); // outer_len
         em[t_start + 1] |= 0x80;
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 
     /// Wycheproof's `InvalidAsnInPadding`: a `DigestInfo` length off by one from the true value.
     #[test]
     fn verify_rejects_wrong_der_length() {
-        let mut em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        let mut em = encode::<256>(b"hello");
         let t_start = 256 - 51;
         em[t_start + 1] += 1;
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 
     /// Wycheproof's `ModifiedPadding` ("appending 0's to digestInfo"): two extra zero bytes appended
@@ -343,14 +360,14 @@ mod tests {
     /// this; requiring every byte of `T` to be accounted for by the parse does not.
     #[test]
     fn verify_rejects_trailing_garbage_after_digest_info() {
-        let good = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        let good = encode::<256>(b"hello");
         let mut em = [0xffu8; 256];
         em[0] = 0x00;
         em[1] = 0x01;
         em[256 - 51 - 2 - 1] = 0x00; // PS is 2 bytes shorter than the valid encoding's.
         em[256 - 51 - 2..256 - 2].copy_from_slice(&good[256 - 51..]); // the valid T, unmodified.
         em[256 - 2..].copy_from_slice(&[0x00, 0x00]); // two bytes appended after it.
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 
     /// Wycheproof's `ShortPadding`: fewer than the required 8 `0xff` bytes.
@@ -360,17 +377,17 @@ mod tests {
         em[0] = 0x00;
         em[1] = 0x01;
         em[2] = 0x00; // PS has length 0, not >= 8
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 
     /// Wycheproof's `WrongHash`: the OID in the padding names a different hash than the one used
     /// to verify.
     #[test]
     fn verify_rejects_wrong_hash_oid() {
-        let mut em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        let mut em = encode::<256>(b"hello");
         let t_start = 256 - 51;
         em[t_start + 4] ^= 0xff; // flip a byte inside the OID
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 
     /// A crafted `EM` whose `DigestInfo` claims an `AlgorithmIdentifier` length long enough to run
@@ -395,36 +412,36 @@ mod tests {
         em[253] = 0x02;
         em[254] = 0x30;
         em[255] = 0x64;
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 
     /// RFC 8017 §9.2 step 4: "The length of PS will be at least 8 octets" -- exactly 8 must be
     /// accepted, not just "8 or more" in the abstract. `K_LEN = 62` is the minimum modulus width
     /// this hash's `DigestInfo` (`T_LEN = 51`) allows at all (the `K_LEN >= T_LEN + 11` bound
-    /// [`emsa_pkcs1_v1_5_encode`]'s docs describe), which pins `PS` to exactly 8 bytes -- the one
+    /// [`emsa_pkcs1_v1_5_encode_from_hash`]'s docs describe), which pins `PS` to exactly 8 bytes -- the one
     /// pairing that distinguishes "`< 8`" from "`<= 8`" or "`== 8`" as the rejection condition.
     #[test]
     fn verify_accepts_the_minimum_8_byte_ps_boundary() {
-        let em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 62>(b"hello");
+        let em = encode::<62>(b"hello");
         assert_eq!(em[2..2 + 8], [0xff; 8], "this construction must exercise ps_len == 8 exactly");
-        assert!(emsa_pkcs1_v1_5_verify::<SHA256, 32, 62>(b"hello", &em));
+        assert!(verify::<62>(b"hello", &em));
     }
 
     /// RFC 8017 §9.2 step 2: `EM`'s block type byte (`em[1]`) must be exactly `0x01`. `em[0]`
     /// stays correct (`0x00`) so this exercises only the block-type half of the check.
     #[test]
     fn verify_rejects_wrong_block_type() {
-        let mut em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        let mut em = encode::<256>(b"hello");
         em[1] = 0x02;
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 
     /// RFC 8017 §9.2 step 2: `EM`'s leading byte (`em[0]`) must be exactly `0x00`. `em[1]` stays
     /// correct (`0x01`) so this exercises only the leading-byte half of the check.
     #[test]
     fn verify_rejects_wrong_leading_byte() {
-        let mut em = emsa_pkcs1_v1_5_encode::<SHA256, 32, 51, 256>(b"hello");
+        let mut em = encode::<256>(b"hello");
         em[0] = 0x01;
-        assert!(!emsa_pkcs1_v1_5_verify::<SHA256, 32, 256>(b"hello", &em));
+        assert!(!verify::<256>(b"hello", &em));
     }
 }
