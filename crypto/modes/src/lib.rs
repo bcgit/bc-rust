@@ -143,7 +143,7 @@
 //! let plaintext = *b"the quick brown fox!!";
 //!
 //! let mut ciphertext = plaintext;
-//! let iv = Aes128Cfb::<Encrypting>::encrypt(&key, &mut ciphertext).expect("encryption");
+//! let (_, iv) = Aes128Cfb::<Encrypting>::encrypt(&key, &mut ciphertext).expect("encryption");
 //! assert_eq!(ciphertext.len(), plaintext.len());
 //!
 //! let mut recovered = ciphertext;

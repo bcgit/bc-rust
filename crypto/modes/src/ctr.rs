@@ -432,8 +432,10 @@ where
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if the counter cannot cover the call. Nothing is
     /// consumed in that case; see the module docs.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        self.apply(data)
+    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        let len = data.len();
+        self.apply(data)?;
+        Ok(len)
     }
 }
 
@@ -459,7 +461,9 @@ where
     ///
     /// # Errors
     /// As [`StreamCipherEncryptor::do_encrypt`].
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        self.apply(data)
+    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        let len = data.len();
+        self.apply(data)?;
+        Ok(len)
     }
 }

@@ -725,12 +725,14 @@ impl TestFrameworkStreamCipher {
         )
         .unwrap();
 
-        // one-shot, in place: must round-trip.
+        // one-shot, in place: must round-trip, and report every byte as written.
         let mut buf = *DUMMY_SEED;
-        let iv = E::encrypt(&key, &mut buf).unwrap();
+        let (n, iv) = E::encrypt(&key, &mut buf).unwrap();
+        assert_eq!(n, buf.len(), "encrypt must report the number of bytes written");
         let reference_ct = buf;
         assert_ne!(&reference_ct[..], &DUMMY_SEED[..], "encryption must change the data");
-        D::decrypt(&key, &iv, &mut buf).unwrap();
+        let n = D::decrypt(&key, &iv, &mut buf).unwrap();
+        assert_eq!(n, buf.len(), "decrypt must report the number of bytes written");
         assert_eq!(&buf[..], &DUMMY_SEED[..]);
 
         // the streaming API under the same init data must give the one-shot's answer whatever
@@ -785,14 +787,16 @@ impl TestFrameworkStreamCipher {
             E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned)).unwrap();
         streamed.do_encrypt(&mut expected).unwrap();
         let mut buf = *DUMMY_SEED;
-        let iv = E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
-            .unwrap();
+        let (n, iv) =
+            E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
+                .unwrap();
+        assert_eq!(n, buf.len(), "encrypt_rng must report the number of bytes written");
         assert_eq!(iv, iv_streamed);
         assert_eq!(&buf[..], &expected[..]);
         // ...and a driven RNG determines the ciphertext: the same RNG stream again gives the same
         // init data and ciphertext, so the ciphertext is a function of (key, init data) alone.
         let mut buf2 = *DUMMY_SEED;
-        let iv_again =
+        let (_, iv_again) =
             E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf2)
                 .unwrap();
         assert_eq!(iv, iv_again);
@@ -807,8 +811,8 @@ impl TestFrameworkStreamCipher {
             // and different init data under the same key gives different ciphertext
             let mut a = *DUMMY_SEED;
             let mut b = *DUMMY_SEED;
-            let iv_a = E::encrypt(&key, &mut a).unwrap();
-            let iv_b = E::encrypt(&key, &mut b).unwrap();
+            let (_, iv_a) = E::encrypt(&key, &mut a).unwrap();
+            let (_, iv_b) = E::encrypt(&key, &mut b).unwrap();
             assert_ne!(iv_a, iv_b);
             assert_ne!(&a[..], &b[..]);
         }

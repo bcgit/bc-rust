@@ -368,14 +368,15 @@ where
     /// there is no pair path here; the block-aligned middle goes one cipher call per block, and
     /// only the bytes that complete an open segment or open the final short one go singly. See the
     /// module docs. Never fails: CFB has no per-IV data limit.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        let len = data.len();
         let (head, blocks, tail) = self.split(data);
         self.encrypt_bytes(head);
         for block in blocks.iter_mut() {
             self.encrypt_one(block);
         }
         self.encrypt_bytes(tail);
-        Ok(())
+        Ok(len)
     }
 }
 
@@ -402,7 +403,8 @@ where
     /// `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
     /// indexing arithmetic. The bytes that complete an open segment, and the final short segment,
     /// go singly. Never fails: CFB has no per-IV data limit.
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        let len = data.len();
         let (head, blocks, tail) = self.split(data);
         self.decrypt_bytes(head);
         let (fours, rest) = blocks.as_chunks_mut::<4>();
@@ -417,6 +419,6 @@ where
             self.decrypt_one(block);
         }
         self.decrypt_bytes(tail);
-        Ok(())
+        Ok(len)
     }
 }
