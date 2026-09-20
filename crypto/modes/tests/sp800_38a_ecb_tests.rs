@@ -122,7 +122,8 @@ where
     assert_eq!(hook, ct, "{section}: implementor hook");
 
     let mut data = flat(&PLAINTEXTS);
-    let init = Enc::<P, KEY_LEN>::encrypt(&key, &mut data).unwrap();
+    let (n, init) = Enc::<P, KEY_LEN>::encrypt(&key, &mut data).unwrap();
+    assert_eq!(n, data.len(), "{section}: encrypt must report the number of bytes written");
     assert_eq!(init, []);
     assert_eq!(data, flat(expected), "{section}: one-shot");
 }
