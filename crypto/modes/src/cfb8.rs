@@ -224,12 +224,12 @@ where
     /// Strictly serial, one forward cipher per byte: `I_{j+1}` needs `Cj`, which is the result of
     /// the XOR that the cipher call produced. See the module docs. Never fails: CFB has no per-IV
     /// data limit.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         for byte in data.iter_mut() {
             *byte ^= self.keystream_byte();
             self.shift_in(*byte);
         }
-        Ok(())
+        Ok(data.len())
     }
 }
 
@@ -256,7 +256,8 @@ where
     /// Walks the data in fours through the permutation's *forward* four-block path, then in pairs
     /// through its forward pair path, then the remaining bytes singly (Sec 6.3's parallel
     /// decryption; see the module docs). Never fails: CFB has no per-IV data limit.
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        let len = data.len();
         let (fours, rest) = data.as_chunks_mut::<4>();
         for four in fours.iter_mut() {
             self.decrypt_batch(four, P::encrypt_4blocks);
@@ -270,6 +271,6 @@ where
             *byte ^= self.keystream_byte();
             self.shift_in(c);
         }
-        Ok(())
+        Ok(len)
     }
 }

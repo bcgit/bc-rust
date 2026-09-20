@@ -401,7 +401,7 @@ fn one_shots_agree_with_the_streaming_api() {
         (iv, enc_blocks(&mut enc, &blocks3))
     };
     let mut buf = flat3;
-    let iv_b = ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
+    let (_, iv_b) = ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
     assert_eq!(iv_a, iv_b);
     assert_eq!(buf, *ct_blocks.as_flattened(), "3 blocks: one-shot must equal streaming");
     ToyCbc::<Decrypting>::decrypt(&key, &iv, &mut buf).unwrap();
@@ -424,7 +424,7 @@ fn one_shots_agree_with_the_streaming_api() {
 
     // The OS-RNG variant round-trips too.
     let mut buf = flat3;
-    let iv_fresh = ToyCbc::<Encrypting>::encrypt(&key, &mut buf).unwrap();
+    let (_, iv_fresh) = ToyCbc::<Encrypting>::encrypt(&key, &mut buf).unwrap();
     assert_ne!(buf, flat3);
     ToyCbc::<Decrypting>::decrypt(&key, &iv_fresh, &mut buf).unwrap();
     assert_eq!(buf, flat3);

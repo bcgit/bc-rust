@@ -97,6 +97,12 @@ very little) object state to track and return errors about.
 
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
 
+Any function that writes into a caller-provided output buffer must report how many bytes it wrote, as a `usize` in
+its `Ok` value (on its own, or alongside anything else the function needs to return, such as a generated IV). This
+holds even when the count is fully determined by the input -- a fixed-length `[u8; LEN]` buffer, say, always writes
+exactly `LEN` -- so that callers never have to remember which output-buffer methods report their length and which
+don't.
+
 ## Fallibility
 
 As much as humanly possible, Result and unwrap () should be used for "Bad input data" type things and not "Programmer

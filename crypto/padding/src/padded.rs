@@ -1,17 +1,17 @@
 //! [`PaddedEncryptor`] / [`PaddedDecryptor`]: adapt a block-aligned [`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`] to arbitrary-length data using a [`Padding`] scheme.
+//! [`BlockCipherDecryptor`] to arbitrary-length data using a [`BlockCipherPadding`] scheme.
 //!
 //! The public API is the [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] traits, whose
 //! shape was drawn from these two types; the one-shot methods are the traits' provided ones.
 //! `FINAL_LEN` is `BLOCK_LEN`: the final output is the padded block -- or, under a scheme with
-//! [`Padding::ALWAYS_PADS`] `false` (`NoPadding`) and an aligned message, nothing at all, in which
-//! case `do_final` reports 0 of the `FINAL_LEN` bytes as output.
+//! [`BlockCipherPadding::ALWAYS_PADS`] `false` (`NoPadding`) and an aligned message, nothing at
+//! all, in which case `do_final` reports 0 of the `FINAL_LEN` bytes as output.
 
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, Padding, RNG, SecurityStrength,
-    SimpleCipherDecryptor, SimpleCipherEncryptor,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
+    SecurityStrength, SimpleCipherDecryptor, SimpleCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 use core::array::from_mut;
@@ -35,7 +35,7 @@ pub struct PaddedEncryptor<
     const BLOCK_LEN: usize,
 > where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: Padding<BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
 {
     inner: E,
     /// Partial plaintext block; `buf_len < BLOCK_LEN` between calls.
@@ -48,7 +48,7 @@ impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
     PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: Padding<BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
 {
     fn wrap(inner: E) -> Self {
         Self { inner, buf: Secret::new(), buf_len: 0, _padding: PhantomData }
@@ -59,7 +59,7 @@ impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
     for PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: Padding<BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
     const ALG_NAME: &'static str = E::ALG_NAME;
@@ -72,7 +72,7 @@ impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
     for PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: Padding<BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
 {
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
@@ -188,7 +188,7 @@ pub struct PaddedDecryptor<
     const BLOCK_LEN: usize,
 > where
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: Padding<BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
 {
     inner: D,
     /// Partial ciphertext block; `buf_len < BLOCK_LEN` between calls.
@@ -203,7 +203,7 @@ impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
     for PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: Padding<BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
     const ALG_NAME: &'static str = D::ALG_NAME;
@@ -216,7 +216,7 @@ impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
     for PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: Padding<BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
 {
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
