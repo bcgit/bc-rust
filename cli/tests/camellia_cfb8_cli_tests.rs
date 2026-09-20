@@ -189,10 +189,10 @@ fn a_key_of_the_wrong_length_is_rejected() {
 }
 
 /// The harness above must survive a write that loses the race with the child's exit. This pins it
-/// deterministically: the key is rejected so `camellia128-cfb8` exits before reading a byte, and the payload
-/// is far larger than any pipe buffer, so the write is certain to get EPIPE rather than merely
-/// likely to. It guards the `run` helper that every test in this file -- and, copy for copy, the
-/// sibling cfb and ctr suites -- depends on.
+/// deterministically: the key is rejected so `camellia128-cfb8` exits before reading a byte, and
+/// the payload is far larger than any pipe buffer, so the write is certain to get EPIPE rather
+/// than merely likely to. It guards the `run` helper that every test in this file -- and, copy
+/// for copy, the sibling cfb and ctr suites -- depends on.
 #[test]
 fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
     let err =
