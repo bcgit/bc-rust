@@ -89,7 +89,7 @@
 //!
 //! // One shot, in place: encrypts under a freshly generated IV, which is returned.
 //! let mut data = plaintext;
-//! let iv = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
 //! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
@@ -205,7 +205,7 @@
 //! let plaintext = [0x5Au8; 32]; // two equal blocks
 //!
 //! let mut data = plaintext;
-//! let no_iv: [u8; 0] = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (_, no_iv): (usize, [u8; 0]) = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
 //! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
 //!
 //! Aes128Ecb::<Decrypting>::decrypt(&key, &no_iv, &mut data).expect("decryption");

@@ -133,7 +133,8 @@ where
     fn do_encrypt_blocks(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
-    ) -> Result<(), SymmetricCipherError> {
+    ) -> Result<usize, SymmetricCipherError> {
+        let len = blocks.len() * BLOCK_LEN;
         let (fours, rest) = blocks.as_chunks_mut::<4>();
         for four in fours.iter_mut() {
             self.perm.encrypt_4blocks(four);
@@ -145,7 +146,7 @@ where
         for block in tail.iter_mut() {
             self.perm.encrypt_block(block);
         }
-        Ok(())
+        Ok(len)
     }
 }
 
@@ -169,7 +170,8 @@ where
     fn do_decrypt_blocks(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
-    ) -> Result<(), SymmetricCipherError> {
+    ) -> Result<usize, SymmetricCipherError> {
+        let len = blocks.len() * BLOCK_LEN;
         let (fours, rest) = blocks.as_chunks_mut::<4>();
         for four in fours.iter_mut() {
             self.perm.decrypt_4blocks(four);
@@ -181,6 +183,6 @@ where
         for block in tail.iter_mut() {
             self.perm.decrypt_block(block);
         }
-        Ok(())
+        Ok(len)
     }
 }
