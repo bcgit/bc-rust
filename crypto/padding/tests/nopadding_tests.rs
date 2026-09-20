@@ -1,11 +1,11 @@
-//! Tests for `NoPadding`: a `Padding` scheme that adds nothing and refuses to.
+//! Tests for `NoPadding`: a `BlockCipherPadding` scheme that adds nothing and refuses to.
 //!
 //! There is no rule to transcribe; the contract is that `pad` is an error whenever it is called
 //! (being called means a partial block existed), `unpad` reports a whole block of data, and the
 //! scheme declares that it does not pad aligned data, so the adapters emit no final block.
 
 use bouncycastle_core::errors::PaddingError;
-use bouncycastle_core::traits::Padding;
+use bouncycastle_core::traits::BlockCipherPadding;
 use bouncycastle_padding::{NoPadding, PKCS7};
 
 fn pad_always_refuses<const K: usize>() {
@@ -13,7 +13,7 @@ fn pad_always_refuses<const K: usize>() {
         let mut block: [u8; K] = core::array::from_fn(|i| i as u8 ^ 0xA5);
         let original = block;
         assert_eq!(
-            <NoPadding as Padding<K>>::pad(&mut block, data_len),
+            <NoPadding as BlockCipherPadding<K>>::pad(&mut block, data_len),
             Err(PaddingError::PaddingNotPermitted),
             "K={K} data_len={data_len}"
         );
@@ -22,7 +22,7 @@ fn pad_always_refuses<const K: usize>() {
     // Beyond the block is the same error every scheme gives.
     let mut block = [0u8; K];
     assert_eq!(
-        <NoPadding as Padding<K>>::pad(&mut block, K),
+        <NoPadding as BlockCipherPadding<K>>::pad(&mut block, K),
         Err(PaddingError::DataLengthTooLong(K - 1))
     );
 }
@@ -38,18 +38,18 @@ fn pad_refuses_every_data_length() {
 #[test]
 fn unpad_reports_the_whole_block_as_data() {
     for fill in [0x00u8, 0x01, 0x10, 0x7f, 0xff] {
-        assert_eq!(<NoPadding as Padding<16>>::unpad(&[fill; 16]), Ok(16));
-        assert_eq!(<NoPadding as Padding<8>>::unpad(&[fill; 8]), Ok(8));
+        assert_eq!(<NoPadding as BlockCipherPadding<16>>::unpad(&[fill; 16]), Ok(16));
+        assert_eq!(<NoPadding as BlockCipherPadding<8>>::unpad(&[fill; 8]), Ok(8));
     }
     // ...including blocks that would be well-formed PKCS7 padding: there is nothing to strip.
     let mut pkcs7 = [0u8; 16];
-    <PKCS7 as Padding<16>>::pad(&mut pkcs7, 5).unwrap();
-    assert_eq!(<NoPadding as Padding<16>>::unpad(&pkcs7), Ok(16));
+    <PKCS7 as BlockCipherPadding<16>>::pad(&mut pkcs7, 5).unwrap();
+    assert_eq!(<NoPadding as BlockCipherPadding<16>>::unpad(&pkcs7), Ok(16));
 }
 
 /// The flag the adapters key off: PKCS7 always appends a block to aligned data, NoPadding never.
 #[test]
 fn always_pads_flags() {
-    assert!(<PKCS7 as Padding<16>>::ALWAYS_PADS);
-    assert!(!<NoPadding as Padding<16>>::ALWAYS_PADS);
+    assert!(<PKCS7 as BlockCipherPadding<16>>::ALWAYS_PADS);
+    assert!(!<NoPadding as BlockCipherPadding<16>>::ALWAYS_PADS);
 }

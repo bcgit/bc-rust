@@ -4,7 +4,7 @@
 //! computed directly from that rule.
 
 use bouncycastle_core::errors::PaddingError;
-use bouncycastle_core::traits::Padding;
+use bouncycastle_core::traits::BlockCipherPadding;
 use bouncycastle_padding::PKCS7;
 
 fn roundtrip_all_lengths<const K: usize>() {
@@ -15,7 +15,7 @@ fn roundtrip_all_lengths<const K: usize>() {
         }
         let original = block;
 
-        <PKCS7 as Padding<K>>::pad(&mut block, data_len).unwrap();
+        <PKCS7 as BlockCipherPadding<K>>::pad(&mut block, data_len).unwrap();
 
         // data untouched
         assert_eq!(&block[..data_len], &original[..data_len]);
@@ -24,7 +24,7 @@ fn roundtrip_all_lengths<const K: usize>() {
         assert_eq!(block[data_len..].len(), expected_pad);
         assert!(block[data_len..].iter().all(|&b| b as usize == expected_pad));
 
-        assert_eq!(<PKCS7 as Padding<K>>::unpad(&block), Ok(data_len));
+        assert_eq!(<PKCS7 as BlockCipherPadding<K>>::unpad(&block), Ok(data_len));
     }
 }
 
@@ -50,23 +50,29 @@ fn rfc5652_worked_examples() {
     // ..., "k k ... k k -- if lth mod k = 0".
     const K: usize = 16;
     let mut b = [0xFFu8; K];
-    <PKCS7 as Padding<K>>::pad(&mut b, K - 1).unwrap();
+    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, K - 1).unwrap();
     assert_eq!(b[K - 1], 0x01);
 
     let mut b = [0xFFu8; K];
-    <PKCS7 as Padding<K>>::pad(&mut b, K - 2).unwrap();
+    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, K - 2).unwrap();
     assert_eq!(&b[K - 2..], &[0x02, 0x02]);
 
     let mut b = [0xFFu8; K];
-    <PKCS7 as Padding<K>>::pad(&mut b, 0).unwrap();
+    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, 0).unwrap();
     assert_eq!(b, [K as u8; K]);
 }
 
 #[test]
 fn pad_rejects_full_block() {
     let mut b = [0u8; 16];
-    assert_eq!(<PKCS7 as Padding<16>>::pad(&mut b, 16), Err(PaddingError::DataLengthTooLong(15)));
-    assert_eq!(<PKCS7 as Padding<16>>::pad(&mut b, 17), Err(PaddingError::DataLengthTooLong(15)));
+    assert_eq!(
+        <PKCS7 as BlockCipherPadding<16>>::pad(&mut b, 16),
+        Err(PaddingError::DataLengthTooLong(15))
+    );
+    assert_eq!(
+        <PKCS7 as BlockCipherPadding<16>>::pad(&mut b, 17),
+        Err(PaddingError::DataLengthTooLong(15))
+    );
     // block untouched on error
     assert_eq!(b, [0u8; 16]);
 }
@@ -77,13 +83,13 @@ fn unpad_rejects_malformed() {
 
     // last byte zero: no such padding string
     let mut b = [0x00u8; K];
-    assert_eq!(<PKCS7 as Padding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
+    assert_eq!(<PKCS7 as BlockCipherPadding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
 
     // last byte greater than k
     b[K - 1] = (K + 1) as u8;
-    assert_eq!(<PKCS7 as Padding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
+    assert_eq!(<PKCS7 as BlockCipherPadding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
     b[K - 1] = 0xFF;
-    assert_eq!(<PKCS7 as Padding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
+    assert_eq!(<PKCS7 as BlockCipherPadding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
 
     // claims 4 bytes of padding but one of them is wrong, at every possible position
     for bad in 0..4 {
@@ -96,7 +102,7 @@ fn unpad_rejects_malformed() {
             assert_eq!(b[K - 1], 0x05);
         }
         assert_eq!(
-            <PKCS7 as Padding<K>>::unpad(&b),
+            <PKCS7 as BlockCipherPadding<K>>::unpad(&b),
             Err(PaddingError::InvalidPadding),
             "bad position {bad}"
         );
@@ -106,7 +112,7 @@ fn unpad_rejects_malformed() {
     for pos in 0..K {
         let mut b = [K as u8; K];
         b[pos] ^= 0x80;
-        assert_eq!(<PKCS7 as Padding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
+        assert_eq!(<PKCS7 as BlockCipherPadding<K>>::unpad(&b), Err(PaddingError::InvalidPadding));
     }
 }
 
@@ -115,7 +121,7 @@ fn unpad_ignores_data_bytes_that_happen_to_equal_pad_value() {
     // data bytes equal to the pad value must not confuse the length recovery
     const K: usize = 16;
     let mut b = [0x03u8; K]; // 13 data bytes all 0x03, then 3 bytes of 0x03 padding
-    <PKCS7 as Padding<K>>::pad(&mut b, 13).unwrap();
+    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, 13).unwrap();
     assert_eq!(b, [0x03u8; K]);
-    assert_eq!(<PKCS7 as Padding<K>>::unpad(&b), Ok(13));
+    assert_eq!(<PKCS7 as BlockCipherPadding<K>>::unpad(&b), Ok(13));
 }
