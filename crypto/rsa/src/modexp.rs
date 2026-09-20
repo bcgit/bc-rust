@@ -248,11 +248,6 @@ impl<const L: usize> MontgomeryContext<L> {
         let r2_mod_n = pow2_mod(128 * L as u32, modulus);
         Some(Self { modulus: *modulus, n_prime, r_mod_n, r2_mod_n })
     }
-
-    /// The modulus this context was built for.
-    pub fn modulus(&self) -> &[u64; L] {
-        &self.modulus
-    }
 }
 
 /// `base^exponent mod ctx.modulus()`, constant-time in `exponent`: every one of the modulus's
