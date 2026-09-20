@@ -33,14 +33,14 @@ use bouncycastle_modes::{Cfb8, Decrypting};
 /// // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
 /// let message = *b"hello";
 /// let mut data = message;
-/// let iv = TDES_CFB8::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = TDES_CFB8::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
 /// TDES_CFB8::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // CFB8 and CFB64 are not interchangeable: same key, same IV, different ciphertext.
 /// let mut as_cfb8 = message;
-/// let iv = TDES_CFB8::<Encrypting>::encrypt(&key, &mut as_cfb8).unwrap();
+/// let (_, iv) = TDES_CFB8::<Encrypting>::encrypt(&key, &mut as_cfb8).unwrap();
 /// let mut as_cfb64 = as_cfb8;
 /// TDES_CFB::<Decrypting>::decrypt(&key, &iv, &mut as_cfb64).unwrap();
 /// assert_ne!(as_cfb64, message);
