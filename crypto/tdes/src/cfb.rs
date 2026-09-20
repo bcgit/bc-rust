@@ -34,7 +34,7 @@ use bouncycastle_modes::{Cfb, Decrypting};
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let iv = TDES_CFB::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = TDES_CFB::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
 /// TDES_CFB::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
