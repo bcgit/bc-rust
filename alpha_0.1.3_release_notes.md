@@ -5,7 +5,8 @@
 * New algorithms added to crypto/ :
     * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java.
     * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_GCM.
-    * Camellia -- the Camellia block cipher (RFC 3713 / ISO/IEC 18033-3), ported from bc-java, along with its Camellia_CBC mode.
+    * Camellia -- the Camellia block cipher (RFC 3713 / ISO/IEC 18033-3), ported from bc-java, along with its
+      Camellia_CBC, Camellia_CFB, Camellia_CFB8 and Camellia_CTR modes.
 
 ## Minor features / bug fixes
 
