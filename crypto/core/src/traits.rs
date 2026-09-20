@@ -538,18 +538,22 @@ pub trait BlockCipherDecryptor<
     ) -> Result<Self, SymmetricCipherError>;
     /// The implementor hook: decrypts consecutive whole blocks in place. See
     /// [`BlockCipherEncryptor::do_encrypt_blocks`]; callers should normally use the flat
-    /// [`BlockCipherDecryptor::do_decrypt`] instead.
+    /// [`BlockCipherDecryptor::do_decrypt`] instead. Returns the number of bytes written, which is
+    /// always `blocks.len() * BLOCK_LEN` since a block cipher mode never changes the length of its
+    /// data, but the count is still returned for consistency with the rest of the library's
+    /// output-buffer APIs.
     fn do_decrypt_blocks(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
-    ) -> Result<(), SymmetricCipherError>;
+    ) -> Result<usize, SymmetricCipherError>;
 
     /// Streaming: decrypts `LEN` bytes, a whole number of blocks, in place. `LEN % BLOCK_LEN == 0`
-    /// is checked at compile time, exactly as for [`BlockCipherEncryptor::do_encrypt`].
+    /// is checked at compile time, exactly as for [`BlockCipherEncryptor::do_encrypt`]. Returns the
+    /// number of bytes written; see [`Self::do_decrypt_blocks`].
     fn do_decrypt<const LEN: usize>(
         &mut self,
         data: &mut [u8; LEN],
-    ) -> Result<(), SymmetricCipherError> {
+    ) -> Result<usize, SymmetricCipherError> {
         const {
             assert!(
                 LEN.is_multiple_of(BLOCK_LEN),
@@ -562,12 +566,13 @@ pub trait BlockCipherDecryptor<
     }
 
     /// One-shot: decrypts `LEN` bytes in place from the given init data. `LEN % BLOCK_LEN == 0` is
-    /// checked at compile time exactly as for [`BlockCipherEncryptor::encrypt`].
+    /// checked at compile time exactly as for [`BlockCipherEncryptor::encrypt`]. Returns the
+    /// number of bytes written; see [`Self::do_decrypt_blocks`].
     fn decrypt<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
         data: &mut [u8; LEN],
-    ) -> Result<(), SymmetricCipherError> {
+    ) -> Result<usize, SymmetricCipherError> {
         Self::do_decrypt_init(key, init_data)?.do_decrypt(data)
     }
 }
@@ -634,21 +639,25 @@ pub trait BlockCipherEncryptor<
     /// no length invariant for a const parameter to carry, and because how to batch the blocks --
     /// singly, in pairs, in fours -- is the mode's decision, not the caller's: a mode whose
     /// permutation processes several blocks at once (CBC decryption, CTR) chunks the slice itself.
-    /// Callers should normally use the flat [`BlockCipherEncryptor::do_encrypt`] instead.
+    /// Callers should normally use the flat [`BlockCipherEncryptor::do_encrypt`] instead. Returns
+    /// the number of bytes written, which is always `blocks.len() * BLOCK_LEN` since a block
+    /// cipher mode never changes the length of its data, but the count is still returned for
+    /// consistency with the rest of the library's output-buffer APIs.
     fn do_encrypt_blocks(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
-    ) -> Result<(), SymmetricCipherError>;
+    ) -> Result<usize, SymmetricCipherError>;
 
     /// Streaming: encrypts `LEN` bytes, a whole number of blocks, in place. A sequence of calls
-    /// is equivalent to one call over the concatenation.
+    /// is equivalent to one call over the concatenation. Returns the number of bytes written; see
+    /// [`Self::do_encrypt_blocks`].
     ///
     /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs. The whole buffer
     /// then goes to [`BlockCipherEncryptor::do_encrypt_blocks`] in one call.
     fn do_encrypt<const LEN: usize>(
         &mut self,
         data: &mut [u8; LEN],
-    ) -> Result<(), SymmetricCipherError> {
+    ) -> Result<usize, SymmetricCipherError> {
         const {
             assert!(
                 LEN.is_multiple_of(BLOCK_LEN),
@@ -660,25 +669,26 @@ pub trait BlockCipherEncryptor<
         self.do_encrypt_blocks(blocks)
     }
 
-    /// One-shot: encrypts `LEN` bytes in place under a fresh init, and returns the generated init
-    /// data. `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs.
+    /// One-shot: encrypts `LEN` bytes in place under a fresh init, and returns the number of
+    /// bytes written (see [`Self::do_encrypt_blocks`]) alongside the generated init data.
+    /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs.
     fn encrypt<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         data: &mut [u8; LEN],
-    ) -> Result<[u8; INIT_DATA_LEN], SymmetricCipherError> {
+    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
-        enc.do_encrypt(data)?;
-        Ok(init_data)
+        let written = enc.do_encrypt(data)?;
+        Ok((written, init_data))
     }
     /// As [`BlockCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
     fn encrypt_rng<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
         data: &mut [u8; LEN],
-    ) -> Result<[u8; INIT_DATA_LEN], SymmetricCipherError> {
+    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
-        enc.do_encrypt(data)?;
-        Ok(init_data)
+        let written = enc.do_encrypt(data)?;
+        Ok((written, init_data))
     }
 }
 
@@ -1204,7 +1214,7 @@ pub trait MAC: Sized {
 ///
 /// Only the final, partial block of a message is ever padded; the padding layer sitting between the
 /// caller and the block cipher is responsible for routing whole blocks straight through.
-pub trait Padding<const BLOCK_LEN: usize> {
+pub trait BlockCipherPadding<const BLOCK_LEN: usize> {
     /// Whether the scheme appends a whole block of padding to data that is already a whole number
     /// of blocks. `true` for a scheme like PKCS7, which must always add at least one byte so that
     /// unpadding is unambiguous; a caller then finishes an aligned message with `pad(block, 0)`.
@@ -1572,15 +1582,18 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 
     /// Streaming: decrypts `data`, of any length, in place. A sequence of calls is equivalent to
     /// one call over the concatenation, whatever the chunking, exactly as for
-    /// [`StreamCipherEncryptor::do_encrypt`].
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError>;
+    /// [`StreamCipherEncryptor::do_encrypt`]. Returns the number of bytes written, which is always
+    /// `data.len()` since a stream cipher never buffers or changes the length of its data, but the
+    /// count is still returned for consistency with the rest of the library's output-buffer APIs.
+    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError>;
 
-    /// One-shot: decrypts `data` in place from the given init data.
+    /// One-shot: decrypts `data` in place from the given init data. Returns the number of bytes
+    /// written; see [`Self::do_decrypt`].
     fn decrypt(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
         data: &mut [u8],
-    ) -> Result<(), SymmetricCipherError> {
+    ) -> Result<usize, SymmetricCipherError> {
         Self::do_decrypt_init(key, init_data)?.do_decrypt(data)
     }
 }
@@ -1645,29 +1658,33 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
     /// Streaming: encrypts `data`, of any length, in place. A sequence of calls is equivalent to
-    /// one call over the concatenation, whatever the chunking.
+    /// one call over the concatenation, whatever the chunking. Returns the number of bytes
+    /// written, which is always `data.len()` since a stream cipher never buffers or changes the
+    /// length of its data, but the count is still returned for consistency with the rest of the
+    /// library's output-buffer APIs.
     ///
     /// This is the only method an implementor writes besides the two `_init` constructors.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError>;
+    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError>;
 
-    /// One-shot: encrypts `data` in place under a fresh init, and returns the generated init data.
+    /// One-shot: encrypts `data` in place under a fresh init, and returns the number of bytes
+    /// written (see [`Self::do_encrypt`]) alongside the generated init data.
     fn encrypt(
         key: &KeyMaterial<KEY_LEN>,
         data: &mut [u8],
-    ) -> Result<[u8; INIT_DATA_LEN], SymmetricCipherError> {
+    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
-        enc.do_encrypt(data)?;
-        Ok(init_data)
+        let written = enc.do_encrypt(data)?;
+        Ok((written, init_data))
     }
     /// As [`StreamCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
     fn encrypt_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
         data: &mut [u8],
-    ) -> Result<[u8; INIT_DATA_LEN], SymmetricCipherError> {
+    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
-        enc.do_encrypt(data)?;
-        Ok(init_data)
+        let written = enc.do_encrypt(data)?;
+        Ok((written, init_data))
     }
 }
 
