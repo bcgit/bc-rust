@@ -69,11 +69,22 @@
 //! assert_eq!(blocks, original);
 //! ```
 //!
-//! ## CBC mode
+//! ## Modes of operation
 //!
 //! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
-//! provides [`Camellia_CBC_128`], [`Camellia_CBC_192`] and [`Camellia_CBC_256`] as aliases that
-//! fill in the const parameters, with the direction left as the type parameter:
+//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
+//! makes: [`Camellia_CBC_128`], [`Camellia_CBC_192`] and [`Camellia_CBC_256`] for CBC
+//! (NIST SP 800-38A Sec 6.2), which take the direction **and a padding scheme**, and
+//! [`Camellia_CFB_128`] / `_192` / `_256` for CFB128 (Sec 6.3), which take only the direction.
+//! [`Camellia_CFB8_128`] / `_192` / `_256` give CFB8, the `s = 8` segment size, which is a
+//! different and non-interoperable mode costing one Camellia call per byte, and
+//! [`Camellia_CTR_128`] / `_192` / `_256` give CTR (Sec 6.5) with a 12-byte nonce and a 4-byte
+//! counter.
+//!
+//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
+//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
+//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
+//! [`Camellia_CBC_128`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia_CBC_256;
@@ -98,8 +109,32 @@
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!
+//! The stream modes take any length and return the initialisation data the same way:
+//!
+//! ```
+//! use bouncycastle_camellia::Camellia_CTR_256;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Encrypting};
+//!
+//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
+//! let plaintext = [0x5Au8; 50];
+//! let mut data = plaintext;
+//!
+//! // The nonce is generated for you and returned; there is no API for supplying one.
+//! let (written, nonce) =
+//!     Camellia_CTR_256::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! assert_eq!(written, 50);
+//! assert_ne!(data, plaintext);
+//!
+//! Camellia_CTR_256::<Decrypting>::decrypt(&key, &nonce, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
+//! ```
+//!
 //! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
+//! name `bouncycastle_modes::Cbc` directly; that is what the CBC aliases wrap.
 //!
 //! There is no one-shot static on the permutation, because `Camellia_128::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
@@ -242,7 +277,10 @@
 //! * Verified against the three vectors of RFC 3713 Appendix A; all 3840 vectors of NTT's
 //!   CRYPTREC test-vector file `t_camellia.txt` (ten keys per key length, 128 single-bit
 //!   plaintexts each), both directions; the nine vectors of `tests/bc_java_tests.rs` (RFC 3713
-//!   and NESSIE); the CBC vectors of OpenSSL's `evpciph_camellia.txt` through the CBC aliases;
+//!   and NESSIE); the CBC and CFB128 vectors of OpenSSL's `evpciph_camellia.txt` through the CBC
+//!   and CFB aliases; RFC 5528's nine Camellia-CTR vectors, through a reference built from the
+//!   SP 800-38A Sec 6.5 equations which the [`Camellia_CTR_128`] aliases are then held to (see
+//!   `tests/stream_mode_tests.rs` for why RFC 5528's counter blocks are not ones they produce);
 //!   and the transcription of `CamelliaLightEngine` on thousands of keys and blocks in every lane.
 
 #![no_std]
@@ -252,10 +290,16 @@
 mod bitslice;
 mod camellia;
 mod cbc;
+mod cfb;
+mod cfb8;
+mod ctr;
 mod round;
 mod sbox;
 mod schedule;
 
 pub use camellia::{BLOCK_LEN, Camellia, Camellia_128, Camellia_192, Camellia_256, LANES};
 pub use cbc::{Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
+pub use cfb::{Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256};
+pub use cfb8::{Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256};
+pub use ctr::{CTR_NONCE_LEN, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256};
 pub use schedule::CamelliaParams;
