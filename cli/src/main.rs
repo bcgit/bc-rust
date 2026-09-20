@@ -1366,8 +1366,8 @@ enum Subcommands {
     /// RSA-2048 signing/verification: RSASSA-PKCS1-v1_5 (RFC 8017 SS8.2) or RSASSA-PSS (RFC 8017
     /// SS8.1, or RFC 8702 SS3.2.1 with `--hash shake128`), selected by `--scheme`/`--hash`. PSS
     /// draws a fresh salt from the OS RNG each time it signs. Private/public key files use this
-    /// crate's own raw fixed-width encoding (see `RsaPrivateKey`/`RsaPublicKey::encode`'s docs),
-    /// not PEM or ASN.1 DER.
+    /// crate's own raw fixed-width encoding (see `RsaPrivateKey`/`RsaPublicKey`'s `# Encoding`
+    /// docs), not PEM or ASN.1 DER.
     RSA_2048 {
         action: RSAAction,
 

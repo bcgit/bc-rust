@@ -5,11 +5,14 @@
 //! key signs under any hash/MGF choice; nothing ties it to SHA-256), and the verify side is
 //! checked against all of Wycheproof's real vectors.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{RNG, SignatureVerifier, Signer};
+use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_2048::{
-    Rsa2048PrivateKey, Rsa2048PublicKey, pss_shake128_sign, pss_shake128_sign_with_salt,
-    pss_shake128_verify,
+    PK_LEN, RSASSA_PSS_SHAKE128, Rsa2048PrivateKey, Rsa2048PublicKey, SIG_LEN, SK_LEN,
+    pss_shake128_sign, pss_shake128_sign_with_salt, pss_shake128_verify,
 };
 use serde_json::Value;
 use std::fs;
@@ -162,4 +165,120 @@ fn rsa_pss_2048_shake128_wycheproof_vectors() {
     assert_eq!(num_tests, 114);
     assert_eq!(num_valid, 69);
     assert_eq!(num_invalid, 45);
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureError> {
+    let sk = genuine_key();
+    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+/// `core-test-framework`'s conformance suite for the SHAKE-native PSS path (randomized, `ctx`
+/// ignored), with every signature bit flipped: `RSASSA_PSS_SHAKE` is its own generic type, so it
+/// gets the exhaustive pass once, here.
+#[test]
+fn pss_shake128_trait_conformance_suite() {
+    TestFrameworkSignature::new(false, false).test_signature::<
+        Rsa2048PublicKey,
+        Rsa2048PrivateKey,
+        RSASSA_PSS_SHAKE128,
+        RSASSA_PSS_SHAKE128,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, true);
+}
+
+#[test]
+fn pss_shake128_trait_and_free_functions_cross_verify() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"PSS-SHAKE128 across both APIs";
+    pss_shake128_verify(&pk, msg, &RSASSA_PSS_SHAKE128::sign(&sk, msg, None).unwrap()).unwrap();
+    let from_free = pss_shake128_sign(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    RSASSA_PSS_SHAKE128::verify(&pk, msg, None, &from_free).unwrap();
+    assert!(RSASSA_PSS_SHAKE128::verify(&pk, b"other", None, &from_free).is_err());
+}
+
+/// A fixed-output RNG (all-`0x42` bytes), as `bouncycastle-ecdsa`'s tests use: pins that
+/// `sign_randomized` takes its salt from the caller's RNG and nowhere else.
+struct FixedRng;
+impl RNG for FixedRng {
+    fn add_seed_keymaterial(
+        &mut self,
+        _additional_seed: &dyn bouncycastle_core::key_material::KeyMaterialTrait,
+    ) -> Result<(), bouncycastle_core::errors::RNGError> {
+        Ok(())
+    }
+    fn next_int(&mut self) -> Result<u32, bouncycastle_core::errors::RNGError> {
+        Ok(0x42424242)
+    }
+    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, bouncycastle_core::errors::RNGError> {
+        Ok(vec![0x42u8; len])
+    }
+    fn next_bytes_out(
+        &mut self,
+        out: &mut [u8],
+    ) -> Result<usize, bouncycastle_core::errors::RNGError> {
+        out.fill(0x42);
+        Ok(out.len())
+    }
+    fn fill_keymaterial_out(
+        &mut self,
+        _out: &mut dyn bouncycastle_core::key_material::KeyMaterialTrait,
+    ) -> Result<usize, bouncycastle_core::errors::RNGError> {
+        unimplemented!()
+    }
+    fn security_strength(&self) -> bouncycastle_core::traits::SecurityStrength {
+        bouncycastle_core::traits::SecurityStrength::_256bit
+    }
+}
+
+/// `set_signer_salt` fixes the salt on the streaming path (the counterpart of ML-DSA's
+/// `set_signer_rnd`): the result is deterministic and byte-identical to the fixed-salt free
+/// function over the same salt, while an unfixed streamed signature is fresh.
+#[test]
+fn set_signer_salt_fixes_the_salt_on_the_streaming_path() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"fixed salt, streamed in two chunks";
+    let salt = [0x42u8; 32];
+
+    let mut signer = RSASSA_PSS_SHAKE128::sign_init(&sk, None).unwrap();
+    signer.set_signer_salt(salt);
+    signer.sign_update(&msg[..11]);
+    signer.sign_update(&msg[11..]);
+    let sig = signer.sign_final().unwrap();
+    assert_eq!(sig, pss_shake128_sign_with_salt(&sk, msg, &salt).unwrap());
+    RSASSA_PSS_SHAKE128::verify(&pk, msg, None, &sig).unwrap();
+
+    let mut fresh = RSASSA_PSS_SHAKE128::sign_init(&sk, None).unwrap();
+    fresh.sign_update(msg);
+    assert_ne!(fresh.sign_final().unwrap(), sig, "without set_signer_salt the salt is fresh");
+
+    // On a verify-initialised state it has no effect.
+    let mut verifier = RSASSA_PSS_SHAKE128::verify_init(&pk, None).unwrap();
+    verifier.set_signer_salt([0xffu8; 32]);
+    verifier.verify_update(msg);
+    verifier.verify_final(&sig).unwrap();
+}
+
+/// `sign_randomized` draws the salt from the caller's RNG (the ECDSA/SM2 shape): with a
+/// fixed-output RNG it equals the fixed-salt path over that same output, and with a real RNG it
+/// is fresh per call and verifies through both the trait and the free-function verifier.
+#[test]
+fn sign_randomized_takes_the_salt_from_the_callers_rng() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"caller-supplied RNG";
+    let from_fixed_rng = RSASSA_PSS_SHAKE128::sign_randomized(&sk, msg, &mut FixedRng).unwrap();
+    assert_eq!(from_fixed_rng, pss_shake128_sign_with_salt(&sk, msg, &[0x42u8; 32]).unwrap());
+
+    let mut rng = DefaultRNG::default();
+    let a = RSASSA_PSS_SHAKE128::sign_randomized(&sk, msg, &mut rng).unwrap();
+    let b = RSASSA_PSS_SHAKE128::sign_randomized(&sk, msg, &mut rng).unwrap();
+    assert_ne!(a, b);
+    RSASSA_PSS_SHAKE128::verify(&pk, msg, None, &a).unwrap();
+    pss_shake128_verify(&pk, msg, &b).unwrap();
+    assert!(RSASSA_PSS_SHAKE128::verify(&pk, b"other", None, &a).is_err());
+    let _ = pss_shake128_sign; // the free functions stay the explicit-RNG one-shot path
 }

@@ -1,6 +1,11 @@
-//! Validation tests for [`bouncycastle_rsa::keys`]'s public API.
+//! Validation tests for [`bouncycastle_rsa::keys`]'s public API, including the
+//! `SignaturePrivateKey`/`SignaturePublicKey` impls `rsa_2048` gives its aliases of these types
+//! (`RsaPrivateKey<32, 16>` *is* `Rsa2048PrivateKey`, so the traits' methods resolve here once
+//! imported). The generic boundary conditions every size shares are covered by
+//! `core-test-framework`'s `test_keys` in each size's own test file; these pin the layout itself.
 
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_rsa::keys::{RsaPrivateKey, RsaPublicKey};
 
 const P: [u64; 16] = [
@@ -131,39 +136,112 @@ fn public_key_rejects_even_modulus() {
 #[test]
 fn public_key_encode_round_trips() {
     let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
-    let bytes: [u8; 260] = pk.encode::<256, 260>();
-    let decoded = RsaPublicKey::<32>::from_bytes::<256, 260>(&bytes).expect("must decode");
+    let bytes: [u8; 260] = pk.encode();
+    let decoded = RsaPublicKey::<32>::from_bytes(&bytes).expect("must decode");
     assert_eq!(decoded, pk);
+}
+
+/// `SignaturePublicKey`'s `n || e` layout, checked field by field rather than only by round
+/// trip: `n` big-endian (its most significant limb's top byte first), then `e` big-endian.
+#[test]
+fn public_key_encode_layout_is_n_then_e_big_endian() {
+    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let bytes = pk.encode();
+    assert_eq!(bytes[..8], N[31].to_be_bytes());
+    assert_eq!(bytes[248..256], N[0].to_be_bytes());
+    assert_eq!(bytes[256..], [0x00, 0x01, 0x00, 0x01]);
+
+    let mut out = [0xaau8; 260];
+    assert_eq!(pk.encode_out(&mut out), 260);
+    assert_eq!(out, bytes);
 }
 
 #[test]
 fn public_key_from_bytes_rejects_even_modulus() {
     let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
-    let mut bytes: [u8; 260] = pk.encode::<256, 260>();
+    let mut bytes: [u8; 260] = pk.encode();
     bytes[255] &= !1; // clear n's low bit (last byte, big-endian)
     assert!(matches!(
-        RsaPublicKey::<32>::from_bytes::<256, 260>(&bytes),
+        RsaPublicKey::<32>::from_bytes(&bytes),
         Err(SignatureError::DecodingError(_))
     ));
 }
 
 #[test]
+fn public_key_from_bytes_rejects_wrong_lengths() {
+    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let bytes = pk.encode();
+    assert!(matches!(
+        RsaPublicKey::<32>::from_bytes(&bytes[..259]),
+        Err(SignatureError::DecodingError(_))
+    ));
+    let mut too_long = bytes.to_vec();
+    too_long.push(0);
+    assert!(matches!(
+        RsaPublicKey::<32>::from_bytes(&too_long),
+        Err(SignatureError::DecodingError(_))
+    ));
+}
+
+/// `Display` (a `SignaturePublicKey` supertrait) prints `n` as one big-endian hex string and `e`
+/// in hex, so a printed key can be matched by eye against a hex dump of its encoding.
+#[test]
+fn public_key_display_prints_big_endian_hex() {
+    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let shown = format!("{pk}");
+    let n_hex: String = pk.encode()[..256].iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(shown, format!("RsaPublicKey<32> {{ n: {n_hex}, e: 10001 }}"));
+}
+
+#[test]
 fn private_key_encode_round_trips() {
     let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
-    let bytes: [u8; 640] = sk.encode::<128, 640>();
-    let decoded = RsaPrivateKey::<32, 16>::from_bytes::<128, 640>(&bytes).expect("must decode");
+    let bytes: [u8; 640] = sk.encode();
+    let decoded = RsaPrivateKey::<32, 16>::from_bytes(&bytes).expect("must decode");
     assert_eq!(decoded, sk);
+}
+
+/// `SignaturePrivateKey`'s `p || q || dP || dQ || qInv` layout, each field 128 bytes big-endian.
+#[test]
+fn private_key_encode_layout_is_five_big_endian_fields() {
+    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let bytes = sk.encode();
+    for (i, field) in [P, Q, D_P, D_Q, Q_INV].iter().enumerate() {
+        let start = 128 * i;
+        assert_eq!(bytes[start..start + 8], field[15].to_be_bytes(), "field {i} MSB");
+        assert_eq!(bytes[start + 120..start + 128], field[0].to_be_bytes(), "field {i} LSB");
+    }
+
+    let mut out = [0xaau8; 640];
+    assert_eq!(sk.encode_out(&mut out), 640);
+    assert_eq!(out, bytes);
 }
 
 #[test]
 fn private_key_from_bytes_rejects_equal_primes() {
     let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
-    let mut bytes: [u8; 640] = sk.encode::<128, 640>();
+    let mut bytes: [u8; 640] = sk.encode();
     // Overwrite q (the second 128-byte field) with p, making the two primes equal.
     let p_field = bytes[..128].to_vec();
     bytes[128..256].copy_from_slice(&p_field);
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_bytes::<128, 640>(&bytes),
+        RsaPrivateKey::<32, 16>::from_bytes(&bytes),
+        Err(SignatureError::DecodingError(_))
+    ));
+}
+
+#[test]
+fn private_key_from_bytes_rejects_wrong_lengths() {
+    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let bytes = sk.encode();
+    assert!(matches!(
+        RsaPrivateKey::<32, 16>::from_bytes(&bytes[..639]),
+        Err(SignatureError::DecodingError(_))
+    ));
+    let mut too_long = bytes.to_vec();
+    too_long.push(0);
+    assert!(matches!(
+        RsaPrivateKey::<32, 16>::from_bytes(&too_long),
         Err(SignatureError::DecodingError(_))
     ));
 }

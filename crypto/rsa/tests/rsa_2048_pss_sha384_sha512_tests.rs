@@ -6,11 +6,15 @@
 //! sign side -- see `rsa_2048_pkcs1_v1_5_sha384_sha512_tests.rs` for why reusing the SHA-256
 //! sig-gen key here (rather than factoring a fresh one) is the right tradeoff.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_2048::{
-    Rsa2048PrivateKey, Rsa2048PublicKey, pss_sign_sha384, pss_sign_sha384_with_salt,
-    pss_sign_sha512, pss_sign_sha512_with_salt, pss_verify_sha384, pss_verify_sha512,
+    PK_LEN, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa2048PrivateKey, Rsa2048PublicKey, SIG_LEN,
+    SK_LEN, pss_sign_sha384, pss_sign_sha384_with_salt, pss_sign_sha512, pss_sign_sha512_with_salt,
+    pss_verify_sha384, pss_verify_sha512,
 };
 use serde_json::Value;
 use std::fs;
@@ -176,4 +180,53 @@ fn rsa_pss_sha384_mgf1_48_wycheproof_vectors() {
     assert_eq!(num_tests, 141);
     assert_eq!(num_valid, 95);
     assert_eq!(num_invalid, 46);
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureError> {
+    let sk = genuine_key();
+    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+/// `core-test-framework`'s conformance suite for the SHA-384/SHA-512 PSS pairings (randomized,
+/// `ctx` ignored); the bit-flip pass runs in `rsa_2048_pss_tests.rs`'s SHA-256 suite.
+#[test]
+fn pss_sha384_sha512_trait_conformance_suite() {
+    let framework = TestFrameworkSignature::new(false, false);
+    framework.test_signature::<
+        Rsa2048PublicKey,
+        Rsa2048PrivateKey,
+        RSASSA_PSS_SHA384,
+        RSASSA_PSS_SHA384,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+    framework.test_signature::<
+        Rsa2048PublicKey,
+        Rsa2048PrivateKey,
+        RSASSA_PSS_SHA512,
+        RSASSA_PSS_SHA512,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+}
+
+#[test]
+fn pss_sha384_sha512_trait_and_free_functions_cross_verify() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"PSS across both APIs";
+    pss_verify_sha384(&pk, msg, &RSASSA_PSS_SHA384::sign(&sk, msg, None).unwrap()).unwrap();
+    pss_verify_sha512(&pk, msg, &RSASSA_PSS_SHA512::sign(&sk, msg, None).unwrap()).unwrap();
+    let mut rng = DefaultRNG::default();
+    let free_384 = pss_sign_sha384(&sk, msg, &mut rng).unwrap();
+    let free_512 = pss_sign_sha512(&sk, msg, &mut rng).unwrap();
+    RSASSA_PSS_SHA384::verify(&pk, msg, None, &free_384).unwrap();
+    RSASSA_PSS_SHA512::verify(&pk, msg, None, &free_512).unwrap();
+    // The two hash pairings are distinct encodings: neither accepts the other's signature.
+    assert!(RSASSA_PSS_SHA384::verify(&pk, msg, None, &free_512).is_err());
+    assert!(RSASSA_PSS_SHA512::verify(&pk, msg, None, &free_384).is_err());
 }

@@ -10,11 +10,14 @@
 //! `rsa_pss_2048_sha256_mgf1_32_test.json` -- the same public key as that sig-gen key (confirmed
 //! by comparing moduli in Python before writing this file).
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{RNG, SignatureVerifier, Signer};
+use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_2048::{
-    Rsa2048PrivateKey, Rsa2048PublicKey, pss_sign_sha256, pss_sign_sha256_with_salt,
-    pss_verify_sha256,
+    PK_LEN, RSASSA_PSS_SHA256, Rsa2048PrivateKey, Rsa2048PublicKey, SIG_LEN, SK_LEN,
+    pss_sign_sha256, pss_sign_sha256_with_salt, pss_verify_sha256,
 };
 use serde_json::Value;
 use std::fs;
@@ -167,4 +170,123 @@ fn rsa_pss_sha256_mgf1_32_wycheproof_vectors() {
     assert_eq!(num_tests, 108);
     assert_eq!(num_valid, 63);
     assert_eq!(num_invalid, 45);
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureError> {
+    let sk = wycheproof_key();
+    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+/// `core-test-framework`'s conformance suite: randomized (`Signer::sign` draws a fresh salt from
+/// the default RNG, so two signatures of one message differ), `ctx` ignored, every signature bit
+/// flipped in turn -- run here since the generic `RSASSA_PSS` code is the same at every width.
+#[test]
+fn pss_sha256_trait_conformance_suite() {
+    TestFrameworkSignature::new(false, false).test_signature::<
+        Rsa2048PublicKey,
+        Rsa2048PrivateKey,
+        RSASSA_PSS_SHA256,
+        RSASSA_PSS_SHA256,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, true);
+}
+
+/// The trait's default-RNG salt and the free functions' caller-supplied RNG produce signatures
+/// each side's verifier accepts: one encoding, two ways in.
+#[test]
+fn pss_sha256_trait_and_free_functions_cross_verify() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"PSS across both APIs";
+    let from_trait = RSASSA_PSS_SHA256::sign(&sk, msg, None).unwrap();
+    pss_verify_sha256(&pk, msg, &from_trait).unwrap();
+    let from_free = pss_sign_sha256(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    RSASSA_PSS_SHA256::verify(&pk, msg, None, &from_free).unwrap();
+    assert!(RSASSA_PSS_SHA256::verify(&pk, b"other", None, &from_free).is_err());
+}
+
+/// A fixed-output RNG (all-`0x42` bytes), as `bouncycastle-ecdsa`'s tests use: pins that
+/// `sign_randomized` takes its salt from the caller's RNG and nowhere else.
+struct FixedRng;
+impl RNG for FixedRng {
+    fn add_seed_keymaterial(
+        &mut self,
+        _additional_seed: &dyn bouncycastle_core::key_material::KeyMaterialTrait,
+    ) -> Result<(), bouncycastle_core::errors::RNGError> {
+        Ok(())
+    }
+    fn next_int(&mut self) -> Result<u32, bouncycastle_core::errors::RNGError> {
+        Ok(0x42424242)
+    }
+    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, bouncycastle_core::errors::RNGError> {
+        Ok(vec![0x42u8; len])
+    }
+    fn next_bytes_out(
+        &mut self,
+        out: &mut [u8],
+    ) -> Result<usize, bouncycastle_core::errors::RNGError> {
+        out.fill(0x42);
+        Ok(out.len())
+    }
+    fn fill_keymaterial_out(
+        &mut self,
+        _out: &mut dyn bouncycastle_core::key_material::KeyMaterialTrait,
+    ) -> Result<usize, bouncycastle_core::errors::RNGError> {
+        unimplemented!()
+    }
+    fn security_strength(&self) -> bouncycastle_core::traits::SecurityStrength {
+        bouncycastle_core::traits::SecurityStrength::_256bit
+    }
+}
+
+/// `set_signer_salt` fixes the salt on the streaming path (the counterpart of ML-DSA's
+/// `set_signer_rnd`): the result is deterministic and byte-identical to the fixed-salt free
+/// function over the same salt, while an unfixed streamed signature is fresh.
+#[test]
+fn set_signer_salt_fixes_the_salt_on_the_streaming_path() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"fixed salt, streamed in two chunks";
+    let salt = [0x42u8; 32];
+
+    let mut signer = RSASSA_PSS_SHA256::sign_init(&sk, None).unwrap();
+    signer.set_signer_salt(salt);
+    signer.sign_update(&msg[..11]);
+    signer.sign_update(&msg[11..]);
+    let sig = signer.sign_final().unwrap();
+    assert_eq!(sig, pss_sign_sha256_with_salt(&sk, msg, &salt).unwrap());
+    RSASSA_PSS_SHA256::verify(&pk, msg, None, &sig).unwrap();
+
+    let mut fresh = RSASSA_PSS_SHA256::sign_init(&sk, None).unwrap();
+    fresh.sign_update(msg);
+    assert_ne!(fresh.sign_final().unwrap(), sig, "without set_signer_salt the salt is fresh");
+
+    // On a verify-initialised state it has no effect.
+    let mut verifier = RSASSA_PSS_SHA256::verify_init(&pk, None).unwrap();
+    verifier.set_signer_salt([0xffu8; 32]);
+    verifier.verify_update(msg);
+    verifier.verify_final(&sig).unwrap();
+}
+
+/// `sign_randomized` draws the salt from the caller's RNG (the ECDSA/SM2 shape): with a
+/// fixed-output RNG it equals the fixed-salt path over that same output, and with a real RNG it
+/// is fresh per call and verifies through both the trait and the free-function verifier.
+#[test]
+fn sign_randomized_takes_the_salt_from_the_callers_rng() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"caller-supplied RNG";
+    let from_fixed_rng = RSASSA_PSS_SHA256::sign_randomized(&sk, msg, &mut FixedRng).unwrap();
+    assert_eq!(from_fixed_rng, pss_sign_sha256_with_salt(&sk, msg, &[0x42u8; 32]).unwrap());
+
+    let mut rng = DefaultRNG::default();
+    let a = RSASSA_PSS_SHA256::sign_randomized(&sk, msg, &mut rng).unwrap();
+    let b = RSASSA_PSS_SHA256::sign_randomized(&sk, msg, &mut rng).unwrap();
+    assert_ne!(a, b);
+    RSASSA_PSS_SHA256::verify(&pk, msg, None, &a).unwrap();
+    pss_verify_sha256(&pk, msg, &b).unwrap();
+    assert!(RSASSA_PSS_SHA256::verify(&pk, b"other", None, &a).is_err());
+    let _ = pss_sign_sha256; // the free functions stay the explicit-RNG one-shot path
 }
