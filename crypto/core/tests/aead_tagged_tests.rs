@@ -300,4 +300,14 @@ fn tagged_undersized_buffers_are_rejected() {
         Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, msg.len()),
         other => panic!("tagged_do_aead_decrypt_final into a short buffer: {other:?}"),
     }
+
+    // A buffer of exactly the length it asks for must be accepted. Without this the
+    // `plaintext.len() < needed` guard can be weakened to `<=` or `==` without any test noticing:
+    // a too-short buffer is caught either way, by the guard or by `do_update_out` behind it, and
+    // both report the same error with the same length.
+    let mut dec = ToyDec::do_decrypt_init(&km, &nonce).unwrap();
+    dec.do_update_aad(AAD).unwrap();
+    let mut exact = vec![0u8; msg.len()];
+    let n = dec.tagged_do_aead_decrypt_final(&ct, &mut exact).unwrap();
+    assert_eq!(&exact[..n], &msg[..], "a buffer of exactly `needed` bytes must be enough");
 }
