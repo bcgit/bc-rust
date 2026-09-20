@@ -59,14 +59,14 @@ impl BlockCipherEncryptor<B, B, B> for ToyCbc {
         rng.next_bytes_out(&mut iv)?;
         Ok((Self { key, chain: iv }, iv))
     }
-    fn do_encrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<(), SymmetricCipherError> {
+    fn do_encrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<usize, SymmetricCipherError> {
         for block in blocks.iter_mut() {
             for (b, (c, k)) in block.iter_mut().zip(self.chain.iter().zip(self.key.iter())) {
                 *b ^= c ^ k;
             }
             self.chain = *block;
         }
-        Ok(())
+        Ok(blocks.len() * B)
     }
 }
 
@@ -74,7 +74,8 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
     fn do_decrypt_init(key: &KeyMaterial<B>, iv: &[u8; B]) -> Result<Self, SymmetricCipherError> {
         Ok(Self { key: Self::check_key(key)?, chain: *iv })
     }
-    fn do_decrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<(), SymmetricCipherError> {
+    fn do_decrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<usize, SymmetricCipherError> {
+        let len = blocks.len() * B;
         for block in blocks.iter_mut() {
             let ct = *block;
             for (b, (c, k)) in block.iter_mut().zip(self.chain.iter().zip(self.key.iter())) {
@@ -82,7 +83,7 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
             }
             self.chain = ct;
         }
-        Ok(())
+        Ok(len)
     }
 }
 
