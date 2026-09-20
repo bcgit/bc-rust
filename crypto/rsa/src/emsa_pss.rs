@@ -13,13 +13,16 @@
 use crate::mgf1::mgf1;
 use bouncycastle_core::traits::Hash;
 
-/// EMSA-PSS-ENCODE (RFC 8017 §9.1.1), with `emBits` fixed to `8 * K_LEN - 1` (see the module
-/// docs) and the salt supplied by the caller rather than generated here -- [`crate::rsassa_pss`]
-/// draws it from an RNG; this function stays deterministic so it can be tested directly against
-/// a known salt. Step 3's error ("encoding error", `emLen < hLen + sLen + 2`) is a `debug_assert`,
-/// since every (hash, modulus size) pairing this crate wires up has a modulus far wider than any
-/// hash-plus-salt combination it offers.
-pub fn emsa_pss_encode<
+/// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from step 3 onward, with `emBits` fixed to `8 * K_LEN - 1`
+/// (see the module docs), steps 1-2's `mHash = Hash(M)` supplied by the caller (either
+/// [`crate::rsassa_pss`] hashing a whole message in one call, or a streaming `Signer` that hashed
+/// it incrementally -- this function itself never sees the message), and the salt supplied
+/// rather than generated here -- [`crate::rsassa_pss`] draws it from an RNG; this function stays
+/// deterministic so it can be tested directly against a known salt. Step 3's error ("encoding
+/// error", `emLen < hLen + sLen + 2`) is a `debug_assert`, since every (hash, modulus size)
+/// pairing this crate wires up has a modulus far wider than any hash-plus-salt combination it
+/// offers.
+pub fn emsa_pss_encode_from_hash<
     H: Hash + Default,
     const H_LEN: usize,
     const SEED_LEN: usize,
@@ -28,7 +31,7 @@ pub fn emsa_pss_encode<
     const DB_LEN: usize,
     const K_LEN: usize,
 >(
-    message: &[u8],
+    m_hash: &[u8; H_LEN],
     salt: &[u8; S_LEN],
 ) -> [u8; K_LEN] {
     debug_assert_eq!(M_PRIME_LEN, 8 + H_LEN + S_LEN, "emsa_pss_encode: M_PRIME_LEN mismatch");
@@ -38,13 +41,9 @@ pub fn emsa_pss_encode<
         "emsa_pss_encode: modulus too short for this hash/salt"
     );
 
-    // Steps 1-2: mHash = Hash(M).
-    let mut m_hash = [0u8; H_LEN];
-    H::default().hash_out(message, &mut m_hash);
-
     // Steps 5-6: M' = 8 zero octets || mHash || salt; H = Hash(M').
     let mut m_prime = [0u8; M_PRIME_LEN];
-    m_prime[8..8 + H_LEN].copy_from_slice(&m_hash);
+    m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(salt);
     let mut h = [0u8; H_LEN];
     H::default().hash_out(&m_prime, &mut h);
@@ -70,10 +69,11 @@ pub fn emsa_pss_encode<
     em
 }
 
-/// EMSA-PSS-VERIFY (RFC 8017 §9.1.2), with `emBits` fixed as [`emsa_pss_encode`]'s is. Step 1's
-/// message-length limit and step 3's minimum-`emLen` check are not reachable for this crate's
-/// fixed sizes, for the same reasons given there.
-pub fn emsa_pss_verify<
+/// EMSA-PSS-VERIFY (RFC 8017 §9.1.2) from step 4 onward, with `emBits` fixed as
+/// [`emsa_pss_encode_from_hash`]'s is and step 2's `mHash = Hash(M)` supplied by the caller the
+/// same way. Step 1's message-length limit and step 3's minimum-`emLen` check are not reachable
+/// for this crate's fixed sizes, for the same reasons given there.
+pub fn emsa_pss_verify_from_hash<
     H: Hash + Default,
     const H_LEN: usize,
     const SEED_LEN: usize,
@@ -82,7 +82,7 @@ pub fn emsa_pss_verify<
     const DB_LEN: usize,
     const K_LEN: usize,
 >(
-    message: &[u8],
+    m_hash: &[u8; H_LEN],
     em: &[u8; K_LEN],
 ) -> bool {
     // Step 4.
@@ -118,11 +118,9 @@ pub fn emsa_pss_verify<
     let mut salt = [0u8; S_LEN];
     salt.copy_from_slice(&db[DB_LEN - S_LEN..]);
 
-    // Steps 12-14.
-    let mut m_hash = [0u8; H_LEN];
-    H::default().hash_out(message, &mut m_hash);
+    // Steps 12-14 (step 2's mHash is the caller's `m_hash`).
     let mut m_prime = [0u8; M_PRIME_LEN];
-    m_prime[8..8 + H_LEN].copy_from_slice(&m_hash);
+    m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(&salt);
     let mut h_prime = [0u8; H_LEN];
     H::default().hash_out(&m_prime, &mut h_prime);
@@ -132,11 +130,13 @@ pub fn emsa_pss_verify<
 
 #[cfg(test)]
 mod tests {
-    //! `emsa_pss_encode`/`emsa_pss_verify` are crate-private (only [`crate::rsassa_pss`] needs
-    //! them), so they are exercised here rather than from `tests/` -- the same "high-risk code
-    //! that cannot be reached through the public API" exception `rsa_core`'s tests use. The KAT
-    //! is a direct Python transliteration of RFC 8017 SS9.1.1's own steps (not from recall),
-    //! reusing this crate's own `mgf1` reference values (`mgf1.rs`'s own tests) for the mask.
+    //! `emsa_pss_encode_from_hash`/`emsa_pss_verify_from_hash` are crate-private (only
+    //! [`crate::rsassa_pss`] needs them), so they are exercised here rather than from `tests/` --
+    //! the same "high-risk code that cannot be reached through the public API" exception
+    //! `rsa_core`'s tests use. The KAT is a direct Python transliteration of RFC 8017 SS9.1.1's
+    //! own steps (not from recall), reusing this crate's own `mgf1` reference values (`mgf1.rs`'s
+    //! own tests) for the mask. The `encode`/`verify` helpers below add step 2's `mHash = Hash(M)`
+    //! back on top, so the tests can speak in terms of messages.
 
     use super::*;
     use bouncycastle_sha2::SHA256;
@@ -167,12 +167,18 @@ mod tests {
         0xbc,
     ];
 
+    fn m_hash(message: &[u8]) -> [u8; 32] {
+        let mut m_hash = [0u8; 32];
+        SHA256::default().hash_out(message, &mut m_hash);
+        m_hash
+    }
+
     fn encode(message: &[u8], salt: &[u8; 32]) -> [u8; 256] {
-        emsa_pss_encode::<SHA256, 32, 36, 32, 72, 223, 256>(message, salt)
+        emsa_pss_encode_from_hash::<SHA256, 32, 36, 32, 72, 223, 256>(&m_hash(message), salt)
     }
 
     fn verify(message: &[u8], em: &[u8; 256]) -> bool {
-        emsa_pss_verify::<SHA256, 32, 36, 32, 72, 223, 256>(message, em)
+        emsa_pss_verify_from_hash::<SHA256, 32, 36, 32, 72, 223, 256>(&m_hash(message), em)
     }
 
     #[test]
