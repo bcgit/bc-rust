@@ -8,6 +8,14 @@
 //! (`RSA_2048_PSS_SHA384`, ...) would mean over thirty near-identical subcommands for what is
 //! fundamentally one primitive per modulus size.
 //!
+//! Every (size, scheme, hash) pairing is one of `bouncycastle_rsa`'s `Signer`/`SignatureVerifier`
+//! types (`rsa_2048::RSASSA_PKCS1_v1_5_SHA256` and siblings), so, as `ecdsa_cmd.rs` does for its
+//! curves, a single generic [`rsa_sign_verify_cmd`] bound over those traits is monomorphised once
+//! per pairing below, and the message streams from stdin through the traits' `_update` methods in
+//! this CLI's usual ~1 KB chunks rather than being read whole. `ctx` (accepted by the traits for
+//! conformance) is not exposed as a flag: RSA has no context-string input, and `bouncycastle_rsa`
+//! documents the parameter as ignored, so every call below passes `None`.
+//!
 //! `bouncycastle_rsa` does not generate keys (see that crate's `keys` module docs), so there is no
 //! `Keygen` action here, and no `PkFromSk` either -- a private key's CRT components alone do not
 //! determine the public exponent `e`, so there is nothing to derive a public key from. Private and
@@ -17,18 +25,15 @@
 //! produced by another RSA implementation cannot be fed to this CLI directly.
 //!
 //! 1024- and 1536-bit RSA are verification-only in `bouncycastle_rsa` (see its crate docs' `#
-//! Scope`), so `rsa_1024_cmd`/`rsa_1536_cmd` take no `action`/`skfile` at all: they only verify.
-//!
-//! Reads the whole message into memory (`read_all_stdin`) rather than this CLI's usual ~1 KB
-//! streaming buffer: RSASSA-PKCS1-v1_5 and RSASSA-PSS both hash the entire message before any
-//! signing/verification step can begin, and `bouncycastle_rsa`'s sign/verify functions take the
-//! whole message as one slice -- there is no incremental hash state to feed a chunk at a time.
+//! Scope`), so `rsa_1024_cmd`/`rsa_1536_cmd` take no `action`/`skfile` at all: they only verify,
+//! through [`do_verify`], which needs only a `SignatureVerifier` -- exactly the trait those sizes'
+//! types implement.
 
 use crate::helpers::{read_from_file, write_bytes_or_hex};
-use bouncycastle::core::errors::SignatureError;
-use bouncycastle::core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
-use bouncycastle::rng::DefaultRNG;
-use bouncycastle::rsa::keys::{RsaPrivateKey, RsaPublicKey};
+use bouncycastle::core::traits::{
+    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+};
+use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 use clap::ValueEnum;
 use std::io;
 use std::io::Read;
@@ -76,11 +81,15 @@ fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
 }
 
 /// The message is read raw, never hex-decoded: unlike a key or signature file, arbitrary message
-/// bytes that happen to look like hex must still be signed/verified byte-for-byte.
-fn read_all_stdin() -> Vec<u8> {
-    let mut buf = Vec::new();
-    io::stdin().read_to_end(&mut buf).expect("Failed to read from stdin");
-    buf
+/// bytes that happen to look like hex must still be signed/verified byte-for-byte. Streams stdin
+/// through `update` in ~1 KB chunks (the same loop as `ecdsa_cmd.rs`).
+fn stream_stdin_into(mut update: impl FnMut(&[u8])) {
+    let mut buf = [0u8; 1024];
+    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+    while bytes_read > 0 {
+        update(&buf[..bytes_read]);
+        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+    }
 }
 
 fn unsupported(scheme: &RSAScheme, hash: &RSAHash, alg_name: &str) -> ! {
@@ -88,27 +97,13 @@ fn unsupported(scheme: &RSAScheme, hash: &RSAHash, alg_name: &str) -> ! {
     exit(-1);
 }
 
-/// A `bouncycastle_rsa::rsa_*::pkcs1_v1_5_sign_*` function.
-type PkcsSignFn<const L: usize, const HALF: usize, const SIG_LEN: usize> =
-    fn(&RsaPrivateKey<L, HALF>, &[u8]) -> Result<[u8; SIG_LEN], SignatureError>;
-/// A `bouncycastle_rsa::rsa_*::pss_sign_*`/`pss_shake*_sign` function.
-type PssSignFn<const L: usize, const HALF: usize, const SIG_LEN: usize> =
-    fn(&RsaPrivateKey<L, HALF>, &[u8], &mut dyn RNG) -> Result<[u8; SIG_LEN], SignatureError>;
-/// A `bouncycastle_rsa::rsa_*::{pkcs1_v1_5,pss,pss_shake*}_verify_*` function -- the same shape
-/// for every scheme, since verification never needs an RNG.
-type VerifyFn<const L: usize, const SIG_LEN: usize> =
-    fn(&RsaPublicKey<L>, &[u8], &[u8; SIG_LEN]) -> Result<(), SignatureError>;
-
-/// See [`RsaPrivateKey`]'s `# Encoding` docs for the expected layout; a wrong-length file is one
-/// of the `DecodingError`s `SignaturePrivateKey::from_bytes` reports.
-fn parse_sk<const HALF: usize, const L: usize, const HALF_BYTES: usize, const SK_LEN: usize>(
+/// See `RsaPrivateKey`'s `# Encoding` docs for the expected layout; a wrong-length file is one of
+/// the `DecodingError`s `SignaturePrivateKey::from_bytes` reports.
+fn parse_sk<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize>(
     bytes: &[u8],
     alg_name: &str,
-) -> RsaPrivateKey<L, HALF>
-where
-    RsaPrivateKey<L, HALF>: SignaturePrivateKey<SK_LEN>,
-{
-    match <RsaPrivateKey<L, HALF> as SignaturePrivateKey<SK_LEN>>::from_bytes(bytes) {
+) -> SK {
+    match SK::from_bytes(bytes) {
         Ok(sk) => sk,
         Err(_) => {
             eprintln!(
@@ -120,16 +115,13 @@ where
     }
 }
 
-/// See [`RsaPublicKey`]'s `# Encoding` docs for the expected layout; a wrong-length file is one of
+/// See `RsaPublicKey`'s `# Encoding` docs for the expected layout; a wrong-length file is one of
 /// the `DecodingError`s `SignaturePublicKey::from_bytes` reports.
-fn parse_pk<const L: usize, const N_BYTES: usize, const PK_LEN: usize>(
+fn parse_pk<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize>(
     bytes: &[u8],
     alg_name: &str,
-) -> RsaPublicKey<L>
-where
-    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
-{
-    match <RsaPublicKey<L> as SignaturePublicKey<PK_LEN>>::from_bytes(bytes) {
+) -> PK {
+    match PK::from_bytes(bytes) {
         Ok(pk) => pk,
         Err(_) => {
             eprintln!(
@@ -141,25 +133,29 @@ where
     }
 }
 
-/// Shared by [`rsa_pkcs1_cmd`] and [`rsa_pss_cmd`]'s `Verify` arm, and called directly by the
-/// verify-only sizes (`rsa_1024_cmd`, `rsa_1536_cmd`).
-fn do_verify<const L: usize, const N_BYTES: usize, const PK_LEN: usize, const SIG_LEN: usize>(
-    verify: VerifyFn<L, SIG_LEN>,
+/// Verifies stdin against `--pkfile`/`--sigfile` through `V`'s streaming `SignatureVerifier`
+/// impl. Shared by [`rsa_sign_verify_cmd`]'s `Verify` arm, and called directly by the verify-only
+/// sizes (`rsa_1024_cmd`, `rsa_1536_cmd`). A signature file of the wrong length is simply
+/// invalid (RFC 8017 §8.1.2/§8.2.2 step 1), as `verify_final` reports it.
+fn do_verify<
+    PK: SignaturePublicKey<PK_LEN>,
+    V: SignatureVerifier<PK, PK_LEN, SIG_LEN>,
+    const PK_LEN: usize,
+    const SIG_LEN: usize,
+>(
     pkfile: &Option<String>,
     sigfile: &Option<String>,
     alg_name: &str,
-) where
-    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
-{
-    let pk_bytes = require_file(pkfile, "pkfile");
-    let pk = parse_pk::<L, N_BYTES, PK_LEN>(&pk_bytes, alg_name);
-    let sig_bytes = require_file(sigfile, "sigfile");
-    let Ok(sig): Result<[u8; SIG_LEN], _> = sig_bytes.try_into() else {
-        eprintln!("Error: signature file must be exactly {SIG_LEN} bytes for {alg_name}.");
-        exit(-1);
-    };
-    let msg = read_all_stdin();
-    if verify(&pk, &msg, &sig).is_ok() {
+) {
+    let pk = parse_pk::<PK, PK_LEN>(&require_file(pkfile, "pkfile"), alg_name);
+    let sig = require_file(sigfile, "sigfile");
+
+    // `verify_init` is infallible for every `bouncycastle_rsa` verifier (it only stores the key
+    // and a fresh hash state), so this unwrap cannot fire.
+    let mut verifier = V::verify_init(&pk, None).unwrap();
+    stream_stdin_into(|chunk| verifier.verify_update(chunk));
+
+    if verifier.verify_final(&sig).is_ok() {
         println!("Signature is valid.");
     } else {
         eprintln!("Signature is invalid.");
@@ -167,155 +163,110 @@ fn do_verify<const L: usize, const N_BYTES: usize, const PK_LEN: usize, const SI
     }
 }
 
-/// RSASSA-PKCS1-v1_5 (deterministic: `sign` takes no RNG). See [`rsa_pss_cmd`] for the PSS
-/// counterpart.
-#[allow(clippy::too_many_arguments)]
-fn rsa_pkcs1_cmd<
-    const HALF: usize,
-    const L: usize,
-    const HALF_BYTES: usize,
-    const SK_LEN: usize,
-    const N_BYTES: usize,
+/// One (size, scheme, hash) pairing `S`, signing or verifying stdin per `action`. PSS pairings
+/// draw their salt from the library's default OS-backed RNG inside `S::sign_final`.
+fn rsa_sign_verify_cmd<
+    PK: SignaturePublicKey<PK_LEN>,
+    SK: SignaturePrivateKey<SK_LEN>,
+    S: Signer<SK, SK_LEN, SIG_LEN> + SignatureVerifier<PK, PK_LEN, SIG_LEN>,
     const PK_LEN: usize,
+    const SK_LEN: usize,
     const SIG_LEN: usize,
 >(
     action: &RSAAction,
-    sign: PkcsSignFn<L, HALF, SIG_LEN>,
-    verify: VerifyFn<L, SIG_LEN>,
     skfile: &Option<String>,
     pkfile: &Option<String>,
     sigfile: &Option<String>,
     output_hex: bool,
     alg_name: &str,
-) where
-    RsaPrivateKey<L, HALF>: SignaturePrivateKey<SK_LEN>,
-    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
-{
+) {
     match action {
         RSAAction::Sign => {
-            let sk_bytes = require_file(skfile, "skfile");
-            let sk = parse_sk::<HALF, L, HALF_BYTES, SK_LEN>(&sk_bytes, alg_name);
-            let msg = read_all_stdin();
-            let sig = sign(&sk, &msg).unwrap_or_else(|_| {
+            let sk = parse_sk::<SK, SK_LEN>(&require_file(skfile, "skfile"), alg_name);
+
+            // `sign_init` is infallible for every `bouncycastle_rsa` signer (see `do_verify`).
+            let mut signer = S::sign_init(&sk, None).unwrap();
+            stream_stdin_into(|chunk| signer.sign_update(chunk));
+            let sig = signer.sign_final().unwrap_or_else(|_| {
                 eprintln!("Error: signing failed.");
                 exit(-1);
             });
+
             write_bytes_or_hex(&sig, output_hex);
         }
-        RSAAction::Verify => {
-            do_verify::<L, N_BYTES, PK_LEN, SIG_LEN>(verify, pkfile, sigfile, alg_name)
-        }
+        RSAAction::Verify => do_verify::<PK, S, PK_LEN, SIG_LEN>(pkfile, sigfile, alg_name),
     }
 }
 
-/// RSASSA-PSS (randomized: `sign` draws a fresh salt from a [`DefaultRNG`] each call), covering
-/// both the MGF1-based scheme (RFC 8017 §8.1) and the SHAKE-native one (RFC 8702 §3.2.1) -- their
-/// `sign`/`verify` function shapes are identical, only the concrete function passed in differs.
-#[allow(clippy::too_many_arguments)]
-fn rsa_pss_cmd<
-    const HALF: usize,
-    const L: usize,
-    const HALF_BYTES: usize,
-    const SK_LEN: usize,
-    const N_BYTES: usize,
-    const PK_LEN: usize,
-    const SIG_LEN: usize,
->(
-    action: &RSAAction,
-    sign: PssSignFn<L, HALF, SIG_LEN>,
-    verify: VerifyFn<L, SIG_LEN>,
-    skfile: &Option<String>,
-    pkfile: &Option<String>,
-    sigfile: &Option<String>,
-    output_hex: bool,
-    alg_name: &str,
-) where
-    RsaPrivateKey<L, HALF>: SignaturePrivateKey<SK_LEN>,
-    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
-{
-    match action {
-        RSAAction::Sign => {
-            let sk_bytes = require_file(skfile, "skfile");
-            let sk = parse_sk::<HALF, L, HALF_BYTES, SK_LEN>(&sk_bytes, alg_name);
-            let msg = read_all_stdin();
-            let mut rng = DefaultRNG::default();
-            let sig = sign(&sk, &msg, &mut rng).unwrap_or_else(|_| {
-                eprintln!("Error: signing failed.");
-                exit(-1);
-            });
-            write_bytes_or_hex(&sig, output_hex);
-        }
-        RSAAction::Verify => {
-            do_verify::<L, N_BYTES, PK_LEN, SIG_LEN>(verify, pkfile, sigfile, alg_name)
-        }
-    }
-}
-
-/// RSA-1024: verification only (see module docs). `L = 16`, `N_BYTES = 128`, `PK_LEN = 132`,
-/// `SIG_LEN = 128`. No SHA-512 or PSS group exists in Wycheproof at this size (see
-/// `bouncycastle_rsa::rsa_1024`'s own docs), so neither is wired up here either.
+/// RSA-1024: verification only (see module docs). No SHA-512 or PSS group exists in Wycheproof at
+/// this size (see `bouncycastle_rsa::rsa_1024`'s own docs), so neither is wired up here either.
 pub(crate) fn rsa_1024_cmd(
     scheme: &RSAScheme,
     hash: &RSAHash,
     pkfile: &Option<String>,
     sigfile: &Option<String>,
 ) {
-    use bouncycastle::rsa::rsa_1024::{pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384};
+    use rsa_1024::{
+        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, Rsa1024PublicKey, SIG_LEN,
+    };
     match (scheme, hash) {
-        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => do_verify::<16, 128, 132, 128>(
-            pkcs1_v1_5_verify_sha256,
-            pkfile,
-            sigfile,
-            "RSA-1024/PKCS#1v1.5/SHA-256",
-        ),
-        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => do_verify::<16, 128, 132, 128>(
-            pkcs1_v1_5_verify_sha384,
-            pkfile,
-            sigfile,
-            "RSA-1024/PKCS#1v1.5/SHA-384",
-        ),
+        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => {
+            do_verify::<Rsa1024PublicKey, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SIG_LEN>(
+                pkfile,
+                sigfile,
+                "RSA-1024/PKCS#1v1.5/SHA-256",
+            )
+        }
+        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => {
+            do_verify::<Rsa1024PublicKey, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SIG_LEN>(
+                pkfile,
+                sigfile,
+                "RSA-1024/PKCS#1v1.5/SHA-384",
+            )
+        }
         (scheme, hash) => unsupported(scheme, hash, "RSA-1024"),
     }
 }
 
-/// RSA-1536: verification only (see module docs). `L = 24`, `N_BYTES = 192`, `PK_LEN = 196`,
-/// `SIG_LEN = 192`. No PSS group exists in Wycheproof at this size.
+/// RSA-1536: verification only (see module docs). No PSS group exists in Wycheproof at this size.
 pub(crate) fn rsa_1536_cmd(
     scheme: &RSAScheme,
     hash: &RSAHash,
     pkfile: &Option<String>,
     sigfile: &Option<String>,
 ) {
-    use bouncycastle::rsa::rsa_1536::{
-        pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
+    use rsa_1536::{
+        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+        Rsa1536PublicKey, SIG_LEN,
     };
     match (scheme, hash) {
-        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => do_verify::<24, 192, 196, 192>(
-            pkcs1_v1_5_verify_sha256,
-            pkfile,
-            sigfile,
-            "RSA-1536/PKCS#1v1.5/SHA-256",
-        ),
-        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => do_verify::<24, 192, 196, 192>(
-            pkcs1_v1_5_verify_sha384,
-            pkfile,
-            sigfile,
-            "RSA-1536/PKCS#1v1.5/SHA-384",
-        ),
-        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => do_verify::<24, 192, 196, 192>(
-            pkcs1_v1_5_verify_sha512,
-            pkfile,
-            sigfile,
-            "RSA-1536/PKCS#1v1.5/SHA-512",
-        ),
+        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => {
+            do_verify::<Rsa1536PublicKey, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SIG_LEN>(
+                pkfile,
+                sigfile,
+                "RSA-1536/PKCS#1v1.5/SHA-256",
+            )
+        }
+        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => {
+            do_verify::<Rsa1536PublicKey, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SIG_LEN>(
+                pkfile,
+                sigfile,
+                "RSA-1536/PKCS#1v1.5/SHA-384",
+            )
+        }
+        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => {
+            do_verify::<Rsa1536PublicKey, RSASSA_PKCS1_v1_5_SHA512, PK_LEN, SIG_LEN>(
+                pkfile,
+                sigfile,
+                "RSA-1536/PKCS#1v1.5/SHA-512",
+            )
+        }
         (scheme, hash) => unsupported(scheme, hash, "RSA-1536"),
     }
 }
 
-/// RSA-2048: sign and verify. `HALF = 16`, `L = 32`, `HALF_BYTES = 128`, `SK_LEN = 640`, `N_BYTES
-/// = 256`, `PK_LEN = 260`, `SIG_LEN = 256`. `--hash shake128` is the only SHAKE choice wired up at
-/// this size (RFC 8702 §5 pairs SHAKE128 with 2048/3072-bit RSA, SHAKE256 with 4096-bit or
-/// larger).
+/// RSA-2048: sign and verify. `--hash shake128` is the only SHAKE choice wired up at this size
+/// (RFC 8702 §5 pairs SHAKE128 with 2048/3072-bit RSA, SHAKE256 with 4096-bit or larger).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rsa_2048_cmd(
     action: &RSAAction,
@@ -326,66 +277,51 @@ pub(crate) fn rsa_2048_cmd(
     sigfile: &Option<String>,
     output_hex: bool,
 ) {
-    use bouncycastle::rsa::rsa_2048::{
-        pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
-        pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
-        pss_shake128_sign, pss_shake128_verify, pss_sign_sha256, pss_sign_sha384, pss_sign_sha512,
-        pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
+    use rsa_2048::{
+        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
+        Rsa2048PrivateKey as SK, Rsa2048PublicKey as PK, SIG_LEN, SK_LEN,
     };
+    let args = (skfile, pkfile, sigfile, output_hex);
+    let run =
+        |name: &str,
+         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
+            f(action, args.0, args.1, args.2, args.3, name)
+        };
     match (scheme, hash) {
-        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => rsa_pkcs1_cmd::<16, 32, 128, 640, 256, 260, 256>(
-            action,
-            pkcs1_v1_5_sign_sha256,
-            pkcs1_v1_5_verify_sha256,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
             "RSA-2048/PKCS#1v1.5/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => rsa_pkcs1_cmd::<16, 32, 128, 640, 256, 260, 256>(
-            action,
-            pkcs1_v1_5_sign_sha384,
-            pkcs1_v1_5_verify_sha384,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => run(
             "RSA-2048/PKCS#1v1.5/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => rsa_pkcs1_cmd::<16, 32, 128, 640, 256, 260, 256>(
-            action,
-            pkcs1_v1_5_sign_sha512,
-            pkcs1_v1_5_verify_sha512,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => run(
             "RSA-2048/PKCS#1v1.5/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha256) => rsa_pss_cmd::<16, 32, 128, 640, 256, 260, 256>(
-            action, pss_sign_sha256, pss_verify_sha256, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha256) => run(
             "RSA-2048/PSS/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha384) => rsa_pss_cmd::<16, 32, 128, 640, 256, 260, 256>(
-            action, pss_sign_sha384, pss_verify_sha384, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha384) => run(
             "RSA-2048/PSS/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha512) => rsa_pss_cmd::<16, 32, 128, 640, 256, 260, 256>(
-            action, pss_sign_sha512, pss_verify_sha512, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha512) => run(
             "RSA-2048/PSS/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Shake128) => rsa_pss_cmd::<16, 32, 128, 640, 256, 260, 256>(
-            action, pss_shake128_sign, pss_shake128_verify, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Shake128) => run(
             "RSA-2048/PSS-SHAKE128",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHAKE128, PK_LEN, SK_LEN, SIG_LEN>,
         ),
         (scheme, hash) => unsupported(scheme, hash, "RSA-2048"),
     }
 }
 
-/// RSA-3072: sign and verify. `HALF = 24`, `L = 48`, `HALF_BYTES = 192`, `SK_LEN = 960`, `N_BYTES
-/// = 384`, `PK_LEN = 388`, `SIG_LEN = 384`. See [`rsa_2048_cmd`] for the SHAKE128 pairing
-/// rationale.
+/// RSA-3072: sign and verify. See [`rsa_2048_cmd`] for the SHAKE128 pairing rationale.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rsa_3072_cmd(
     action: &RSAAction,
@@ -396,66 +332,52 @@ pub(crate) fn rsa_3072_cmd(
     sigfile: &Option<String>,
     output_hex: bool,
 ) {
-    use bouncycastle::rsa::rsa_3072::{
-        pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
-        pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
-        pss_shake128_sign, pss_shake128_verify, pss_sign_sha256, pss_sign_sha384, pss_sign_sha512,
-        pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
+    use rsa_3072::{
+        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
+        Rsa3072PrivateKey as SK, Rsa3072PublicKey as PK, SIG_LEN, SK_LEN,
     };
+    let args = (skfile, pkfile, sigfile, output_hex);
+    let run =
+        |name: &str,
+         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
+            f(action, args.0, args.1, args.2, args.3, name)
+        };
     match (scheme, hash) {
-        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => rsa_pkcs1_cmd::<24, 48, 192, 960, 384, 388, 384>(
-            action,
-            pkcs1_v1_5_sign_sha256,
-            pkcs1_v1_5_verify_sha256,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
             "RSA-3072/PKCS#1v1.5/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => rsa_pkcs1_cmd::<24, 48, 192, 960, 384, 388, 384>(
-            action,
-            pkcs1_v1_5_sign_sha384,
-            pkcs1_v1_5_verify_sha384,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => run(
             "RSA-3072/PKCS#1v1.5/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => rsa_pkcs1_cmd::<24, 48, 192, 960, 384, 388, 384>(
-            action,
-            pkcs1_v1_5_sign_sha512,
-            pkcs1_v1_5_verify_sha512,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => run(
             "RSA-3072/PKCS#1v1.5/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha256) => rsa_pss_cmd::<24, 48, 192, 960, 384, 388, 384>(
-            action, pss_sign_sha256, pss_verify_sha256, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha256) => run(
             "RSA-3072/PSS/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha384) => rsa_pss_cmd::<24, 48, 192, 960, 384, 388, 384>(
-            action, pss_sign_sha384, pss_verify_sha384, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha384) => run(
             "RSA-3072/PSS/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha512) => rsa_pss_cmd::<24, 48, 192, 960, 384, 388, 384>(
-            action, pss_sign_sha512, pss_verify_sha512, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha512) => run(
             "RSA-3072/PSS/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Shake128) => rsa_pss_cmd::<24, 48, 192, 960, 384, 388, 384>(
-            action, pss_shake128_sign, pss_shake128_verify, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Shake128) => run(
             "RSA-3072/PSS-SHAKE128",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHAKE128, PK_LEN, SK_LEN, SIG_LEN>,
         ),
         (scheme, hash) => unsupported(scheme, hash, "RSA-3072"),
     }
 }
 
-/// RSA-4096: sign and verify. `HALF = 32`, `L = 64`, `HALF_BYTES = 256`, `SK_LEN = 1280`, `N_BYTES
-/// = 512`, `PK_LEN = 516`, `SIG_LEN = 512`. `--hash shake256` (not shake128) is wired up at this
-/// size -- see [`rsa_2048_cmd`] for the pairing rationale.
+/// RSA-4096: sign and verify. `--hash shake256` (not shake128) is wired up at this size -- see
+/// [`rsa_2048_cmd`] for the pairing rationale.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rsa_4096_cmd(
     action: &RSAAction,
@@ -466,73 +388,53 @@ pub(crate) fn rsa_4096_cmd(
     sigfile: &Option<String>,
     output_hex: bool,
 ) {
-    use bouncycastle::rsa::rsa_4096::{
-        pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
-        pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
-        pss_shake256_sign, pss_shake256_verify, pss_sign_sha256, pss_sign_sha384, pss_sign_sha512,
-        pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
+    use rsa_4096::{
+        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE256,
+        Rsa4096PrivateKey as SK, Rsa4096PublicKey as PK, SIG_LEN, SK_LEN,
     };
+    let args = (skfile, pkfile, sigfile, output_hex);
+    let run =
+        |name: &str,
+         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
+            f(action, args.0, args.1, args.2, args.3, name)
+        };
     match (scheme, hash) {
-        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => {
-            rsa_pkcs1_cmd::<32, 64, 256, 1280, 512, 516, 512>(
-                action,
-                pkcs1_v1_5_sign_sha256,
-                pkcs1_v1_5_verify_sha256,
-                skfile,
-                pkfile,
-                sigfile,
-                output_hex,
-                "RSA-4096/PKCS#1v1.5/SHA-256",
-            )
-        }
-        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => {
-            rsa_pkcs1_cmd::<32, 64, 256, 1280, 512, 516, 512>(
-                action,
-                pkcs1_v1_5_sign_sha384,
-                pkcs1_v1_5_verify_sha384,
-                skfile,
-                pkfile,
-                sigfile,
-                output_hex,
-                "RSA-4096/PKCS#1v1.5/SHA-384",
-            )
-        }
-        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => {
-            rsa_pkcs1_cmd::<32, 64, 256, 1280, 512, 516, 512>(
-                action,
-                pkcs1_v1_5_sign_sha512,
-                pkcs1_v1_5_verify_sha512,
-                skfile,
-                pkfile,
-                sigfile,
-                output_hex,
-                "RSA-4096/PKCS#1v1.5/SHA-512",
-            )
-        }
-        (RSAScheme::Pss, RSAHash::Sha256) => rsa_pss_cmd::<32, 64, 256, 1280, 512, 516, 512>(
-            action, pss_sign_sha256, pss_verify_sha256, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
+            "RSA-4096/PKCS#1v1.5/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
+        ),
+        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => run(
+            "RSA-4096/PKCS#1v1.5/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
+        ),
+        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => run(
+            "RSA-4096/PKCS#1v1.5/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
+        ),
+        (RSAScheme::Pss, RSAHash::Sha256) => run(
             "RSA-4096/PSS/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha384) => rsa_pss_cmd::<32, 64, 256, 1280, 512, 516, 512>(
-            action, pss_sign_sha384, pss_verify_sha384, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha384) => run(
             "RSA-4096/PSS/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha512) => rsa_pss_cmd::<32, 64, 256, 1280, 512, 516, 512>(
-            action, pss_sign_sha512, pss_verify_sha512, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha512) => run(
             "RSA-4096/PSS/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Shake256) => rsa_pss_cmd::<32, 64, 256, 1280, 512, 516, 512>(
-            action, pss_shake256_sign, pss_shake256_verify, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Shake256) => run(
             "RSA-4096/PSS-SHAKE256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHAKE256, PK_LEN, SK_LEN, SIG_LEN>,
         ),
         (scheme, hash) => unsupported(scheme, hash, "RSA-4096"),
     }
 }
 
-/// RSA-8192: sign and verify. `HALF = 64`, `L = 128`, `HALF_BYTES = 512`, `SK_LEN = 2560`,
-/// `N_BYTES = 1024`, `PK_LEN = 1028`, `SIG_LEN = 1024`. No PSS-SHAKE variant is wired up at this
-/// size: no Wycheproof vectors exist for it, and RFC 8702 §5 does not name a pairing beyond
-/// "4096-bit or larger" for SHAKE256 -- 4096 already covers that recommendation.
+/// RSA-8192: sign and verify. No PSS-SHAKE variant is wired up at this size: no Wycheproof
+/// vectors exist for it, and RFC 8702 §5 does not name a pairing beyond "4096-bit or larger" for
+/// SHAKE256 -- 4096 already covers that recommendation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rsa_8192_cmd(
     action: &RSAAction,
@@ -543,60 +445,41 @@ pub(crate) fn rsa_8192_cmd(
     sigfile: &Option<String>,
     output_hex: bool,
 ) {
-    use bouncycastle::rsa::rsa_8192::{
-        pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
-        pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
-        pss_sign_sha256, pss_sign_sha384, pss_sign_sha512, pss_verify_sha256, pss_verify_sha384,
-        pss_verify_sha512,
+    use rsa_8192::{
+        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa8192PrivateKey as SK,
+        Rsa8192PublicKey as PK, SIG_LEN, SK_LEN,
     };
+    let args = (skfile, pkfile, sigfile, output_hex);
+    let run =
+        |name: &str,
+         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
+            f(action, args.0, args.1, args.2, args.3, name)
+        };
     match (scheme, hash) {
-        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => {
-            rsa_pkcs1_cmd::<64, 128, 512, 2560, 1024, 1028, 1024>(
-                action,
-                pkcs1_v1_5_sign_sha256,
-                pkcs1_v1_5_verify_sha256,
-                skfile,
-                pkfile,
-                sigfile,
-                output_hex,
-                "RSA-8192/PKCS#1v1.5/SHA-256",
-            )
-        }
-        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => {
-            rsa_pkcs1_cmd::<64, 128, 512, 2560, 1024, 1028, 1024>(
-                action,
-                pkcs1_v1_5_sign_sha384,
-                pkcs1_v1_5_verify_sha384,
-                skfile,
-                pkfile,
-                sigfile,
-                output_hex,
-                "RSA-8192/PKCS#1v1.5/SHA-384",
-            )
-        }
-        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => {
-            rsa_pkcs1_cmd::<64, 128, 512, 2560, 1024, 1028, 1024>(
-                action,
-                pkcs1_v1_5_sign_sha512,
-                pkcs1_v1_5_verify_sha512,
-                skfile,
-                pkfile,
-                sigfile,
-                output_hex,
-                "RSA-8192/PKCS#1v1.5/SHA-512",
-            )
-        }
-        (RSAScheme::Pss, RSAHash::Sha256) => rsa_pss_cmd::<64, 128, 512, 2560, 1024, 1028, 1024>(
-            action, pss_sign_sha256, pss_verify_sha256, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
+            "RSA-8192/PKCS#1v1.5/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
+        ),
+        (RSAScheme::Pkcs1v15, RSAHash::Sha384) => run(
+            "RSA-8192/PKCS#1v1.5/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
+        ),
+        (RSAScheme::Pkcs1v15, RSAHash::Sha512) => run(
+            "RSA-8192/PKCS#1v1.5/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PKCS1_v1_5_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
+        ),
+        (RSAScheme::Pss, RSAHash::Sha256) => run(
             "RSA-8192/PSS/SHA-256",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA256, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha384) => rsa_pss_cmd::<64, 128, 512, 2560, 1024, 1028, 1024>(
-            action, pss_sign_sha384, pss_verify_sha384, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha384) => run(
             "RSA-8192/PSS/SHA-384",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA384, PK_LEN, SK_LEN, SIG_LEN>,
         ),
-        (RSAScheme::Pss, RSAHash::Sha512) => rsa_pss_cmd::<64, 128, 512, 2560, 1024, 1028, 1024>(
-            action, pss_sign_sha512, pss_verify_sha512, skfile, pkfile, sigfile, output_hex,
+        (RSAScheme::Pss, RSAHash::Sha512) => run(
             "RSA-8192/PSS/SHA-512",
+            rsa_sign_verify_cmd::<PK, SK, RSASSA_PSS_SHA512, PK_LEN, SK_LEN, SIG_LEN>,
         ),
         (scheme, hash) => unsupported(scheme, hash, "RSA-8192"),
     }
