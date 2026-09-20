@@ -811,7 +811,7 @@ pub trait MAC: Sized {
 ///
 /// Only the final, partial block of a message is ever padded; the padding layer sitting between the
 /// caller and the block cipher is responsible for routing whole blocks straight through.
-pub trait Padding<const BLOCK_LEN: usize> {
+pub trait BlockCipherPadding<const BLOCK_LEN: usize> {
     /// Whether the scheme appends a whole block of padding to data that is already a whole number
     /// of blocks. `true` for a scheme like PKCS7, which must always add at least one byte so that
     /// unpadding is unambiguous; a caller then finishes an aligned message with `pad(block, 0)`.
