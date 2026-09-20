@@ -7,14 +7,32 @@
 //! implementation), not from primes generated here. RFC 8017's first representation, the plain
 //! `(n, d)` pair, is not supported -- every real RSA private key ships as the CRT form because
 //! CRT-based signing (RFC 8017 §5.2.1 step 2.b) is the only signing path this crate implements.
+//!
+//! Each concrete modulus size's aliases of these types (`crate::rsa_2048::Rsa2048PrivateKey` and
+//! siblings) implement `bouncycastle_core`'s `SignaturePrivateKey`/`SignaturePublicKey` traits,
+//! in that size's module, with the byte layouts described on each type below; the generic types
+//! here only carry the layout's implementation (`encode_raw`/`from_bytes_raw`, crate-private),
+//! since the traits' `SK_LEN`/`PK_LEN` are fixed per size and stable Rust cannot derive them from
+//! `L`.
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
 use bouncycastle_utils::secret::Secret;
+use core::fmt;
+use core::fmt::{Display, Formatter};
 
 /// An RSA public key: RFC 8017 §3.1's `(n, e)`.
+///
+/// # Encoding
+///
+/// `SignaturePublicKey::encode`/`from_bytes` (implemented per size, e.g. for
+/// `crate::rsa_2048::Rsa2048PublicKey`) use the raw layout `n || e`: `n` as `8 * L` big-endian
+/// bytes (RFC 8017 §4.1's I2OSP), then `e` as 4 big-endian bytes, `PK_LEN = 8 * L + 4` in all.
+/// Not an RFC 8017 or ASN.1 format -- this crate has no DER encoder/decoder -- just a fixed-width
+/// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write public keys as files.
+/// Decoding validates `(n, e)` the same way [`Self::new`] does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RsaPublicKey<const L: usize> {
     n: [u64; L],
@@ -50,33 +68,50 @@ impl<const L: usize> RsaPublicKey<L> {
         self.e
     }
 
-    /// Encodes as `n || e`: `n` as `N_BYTES = 8 * L` big-endian bytes (RFC 8017 §4.1's I2OSP),
-    /// then `e` as 4 big-endian bytes. Not an RFC 8017 or ASN.1 format -- this crate has no DER
-    /// encoder/decoder -- just a fixed-width raw layout [`Self::from_bytes`] round-trips, for
-    /// `cli/src/rsa_cmd.rs` to read and write public keys as files.
-    pub fn encode<const N_BYTES: usize, const PK_LEN: usize>(&self) -> [u8; PK_LEN] {
-        debug_assert_eq!(N_BYTES, 8 * L, "RsaPublicKey::encode needs N_BYTES == 8 * L");
-        debug_assert_eq!(PK_LEN, N_BYTES + 4, "RsaPublicKey::encode needs PK_LEN == N_BYTES + 4");
+    /// The `# Encoding` layout (see the type's docs), `n || e`, with `N_BYTES = 8 * L` and
+    /// `PK_LEN = N_BYTES + 4` supplied by the per-size `SignaturePublicKey` impl that wraps this.
+    pub(crate) fn encode_raw<const N_BYTES: usize, const PK_LEN: usize>(&self) -> [u8; PK_LEN] {
+        debug_assert_eq!(N_BYTES, 8 * L, "RsaPublicKey::encode_raw needs N_BYTES == 8 * L");
+        debug_assert_eq!(
+            PK_LEN,
+            N_BYTES + 4,
+            "RsaPublicKey::encode_raw needs PK_LEN == N_BYTES + 4"
+        );
         let mut out = [0u8; PK_LEN];
         out[..N_BYTES].copy_from_slice(&be_bytes_from_limbs::<L, N_BYTES>(&self.n));
         out[N_BYTES..].copy_from_slice(&self.e.to_be_bytes());
         out
     }
 
-    /// Decodes [`Self::encode`]'s layout, validated the same way [`Self::new`] validates `(n, e)`.
-    pub fn from_bytes<const N_BYTES: usize, const PK_LEN: usize>(
+    /// Decodes [`Self::encode_raw`]'s layout, validated the same way [`Self::new`] validates
+    /// `(n, e)`. Takes the exact-length array; the per-size `SignaturePublicKey::from_bytes` that
+    /// wraps this is where a wrong-length slice is rejected.
+    pub(crate) fn from_bytes_raw<const N_BYTES: usize, const PK_LEN: usize>(
         bytes: &[u8; PK_LEN],
     ) -> Result<Self, SignatureError> {
-        debug_assert_eq!(N_BYTES, 8 * L, "RsaPublicKey::from_bytes needs N_BYTES == 8 * L");
+        debug_assert_eq!(N_BYTES, 8 * L, "RsaPublicKey::from_bytes_raw needs N_BYTES == 8 * L");
         debug_assert_eq!(
             PK_LEN,
             N_BYTES + 4,
-            "RsaPublicKey::from_bytes needs PK_LEN == N_BYTES + 4"
+            "RsaPublicKey::from_bytes_raw needs PK_LEN == N_BYTES + 4"
         );
         let n_bytes: [u8; N_BYTES] = bytes[..N_BYTES].try_into().expect("N_BYTES-byte slice");
         let n = limbs_from_be_bytes::<L, N_BYTES>(&n_bytes);
         let e_bytes: [u8; 4] = bytes[N_BYTES..].try_into().expect("4-byte slice");
         Self::new(&n, u32::from_be_bytes(e_bytes))
+    }
+}
+
+/// `RsaPublicKey<L> { n: <hex>, e: <hex> }`, `n` as one big-endian hex string (the limbs are
+/// stored least-significant first, so they are printed in reverse). Required by
+/// `SignaturePublicKey`'s `Display` supertrait; public data only, so nothing is redacted.
+impl<const L: usize> Display for RsaPublicKey<L> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "RsaPublicKey<{L}> {{ n: ")?;
+        for limb in self.n.iter().rev() {
+            write!(f, "{limb:016x}")?;
+        }
+        write!(f, ", e: {:x} }}", self.e)
     }
 }
 
@@ -95,6 +130,15 @@ impl<const L: usize> RsaPublicKey<L> {
 /// relationship instead, at the same asymptotic cost this crate already pays to reduce the
 /// `n`-width message down to each prime's width, so the extra restriction bought nothing and is
 /// not reimposed here.
+///
+/// # Encoding
+///
+/// `SignaturePrivateKey::encode`/`from_bytes` (implemented per size, e.g. for
+/// `crate::rsa_2048::Rsa2048PrivateKey`) use the raw layout `p || q || dP || dQ || qInv`, each
+/// `8 * HALF` big-endian bytes, `SK_LEN = 40 * HALF` in all. Not an RFC 8017 or ASN.1 format --
+/// see [`RsaPublicKey`]'s `# Encoding` for why -- just a fixed-width layout that round-trips, for
+/// `cli/src/rsa_cmd.rs` to read and write private keys as files. Decoding validates the five
+/// components the same way [`Self::from_crt_components`] does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RsaPrivateKey<const L: usize, const HALF: usize> {
     p: Secret<[u64; HALF]>,
@@ -192,20 +236,19 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
         &self.q_inv
     }
 
-    /// Encodes as `p || q || dP || dQ || qInv`, each `HALF_BYTES = 8 * HALF` big-endian bytes. Not
-    /// an RFC 8017 or ASN.1 format -- see [`RsaPublicKey::encode`]'s docs for why -- just a
-    /// fixed-width raw layout [`Self::from_bytes`] round-trips, for `cli/src/rsa_cmd.rs` to read
-    /// and write private keys as files.
-    pub fn encode<const HALF_BYTES: usize, const SK_LEN: usize>(&self) -> [u8; SK_LEN] {
+    /// The `# Encoding` layout (see the type's docs), `p || q || dP || dQ || qInv`, with
+    /// `HALF_BYTES = 8 * HALF` and `SK_LEN = 5 * HALF_BYTES` supplied by the per-size
+    /// `SignaturePrivateKey` impl that wraps this.
+    pub(crate) fn encode_raw<const HALF_BYTES: usize, const SK_LEN: usize>(&self) -> [u8; SK_LEN] {
         debug_assert_eq!(
             HALF_BYTES,
             8 * HALF,
-            "RsaPrivateKey::encode needs HALF_BYTES == 8 * HALF"
+            "RsaPrivateKey::encode_raw needs HALF_BYTES == 8 * HALF"
         );
         debug_assert_eq!(
             SK_LEN,
             5 * HALF_BYTES,
-            "RsaPrivateKey::encode needs SK_LEN == 5 * HALF_BYTES"
+            "RsaPrivateKey::encode_raw needs SK_LEN == 5 * HALF_BYTES"
         );
         let mut out = [0u8; SK_LEN];
         out[..HALF_BYTES].copy_from_slice(&be_bytes_from_limbs::<HALF, HALF_BYTES>(&self.p));
@@ -220,20 +263,22 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
         out
     }
 
-    /// Decodes [`Self::encode`]'s layout, validated the same way
-    /// [`Self::from_crt_components`] validates its five components.
-    pub fn from_bytes<const HALF_BYTES: usize, const SK_LEN: usize>(
+    /// Decodes [`Self::encode_raw`]'s layout, validated the same way
+    /// [`Self::from_crt_components`] validates its five components. Takes the exact-length array;
+    /// the per-size `SignaturePrivateKey::from_bytes` that wraps this is where a wrong-length
+    /// slice is rejected.
+    pub(crate) fn from_bytes_raw<const HALF_BYTES: usize, const SK_LEN: usize>(
         bytes: &[u8; SK_LEN],
     ) -> Result<Self, SignatureError> {
         debug_assert_eq!(
             HALF_BYTES,
             8 * HALF,
-            "RsaPrivateKey::from_bytes needs HALF_BYTES == 8 * HALF"
+            "RsaPrivateKey::from_bytes_raw needs HALF_BYTES == 8 * HALF"
         );
         debug_assert_eq!(
             SK_LEN,
             5 * HALF_BYTES,
-            "RsaPrivateKey::from_bytes needs SK_LEN == 5 * HALF_BYTES"
+            "RsaPrivateKey::from_bytes_raw needs SK_LEN == 5 * HALF_BYTES"
         );
         let p_bytes: [u8; HALF_BYTES] = bytes[..HALF_BYTES].try_into().expect("HALF_BYTES bytes");
         let q_bytes: [u8; HALF_BYTES] =

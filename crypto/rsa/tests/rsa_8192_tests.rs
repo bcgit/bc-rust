@@ -20,14 +20,20 @@
 //!    in each file is still exercised at least once (deduplicated below), so every failure mode
 //!    Wycheproof encodes for this hash is checked -- just not every repetition of it.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core_test_framework::signature::{
+    TestFrameworkSignature, TestFrameworkSignatureKeys,
+};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_8192::{
-    Rsa8192PrivateKey, Rsa8192PublicKey, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384,
-    pkcs1_v1_5_sign_sha512, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
-    pkcs1_v1_5_verify_sha512, pss_sign_sha256, pss_sign_sha256_with_salt, pss_sign_sha384,
-    pss_sign_sha384_with_salt, pss_sign_sha512, pss_sign_sha512_with_salt, pss_verify_sha256,
-    pss_verify_sha384, pss_verify_sha512,
+    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa8192PrivateKey, Rsa8192PublicKey,
+    SIG_LEN, SK_LEN, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
+    pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512, pss_sign_sha256,
+    pss_sign_sha256_with_salt, pss_sign_sha384, pss_sign_sha384_with_salt, pss_sign_sha512,
+    pss_sign_sha512_with_salt, pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -356,4 +362,78 @@ fn rsa_signature_8192_sha512_wycheproof_vectors_sampled() {
         |pk, msg, sig| pkcs1_v1_5_verify_sha512(pk, msg, sig).is_ok(),
         "SHA-512",
     );
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa8192PublicKey, Rsa8192PrivateKey), SignatureError> {
+    let sk = genuine_key();
+    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+/// `core-test-framework`'s full conformance suite for one pairing at this width; the rest get
+/// [`trait_round_trip`], for the reason `rsa_4096_tests.rs` gives (an RSA-8192 signature is
+/// slower still in a debug build).
+#[test]
+fn pkcs1_v1_5_sha256_trait_conformance_suite() {
+    TestFrameworkSignature::new(true, false).test_signature::<
+        Rsa8192PublicKey,
+        Rsa8192PrivateKey,
+        RSASSA_PKCS1_v1_5_SHA256,
+        RSASSA_PKCS1_v1_5_SHA256,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+}
+
+#[test]
+fn key_trait_boundary_conditions() {
+    TestFrameworkSignatureKeys::new()
+        .test_keys::<Rsa8192PublicKey, Rsa8192PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
+}
+
+fn trait_round_trip<S>(pk: &Rsa8192PublicKey, sk: &Rsa8192PrivateKey, free_sig: &[u8; SIG_LEN])
+where
+    S: Signer<Rsa8192PrivateKey, SK_LEN, SIG_LEN>
+        + SignatureVerifier<Rsa8192PublicKey, PK_LEN, SIG_LEN>,
+{
+    let msg = b"RSA-8192 trait round trip";
+    let sig = S::sign(sk, msg, None).unwrap();
+    S::verify(pk, msg, None, &sig).unwrap();
+    S::verify(pk, msg, None, free_sig).unwrap();
+    assert!(S::verify(pk, b"a different message", None, &sig).is_err());
+}
+
+#[test]
+fn remaining_pairings_trait_round_trips() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"RSA-8192 trait round trip";
+    let mut rng = DefaultRNG::default();
+    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA384>(
+        &pk,
+        &sk,
+        &pkcs1_v1_5_sign_sha384(&sk, msg).unwrap(),
+    );
+    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA512>(
+        &pk,
+        &sk,
+        &pkcs1_v1_5_sign_sha512(&sk, msg).unwrap(),
+    );
+    trait_round_trip::<RSASSA_PSS_SHA256>(&pk, &sk, &pss_sign_sha256(&sk, msg, &mut rng).unwrap());
+    trait_round_trip::<RSASSA_PSS_SHA384>(&pk, &sk, &pss_sign_sha384(&sk, msg, &mut rng).unwrap());
+    trait_round_trip::<RSASSA_PSS_SHA512>(&pk, &sk, &pss_sign_sha512(&sk, msg, &mut rng).unwrap());
+}
+
+/// The trait path reproduces BC Java's RSA-8192/PKCS#1 v1.5/SHA-256 signature byte for byte and
+/// accepts BC Java's PSS signature -- the same cross-implementation check as the free-function
+/// tests above, through `Signer`/`SignatureVerifier`.
+#[test]
+fn trait_matches_bc_java() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let sig = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, b"hello", None).unwrap();
+    assert_eq!(sig.to_vec(), hex_decode(BC_JAVA_SHA256_SIG).unwrap());
+    let pss = hex_decode(BC_JAVA_PSS_SHA256_SIG).unwrap();
+    RSASSA_PSS_SHA256::verify(&pk, b"hello", None, &pss).unwrap();
 }

@@ -11,14 +11,20 @@
 //! group's `(n, e, d)` via the same factoring-from-d method as RSA-2048's key, cross-checked
 //! against all 8 of that group's real signatures before being pasted here.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core_test_framework::signature::{
+    TestFrameworkSignature, TestFrameworkSignatureKeys,
+};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_4096::{
-    Rsa4096PrivateKey, Rsa4096PublicKey, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384,
-    pkcs1_v1_5_sign_sha512, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
-    pkcs1_v1_5_verify_sha512, pss_sign_sha256, pss_sign_sha256_with_salt, pss_sign_sha384,
-    pss_sign_sha384_with_salt, pss_sign_sha512, pss_sign_sha512_with_salt, pss_verify_sha256,
-    pss_verify_sha384, pss_verify_sha512,
+    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa4096PrivateKey, Rsa4096PublicKey,
+    SIG_LEN, SK_LEN, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
+    pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512, pss_sign_sha256,
+    pss_sign_sha256_with_salt, pss_sign_sha384, pss_sign_sha384_with_salt, pss_sign_sha512,
+    pss_sign_sha512_with_salt, pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
 };
 use serde_json::Value;
 use std::fs;
@@ -392,4 +398,79 @@ fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
     assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
     pss_verify_sha512(&pk, b"hello", &sig_a).expect("sig_a must verify");
     pss_verify_sha512(&pk, b"hello", &sig_b).expect("sig_b must verify");
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa4096PublicKey, Rsa4096PrivateKey), SignatureError> {
+    let sk = genuine_key();
+    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+/// `core-test-framework`'s full conformance suite for one deterministic and one randomized
+/// pairing at this width. An RSA-4096 private-key operation is slow enough in a debug build that
+/// the suite's dozen signatures per pairing add up, so the remaining pairings get
+/// [`trait_round_trip`] instead: the generic code they share has already had the full suite at
+/// RSA-2048 and RSA-3072, and only this size's width constants are new.
+#[test]
+fn sha256_trait_conformance_suites() {
+    TestFrameworkSignature::new(true, false).test_signature::<
+        Rsa4096PublicKey,
+        Rsa4096PrivateKey,
+        RSASSA_PKCS1_v1_5_SHA256,
+        RSASSA_PKCS1_v1_5_SHA256,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+    TestFrameworkSignature::new(false, false).test_signature::<
+        Rsa4096PublicKey,
+        Rsa4096PrivateKey,
+        RSASSA_PSS_SHA256,
+        RSASSA_PSS_SHA256,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+}
+
+#[test]
+fn key_trait_boundary_conditions() {
+    TestFrameworkSignatureKeys::new()
+        .test_keys::<Rsa4096PublicKey, Rsa4096PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
+}
+
+/// Sign then verify through the traits, verify the free functions' signature over the same
+/// message through the trait, and reject a different message -- what a wrong width constant in
+/// this size's aliases would break.
+fn trait_round_trip<S>(pk: &Rsa4096PublicKey, sk: &Rsa4096PrivateKey, free_sig: &[u8; SIG_LEN])
+where
+    S: Signer<Rsa4096PrivateKey, SK_LEN, SIG_LEN>
+        + SignatureVerifier<Rsa4096PublicKey, PK_LEN, SIG_LEN>,
+{
+    let msg = b"RSA-4096 trait round trip";
+    let sig = S::sign(sk, msg, None).unwrap();
+    S::verify(pk, msg, None, &sig).unwrap();
+    S::verify(pk, msg, None, free_sig).unwrap();
+    assert!(S::verify(pk, b"a different message", None, &sig).is_err());
+}
+
+#[test]
+fn remaining_pairings_trait_round_trips() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"RSA-4096 trait round trip";
+    let mut rng = DefaultRNG::default();
+    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA384>(
+        &pk,
+        &sk,
+        &pkcs1_v1_5_sign_sha384(&sk, msg).unwrap(),
+    );
+    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA512>(
+        &pk,
+        &sk,
+        &pkcs1_v1_5_sign_sha512(&sk, msg).unwrap(),
+    );
+    trait_round_trip::<RSASSA_PSS_SHA384>(&pk, &sk, &pss_sign_sha384(&sk, msg, &mut rng).unwrap());
+    trait_round_trip::<RSASSA_PSS_SHA512>(&pk, &sk, &pss_sign_sha512(&sk, msg, &mut rng).unwrap());
 }

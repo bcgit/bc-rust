@@ -10,14 +10,20 @@
 //! `rsa_2048_pkcs1_v1_5_tests.rs`), cross-checked against all 8 of that group's real signatures
 //! before being pasted here.
 
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core_test_framework::signature::{
+    TestFrameworkSignature, TestFrameworkSignatureKeys,
+};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_3072::{
-    Rsa3072PrivateKey, Rsa3072PublicKey, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384,
-    pkcs1_v1_5_sign_sha512, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
-    pkcs1_v1_5_verify_sha512, pss_sign_sha256, pss_sign_sha256_with_salt, pss_sign_sha384,
-    pss_sign_sha384_with_salt, pss_sign_sha512, pss_sign_sha512_with_salt, pss_verify_sha256,
-    pss_verify_sha384, pss_verify_sha512,
+    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa3072PrivateKey, Rsa3072PublicKey,
+    SIG_LEN, SK_LEN, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
+    pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512, pss_sign_sha256,
+    pss_sign_sha256_with_salt, pss_sign_sha384, pss_sign_sha384_with_salt, pss_sign_sha512,
+    pss_sign_sha512_with_salt, pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
 };
 use serde_json::Value;
 use std::fs;
@@ -345,4 +351,99 @@ fn rsa_pss_3072_sha256_mgf1_32_wycheproof_vectors() {
     }
     assert_eq!(num_valid, 63);
     assert_eq!(num_invalid, 45);
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+fn fixed_keypair() -> Result<(Rsa3072PublicKey, Rsa3072PrivateKey), SignatureError> {
+    let sk = genuine_key();
+    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001)?;
+    Ok((pk, sk))
+}
+
+/// `core-test-framework`'s conformance suite for every RSA-3072 pairing (the exhaustive bit-flip
+/// pass over the shared generic code runs at RSA-2048).
+#[test]
+fn pkcs1_v1_5_trait_conformance_suites() {
+    let framework = TestFrameworkSignature::new(true, false);
+    framework.test_signature::<
+        Rsa3072PublicKey,
+        Rsa3072PrivateKey,
+        RSASSA_PKCS1_v1_5_SHA256,
+        RSASSA_PKCS1_v1_5_SHA256,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+    framework.test_signature::<
+        Rsa3072PublicKey,
+        Rsa3072PrivateKey,
+        RSASSA_PKCS1_v1_5_SHA384,
+        RSASSA_PKCS1_v1_5_SHA384,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+    framework.test_signature::<
+        Rsa3072PublicKey,
+        Rsa3072PrivateKey,
+        RSASSA_PKCS1_v1_5_SHA512,
+        RSASSA_PKCS1_v1_5_SHA512,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+}
+
+#[test]
+fn pss_trait_conformance_suites() {
+    let framework = TestFrameworkSignature::new(false, false);
+    framework.test_signature::<
+        Rsa3072PublicKey,
+        Rsa3072PrivateKey,
+        RSASSA_PSS_SHA256,
+        RSASSA_PSS_SHA256,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+    framework.test_signature::<
+        Rsa3072PublicKey,
+        Rsa3072PrivateKey,
+        RSASSA_PSS_SHA384,
+        RSASSA_PSS_SHA384,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+    framework.test_signature::<
+        Rsa3072PublicKey,
+        Rsa3072PrivateKey,
+        RSASSA_PSS_SHA512,
+        RSASSA_PSS_SHA512,
+        PK_LEN,
+        SK_LEN,
+        SIG_LEN,
+    >(fixed_keypair, false);
+}
+
+#[test]
+fn key_trait_boundary_conditions() {
+    TestFrameworkSignatureKeys::new()
+        .test_keys::<Rsa3072PublicKey, Rsa3072PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
+}
+
+/// Trait and free-function paths agree at this width: identical PKCS#1 v1.5 signatures, and
+/// PSS signatures each side's verifier accepts.
+#[test]
+fn trait_matches_free_functions() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"RSA-3072, both APIs";
+    assert_eq!(
+        RSASSA_PKCS1_v1_5_SHA256::sign(&sk, msg, None).unwrap(),
+        pkcs1_v1_5_sign_sha256(&sk, msg).unwrap()
+    );
+    pss_verify_sha256(&pk, msg, &RSASSA_PSS_SHA256::sign(&sk, msg, None).unwrap()).unwrap();
+    let from_free = pss_sign_sha256(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    RSASSA_PSS_SHA256::verify(&pk, msg, None, &from_free).unwrap();
 }

@@ -11,9 +11,10 @@
 //! `bouncycastle_rsa` does not generate keys (see that crate's `keys` module docs), so there is no
 //! `Keygen` action here, and no `PkFromSk` either -- a private key's CRT components alone do not
 //! determine the public exponent `e`, so there is nothing to derive a public key from. Private and
-//! public key files use `RsaPrivateKey::encode`/`RsaPublicKey::encode`'s raw fixed-width layout
-//! (documented on those methods): not PEM, not ASN.1 DER -- this crate has no encoder for either
-//! -- so a key produced by another RSA implementation cannot be fed to this CLI directly.
+//! public key files use the raw fixed-width layout `RsaPrivateKey`/`RsaPublicKey`'s
+//! `SignaturePrivateKey`/`SignaturePublicKey` impls encode (documented under `# Encoding` on
+//! those types): not PEM, not ASN.1 DER -- this crate has no encoder for either -- so a key
+//! produced by another RSA implementation cannot be fed to this CLI directly.
 //!
 //! 1024- and 1536-bit RSA are verification-only in `bouncycastle_rsa` (see its crate docs' `#
 //! Scope`), so `rsa_1024_cmd`/`rsa_1536_cmd` take no `action`/`skfile` at all: they only verify.
@@ -25,7 +26,7 @@
 
 use crate::helpers::{read_from_file, write_bytes_or_hex};
 use bouncycastle::core::errors::SignatureError;
-use bouncycastle::core::traits::RNG;
+use bouncycastle::core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle::rng::DefaultRNG;
 use bouncycastle::rsa::keys::{RsaPrivateKey, RsaPublicKey};
 use clap::ValueEnum;
@@ -98,37 +99,43 @@ type PssSignFn<const L: usize, const HALF: usize, const SIG_LEN: usize> =
 type VerifyFn<const L: usize, const SIG_LEN: usize> =
     fn(&RsaPublicKey<L>, &[u8], &[u8; SIG_LEN]) -> Result<(), SignatureError>;
 
-/// See [`RsaPrivateKey::from_bytes`] for the expected layout.
+/// See [`RsaPrivateKey`]'s `# Encoding` docs for the expected layout; a wrong-length file is one
+/// of the `DecodingError`s `SignaturePrivateKey::from_bytes` reports.
 fn parse_sk<const HALF: usize, const L: usize, const HALF_BYTES: usize, const SK_LEN: usize>(
     bytes: &[u8],
     alg_name: &str,
-) -> RsaPrivateKey<L, HALF> {
-    let Ok(arr): Result<[u8; SK_LEN], _> = bytes.try_into() else {
-        eprintln!("Error: {alg_name} private key file must be exactly {SK_LEN} bytes.");
-        exit(-1);
-    };
-    match RsaPrivateKey::<L, HALF>::from_bytes::<HALF_BYTES, SK_LEN>(&arr) {
+) -> RsaPrivateKey<L, HALF>
+where
+    RsaPrivateKey<L, HALF>: SignaturePrivateKey<SK_LEN>,
+{
+    match <RsaPrivateKey<L, HALF> as SignaturePrivateKey<SK_LEN>>::from_bytes(bytes) {
         Ok(sk) => sk,
         Err(_) => {
-            eprintln!("Error: couldn't parse the input as a valid {alg_name} private key.");
+            eprintln!(
+                "Error: couldn't parse the input as a valid {alg_name} private key (must be \
+                 exactly {SK_LEN} bytes)."
+            );
             exit(-1);
         }
     }
 }
 
-/// See [`RsaPublicKey::from_bytes`] for the expected layout.
+/// See [`RsaPublicKey`]'s `# Encoding` docs for the expected layout; a wrong-length file is one of
+/// the `DecodingError`s `SignaturePublicKey::from_bytes` reports.
 fn parse_pk<const L: usize, const N_BYTES: usize, const PK_LEN: usize>(
     bytes: &[u8],
     alg_name: &str,
-) -> RsaPublicKey<L> {
-    let Ok(arr): Result<[u8; PK_LEN], _> = bytes.try_into() else {
-        eprintln!("Error: {alg_name} public key file must be exactly {PK_LEN} bytes.");
-        exit(-1);
-    };
-    match RsaPublicKey::<L>::from_bytes::<N_BYTES, PK_LEN>(&arr) {
+) -> RsaPublicKey<L>
+where
+    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
+{
+    match <RsaPublicKey<L> as SignaturePublicKey<PK_LEN>>::from_bytes(bytes) {
         Ok(pk) => pk,
         Err(_) => {
-            eprintln!("Error: couldn't parse the input as a valid {alg_name} public key.");
+            eprintln!(
+                "Error: couldn't parse the input as a valid {alg_name} public key (must be exactly \
+                 {PK_LEN} bytes)."
+            );
             exit(-1);
         }
     }
@@ -141,7 +148,9 @@ fn do_verify<const L: usize, const N_BYTES: usize, const PK_LEN: usize, const SI
     pkfile: &Option<String>,
     sigfile: &Option<String>,
     alg_name: &str,
-) {
+) where
+    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
+{
     let pk_bytes = require_file(pkfile, "pkfile");
     let pk = parse_pk::<L, N_BYTES, PK_LEN>(&pk_bytes, alg_name);
     let sig_bytes = require_file(sigfile, "sigfile");
@@ -178,7 +187,10 @@ fn rsa_pkcs1_cmd<
     sigfile: &Option<String>,
     output_hex: bool,
     alg_name: &str,
-) {
+) where
+    RsaPrivateKey<L, HALF>: SignaturePrivateKey<SK_LEN>,
+    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
+{
     match action {
         RSAAction::Sign => {
             let sk_bytes = require_file(skfile, "skfile");
@@ -217,7 +229,10 @@ fn rsa_pss_cmd<
     sigfile: &Option<String>,
     output_hex: bool,
     alg_name: &str,
-) {
+) where
+    RsaPrivateKey<L, HALF>: SignaturePrivateKey<SK_LEN>,
+    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
+{
     match action {
         RSAAction::Sign => {
             let sk_bytes = require_file(skfile, "skfile");

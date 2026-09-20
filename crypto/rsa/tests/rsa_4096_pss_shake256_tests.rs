@@ -3,11 +3,12 @@
 //! self-consistency round trip for signing (reusing the genuine RSA-4096 key `rsa_4096_tests.rs`
 //! recovered), and all of Wycheproof's real vectors for verification.
 
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_4096::{
-    Rsa4096PrivateKey, Rsa4096PublicKey, pss_shake256_sign, pss_shake256_sign_with_salt,
-    pss_shake256_verify,
+    RSASSA_PSS_SHAKE256, Rsa4096PrivateKey, Rsa4096PublicKey, pss_shake256_sign,
+    pss_shake256_sign_with_salt, pss_shake256_verify,
 };
 use serde_json::Value;
 use std::fs;
@@ -179,4 +180,22 @@ fn rsa_pss_4096_shake256_wycheproof_vectors() {
     assert_eq!(num_tests, 184);
     assert_eq!(num_valid, 138);
     assert_eq!(num_invalid, 46);
+}
+
+// ---- bouncycastle_core trait conformance ------------------------------------------------------
+
+/// The SHAKE-native generic type has had `core-test-framework`'s full suite at RSA-2048/3072
+/// (`RSASSA_PSS_SHAKE128`); this checks the RSA-4096/SHAKE256 alias's width constants by round
+/// trip and cross-verification against the free functions.
+#[test]
+fn pss_shake256_trait_round_trip_and_cross_verify() {
+    let sk = genuine_key();
+    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let msg = b"PSS-SHAKE256 at RSA-4096, both APIs";
+    let from_trait = RSASSA_PSS_SHAKE256::sign(&sk, msg, None).unwrap();
+    RSASSA_PSS_SHAKE256::verify(&pk, msg, None, &from_trait).unwrap();
+    pss_shake256_verify(&pk, msg, &from_trait).unwrap();
+    let from_free = pss_shake256_sign(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    RSASSA_PSS_SHAKE256::verify(&pk, msg, None, &from_free).unwrap();
+    assert!(RSASSA_PSS_SHAKE256::verify(&pk, b"other", None, &from_free).is_err());
 }
