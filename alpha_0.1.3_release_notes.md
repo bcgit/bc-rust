@@ -21,8 +21,9 @@
       data back.
     * Testing covers the ASCON NIST LWC KAT sweeps from `bc-test-data` (1089 AEAD128, 1025
       Hash256, 1025 XOF128 and 1089 CXOF128 cases when the data repository is present), plus
-      embedded always-on vectors. Mutation testing for `bouncycastle-ascon` currently reports 735
-      mutants, 604 caught, 111 unviable and 20 missed before the XOF/CXOF boundary-test additions.
+      embedded always-on vectors. Mutation testing for `bouncycastle-ascon` reports 735 mutants,
+      618 caught, 111 unviable and 6 missed; the six survivors are the sponge boundary and
+      `set_state_byte` OR/XOR equivalences documented at their sites.
 
 ## Minor features / bug fixes
 
