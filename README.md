@@ -116,7 +116,7 @@ This project is structured as a cargo workspace with each cryptographic algorith
 You can build the main library and the `bc-rust` command-line utility with:
 
 ```
-cargo build
+cargo build -p cli
 ```
 
 Or you can build a single sub-crate by name, for example:
