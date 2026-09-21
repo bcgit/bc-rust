@@ -165,11 +165,10 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
 
     let mut too_small = vec![0u8; plaintext.len() - 1];
     match enc.do_update_out(&plaintext, &mut too_small) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(what, needed)) => {
-            assert_eq!(what, "ciphertext");
+        Err(SymmetricCipherError::OutputBufferTooSmall(needed)) => {
             assert_eq!(needed, plaintext.len(), "the error carries the required length");
         }
-        other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
+        other => panic!("expected OutputBufferTooSmall, got {other:?}"),
     }
 
     // Nothing was consumed, so the keystream has not advanced: the retry must give exactly what a
@@ -215,11 +214,10 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
 
     let mut too_small = vec![0u8; ciphertext.len() - 1];
     match dec.do_update_out(&ciphertext, &mut too_small) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(what, needed)) => {
-            assert_eq!(what, "plaintext");
+        Err(SymmetricCipherError::OutputBufferTooSmall(needed)) => {
             assert_eq!(needed, ciphertext.len(), "the error carries the required length");
         }
-        other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
+        other => panic!("expected OutputBufferTooSmall, got {other:?}"),
     }
 
     // Nothing was consumed, so the retry recovers the plaintext exactly.
