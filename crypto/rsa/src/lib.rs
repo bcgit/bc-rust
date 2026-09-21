@@ -21,8 +21,10 @@
 //! a caller-supplied RNG through `sign_randomized`, or is fixed through `set_signer_salt` on a
 //! streaming state. The key types implement
 //! [`SignaturePrivateKey`](bouncycastle_core::traits::SignaturePrivateKey)/[`SignaturePublicKey`](bouncycastle_core::traits::SignaturePublicKey)
-//! per size. The generic `rsassa_*` modules also expose `*_from_hash` entry points that take
-//! the message hash rather than the message, for a caller that already holds the digest.
+//! per size, and each signing size's module offers `keygen`/`keygen_from_rng` (FIPS 186-5
+//! Appendix A.1.3, in [`keygen`]), the same pair the ECDSA crate's curves offer. The generic
+//! `rsassa_*` modules also expose `*_from_hash` entry points that take the message hash rather
+//! than the message, for a caller that already holds the digest.
 //!
 //! # Usage Examples
 //!
@@ -32,7 +34,10 @@
 //! ```
 //! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer};
 //! use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, RSA2048PrivateKey, RSA2048PublicKey};
-//! # // The same genuine RSA-2048 keypair as the next example; see there for its provenance.
+//! # // A genuine RSA-2048 keypair (Wycheproof rsa_pkcs1_2048_sig_gen_test.json's first SHA-256
+//! # // group; `tests/rsa_2048_pkcs1_v1_5_tests.rs` has the full, sourced provenance). A fresh
+//! # // pair comes from `bouncycastle_rsa::rsa_2048::keygen()?` instead -- a few seconds of
+//! # // Miller-Rabin in a debug build, so this example uses a fixed one.
 //! # const P: [u64; 16] = [0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9, 0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788, 0x978f6c35814f50ee, 0xe6a289ad4cfbf78f, 0x34d5681e5809d415, 0xbb028bda42eeb5d2, 0x41c56e4de086b0d5, 0x58b8d1e24f3b55d0, 0xfb5248247d98cb7d, 0xdc431050f782e894];
 //! # const Q: [u64; 16] = [0x669f140cfbc20f25, 0xb97bb03677207d95, 0xfd4e06f3ed7299d4, 0x160f90536abc9492, 0xf5b131f39098f7bc, 0xae8d72c57088d7ab, 0x89b94fbde542aba9, 0x3d3f9880ec47d5e0, 0x1378a6868af3b7a0, 0x5544070beb057c94, 0x16611debc472fac4, 0xe500ffb79f5b8868, 0x308a5e32196603b2, 0xea5fb19eb4eabc38, 0x122273ae3222b598, 0xbd1a81e7977f9898];
 //! # const D_P: [u64; 16] = [0x209f33f09515d7c1, 0xb4a9b37656917205, 0x276933bb07e4efb9, 0x8c14019808e00414, 0x289f96da220711e5, 0xfbbd2923d31532fe, 0xc06b414e61c0e1e7, 0x4c23c4588488961d, 0x4dc48ae34514759c, 0x9c786961ae3e2c35, 0x497e8d9c650688e0, 0x18bf08472612dbe5, 0x8885fb161870ee12, 0xf21d7c1479d99d47, 0x9121d91952ffd1c7, 0xa94b528b28f29159];
@@ -169,13 +174,18 @@
 //!   timing) against many signatures under the same key may still be able to recover information
 //!   about `p`/`q`/`dP`/`dQ`, per Kocher (1996) and Boneh & Brumley (2003) -- see [`modexp`]'s own
 //!   docs for the exact boundary of what is and is not covered.
-//! - **This crate does not generate or validate primality of `p`/`q`.** [`keys::RsaPrivateKey::from_crt_components`]
-//!   checks that `p`/`q` are odd and distinct and that `dP`/`dQ`/`qInv` are in range, but it has no
-//!   way to check that `p` and `q` are actually prime (that would need a primality test this crate
-//!   does not implement) or that `e` is coprime to `λ(n)`. Supplying non-prime or otherwise
-//!   malformed CRT components produces a key that computes *something*, silently, rather than
-//!   being rejected -- validating the inputs' number-theoretic properties before construction is
-//!   entirely the caller's responsibility.
+//! - **Imported keys are not validated for primality.** [`keys::RsaPrivateKey::from_crt_components`]
+//!   checks that `p`/`q` are odd and distinct and that `dP`/`dQ`/`qInv` are in range, but does
+//!   not test `p` and `q` for primality or `e` for coprimality with `λ(n)`. Supplying non-prime or
+//!   otherwise malformed CRT components produces a key that computes *something*, silently,
+//!   rather than being rejected -- validating imported key material's number-theoretic properties
+//!   before construction is the caller's responsibility (`keygen::is_probable_prime` is available
+//!   for the primality part). Keys from this crate's own `keygen` meet FIPS 186-5 Appendix A.1.1's
+//!   criteria by construction.
+//! - **Key generation is not constant-time.** Rejection sampling of prime candidates is
+//!   inherently data-dependent in how many candidates it draws and where each is rejected, and the
+//!   small-modulus arithmetic on candidates uses ordinary integer division -- see [`keygen`]'s docs
+//!   for exactly what is and is not constant-time there. Signing itself is unaffected.
 //! - **RSASSA-PSS's salt is only as good as its source.** `Signer::sign` draws it from the
 //!   library's default OS-backed RNG; `sign_randomized` takes the caller's RNG and
 //!   `set_signer_salt` takes the salt itself. Unlike ECDSA's per-message secret `k`, a repeated
@@ -208,6 +218,7 @@ mod codec;
 mod emsa_pkcs1_v1_5;
 mod emsa_pss;
 mod emsa_pss_shake;
+pub mod keygen;
 pub mod keys;
 mod mgf1;
 pub mod modexp;

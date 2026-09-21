@@ -16,20 +16,23 @@
 //! conformance) is not exposed as a flag: RSA has no context-string input, and `bouncycastle_rsa`
 //! documents the parameter as ignored, so every call below passes `None`.
 //!
-//! `bouncycastle_rsa` does not generate keys (see that crate's `keys` module docs), so there is no
-//! `Keygen` action here, and no `PkFromSk` either -- a private key's CRT components alone do not
-//! determine the public exponent `e`, so there is nothing to derive a public key from. Private and
-//! public key files use the raw fixed-width layout `RsaPrivateKey`/`RsaPublicKey`'s
-//! `SignaturePrivateKey`/`SignaturePublicKey` impls encode (documented under `# Encoding` on
-//! those types): not PEM, not ASN.1 DER -- this crate has no encoder for either -- so a key
-//! produced by another RSA implementation cannot be fed to this CLI directly.
+//! `keygen` (FIPS 186-5 Appendix A.1.3, `bouncycastle_rsa::rsa_*::keygen`) writes the private key
+//! to stdout like the other key-generating commands, and -- unlike them -- also needs `--pkfile`
+//! to receive the public key: an RSA private key file (RFC 8017's CRT quintuple) does not carry
+//! the public exponent `e`, so there is no `PkFromSk`/`CheckConsistency` here, the public key has
+//! to be kept from generation time. Private and public key files use the raw fixed-width layout
+//! `RsaPrivateKey`/`RsaPublicKey`'s `SignaturePrivateKey`/`SignaturePublicKey` impls encode
+//! (documented under `# Encoding` on those types): not PEM, not ASN.1 DER -- this crate has no
+//! encoder for either -- so a key produced by another RSA implementation cannot be fed to this
+//! CLI directly.
 //!
 //! 1024- and 1536-bit RSA are verification-only in `bouncycastle_rsa` (see its crate docs' `#
 //! Scope`), so `rsa_1024_cmd`/`rsa_1536_cmd` take no `action`/`skfile` at all: they only verify,
 //! through [`do_verify`], which needs only a `SignatureVerifier` -- exactly the trait those sizes'
 //! types implement.
 
-use crate::helpers::{read_from_file, write_bytes_or_hex};
+use crate::helpers::{read_from_file, write_bytes_or_hex, write_bytes_or_hex_to_file};
+use bouncycastle::core::errors::SignatureError;
 use bouncycastle::core::traits::{
     SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
 };
@@ -41,6 +44,8 @@ use std::process::exit;
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
 pub(crate) enum RSAAction {
+    /// Generate a key pair: the private key to stdout, the public key to `--pkfile`.
+    Keygen,
     /// Sign a message read from stdin with a private key file and output the signature.
     Sign,
     /// Verify a message read from stdin with a public key file and a signature file.
@@ -163,8 +168,9 @@ fn do_verify<
     }
 }
 
-/// One (size, scheme, hash) pairing `S`, signing or verifying stdin per `action`. PSS pairings
-/// draw their salt from the library's default OS-backed RNG inside `S::sign_final`.
+/// One (size, scheme, hash) pairing `S`, generating a key pair, or signing or verifying stdin,
+/// per `action`. PSS pairings draw their salt from the library's default OS-backed RNG inside
+/// `S::sign_final`; `keygen` is the size's FIPS 186-5 generator, independent of scheme and hash.
 fn rsa_sign_verify_cmd<
     PK: SignaturePublicKey<PK_LEN>,
     SK: SignaturePrivateKey<SK_LEN>,
@@ -174,6 +180,7 @@ fn rsa_sign_verify_cmd<
     const SIG_LEN: usize,
 >(
     action: &RSAAction,
+    keygen: fn() -> Result<(PK, SK), SignatureError>,
     skfile: &Option<String>,
     pkfile: &Option<String>,
     sigfile: &Option<String>,
@@ -181,6 +188,21 @@ fn rsa_sign_verify_cmd<
     alg_name: &str,
 ) {
     match action {
+        RSAAction::Keygen => {
+            let Some(pkfile) = pkfile else {
+                eprintln!(
+                    "Error: {alg_name} keygen needs --pkfile to receive the public key (an RSA \
+                     private key file does not carry e, so it cannot be derived later)."
+                );
+                exit(-1);
+            };
+            let (pk, sk) = keygen().unwrap_or_else(|e| {
+                eprintln!("Error: {alg_name} key generation failed: {e:?}");
+                exit(-1);
+            });
+            write_bytes_or_hex_to_file(&pk.encode(), pkfile, output_hex);
+            write_bytes_or_hex(&sk.encode(), output_hex);
+        }
         RSAAction::Sign => {
             let sk = parse_sk::<SK, SK_LEN>(&require_file(skfile, "skfile"), alg_name);
 
@@ -283,11 +305,16 @@ pub(crate) fn rsa_2048_cmd(
         RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
-    let run =
-        |name: &str,
-         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
-            f(action, args.0, args.1, args.2, args.3, name)
-        };
+    let run = |name: &str,
+               f: fn(
+        &RSAAction,
+        fn() -> Result<(PK, SK), SignatureError>,
+        &Option<String>,
+        &Option<String>,
+        &Option<String>,
+        bool,
+        &str,
+    )| { f(action, rsa_2048::keygen, args.0, args.1, args.2, args.3, name) };
     match (scheme, hash) {
         (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
             "RSA-2048/PKCS#1v1.5/SHA-256",
@@ -338,11 +365,16 @@ pub(crate) fn rsa_3072_cmd(
         RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
-    let run =
-        |name: &str,
-         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
-            f(action, args.0, args.1, args.2, args.3, name)
-        };
+    let run = |name: &str,
+               f: fn(
+        &RSAAction,
+        fn() -> Result<(PK, SK), SignatureError>,
+        &Option<String>,
+        &Option<String>,
+        &Option<String>,
+        bool,
+        &str,
+    )| { f(action, rsa_3072::keygen, args.0, args.1, args.2, args.3, name) };
     match (scheme, hash) {
         (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
             "RSA-3072/PKCS#1v1.5/SHA-256",
@@ -394,11 +426,16 @@ pub(crate) fn rsa_4096_cmd(
         RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE256, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
-    let run =
-        |name: &str,
-         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
-            f(action, args.0, args.1, args.2, args.3, name)
-        };
+    let run = |name: &str,
+               f: fn(
+        &RSAAction,
+        fn() -> Result<(PK, SK), SignatureError>,
+        &Option<String>,
+        &Option<String>,
+        &Option<String>,
+        bool,
+        &str,
+    )| { f(action, rsa_4096::keygen, args.0, args.1, args.2, args.3, name) };
     match (scheme, hash) {
         (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
             "RSA-4096/PKCS#1v1.5/SHA-256",
@@ -451,11 +488,16 @@ pub(crate) fn rsa_8192_cmd(
         RSASSA_PSS_SHA512, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
-    let run =
-        |name: &str,
-         f: fn(&RSAAction, &Option<String>, &Option<String>, &Option<String>, bool, &str)| {
-            f(action, args.0, args.1, args.2, args.3, name)
-        };
+    let run = |name: &str,
+               f: fn(
+        &RSAAction,
+        fn() -> Result<(PK, SK), SignatureError>,
+        &Option<String>,
+        &Option<String>,
+        &Option<String>,
+        bool,
+        &str,
+    )| { f(action, rsa_8192::keygen, args.0, args.1, args.2, args.3, name) };
     match (scheme, hash) {
         (RSAScheme::Pkcs1v15, RSAHash::Sha256) => run(
             "RSA-8192/PKCS#1v1.5/SHA-256",

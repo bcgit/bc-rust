@@ -1715,11 +1715,12 @@ enum Subcommands {
         sigfile: Option<String>,
     },
 
-    /// RSA-2048 signing/verification: RSASSA-PKCS1-v1_5 (RFC 8017 SS8.2) or RSASSA-PSS (RFC 8017
-    /// SS8.1, or RFC 8702 SS3.2.1 with `--hash shake128`), selected by `--scheme`/`--hash`. PSS
-    /// draws a fresh salt from the OS RNG each time it signs. Private/public key files use this
-    /// crate's own raw fixed-width encoding (see `RsaPrivateKey`/`RsaPublicKey`'s `# Encoding`
-    /// docs), not PEM or ASN.1 DER.
+    /// RSA-2048 key generation, signing and verification: RSASSA-PKCS1-v1_5 (RFC 8017 SS8.2) or
+    /// RSASSA-PSS (RFC 8017 SS8.1, or RFC 8702 SS3.2.1 with `--hash shake128`), selected by
+    /// `--scheme`/`--hash`. PSS draws a fresh salt from the OS RNG each time it signs. `keygen`
+    /// (FIPS 186-5 A.1.3, e = 65537) writes the private key to stdout and the public key to
+    /// `--pkfile`. Private/public key files use this crate's own raw fixed-width encoding (see
+    /// `RsaPrivateKey`/`RsaPublicKey`'s `# Encoding` docs), not PEM or ASN.1 DER.
     RSA_2048 {
         action: RSAAction,
 
@@ -1736,7 +1737,8 @@ enum Subcommands {
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
         pkfile: Option<String>,
 
         #[arg(long)]
@@ -1765,7 +1767,8 @@ enum Subcommands {
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
         pkfile: Option<String>,
 
         #[arg(long)]
@@ -1795,7 +1798,8 @@ enum Subcommands {
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
         pkfile: Option<String>,
 
         #[arg(long)]
@@ -1826,7 +1830,8 @@ enum Subcommands {
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
         pkfile: Option<String>,
 
         #[arg(long)]
