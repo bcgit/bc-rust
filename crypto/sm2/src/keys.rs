@@ -8,8 +8,8 @@
 //! [`crate::extra_bits`]'s docs for the bias-bound derivation specific to SM2's `n`).
 
 use crate::extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::traits::{RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::nat;
 use bouncycastle_ec::sm2::Sm2FieldElement;
 use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
@@ -200,8 +200,19 @@ pub fn keygen() -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
     keygen_from_rng(&mut DefaultRNG::default())
 }
 
-/// As [`keygen`], but sources the DRBG output from the caller-provided RNG.
+/// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must offer
+/// a security strength of at least 128 bits: the draft leaves this unstated (see the module
+/// docs on why key generation borrows FIPS 186-5's method wholesale), so this follows that
+/// method's own Appendix A.2.1 step 3, requiring a DRBG strength "not less than" the one SP
+/// 800-57 Part 1 Rev. 5's Table 2 associates with SM2's 256-bit curve order (`f = 256-383` in
+/// that table's ECC column, giving 128-bit security).
 pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
+    // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security strength
+    // SM2's 256-bit curve order calls for (SP 800-57 Part 1 Rev. 5, Table 2: 128 bits).
+    if rng.security_strength() < SecurityStrength::_128bit {
+        return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
+    }
+
     // Raw DRBG output, reduced below into the private key / per-message secret: held in
     // `Secret` so it is scrubbed when this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();

@@ -22,8 +22,8 @@
 //! neither the other curves' Barrett reduction nor the field's Solinas fold.
 
 use crate::keys_common::DerivePublicKey;
-use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::traits::{RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::nat;
 use bouncycastle_ec::p521::P521FieldElement;
 use bouncycastle_ec::p521_comb::comb_multiply_base_point;
@@ -210,10 +210,20 @@ pub fn keygen() -> Result<(ECDSAP521PublicKey, ECDSAP521PrivateKey), SignatureEr
     keygen_from_rng(&mut DefaultRNG::default())
 }
 
-/// As [`keygen`], but sources the DRBG output from the caller-provided RNG.
+/// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must
+/// offer a security strength of at least 256 bits: FIPS 186-5 Appendix A.2.1 step 3 requires
+/// a DRBG whose security strength is "not less than" the one SP 800-57 Part 1 Rev. 5's
+/// Table 2 associates with P-521's 521-bit order (`f = 512+` in that table's ECC column, giving
+/// 256-bit security).
 pub fn keygen_from_rng(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAP521PublicKey, ECDSAP521PrivateKey), SignatureError> {
+    // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security
+    // strength P-521's 521-bit order calls for (SP 800-57 Part 1 Rev. 5, Table 2: 256 bits).
+    if rng.security_strength() < SecurityStrength::_256bit {
+        return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
+    }
+
     // Raw DRBG output, reduced below into the private key / per-message secret: held in
     // `Secret` so it is scrubbed when this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
