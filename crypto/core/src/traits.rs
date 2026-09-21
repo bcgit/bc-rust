@@ -23,7 +23,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// This and the three that follow were the whole of the former `SymmetricCipher` trait, which
     /// every symmetric cipher was once expected to implement. They now live here, because an AEAD
     /// is the only kind of cipher left that needs them: a block mode reaches the same shape through
-    /// [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] and the padding adapters, and a
+    /// [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] and the padding adapters, and a
     /// stream mode gets those traits directly.
     ///
     /// These are meant to be simple, easy to use, secure and fool-proof, at the cost of producing a
@@ -1166,7 +1166,7 @@ pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG
 
 /// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose
 /// notes on in-place operation, arbitrary lengths, the `Result` and the free
-/// [`SimpleCipherDecryptor`] impl all apply here too.
+/// [`SymmetricCipherDecryptor`] impl all apply here too.
 pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     Algorithm + Sized
 {
@@ -1207,7 +1207,7 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 ///
 /// # You also get the arbitrary-length API for free
 ///
-/// Every implementor is automatically a [`SimpleCipherEncryptor`] with `FINAL_LEN = 0`, by a
+/// Every implementor is automatically a [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`, by a
 /// blanket impl written in terms of [`do_encrypt`](Self::do_encrypt). So an implementor writes the
 /// three methods below and a caller may still use `encrypt_out`, `do_update_out` and the rest --
 /// the separate-output view that the padding adapters present -- and hold a stream mode through the
@@ -1349,7 +1349,7 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
 }
 
 /// The decryption half of a symmetric cipher's arbitrary-length API. See
-/// [`SimpleCipherEncryptor`] for the shape of the API and the meaning of `FINAL_LEN`; this is
+/// [`SymmetricCipherEncryptor`] for the shape of the API and the meaning of `FINAL_LEN`; this is
 /// its mirror image, and the two are implemented by paired types.
 ///
 /// Decryption is not the exact mirror of encryption in one respect: the last `FINAL_LEN` bytes a
@@ -1364,14 +1364,14 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// [`do_decrypt_init`](Self::do_decrypt_init), [`update_out_len`](Self::update_out_len),
 /// [`do_update_out`](Self::do_update_out), [`do_final`](Self::do_final) and
 /// [`decrypt_out_max_len`](Self::decrypt_out_max_len).
-pub trait SimpleCipherDecryptor<
+pub trait SymmetricCipherDecryptor<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const FINAL_LEN: usize,
 >: Algorithm + Sized
 {
     /// Begins a streaming decryption from the init data returned by
-    /// [`SimpleCipherEncryptor::do_encrypt_init`].
+    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     ///
     /// # Errors
     /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
@@ -1494,14 +1494,14 @@ pub trait SimpleCipherDecryptor<
 /// are provided over the streaming methods. An implementor writes only the two `_init`
 /// constructors, [`update_out_len`](Self::update_out_len), [`do_update_out`](Self::do_update_out),
 /// [`do_final`](Self::do_final) and [`encrypt_out_len`](Self::encrypt_out_len).
-pub trait SimpleCipherEncryptor<
+pub trait SymmetricCipherEncryptor<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const FINAL_LEN: usize,
 >: Algorithm + Sized
 {
     /// Begins a streaming encryption, returning the encryptor and the generated init data (IV or
-    /// nonce), which the recipient needs for [`SimpleCipherDecryptor::do_decrypt_init`]. Sources
+    /// nonce), which the recipient needs for [`SymmetricCipherDecryptor::do_decrypt_init`]. Sources
     /// randomness from the library's default OS-backed RNG.
     ///
     /// # Errors
@@ -1620,11 +1620,11 @@ pub trait SimpleCipherEncryptor<
     }
 }
 
-/// Every stream cipher is also a [`SimpleCipherEncryptor`] with `FINAL_LEN = 0`.
+/// Every stream cipher is also a [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`.
 ///
 /// The two traits describe the same operation at different granularities. [`StreamCipherEncryptor`]
 /// is the in-place view -- one buffer, transformed where it lies -- and
-/// [`SimpleCipherEncryptor`] is the separate-output view that the padding adapters and the AEAD
+/// [`SymmetricCipherEncryptor`] is the separate-output view that the padding adapters and the AEAD
 /// ciphers share. A stream cipher can offer the second in terms of the first, because it changes
 /// neither the length of its data nor anything at the end of the message: `update_out_len` is the
 /// identity, `encrypt_out_len` is the identity, and `do_final` has nothing to produce, which is
@@ -1640,7 +1640,7 @@ pub trait SimpleCipherEncryptor<
 /// `<Cfb<..> as StreamCipherEncryptor<..>>::do_encrypt_init(&key)` -- though either resolves to the
 /// same function.
 impl<T, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
-    SimpleCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
+    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
 where
     T: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
 {
@@ -1702,10 +1702,10 @@ where
     }
 }
 
-/// Every stream cipher is also a [`SimpleCipherDecryptor`] with `FINAL_LEN = 0`. The mirror of
+/// Every stream cipher is also a [`SymmetricCipherDecryptor`] with `FINAL_LEN = 0`. The mirror of
 /// the [`StreamCipherEncryptor`] blanket impl above; see it for why this exists.
 impl<T, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
-    SimpleCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
+    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
 where
     T: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
 {

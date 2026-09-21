@@ -7,11 +7,12 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{
     AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength,
-    SimpleCipherDecryptor, SimpleCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 
 /// Instance of the test framework.
-pub struct TestFrameworkSimpleCipher {
+pub struct TestFrameworkSymmetricCipher {
     /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the plaintext length
     /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
     /// -- the block length, for a `PaddedEncryptor` over `NoPadding` -- means only multiples of it
@@ -20,13 +21,13 @@ pub struct TestFrameworkSimpleCipher {
     pub required_alignment: usize,
 }
 
-impl TestFrameworkSimpleCipher {
+impl TestFrameworkSymmetricCipher {
     ///
     pub fn new() -> Self {
         Self { required_alignment: 1 }
     }
 
-    /// Exercises the [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] contract for a
+    /// Exercises the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] contract for a
     /// paired implementor.
     ///
     /// Checks, in order:
@@ -49,8 +50,8 @@ impl TestFrameworkSimpleCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const FINAL_LEN: usize,
-        E: SimpleCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
-        D: SimpleCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
     >(
         &self,
     ) {
