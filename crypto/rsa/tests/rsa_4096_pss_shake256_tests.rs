@@ -6,7 +6,7 @@
 use bouncycastle_core::traits::{SignatureVerifier, Signer};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_rsa::rsa_4096::{RSASSA_PSS_SHAKE256, Rsa4096PrivateKey, Rsa4096PublicKey};
+use bouncycastle_rsa::rsa_4096::{RSA4096PrivateKey, RSA4096PublicKey, RSASSA_PSS_SHAKE256};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -56,7 +56,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 /// The same genuine RSA-4096 keypair `rsa_4096_tests.rs` recovers (from
 /// `rsa_pkcs1_4096_sig_gen_test.json`'s SHA-256 group) -- reused here as a plain, valid RSA-4096
 /// key, not because it has anything to do with SHA-256/MGF1 specifically.
-fn genuine_key() -> Rsa4096PrivateKey {
+fn genuine_key() -> RSA4096PrivateKey {
     let p: [u64; 32] = [
         0x5141acd4afd4771f, 0x5857742b7e4032dc, 0xb7a9b97fe5371396, 0x4b1783c5bc91a6dc,
         0xaf5d0c912d97b728, 0xeb265a7f28b88976, 0x5e993302aa72f11d, 0xc007ad09d76ae22a,
@@ -107,14 +107,14 @@ fn genuine_key() -> Rsa4096PrivateKey {
         0x748d7b5d94cacd4d, 0xcf634f3a07cea4b7, 0x8dbcca51f4da4379, 0x80774236a54ec9dc,
         0x6a1ef00ee582d3d1, 0xdecfb14ca1e80c8e, 0xc78af5f6c807cc99, 0x484ad86e79415ea3,
     ];
-    Rsa4096PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA4096PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("recovered CRT components must be accepted")
 }
 
 #[test]
 fn pss_shake256_sign_with_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
 
     let salt = [0x42u8; 64];
     let sig = sign_with_salt!(RSASSA_PSS_SHAKE256, &sk, b"the message to sign", salt)
@@ -130,7 +130,7 @@ fn pss_shake256_sign_with_fixed_salt_round_trips() {
 #[test]
 fn pss_shake256_sign_with_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
     let sig_a = RSASSA_PSS_SHAKE256::sign_randomized(&sk, b"hello", &mut rng)
@@ -158,7 +158,7 @@ fn rsa_pss_4096_shake256_wycheproof_vectors() {
         let n: [u64; 64] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .expect("publicExponent fits in u32 for every group here");
-        let pk = Rsa4096PublicKey::new(&n, e).expect("group public key must be valid");
+        let pk = RSA4096PublicKey::new(&n, e).expect("group public key must be valid");
 
         for test in group["tests"].as_array().unwrap() {
             num_tests += 1;
@@ -200,7 +200,7 @@ fn rsa_pss_4096_shake256_wycheproof_vectors() {
 #[test]
 fn pss_shake256_trait_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let msg = b"PSS-SHAKE256 at RSA-4096, both APIs";
     let from_trait = RSASSA_PSS_SHAKE256::sign(&sk, msg, None).unwrap();
     RSASSA_PSS_SHAKE256::verify(&pk, msg, None, &from_trait).unwrap();

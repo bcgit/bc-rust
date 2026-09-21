@@ -23,20 +23,20 @@ use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_sha3::SHAKE128;
 
 /// An RSA-2048 private key (`p`, `q` each 1024 bits).
-pub type Rsa2048PrivateKey = RsaPrivateKey<32, 16>;
+pub type RSA2048PrivateKey = RsaPrivateKey<32, 16>;
 /// An RSA-2048 public key.
-pub type Rsa2048PublicKey = RsaPublicKey<32>;
+pub type RSA2048PublicKey = RsaPublicKey<32>;
 
-/// Encoded length of an [`Rsa2048PrivateKey`] under [`SignaturePrivateKey`]: `p || q || dP || dQ
+/// Encoded length of an [`RSA2048PrivateKey`] under [`SignaturePrivateKey`]: `p || q || dP || dQ
 /// || qInv`, five 128-byte values (see [`RsaPrivateKey`]'s `# Encoding`).
 pub const SK_LEN: usize = 640;
-/// Encoded length of an [`Rsa2048PublicKey`] under [`SignaturePublicKey`]: `n || e`, 256 + 4
+/// Encoded length of an [`RSA2048PublicKey`] under [`SignaturePublicKey`]: `n || e`, 256 + 4
 /// bytes (see [`RsaPublicKey`]'s `# Encoding`).
 pub const PK_LEN: usize = 260;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.1.1/§8.2.1 step 2.c).
 pub const SIG_LEN: usize = 256;
 
-impl SignaturePrivateKey<SK_LEN> for Rsa2048PrivateKey {
+impl SignaturePrivateKey<SK_LEN> for RSA2048PrivateKey {
     fn encode(&self) -> [u8; SK_LEN] {
         self.encode_raw::<128, SK_LEN>()
     }
@@ -54,7 +54,7 @@ impl SignaturePrivateKey<SK_LEN> for Rsa2048PrivateKey {
     }
 }
 
-impl SignaturePublicKey<PK_LEN> for Rsa2048PublicKey {
+impl SignaturePublicKey<PK_LEN> for RSA2048PublicKey {
     fn encode(&self) -> [u8; PK_LEN] {
         self.encode_raw::<256, PK_LEN>()
     }

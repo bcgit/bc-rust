@@ -9,7 +9,7 @@ use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_3072::{
-    PK_LEN, RSASSA_PSS_SHAKE128, Rsa3072PrivateKey, Rsa3072PublicKey, SIG_LEN, SK_LEN,
+    PK_LEN, RSA3072PrivateKey, RSA3072PublicKey, RSASSA_PSS_SHAKE128, SIG_LEN, SK_LEN,
 };
 use serde_json::Value;
 use std::fs;
@@ -60,7 +60,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 /// The same genuine RSA-3072 keypair `rsa_3072_tests.rs` recovers (from
 /// `rsa_pkcs1_3072_sig_gen_test.json`'s SHA-256 group) -- reused here as a plain, valid RSA-3072
 /// key, not because it has anything to do with SHA-256/MGF1 specifically.
-fn genuine_key() -> Rsa3072PrivateKey {
+fn genuine_key() -> RSA3072PrivateKey {
     let p: [u64; 24] = [
         0xb26d973345bc4c5f, 0x23251a1d29962ca9, 0x554fc3f23d6c9046, 0x89ffe73b1401e9b8,
         0xe0b448b454670aca, 0xa73ea5c2413d1da2, 0xe9539bc7a8d3b351, 0x357984fc116af9cb,
@@ -101,14 +101,14 @@ fn genuine_key() -> Rsa3072PrivateKey {
         0xfe6c3600d9b8e9a9, 0x744fac4daabf5488, 0xfbee6ec24b75fbf0, 0x8be552c8be44f139,
         0xfb0da96bd423759d, 0xb3443d93e7e8ca62, 0x36fe01b950885ecd, 0x214a1f73130e48b3,
     ];
-    Rsa3072PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA3072PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("recovered CRT components must be accepted")
 }
 
 #[test]
 fn pss_shake128_sign_with_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA3072PublicKey::new(sk.n(), 0x10001).unwrap();
 
     let salt = [0x42u8; 32];
     let sig = sign_with_salt!(RSASSA_PSS_SHAKE128, &sk, b"the message to sign", salt)
@@ -124,7 +124,7 @@ fn pss_shake128_sign_with_fixed_salt_round_trips() {
 #[test]
 fn pss_shake128_sign_with_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA3072PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
     let sig_a = RSASSA_PSS_SHAKE128::sign_randomized(&sk, b"hello", &mut rng)
@@ -152,7 +152,7 @@ fn rsa_pss_3072_shake128_wycheproof_vectors() {
         let n: [u64; 48] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .expect("publicExponent fits in u32 for every group here");
-        let pk = Rsa3072PublicKey::new(&n, e).expect("group public key must be valid");
+        let pk = RSA3072PublicKey::new(&n, e).expect("group public key must be valid");
 
         for test in group["tests"].as_array().unwrap() {
             num_tests += 1;
@@ -188,17 +188,17 @@ fn rsa_pss_3072_shake128_wycheproof_vectors() {
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 
-fn fixed_keypair() -> Result<(Rsa3072PublicKey, Rsa3072PrivateKey), SignatureError> {
+fn fixed_keypair() -> Result<(RSA3072PublicKey, RSA3072PrivateKey), SignatureError> {
     let sk = genuine_key();
-    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001)?;
+    let pk = RSA3072PublicKey::new(sk.n(), 0x10001)?;
     Ok((pk, sk))
 }
 
 #[test]
 fn pss_shake128_trait_conformance_suite() {
     TestFrameworkSignature::new(false, false).test_signature::<
-        Rsa3072PublicKey,
-        Rsa3072PrivateKey,
+        RSA3072PublicKey,
+        RSA3072PrivateKey,
         RSASSA_PSS_SHAKE128,
         RSASSA_PSS_SHAKE128,
         PK_LEN,

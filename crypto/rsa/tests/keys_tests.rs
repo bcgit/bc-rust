@@ -1,6 +1,6 @@
 //! Validation tests for [`bouncycastle_rsa::keys`]'s public API, including the
 //! `SignaturePrivateKey`/`SignaturePublicKey` impls `rsa_2048` gives its aliases of these types
-//! (`RsaPrivateKey<32, 16>` *is* `Rsa2048PrivateKey`, so the traits' methods resolve here once
+//! (`RsaPrivateKey<32, 16>` *is* `RSA2048PrivateKey`, so the traits' methods resolve here once
 //! imported). The generic boundary conditions every size shares are covered by
 //! `core-test-framework`'s `test_keys` in each size's own test file; these pin the layout itself.
 
