@@ -5,8 +5,10 @@ use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use crate::rsassa_pss::RSASSA_PSS;
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
+use core::num::NonZeroUsize;
 
 /// An RSA-8192 private key (`p`, `q` each 4096 bits).
 pub type RSA8192PrivateKey = RsaPrivateKey<128, 64>;
@@ -21,6 +23,25 @@ pub const SK_LEN: usize = 2560;
 pub const PK_LEN: usize = 1028;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.1.1/§8.2.1 step 2.c).
 pub const SIG_LEN: usize = 1024;
+
+/// FIPS 186-5 Appendix A.1.3 key pair generation for RSA-8192 (see [`crate::keygen`]), sourcing
+/// the candidates from the library's default OS-backed RNG. `e` is [`crate::keygen::PUBLIC_EXPONENT`].
+pub fn keygen() -> Result<(RSA8192PublicKey, RSA8192PrivateKey), SignatureError> {
+    keygen_from_rng(&mut DefaultRNG::default())
+}
+
+/// As [`keygen`], but sourcing the candidates from the caller-provided RNG, which must offer a
+/// security strength of at least 192 bits (SP 800-57 Part 1 Rev. 5, Table 2: `k = 7680` gives 192, and 8192 exceeds it). Each
+/// candidate prime gets 4 Miller-Rabin rounds: FIPS 186-5 Table B.1 stops at 2048-bit primes; Appendix C.1's formula (2), which reproduces every entry of that table, gives 3 rounds for 4096-bit primes at `2^-192` (RSA-8192 exceeds SP 800-57's 7680-bit/192-bit row) and 5 at `2^-256`, so 4 is taken, matching the table's last row with margin.
+pub fn keygen_from_rng(
+    rng: &mut dyn RNG,
+) -> Result<(RSA8192PublicKey, RSA8192PrivateKey), SignatureError> {
+    crate::keygen::keygen_from_rng::<64, 128, 129>(
+        rng,
+        NonZeroUsize::new(4).expect("nonzero literal"),
+        SecurityStrength::_192bit,
+    )
+}
 
 impl SignaturePrivateKey<SK_LEN> for RSA8192PrivateKey {
     fn encode(&self) -> [u8; SK_LEN] {

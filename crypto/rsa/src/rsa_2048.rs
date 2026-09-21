@@ -18,9 +18,11 @@ use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use crate::rsassa_pss::RSASSA_PSS;
 use crate::rsassa_pss_shake::RSASSA_PSS_SHAKE;
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_sha3::SHAKE128;
+use core::num::NonZeroUsize;
 
 /// An RSA-2048 private key (`p`, `q` each 1024 bits).
 pub type RSA2048PrivateKey = RsaPrivateKey<32, 16>;
@@ -35,6 +37,25 @@ pub const SK_LEN: usize = 640;
 pub const PK_LEN: usize = 260;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.1.1/§8.2.1 step 2.c).
 pub const SIG_LEN: usize = 256;
+
+/// FIPS 186-5 Appendix A.1.3 key pair generation for RSA-2048 (see [`crate::keygen`]), sourcing
+/// the candidates from the library's default OS-backed RNG. `e` is [`crate::keygen::PUBLIC_EXPONENT`].
+pub fn keygen() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
+    keygen_from_rng(&mut DefaultRNG::default())
+}
+
+/// As [`keygen`], but sourcing the candidates from the caller-provided RNG, which must offer a
+/// security strength of at least 112 bits (SP 800-57 Part 1 Rev. 5, Table 2, `k = 2048`). Each
+/// candidate prime gets 5 Miller-Rabin rounds: FIPS 186-5 Table B.1's row for 1024-bit `p` and `q` at an error probability of `2^-112`, RSA-2048's security strength (SP 800-57 Part 1 Rev. 5, Table 2).
+pub fn keygen_from_rng(
+    rng: &mut dyn RNG,
+) -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
+    crate::keygen::keygen_from_rng::<16, 32, 33>(
+        rng,
+        NonZeroUsize::new(5).expect("nonzero literal"),
+        SecurityStrength::_112bit,
+    )
+}
 
 impl SignaturePrivateKey<SK_LEN> for RSA2048PrivateKey {
     fn encode(&self) -> [u8; SK_LEN] {

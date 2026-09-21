@@ -2,11 +2,12 @@
 //! "second representation", the CRT quintuple `p`, `q`, `dP`, `dQ`, `qInv`), generic over the
 //! modulus's limb count `L` and each prime's limb count `HALF`.
 //!
-//! This crate does not generate keys: callers construct these from externally supplied key
-//! material (e.g. loaded from CAVP/wycheproof test vectors, or a key produced by another
-//! implementation), not from primes generated here. RFC 8017's first representation, the plain
-//! `(n, d)` pair, is not supported -- every real RSA private key ships as the CRT form because
-//! CRT-based signing (RFC 8017 §5.2.1 step 2.b) is the only signing path this crate implements.
+//! Keys come either from [`crate::keygen`] (FIPS 186-5 Appendix A.1.3, via each size module's
+//! `keygen`) or from externally supplied key material (e.g. loaded from CAVP/wycheproof test
+//! vectors, or a key produced by another implementation) through [`RsaPrivateKey::from_crt_components`].
+//! RFC 8017's first representation, the plain `(n, d)` pair, is not supported -- every real RSA
+//! private key ships as the CRT form because CRT-based signing (RFC 8017 §5.2.1 step 2.b) is the
+//! only signing path this crate implements.
 //!
 //! Each concrete modulus size's aliases of these types (`crate::rsa_2048::RSA2048PrivateKey` and
 //! siblings) implement `bouncycastle_core`'s `SignaturePrivateKey`/`SignaturePublicKey` traits,

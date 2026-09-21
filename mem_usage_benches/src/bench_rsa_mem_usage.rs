@@ -30,7 +30,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::traits::{SignatureVerifier, Signer};
+use bouncycastle::core::traits::{
+    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+};
 use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 
 const MSG: &[u8] = b"peak stack usage of RSA sign/verify, held constant across every modulus size";
@@ -145,6 +147,16 @@ fn genuine_2048_key() -> rsa_2048::RSA2048PrivateKey {
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
     rsa_2048::RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
+}
+
+/// FIPS 186-5 A.1.3 key generation: the candidate buffers, the Miller-Rabin Montgomery context
+/// and `mod_pow`'s ladder at the CRT-prime width, plus the `lcm(p - 1, q - 1)`/`d` bound check at
+/// the modulus width.
+fn bench_2048_keygen() {
+    eprintln!("RSA-2048/Keygen");
+    let (pk, sk) = rsa_2048::keygen().unwrap();
+    println!("{:x?}", pk.encode());
+    println!("{}", sk.encode().len());
 }
 
 fn bench_2048_sign() {
@@ -285,6 +297,7 @@ fn main() {
     print_key_sizes()
     // bench_do_nothing()
     // bench_1024_verify()
+    // bench_2048_keygen()
     // bench_2048_sign()
     // bench_2048_verify()
     // bench_8192_sign()
