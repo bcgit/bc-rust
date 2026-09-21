@@ -92,10 +92,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for ToyEnc {
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "ciphertext",
-                plaintext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
@@ -132,10 +129,7 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for ToyDec {
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "plaintext",
-                ciphertext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
         }
         let out = &mut plaintext[..ciphertext.len()];
         out.copy_from_slice(ciphertext);
@@ -275,14 +269,14 @@ fn tagged_undersized_buffers_are_rejected() {
     assert_eq!(needed, msg.len() + TAG_LEN);
     let mut short = vec![0u8; needed - 1];
     match ToyEnc::tagged_encrypt(&km, AAD, &msg, &mut short) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, needed),
+        Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, needed),
         other => panic!("tagged_encrypt into a short buffer: {other:?}"),
     }
 
     let (enc, _) = ToyEnc::do_encrypt_init(&km).unwrap();
     let mut short = [0u8; TAG_LEN - 1];
     match enc.tagged_do_aead_encrypt_final(&mut short) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, TAG_LEN),
+        Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, TAG_LEN),
         other => panic!("tagged_do_aead_encrypt_final into a short buffer: {other:?}"),
     }
 
@@ -290,14 +284,14 @@ fn tagged_undersized_buffers_are_rejected() {
     assert_eq!(needed, msg.len());
     let mut short = vec![0u8; needed - 1];
     match ToyDec::tagged_decrypt(&km, &nonce, AAD, &ct, &mut short) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, needed),
+        Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, needed),
         other => panic!("tagged_decrypt into a short buffer: {other:?}"),
     }
 
     let dec = ToyDec::do_decrypt_init(&km, &nonce).unwrap();
     let mut short = vec![0u8; msg.len() - 1];
     match dec.tagged_do_aead_decrypt_final(&ct, &mut short) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, msg.len()),
+        Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, msg.len()),
         other => panic!("tagged_do_aead_decrypt_final into a short buffer: {other:?}"),
     }
 

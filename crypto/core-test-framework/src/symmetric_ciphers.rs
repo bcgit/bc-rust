@@ -7,12 +7,12 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    SecurityStrength, SimpleCipherDecryptor, SimpleCipherEncryptor, StreamCipherDecryptor,
-    StreamCipherEncryptor,
+    SecurityStrength, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 
 /// Instance of the test framework.
-pub struct TestFrameworkSimpleCipher {
+pub struct TestFrameworkSymmetricCipher {
     /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the plaintext length
     /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
     /// -- the block length, for a `PaddedEncryptor` over `NoPadding` -- means only multiples of it
@@ -21,13 +21,13 @@ pub struct TestFrameworkSimpleCipher {
     pub required_alignment: usize,
 }
 
-impl TestFrameworkSimpleCipher {
+impl TestFrameworkSymmetricCipher {
     ///
     pub fn new() -> Self {
         Self { required_alignment: 1 }
     }
 
-    /// Exercises the [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] contract for a
+    /// Exercises the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] contract for a
     /// paired implementor.
     ///
     /// Checks, in order:
@@ -50,8 +50,8 @@ impl TestFrameworkSimpleCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const FINAL_LEN: usize,
-        E: SimpleCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
-        D: SimpleCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
     >(
         &self,
     ) {
@@ -206,14 +206,14 @@ impl TestFrameworkSimpleCipher {
         let need = E::encrypt_out_len(len);
         let mut short = vec![0u8; need - 1];
         match E::encrypt_out(&key, msg, &mut short) {
-            Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+            Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
             other => panic!("encrypt_out into a short buffer: {other:?}"),
         }
         let need = D::decrypt_out_max_len(ct_len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
             match D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut short) {
-                Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("decrypt_out into a short buffer: {other:?}"),
             }
         }
@@ -222,7 +222,7 @@ impl TestFrameworkSimpleCipher {
         if need > 0 {
             let mut short = vec![0u8; need - 1];
             match enc.do_update_out(msg, &mut short) {
-                Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("do_update_out into a short buffer: {other:?}"),
             }
         }
@@ -589,7 +589,7 @@ impl TestFrameworkAEADCipher {
             if need > 0 {
                 let mut short = vec![0u8; need - 1];
                 match E::encrypt_out(&key, aad, msg, &mut short) {
-                    Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => {
+                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
                     other => panic!("encrypt_out into a short buffer: {other:?}"),
@@ -602,7 +602,7 @@ impl TestFrameworkAEADCipher {
                     msg,
                     &mut short,
                 ) {
-                    Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => {
+                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
                     other => panic!("encrypt_out_rng into a short buffer: {other:?}"),
@@ -625,7 +625,7 @@ impl TestFrameworkAEADCipher {
             if need > 0 {
                 let mut short = vec![0u8; need - 1];
                 match D::decrypt_out(&key, &nonce, aad, &ct, &tag, &mut short) {
-                    Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => {
+                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
                     other => panic!("decrypt_out into a short buffer: {other:?}"),
@@ -696,7 +696,7 @@ impl TestFrameworkAEADCipher {
             if need > 0 {
                 let mut short = vec![0u8; need - 1];
                 match enc.do_update_out(msg, &mut short) {
-                    Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => {
+                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
                     other => panic!("encrypt do_update_out into a short buffer: {other:?}"),
@@ -713,7 +713,7 @@ impl TestFrameworkAEADCipher {
             if need > 0 {
                 let mut short = vec![0u8; need - 1];
                 match dec.do_update_out(&ct, &mut short) {
-                    Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => {
+                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
                     other => panic!("decrypt do_update_out into a short buffer: {other:?}"),

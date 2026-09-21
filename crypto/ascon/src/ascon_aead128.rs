@@ -231,10 +231,7 @@ impl AsconAead128 {
     ) -> Result<usize, SymmetricCipherError> {
         let needed = plaintext.len() + TAG_LEN;
         if out.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "Ascon-AEAD128 output buffer too small (need plaintext length + 16)",
-                needed,
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let mut cipher = Self::new(key, nonce, ad, true)?;
         out[..plaintext.len()].copy_from_slice(plaintext);
@@ -263,10 +260,7 @@ impl AsconAead128 {
         }
         let pt_len = ciphertext.len() - TAG_LEN;
         if out.len() < pt_len {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "Ascon-AEAD128 output buffer too small",
-                pt_len,
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(pt_len));
         }
         let mut cipher = Self::new(key, nonce, ad, false)?;
         out[..pt_len].copy_from_slice(&ciphertext[..pt_len]);
@@ -544,10 +538,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for AsconAead128Encrypt
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "ciphertext",
-                plaintext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
@@ -596,10 +587,7 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for AsconAead128Decrypt
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "plaintext",
-                ciphertext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
         }
         let out = &mut plaintext[..ciphertext.len()];
         out.copy_from_slice(ciphertext);

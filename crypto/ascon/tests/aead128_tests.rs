@@ -315,10 +315,10 @@ fn aead128_undersized_buffers_are_rejected() {
     // encrypt: output buffer shorter than plaintext.len() + 16.
     let mut too_small = vec![0u8; msg.len() + 15];
     match AsconAead128::encrypt(&km, &NONCE, None, &msg, &mut too_small) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, needed)) => {
+        Err(SymmetricCipherError::OutputBufferTooSmall(needed)) => {
             assert_eq!(needed, msg.len() + 16);
         }
-        other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
+        other => panic!("expected OutputBufferTooSmall, got {other:?}"),
     }
 
     // decrypt: ciphertext shorter than the 16-byte tag, which is checked before the output buffer.
@@ -333,10 +333,10 @@ fn aead128_undersized_buffers_are_rejected() {
     let ct = enc_oneshot(&KEY, &NONCE, &[], &msg);
     let mut too_small_pt = vec![0u8; msg.len() - 1];
     match AsconAead128::decrypt(&km, &NONCE, None, &ct, &mut too_small_pt) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, needed)) => {
+        Err(SymmetricCipherError::OutputBufferTooSmall(needed)) => {
             assert_eq!(needed, msg.len());
         }
-        other => panic!("expected IncorrectOutputBufferLength, got {other:?}"),
+        other => panic!("expected OutputBufferTooSmall, got {other:?}"),
     }
 
     // A ciphertext of exactly 16 bytes -- an empty plaintext plus its tag -- is the boundary case

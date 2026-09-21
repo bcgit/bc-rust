@@ -176,7 +176,7 @@ fn aead128_encrypt_stream(
         }
         let mut out = [0u8; 1024];
         // infallible: `out` is as long as `buf`, so it cannot be shorter than the `n` bytes read
-        // into it, which is the only length `IncorrectOutputBufferLength` could complain about.
+        // into it, which is the only length `OutputBufferTooSmall` could complain about.
         let written = cipher.do_update_out(&buf[..n], &mut out).unwrap();
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
