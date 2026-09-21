@@ -309,3 +309,44 @@ fn unsupported_pairings_are_refused() {
     );
     assert!(err.contains("not supported"), "stderr: {err}");
 }
+
+/// `keygen` writes a 640-byte private key to stdout and a 260-byte public key to `--pkfile`, and
+/// the pair then signs and verifies through the CLI; without `--pkfile` it refuses, since the
+/// public key cannot be recovered from the private key file later.
+#[test]
+fn rsa_2048_keygen_then_sign_and_verify() {
+    let pkfile = temp_file("genpk", b"");
+    let sk_hex = run_ok(
+        &[
+            "rsa-2048", "keygen", "--scheme", "pkcs1v15", "--hash", "sha256", "--pkfile", &pkfile,
+            "-x",
+        ],
+        &[],
+    );
+    let sk_hex = String::from_utf8(sk_hex).unwrap();
+    assert_eq!(sk_hex.trim().len(), 2 * 640, "private key on stdout, hex");
+    let pk_hex = std::fs::read_to_string(&pkfile).unwrap();
+    assert_eq!(pk_hex.trim().len(), 2 * 260, "public key in --pkfile, hex");
+    let pk = RSA2048PublicKey::from_bytes(&unhex(pk_hex.trim())).unwrap();
+    assert_eq!(pk.e(), 65537);
+
+    let skfile = temp_file("gensk", sk_hex.trim().as_bytes());
+    let msg = pseudo_random(2000, 5);
+    let sig = run_ok(
+        &["rsa-2048", "sign", "--scheme", "pss", "--hash", "sha256", "--skfile", &skfile],
+        &msg,
+    );
+    let sigfile = temp_file("gensig", &sig);
+    let out = run_ok(
+        &[
+            "rsa-2048", "verify", "--scheme", "pss", "--hash", "sha256", "--pkfile", &pkfile,
+            "--sigfile", &sigfile,
+        ],
+        &msg,
+    );
+    assert!(String::from_utf8_lossy(&out).contains("Signature is valid."));
+    RSASSA_PSS_SHA256::verify(&pk, &msg, None, &sig).unwrap();
+
+    let err = run_err(&["rsa-2048", "keygen", "--scheme", "pkcs1v15", "--hash", "sha256"], &[]);
+    assert!(err.contains("--pkfile"), "stderr: {err}");
+}

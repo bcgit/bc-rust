@@ -9,6 +9,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_rng::DefaultRNG;
+use bouncycastle_rsa::rsa_2048::keygen;
 use bouncycastle_rsa::rsa_2048::{
     RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
     RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512,
@@ -194,6 +195,13 @@ fn bench_rsa_2048(c: &mut Criterion) {
     });
 
     group.finish();
+
+    // FIPS 186-5 A.1.3 key generation: rejection sampling, so the run-to-run spread is large;
+    // ten samples is enough to see the order of magnitude without a multi-minute bench.
+    let mut keygen_group = c.benchmark_group("rsa_2048_keygen");
+    keygen_group.sample_size(10);
+    keygen_group.bench_function("keygen", |b| b.iter(|| black_box(keygen().unwrap())));
+    keygen_group.finish();
 }
 
 criterion_group!(benches, bench_rsa_2048);
