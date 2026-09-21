@@ -16,7 +16,7 @@ use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_2048::{
-    PK_LEN, RSASSA_PSS_SHA256, Rsa2048PrivateKey, Rsa2048PublicKey, SIG_LEN, SK_LEN,
+    PK_LEN, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PSS_SHA256, SIG_LEN, SK_LEN,
 };
 use bouncycastle_rsa::rsassa_pss;
 use bouncycastle_sha2::SHA256;
@@ -69,7 +69,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 /// The same genuine RSA-2048 keypair `rsa_2048_pkcs1_v1_5_tests.rs` recovers from
 /// `rsa_pkcs1_2048_sig_gen_test.json` -- see that file for the full, sourced provenance (p/q
 /// recovered from Wycheproof's own `(n, e, d)` via the standard factoring-from-d method).
-fn wycheproof_key() -> Rsa2048PrivateKey {
+fn wycheproof_key() -> RSA2048PrivateKey {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
         0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
@@ -100,14 +100,14 @@ fn wycheproof_key() -> Rsa2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    Rsa2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("recovered CRT components must be accepted")
 }
 
 #[test]
 fn pss_sign_with_fixed_salt_round_trips() {
     let sk = wycheproof_key();
-    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
 
     let salt = [0x42u8; 32];
     let sig = sign_with_salt!(RSASSA_PSS_SHA256, &sk, b"the message to sign", salt)
@@ -124,7 +124,7 @@ fn pss_sign_with_fixed_salt_round_trips() {
 #[test]
 fn pss_sign_with_rng_produces_fresh_salts_that_both_verify() {
     let sk = wycheproof_key();
-    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
     let sig_a =
@@ -152,7 +152,7 @@ fn rsa_pss_sha256_mgf1_32_wycheproof_vectors() {
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .expect("publicExponent fits in u32 for every group here");
-        let pk = Rsa2048PublicKey::new(&n, e).expect("group public key must be valid");
+        let pk = RSA2048PublicKey::new(&n, e).expect("group public key must be valid");
 
         for test in group["tests"].as_array().unwrap() {
             num_tests += 1;
@@ -188,9 +188,9 @@ fn rsa_pss_sha256_mgf1_32_wycheproof_vectors() {
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 
-fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureError> {
+fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
     let sk = wycheproof_key();
-    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
+    let pk = RSA2048PublicKey::new(sk.n(), 0x10001)?;
     Ok((pk, sk))
 }
 
@@ -200,8 +200,8 @@ fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureErr
 #[test]
 fn pss_sha256_trait_conformance_suite() {
     TestFrameworkSignature::new(false, false).test_signature::<
-        Rsa2048PublicKey,
-        Rsa2048PrivateKey,
+        RSA2048PublicKey,
+        RSA2048PrivateKey,
         RSASSA_PSS_SHA256,
         RSASSA_PSS_SHA256,
         PK_LEN,

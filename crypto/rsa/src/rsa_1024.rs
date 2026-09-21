@@ -1,4 +1,4 @@
-//! RSA-1024: verification only. `L = 16` (1024 bits). There is no `Rsa1024PrivateKey` and no
+//! RSA-1024: verification only. `L = 16` (1024 bits). There is no `RSA1024PrivateKey` and no
 //! signing function -- per this crate's `# Scope` (see `src/lib.rs`), a 1024-bit modulus is for
 //! verifying signatures made elsewhere (legacy interoperability), not for producing new ones, and
 //! that is enforced by the absent type rather than a runtime check.
@@ -34,15 +34,15 @@ use bouncycastle_core::traits::SignaturePublicKey;
 use bouncycastle_sha2::{SHA256, SHA384};
 
 /// An RSA-1024 public key.
-pub type Rsa1024PublicKey = RsaPublicKey<16>;
+pub type RSA1024PublicKey = RsaPublicKey<16>;
 
-/// Encoded length of an [`Rsa1024PublicKey`] under [`SignaturePublicKey`]: 128 + 4 bytes (see
+/// Encoded length of an [`RSA1024PublicKey`] under [`SignaturePublicKey`]: 128 + 4 bytes (see
 /// [`RsaPublicKey`]'s `# Encoding`).
 pub const PK_LEN: usize = 132;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.2.1 step 2.c).
 pub const SIG_LEN: usize = 128;
 
-impl SignaturePublicKey<PK_LEN> for Rsa1024PublicKey {
+impl SignaturePublicKey<PK_LEN> for RSA1024PublicKey {
     fn encode(&self) -> [u8; PK_LEN] {
         self.encode_raw::<128, PK_LEN>()
     }

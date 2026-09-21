@@ -10,7 +10,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1024::{
-    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, Rsa1024PublicKey,
+    PK_LEN, RSA1024PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
 };
 use serde_json::Value;
 use std::fs;
@@ -49,7 +49,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 
 fn run_sig_gen_group_as_verify_vectors(
     sha: &str,
-    verify: impl Fn(&Rsa1024PublicKey, &[u8], &[u8; 128]) -> bool,
+    verify: impl Fn(&RSA1024PublicKey, &[u8], &[u8; 128]) -> bool,
 ) {
     let doc: Value =
         serde_json::from_str(&get_test_data("rsa_pkcs1_1024_sig_gen_test.json")).unwrap();
@@ -63,7 +63,7 @@ fn run_sig_gen_group_as_verify_vectors(
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = Rsa1024PublicKey::new(&n, e).expect("group public key must be valid");
+    let pk = RSA1024PublicKey::new(&n, e).expect("group public key must be valid");
 
     let mut num_tests = 0usize;
     for test in group["tests"].as_array().unwrap() {
@@ -93,7 +93,7 @@ fn pkcs1_v1_5_sha384_accepts_genuine_sig_gen_signatures() {
 
 fn run_sig_gen_group_rejects_wrong_message(
     sha: &str,
-    verify: impl Fn(&Rsa1024PublicKey, &[u8], &[u8; 128]) -> bool,
+    verify: impl Fn(&RSA1024PublicKey, &[u8], &[u8; 128]) -> bool,
 ) {
     let doc: Value =
         serde_json::from_str(&get_test_data("rsa_pkcs1_1024_sig_gen_test.json")).unwrap();
@@ -106,7 +106,7 @@ fn run_sig_gen_group_rejects_wrong_message(
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = Rsa1024PublicKey::new(&n, e).unwrap();
+    let pk = RSA1024PublicKey::new(&n, e).unwrap();
     let test = &group["tests"][0];
     let sig_bytes = hex_decode(test["sig"].as_str().unwrap()).unwrap();
     let sig: [u8; 128] = sig_bytes.try_into().unwrap();
@@ -157,19 +157,19 @@ fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = Rsa1024PublicKey::new(&n, e).unwrap();
+    let pk = RSA1024PublicKey::new(&n, e).unwrap();
 
     let bytes = pk.encode();
     assert_eq!(bytes.len(), PK_LEN);
-    assert_eq!(Rsa1024PublicKey::from_bytes(&bytes).unwrap(), pk);
+    assert_eq!(RSA1024PublicKey::from_bytes(&bytes).unwrap(), pk);
     assert!(matches!(
-        Rsa1024PublicKey::from_bytes(&bytes[..PK_LEN - 1]),
+        RSA1024PublicKey::from_bytes(&bytes[..PK_LEN - 1]),
         Err(SignatureError::DecodingError(_))
     ));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
     assert!(matches!(
-        Rsa1024PublicKey::from_bytes(&too_long),
+        RSA1024PublicKey::from_bytes(&too_long),
         Err(SignatureError::DecodingError(_))
     ));
 }

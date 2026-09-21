@@ -10,14 +10,14 @@ use std::hint::black_box;
 
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_2048::{
-    RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
-    Rsa2048PrivateKey, Rsa2048PublicKey,
+    RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
+    RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512,
+    RSASSA_PSS_SHAKE128,
 };
 
 const MSG: &[u8] = b"a representative message for benchmarking RSA-2048";
 
-fn genuine_key() -> Rsa2048PrivateKey {
+fn genuine_key() -> RSA2048PrivateKey {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
         0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
@@ -48,13 +48,13 @@ fn genuine_key() -> Rsa2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    Rsa2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("genuine RSA-2048 CRT components must be accepted")
 }
 
 fn bench_rsa_2048(c: &mut Criterion) {
     let sk = genuine_key();
-    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
     let sig_pkcs1_256 = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();

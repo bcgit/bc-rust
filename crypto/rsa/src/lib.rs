@@ -31,15 +31,15 @@
 //!
 //! ```
 //! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer};
-//! use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, Rsa2048PrivateKey, Rsa2048PublicKey};
+//! use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, RSA2048PrivateKey, RSA2048PublicKey};
 //! # // The same genuine RSA-2048 keypair as the next example; see there for its provenance.
 //! # const P: [u64; 16] = [0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9, 0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788, 0x978f6c35814f50ee, 0xe6a289ad4cfbf78f, 0x34d5681e5809d415, 0xbb028bda42eeb5d2, 0x41c56e4de086b0d5, 0x58b8d1e24f3b55d0, 0xfb5248247d98cb7d, 0xdc431050f782e894];
 //! # const Q: [u64; 16] = [0x669f140cfbc20f25, 0xb97bb03677207d95, 0xfd4e06f3ed7299d4, 0x160f90536abc9492, 0xf5b131f39098f7bc, 0xae8d72c57088d7ab, 0x89b94fbde542aba9, 0x3d3f9880ec47d5e0, 0x1378a6868af3b7a0, 0x5544070beb057c94, 0x16611debc472fac4, 0xe500ffb79f5b8868, 0x308a5e32196603b2, 0xea5fb19eb4eabc38, 0x122273ae3222b598, 0xbd1a81e7977f9898];
 //! # const D_P: [u64; 16] = [0x209f33f09515d7c1, 0xb4a9b37656917205, 0x276933bb07e4efb9, 0x8c14019808e00414, 0x289f96da220711e5, 0xfbbd2923d31532fe, 0xc06b414e61c0e1e7, 0x4c23c4588488961d, 0x4dc48ae34514759c, 0x9c786961ae3e2c35, 0x497e8d9c650688e0, 0x18bf08472612dbe5, 0x8885fb161870ee12, 0xf21d7c1479d99d47, 0x9121d91952ffd1c7, 0xa94b528b28f29159];
 //! # const D_Q: [u64; 16] = [0xf7597ffb68011d8d, 0x7b3cc538c4bab8c9, 0xa8fa480a81a925af, 0x6d6ede7251a383bf, 0x8a63f788ce3a0f85, 0x0b920502eb478bc9, 0x7e37e755edfe70d9, 0x9cf9948422a16555, 0x0d6d9ea1f2ef71fd, 0xf7efa32ea0cb6e00, 0x0629b114ca7f780f, 0xcf51176359654348, 0x540cdcbd4ad35435, 0x31c02ff1a2bc437c, 0xff2503df78bafed5, 0x3af0e72a933aef09];
 //! # const Q_INV: [u64; 16] = [0x552fe4bfce945f7b, 0x67e50c999c67247b, 0xfb54ef17be3b2853, 0x241f5921b5ad3983, 0x02de5eccd143cf31, 0x74e45f6fcc60f216, 0xafa5428a74f12708, 0x88d42294b6a2759b, 0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51, 0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163];
-//! let sk = Rsa2048PrivateKey::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)?;
-//! let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
+//! let sk = RSA2048PrivateKey::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)?;
+//! let pk = RSA2048PublicKey::new(sk.n(), 0x10001)?;
 //!
 //! // One-shot. RSA has no context string, so `ctx` is `None` (a `Some` is accepted and ignored).
 //! let signature = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, b"the message to sign", None)?;
@@ -86,9 +86,9 @@
 //! RSASSA_PSS_SHA256::verify(&pk, b"the message to sign", None, &sig_d)?;
 //!
 //! // Keys round-trip through the traits' raw fixed-width encoding (see `keys`'s docs).
-//! let pk_again = Rsa2048PublicKey::from_bytes(&pk.encode())?;
+//! let pk_again = RSA2048PublicKey::from_bytes(&pk.encode())?;
 //! assert_eq!(pk_again, pk);
-//! let sk_again = Rsa2048PrivateKey::from_bytes(&sk.encode())?;
+//! let sk_again = RSA2048PrivateKey::from_bytes(&sk.encode())?;
 //! assert_eq!(sk_again, sk);
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
@@ -100,11 +100,11 @@
 //!
 //! ```
 //! use bouncycastle_core::traits::SignatureVerifier;
-//! use bouncycastle_rsa::rsa_1024::{RSASSA_PKCS1_v1_5_SHA256, Rsa1024PublicKey};
+//! use bouncycastle_rsa::rsa_1024::{RSASSA_PKCS1_v1_5_SHA256, RSA1024PublicKey};
 //! # const N: [u64; 16] = [0xd00343468eaacfbf, 0xb7c7044cc202dcca, 0x9686f30f478db649, 0x5179b54951fff6aa, 0xbabb14f550d5d0dd, 0x5405db7c5c8f4cf6, 0x9816e2eda41fd7b9, 0xb31b6abd805bace9, 0xb909dd0f4c6014f2, 0x9c8a5810b6d05990, 0x40760d1f23fe9250, 0x90adb011a919575a, 0x45e48572113cab28, 0xcb9ca9ec12000fc8, 0x91b4fcaf62a14595, 0xac9048a7a4f560af];
 //! let sig = bouncycastle_hex::decode("41339884a9b3940e8488d666bb158063c6a2a2717cae7f564834a876fcbf7098ecf3acbfabf37d38a8e6127b1e313744f1f896e165efdaea0b2e7673867842b9e94db0868ed9a92bcdcb370a4e20ff275c82595e4400a8b9e9f12482f014846b48216f321266ae6ae6338dbcdc41b711e483e6e3e728772e7f9f5ef95c30196b").unwrap();
 //! let msg = [0u8; 20]; // Wycheproof's own genuine message for this signature.
-//! let pk = Rsa1024PublicKey::new(&N, 0x10001)?;
+//! let pk = RSA1024PublicKey::new(&N, 0x10001)?;
 //! RSASSA_PKCS1_v1_5_SHA256::verify(&pk, &msg, None, &sig)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
