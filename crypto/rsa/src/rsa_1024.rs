@@ -28,7 +28,6 @@
 //! ```
 
 use crate::keys::RsaPublicKey;
-use crate::rsassa_pkcs1_v1_5;
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::SignaturePublicKey;
@@ -62,7 +61,7 @@ impl SignaturePublicKey<PK_LEN> for Rsa1024PublicKey {
 }
 
 /// RSASSA-PKCS1-v1_5/SHA-256 over RSA-1024 as a `SignatureVerifier` only (see the module docs):
-/// [`RSASSA_PKCS1_v1_5`] at the widths [`pkcs1_v1_5_verify_sha256`] passes. The signing-side
+/// [`RSASSA_PKCS1_v1_5`] at this size's widths. The signing-side
 /// widths the generic type also needs (`HALF = 8`, `HALF2 = 16`, `HALF21 = 17`, `SK_LEN = 320`)
 /// are what an RSA-1024 CRT key would have if one existed; they name the type but nothing uses
 /// them, since the `Signer` impl they would feed does not exist for `RsaPrivateKey<16, 8>`.
@@ -73,23 +72,3 @@ pub type RSASSA_PKCS1_v1_5_SHA256 =
 #[allow(non_camel_case_types)]
 pub type RSASSA_PKCS1_v1_5_SHA384 =
     RSASSA_PKCS1_v1_5<SHA384, 48, 67, 16, 32, 33, 8, 16, 17, 128, 320, PK_LEN>;
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-256 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha256(
-    pk: &Rsa1024PublicKey,
-    message: &[u8],
-    signature: &[u8; 128],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA256, 32, 16, 32, 33, 128>(pk, message, signature)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-384 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha384(
-    pk: &Rsa1024PublicKey,
-    message: &[u8],
-    signature: &[u8; 128],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA384, 48, 16, 32, 33, 128>(pk, message, signature)
-}

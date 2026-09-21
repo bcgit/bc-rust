@@ -9,7 +9,7 @@ use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1536::{
     PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    Rsa1536PublicKey, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
+    Rsa1536PublicKey,
 };
 use serde_json::Value;
 use std::fs;
@@ -79,21 +79,21 @@ fn run_sig_gen_group_as_verify_vectors(
 #[test]
 fn pkcs1_v1_5_sha256_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha256(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha384_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha512_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-512", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha512(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -117,24 +117,24 @@ fn run_sig_gen_group_rejects_wrong_message(
 #[test]
 fn pkcs1_v1_5_sha256_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha256(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
     });
 }
 
-/// Mutation testing found that `pkcs1_v1_5_verify_sha384`/`_sha512` had no rejection-path test of
+/// Mutation testing found that PKCS#1 v1.5/SHA-384 and /SHA-512 verification had no rejection-path test of
 /// their own (only `verify_sha256`'s did) -- a whole-function-body mutant that always returned
 /// `Ok(())` still passed the whole suite for either.
 #[test]
 fn pkcs1_v1_5_sha384_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha512_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-512", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha512(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -142,32 +142,6 @@ fn pkcs1_v1_5_sha512_rejects_wrong_message() {
 //
 // Verify-only at this size, as at RSA-1024 -- see `rsa_1024_tests.rs` for why the
 // `core-test-framework` signature suite cannot run here.
-
-#[test]
-fn trait_verify_accepts_genuine_sig_gen_signatures() {
-    run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
-    });
-    run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
-    });
-    run_sig_gen_group_as_verify_vectors("SHA-512", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok()
-    });
-}
-
-#[test]
-fn trait_verify_rejects_wrong_message() {
-    run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
-    });
-    run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
-    });
-    run_sig_gen_group_rejects_wrong_message("SHA-512", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok()
-    });
-}
 
 #[test]
 fn trait_verify_rejects_truncated_signature() {

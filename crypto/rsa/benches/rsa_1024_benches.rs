@@ -3,12 +3,13 @@
 //! `rsa_pkcs1_1024_sig_gen_test.json`'s own genuine `(n, e)` and one real `(msg, sig)` pair, the
 //! same provenance `tests/rsa_1024_tests.rs` uses.
 
+use bouncycastle_core::traits::SignatureVerifier;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1024::{
-    Rsa1024PublicKey, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
+    RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, Rsa1024PublicKey,
 };
 
 fn bench_rsa_1024(c: &mut Criterion) {
@@ -45,9 +46,10 @@ fn bench_rsa_1024(c: &mut Criterion) {
     let mut group = c.benchmark_group("rsa_1024");
     group.bench_function("pkcs1v15_verify_sha256", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha256(
+            RSASSA_PKCS1_v1_5_SHA256::verify(
                 black_box(&pk_sha256),
                 black_box(&msg_sha256),
+                None,
                 black_box(&sig_sha256),
             )
             .unwrap()
@@ -55,9 +57,10 @@ fn bench_rsa_1024(c: &mut Criterion) {
     });
     group.bench_function("pkcs1v15_verify_sha384", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha384(
+            RSASSA_PKCS1_v1_5_SHA384::verify(
                 black_box(&pk_sha384),
                 black_box(&msg_sha384),
+                None,
                 black_box(&sig_sha384),
             )
             .unwrap()

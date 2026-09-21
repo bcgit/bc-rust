@@ -11,7 +11,6 @@ use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1024::{
     PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, Rsa1024PublicKey,
-    pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
 };
 use serde_json::Value;
 use std::fs;
@@ -81,14 +80,14 @@ fn run_sig_gen_group_as_verify_vectors(
 #[test]
 fn pkcs1_v1_5_sha256_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha256(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha384_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -117,17 +116,17 @@ fn run_sig_gen_group_rejects_wrong_message(
 #[test]
 fn pkcs1_v1_5_sha256_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha256(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
     });
 }
 
-/// Mutation testing found that `pkcs1_v1_5_verify_sha384` had no rejection-path test of its own
+/// Mutation testing found that PKCS#1 v1.5/SHA-384 verification had no rejection-path test of its own
 /// (only `verify_sha256`'s did) -- a whole-function-body mutant that always returned `Ok(())`
 /// still passed the whole suite.
 #[test]
 fn pkcs1_v1_5_sha384_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
-        pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok()
+        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -136,27 +135,7 @@ fn pkcs1_v1_5_sha384_rejects_wrong_message() {
 // No `Signer` exists at this size (see `rsa_1024.rs`'s docs and its `compile_fail` doctest), so
 // `core-test-framework`'s signature suite -- which needs one -- cannot run here; the
 // `SignatureVerifier` and `SignaturePublicKey` impls are checked directly against the same
-// genuine Wycheproof material as the free functions.
-
-#[test]
-fn trait_verify_accepts_genuine_sig_gen_signatures() {
-    run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
-    });
-    run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
-    });
-}
-
-#[test]
-fn trait_verify_rejects_wrong_message() {
-    run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
-    });
-    run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
-    });
-}
+// genuine Wycheproof material as the tests above.
 
 /// RFC 8017 §8.2.2 step 1 through the trait's `&[u8]` signature: a truncated genuine signature
 /// is "invalid signature", never accepted.

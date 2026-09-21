@@ -14,13 +14,12 @@
 //! the hash in question -- is checked against all of Wycheproof's real vectors for both hashes.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::Signer;
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_2048::{
     PK_LEN, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, Rsa2048PrivateKey,
-    Rsa2048PublicKey, SIG_LEN, SK_LEN, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
-    pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
+    Rsa2048PublicKey, SIG_LEN, SK_LEN,
 };
 use serde_json::Value;
 use std::fs;
@@ -99,18 +98,18 @@ fn genuine_key() -> Rsa2048PrivateKey {
 fn pkcs1_v1_5_sha384_round_trips() {
     let sk = genuine_key();
     let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = pkcs1_v1_5_sign_sha384(&sk, b"hello").expect("signing must succeed");
-    pkcs1_v1_5_verify_sha384(&pk, b"hello", &sig).expect("must verify");
-    assert!(pkcs1_v1_5_verify_sha384(&pk, b"goodbye", &sig).is_err());
+    let sig = RSASSA_PKCS1_v1_5_SHA384::sign(&sk, b"hello", None).expect("signing must succeed");
+    RSASSA_PKCS1_v1_5_SHA384::verify(&pk, b"hello", None, &sig).expect("must verify");
+    assert!(RSASSA_PKCS1_v1_5_SHA384::verify(&pk, b"goodbye", None, &sig).is_err());
 }
 
 #[test]
 fn pkcs1_v1_5_sha512_round_trips() {
     let sk = genuine_key();
     let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = pkcs1_v1_5_sign_sha512(&sk, b"hello").expect("signing must succeed");
-    pkcs1_v1_5_verify_sha512(&pk, b"hello", &sig).expect("must verify");
-    assert!(pkcs1_v1_5_verify_sha512(&pk, b"goodbye", &sig).is_err());
+    let sig = RSASSA_PKCS1_v1_5_SHA512::sign(&sk, b"hello", None).expect("signing must succeed");
+    RSASSA_PKCS1_v1_5_SHA512::verify(&pk, b"hello", None, &sig).expect("must verify");
+    assert!(RSASSA_PKCS1_v1_5_SHA512::verify(&pk, b"goodbye", None, &sig).is_err());
 }
 
 fn run_verify_vectors(
@@ -183,7 +182,7 @@ fn run_verify_vectors(
 fn rsa_signature_sha384_wycheproof_vectors() {
     run_verify_vectors(
         "rsa_signature_2048_sha384_test.json",
-        |pk, msg, sig| pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok(),
         "SHA-384",
         258,
         7,
@@ -195,7 +194,7 @@ fn rsa_signature_sha384_wycheproof_vectors() {
 fn rsa_signature_sha512_wycheproof_vectors() {
     run_verify_vectors(
         "rsa_signature_2048_sha512_test.json",
-        |pk, msg, sig| pkcs1_v1_5_verify_sha512(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok(),
         "SHA-512",
         259,
         8,
@@ -235,18 +234,4 @@ fn pkcs1_v1_5_sha384_sha512_trait_conformance_suite() {
         SK_LEN,
         SIG_LEN,
     >(fixed_keypair, false);
-}
-
-#[test]
-fn pkcs1_v1_5_sha384_sha512_trait_matches_free_functions() {
-    let (_, sk) = fixed_keypair().unwrap();
-    let msg = b"same message, both APIs";
-    assert_eq!(
-        RSASSA_PKCS1_v1_5_SHA384::sign(&sk, msg, None).unwrap(),
-        pkcs1_v1_5_sign_sha384(&sk, msg).unwrap()
-    );
-    assert_eq!(
-        RSASSA_PKCS1_v1_5_SHA512::sign(&sk, msg, None).unwrap(),
-        pkcs1_v1_5_sign_sha512(&sk, msg).unwrap()
-    );
 }

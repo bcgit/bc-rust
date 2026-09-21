@@ -30,6 +30,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::traits::{SignatureVerifier, Signer};
 use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 
 const MSG: &[u8] = b"peak stack usage of RSA sign/verify, held constant across every modulus size";
@@ -105,7 +106,7 @@ fn bench_1024_verify() {
     );
     let msg = bouncycastle::hex::decode("0000000000000000000000000000000000000000").unwrap();
 
-    if rsa_1024::pkcs1_v1_5_verify_sha256(&pk, &msg, &sig).is_ok() {
+    if rsa_1024::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, &msg, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -149,7 +150,7 @@ fn genuine_2048_key() -> rsa_2048::Rsa2048PrivateKey {
 fn bench_2048_sign() {
     eprintln!("RSA-2048/Sign");
     let sk = genuine_2048_key();
-    let sig = rsa_2048::pkcs1_v1_5_sign_sha256(&sk, MSG).unwrap();
+    let sig = rsa_2048::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -157,9 +158,9 @@ fn bench_2048_verify() {
     eprintln!("RSA-2048/Verify");
     let sk = genuine_2048_key();
     let pk = rsa_2048::Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = rsa_2048::pkcs1_v1_5_sign_sha256(&sk, MSG).unwrap();
+    let sig = rsa_2048::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
 
-    if rsa_2048::pkcs1_v1_5_verify_sha256(&pk, MSG, &sig).is_ok() {
+    if rsa_2048::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -263,7 +264,7 @@ fn genuine_8192_key() -> rsa_8192::Rsa8192PrivateKey {
 fn bench_8192_sign() {
     eprintln!("RSA-8192/Sign");
     let sk = genuine_8192_key();
-    let sig = rsa_8192::pkcs1_v1_5_sign_sha256(&sk, MSG).unwrap();
+    let sig = rsa_8192::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -271,9 +272,9 @@ fn bench_8192_verify() {
     eprintln!("RSA-8192/Verify");
     let sk = genuine_8192_key();
     let pk = rsa_8192::Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = rsa_8192::pkcs1_v1_5_sign_sha256(&sk, MSG).unwrap();
+    let sig = rsa_8192::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
 
-    if rsa_8192::pkcs1_v1_5_verify_sha256(&pk, MSG, &sig).is_ok() {
+    if rsa_8192::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");

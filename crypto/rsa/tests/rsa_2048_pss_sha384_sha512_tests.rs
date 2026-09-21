@@ -13,12 +13,22 @@ use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_2048::{
     PK_LEN, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa2048PrivateKey, Rsa2048PublicKey, SIG_LEN,
-    SK_LEN, pss_sign_sha384, pss_sign_sha384_with_salt, pss_sign_sha512, pss_sign_sha512_with_salt,
-    pss_verify_sha384, pss_verify_sha512,
+    SK_LEN,
 };
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
+
+/// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
+/// deterministic PSS mode, for tests against a known salt. Returns `sign_final`'s `Result`.
+macro_rules! sign_with_salt {
+    ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
+        let mut signer = <$ty>::sign_init($sk, None).unwrap();
+        signer.set_signer_salt($salt);
+        signer.sign_update($msg);
+        signer.sign_final()
+    }};
+}
 
 const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
 const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
@@ -93,9 +103,10 @@ fn pss_sha384_fixed_salt_round_trips() {
     let sk = genuine_key();
     let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x42u8; 48];
-    let sig = pss_sign_sha384_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
-    pss_verify_sha384(&pk, b"hello", &sig).expect("must verify");
-    assert!(pss_verify_sha384(&pk, b"goodbye", &sig).is_err());
+    let sig =
+        sign_with_salt!(RSASSA_PSS_SHA384, &sk, b"hello", salt).expect("signing must succeed");
+    RSASSA_PSS_SHA384::verify(&pk, b"hello", None, &sig).expect("must verify");
+    assert!(RSASSA_PSS_SHA384::verify(&pk, b"goodbye", None, &sig).is_err());
 }
 
 #[test]
@@ -103,11 +114,13 @@ fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
     let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
-    let sig_a = pss_sign_sha384(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b = pss_sign_sha384(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a =
+        RSASSA_PSS_SHA384::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b =
+        RSASSA_PSS_SHA384::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
     assert_ne!(sig_a, sig_b);
-    pss_verify_sha384(&pk, b"hello", &sig_a).expect("sig_a must verify");
-    pss_verify_sha384(&pk, b"hello", &sig_b).expect("sig_b must verify");
+    RSASSA_PSS_SHA384::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
+    RSASSA_PSS_SHA384::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
@@ -115,9 +128,10 @@ fn pss_sha512_fixed_salt_round_trips() {
     let sk = genuine_key();
     let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x42u8; 64];
-    let sig = pss_sign_sha512_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
-    pss_verify_sha512(&pk, b"hello", &sig).expect("must verify");
-    assert!(pss_verify_sha512(&pk, b"goodbye", &sig).is_err());
+    let sig =
+        sign_with_salt!(RSASSA_PSS_SHA512, &sk, b"hello", salt).expect("signing must succeed");
+    RSASSA_PSS_SHA512::verify(&pk, b"hello", None, &sig).expect("must verify");
+    assert!(RSASSA_PSS_SHA512::verify(&pk, b"goodbye", None, &sig).is_err());
 }
 
 #[test]
@@ -125,11 +139,13 @@ fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
     let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
-    let sig_a = pss_sign_sha512(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b = pss_sign_sha512(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a =
+        RSASSA_PSS_SHA512::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b =
+        RSASSA_PSS_SHA512::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
     assert_ne!(sig_a, sig_b);
-    pss_verify_sha512(&pk, b"hello", &sig_a).expect("sig_a must verify");
-    pss_verify_sha512(&pk, b"hello", &sig_b).expect("sig_b must verify");
+    RSASSA_PSS_SHA512::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
+    RSASSA_PSS_SHA512::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
@@ -162,7 +178,7 @@ fn rsa_pss_sha384_mgf1_48_wycheproof_vectors() {
                 continue;
             };
 
-            let verified = pss_verify_sha384(&pk, &msg, &sig).is_ok();
+            let verified = RSASSA_PSS_SHA384::verify(&pk, &msg, None, &sig).is_ok();
             match test["result"].as_str().unwrap() {
                 "valid" => {
                     assert!(verified, "tcId {tc_id}: expected valid, got invalid");
@@ -216,14 +232,16 @@ fn pss_sha384_sha512_trait_conformance_suite() {
 }
 
 #[test]
-fn pss_sha384_sha512_trait_and_free_functions_cross_verify() {
+fn pss_sha384_and_sha512_reject_each_others_signatures() {
     let (pk, sk) = fixed_keypair().unwrap();
     let msg = b"PSS across both APIs";
-    pss_verify_sha384(&pk, msg, &RSASSA_PSS_SHA384::sign(&sk, msg, None).unwrap()).unwrap();
-    pss_verify_sha512(&pk, msg, &RSASSA_PSS_SHA512::sign(&sk, msg, None).unwrap()).unwrap();
+    RSASSA_PSS_SHA384::verify(&pk, msg, None, &RSASSA_PSS_SHA384::sign(&sk, msg, None).unwrap())
+        .unwrap();
+    RSASSA_PSS_SHA512::verify(&pk, msg, None, &RSASSA_PSS_SHA512::sign(&sk, msg, None).unwrap())
+        .unwrap();
     let mut rng = DefaultRNG::default();
-    let free_384 = pss_sign_sha384(&sk, msg, &mut rng).unwrap();
-    let free_512 = pss_sign_sha512(&sk, msg, &mut rng).unwrap();
+    let free_384 = RSASSA_PSS_SHA384::sign_randomized(&sk, msg, &mut rng).unwrap();
+    let free_512 = RSASSA_PSS_SHA512::sign_randomized(&sk, msg, &mut rng).unwrap();
     RSASSA_PSS_SHA384::verify(&pk, msg, None, &free_384).unwrap();
     RSASSA_PSS_SHA512::verify(&pk, msg, None, &free_512).unwrap();
     // The two hash pairings are distinct encodings: neither accepts the other's signature.

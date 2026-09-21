@@ -5,11 +5,11 @@
 //! the hash function `H` (`H_LEN`/`T_LEN` sized to it) -- a concrete modulus size wires these to
 //! literals (e.g. RSA-2048/SHA-256 in [`crate::rsa_2048`]) rather than a caller choosing them.
 //!
-//! Two shapes of the same operation: the free functions [`sign`]/[`verify`] take a whole message,
-//! and [`RSASSA_PKCS1_v1_5`] implements `bouncycastle_core`'s [`Signer`]/[`SignatureVerifier`]
-//! traits over the same widths, adding the streaming (`sign_init`/`sign_update`/`sign_final`)
-//! form and a `&[u8]`-typed signature on the verify side. Both go through [`sign_from_hash`]/
-//! [`verify_from_hash`], so there is exactly one encoding path to test.
+//! [`RSASSA_PKCS1_v1_5`] implements `bouncycastle_core`'s [`Signer`]/[`SignatureVerifier`] traits
+//! over those widths -- one-shot and streaming (`sign_init`/`sign_update`/`sign_final`), with a
+//! `&[u8]`-typed signature on the verify side -- on top of [`sign_from_hash`]/[`verify_from_hash`],
+//! which take the message hash rather than the message and are the pre-hash entry points for a
+//! caller that has already computed it.
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use crate::emsa_pkcs1_v1_5::{emsa_pkcs1_v1_5_encode_from_hash, emsa_pkcs1_v1_5_verify_from_hash};
@@ -22,7 +22,7 @@ use bouncycastle_core::traits::{
 };
 
 /// Streaming state for RSASSA-PKCS1-v1_5's [`Signer`] and [`SignatureVerifier`] impls, at the
-/// widths the const parameters fix (the same list [`sign`] takes, plus the key encoding lengths
+/// widths the const parameters fix (the list [`sign_from_hash`] takes, plus the key encoding lengths
 /// `SK_LEN`/`PK_LEN` the key traits are indexed by). One type serves both roles, mirroring
 /// `bouncycastle_ecdsa::ecdsa_p256::ECDSAP256`: exactly one of `sk`/`pk` is `Some`, chosen by
 /// which trait's `_init` constructed this value, and calling the other trait's `_final` on it is
@@ -173,51 +173,27 @@ where
         // RFC 8017 §8.2.2 step 1: "Length checking: If the length of the signature S is not k
         // octets, output "invalid signature" and stop." -- the one place in this crate that step
         // is a runtime check, since the trait hands over a `&[u8]` rather than the `[u8; K_LEN]`
-        // the free functions take.
+        // [`verify_from_hash`] takes.
         let sig: &[u8; K_LEN] =
             sig.try_into().map_err(|_| SignatureError::SignatureVerificationFailed)?;
         let mut digest = [0u8; H_LEN];
         self.hash.do_final_out(&mut digest);
         // Step 2.b: "If RSAVP1 outputs "signature representative out of range", output "invalid
-        // signature" and stop." The free function [`verify`] deliberately lets RSAVP1's own error
-        // through instead (see its docs); the trait's contract is the RFC's -- one "invalid
-        // signature" answer for every way a signature can fail -- so it is folded in here.
+        // signature" and stop." [`verify_from_hash`] deliberately lets RSAVP1's own error through
+        // instead (see its docs); the trait's contract is the RFC's -- one "invalid signature"
+        // answer for every way a signature can fail -- so it is folded in here.
         verify_from_hash::<H, H_LEN, L, L2, L21, K_LEN>(&pk, &digest, sig)
             .map_err(|_| SignatureError::SignatureVerificationFailed)
     }
 }
 
-/// RSASSA-PKCS1-V1_5-SIGN (RFC 8017 §8.2.1): `S = I2OSP(RSASP1(K, OS2IP(EM)), k)`, where
-/// `EM = EMSA-PKCS1-V1_5-ENCODE(M, k)`. Step 1's two errors ("message too long" -- unreachable
-/// here, since the encoding's own length is fixed at compile time by `K_LEN`, never computed from
-/// `message`'s length -- and "RSA modulus too short") are folded into
-/// [`emsa_pkcs1_v1_5_encode_from_hash`]'s `debug_assert`, not raised here as a runtime error, for
-/// the same reason given there.
-///
-/// Hashes `message` (EMSA-PKCS1-v1_5 step 1) and hands the digest to [`sign_from_hash`].
-pub fn sign<
-    H: Hash + HashAlgParams + AlgorithmOID + Default,
-    const H_LEN: usize,
-    const T_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    message: &[u8],
-) -> Result<[u8; K_LEN], SignatureError> {
-    let mut digest = [0u8; H_LEN];
-    H::default().hash_out(message, &mut digest);
-    sign_from_hash::<H, H_LEN, T_LEN, L, L2, L21, HALF, HALF2, HALF21, K_LEN>(sk, &digest)
-}
-
-/// [`sign`] given the message's hash `digest` (`H`'s output over the message) instead of the
-/// message itself -- for a caller that hashed the message incrementally, such as a streaming
-/// `Signer`. The `H` bound is only what [`emsa_pkcs1_v1_5_encode_from_hash`] needs to build the
+/// RSASSA-PKCS1-V1_5-SIGN (RFC 8017 §8.2.1), `S = I2OSP(RSASP1(K, OS2IP(EM)), k)` with
+/// `EM = EMSA-PKCS1-V1_5-ENCODE(M, k)`, given the message's hash `digest` (`H`'s output over `M`)
+/// rather than `M` itself: the entry point for a caller that hashed the message incrementally
+/// (the [`Signer`] impl) or already holds the digest. Step 1's two errors ("message too long" --
+/// unreachable, since the encoding's length is fixed at compile time by `K_LEN` -- and "RSA
+/// modulus too short") are folded into [`emsa_pkcs1_v1_5_encode_from_hash`]'s `debug_assert`, not
+/// raised here as a runtime error, for the reason given there. The `H` bound is only what [`emsa_pkcs1_v1_5_encode_from_hash`] needs to build the
 /// `DigestInfo`; no hashing happens here.
 pub fn sign_from_hash<
     H: HashAlgParams + AlgorithmOID,
@@ -240,41 +216,20 @@ pub fn sign_from_hash<
     Ok(be_bytes_from_limbs::<L, K_LEN>(&s))
 }
 
-/// RSASSA-PKCS1-V1_5-VERIFY (RFC 8017 §8.2.2): recovers `EM' = I2OSP(RSAVP1((n, e), OS2IP(S)),
-/// k)` and checks it against `message` via [`emsa_pkcs1_v1_5_verify_from_hash`] -- a decode, not
-/// RFC 8017's own step 4 (re-encode `message` and compare bytes to `EM'`), because a byte
+/// RSASSA-PKCS1-V1_5-VERIFY (RFC 8017 §8.2.2), given the message's hash `digest` rather than the
+/// message (the counterpart of [`sign_from_hash`]): recovers `EM' = I2OSP(RSAVP1((n, e),
+/// OS2IP(S)), k)` and checks it against `digest` via [`emsa_pkcs1_v1_5_verify_from_hash`] -- a
+/// decode, not RFC 8017's own step 4 (re-encode and compare bytes to `EM'`), because a byte
 /// comparison against this crate's own (always-`NULL`-including) encoding would reject an
 /// otherwise-valid signature whose `DigestInfo` omits the `AlgorithmIdentifier`'s `NULL`
-/// parameters -- a real-world leniency [`emsa_pkcs1_v1_5_verify_from_hash`]'s docs explain. Step
-/// 1's length check (`S` must be exactly
-/// `k` octets) doesn't apply: `signature` is already a fixed `K_LEN`-byte array, not an
-/// arbitrary-length octet string, so a wrong length is a compile-time type error at the call site
-/// instead. Step 2's "signature representative out of range" surfaces as [`rsavp1`]'s own `Err`,
-/// propagated directly rather than folded into "invalid signature": a caller working through
-/// CAVP/wycheproof-style vectors needs to tell "malformed input" apart from "well-formed but
-/// wrong", the same distinction RFC 8017 itself draws by giving the range check its own error
-/// text.
-///
-/// Hashes `message` and hands the digest to [`verify_from_hash`].
-pub fn verify<
-    H: Hash + HashAlgParams + AlgorithmOID + Default,
-    const H_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const K_LEN: usize,
->(
-    pk: &RsaPublicKey<L>,
-    message: &[u8],
-    signature: &[u8; K_LEN],
-) -> Result<(), SignatureError> {
-    let mut digest = [0u8; H_LEN];
-    H::default().hash_out(message, &mut digest);
-    verify_from_hash::<H, H_LEN, L, L2, L21, K_LEN>(pk, &digest, signature)
-}
-
-/// [`verify`] given the message's hash `digest` instead of the message -- the counterpart of
-/// [`sign_from_hash`], for a streaming `SignatureVerifier`.
+/// parameters -- a real-world leniency that function's docs explain. Step 1's length check (`S`
+/// must be exactly `k` octets) doesn't apply here: `signature` is a fixed `K_LEN`-byte array, so a
+/// wrong length is a type error at the call site; the [`SignatureVerifier`] impl, which takes a
+/// `&[u8]`, performs it. Step 2's "signature representative out of range" surfaces as
+/// [`rsavp1`]'s own `Err`, propagated directly rather than folded into "invalid signature": a
+/// caller working through CAVP/wycheproof-style vectors needs to tell "malformed input" apart from
+/// "well-formed but wrong", the same distinction RFC 8017 itself draws by giving the range check
+/// its own error text (the trait impl folds it, per step 2.b).
 pub fn verify_from_hash<
     H: AlgorithmOID,
     const H_LEN: usize,

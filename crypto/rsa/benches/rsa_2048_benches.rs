@@ -4,15 +4,15 @@
 //! genuine key is the same one `tests/rsa_2048_pkcs1_v1_5_tests.rs` recovers from Wycheproof's
 //! `rsa_pkcs1_2048_sig_gen_test.json` (see that file for the full, sourced provenance).
 
+use bouncycastle_core::traits::{SignatureVerifier, Signer};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_2048::{
-    Rsa2048PrivateKey, Rsa2048PublicKey, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384,
-    pkcs1_v1_5_sign_sha512, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384,
-    pkcs1_v1_5_verify_sha512, pss_shake128_sign, pss_shake128_verify, pss_sign_sha256,
-    pss_sign_sha384, pss_sign_sha512, pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
+    RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
+    Rsa2048PrivateKey, Rsa2048PublicKey,
 };
 
 const MSG: &[u8] = b"a representative message for benchmarking RSA-2048";
@@ -57,94 +57,139 @@ fn bench_rsa_2048(c: &mut Criterion) {
     let pk = Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
-    let sig_pkcs1_256 = pkcs1_v1_5_sign_sha256(&sk, MSG).unwrap();
-    let sig_pkcs1_384 = pkcs1_v1_5_sign_sha384(&sk, MSG).unwrap();
-    let sig_pkcs1_512 = pkcs1_v1_5_sign_sha512(&sk, MSG).unwrap();
-    let sig_pss_256 = pss_sign_sha256(&sk, MSG, &mut rng).unwrap();
-    let sig_pss_384 = pss_sign_sha384(&sk, MSG, &mut rng).unwrap();
-    let sig_pss_512 = pss_sign_sha512(&sk, MSG, &mut rng).unwrap();
-    let sig_pss_shake128 = pss_shake128_sign(&sk, MSG, &mut rng).unwrap();
+    let sig_pkcs1_256 = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
+    let sig_pkcs1_384 = RSASSA_PKCS1_v1_5_SHA384::sign(&sk, MSG, None).unwrap();
+    let sig_pkcs1_512 = RSASSA_PKCS1_v1_5_SHA512::sign(&sk, MSG, None).unwrap();
+    let sig_pss_256 = RSASSA_PSS_SHA256::sign_randomized(&sk, MSG, &mut rng).unwrap();
+    let sig_pss_384 = RSASSA_PSS_SHA384::sign_randomized(&sk, MSG, &mut rng).unwrap();
+    let sig_pss_512 = RSASSA_PSS_SHA512::sign_randomized(&sk, MSG, &mut rng).unwrap();
+    let sig_pss_shake128 = RSASSA_PSS_SHAKE128::sign_randomized(&sk, MSG, &mut rng).unwrap();
 
     let mut group = c.benchmark_group("rsa_2048");
 
     group.bench_function("pkcs1v15_sign_sha256", |b| {
-        b.iter(|| black_box(pkcs1_v1_5_sign_sha256(black_box(&sk), black_box(MSG)).unwrap()))
+        b.iter(|| {
+            black_box(RSASSA_PKCS1_v1_5_SHA256::sign(black_box(&sk), black_box(MSG), None).unwrap())
+        })
     });
     group.bench_function("pkcs1v15_verify_sha256", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha256(black_box(&pk), black_box(MSG), black_box(&sig_pkcs1_256))
-                .unwrap()
+            RSASSA_PKCS1_v1_5_SHA256::verify(
+                black_box(&pk),
+                black_box(MSG),
+                None,
+                black_box(&sig_pkcs1_256),
+            )
+            .unwrap()
         })
     });
     group.bench_function("pkcs1v15_sign_sha384", |b| {
-        b.iter(|| black_box(pkcs1_v1_5_sign_sha384(black_box(&sk), black_box(MSG)).unwrap()))
+        b.iter(|| {
+            black_box(RSASSA_PKCS1_v1_5_SHA384::sign(black_box(&sk), black_box(MSG), None).unwrap())
+        })
     });
     group.bench_function("pkcs1v15_verify_sha384", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha384(black_box(&pk), black_box(MSG), black_box(&sig_pkcs1_384))
-                .unwrap()
+            RSASSA_PKCS1_v1_5_SHA384::verify(
+                black_box(&pk),
+                black_box(MSG),
+                None,
+                black_box(&sig_pkcs1_384),
+            )
+            .unwrap()
         })
     });
     group.bench_function("pkcs1v15_sign_sha512", |b| {
-        b.iter(|| black_box(pkcs1_v1_5_sign_sha512(black_box(&sk), black_box(MSG)).unwrap()))
+        b.iter(|| {
+            black_box(RSASSA_PKCS1_v1_5_SHA512::sign(black_box(&sk), black_box(MSG), None).unwrap())
+        })
     });
     group.bench_function("pkcs1v15_verify_sha512", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha512(black_box(&pk), black_box(MSG), black_box(&sig_pkcs1_512))
-                .unwrap()
+            RSASSA_PKCS1_v1_5_SHA512::verify(
+                black_box(&pk),
+                black_box(MSG),
+                None,
+                black_box(&sig_pkcs1_512),
+            )
+            .unwrap()
         })
     });
     group.bench_function("pss_sign_sha256", |b| {
         b.iter(|| {
             black_box(
-                pss_sign_sha256(black_box(&sk), black_box(MSG), &mut DefaultRNG::default())
-                    .unwrap(),
+                RSASSA_PSS_SHA256::sign_randomized(
+                    black_box(&sk),
+                    black_box(MSG),
+                    &mut DefaultRNG::default(),
+                )
+                .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_sha256", |b| {
         b.iter(|| {
-            pss_verify_sha256(black_box(&pk), black_box(MSG), black_box(&sig_pss_256)).unwrap()
+            RSASSA_PSS_SHA256::verify(black_box(&pk), black_box(MSG), None, black_box(&sig_pss_256))
+                .unwrap()
         })
     });
     group.bench_function("pss_sign_sha384", |b| {
         b.iter(|| {
             black_box(
-                pss_sign_sha384(black_box(&sk), black_box(MSG), &mut DefaultRNG::default())
-                    .unwrap(),
+                RSASSA_PSS_SHA384::sign_randomized(
+                    black_box(&sk),
+                    black_box(MSG),
+                    &mut DefaultRNG::default(),
+                )
+                .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_sha384", |b| {
         b.iter(|| {
-            pss_verify_sha384(black_box(&pk), black_box(MSG), black_box(&sig_pss_384)).unwrap()
+            RSASSA_PSS_SHA384::verify(black_box(&pk), black_box(MSG), None, black_box(&sig_pss_384))
+                .unwrap()
         })
     });
     group.bench_function("pss_sign_sha512", |b| {
         b.iter(|| {
             black_box(
-                pss_sign_sha512(black_box(&sk), black_box(MSG), &mut DefaultRNG::default())
-                    .unwrap(),
+                RSASSA_PSS_SHA512::sign_randomized(
+                    black_box(&sk),
+                    black_box(MSG),
+                    &mut DefaultRNG::default(),
+                )
+                .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_sha512", |b| {
         b.iter(|| {
-            pss_verify_sha512(black_box(&pk), black_box(MSG), black_box(&sig_pss_512)).unwrap()
+            RSASSA_PSS_SHA512::verify(black_box(&pk), black_box(MSG), None, black_box(&sig_pss_512))
+                .unwrap()
         })
     });
     group.bench_function("pss_sign_shake128", |b| {
         b.iter(|| {
             black_box(
-                pss_shake128_sign(black_box(&sk), black_box(MSG), &mut DefaultRNG::default())
-                    .unwrap(),
+                RSASSA_PSS_SHAKE128::sign_randomized(
+                    black_box(&sk),
+                    black_box(MSG),
+                    &mut DefaultRNG::default(),
+                )
+                .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_shake128", |b| {
         b.iter(|| {
-            pss_shake128_verify(black_box(&pk), black_box(MSG), black_box(&sig_pss_shake128))
-                .unwrap()
+            RSASSA_PSS_SHAKE128::verify(
+                black_box(&pk),
+                black_box(MSG),
+                None,
+                black_box(&sig_pss_shake128),
+            )
+            .unwrap()
         })
     });
 
