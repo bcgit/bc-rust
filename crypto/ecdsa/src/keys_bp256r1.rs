@@ -6,8 +6,8 @@
 
 use crate::extra_bits_bp256r1::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_common::DerivePublicKey;
-use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::errors::{RNGError, SignatureError};
+use bouncycastle_core::traits::{RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::bp256r1::Bp256r1FieldElement;
 use bouncycastle_ec::bp256r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::bp256r1_scalar::{Bp256r1Scalar, N_LIMBS};
@@ -131,10 +131,20 @@ pub fn keygen() -> Result<(ECDSABp256r1PublicKey, ECDSABp256r1PrivateKey), Signa
     keygen_from_rng(&mut DefaultRNG::default())
 }
 
-/// As [`keygen`], but sources the DRBG output from the caller-provided RNG.
+/// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must
+/// offer a security strength of at least 128 bits: FIPS 186-5 Appendix A.2.1 step 3 requires
+/// a DRBG whose security strength is "not less than" the one SP 800-57 Part 1 Rev. 5's
+/// Table 2 associates with brainpoolP256r1's 256-bit order (`f = 256-383` in that table's ECC column, giving
+/// 128-bit security).
 pub fn keygen_from_rng(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSABp256r1PublicKey, ECDSABp256r1PrivateKey), SignatureError> {
+    // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security
+    // strength brainpoolP256r1's 256-bit order calls for (SP 800-57 Part 1 Rev. 5, Table 2: 128 bits).
+    if rng.security_strength() < SecurityStrength::_128bit {
+        return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
+    }
+
     // Raw DRBG output, reduced below into the private key / per-message secret: held in
     // `Secret` so it is scrubbed when this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();

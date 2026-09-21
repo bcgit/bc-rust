@@ -363,6 +363,54 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
     assert_eq!(pk1, pk2);
 }
 
+/// FIPS 186-5 Appendix A.2.1 step 3: an RNG weaker than the 128-bit security strength
+/// SM2's order calls for (SP 800-57 Part 1 Rev. 5, Table 2) is refused rather than silently
+/// used.
+#[test]
+fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
+    struct WeakRng;
+    impl RNG for WeakRng {
+        fn add_seed_keymaterial(
+            &mut self,
+            _additional_seed: &dyn bouncycastle_core::key_material::KeyMaterialTrait,
+        ) -> Result<(), bouncycastle_core::errors::RNGError> {
+            Ok(())
+        }
+        fn next_int(&mut self) -> Result<u32, bouncycastle_core::errors::RNGError> {
+            Ok(0)
+        }
+        fn next_bytes(
+            &mut self,
+            len: usize,
+        ) -> Result<Vec<u8>, bouncycastle_core::errors::RNGError> {
+            Ok(vec![0u8; len])
+        }
+        fn next_bytes_out(
+            &mut self,
+            out: &mut [u8],
+        ) -> Result<usize, bouncycastle_core::errors::RNGError> {
+            out.fill(0);
+            Ok(out.len())
+        }
+        fn fill_keymaterial_out(
+            &mut self,
+            _out: &mut dyn bouncycastle_core::key_material::KeyMaterialTrait,
+        ) -> Result<usize, bouncycastle_core::errors::RNGError> {
+            unimplemented!()
+        }
+        fn security_strength(&self) -> bouncycastle_core::traits::SecurityStrength {
+            bouncycastle_core::traits::SecurityStrength::None
+        }
+    }
+
+    assert!(matches!(
+        bouncycastle_sm2::keys::keygen_from_rng(&mut WeakRng),
+        Err(SignatureError::RNGError(
+            bouncycastle_core::errors::RNGError::SecurityStrengthInsufficientForAlgorithm
+        ))
+    ));
+}
+
 /// `draft-shen-sm2-ecdsa-02` §5.2.2 step B1: `r'` and `s'` must each be in `[1, n-1]`, rejected
 /// rather than reduced. Each half of a valid signature is replaced in turn by `0`, by `n`, and by
 /// the all-ones pattern; the untouched half stays valid, so only the range check can be what
