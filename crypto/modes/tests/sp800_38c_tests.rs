@@ -574,10 +574,7 @@ fn undersized_output_buffers_are_refused() {
     let mut ct = [0u8; 40];
     Enc::encrypt(&k, &nonce, &[], &plaintext, &mut ct).expect("encryption");
     let mut too_small = [0u8; 23];
-    assert_eq!(
-        buffer_len_error(Dec::decrypt(&k, &nonce, &[], &ct, &mut too_small)),
-        Some(24)
-    );
+    assert_eq!(buffer_len_error(Dec::decrypt(&k, &nonce, &[], &ct, &mut too_small)), Some(24));
 }
 
 /// A key of the wrong [`KeyType`] is rejected by every entry point, in both directions.

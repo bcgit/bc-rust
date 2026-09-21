@@ -696,9 +696,9 @@ pub use ecb::Ecb;
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor,
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
+    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
 
