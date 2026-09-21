@@ -23,7 +23,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// This and the three that follow were the whole of the former `SymmetricCipher` trait, which
     /// every symmetric cipher was once expected to implement. They now live here, because an AEAD
     /// is the only kind of cipher left that needs them: a block mode reaches the same shape through
-    /// [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] and the padding adapters, and a
+    /// [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] and the padding adapters, and a
     /// stream mode gets those traits directly.
     ///
     /// These are meant to be simple, easy to use, secure and fool-proof, at the cost of producing a
@@ -1200,7 +1200,7 @@ pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG
 
 /// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose
 /// notes on in-place operation, arbitrary lengths, the `Result` and the free
-/// [`SimpleCipherDecryptor`] impl all apply here too.
+/// [`SymmetricCipherDecryptor`] impl all apply here too.
 pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     Algorithm + Sized
 {
@@ -1241,7 +1241,7 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 ///
 /// # You also get the arbitrary-length API for free
 ///
-/// Every implementor is automatically a [`SimpleCipherEncryptor`] with `FINAL_LEN = 0`, by a
+/// Every implementor is automatically a [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`, by a
 /// blanket impl written in terms of [`do_encrypt`](Self::do_encrypt). So an implementor writes the
 /// three methods below and a caller may still use `encrypt_out`, `do_update_out` and the rest --
 /// the separate-output view that the padding adapters present -- and hold a stream mode through the
@@ -1383,7 +1383,7 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
 }
 
 /// The decryption half of a symmetric cipher's arbitrary-length API. See
-/// [`SimpleCipherEncryptor`] for the shape of the API and the meaning of `FINAL_LEN`; this is
+/// [`SymmetricCipherEncryptor`] for the shape of the API and the meaning of `FINAL_LEN`; this is
 /// its mirror image, and the two are implemented by paired types.
 ///
 /// Decryption is not the exact mirror of encryption in one respect: the last `FINAL_LEN` bytes a
@@ -1398,14 +1398,14 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// [`do_decrypt_init`](Self::do_decrypt_init), [`update_out_len`](Self::update_out_len),
 /// [`do_update_out`](Self::do_update_out), [`do_final`](Self::do_final) and
 /// [`decrypt_out_max_len`](Self::decrypt_out_max_len).
-pub trait SimpleCipherDecryptor<
+pub trait SymmetricCipherDecryptor<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const FINAL_LEN: usize,
 >: Algorithm + Sized
 {
     /// Begins a streaming decryption from the init data returned by
-    /// [`SimpleCipherEncryptor::do_encrypt_init`].
+    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     ///
     /// # Errors
     /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
@@ -1417,7 +1417,22 @@ pub trait SimpleCipherDecryptor<
     ) -> Result<Self, SymmetricCipherError>;
 
     /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
-    /// given `input_len` more bytes of ciphertext. Depends on what is already buffered.
+    /// given `input_len` more bytes of ciphertext, so a caller can size the `plaintext` buffer for
+    /// that call before making it.
+    ///
+    /// It is not simply `input_len`: a decryptor holds back the tail of what it has seen -- the
+    /// block that might carry the padding, the bytes that might be the tag -- so how much a call
+    /// releases depends on what is already buffered, which is why this takes `&self` rather than
+    /// being a function of the length alone.
+    ///
+    /// Calling it is optional. A caller that would rather not compute lengths can pass whatever
+    /// buffer it has: if that buffer is too small the call fails with
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] carrying the same number, having consumed
+    /// nothing, so retrying with a buffer at least that long produces exactly what the refused
+    /// call would have. This is for the caller who wants to allocate once up front -- one buffer
+    /// of `update_out_len(CHUNK)` bytes for a loop feeding fixed-size chunks -- rather than
+    /// discover the size from a failure. For the whole message in one call, see
+    /// [`decrypt_out_max_len`](Self::decrypt_out_max_len).
     fn update_out_len(&self, input_len: usize) -> usize;
 
     /// Streaming: consumes `ciphertext`, writing every plaintext byte that can be released so far
@@ -1430,7 +1445,7 @@ pub trait SimpleCipherDecryptor<
     /// everything released plus the data part of [`do_final`](Self::do_final) is the plaintext.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
     /// consumed in that case.
     fn do_update_out(
@@ -1471,7 +1486,7 @@ pub trait SimpleCipherDecryptor<
     /// Provided as `do_decrypt_init`, one `do_update_out` and `do_final`.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is too short, checked
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn decrypt_out(
         key: &KeyMaterial<KEY_LEN>,
@@ -1481,7 +1496,7 @@ pub trait SimpleCipherDecryptor<
     ) -> Result<usize, SymmetricCipherError> {
         let needed = Self::decrypt_out_max_len(ciphertext.len());
         if plaintext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("plaintext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let mut dec = Self::do_decrypt_init(key, init_data)?;
         let written = dec.do_update_out(ciphertext, plaintext)?;
@@ -1528,14 +1543,14 @@ pub trait SimpleCipherDecryptor<
 /// are provided over the streaming methods. An implementor writes only the two `_init`
 /// constructors, [`update_out_len`](Self::update_out_len), [`do_update_out`](Self::do_update_out),
 /// [`do_final`](Self::do_final) and [`encrypt_out_len`](Self::encrypt_out_len).
-pub trait SimpleCipherEncryptor<
+pub trait SymmetricCipherEncryptor<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const FINAL_LEN: usize,
 >: Algorithm + Sized
 {
     /// Begins a streaming encryption, returning the encryptor and the generated init data (IV or
-    /// nonce), which the recipient needs for [`SimpleCipherDecryptor::do_decrypt_init`]. Sources
+    /// nonce), which the recipient needs for [`SymmetricCipherDecryptor::do_decrypt_init`]. Sources
     /// randomness from the library's default OS-backed RNG.
     ///
     /// # Errors
@@ -1553,7 +1568,21 @@ pub trait SimpleCipherEncryptor<
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
     /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
-    /// given `input_len` more bytes of plaintext. Depends on what is already buffered.
+    /// given `input_len` more bytes of plaintext, so a caller can size the `ciphertext` buffer for
+    /// that call before making it.
+    ///
+    /// It is not simply `input_len`: a cipher that works a block at a time buffers a partial block
+    /// until it is full, so how much a call emits depends on what is already buffered, which is
+    /// why this takes `&self` rather than being a function of the length alone.
+    ///
+    /// Calling it is optional. A caller that would rather not compute lengths can pass whatever
+    /// buffer it has: if that buffer is too small the call fails with
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] carrying the same number, having consumed
+    /// nothing, so retrying with a buffer at least that long produces exactly what the refused
+    /// call would have. This is for the caller who wants to allocate once up front -- one buffer
+    /// of `update_out_len(CHUNK)` bytes for a loop feeding fixed-size chunks -- rather than
+    /// discover the size from a failure. For the whole message in one call, see
+    /// [`encrypt_out_len`](Self::encrypt_out_len).
     fn update_out_len(&self, input_len: usize) -> usize;
 
     /// Streaming: consumes `plaintext`, writing every ciphertext byte that can be produced so far
@@ -1562,7 +1591,7 @@ pub trait SimpleCipherEncryptor<
     /// is equivalent to one call over the concatenation.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
     /// consumed in that case.
     fn do_update_out(
@@ -1603,7 +1632,7 @@ pub trait SimpleCipherEncryptor<
     /// Provided as `do_encrypt_init`, one `do_update_out` and `do_final`.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is too short, checked
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn encrypt_out(
         key: &KeyMaterial<KEY_LEN>,
@@ -1612,7 +1641,7 @@ pub trait SimpleCipherEncryptor<
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         let needed = Self::encrypt_out_len(plaintext.len());
         if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
         let written = enc.do_update_out(plaintext, ciphertext)?;
@@ -1631,7 +1660,7 @@ pub trait SimpleCipherEncryptor<
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         let needed = Self::encrypt_out_len(plaintext.len());
         if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
         let written = enc.do_update_out(plaintext, ciphertext)?;
@@ -1654,11 +1683,11 @@ pub trait SimpleCipherEncryptor<
     }
 }
 
-/// Every stream cipher is also a [`SimpleCipherEncryptor`] with `FINAL_LEN = 0`.
+/// Every stream cipher is also a [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`.
 ///
 /// The two traits describe the same operation at different granularities. [`StreamCipherEncryptor`]
 /// is the in-place view -- one buffer, transformed where it lies -- and
-/// [`SimpleCipherEncryptor`] is the separate-output view that the padding adapters and the AEAD
+/// [`SymmetricCipherEncryptor`] is the separate-output view that the padding adapters and the AEAD
 /// ciphers share. A stream cipher can offer the second in terms of the first, because it changes
 /// neither the length of its data nor anything at the end of the message: `update_out_len` is the
 /// identity, `encrypt_out_len` is the identity, and `do_final` has nothing to produce, which is
@@ -1674,7 +1703,7 @@ pub trait SimpleCipherEncryptor<
 /// `<Cfb<..> as StreamCipherEncryptor<..>>::do_encrypt_init(&key)` -- though either resolves to the
 /// same function.
 impl<T, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
-    SimpleCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
+    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
 where
     T: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
 {
@@ -1701,7 +1730,7 @@ where
     /// offer.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// `plaintext`, checked before anything is consumed; otherwise whatever `do_encrypt` returns.
     fn do_update_out(
         &mut self,
@@ -1709,10 +1738,7 @@ where
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "ciphertext",
-                plaintext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
@@ -1736,10 +1762,10 @@ where
     }
 }
 
-/// Every stream cipher is also a [`SimpleCipherDecryptor`] with `FINAL_LEN = 0`. The mirror of
+/// Every stream cipher is also a [`SymmetricCipherDecryptor`] with `FINAL_LEN = 0`. The mirror of
 /// the [`StreamCipherEncryptor`] blanket impl above; see it for why this exists.
 impl<T, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
-    SimpleCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
+    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0> for T
 where
     T: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
 {
@@ -1759,7 +1785,7 @@ where
     /// input untouched.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// `ciphertext`, checked before anything is consumed; otherwise whatever `do_decrypt` returns.
     fn do_update_out(
         &mut self,
@@ -1767,10 +1793,7 @@ where
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "plaintext",
-                ciphertext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
         }
         let out = &mut plaintext[..ciphertext.len()];
         out.copy_from_slice(ciphertext);
