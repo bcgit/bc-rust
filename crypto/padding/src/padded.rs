@@ -104,7 +104,7 @@ where
     ) -> Result<usize, SymmetricCipherError> {
         let out_len = self.update_out_len(plaintext.len());
         if ciphertext.len() < out_len {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", out_len));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(out_len));
         }
         // out_len is a multiple of BLOCK_LEN, so the remainder of this split is empty.
         let (mut out_blocks, _) = ciphertext[..out_len].as_chunks_mut::<BLOCK_LEN>();
@@ -246,7 +246,7 @@ where
     ) -> Result<usize, SymmetricCipherError> {
         let out_len = self.update_out_len(ciphertext.len());
         if plaintext.len() < out_len {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("plaintext", out_len));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(out_len));
         }
         let (mut out_blocks, _) = plaintext[..out_len].as_chunks_mut::<BLOCK_LEN>();
         let mut ciphertext = ciphertext;

@@ -1383,7 +1383,22 @@ pub trait SymmetricCipherDecryptor<
     ) -> Result<Self, SymmetricCipherError>;
 
     /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
-    /// given `input_len` more bytes of ciphertext. Depends on what is already buffered.
+    /// given `input_len` more bytes of ciphertext, so a caller can size the `plaintext` buffer for
+    /// that call before making it.
+    ///
+    /// It is not simply `input_len`: a decryptor holds back the tail of what it has seen -- the
+    /// block that might carry the padding, the bytes that might be the tag -- so how much a call
+    /// releases depends on what is already buffered, which is why this takes `&self` rather than
+    /// being a function of the length alone.
+    ///
+    /// Calling it is optional. A caller that would rather not compute lengths can pass whatever
+    /// buffer it has: if that buffer is too small the call fails with
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] carrying the same number, having consumed
+    /// nothing, so retrying with a buffer at least that long produces exactly what the refused
+    /// call would have. This is for the caller who wants to allocate once up front -- one buffer
+    /// of `update_out_len(CHUNK)` bytes for a loop feeding fixed-size chunks -- rather than
+    /// discover the size from a failure. For the whole message in one call, see
+    /// [`decrypt_out_max_len`](Self::decrypt_out_max_len).
     fn update_out_len(&self, input_len: usize) -> usize;
 
     /// Streaming: consumes `ciphertext`, writing every plaintext byte that can be released so far
@@ -1396,7 +1411,7 @@ pub trait SymmetricCipherDecryptor<
     /// everything released plus the data part of [`do_final`](Self::do_final) is the plaintext.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
     /// consumed in that case.
     fn do_update_out(
@@ -1437,7 +1452,7 @@ pub trait SymmetricCipherDecryptor<
     /// Provided as `do_decrypt_init`, one `do_update_out` and `do_final`.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is too short, checked
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn decrypt_out(
         key: &KeyMaterial<KEY_LEN>,
@@ -1447,7 +1462,7 @@ pub trait SymmetricCipherDecryptor<
     ) -> Result<usize, SymmetricCipherError> {
         let needed = Self::decrypt_out_max_len(ciphertext.len());
         if plaintext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("plaintext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let mut dec = Self::do_decrypt_init(key, init_data)?;
         let written = dec.do_update_out(ciphertext, plaintext)?;
@@ -1519,7 +1534,21 @@ pub trait SymmetricCipherEncryptor<
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
     /// The exact number of bytes the next [`do_update_out`](Self::do_update_out) will write if
-    /// given `input_len` more bytes of plaintext. Depends on what is already buffered.
+    /// given `input_len` more bytes of plaintext, so a caller can size the `ciphertext` buffer for
+    /// that call before making it.
+    ///
+    /// It is not simply `input_len`: a cipher that works a block at a time buffers a partial block
+    /// until it is full, so how much a call emits depends on what is already buffered, which is
+    /// why this takes `&self` rather than being a function of the length alone.
+    ///
+    /// Calling it is optional. A caller that would rather not compute lengths can pass whatever
+    /// buffer it has: if that buffer is too small the call fails with
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] carrying the same number, having consumed
+    /// nothing, so retrying with a buffer at least that long produces exactly what the refused
+    /// call would have. This is for the caller who wants to allocate once up front -- one buffer
+    /// of `update_out_len(CHUNK)` bytes for a loop feeding fixed-size chunks -- rather than
+    /// discover the size from a failure. For the whole message in one call, see
+    /// [`encrypt_out_len`](Self::encrypt_out_len).
     fn update_out_len(&self, input_len: usize) -> usize;
 
     /// Streaming: consumes `plaintext`, writing every ciphertext byte that can be produced so far
@@ -1528,7 +1557,7 @@ pub trait SymmetricCipherEncryptor<
     /// is equivalent to one call over the concatenation.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// [`update_out_len`](Self::update_out_len), carrying the required length. Nothing is
     /// consumed in that case.
     fn do_update_out(
@@ -1569,7 +1598,7 @@ pub trait SymmetricCipherEncryptor<
     /// Provided as `do_encrypt_init`, one `do_update_out` and `do_final`.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is too short, checked
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn encrypt_out(
         key: &KeyMaterial<KEY_LEN>,
@@ -1578,7 +1607,7 @@ pub trait SymmetricCipherEncryptor<
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         let needed = Self::encrypt_out_len(plaintext.len());
         if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
         let written = enc.do_update_out(plaintext, ciphertext)?;
@@ -1597,7 +1626,7 @@ pub trait SymmetricCipherEncryptor<
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
         let needed = Self::encrypt_out_len(plaintext.len());
         if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
         let written = enc.do_update_out(plaintext, ciphertext)?;
@@ -1667,7 +1696,7 @@ where
     /// offer.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// `plaintext`, checked before anything is consumed; otherwise whatever `do_encrypt` returns.
     fn do_update_out(
         &mut self,
@@ -1675,10 +1704,7 @@ where
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "ciphertext",
-                plaintext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
@@ -1725,7 +1751,7 @@ where
     /// input untouched.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is shorter than
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// `ciphertext`, checked before anything is consumed; otherwise whatever `do_decrypt` returns.
     fn do_update_out(
         &mut self,
@@ -1733,10 +1759,7 @@ where
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "plaintext",
-                ciphertext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
         }
         let out = &mut plaintext[..ciphertext.len()];
         out.copy_from_slice(ciphertext);

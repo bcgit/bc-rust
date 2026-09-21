@@ -206,14 +206,14 @@ impl TestFrameworkSymmetricCipher {
         let need = E::encrypt_out_len(len);
         let mut short = vec![0u8; need - 1];
         match E::encrypt_out(&key, msg, &mut short) {
-            Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+            Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
             other => panic!("encrypt_out into a short buffer: {other:?}"),
         }
         let need = D::decrypt_out_max_len(ct_len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
             match D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut short) {
-                Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("decrypt_out into a short buffer: {other:?}"),
             }
         }
@@ -222,7 +222,7 @@ impl TestFrameworkSymmetricCipher {
         if need > 0 {
             let mut short = vec![0u8; need - 1];
             match enc.do_update_out(msg, &mut short) {
-                Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("do_update_out into a short buffer: {other:?}"),
             }
         }

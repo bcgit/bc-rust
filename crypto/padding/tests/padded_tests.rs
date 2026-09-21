@@ -267,14 +267,14 @@ fn output_buffer_too_small_reports_required_length() {
 
     let mut small = [0u8; 2 * B];
     match Enc::encrypt_out(&key, &pt, &mut small) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, need)) => assert_eq!(need, 3 * B),
+        Err(SymmetricCipherError::OutputBufferTooSmall(need)) => assert_eq!(need, 3 * B),
         other => panic!("{other:?}"),
     }
 
     let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
     let mut tiny = [0u8; B - 1];
     match enc.do_update_out(&pt, &mut tiny) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, need)) => assert_eq!(need, 2 * B),
+        Err(SymmetricCipherError::OutputBufferTooSmall(need)) => assert_eq!(need, 2 * B),
         other => panic!("{other:?}"),
     }
     drop(enc);
@@ -282,7 +282,7 @@ fn output_buffer_too_small_reports_required_length() {
     let ct = [0u8; 3 * B];
     let mut small = [0u8; 3 * B - 2];
     match Dec::decrypt_out(&key, &iv, &ct, &mut small) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, need)) => {
+        Err(SymmetricCipherError::OutputBufferTooSmall(need)) => {
             assert_eq!(need, 3 * B - 1)
         }
         other => panic!("{other:?}"),
