@@ -2,8 +2,9 @@
 //! generation function -- `id-RSASSA-PSS-SHAKE128`/`id-RSASSA-PSS-SHAKE256` (RFC 8702 §3.2.1).
 //! Otherwise identical to [`crate::rsassa_pss`] (RFC 8017 §8.1): same RSASP1/RSAVP1 orchestration,
 //! same fresh-salt-per-signature approach, just built on [`crate::emsa_pss_shake`] in place of
-//! [`crate::emsa_pss`] -- and the same free-function/[`RSASSA_PSS_SHAKE`]-trait-type split,
-//! with `X: XOF` in place of `H: Hash` and no `SEED_LEN` (there is no MGF1 counter to size).
+//! [`crate::emsa_pss`] -- and the same [`RSASSA_PSS_SHAKE`] trait type over `*_from_hash`
+//! functions, with `X: XOF` in place of `H: Hash` and no `SEED_LEN` (there is no MGF1 counter to
+//! size).
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use crate::emsa_pss_shake::{emsa_pss_encode_shake_from_hash, emsa_pss_verify_shake_from_hash};
@@ -19,7 +20,7 @@ use bouncycastle_rng::DefaultRNG;
 /// [`crate::rsassa_pss::RSASSA_PSS`] (whose docs cover the shared behaviour, including where the
 /// salt comes from and the [`Self::sign_randomized`]/[`Self::set_signer_salt`] ways to control
 /// it) built on the SHAKE-native encoding instead. `X`'s `Hash` methods (a `XOF` is a `Hash`)
-/// absorb the streamed message; its `H_LEN`-byte output is `mHash`, as in the free functions.
+/// absorb the streamed message; its `H_LEN`-byte output is `mHash`.
 /// Concrete pairings are aliases such as `crate::rsa_2048::RSASSA_PSS_SHAKE128`.
 #[allow(non_camel_case_types)]
 pub struct RSASSA_PSS_SHAKE<
@@ -281,50 +282,10 @@ where
     }
 }
 
-/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) with the salt supplied directly rather than drawn from an
-/// RNG, mirroring [`crate::rsassa_pss::sign_with_salt`]: EMSA-PSS is randomized only in its choice
-/// of salt, so fixing it makes this deterministic and directly testable. [`sign`] is the
-/// RNG-backed entry point real callers want. Hashes `message` (EMSA-PSS step 2) and hands `mHash`
-/// to [`sign_from_hash_with_salt`].
-pub fn sign_with_salt<
-    X: XOF + Default,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    message: &[u8],
-    salt: &[u8; S_LEN],
-) -> Result<[u8; K_LEN], SignatureError> {
-    let mut m_hash = [0u8; H_LEN];
-    X::default().hash_out(message, &mut m_hash);
-    sign_from_hash_with_salt::<
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-    >(sk, &m_hash, salt)
-}
-
-/// [`sign_with_salt`] given the message's hash `m_hash` (`X`'s `H_LEN`-byte output over the
-/// message) instead of the message itself -- for a caller that hashed the message incrementally,
-/// such as a streaming `Signer`.
+/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) with the salt supplied directly, given the message's hash
+/// `m_hash` (`X`'s `H_LEN`-byte output over the message) rather than the message -- mirroring
+/// [`crate::rsassa_pss::sign_from_hash_with_salt`], and what the [`Signer`] impl's `sign_final`
+/// calls.
 pub fn sign_from_hash_with_salt<
     X: XOF + Default,
     const H_LEN: usize,
@@ -351,37 +312,10 @@ pub fn sign_from_hash_with_salt<
     Ok(be_bytes_from_limbs::<L, K_LEN>(&s))
 }
 
-/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1), drawing a fresh `S_LEN`-byte salt from `rng` for each
-/// signature (step 4 of EMSA-PSS-ENCODE). RFC 8702 §3.2.1 fixes `S_LEN` at 32 bytes for
-/// `id-RSASSA-PSS-SHAKE128` and 64 for `id-RSASSA-PSS-SHAKE256`. Hashes `message` and hands
-/// `mHash` to [`sign_from_hash`].
-pub fn sign<
-    X: XOF + Default,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    message: &[u8],
-    rng: &mut dyn RNG,
-) -> Result<[u8; K_LEN], SignatureError> {
-    let mut m_hash = [0u8; H_LEN];
-    X::default().hash_out(message, &mut m_hash);
-    sign_from_hash::<X, H_LEN, S_LEN, M_PRIME_LEN, DB_LEN, L, L2, L21, HALF, HALF2, HALF21, K_LEN>(
-        sk, &m_hash, rng,
-    )
-}
-
-/// [`sign`] given the message's hash `m_hash` instead of the message: draws the salt from `rng`
-/// (EMSA-PSS-ENCODE step 4) and hands both to [`sign_from_hash_with_salt`].
+/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) given the message's hash `m_hash`: draws a fresh
+/// `S_LEN`-byte salt from `rng` (EMSA-PSS-ENCODE step 4; RFC 8702 §3.2.1 fixes `S_LEN` at 32 bytes
+/// for `id-RSASSA-PSS-SHAKE128` and 64 for `id-RSASSA-PSS-SHAKE256`) and hands both to
+/// [`sign_from_hash_with_salt`].
 pub fn sign_from_hash<
     X: XOF + Default,
     const H_LEN: usize,
@@ -418,33 +352,9 @@ pub fn sign_from_hash<
     >(sk, m_hash, &salt)
 }
 
-/// RSASSA-PSS-VERIFY (RFC 8017 §8.1.2), mirroring [`crate::rsassa_pss::verify`] but built on the
-/// SHAKE-native EMSA-PSS-VERIFY, which recovers the salt from `EM` itself. Hashes `message` and
-/// hands `mHash` to [`verify_from_hash`].
-pub fn verify<
-    X: XOF + Default,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const K_LEN: usize,
->(
-    pk: &RsaPublicKey<L>,
-    message: &[u8],
-    signature: &[u8; K_LEN],
-) -> Result<(), SignatureError> {
-    let mut m_hash = [0u8; H_LEN];
-    X::default().hash_out(message, &mut m_hash);
-    verify_from_hash::<X, H_LEN, S_LEN, M_PRIME_LEN, DB_LEN, L, L2, L21, K_LEN>(
-        pk, &m_hash, signature,
-    )
-}
-
-/// [`verify`] given the message's hash `m_hash` instead of the message -- the counterpart of
-/// [`sign_from_hash`], for a streaming `SignatureVerifier`.
+/// RSASSA-PSS-VERIFY (RFC 8017 §8.1.2) given the message's hash `m_hash`, mirroring
+/// [`crate::rsassa_pss::verify_from_hash`] but built on the SHAKE-native EMSA-PSS-VERIFY, which
+/// recovers the salt from `EM` itself.
 pub fn verify_from_hash<
     X: XOF + Default,
     const H_LEN: usize,

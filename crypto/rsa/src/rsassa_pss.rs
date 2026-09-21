@@ -4,10 +4,11 @@
 //! (`8 + H_LEN + S_LEN`); a concrete modulus size wires these to literals (RSA-2048/SHA-256 in
 //! [`crate::rsa_2048`]).
 //!
-//! As in [`crate::rsassa_pkcs1_v1_5`], the free functions take a whole message (and, for
-//! signing, an explicit RNG or salt) while [`RSASSA_PSS`] implements `bouncycastle_core`'s
-//! [`Signer`]/[`SignatureVerifier`] traits over the same widths, streaming the message and
-//! drawing its salt from the library's default RNG. Both go through the `*_from_hash` functions.
+//! As in [`crate::rsassa_pkcs1_v1_5`], [`RSASSA_PSS`] implements `bouncycastle_core`'s
+//! [`Signer`]/[`SignatureVerifier`] traits over those widths on top of the `*_from_hash`
+//! functions, which take the message hash rather than the message; the salt comes from the
+//! library's default RNG unless the caller supplies one ([`RSASSA_PSS::sign_randomized`],
+//! [`RSASSA_PSS::set_signer_salt`]).
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use crate::emsa_pss::{emsa_pss_encode_from_hash, emsa_pss_verify_from_hash};
@@ -20,7 +21,7 @@ use bouncycastle_core::traits::{
 use bouncycastle_rng::DefaultRNG;
 
 /// Streaming state for RSASSA-PSS's [`Signer`] and [`SignatureVerifier`] impls, at the widths the
-/// const parameters fix (the list [`sign`] takes, plus the key encoding lengths `SK_LEN`/`PK_LEN`
+/// const parameters fix (the list [`sign_from_hash`] takes, plus the key encoding lengths `SK_LEN`/`PK_LEN`
 /// the key traits are indexed by). The same one-type-both-roles shape as
 /// [`crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5`], whose docs cover the `sk`/`pk` arrangement,
 /// the ignored `ctx`, the naming, and the cloned key; concrete pairings are aliases such as
@@ -314,52 +315,10 @@ where
 }
 
 /// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) with the salt supplied directly rather than drawn from an
-/// RNG: EMSA-PSS is randomized only in its choice of salt (§9.1's own note 5), so fixing it makes
-/// this deterministic and directly testable against a known salt. [`sign`] is the RNG-backed
-/// entry point real callers want.
-///
-/// Hashes `message` (EMSA-PSS step 2) and hands `mHash` to [`sign_from_hash_with_salt`].
-pub fn sign_with_salt<
-    H: Hash + Default,
-    const H_LEN: usize,
-    const SEED_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    message: &[u8],
-    salt: &[u8; S_LEN],
-) -> Result<[u8; K_LEN], SignatureError> {
-    let mut m_hash = [0u8; H_LEN];
-    H::default().hash_out(message, &mut m_hash);
-    sign_from_hash_with_salt::<
-        H,
-        H_LEN,
-        SEED_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-    >(sk, &m_hash, salt)
-}
-
-/// [`sign_with_salt`] given the message's hash `m_hash` (`H`'s output over the message) instead of
-/// the message itself -- for a caller that hashed the message incrementally, such as a streaming
-/// `Signer`.
+/// RNG, given the message's hash `m_hash` (`H`'s output over the message) rather than the message
+/// itself -- what the [`Signer`] impl's `sign_final` calls once it has hashed the streamed
+/// message and settled the salt. EMSA-PSS is randomized only in its choice of salt (§9.1's own
+/// note 5), so a fixed salt makes this deterministic and directly testable against a known salt.
 pub fn sign_from_hash_with_salt<
     H: Hash + Default,
     const H_LEN: usize,
@@ -387,49 +346,9 @@ pub fn sign_from_hash_with_salt<
     Ok(be_bytes_from_limbs::<L, K_LEN>(&s))
 }
 
-/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1), drawing a fresh `S_LEN`-byte salt from `rng` for each
-/// signature (step 4 of EMSA-PSS-ENCODE). Hashes `message` and hands `mHash` to
-/// [`sign_from_hash`].
-pub fn sign<
-    H: Hash + Default,
-    const H_LEN: usize,
-    const SEED_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    message: &[u8],
-    rng: &mut dyn RNG,
-) -> Result<[u8; K_LEN], SignatureError> {
-    let mut m_hash = [0u8; H_LEN];
-    H::default().hash_out(message, &mut m_hash);
-    sign_from_hash::<
-        H,
-        H_LEN,
-        SEED_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-    >(sk, &m_hash, rng)
-}
-
-/// [`sign`] given the message's hash `m_hash` instead of the message: draws the salt from `rng`
-/// (EMSA-PSS-ENCODE step 4) and hands both to [`sign_from_hash_with_salt`].
+/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) given the message's hash `m_hash` instead of the message:
+/// draws a fresh `S_LEN`-byte salt from `rng` (EMSA-PSS-ENCODE step 4) and hands both to
+/// [`sign_from_hash_with_salt`].
 pub fn sign_from_hash<
     H: Hash + Default,
     const H_LEN: usize,
@@ -468,35 +387,11 @@ pub fn sign_from_hash<
     >(sk, m_hash, &salt)
 }
 
-/// RSASSA-PSS-VERIFY (RFC 8017 §8.1.2): recovers `EM = I2OSP(RSAVP1((n, e), OS2IP(S)), emLen)`
-/// and checks it against `message` via EMSA-PSS-VERIFY, which recovers the salt from `EM` itself
-/// (EMSA-PSS's own verification operation, §9.1.2) rather than needing it supplied. Hashes
-/// `message` and hands `mHash` to [`verify_from_hash`].
-pub fn verify<
-    H: Hash + Default,
-    const H_LEN: usize,
-    const SEED_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const K_LEN: usize,
->(
-    pk: &RsaPublicKey<L>,
-    message: &[u8],
-    signature: &[u8; K_LEN],
-) -> Result<(), SignatureError> {
-    let mut m_hash = [0u8; H_LEN];
-    H::default().hash_out(message, &mut m_hash);
-    verify_from_hash::<H, H_LEN, SEED_LEN, S_LEN, M_PRIME_LEN, DB_LEN, L, L2, L21, K_LEN>(
-        pk, &m_hash, signature,
-    )
-}
-
-/// [`verify`] given the message's hash `m_hash` instead of the message -- the counterpart of
-/// [`sign_from_hash`], for a streaming `SignatureVerifier`.
+/// RSASSA-PSS-VERIFY (RFC 8017 §8.1.2) given the message's hash `m_hash` instead of the message
+/// (the counterpart of [`sign_from_hash`]): recovers `EM = I2OSP(RSAVP1((n, e), OS2IP(S)),
+/// emLen)` and checks it against `m_hash` via EMSA-PSS-VERIFY, which recovers the salt from `EM`
+/// itself (§9.1.2) rather than needing it supplied. RSAVP1's range error propagates as its own
+/// `Err`, as in [`crate::rsassa_pkcs1_v1_5::verify_from_hash`].
 pub fn verify_from_hash<
     H: Hash + Default,
     const H_LEN: usize,

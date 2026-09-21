@@ -6,13 +6,21 @@
 use bouncycastle_core::traits::{SignatureVerifier, Signer};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_rsa::rsa_4096::{
-    RSASSA_PSS_SHAKE256, Rsa4096PrivateKey, Rsa4096PublicKey, pss_shake256_sign,
-    pss_shake256_sign_with_salt, pss_shake256_verify,
-};
+use bouncycastle_rsa::rsa_4096::{RSASSA_PSS_SHAKE256, Rsa4096PrivateKey, Rsa4096PublicKey};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
+
+/// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
+/// deterministic PSS mode, for tests against a known salt. Returns `sign_final`'s `Result`.
+macro_rules! sign_with_salt {
+    ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
+        let mut signer = <$ty>::sign_init($sk, None).unwrap();
+        signer.set_signer_salt($salt);
+        signer.sign_update($msg);
+        signer.sign_final()
+    }};
+}
 
 const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
 const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
@@ -109,14 +117,14 @@ fn pss_shake256_sign_with_fixed_salt_round_trips() {
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
 
     let salt = [0x42u8; 64];
-    let sig = pss_shake256_sign_with_salt(&sk, b"the message to sign", &salt)
+    let sig = sign_with_salt!(RSASSA_PSS_SHAKE256, &sk, b"the message to sign", salt)
         .expect("signing must succeed");
-    pss_shake256_verify(&pk, b"the message to sign", &sig).expect("must verify");
+    RSASSA_PSS_SHAKE256::verify(&pk, b"the message to sign", None, &sig).expect("must verify");
 
-    let sig2 = pss_shake256_sign_with_salt(&sk, b"the message to sign", &salt).unwrap();
+    let sig2 = sign_with_salt!(RSASSA_PSS_SHAKE256, &sk, b"the message to sign", salt).unwrap();
     assert_eq!(sig, sig2);
 
-    assert!(pss_shake256_verify(&pk, b"a different message", &sig).is_err());
+    assert!(RSASSA_PSS_SHAKE256::verify(&pk, b"a different message", None, &sig).is_err());
 }
 
 #[test]
@@ -125,11 +133,13 @@ fn pss_shake256_sign_with_rng_produces_fresh_salts_that_both_verify() {
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
-    let sig_a = pss_shake256_sign(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b = pss_shake256_sign(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a = RSASSA_PSS_SHAKE256::sign_randomized(&sk, b"hello", &mut rng)
+        .expect("signing must succeed");
+    let sig_b = RSASSA_PSS_SHAKE256::sign_randomized(&sk, b"hello", &mut rng)
+        .expect("signing must succeed");
     assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
-    pss_shake256_verify(&pk, b"hello", &sig_a).expect("sig_a must verify");
-    pss_shake256_verify(&pk, b"hello", &sig_b).expect("sig_b must verify");
+    RSASSA_PSS_SHAKE256::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
+    RSASSA_PSS_SHAKE256::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
@@ -162,7 +172,7 @@ fn rsa_pss_4096_shake256_wycheproof_vectors() {
                 continue;
             };
 
-            let verified = pss_shake256_verify(&pk, &msg, &sig).is_ok();
+            let verified = RSASSA_PSS_SHAKE256::verify(&pk, &msg, None, &sig).is_ok();
             match test["result"].as_str().unwrap() {
                 "valid" => {
                     assert!(verified, "tcId {tc_id}: expected valid, got invalid");
@@ -186,16 +196,17 @@ fn rsa_pss_4096_shake256_wycheproof_vectors() {
 
 /// The SHAKE-native generic type has had `core-test-framework`'s full suite at RSA-2048/3072
 /// (`RSASSA_PSS_SHAKE128`); this checks the RSA-4096/SHAKE256 alias's width constants by round
-/// trip and cross-verification against the free functions.
+/// trips through `Signer::sign` and `sign_randomized`.
 #[test]
-fn pss_shake256_trait_round_trip_and_cross_verify() {
+fn pss_shake256_trait_round_trips() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let msg = b"PSS-SHAKE256 at RSA-4096, both APIs";
     let from_trait = RSASSA_PSS_SHAKE256::sign(&sk, msg, None).unwrap();
     RSASSA_PSS_SHAKE256::verify(&pk, msg, None, &from_trait).unwrap();
-    pss_shake256_verify(&pk, msg, &from_trait).unwrap();
-    let from_free = pss_shake256_sign(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    RSASSA_PSS_SHAKE256::verify(&pk, msg, None, &from_trait).unwrap();
+    let from_free =
+        RSASSA_PSS_SHAKE256::sign_randomized(&sk, msg, &mut DefaultRNG::default()).unwrap();
     RSASSA_PSS_SHAKE256::verify(&pk, msg, None, &from_free).unwrap();
     assert!(RSASSA_PSS_SHAKE256::verify(&pk, b"other", None, &from_free).is_err());
 }

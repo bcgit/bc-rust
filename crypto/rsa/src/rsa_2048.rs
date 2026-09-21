@@ -7,22 +7,18 @@
 //! matching RFC 8017 §9.1 note 4's "typical" choice and Wycheproof's own
 //! `rsa_pss_2048_sha256_mgf1_32_test.json`/`..._sha384_mgf1_48_test.json`.
 //!
-//! Each (scheme, hash) pairing is offered two ways over the same code path: a pair of free
-//! functions taking a whole message (`pkcs1_v1_5_sign_sha256`/`pkcs1_v1_5_verify_sha256`, ...),
-//! and a type implementing `bouncycastle_core`'s `Signer`/`SignatureVerifier` traits
-//! ([`RSASSA_PKCS1_v1_5_SHA256`], ...) for streaming use and for code written against those
-//! traits. The key types implement `SignaturePrivateKey`/`SignaturePublicKey` here, at this
-//! size's [`SK_LEN`]/[`PK_LEN`].
+//! Each (scheme, hash) pairing is a type implementing `bouncycastle_core`'s
+//! `Signer`/`SignatureVerifier` traits ([`RSASSA_PKCS1_v1_5_SHA256`], [`RSASSA_PSS_SHA256`],
+//! [`RSASSA_PSS_SHAKE128`], ...): one-shot or streaming, with PSS's salt from the default RNG or
+//! under the caller's control via `sign_randomized`/`set_signer_salt`. The key types implement
+//! `SignaturePrivateKey`/`SignaturePublicKey` here, at this size's [`SK_LEN`]/[`PK_LEN`].
 
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
-use crate::rsassa_pkcs1_v1_5;
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
-use crate::rsassa_pss;
 use crate::rsassa_pss::RSASSA_PSS;
-use crate::rsassa_pss_shake;
 use crate::rsassa_pss_shake::RSASSA_PSS_SHAKE;
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_sha3::SHAKE128;
 
@@ -77,8 +73,8 @@ impl SignaturePublicKey<PK_LEN> for Rsa2048PublicKey {
 }
 
 /// RSASSA-PKCS1-v1_5/SHA-256 over RSA-2048 as a `Signer`/`SignatureVerifier`: [`RSASSA_PKCS1_v1_5`]
-/// at the widths [`pkcs1_v1_5_sign_sha256`] passes. Deterministic, so `Signer::sign` reproduces
-/// that function's output byte for byte.
+/// at this size's widths. Deterministic: PKCS#1 v1.5 has no randomness, so `Signer::sign`
+/// always reproduces the same signature.
 #[allow(non_camel_case_types)]
 pub type RSASSA_PKCS1_v1_5_SHA256 =
     RSASSA_PKCS1_v1_5<SHA256, 32, 51, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
@@ -92,8 +88,8 @@ pub type RSASSA_PKCS1_v1_5_SHA512 =
     RSASSA_PKCS1_v1_5<SHA512, 64, 83, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
 
 /// RSASSA-PSS/SHA-256 (MGF1-SHA-256, 32-byte salt) over RSA-2048 as a `Signer`/`SignatureVerifier`:
-/// [`RSASSA_PSS`] at the widths [`pss_sign_sha256`] passes, drawing its salt from the library's
-/// default RNG (see that type's docs).
+/// [`RSASSA_PSS`] at this size's widths, drawing its salt from the library's default RNG unless
+/// `sign_randomized`/`set_signer_salt` supply it (see that type's docs).
 #[allow(non_camel_case_types)]
 pub type RSASSA_PSS_SHA256 =
     RSASSA_PSS<SHA256, 32, 36, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
@@ -106,197 +102,7 @@ pub type RSASSA_PSS_SHA384 =
 pub type RSASSA_PSS_SHA512 =
     RSASSA_PSS<SHA512, 64, 68, 64, 136, 191, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
 /// RSASSA-PSS-SHAKE128 (RFC 8702 §3.2.1) over RSA-2048 as a `Signer`/`SignatureVerifier`:
-/// [`RSASSA_PSS_SHAKE`] at the widths [`pss_shake128_sign`] passes.
+/// [`RSASSA_PSS_SHAKE`] at this size's widths.
 #[allow(non_camel_case_types)]
 pub type RSASSA_PSS_SHAKE128 =
     RSASSA_PSS_SHAKE<SHAKE128, 32, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) signing, `s = m^d mod n` over an EMSA-PKCS1-v1_5/SHA-256
-/// encoded message. See [`rsassa_pkcs1_v1_5::sign`] for what each error means.
-pub fn pkcs1_v1_5_sign_sha256(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pkcs1_v1_5::sign::<SHA256, 32, 51, 32, 64, 65, 16, 32, 33, 256>(sk, message)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-256 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha256(
-    pk: &Rsa2048PublicKey,
-    message: &[u8],
-    signature: &[u8; 256],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA256, 32, 32, 64, 65, 256>(pk, message, signature)
-}
-
-/// RSASSA-PSS (RFC 8017 §8.1) signing with SHA-256 (both as the message hash and, per §8.1's own
-/// recommendation, as MGF1's hash) and a 32-byte salt drawn fresh from `rng` for each signature.
-/// See [`rsassa_pss::sign`] for what each error means.
-pub fn pss_sign_sha256(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    rng: &mut dyn RNG,
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss::sign::<SHA256, 32, 36, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256>(sk, message, rng)
-}
-
-/// As [`pss_sign_sha256`], but with the salt supplied directly instead of drawn from an RNG --
-/// deterministic, for testing against a known salt. See [`rsassa_pss::sign_with_salt`].
-pub fn pss_sign_sha256_with_salt(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    salt: &[u8; 32],
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss::sign_with_salt::<SHA256, 32, 36, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256>(
-        sk, message, salt,
-    )
-}
-
-/// RSASSA-PSS (RFC 8017 §8.1) verification against a SHA-256/MGF1-SHA-256/32-byte-salt encoding.
-/// See [`rsassa_pss::verify`] for what each error means.
-pub fn pss_verify_sha256(
-    pk: &Rsa2048PublicKey,
-    message: &[u8],
-    signature: &[u8; 256],
-) -> Result<(), SignatureError> {
-    rsassa_pss::verify::<SHA256, 32, 36, 32, 72, 223, 32, 64, 65, 256>(pk, message, signature)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) signing with SHA-384. See [`rsassa_pkcs1_v1_5::sign`] for
-/// what each error means.
-pub fn pkcs1_v1_5_sign_sha384(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pkcs1_v1_5::sign::<SHA384, 48, 67, 32, 64, 65, 16, 32, 33, 256>(sk, message)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-384 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha384(
-    pk: &Rsa2048PublicKey,
-    message: &[u8],
-    signature: &[u8; 256],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA384, 48, 32, 64, 65, 256>(pk, message, signature)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) signing with SHA-512. See [`rsassa_pkcs1_v1_5::sign`] for
-/// what each error means.
-pub fn pkcs1_v1_5_sign_sha512(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pkcs1_v1_5::sign::<SHA512, 64, 83, 32, 64, 65, 16, 32, 33, 256>(sk, message)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-512 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha512(
-    pk: &Rsa2048PublicKey,
-    message: &[u8],
-    signature: &[u8; 256],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA512, 64, 32, 64, 65, 256>(pk, message, signature)
-}
-
-/// RSASSA-PSS (RFC 8017 §8.1) signing with SHA-384 (as both the message hash and MGF1's hash)
-/// and a 48-byte salt drawn fresh from `rng`. See [`rsassa_pss::sign`] for what each error means.
-pub fn pss_sign_sha384(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    rng: &mut dyn RNG,
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss::sign::<SHA384, 48, 52, 48, 104, 207, 32, 64, 65, 16, 32, 33, 256>(sk, message, rng)
-}
-
-/// As [`pss_sign_sha384`], but with the salt supplied directly instead of drawn from an RNG --
-/// deterministic, for testing against a known salt. See [`rsassa_pss::sign_with_salt`].
-pub fn pss_sign_sha384_with_salt(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    salt: &[u8; 48],
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss::sign_with_salt::<SHA384, 48, 52, 48, 104, 207, 32, 64, 65, 16, 32, 33, 256>(
-        sk, message, salt,
-    )
-}
-
-/// RSASSA-PSS (RFC 8017 §8.1) verification against a SHA-384/MGF1-SHA-384/48-byte-salt encoding.
-/// See [`rsassa_pss::verify`] for what each error means.
-pub fn pss_verify_sha384(
-    pk: &Rsa2048PublicKey,
-    message: &[u8],
-    signature: &[u8; 256],
-) -> Result<(), SignatureError> {
-    rsassa_pss::verify::<SHA384, 48, 52, 48, 104, 207, 32, 64, 65, 256>(pk, message, signature)
-}
-
-/// RSASSA-PSS (RFC 8017 §8.1) signing with SHA-512 (as both the message hash and MGF1's hash)
-/// and a 64-byte salt drawn fresh from `rng`. See [`rsassa_pss::sign`] for what each error means.
-pub fn pss_sign_sha512(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    rng: &mut dyn RNG,
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss::sign::<SHA512, 64, 68, 64, 136, 191, 32, 64, 65, 16, 32, 33, 256>(sk, message, rng)
-}
-
-/// As [`pss_sign_sha512`], but with the salt supplied directly instead of drawn from an RNG --
-/// deterministic, for testing against a known salt. See [`rsassa_pss::sign_with_salt`].
-pub fn pss_sign_sha512_with_salt(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    salt: &[u8; 64],
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss::sign_with_salt::<SHA512, 64, 68, 64, 136, 191, 32, 64, 65, 16, 32, 33, 256>(
-        sk, message, salt,
-    )
-}
-
-/// RSASSA-PSS (RFC 8017 §8.1) verification against a SHA-512/MGF1-SHA-512/64-byte-salt encoding.
-/// See [`rsassa_pss::verify`] for what each error means.
-pub fn pss_verify_sha512(
-    pk: &Rsa2048PublicKey,
-    message: &[u8],
-    signature: &[u8; 256],
-) -> Result<(), SignatureError> {
-    rsassa_pss::verify::<SHA512, 64, 68, 64, 136, 191, 32, 64, 65, 256>(pk, message, signature)
-}
-
-/// RSASSA-PSS-SHAKE128 (`id-RSASSA-PSS-SHAKE128`, RFC 8702 §3.2.1) signing: SHAKE128 as both the
-/// message hash and, natively rather than through MGF1, the mask generation function, with a
-/// 32-byte salt drawn fresh from `rng` for each signature. RFC 8702 §5 recommends this pairing for
-/// a 2048- or 3072-bit RSA modulus. See [`rsassa_pss_shake::sign`] for what each error means.
-pub fn pss_shake128_sign(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    rng: &mut dyn RNG,
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss_shake::sign::<SHAKE128, 32, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256>(
-        sk, message, rng,
-    )
-}
-
-/// As [`pss_shake128_sign`], but with the salt supplied directly instead of drawn from an RNG --
-/// deterministic, for testing against a known salt. See [`rsassa_pss_shake::sign_with_salt`].
-pub fn pss_shake128_sign_with_salt(
-    sk: &Rsa2048PrivateKey,
-    message: &[u8],
-    salt: &[u8; 32],
-) -> Result<[u8; 256], SignatureError> {
-    rsassa_pss_shake::sign_with_salt::<SHAKE128, 32, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256>(
-        sk, message, salt,
-    )
-}
-
-/// RSASSA-PSS-SHAKE128 (RFC 8702 §3.2.1) verification. See [`rsassa_pss_shake::verify`] for what
-/// each error means.
-pub fn pss_shake128_verify(
-    pk: &Rsa2048PublicKey,
-    message: &[u8],
-    signature: &[u8; 256],
-) -> Result<(), SignatureError> {
-    rsassa_pss_shake::verify::<SHAKE128, 32, 32, 72, 223, 32, 64, 65, 256>(pk, message, signature)
-}

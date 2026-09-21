@@ -3,8 +3,8 @@
 //! _mgf1_*_test.json` (PSS verify, all three hashes -- unlike every other size in this crate,
 //! Wycheproof has matching-hash-and-MGF PSS vectors for all three at 4096 bits). Only SHA-256 has
 //! sig-gen key material to check signing against a known-correct output, so every other sign
-//! function (`pkcs1_v1_5_sign_sha384`/`_sha512`, and all six `pss_sign_sha{256,384,512}
-//! [_with_salt]`) is exercised by a self-consistency round trip instead, following
+//! pairing (PKCS#1 v1.5/SHA-384 and /SHA-512 signing, and PSS signing under all three hashes
+//! with both an RNG-drawn and a fixed salt) is exercised by a self-consistency round trip instead, following
 //! `rsa_3072_tests.rs`'s own precedent.
 //!
 //! `p`/`q`/`dP`/`dQ`/`qInv` were recovered from `rsa_pkcs1_4096_sig_gen_test.json`'s SHA-256
@@ -21,14 +21,22 @@ use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_4096::{
     PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
     RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa4096PrivateKey, Rsa4096PublicKey,
-    SIG_LEN, SK_LEN, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_sign_sha384, pkcs1_v1_5_sign_sha512,
-    pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512, pss_sign_sha256,
-    pss_sign_sha256_with_salt, pss_sign_sha384, pss_sign_sha384_with_salt, pss_sign_sha512,
-    pss_sign_sha512_with_salt, pss_verify_sha256, pss_verify_sha384, pss_verify_sha512,
+    SIG_LEN, SK_LEN,
 };
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
+
+/// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
+/// deterministic PSS mode, for tests against a known salt. Returns `sign_final`'s `Result`.
+macro_rules! sign_with_salt {
+    ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
+        let mut signer = <$ty>::sign_init($sk, None).unwrap();
+        signer.set_signer_salt($salt);
+        signer.sign_update($msg);
+        signer.sign_final()
+    }};
+}
 
 const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
 const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
@@ -134,7 +142,7 @@ fn pkcs1_v1_5_sig_gen_4096_sha256() {
         let tc_id = test["tcId"].as_u64().unwrap();
         let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
         let expected_sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
-        let sig = pkcs1_v1_5_sign_sha256(&sk, &msg).unwrap_or_else(|e| {
+        let sig = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, &msg, None).unwrap_or_else(|e| {
             panic!("tcId {tc_id}: signing failed: {e:?}");
         });
         assert_eq!(sig.to_vec(), expected_sig, "tcId {tc_id}: signature mismatch");
@@ -142,7 +150,7 @@ fn pkcs1_v1_5_sig_gen_4096_sha256() {
     assert_eq!(num_tests, 8);
 }
 
-/// Mutation testing found that `pkcs1_v1_5_sign_sha384`/`_sha512` were never called by any test at
+/// Mutation testing found that PKCS#1 v1.5/SHA-384 and /SHA-512 signing were never called by any test at
 /// this modulus size (the real Wycheproof verify vectors below only exercise `verify`, and only
 /// SHA-256 has a sig-gen file to sign against): a whole-function-body mutant replacing either sign
 /// function with a constant still passed the whole suite.
@@ -150,10 +158,10 @@ fn pkcs1_v1_5_sig_gen_4096_sha256() {
 fn pkcs1_v1_5_sha384_and_sha512_round_trip() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig384 = pkcs1_v1_5_sign_sha384(&sk, b"hello").unwrap();
-    pkcs1_v1_5_verify_sha384(&pk, b"hello", &sig384).unwrap();
-    let sig512 = pkcs1_v1_5_sign_sha512(&sk, b"hello").unwrap();
-    pkcs1_v1_5_verify_sha512(&pk, b"hello", &sig512).unwrap();
+    let sig384 = RSASSA_PKCS1_v1_5_SHA384::sign(&sk, b"hello", None).unwrap();
+    RSASSA_PKCS1_v1_5_SHA384::verify(&pk, b"hello", None, &sig384).unwrap();
+    let sig512 = RSASSA_PKCS1_v1_5_SHA512::sign(&sk, b"hello", None).unwrap();
+    RSASSA_PKCS1_v1_5_SHA512::verify(&pk, b"hello", None, &sig512).unwrap();
 }
 
 fn run_pkcs1_v1_5_verify_vectors(
@@ -215,7 +223,7 @@ fn run_pkcs1_v1_5_verify_vectors(
 fn rsa_signature_4096_sha256_wycheproof_vectors() {
     run_pkcs1_v1_5_verify_vectors(
         "rsa_signature_4096_sha256_test.json",
-        |pk, msg, sig| pkcs1_v1_5_verify_sha256(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok(),
         "SHA-256",
         7,
         250,
@@ -226,7 +234,7 @@ fn rsa_signature_4096_sha256_wycheproof_vectors() {
 fn rsa_signature_4096_sha384_wycheproof_vectors() {
     run_pkcs1_v1_5_verify_vectors(
         "rsa_signature_4096_sha384_test.json",
-        |pk, msg, sig| pkcs1_v1_5_verify_sha384(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok(),
         "SHA-384",
         7,
         251,
@@ -237,7 +245,7 @@ fn rsa_signature_4096_sha384_wycheproof_vectors() {
 fn rsa_signature_4096_sha512_wycheproof_vectors() {
     run_pkcs1_v1_5_verify_vectors(
         "rsa_signature_4096_sha512_test.json",
-        |pk, msg, sig| pkcs1_v1_5_verify_sha512(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok(),
         "SHA-512",
         7,
         251,
@@ -296,7 +304,7 @@ fn run_pss_verify_vectors(
 fn rsa_pss_4096_sha256_mgf1_32_wycheproof_vectors() {
     run_pss_verify_vectors(
         "rsa_pss_4096_sha256_mgf1_32_test.json",
-        |pk, msg, sig| pss_verify_sha256(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PSS_SHA256::verify(pk, msg, None, sig).is_ok(),
         "SHA-256",
         32,
         63,
@@ -308,7 +316,7 @@ fn rsa_pss_4096_sha256_mgf1_32_wycheproof_vectors() {
 fn rsa_pss_4096_sha384_mgf1_48_wycheproof_vectors() {
     run_pss_verify_vectors(
         "rsa_pss_4096_sha384_mgf1_48_test.json",
-        |pk, msg, sig| pss_verify_sha384(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PSS_SHA384::verify(pk, msg, None, sig).is_ok(),
         "SHA-384",
         48,
         95,
@@ -320,7 +328,7 @@ fn rsa_pss_4096_sha384_mgf1_48_wycheproof_vectors() {
 fn rsa_pss_4096_sha512_mgf1_64_wycheproof_vectors() {
     run_pss_verify_vectors(
         "rsa_pss_4096_sha512_mgf1_64_test.json",
-        |pk, msg, sig| pss_verify_sha512(pk, msg, sig).is_ok(),
+        |pk, msg, sig| RSASSA_PSS_SHA512::verify(pk, msg, None, sig).is_ok(),
         "SHA-512",
         64,
         132,
@@ -328,7 +336,7 @@ fn rsa_pss_4096_sha512_mgf1_64_wycheproof_vectors() {
     );
 }
 
-/// Mutation testing found that none of the six `pss_sign_sha{256,384,512}[_with_salt]` functions
+/// Mutation testing found that none of the six PSS signing paths (three hashes, RNG-drawn or fixed salt)
 /// were ever called at this modulus size: the real Wycheproof PSS vectors above only exercise
 /// `verify` (against externally-sourced signatures), so a whole-function-body mutant replacing any
 /// sign function with a constant still passed the whole suite. One fixed-salt-round-trip-plus-
@@ -339,9 +347,10 @@ fn pss_sha256_fixed_salt_round_trips() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x22u8; 32];
-    let sig = pss_sign_sha256_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
-    pss_verify_sha256(&pk, b"hello", &sig).expect("must verify");
-    assert!(pss_verify_sha256(&pk, b"goodbye", &sig).is_err());
+    let sig =
+        sign_with_salt!(RSASSA_PSS_SHA256, &sk, b"hello", salt).expect("signing must succeed");
+    RSASSA_PSS_SHA256::verify(&pk, b"hello", None, &sig).expect("must verify");
+    assert!(RSASSA_PSS_SHA256::verify(&pk, b"goodbye", None, &sig).is_err());
 }
 
 #[test]
@@ -349,11 +358,13 @@ fn pss_sha256_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
-    let sig_a = pss_sign_sha256(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b = pss_sign_sha256(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a =
+        RSASSA_PSS_SHA256::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b =
+        RSASSA_PSS_SHA256::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
     assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
-    pss_verify_sha256(&pk, b"hello", &sig_a).expect("sig_a must verify");
-    pss_verify_sha256(&pk, b"hello", &sig_b).expect("sig_b must verify");
+    RSASSA_PSS_SHA256::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
+    RSASSA_PSS_SHA256::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
@@ -361,9 +372,10 @@ fn pss_sha384_fixed_salt_round_trips() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x11u8; 48];
-    let sig = pss_sign_sha384_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
-    pss_verify_sha384(&pk, b"hello", &sig).expect("must verify");
-    assert!(pss_verify_sha384(&pk, b"goodbye", &sig).is_err());
+    let sig =
+        sign_with_salt!(RSASSA_PSS_SHA384, &sk, b"hello", salt).expect("signing must succeed");
+    RSASSA_PSS_SHA384::verify(&pk, b"hello", None, &sig).expect("must verify");
+    assert!(RSASSA_PSS_SHA384::verify(&pk, b"goodbye", None, &sig).is_err());
 }
 
 #[test]
@@ -371,11 +383,13 @@ fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
-    let sig_a = pss_sign_sha384(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b = pss_sign_sha384(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a =
+        RSASSA_PSS_SHA384::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b =
+        RSASSA_PSS_SHA384::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
     assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
-    pss_verify_sha384(&pk, b"hello", &sig_a).expect("sig_a must verify");
-    pss_verify_sha384(&pk, b"hello", &sig_b).expect("sig_b must verify");
+    RSASSA_PSS_SHA384::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
+    RSASSA_PSS_SHA384::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
@@ -383,9 +397,10 @@ fn pss_sha512_fixed_salt_round_trips() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x33u8; 64];
-    let sig = pss_sign_sha512_with_salt(&sk, b"hello", &salt).expect("signing must succeed");
-    pss_verify_sha512(&pk, b"hello", &sig).expect("must verify");
-    assert!(pss_verify_sha512(&pk, b"goodbye", &sig).is_err());
+    let sig =
+        sign_with_salt!(RSASSA_PSS_SHA512, &sk, b"hello", salt).expect("signing must succeed");
+    RSASSA_PSS_SHA512::verify(&pk, b"hello", None, &sig).expect("must verify");
+    assert!(RSASSA_PSS_SHA512::verify(&pk, b"goodbye", None, &sig).is_err());
 }
 
 #[test]
@@ -393,11 +408,13 @@ fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
     let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
-    let sig_a = pss_sign_sha512(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b = pss_sign_sha512(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a =
+        RSASSA_PSS_SHA512::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_b =
+        RSASSA_PSS_SHA512::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
     assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
-    pss_verify_sha512(&pk, b"hello", &sig_a).expect("sig_a must verify");
-    pss_verify_sha512(&pk, b"hello", &sig_b).expect("sig_b must verify");
+    RSASSA_PSS_SHA512::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
+    RSASSA_PSS_SHA512::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
@@ -441,10 +458,9 @@ fn key_trait_boundary_conditions() {
         .test_keys::<Rsa4096PublicKey, Rsa4096PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
 }
 
-/// Sign then verify through the traits, verify the free functions' signature over the same
-/// message through the trait, and reject a different message -- what a wrong width constant in
-/// this size's aliases would break.
-fn trait_round_trip<S>(pk: &Rsa4096PublicKey, sk: &Rsa4096PrivateKey, free_sig: &[u8; SIG_LEN])
+/// Sign one-shot and streamed, verify both, and reject a different message -- what a wrong width
+/// constant in this size's aliases would break.
+fn trait_round_trip<S>(pk: &Rsa4096PublicKey, sk: &Rsa4096PrivateKey)
 where
     S: Signer<Rsa4096PrivateKey, SK_LEN, SIG_LEN>
         + SignatureVerifier<Rsa4096PublicKey, PK_LEN, SIG_LEN>,
@@ -452,25 +468,18 @@ where
     let msg = b"RSA-4096 trait round trip";
     let sig = S::sign(sk, msg, None).unwrap();
     S::verify(pk, msg, None, &sig).unwrap();
-    S::verify(pk, msg, None, free_sig).unwrap();
+    let mut signer = S::sign_init(sk, None).unwrap();
+    signer.sign_update(&msg[..8]);
+    signer.sign_update(&msg[8..]);
+    S::verify(pk, msg, None, &signer.sign_final().unwrap()).unwrap();
     assert!(S::verify(pk, b"a different message", None, &sig).is_err());
 }
 
 #[test]
 fn remaining_pairings_trait_round_trips() {
     let (pk, sk) = fixed_keypair().unwrap();
-    let msg = b"RSA-4096 trait round trip";
-    let mut rng = DefaultRNG::default();
-    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA384>(
-        &pk,
-        &sk,
-        &pkcs1_v1_5_sign_sha384(&sk, msg).unwrap(),
-    );
-    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA512>(
-        &pk,
-        &sk,
-        &pkcs1_v1_5_sign_sha512(&sk, msg).unwrap(),
-    );
-    trait_round_trip::<RSASSA_PSS_SHA384>(&pk, &sk, &pss_sign_sha384(&sk, msg, &mut rng).unwrap());
-    trait_round_trip::<RSASSA_PSS_SHA512>(&pk, &sk, &pss_sign_sha512(&sk, msg, &mut rng).unwrap());
+    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA384>(&pk, &sk);
+    trait_round_trip::<RSASSA_PKCS1_v1_5_SHA512>(&pk, &sk);
+    trait_round_trip::<RSASSA_PSS_SHA384>(&pk, &sk);
+    trait_round_trip::<RSASSA_PSS_SHA512>(&pk, &sk);
 }

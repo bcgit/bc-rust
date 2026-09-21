@@ -10,11 +10,21 @@ use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_3072::{
     PK_LEN, RSASSA_PSS_SHAKE128, Rsa3072PrivateKey, Rsa3072PublicKey, SIG_LEN, SK_LEN,
-    pss_shake128_sign, pss_shake128_sign_with_salt, pss_shake128_verify,
 };
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
+
+/// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
+/// deterministic PSS mode, for tests against a known salt. Returns `sign_final`'s `Result`.
+macro_rules! sign_with_salt {
+    ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
+        let mut signer = <$ty>::sign_init($sk, None).unwrap();
+        signer.set_signer_salt($salt);
+        signer.sign_update($msg);
+        signer.sign_final()
+    }};
+}
 
 const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
 const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
@@ -101,14 +111,14 @@ fn pss_shake128_sign_with_fixed_salt_round_trips() {
     let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
 
     let salt = [0x42u8; 32];
-    let sig = pss_shake128_sign_with_salt(&sk, b"the message to sign", &salt)
+    let sig = sign_with_salt!(RSASSA_PSS_SHAKE128, &sk, b"the message to sign", salt)
         .expect("signing must succeed");
-    pss_shake128_verify(&pk, b"the message to sign", &sig).expect("must verify");
+    RSASSA_PSS_SHAKE128::verify(&pk, b"the message to sign", None, &sig).expect("must verify");
 
-    let sig2 = pss_shake128_sign_with_salt(&sk, b"the message to sign", &salt).unwrap();
+    let sig2 = sign_with_salt!(RSASSA_PSS_SHAKE128, &sk, b"the message to sign", salt).unwrap();
     assert_eq!(sig, sig2);
 
-    assert!(pss_shake128_verify(&pk, b"a different message", &sig).is_err());
+    assert!(RSASSA_PSS_SHAKE128::verify(&pk, b"a different message", None, &sig).is_err());
 }
 
 #[test]
@@ -117,11 +127,13 @@ fn pss_shake128_sign_with_rng_produces_fresh_salts_that_both_verify() {
     let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
-    let sig_a = pss_shake128_sign(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b = pss_shake128_sign(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a = RSASSA_PSS_SHAKE128::sign_randomized(&sk, b"hello", &mut rng)
+        .expect("signing must succeed");
+    let sig_b = RSASSA_PSS_SHAKE128::sign_randomized(&sk, b"hello", &mut rng)
+        .expect("signing must succeed");
     assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
-    pss_shake128_verify(&pk, b"hello", &sig_a).expect("sig_a must verify");
-    pss_shake128_verify(&pk, b"hello", &sig_b).expect("sig_b must verify");
+    RSASSA_PSS_SHAKE128::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
+    RSASSA_PSS_SHAKE128::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
@@ -154,7 +166,7 @@ fn rsa_pss_3072_shake128_wycheproof_vectors() {
                 continue;
             };
 
-            let verified = pss_shake128_verify(&pk, &msg, &sig).is_ok();
+            let verified = RSASSA_PSS_SHAKE128::verify(&pk, &msg, None, &sig).is_ok();
             match test["result"].as_str().unwrap() {
                 "valid" => {
                     assert!(verified, "tcId {tc_id}: expected valid, got invalid");
@@ -193,13 +205,4 @@ fn pss_shake128_trait_conformance_suite() {
         SK_LEN,
         SIG_LEN,
     >(fixed_keypair, false);
-}
-
-#[test]
-fn pss_shake128_trait_and_free_functions_cross_verify() {
-    let (pk, sk) = fixed_keypair().unwrap();
-    let msg = b"PSS-SHAKE128 at RSA-3072, both APIs";
-    pss_shake128_verify(&pk, msg, &RSASSA_PSS_SHAKE128::sign(&sk, msg, None).unwrap()).unwrap();
-    let from_free = pss_shake128_sign(&sk, msg, &mut DefaultRNG::default()).unwrap();
-    RSASSA_PSS_SHAKE128::verify(&pk, msg, None, &from_free).unwrap();
 }

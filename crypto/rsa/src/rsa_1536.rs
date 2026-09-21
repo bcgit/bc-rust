@@ -11,7 +11,6 @@
 //! the same reason and in the same way as [`crate::rsa_1024`]'s -- see that module's docs.
 
 use crate::keys::RsaPublicKey;
-use crate::rsassa_pkcs1_v1_5;
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::SignaturePublicKey;
@@ -58,33 +57,3 @@ pub type RSASSA_PKCS1_v1_5_SHA384 =
 #[allow(non_camel_case_types)]
 pub type RSASSA_PKCS1_v1_5_SHA512 =
     RSASSA_PKCS1_v1_5<SHA512, 64, 83, 24, 48, 49, 12, 24, 25, 192, 480, PK_LEN>;
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-256 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha256(
-    pk: &Rsa1536PublicKey,
-    message: &[u8],
-    signature: &[u8; 192],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA256, 32, 24, 48, 49, 192>(pk, message, signature)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-384 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha384(
-    pk: &Rsa1536PublicKey,
-    message: &[u8],
-    signature: &[u8; 192],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA384, 48, 24, 48, 49, 192>(pk, message, signature)
-}
-
-/// RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) verification against a SHA-512 digest. See
-/// [`rsassa_pkcs1_v1_5::verify`] for what each error means.
-pub fn pkcs1_v1_5_verify_sha512(
-    pk: &Rsa1536PublicKey,
-    message: &[u8],
-    signature: &[u8; 192],
-) -> Result<(), SignatureError> {
-    rsassa_pkcs1_v1_5::verify::<SHA512, 64, 24, 48, 49, 192>(pk, message, signature)
-}
