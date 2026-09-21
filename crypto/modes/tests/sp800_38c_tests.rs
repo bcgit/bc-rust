@@ -42,11 +42,9 @@ fn is_tag_failure<T>(r: Result<T, SymmetricCipherError>) -> bool {
     matches!(r, Err(SymmetricCipherError::AEADTagCheckFailed))
 }
 
-fn buffer_len_error<T>(r: Result<T, SymmetricCipherError>) -> Option<(&'static str, usize)> {
+fn buffer_len_error<T>(r: Result<T, SymmetricCipherError>) -> Option<usize> {
     match r {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(which, needed)) => {
-            Some((which, needed))
-        }
+        Err(SymmetricCipherError::OutputBufferTooSmall(needed)) => Some(needed),
         _ => None,
     }
 }
@@ -564,13 +562,13 @@ fn undersized_output_buffers_are_refused() {
     let mut too_small = [0u8; 23];
     assert_eq!(
         buffer_len_error(Enc::encrypt_detached(&k, &nonce, &[], &plaintext, &mut too_small)),
-        Some(("ciphertext", 24))
+        Some(24)
     );
 
     let mut too_small = [0u8; 39];
     assert_eq!(
         buffer_len_error(Enc::encrypt(&k, &nonce, &[], &plaintext, &mut too_small)),
-        Some(("ciphertext", 40))
+        Some(40)
     );
 
     let mut ct = [0u8; 40];
@@ -578,7 +576,7 @@ fn undersized_output_buffers_are_refused() {
     let mut too_small = [0u8; 23];
     assert_eq!(
         buffer_len_error(Dec::decrypt(&k, &nonce, &[], &ct, &mut too_small)),
-        Some(("plaintext", 24))
+        Some(24)
     );
 }
 

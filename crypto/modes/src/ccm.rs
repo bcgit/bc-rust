@@ -723,7 +723,7 @@ where
     /// the tag. For the spec's own inline `ciphertext || tag` string, use [`Self::encrypt`].
     ///
     /// # Errors
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `ciphertext` is too short, plus
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, plus
     /// [`Self::new`]'s errors.
     pub fn encrypt_detached(
         key: &KeyMaterial<KEY_LEN>,
@@ -733,10 +733,7 @@ where
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "ciphertext",
-                plaintext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         let mut ccm = Self::new(key, nonce, aad, plaintext.len())?;
         let out = &mut ciphertext[..plaintext.len()];
@@ -762,7 +759,7 @@ where
     ) -> Result<usize, SymmetricCipherError> {
         let needed = plaintext.len() + TAG_LEN;
         if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("ciphertext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let (data, tag_out) = ciphertext[..needed].split_at_mut(plaintext.len());
         let (_, tag) = Self::encrypt_detached(key, nonce, aad, plaintext, data)?;
@@ -828,7 +825,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify,
-    /// [`SymmetricCipherError::IncorrectOutputBufferLength`] if `plaintext` is too short, plus
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, plus
     /// [`Self::new`]'s errors.
     pub fn decrypt_detached(
         key: &KeyMaterial<KEY_LEN>,
@@ -839,10 +836,7 @@ where
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "plaintext",
-                ciphertext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
         }
         let mut ccm = Self::new(key, nonce, aad, ciphertext.len())?;
         let out = &mut plaintext[..ciphertext.len()];
