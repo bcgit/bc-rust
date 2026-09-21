@@ -43,40 +43,40 @@ fn print_key_sizes() {
 
     println!("\nRSA-1024 (verification only)");
     println!("public key on disk (n || e): {} bytes", 132);
-    println!("size_of<Rsa1024PublicKey>: {} bytes", size_of::<rsa_1024::Rsa1024PublicKey>());
+    println!("size_of<RSA1024PublicKey>: {} bytes", size_of::<rsa_1024::RSA1024PublicKey>());
     println!("signature: {} bytes", 128);
 
     println!("\nRSA-1536 (verification only)");
     println!("public key on disk (n || e): {} bytes", 196);
-    println!("size_of<Rsa1536PublicKey>: {} bytes", size_of::<rsa_1536::Rsa1536PublicKey>());
+    println!("size_of<RSA1536PublicKey>: {} bytes", size_of::<rsa_1536::RSA1536PublicKey>());
     println!("signature: {} bytes", 192);
 
     println!("\nRSA-2048");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 640);
-    println!("size_of<Rsa2048PrivateKey>: {} bytes", size_of::<rsa_2048::Rsa2048PrivateKey>());
+    println!("size_of<RSA2048PrivateKey>: {} bytes", size_of::<rsa_2048::RSA2048PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 260);
-    println!("size_of<Rsa2048PublicKey>: {} bytes", size_of::<rsa_2048::Rsa2048PublicKey>());
+    println!("size_of<RSA2048PublicKey>: {} bytes", size_of::<rsa_2048::RSA2048PublicKey>());
     println!("signature: {} bytes", 256);
 
     println!("\nRSA-3072");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 960);
-    println!("size_of<Rsa3072PrivateKey>: {} bytes", size_of::<rsa_3072::Rsa3072PrivateKey>());
+    println!("size_of<RSA3072PrivateKey>: {} bytes", size_of::<rsa_3072::RSA3072PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 388);
-    println!("size_of<Rsa3072PublicKey>: {} bytes", size_of::<rsa_3072::Rsa3072PublicKey>());
+    println!("size_of<RSA3072PublicKey>: {} bytes", size_of::<rsa_3072::RSA3072PublicKey>());
     println!("signature: {} bytes", 384);
 
     println!("\nRSA-4096");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 1280);
-    println!("size_of<Rsa4096PrivateKey>: {} bytes", size_of::<rsa_4096::Rsa4096PrivateKey>());
+    println!("size_of<RSA4096PrivateKey>: {} bytes", size_of::<rsa_4096::RSA4096PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 516);
-    println!("size_of<Rsa4096PublicKey>: {} bytes", size_of::<rsa_4096::Rsa4096PublicKey>());
+    println!("size_of<RSA4096PublicKey>: {} bytes", size_of::<rsa_4096::RSA4096PublicKey>());
     println!("signature: {} bytes", 512);
 
     println!("\nRSA-8192");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 2560);
-    println!("size_of<Rsa8192PrivateKey>: {} bytes", size_of::<rsa_8192::Rsa8192PrivateKey>());
+    println!("size_of<RSA8192PrivateKey>: {} bytes", size_of::<rsa_8192::RSA8192PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 1028);
-    println!("size_of<Rsa8192PublicKey>: {} bytes", size_of::<rsa_8192::Rsa8192PublicKey>());
+    println!("size_of<RSA8192PublicKey>: {} bytes", size_of::<rsa_8192::RSA8192PublicKey>());
     println!("signature: {} bytes", 1024);
 }
 
@@ -96,7 +96,7 @@ fn bench_1024_verify() {
         0xb909dd0f4c6014f2, 0x9c8a5810b6d05990, 0x40760d1f23fe9250, 0x90adb011a919575a,
         0x45e48572113cab28, 0xcb9ca9ec12000fc8, 0x91b4fcaf62a14595, 0xac9048a7a4f560af,
     ];
-    let pk = rsa_1024::Rsa1024PublicKey::new(&n, 0x10001).unwrap();
+    let pk = rsa_1024::RSA1024PublicKey::new(&n, 0x10001).unwrap();
     let mut sig = [0u8; 128];
     sig.copy_from_slice(
         &bouncycastle::hex::decode(
@@ -113,7 +113,7 @@ fn bench_1024_verify() {
     }
 }
 
-fn genuine_2048_key() -> rsa_2048::Rsa2048PrivateKey {
+fn genuine_2048_key() -> rsa_2048::RSA2048PrivateKey {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
         0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
@@ -144,7 +144,7 @@ fn genuine_2048_key() -> rsa_2048::Rsa2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    rsa_2048::Rsa2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
+    rsa_2048::RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
 }
 
 fn bench_2048_sign() {
@@ -157,7 +157,7 @@ fn bench_2048_sign() {
 fn bench_2048_verify() {
     eprintln!("RSA-2048/Verify");
     let sk = genuine_2048_key();
-    let pk = rsa_2048::Rsa2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_2048::RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let sig = rsa_2048::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
 
     if rsa_2048::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, MSG, None, &sig).is_ok() {
@@ -167,7 +167,7 @@ fn bench_2048_verify() {
     }
 }
 
-fn genuine_8192_key() -> rsa_8192::Rsa8192PrivateKey {
+fn genuine_8192_key() -> rsa_8192::RSA8192PrivateKey {
     let p: [u64; 64] = [
         0xa9a87892c469b1e5, 0x038c3f4efcb198ac, 0xed4f14df1b8a1e1f, 0xef2330d78ee73020,
         0xd3093ddaf276904c, 0x94a438d69aeaff23, 0x48dbb3d700ad58ed, 0xbbd763b5346ff916,
@@ -258,7 +258,7 @@ fn genuine_8192_key() -> rsa_8192::Rsa8192PrivateKey {
         0xd1aac2fe108f98c0, 0x1e799537a42b3060, 0xdbcce6fc287e449b, 0x1985969e5afbc524,
         0x61ba61f820f83597, 0x65c8523f0767bccc, 0xde04e1644a214f9a, 0x9748f8d853be7131,
     ];
-    rsa_8192::Rsa8192PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
+    rsa_8192::RSA8192PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
 }
 
 fn bench_8192_sign() {
@@ -271,7 +271,7 @@ fn bench_8192_sign() {
 fn bench_8192_verify() {
     eprintln!("RSA-8192/Verify");
     let sk = genuine_8192_key();
-    let pk = rsa_8192::Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_8192::RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let sig = rsa_8192::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
 
     if rsa_8192::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, MSG, None, &sig).is_ok() {

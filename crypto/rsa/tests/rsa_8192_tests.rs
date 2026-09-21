@@ -28,9 +28,9 @@ use bouncycastle_core_test_framework::signature::{
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_8192::{
-    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa8192PrivateKey, Rsa8192PublicKey,
-    SIG_LEN, SK_LEN,
+    PK_LEN, RSA8192PrivateKey, RSA8192PublicKey, RSASSA_PKCS1_v1_5_SHA256,
+    RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384,
+    RSASSA_PSS_SHA512, SIG_LEN, SK_LEN,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -80,7 +80,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 }
 
 /// The fresh, self-generated key used for the BC Java cross-check and for self-consistency.
-fn genuine_key() -> Rsa8192PrivateKey {
+fn genuine_key() -> RSA8192PrivateKey {
     let p: [u64; 64] = [
         0xa9a87892c469b1e5, 0x038c3f4efcb198ac, 0xed4f14df1b8a1e1f, 0xef2330d78ee73020,
         0xd3093ddaf276904c, 0x94a438d69aeaff23, 0x48dbb3d700ad58ed, 0xbbd763b5346ff916,
@@ -171,7 +171,7 @@ fn genuine_key() -> Rsa8192PrivateKey {
         0xd1aac2fe108f98c0, 0x1e799537a42b3060, 0xdbcce6fc287e449b, 0x1985969e5afbc524,
         0x61ba61f820f83597, 0x65c8523f0767bccc, 0xde04e1644a214f9a, 0x9748f8d853be7131,
     ];
-    Rsa8192PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA8192PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("self-generated CRT components must be accepted")
 }
 
@@ -196,7 +196,7 @@ fn pkcs1_v1_5_matches_bc_java_byte_for_byte() {
 #[test]
 fn pkcs1_v1_5_verifies_bc_java_signatures() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let sig256: [u8; 1024] = hex_decode(BC_JAVA_SHA256_SIG).unwrap().try_into().unwrap();
     let sig384: [u8; 1024] = hex_decode(BC_JAVA_SHA384_SIG).unwrap().try_into().unwrap();
     let sig512: [u8; 1024] = hex_decode(BC_JAVA_SHA512_SIG).unwrap().try_into().unwrap();
@@ -211,7 +211,7 @@ fn pkcs1_v1_5_verifies_bc_java_signatures() {
 #[test]
 fn pss_verifies_bc_java_sha256_signature() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let sig: [u8; 1024] = hex_decode(BC_JAVA_PSS_SHA256_SIG).unwrap().try_into().unwrap();
     RSASSA_PSS_SHA256::verify(&pk, b"hello", None, &sig)
         .expect("BC Java's PSS/SHA-256 signature (default salt length = hLen) must verify");
@@ -226,7 +226,7 @@ fn pss_verifies_bc_java_sha256_signature() {
 #[test]
 fn pss_sha256_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x33u8; 32];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA256, &sk, b"hello", salt).expect("signing must succeed");
@@ -237,7 +237,7 @@ fn pss_sha256_fixed_salt_round_trips() {
 #[test]
 fn pss_sha256_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
     let sig_a =
         RSASSA_PSS_SHA256::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
@@ -251,7 +251,7 @@ fn pss_sha256_rng_produces_fresh_salts_that_both_verify() {
 #[test]
 fn pss_sha384_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x11u8; 48];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA384, &sk, b"hello", salt).expect("signing must succeed");
@@ -262,7 +262,7 @@ fn pss_sha384_fixed_salt_round_trips() {
 #[test]
 fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
     let sig_a =
         RSASSA_PSS_SHA384::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
@@ -276,7 +276,7 @@ fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
 #[test]
 fn pss_sha512_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x22u8; 64];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA512, &sk, b"hello", salt).expect("signing must succeed");
@@ -287,7 +287,7 @@ fn pss_sha512_fixed_salt_round_trips() {
 #[test]
 fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
     let sig_a =
         RSASSA_PSS_SHA512::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
@@ -318,7 +318,7 @@ fn distinct_cases(tests: &[Value]) -> Vec<&Value> {
 
 fn run_sampled_pkcs1_v1_5_verify_vectors(
     filename: &str,
-    verify: impl Fn(&Rsa8192PublicKey, &[u8], &[u8; 1024]) -> bool,
+    verify: impl Fn(&RSA8192PublicKey, &[u8], &[u8; 1024]) -> bool,
     expected_sha: &str,
 ) {
     let doc: Value = serde_json::from_str(&get_test_data(filename)).expect("valid JSON");
@@ -327,7 +327,7 @@ fn run_sampled_pkcs1_v1_5_verify_vectors(
     let n: [u64; 128] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = Rsa8192PublicKey::new(&n, e).unwrap();
+    let pk = RSA8192PublicKey::new(&n, e).unwrap();
 
     let tests = group["tests"].as_array().unwrap();
     let sample = distinct_cases(tests);
@@ -386,9 +386,9 @@ fn rsa_signature_8192_sha512_wycheproof_vectors_sampled() {
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 
-fn fixed_keypair() -> Result<(Rsa8192PublicKey, Rsa8192PrivateKey), SignatureError> {
+fn fixed_keypair() -> Result<(RSA8192PublicKey, RSA8192PrivateKey), SignatureError> {
     let sk = genuine_key();
-    let pk = Rsa8192PublicKey::new(sk.n(), 0x10001)?;
+    let pk = RSA8192PublicKey::new(sk.n(), 0x10001)?;
     Ok((pk, sk))
 }
 
@@ -398,8 +398,8 @@ fn fixed_keypair() -> Result<(Rsa8192PublicKey, Rsa8192PrivateKey), SignatureErr
 #[test]
 fn pkcs1_v1_5_sha256_trait_conformance_suite() {
     TestFrameworkSignature::new(true, false).test_signature::<
-        Rsa8192PublicKey,
-        Rsa8192PrivateKey,
+        RSA8192PublicKey,
+        RSA8192PrivateKey,
         RSASSA_PKCS1_v1_5_SHA256,
         RSASSA_PKCS1_v1_5_SHA256,
         PK_LEN,
@@ -411,13 +411,13 @@ fn pkcs1_v1_5_sha256_trait_conformance_suite() {
 #[test]
 fn key_trait_boundary_conditions() {
     TestFrameworkSignatureKeys::new()
-        .test_keys::<Rsa8192PublicKey, Rsa8192PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
+        .test_keys::<RSA8192PublicKey, RSA8192PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
 }
 
-fn trait_round_trip<S>(pk: &Rsa8192PublicKey, sk: &Rsa8192PrivateKey)
+fn trait_round_trip<S>(pk: &RSA8192PublicKey, sk: &RSA8192PrivateKey)
 where
-    S: Signer<Rsa8192PrivateKey, SK_LEN, SIG_LEN>
-        + SignatureVerifier<Rsa8192PublicKey, PK_LEN, SIG_LEN>,
+    S: Signer<RSA8192PrivateKey, SK_LEN, SIG_LEN>
+        + SignatureVerifier<RSA8192PublicKey, PK_LEN, SIG_LEN>,
 {
     let msg = b"RSA-8192 trait round trip";
     let sig = S::sign(sk, msg, None).unwrap();

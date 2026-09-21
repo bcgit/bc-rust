@@ -8,7 +8,7 @@
 //! `(n, d)` pair, is not supported -- every real RSA private key ships as the CRT form because
 //! CRT-based signing (RFC 8017 §5.2.1 step 2.b) is the only signing path this crate implements.
 //!
-//! Each concrete modulus size's aliases of these types (`crate::rsa_2048::Rsa2048PrivateKey` and
+//! Each concrete modulus size's aliases of these types (`crate::rsa_2048::RSA2048PrivateKey` and
 //! siblings) implement `bouncycastle_core`'s `SignaturePrivateKey`/`SignaturePublicKey` traits,
 //! in that size's module, with the byte layouts described on each type below; the generic types
 //! here only carry the layout's implementation (`encode_raw`/`from_bytes_raw`, crate-private),
@@ -28,7 +28,7 @@ use core::fmt::{Display, Formatter};
 /// # Encoding
 ///
 /// `SignaturePublicKey::encode`/`from_bytes` (implemented per size, e.g. for
-/// `crate::rsa_2048::Rsa2048PublicKey`) use the raw layout `n || e`: `n` as `8 * L` big-endian
+/// `crate::rsa_2048::RSA2048PublicKey`) use the raw layout `n || e`: `n` as `8 * L` big-endian
 /// bytes (RFC 8017 §4.1's I2OSP), then `e` as 4 big-endian bytes, `PK_LEN = 8 * L + 4` in all.
 /// Not an RFC 8017 or ASN.1 format -- this crate has no DER encoder/decoder -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write public keys as files.
@@ -134,7 +134,7 @@ impl<const L: usize> Display for RsaPublicKey<L> {
 /// # Encoding
 ///
 /// `SignaturePrivateKey::encode`/`from_bytes` (implemented per size, e.g. for
-/// `crate::rsa_2048::Rsa2048PrivateKey`) use the raw layout `p || q || dP || dQ || qInv`, each
+/// `crate::rsa_2048::RSA2048PrivateKey`) use the raw layout `p || q || dP || dQ || qInv`, each
 /// `8 * HALF` big-endian bytes, `SK_LEN = 40 * HALF` in all. Not an RFC 8017 or ASN.1 format --
 /// see [`RsaPublicKey`]'s `# Encoding` for why -- just a fixed-width layout that round-trips, for
 /// `cli/src/rsa_cmd.rs` to read and write private keys as files. Decoding validates the five

@@ -9,14 +9,14 @@ use std::hint::black_box;
 
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_4096::{
-    RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE256,
-    Rsa4096PrivateKey, Rsa4096PublicKey,
+    RSA4096PrivateKey, RSA4096PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
+    RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512,
+    RSASSA_PSS_SHAKE256,
 };
 
 const MSG: &[u8] = b"a representative message for benchmarking RSA-4096";
 
-fn genuine_key() -> Rsa4096PrivateKey {
+fn genuine_key() -> RSA4096PrivateKey {
     let p: [u64; 32] = [
         0x5141acd4afd4771f, 0x5857742b7e4032dc, 0xb7a9b97fe5371396, 0x4b1783c5bc91a6dc,
         0xaf5d0c912d97b728, 0xeb265a7f28b88976, 0x5e993302aa72f11d, 0xc007ad09d76ae22a,
@@ -67,13 +67,13 @@ fn genuine_key() -> Rsa4096PrivateKey {
         0x748d7b5d94cacd4d, 0xcf634f3a07cea4b7, 0x8dbcca51f4da4379, 0x80774236a54ec9dc,
         0x6a1ef00ee582d3d1, 0xdecfb14ca1e80c8e, 0xc78af5f6c807cc99, 0x484ad86e79415ea3,
     ];
-    Rsa4096PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA4096PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("genuine RSA-4096 CRT components must be accepted")
 }
 
 fn bench_rsa_4096(c: &mut Criterion) {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
     let sig_pkcs1_256 = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();

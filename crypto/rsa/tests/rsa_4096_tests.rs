@@ -19,9 +19,9 @@ use bouncycastle_core_test_framework::signature::{
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_4096::{
-    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa4096PrivateKey, Rsa4096PublicKey,
-    SIG_LEN, SK_LEN,
+    PK_LEN, RSA4096PrivateKey, RSA4096PublicKey, RSASSA_PKCS1_v1_5_SHA256,
+    RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384,
+    RSASSA_PSS_SHA512, SIG_LEN, SK_LEN,
 };
 use serde_json::Value;
 use std::fs;
@@ -69,7 +69,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-fn genuine_key() -> Rsa4096PrivateKey {
+fn genuine_key() -> RSA4096PrivateKey {
     let p: [u64; 32] = [
         0x5141acd4afd4771f, 0x5857742b7e4032dc, 0xb7a9b97fe5371396, 0x4b1783c5bc91a6dc,
         0xaf5d0c912d97b728, 0xeb265a7f28b88976, 0x5e993302aa72f11d, 0xc007ad09d76ae22a,
@@ -120,7 +120,7 @@ fn genuine_key() -> Rsa4096PrivateKey {
         0x748d7b5d94cacd4d, 0xcf634f3a07cea4b7, 0x8dbcca51f4da4379, 0x80774236a54ec9dc,
         0x6a1ef00ee582d3d1, 0xdecfb14ca1e80c8e, 0xc78af5f6c807cc99, 0x484ad86e79415ea3,
     ];
-    Rsa4096PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA4096PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("recovered CRT components must be accepted")
 }
 
@@ -157,7 +157,7 @@ fn pkcs1_v1_5_sig_gen_4096_sha256() {
 #[test]
 fn pkcs1_v1_5_sha384_and_sha512_round_trip() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let sig384 = RSASSA_PKCS1_v1_5_SHA384::sign(&sk, b"hello", None).unwrap();
     RSASSA_PKCS1_v1_5_SHA384::verify(&pk, b"hello", None, &sig384).unwrap();
     let sig512 = RSASSA_PKCS1_v1_5_SHA512::sign(&sk, b"hello", None).unwrap();
@@ -166,7 +166,7 @@ fn pkcs1_v1_5_sha384_and_sha512_round_trip() {
 
 fn run_pkcs1_v1_5_verify_vectors(
     filename: &str,
-    verify: impl Fn(&Rsa4096PublicKey, &[u8], &[u8; 512]) -> bool,
+    verify: impl Fn(&RSA4096PublicKey, &[u8], &[u8; 512]) -> bool,
     expected_sha: &str,
     expected_valid: usize,
     expected_invalid: usize,
@@ -181,7 +181,7 @@ fn run_pkcs1_v1_5_verify_vectors(
         let n: [u64; 64] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .unwrap();
-        let pk = Rsa4096PublicKey::new(&n, e).unwrap();
+        let pk = RSA4096PublicKey::new(&n, e).unwrap();
 
         for test in group["tests"].as_array().unwrap() {
             let tc_id = test["tcId"].as_u64().unwrap();
@@ -254,7 +254,7 @@ fn rsa_signature_4096_sha512_wycheproof_vectors() {
 
 fn run_pss_verify_vectors(
     filename: &str,
-    verify: impl Fn(&Rsa4096PublicKey, &[u8], &[u8; 512]) -> bool,
+    verify: impl Fn(&RSA4096PublicKey, &[u8], &[u8; 512]) -> bool,
     expected_sha: &str,
     expected_slen: u64,
     expected_valid: usize,
@@ -271,7 +271,7 @@ fn run_pss_verify_vectors(
         let n: [u64; 64] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .unwrap();
-        let pk = Rsa4096PublicKey::new(&n, e).unwrap();
+        let pk = RSA4096PublicKey::new(&n, e).unwrap();
 
         for test in group["tests"].as_array().unwrap() {
             let tc_id = test["tcId"].as_u64().unwrap();
@@ -345,7 +345,7 @@ fn rsa_pss_4096_sha512_mgf1_64_wycheproof_vectors() {
 #[test]
 fn pss_sha256_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x22u8; 32];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA256, &sk, b"hello", salt).expect("signing must succeed");
@@ -356,7 +356,7 @@ fn pss_sha256_fixed_salt_round_trips() {
 #[test]
 fn pss_sha256_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
     let sig_a =
         RSASSA_PSS_SHA256::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
@@ -370,7 +370,7 @@ fn pss_sha256_rng_produces_fresh_salts_that_both_verify() {
 #[test]
 fn pss_sha384_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x11u8; 48];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA384, &sk, b"hello", salt).expect("signing must succeed");
@@ -381,7 +381,7 @@ fn pss_sha384_fixed_salt_round_trips() {
 #[test]
 fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
     let sig_a =
         RSASSA_PSS_SHA384::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
@@ -395,7 +395,7 @@ fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
 #[test]
 fn pss_sha512_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let salt = [0x33u8; 64];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA512, &sk, b"hello", salt).expect("signing must succeed");
@@ -406,7 +406,7 @@ fn pss_sha512_fixed_salt_round_trips() {
 #[test]
 fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
     let sig_a =
         RSASSA_PSS_SHA512::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
@@ -419,9 +419,9 @@ fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 
-fn fixed_keypair() -> Result<(Rsa4096PublicKey, Rsa4096PrivateKey), SignatureError> {
+fn fixed_keypair() -> Result<(RSA4096PublicKey, RSA4096PrivateKey), SignatureError> {
     let sk = genuine_key();
-    let pk = Rsa4096PublicKey::new(sk.n(), 0x10001)?;
+    let pk = RSA4096PublicKey::new(sk.n(), 0x10001)?;
     Ok((pk, sk))
 }
 
@@ -433,8 +433,8 @@ fn fixed_keypair() -> Result<(Rsa4096PublicKey, Rsa4096PrivateKey), SignatureErr
 #[test]
 fn sha256_trait_conformance_suites() {
     TestFrameworkSignature::new(true, false).test_signature::<
-        Rsa4096PublicKey,
-        Rsa4096PrivateKey,
+        RSA4096PublicKey,
+        RSA4096PrivateKey,
         RSASSA_PKCS1_v1_5_SHA256,
         RSASSA_PKCS1_v1_5_SHA256,
         PK_LEN,
@@ -442,8 +442,8 @@ fn sha256_trait_conformance_suites() {
         SIG_LEN,
     >(fixed_keypair, false);
     TestFrameworkSignature::new(false, false).test_signature::<
-        Rsa4096PublicKey,
-        Rsa4096PrivateKey,
+        RSA4096PublicKey,
+        RSA4096PrivateKey,
         RSASSA_PSS_SHA256,
         RSASSA_PSS_SHA256,
         PK_LEN,
@@ -455,15 +455,15 @@ fn sha256_trait_conformance_suites() {
 #[test]
 fn key_trait_boundary_conditions() {
     TestFrameworkSignatureKeys::new()
-        .test_keys::<Rsa4096PublicKey, Rsa4096PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
+        .test_keys::<RSA4096PublicKey, RSA4096PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
 }
 
 /// Sign one-shot and streamed, verify both, and reject a different message -- what a wrong width
 /// constant in this size's aliases would break.
-fn trait_round_trip<S>(pk: &Rsa4096PublicKey, sk: &Rsa4096PrivateKey)
+fn trait_round_trip<S>(pk: &RSA4096PublicKey, sk: &RSA4096PrivateKey)
 where
-    S: Signer<Rsa4096PrivateKey, SK_LEN, SIG_LEN>
-        + SignatureVerifier<Rsa4096PublicKey, PK_LEN, SIG_LEN>,
+    S: Signer<RSA4096PrivateKey, SK_LEN, SIG_LEN>
+        + SignatureVerifier<RSA4096PublicKey, PK_LEN, SIG_LEN>,
 {
     let msg = b"RSA-4096 trait round trip";
     let sig = S::sign(sk, msg, None).unwrap();

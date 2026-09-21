@@ -12,8 +12,8 @@ use bouncycastle::core::traits::{
     SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
 };
 use bouncycastle::rsa::rsa_2048::{
-    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, RSASSA_PSS_SHAKE128, Rsa2048PrivateKey,
-    Rsa2048PublicKey, SIG_LEN,
+    PK_LEN, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256,
+    RSASSA_PSS_SHAKE128, SIG_LEN,
 };
 use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
@@ -158,12 +158,12 @@ fn temp_file(tag: &str, contents: &[u8]) -> String {
     path.to_string_lossy().into_owned()
 }
 
-fn sk_2048() -> Rsa2048PrivateKey {
-    Rsa2048PrivateKey::from_bytes(&unhex(SK_2048_HEX)).expect("the documented key decodes")
+fn sk_2048() -> RSA2048PrivateKey {
+    RSA2048PrivateKey::from_bytes(&unhex(SK_2048_HEX)).expect("the documented key decodes")
 }
 
-fn pk_2048() -> Rsa2048PublicKey {
-    Rsa2048PublicKey::from_bytes(&unhex(PK_2048_HEX)).expect("the documented key decodes")
+fn pk_2048() -> RSA2048PublicKey {
+    RSA2048PublicKey::from_bytes(&unhex(PK_2048_HEX)).expect("the documented key decodes")
 }
 
 /// The CLI accepts key and signature files as hex (as written here) or binary.
@@ -229,7 +229,7 @@ fn rsa_2048_pkcs1v15_signature_matches_the_library_and_verifies() {
 
 /// One PSS pairing: two CLI signatures of one message differ (a fresh salt each), and both
 /// verify -- through the library's `SignatureVerifier` `V` and through the CLI.
-fn pss_case<V: SignatureVerifier<Rsa2048PublicKey, PK_LEN, SIG_LEN>>(hash: &str, msg: &[u8]) {
+fn pss_case<V: SignatureVerifier<RSA2048PublicKey, PK_LEN, SIG_LEN>>(hash: &str, msg: &[u8]) {
     let pk = pk_2048();
     let sig_a = rsa_2048_sign("pss", hash, msg);
     let sig_b = rsa_2048_sign("pss", hash, msg);

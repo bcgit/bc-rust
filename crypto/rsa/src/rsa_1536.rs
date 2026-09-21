@@ -1,5 +1,5 @@
 //! RSA-1536: verification only. `L = 24` (1536 bits). As with [`crate::rsa_1024`], there is no
-//! `Rsa1536PrivateKey` and no signing function -- see that module's docs and this crate's
+//! `RSA1536PrivateKey` and no signing function -- see that module's docs and this crate's
 //! `# Scope` for why.
 //!
 //! Only PKCS#1 v1.5 is wired up: Wycheproof has no PSS vectors at 1536 bits (nor, realistically,
@@ -17,15 +17,15 @@ use bouncycastle_core::traits::SignaturePublicKey;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 
 /// An RSA-1536 public key.
-pub type Rsa1536PublicKey = RsaPublicKey<24>;
+pub type RSA1536PublicKey = RsaPublicKey<24>;
 
-/// Encoded length of an [`Rsa1536PublicKey`] under [`SignaturePublicKey`]: 192 + 4 bytes (see
+/// Encoded length of an [`RSA1536PublicKey`] under [`SignaturePublicKey`]: 192 + 4 bytes (see
 /// [`RsaPublicKey`]'s `# Encoding`).
 pub const PK_LEN: usize = 196;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.2.1 step 2.c).
 pub const SIG_LEN: usize = 192;
 
-impl SignaturePublicKey<PK_LEN> for Rsa1536PublicKey {
+impl SignaturePublicKey<PK_LEN> for RSA1536PublicKey {
     fn encode(&self) -> [u8; PK_LEN] {
         self.encode_raw::<192, PK_LEN>()
     }

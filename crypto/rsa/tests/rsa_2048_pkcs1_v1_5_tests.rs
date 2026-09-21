@@ -38,7 +38,7 @@ use bouncycastle_core_test_framework::signature::{
 };
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_2048::{
-    PK_LEN, RSASSA_PKCS1_v1_5_SHA256, Rsa2048PrivateKey, Rsa2048PublicKey, SIG_LEN, SK_LEN,
+    PK_LEN, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, SIG_LEN, SK_LEN,
 };
 use bouncycastle_rsa::rsassa_pkcs1_v1_5;
 use bouncycastle_sha2::SHA256;
@@ -81,7 +81,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
     limbs
 }
 
-fn wycheproof_key() -> Rsa2048PrivateKey {
+fn wycheproof_key() -> RSA2048PrivateKey {
     // Little-endian [u64; 16] limbs -- P[0] is p's *least* significant 64 bits. (An earlier
     // version of this file tried to write these as a single big-endian hex string by
     // concatenating the limbs in array order, which silently reverses significance at each 8-byte
@@ -117,7 +117,7 @@ fn wycheproof_key() -> Rsa2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    Rsa2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("recovered CRT components must be accepted")
 }
 
@@ -158,9 +158,9 @@ fn pkcs1_v1_5_sig_gen_2048_sha256() {
 
 /// The same genuine key pair as the sig-gen test above, in the `fn() -> Result<(PK, SK)>`
 /// shape `core-test-framework` takes in place of a key generator (this crate has none).
-fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureError> {
+fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
     let sk = wycheproof_key();
-    let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
+    let pk = RSA2048PublicKey::new(sk.n(), 0x10001)?;
     Ok((pk, sk))
 }
 
@@ -172,8 +172,8 @@ fn fixed_keypair() -> Result<(Rsa2048PublicKey, Rsa2048PrivateKey), SignatureErr
 #[test]
 fn pkcs1_v1_5_sha256_trait_conformance_suite() {
     TestFrameworkSignature::new(true, false).test_signature::<
-        Rsa2048PublicKey,
-        Rsa2048PrivateKey,
+        RSA2048PublicKey,
+        RSA2048PrivateKey,
         RSASSA_PKCS1_v1_5_SHA256,
         RSASSA_PKCS1_v1_5_SHA256,
         PK_LEN,
@@ -185,7 +185,7 @@ fn pkcs1_v1_5_sha256_trait_conformance_suite() {
 #[test]
 fn key_trait_boundary_conditions() {
     TestFrameworkSignatureKeys::new()
-        .test_keys::<Rsa2048PublicKey, Rsa2048PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
+        .test_keys::<RSA2048PublicKey, RSA2048PrivateKey, PK_LEN, SK_LEN>(fixed_keypair);
 }
 
 /// Streamed and one-shot signing are one computation: PKCS#1 v1.5 is deterministic, so the
@@ -257,7 +257,7 @@ fn rsa_signature_sha256_all_groups() {
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .unwrap();
-        let pk = Rsa2048PublicKey::new(&n, e).unwrap();
+        let pk = RSA2048PublicKey::new(&n, e).unwrap();
 
         for test in group["tests"].as_array().unwrap() {
             num_tests += 1;

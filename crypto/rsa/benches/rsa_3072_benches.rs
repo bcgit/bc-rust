@@ -8,14 +8,14 @@ use std::hint::black_box;
 
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::rsa_3072::{
-    RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
-    Rsa3072PrivateKey, Rsa3072PublicKey,
+    RSA3072PrivateKey, RSA3072PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
+    RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512,
+    RSASSA_PSS_SHAKE128,
 };
 
 const MSG: &[u8] = b"a representative message for benchmarking RSA-3072";
 
-fn genuine_key() -> Rsa3072PrivateKey {
+fn genuine_key() -> RSA3072PrivateKey {
     let p: [u64; 24] = [
         0xb26d973345bc4c5f, 0x23251a1d29962ca9, 0x554fc3f23d6c9046, 0x89ffe73b1401e9b8,
         0xe0b448b454670aca, 0xa73ea5c2413d1da2, 0xe9539bc7a8d3b351, 0x357984fc116af9cb,
@@ -56,13 +56,13 @@ fn genuine_key() -> Rsa3072PrivateKey {
         0xfe6c3600d9b8e9a9, 0x744fac4daabf5488, 0xfbee6ec24b75fbf0, 0x8be552c8be44f139,
         0xfb0da96bd423759d, 0xb3443d93e7e8ca62, 0x36fe01b950885ecd, 0x214a1f73130e48b3,
     ];
-    Rsa3072PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RSA3072PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("genuine RSA-3072 CRT components must be accepted")
 }
 
 fn bench_rsa_3072(c: &mut Criterion) {
     let sk = genuine_key();
-    let pk = Rsa3072PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RSA3072PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
     let sig_pkcs1_256 = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();

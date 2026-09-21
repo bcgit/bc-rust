@@ -9,20 +9,20 @@ use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 
 /// An RSA-8192 private key (`p`, `q` each 4096 bits).
-pub type Rsa8192PrivateKey = RsaPrivateKey<128, 64>;
+pub type RSA8192PrivateKey = RsaPrivateKey<128, 64>;
 /// An RSA-8192 public key.
-pub type Rsa8192PublicKey = RsaPublicKey<128>;
+pub type RSA8192PublicKey = RsaPublicKey<128>;
 
-/// Encoded length of an [`Rsa8192PrivateKey`] under [`SignaturePrivateKey`]: five 512-byte
+/// Encoded length of an [`RSA8192PrivateKey`] under [`SignaturePrivateKey`]: five 512-byte
 /// values (see [`RsaPrivateKey`]'s `# Encoding`).
 pub const SK_LEN: usize = 2560;
-/// Encoded length of an [`Rsa8192PublicKey`] under [`SignaturePublicKey`]: 1024 + 4 bytes (see
+/// Encoded length of an [`RSA8192PublicKey`] under [`SignaturePublicKey`]: 1024 + 4 bytes (see
 /// [`RsaPublicKey`]'s `# Encoding`).
 pub const PK_LEN: usize = 1028;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.1.1/§8.2.1 step 2.c).
 pub const SIG_LEN: usize = 1024;
 
-impl SignaturePrivateKey<SK_LEN> for Rsa8192PrivateKey {
+impl SignaturePrivateKey<SK_LEN> for RSA8192PrivateKey {
     fn encode(&self) -> [u8; SK_LEN] {
         self.encode_raw::<512, SK_LEN>()
     }
@@ -40,7 +40,7 @@ impl SignaturePrivateKey<SK_LEN> for Rsa8192PrivateKey {
     }
 }
 
-impl SignaturePublicKey<PK_LEN> for Rsa8192PublicKey {
+impl SignaturePublicKey<PK_LEN> for RSA8192PublicKey {
     fn encode(&self) -> [u8; PK_LEN] {
         self.encode_raw::<1024, PK_LEN>()
     }

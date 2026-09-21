@@ -207,18 +207,18 @@ pub(crate) fn rsa_1024_cmd(
     sigfile: &Option<String>,
 ) {
     use rsa_1024::{
-        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, Rsa1024PublicKey, SIG_LEN,
+        PK_LEN, RSA1024PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, SIG_LEN,
     };
     match (scheme, hash) {
         (RSAScheme::Pkcs1v15, RSAHash::Sha256) => {
-            do_verify::<Rsa1024PublicKey, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SIG_LEN>(
+            do_verify::<RSA1024PublicKey, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SIG_LEN>(
                 pkfile,
                 sigfile,
                 "RSA-1024/PKCS#1v1.5/SHA-256",
             )
         }
         (RSAScheme::Pkcs1v15, RSAHash::Sha384) => {
-            do_verify::<Rsa1024PublicKey, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SIG_LEN>(
+            do_verify::<RSA1024PublicKey, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SIG_LEN>(
                 pkfile,
                 sigfile,
                 "RSA-1024/PKCS#1v1.5/SHA-384",
@@ -236,26 +236,26 @@ pub(crate) fn rsa_1536_cmd(
     sigfile: &Option<String>,
 ) {
     use rsa_1536::{
-        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-        Rsa1536PublicKey, SIG_LEN,
+        PK_LEN, RSA1536PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
+        RSASSA_PKCS1_v1_5_SHA512, SIG_LEN,
     };
     match (scheme, hash) {
         (RSAScheme::Pkcs1v15, RSAHash::Sha256) => {
-            do_verify::<Rsa1536PublicKey, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SIG_LEN>(
+            do_verify::<RSA1536PublicKey, RSASSA_PKCS1_v1_5_SHA256, PK_LEN, SIG_LEN>(
                 pkfile,
                 sigfile,
                 "RSA-1536/PKCS#1v1.5/SHA-256",
             )
         }
         (RSAScheme::Pkcs1v15, RSAHash::Sha384) => {
-            do_verify::<Rsa1536PublicKey, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SIG_LEN>(
+            do_verify::<RSA1536PublicKey, RSASSA_PKCS1_v1_5_SHA384, PK_LEN, SIG_LEN>(
                 pkfile,
                 sigfile,
                 "RSA-1536/PKCS#1v1.5/SHA-384",
             )
         }
         (RSAScheme::Pkcs1v15, RSAHash::Sha512) => {
-            do_verify::<Rsa1536PublicKey, RSASSA_PKCS1_v1_5_SHA512, PK_LEN, SIG_LEN>(
+            do_verify::<RSA1536PublicKey, RSASSA_PKCS1_v1_5_SHA512, PK_LEN, SIG_LEN>(
                 pkfile,
                 sigfile,
                 "RSA-1536/PKCS#1v1.5/SHA-512",
@@ -278,9 +278,9 @@ pub(crate) fn rsa_2048_cmd(
     output_hex: bool,
 ) {
     use rsa_2048::{
-        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
-        Rsa2048PrivateKey as SK, Rsa2048PublicKey as PK, SIG_LEN, SK_LEN,
+        PK_LEN, RSA2048PrivateKey as SK, RSA2048PublicKey as PK, RSASSA_PKCS1_v1_5_SHA256,
+        RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384,
+        RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
     let run =
@@ -333,9 +333,9 @@ pub(crate) fn rsa_3072_cmd(
     output_hex: bool,
 ) {
     use rsa_3072::{
-        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
-        Rsa3072PrivateKey as SK, Rsa3072PublicKey as PK, SIG_LEN, SK_LEN,
+        PK_LEN, RSA3072PrivateKey as SK, RSA3072PublicKey as PK, RSASSA_PKCS1_v1_5_SHA256,
+        RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384,
+        RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
     let run =
@@ -389,9 +389,9 @@ pub(crate) fn rsa_4096_cmd(
     output_hex: bool,
 ) {
     use rsa_4096::{
-        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE256,
-        Rsa4096PrivateKey as SK, Rsa4096PublicKey as PK, SIG_LEN, SK_LEN,
+        PK_LEN, RSA4096PrivateKey as SK, RSA4096PublicKey as PK, RSASSA_PKCS1_v1_5_SHA256,
+        RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384,
+        RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE256, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
     let run =
@@ -446,9 +446,9 @@ pub(crate) fn rsa_8192_cmd(
     output_hex: bool,
 ) {
     use rsa_8192::{
-        PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-        RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, Rsa8192PrivateKey as SK,
-        Rsa8192PublicKey as PK, SIG_LEN, SK_LEN,
+        PK_LEN, RSA8192PrivateKey as SK, RSA8192PublicKey as PK, RSASSA_PKCS1_v1_5_SHA256,
+        RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384,
+        RSASSA_PSS_SHA512, SIG_LEN, SK_LEN,
     };
     let args = (skfile, pkfile, sigfile, output_hex);
     let run =
