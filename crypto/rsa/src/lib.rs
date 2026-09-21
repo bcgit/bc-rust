@@ -13,14 +13,16 @@
 //! only, enforced by the absence of a private-key type (and so of any `Signer` impl) for those
 //! sizes rather than a runtime check.
 //!
-//! Every (scheme, hash, modulus size) pairing is available two ways over one implementation:
-//! as a pair of free functions taking a whole message (`pkcs1_v1_5_sign_sha256`/`..._verify_...`
-//! in each size module), and as a type implementing [`bouncycastle_core`]'s
+//! Every (scheme, hash, modulus size) pairing is a type implementing [`bouncycastle_core`]'s
 //! [`Signer`](bouncycastle_core::traits::Signer)/[`SignatureVerifier`](bouncycastle_core::traits::SignatureVerifier)
-//! traits (`RSASSA_PKCS1_v1_5_SHA256` and siblings in each size module), which adds the
-//! streaming `_init`/`_update`/`_final` form. The key types implement
+//! traits (`RSASSA_PKCS1_v1_5_SHA256` and siblings in each size module), one-shot or streaming
+//! (`_init`/`_update`/`_final`), the same API shape as this workspace's ECDSA, SM2 and ML-DSA
+//! crates. RSASSA-PSS's salt comes from the library's default RNG through `Signer::sign`, from
+//! a caller-supplied RNG through `sign_randomized`, or is fixed through `set_signer_salt` on a
+//! streaming state. The key types implement
 //! [`SignaturePrivateKey`](bouncycastle_core::traits::SignaturePrivateKey)/[`SignaturePublicKey`](bouncycastle_core::traits::SignaturePublicKey)
-//! per size.
+//! per size. The generic `rsassa_*` modules also expose `*_from_hash` entry points that take
+//! the message hash rather than the message, for a caller that already holds the digest.
 //!
 //! # Usage Examples
 //!
@@ -66,6 +68,23 @@
 //! RSASSA_PSS_SHA256::verify(&pk, b"the message to sign", None, &sig_a)?;
 //! RSASSA_PSS_SHA256::verify(&pk, b"the message to sign", None, &sig_b)?;
 //!
+//! // ... or from a caller-supplied RNG (as ECDSA's and SM2's `sign_randomized`), ...
+//! use bouncycastle_rng::DefaultRNG;
+//! let sig_c = RSASSA_PSS_SHA256::sign_randomized(&sk, b"the message to sign", &mut DefaultRNG::default())?;
+//! RSASSA_PSS_SHA256::verify(&pk, b"the message to sign", None, &sig_c)?;
+//!
+//! // ... or fixed on a streaming state (as ML-DSA's `set_signer_rnd`), which makes PSS
+//! // deterministic -- for a caller with its own randomness source, or a test against a known salt.
+//! let mut signer = RSASSA_PSS_SHA256::sign_init(&sk, None)?;
+//! signer.set_signer_salt([0x42u8; 32]);
+//! signer.sign_update(b"the message to sign");
+//! let sig_d = signer.sign_final()?;
+//! let mut signer = RSASSA_PSS_SHA256::sign_init(&sk, None)?;
+//! signer.set_signer_salt([0x42u8; 32]);
+//! signer.sign_update(b"the message to sign");
+//! assert_eq!(signer.sign_final()?, sig_d);
+//! RSASSA_PSS_SHA256::verify(&pk, b"the message to sign", None, &sig_d)?;
+//!
 //! // Keys round-trip through the traits' raw fixed-width encoding (see `keys`'s docs).
 //! let pk_again = Rsa2048PublicKey::from_bytes(&pk.encode())?;
 //! assert_eq!(pk_again, pk);
@@ -74,61 +93,27 @@
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! The same RSA-2048/SHA-256 pairing through the free functions, which take a whole message and
-//! (for PSS) an explicit RNG or salt:
+//! RSA-1024 verification, the other major usage pattern: no private key or `Signer` exists for
+//! this size at all (see `# Scope` above), only a `SignatureVerifier` for signatures produced
+//! elsewhere -- here, one of Wycheproof's own genuine `rsa_pkcs1_1024_sig_gen_test.json`
+//! signatures (`tests/rsa_1024_tests.rs` has the full, sourced provenance):
 //!
 //! ```
-//! use bouncycastle_rsa::rsa_2048::{Rsa2048PrivateKey, Rsa2048PublicKey, pkcs1_v1_5_sign_sha256, pkcs1_v1_5_verify_sha256};
-//! # // A genuine RSA-2048 keypair (Wycheproof rsa_pkcs1_2048_sig_gen_test.json's first SHA-256
-//! # // group; `tests/rsa_2048_pkcs1_v1_5_tests.rs` has the full, sourced provenance).
-//! # const P: [u64; 16] = [0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9, 0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788, 0x978f6c35814f50ee, 0xe6a289ad4cfbf78f, 0x34d5681e5809d415, 0xbb028bda42eeb5d2, 0x41c56e4de086b0d5, 0x58b8d1e24f3b55d0, 0xfb5248247d98cb7d, 0xdc431050f782e894];
-//! # const Q: [u64; 16] = [0x669f140cfbc20f25, 0xb97bb03677207d95, 0xfd4e06f3ed7299d4, 0x160f90536abc9492, 0xf5b131f39098f7bc, 0xae8d72c57088d7ab, 0x89b94fbde542aba9, 0x3d3f9880ec47d5e0, 0x1378a6868af3b7a0, 0x5544070beb057c94, 0x16611debc472fac4, 0xe500ffb79f5b8868, 0x308a5e32196603b2, 0xea5fb19eb4eabc38, 0x122273ae3222b598, 0xbd1a81e7977f9898];
-//! # const D_P: [u64; 16] = [0x209f33f09515d7c1, 0xb4a9b37656917205, 0x276933bb07e4efb9, 0x8c14019808e00414, 0x289f96da220711e5, 0xfbbd2923d31532fe, 0xc06b414e61c0e1e7, 0x4c23c4588488961d, 0x4dc48ae34514759c, 0x9c786961ae3e2c35, 0x497e8d9c650688e0, 0x18bf08472612dbe5, 0x8885fb161870ee12, 0xf21d7c1479d99d47, 0x9121d91952ffd1c7, 0xa94b528b28f29159];
-//! # const D_Q: [u64; 16] = [0xf7597ffb68011d8d, 0x7b3cc538c4bab8c9, 0xa8fa480a81a925af, 0x6d6ede7251a383bf, 0x8a63f788ce3a0f85, 0x0b920502eb478bc9, 0x7e37e755edfe70d9, 0x9cf9948422a16555, 0x0d6d9ea1f2ef71fd, 0xf7efa32ea0cb6e00, 0x0629b114ca7f780f, 0xcf51176359654348, 0x540cdcbd4ad35435, 0x31c02ff1a2bc437c, 0xff2503df78bafed5, 0x3af0e72a933aef09];
-//! # const Q_INV: [u64; 16] = [0x552fe4bfce945f7b, 0x67e50c999c67247b, 0xfb54ef17be3b2853, 0x241f5921b5ad3983, 0x02de5eccd143cf31, 0x74e45f6fcc60f216, 0xafa5428a74f12708, 0x88d42294b6a2759b, 0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51, 0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163];
-//! let sk = Rsa2048PrivateKey::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)?;
-//! let pk = Rsa2048PublicKey::new(sk.n(), 0x10001)?;
-//!
-//! let signature = pkcs1_v1_5_sign_sha256(&sk, b"the message to sign")?;
-//! pkcs1_v1_5_verify_sha256(&pk, b"the message to sign", &signature)?;
-//!
-//! // A signature does not verify against a different message.
-//! assert!(pkcs1_v1_5_verify_sha256(&pk, b"a different message", &signature).is_err());
-//!
-//! // RSASSA-PSS is randomized (a fresh salt each time), so two signatures of the same message
-//! // differ, but both verify.
-//! use bouncycastle_rsa::rsa_2048::{pss_sign_sha256, pss_verify_sha256};
-//! use bouncycastle_rng::DefaultRNG;
-//!
-//! let mut rng = DefaultRNG::default();
-//! let sig_a = pss_sign_sha256(&sk, b"the message to sign", &mut rng)?;
-//! let sig_b = pss_sign_sha256(&sk, b"the message to sign", &mut rng)?;
-//! assert_ne!(sig_a, sig_b);
-//! pss_verify_sha256(&pk, b"the message to sign", &sig_a)?;
-//! pss_verify_sha256(&pk, b"the message to sign", &sig_b)?;
-//! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
-//! ```
-//!
-//! RSA-1024 verification, the other major usage pattern: no private key or signer exists for this
-//! size at all (see `# Scope` above), only verification against a signature produced elsewhere --
-//! here, one of Wycheproof's own genuine `rsa_pkcs1_1024_sig_gen_test.json` signatures
-//! (`tests/rsa_1024_tests.rs` has the full, sourced provenance):
-//!
-//! ```
-//! use bouncycastle_rsa::rsa_1024::{Rsa1024PublicKey, pkcs1_v1_5_verify_sha256};
+//! use bouncycastle_core::traits::SignatureVerifier;
+//! use bouncycastle_rsa::rsa_1024::{RSASSA_PKCS1_v1_5_SHA256, Rsa1024PublicKey};
 //! # const N: [u64; 16] = [0xd00343468eaacfbf, 0xb7c7044cc202dcca, 0x9686f30f478db649, 0x5179b54951fff6aa, 0xbabb14f550d5d0dd, 0x5405db7c5c8f4cf6, 0x9816e2eda41fd7b9, 0xb31b6abd805bace9, 0xb909dd0f4c6014f2, 0x9c8a5810b6d05990, 0x40760d1f23fe9250, 0x90adb011a919575a, 0x45e48572113cab28, 0xcb9ca9ec12000fc8, 0x91b4fcaf62a14595, 0xac9048a7a4f560af];
-//! let sig: [u8; 128] = bouncycastle_hex::decode("41339884a9b3940e8488d666bb158063c6a2a2717cae7f564834a876fcbf7098ecf3acbfabf37d38a8e6127b1e313744f1f896e165efdaea0b2e7673867842b9e94db0868ed9a92bcdcb370a4e20ff275c82595e4400a8b9e9f12482f014846b48216f321266ae6ae6338dbcdc41b711e483e6e3e728772e7f9f5ef95c30196b").unwrap().try_into().unwrap();
+//! let sig = bouncycastle_hex::decode("41339884a9b3940e8488d666bb158063c6a2a2717cae7f564834a876fcbf7098ecf3acbfabf37d38a8e6127b1e313744f1f896e165efdaea0b2e7673867842b9e94db0868ed9a92bcdcb370a4e20ff275c82595e4400a8b9e9f12482f014846b48216f321266ae6ae6338dbcdc41b711e483e6e3e728772e7f9f5ef95c30196b").unwrap();
 //! let msg = [0u8; 20]; // Wycheproof's own genuine message for this signature.
 //! let pk = Rsa1024PublicKey::new(&N, 0x10001)?;
-//! pkcs1_v1_5_verify_sha256(&pk, &msg, &sig)?;
+//! RSASSA_PKCS1_v1_5_SHA256::verify(&pk, &msg, None, &sig)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! RSASSA-PSS-SHAKE128/256 (RFC 8702 §3.2.1, [`rsa_2048::pss_shake128_sign`]/`_verify` and
-//! siblings at RSA-3072/4096) follow the exact same `sign`/`sign_with_salt`/`verify` shape as
-//! `pss_sign_sha256`/`pss_verify_sha256` above, just with a different function name per §5's
-//! recommended pairing (SHAKE128 at 2048/3072, SHAKE256 at 4096) -- see [`rsa_2048`]'s own docs
-//! rather than a second, near-identical example here.
+//! RSASSA-PSS-SHAKE128/256 (RFC 8702 §3.2.1: [`rsa_2048::RSASSA_PSS_SHAKE128`],
+//! [`rsa_3072::RSASSA_PSS_SHAKE128`], [`rsa_4096::RSASSA_PSS_SHAKE256`], per §5's recommended
+//! pairing) have exactly the shape of `RSASSA_PSS_SHA256` above, `sign_randomized` and
+//! `set_signer_salt` included -- see [`rsa_2048`]'s own docs rather than a second, near-identical
+//! example here.
 //!
 //! # Status
 //!

@@ -3,12 +3,13 @@
 //! `rsa_pkcs1_1536_sig_gen_test.json`'s own genuine `(n, e)` and real `(msg, sig)` pairs, the same
 //! provenance `tests/rsa_1536_tests.rs` uses.
 
+use bouncycastle_core::traits::SignatureVerifier;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1536::{
-    Rsa1536PublicKey, pkcs1_v1_5_verify_sha256, pkcs1_v1_5_verify_sha384, pkcs1_v1_5_verify_sha512,
+    RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, Rsa1536PublicKey,
 };
 
 fn bench_rsa_1536(c: &mut Criterion) {
@@ -64,20 +65,35 @@ fn bench_rsa_1536(c: &mut Criterion) {
     let mut group = c.benchmark_group("rsa_1536");
     group.bench_function("pkcs1v15_verify_sha256", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha256(black_box(&pk_sha256), black_box(&msg), black_box(&sig_sha256))
-                .unwrap()
+            RSASSA_PKCS1_v1_5_SHA256::verify(
+                black_box(&pk_sha256),
+                black_box(&msg),
+                None,
+                black_box(&sig_sha256),
+            )
+            .unwrap()
         })
     });
     group.bench_function("pkcs1v15_verify_sha384", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha384(black_box(&pk_sha384), black_box(&msg), black_box(&sig_sha384))
-                .unwrap()
+            RSASSA_PKCS1_v1_5_SHA384::verify(
+                black_box(&pk_sha384),
+                black_box(&msg),
+                None,
+                black_box(&sig_sha384),
+            )
+            .unwrap()
         })
     });
     group.bench_function("pkcs1v15_verify_sha512", |b| {
         b.iter(|| {
-            pkcs1_v1_5_verify_sha512(black_box(&pk_sha512), black_box(&msg), black_box(&sig_sha512))
-                .unwrap()
+            RSASSA_PKCS1_v1_5_SHA512::verify(
+                black_box(&pk_sha512),
+                black_box(&msg),
+                None,
+                black_box(&sig_sha512),
+            )
+            .unwrap()
         })
     });
     group.finish();
