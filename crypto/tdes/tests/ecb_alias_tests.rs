@@ -7,7 +7,7 @@
 //! value than CBC's.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, TDES, TDES_ECB};

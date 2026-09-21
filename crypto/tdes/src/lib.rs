@@ -58,7 +58,7 @@
 //! ```
 //! use bouncycastle_tdes::TDES_CBC;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
 //! use bouncycastle_padding::PKCS7;
 //!
@@ -105,7 +105,7 @@
 //! ```
 //! use bouncycastle_tdes::TDES2_CBC;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::SimpleCipherDecryptor;
+//! use bouncycastle_core::traits::SymmetricCipherDecryptor;
 //! use bouncycastle_padding::NoPadding;
 //!
 //! // NIST CAVP TCBCMMT2.rsp, [DECRYPT] COUNT = 0.

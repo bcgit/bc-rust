@@ -28,7 +28,7 @@
 //!
 //! # This is the arbitrary-length API
 //!
-//! A padded alias implements [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`], not the
+//! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
 //! block traits: `encrypt_out` / `decrypt_out` and the streaming `do_update_out` / `do_final`, all
 //! taking a `&[u8]` of any length. The block-aligned API, with its compile-time length checks and
 //! its in-place data methods, is `bouncycastle_modes::Cbc` itself, which this wraps:
@@ -54,7 +54,7 @@ use bouncycastle_padding::PaddedDecryptor;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
 use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
 // end of imports needed for docs
@@ -68,7 +68,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
 /// ```
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 /// use bouncycastle_padding::PKCS7;
 ///
@@ -97,7 +97,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
 /// ```
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::NoPadding;
 ///
@@ -122,7 +122,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
 /// ```compile_fail
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::{NoPadding, PKCS7};
 ///
@@ -151,7 +151,7 @@ pub type TDES_CBC<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 /// use bouncycastle_tdes::TDES2_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherDecryptor;
+/// use bouncycastle_core::traits::SymmetricCipherDecryptor;
 /// use bouncycastle_padding::NoPadding;
 ///
 /// // NIST CAVP TCBCMMT2.rsp, [DECRYPT] COUNT = 0: KEY1 || KEY2 (KEY3 = KEY1).
