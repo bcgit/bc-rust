@@ -9,11 +9,11 @@ use bouncycastle_core::errors::{KeyMaterialError, PaddingError, SymmetricCipherE
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SecurityStrength,
-    SimpleCipherDecryptor, SimpleCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
-    TestFrameworkBlockCipher, TestFrameworkSimpleCipher,
+    TestFrameworkBlockCipher, TestFrameworkSymmetricCipher,
 };
 use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
 use bouncycastle_rng::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256};
@@ -106,11 +106,11 @@ fn toy_cipher_passes_core_test_framework() {
     TestFrameworkBlockCipher::new().test::<B, B, B, ToyCbc, ToyCbc>();
 }
 
-/// The padded adapters are the first implementors of `SimpleCipherEncryptor` /
-/// `SimpleCipherDecryptor`, so this is also what exercises those traits' provided one-shots.
+/// The padded adapters are the first implementors of `SymmetricCipherEncryptor` /
+/// `SymmetricCipherDecryptor`, so this is also what exercises those traits' provided one-shots.
 #[test]
 fn padded_adapters_pass_the_symmetric_cipher_framework() {
-    TestFrameworkSimpleCipher::new().test_encryptor_decryptor::<B, B, B, Enc, Dec>();
+    TestFrameworkSymmetricCipher::new().test_encryptor_decryptor::<B, B, B, Enc, Dec>();
 }
 
 #[test]
@@ -267,14 +267,14 @@ fn output_buffer_too_small_reports_required_length() {
 
     let mut small = [0u8; 2 * B];
     match Enc::encrypt_out(&key, &pt, &mut small) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, need)) => assert_eq!(need, 3 * B),
+        Err(SymmetricCipherError::OutputBufferTooSmall(need)) => assert_eq!(need, 3 * B),
         other => panic!("{other:?}"),
     }
 
     let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
     let mut tiny = [0u8; B - 1];
     match enc.do_update_out(&pt, &mut tiny) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, need)) => assert_eq!(need, 2 * B),
+        Err(SymmetricCipherError::OutputBufferTooSmall(need)) => assert_eq!(need, 2 * B),
         other => panic!("{other:?}"),
     }
     drop(enc);
@@ -282,7 +282,7 @@ fn output_buffer_too_small_reports_required_length() {
     let ct = [0u8; 3 * B];
     let mut small = [0u8; 3 * B - 2];
     match Dec::decrypt_out(&key, &iv, &ct, &mut small) {
-        Err(SymmetricCipherError::IncorrectOutputBufferLength(_, need)) => {
+        Err(SymmetricCipherError::OutputBufferTooSmall(need)) => {
             assert_eq!(need, 3 * B - 1)
         }
         other => panic!("{other:?}"),
@@ -309,7 +309,7 @@ fn wrong_key_type_is_rejected_by_adapters() {
 /// `PaddingError`, at `encrypt_out` and at a streaming `do_final`.
 #[test]
 fn no_padding_adapters_pass_the_symmetric_cipher_framework() {
-    let mut framework = TestFrameworkSimpleCipher::new();
+    let mut framework = TestFrameworkSymmetricCipher::new();
     framework.required_alignment = B;
     framework.test_encryptor_decryptor::<B, B, B, EncNP, DecNP>();
 }

@@ -170,9 +170,11 @@ pub enum SymmetricCipherError {
     AEADTagCheckFailed,
     ///
     DecryptionFailed,
-    /// Indicates that the output buffer is not large enough to hold the requested output.
-    /// The usize represents the required buffer length.
-    IncorrectOutputBufferLength(&'static str, usize),
+    /// The caller's output buffer is too small for what this call would write. The usize is the
+    /// minimum length the buffer needs for the same call to succeed on a retry; the call consumed
+    /// no input and left the cipher's state untouched, so retrying with a buffer at least that
+    /// long produces exactly what the refused call would have.
+    OutputBufferTooSmall(usize),
     ///
     KeyMaterialError(KeyMaterialError),
     ///
