@@ -252,6 +252,15 @@ pub trait BlockCipherEncryptor<
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// As [`BlockCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -307,6 +316,11 @@ pub trait BlockCipherEncryptor<
         Ok((written, init_data))
     }
     /// As [`BlockCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_rng<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1240,6 +1254,15 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// As [`StreamCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1265,6 +1288,11 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
         Ok((written, init_data))
     }
     /// As [`StreamCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1519,6 +1547,15 @@ pub trait SymmetricCipherEncryptor<
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
     /// As [`do_encrypt_init`](Self::do_encrypt_init), but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1609,6 +1646,11 @@ pub trait SymmetricCipherEncryptor<
     }
 
     /// As [`encrypt_out`](Self::encrypt_out), but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_out_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
