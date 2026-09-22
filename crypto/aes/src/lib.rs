@@ -17,8 +17,8 @@
 //! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
-//!     &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x08, 0x07,
-//!       0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f],
+//!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+//!       0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c],
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
 //!
@@ -28,8 +28,8 @@
 //! let mut block: [u8; 16] = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
 //!                            0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34];
 //! aes.encrypt_block(&mut block);
-//!
-//! // `block` now contains the ciphertext.
+//! assert_eq!(block, [0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb,
+//!                    0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32]);
 //!
 //! // The same value decrypts, from the same instantiated aes object.
 //! aes.decrypt_block(&mut block);
@@ -118,7 +118,7 @@
 //! MIXCOLUMNS() in. The trouble is that a table indexed by a byte of the state is indexed by
 //! secret data, so on any CPU with a data cache the memory access pattern, and hence the timing,
 //! depends on the key. That is a practical, repeatedly-demonstrated attack, and it is not fixable
-//! while with a lookp table based implementation.
+//! with a lookup-table-based implementation.
 //!
 //! ## Bit-slicing
 //!

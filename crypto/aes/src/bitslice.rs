@@ -47,6 +47,9 @@
 //! lane `r`, and one column step is two bit positions), and why MIXCOLUMNS() uses rotations by
 //! 8 and 16 (one and two rows). Both are derived from this table in [`crate::round`].
 //!
+//! `test_layout_matches_the_documented_table` below pins the table exhaustively; every mask in
+//! this crate is only correct relative to it.
+//!
 //! # Provenance
 //!
 //! The three-stage masked-swap transpose and the even/odd two-block packing are translated from

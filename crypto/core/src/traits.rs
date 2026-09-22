@@ -211,6 +211,8 @@ pub trait BlockCipherDecryptor<
 /// This trait allows for a block cipher to generate initialization data, such as an Initialization
 /// Vector (IV) or Counter (CTR) which is not technically part of the ciphertext, but must be
 /// transmitted along with the ciphertext in order for the recipient to perform successful decryption.
+/// The length of the initialization data is specified by the implementing struct via the
+/// `INIT_DATA_LEN` constant.
 ///
 /// In order for these APIs to be usable securely in all contexts, the init data will be generated
 /// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
