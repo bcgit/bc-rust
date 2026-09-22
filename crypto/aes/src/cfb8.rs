@@ -31,7 +31,7 @@ use bouncycastle_modes::Cfb8;
 /// // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
 /// let message = *b"hello";
 /// let mut data = message;
-/// let iv = AES_CFB8_128::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = AES_CFB8_128::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
 /// AES_CFB8_128::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
@@ -50,7 +50,7 @@ use bouncycastle_modes::Cfb8;
 ///
 /// // CFB8 and CFB128 are not interchangeable: same key, same IV, different ciphertext.
 /// let mut as_cfb8 = message;
-/// let iv = AES_CFB8_128::<Encrypting>::encrypt(&key, &mut as_cfb8).unwrap();
+/// let (_, iv) = AES_CFB8_128::<Encrypting>::encrypt(&key, &mut as_cfb8).unwrap();
 /// let mut as_cfb128 = as_cfb8;
 /// AES_CFB_128::<Decrypting>::decrypt(&key, &iv, &mut as_cfb128).unwrap();
 /// assert_ne!(as_cfb128, message);
@@ -68,7 +68,7 @@ pub type AES_CFB8_128<Dir> = Cfb8<AES_128, Dir, 16, BLOCK_LEN>;
 ///
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let iv = AES_CFB8_192::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = AES_CFB8_192::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// AES_CFB8_192::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
@@ -85,7 +85,7 @@ pub type AES_CFB8_192<Dir> = Cfb8<AES_192, Dir, 24, BLOCK_LEN>;
 ///
 /// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let iv = AES_CFB8_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = AES_CFB8_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
 /// AES_CFB8_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```

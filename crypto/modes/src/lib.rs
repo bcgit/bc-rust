@@ -20,7 +20,7 @@
 //!
 //! **All five reach the same arbitrary-length API**, so code can be written against one trait and
 //! handed any mode. A block mode gets there by being wrapped in `bouncycastle-padding`'s adapters,
-//! which are [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] with the padded block as
+//! which are [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with the padded block as
 //! their final output; a stream mode implements those traits directly, with `FINAL_LEN = 0` because
 //! it has no final output at all. The `bouncycastle-aes` aliases show the difference in
 //! one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme, `AES_CTR_128<Encrypting>`
@@ -89,7 +89,7 @@
 //!
 //! // One shot, in place: encrypts under a freshly generated IV, which is returned.
 //! let mut data = plaintext;
-//! let iv = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
 //! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
@@ -143,7 +143,7 @@
 //! let plaintext = *b"the quick brown fox!!";
 //!
 //! let mut ciphertext = plaintext;
-//! let iv = Aes128Cfb::<Encrypting>::encrypt(&key, &mut ciphertext).expect("encryption");
+//! let (_, iv) = Aes128Cfb::<Encrypting>::encrypt(&key, &mut ciphertext).expect("encryption");
 //! assert_eq!(ciphertext.len(), plaintext.len());
 //!
 //! let mut recovered = ciphertext;
@@ -205,7 +205,7 @@
 //! let plaintext = [0x5Au8; 32]; // two equal blocks
 //!
 //! let mut data = plaintext;
-//! let no_iv: [u8; 0] = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (_, no_iv): (usize, [u8; 0]) = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
 //! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
 //!
 //! Aes128Ecb::<Decrypting>::decrypt(&key, &no_iv, &mut data).expect("decryption");
@@ -295,7 +295,7 @@
 //! ```
 //! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //! use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
 //!
@@ -532,8 +532,8 @@ pub use ecb::Ecb;
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SimpleCipherDecryptor,
-    SimpleCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
 

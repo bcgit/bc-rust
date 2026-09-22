@@ -15,8 +15,8 @@ mod common;
 use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SimpleCipherDecryptor,
-    SimpleCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
@@ -179,14 +179,16 @@ fn ecb_is_deterministic_and_leaks_equal_blocks() {
     // The one-shots see the same thing: `encrypt` returns the empty init data and is repeatable.
     let flat: [u8; 4 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
     let mut once = flat;
-    let init_a: [u8; 0] = ToyEcb::<Encrypting>::encrypt(&key, &mut once).unwrap();
+    let (n_a, init_a): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt(&key, &mut once).unwrap();
+    assert_eq!(n_a, once.len(), "encrypt must report the number of bytes written");
     let mut twice = flat;
-    let init_b = ToyEcb::<Encrypting>::encrypt_rng(
+    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt_rng(
         &key,
         &mut FixedSeedRNG::<TOY_LEN>::new([0xAB; TOY_LEN]),
         &mut twice,
     )
     .unwrap();
+    assert_eq!(n_b, twice.len(), "encrypt_rng must report the number of bytes written");
     assert_eq!(init_a, init_b);
     assert_eq!(once, twice, "the RNG variant draws nothing, so it changes nothing");
     assert_eq!(once, *ct_a.as_flattened());
@@ -306,7 +308,7 @@ fn flat_streaming_and_one_shots_agree_with_the_block_hook() {
     assert_eq!(*block_ct.as_flattened(), enc_flat(&mut encryptor(), &flat_plaintext));
 
     let mut buf = flat_plaintext;
-    let init = ToyEcb::<Encrypting>::encrypt(&key, &mut buf).unwrap();
+    let (_, init) = ToyEcb::<Encrypting>::encrypt(&key, &mut buf).unwrap();
     assert_eq!(buf, *block_ct.as_flattened(), "one-shot must equal streaming");
     ToyEcb::<Decrypting>::decrypt(&key, &init, &mut buf).unwrap();
     assert_eq!(buf, flat_plaintext);
