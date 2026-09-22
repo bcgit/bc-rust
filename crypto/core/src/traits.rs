@@ -1,5 +1,7 @@
 //! Provides simplified abstracted APIs over classes of cryptographic primitives, such as Hash, KDF, etc.
 
+// Objects in this file should be sorted alphabetically, regardless of whether they are a trait, struct, or enum.
+
 use crate::errors::*;
 use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
@@ -20,26 +22,15 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// A one-shot API to encrypt some plaintext with the given key, with no additional
     /// authenticated data.
     ///
-    /// This and the three that follow were the whole of the former `SymmetricCipher` trait, which
-    /// every symmetric cipher was once expected to implement. They now live here, because an AEAD
-    /// is the only kind of cipher left that needs them: a block mode reaches the same shape through
-    /// [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] and the padding adapters, and a
-    /// stream mode gets those traits directly.
-    ///
-    /// These are meant to be simple, easy to use, secure and fool-proof, at the cost of producing a
-    /// ciphertext whose layout is this implementation's business: an AEAD has a tag to put
-    /// somewhere, and where it goes is not fixed here. See the documentation of the underlying
-    /// implementation before assuming another one will read it.
-    ///
-    /// Returns the generated nonce and the ciphertext as a `Vec<u8>`, so it needs the `std`
-    /// feature. For AAD, use [`aead_encrypt`](Self::aead_encrypt).
+    /// Returns the generated nonce, and the ciphertext as a `Vec<u8>`, so it needs the `std`
+    /// feature.
+    /// This API does not allow for including additional data (AAD), for that use [`aead_encrypt`](Self::aead_encrypt).
     fn encrypt(
         key: &KeyMaterial<KEY_LEN>,
         plaintext: &[u8],
     ) -> Result<([u8; NONCE_LEN], Vec<u8>), SymmetricCipherError>;
 
-    /// As [`encrypt`](Self::encrypt), writing into a caller-supplied buffer so it is available
-    /// without `std`.
+    /// As [`encrypt`](Self::encrypt), writing into a caller-supplied buffer.
     ///
     /// See the documentation for the underlying implementation for how big the ciphertext buffer
     /// must be; an AEAD needs room for the tag as well as the data. Returns the generated nonce and
@@ -208,21 +199,25 @@ pub trait BlockCipherDecryptor<
     }
 }
 
-/// The encryption half of a block cipher's streaming API. Strictly block-aligned: whole blocks in, whole
+/// The encryption half of a block cipher's API.
+///
+/// Strictly block-aligned: whole blocks in, whole
 /// blocks out, no finalization step. Padding of non-block-aligned data is handled by a separate layer
 /// (`PaddedEncryptor` / `PaddedDecryptor`) built on top of this trait.
 ///
-/// Encryption and decryption are separate traits (as with [`KEMEncapsulator`] / [`KEMDecapsulator`]) so
-/// that the direction can be encoded in the type, and so that a policy can permit decryption of an
-/// algorithm while forbidding new encryptions.
+/// Encryption and decryption are separate traits so that a policy can permit decryption of existing
+/// data while forbidding new encryptions.
 ///
-/// This trait allows for a block cipher to generate initialization data, such as an Initialization Vector (IV) or Counter (CTR)
-/// which is not technically part of the ciphertext, but must be transmitted along with the ciphertext in order for the
-/// recipient to perform successful decryption. The length of the initialization data is specified by the implementing struct
-/// via the `INIT_DATA_LEN` constant.
+/// This trait allows for a block cipher to generate initialization data, such as an Initialization
+/// Vector (IV) or Counter (CTR) which is not technically part of the ciphertext, but must be
+/// transmitted along with the ciphertext in order for the recipient to perform successful decryption.
+/// The length of the initialization data is specified by the implementing struct via the
+/// `INIT_DATA_LEN` constant.
+///
 /// In order for these APIs to be usable securely in all contexts, the init data will be generated
 /// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
-/// user to provide the init data. If you require this functionality, see the documentation for the underlying implementation.
+/// user to provide the init data to the encryptor.
+/// If you require this functionality, see the documentation for the underlying implementation.
 ///
 /// # Everything is in place
 ///
@@ -325,10 +320,9 @@ pub trait BlockCipherEncryptor<
 
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
 ///
-/// This is the raw primitive a mode of operation is built on, not something to encrypt data with.
-/// It transforms exactly one block, so applying it directly to data is ECB (Sec 6.1), which is not
-/// confidential -- the trait is named for the mode it *is* when used that way, as a reminder. [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
-/// they carry initialization data and chaining state; this one carries only a key schedule.
+/// # 🚨 Security 🚨
+/// ECB is not secure for encrypting data; instead, it is a raw building block upon which
+/// secure modes such as CBC and GCM can be built.
 ///
 /// Implementors are expected to hold that key schedule in a zeroize-on-drop wrapper
 /// (`bouncycastle_utils::secret::Secret`), so it is scrubbed when the value is dropped.
@@ -1229,15 +1223,12 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     }
 }
 
-/// The encryption half of a stream cipher's streaming API. This is the stream-cipher counterpart
-/// of [`BlockCipherEncryptor`]: the same in-place, init-data-generating shape, but with no block
-/// length. A stream cipher applies its keystream byte by byte, so the data methods take a
-/// `&mut [u8]` of any length, and there is no alignment to check, no padding layer to reach for,
-/// and no finalization step.
+/// The encryption half of a stream cipher's streaming API.
+/// A stream cipher applies its keystream byte by byte, so the data methods take a
+/// `&mut [u8]` of any length, and there is no finalization step.
 ///
-/// Encryption and decryption are separate traits for the same reasons as
-/// [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]: the direction is encoded in the type, and a
-/// policy can permit decryption of an algorithm while forbidding new encryptions.
+/// Encryption and decryption are separate traits so that policy can permit decryption of an
+/// existing data while forbidding new encryptions.
 ///
 /// # You also get the arbitrary-length API for free
 ///
