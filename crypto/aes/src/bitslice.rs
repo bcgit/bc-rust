@@ -12,7 +12,7 @@
 //! are always processed together; see the crate docs for why, and [`crate::aes`] for how a
 //! single-block call fills the unused half.
 //!
-//! # The layout, derived
+//! # The layout
 //!
 //! [`ortho`] transposes, within each byte-lane of the eight words, the 8x8 bit matrix indexed by
 //! (word number, bit number within the lane):
@@ -46,9 +46,6 @@
 //! This is why SHIFTROWS() becomes a rotation *within* a byte-lane (row `r` lives entirely in
 //! lane `r`, and one column step is two bit positions), and why MIXCOLUMNS() uses rotations by
 //! 8 and 16 (one and two rows). Both are derived from this table in [`crate::round`].
-//!
-//! `test_layout_matches_the_documented_table` below pins the table exhaustively; every mask in
-//! this crate is only correct relative to it.
 //!
 //! # Provenance
 //!
