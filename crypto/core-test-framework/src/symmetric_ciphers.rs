@@ -7,11 +7,12 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::traits::{
     AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength,
-    SimpleCipherDecryptor, SimpleCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 
 /// Instance of the test framework.
-pub struct TestFrameworkSimpleCipher {
+pub struct TestFrameworkSymmetricCipher {
     /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the plaintext length
     /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
     /// -- the block length, for a `PaddedEncryptor` over `NoPadding` -- means only multiples of it
@@ -20,13 +21,13 @@ pub struct TestFrameworkSimpleCipher {
     pub required_alignment: usize,
 }
 
-impl TestFrameworkSimpleCipher {
+impl TestFrameworkSymmetricCipher {
     ///
     pub fn new() -> Self {
         Self { required_alignment: 1 }
     }
 
-    /// Exercises the [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] contract for a
+    /// Exercises the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] contract for a
     /// paired implementor.
     ///
     /// Checks, in order:
@@ -49,8 +50,8 @@ impl TestFrameworkSimpleCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const FINAL_LEN: usize,
-        E: SimpleCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
-        D: SimpleCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
     >(
         &self,
     ) {
@@ -157,30 +158,36 @@ impl TestFrameworkSimpleCipher {
             }
         }
 
-        // a driven RNG reproduces its init data, and determines the ciphertext
-        let seed: [u8; INIT_DATA_LEN] = core::array::from_fn(|i| DUMMY_SEED[100 + i]);
-        let (mut enc, init_data) =
-            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed)).unwrap();
-        assert_eq!(init_data, seed, "a fixed RNG must yield its stream as the init data");
-        let mut streamed = vec![0u8; enc.update_out_len(len)];
-        let n = enc.do_update_out(msg, &mut streamed).unwrap();
-        streamed.truncate(n);
-        let (last, last_len) = enc.do_final().unwrap();
-        streamed.extend_from_slice(&last[..last_len]);
-        let mut one_shot = vec![0u8; E::encrypt_out_len(len)];
-        let (init_data2, n2) = E::encrypt_out_rng(
-            &key,
-            &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed),
-            msg,
-            &mut one_shot,
-        )
-        .unwrap();
-        assert_eq!(init_data2, seed);
-        assert_eq!(
-            &one_shot[..n2],
-            &streamed[..],
-            "same key and init data must give the same ciphertext"
-        );
+        // The RNG-taking constructor is only exercised for a cipher that has init data to
+        // generate. Its contract requires an implementation with `INIT_DATA_LEN == 0` (ECB) to
+        // panic instead, so driving it here would fail that implementor for conforming.
+        if INIT_DATA_LEN > 0 {
+            // a driven RNG reproduces its init data, and determines the ciphertext
+            let seed: [u8; INIT_DATA_LEN] = core::array::from_fn(|i| DUMMY_SEED[100 + i]);
+            let (mut enc, init_data) =
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed))
+                    .unwrap();
+            assert_eq!(init_data, seed, "a fixed RNG must yield its stream as the init data");
+            let mut streamed = vec![0u8; enc.update_out_len(len)];
+            let n = enc.do_update_out(msg, &mut streamed).unwrap();
+            streamed.truncate(n);
+            let (last, last_len) = enc.do_final().unwrap();
+            streamed.extend_from_slice(&last[..last_len]);
+            let mut one_shot = vec![0u8; E::encrypt_out_len(len)];
+            let (init_data2, n2) = E::encrypt_out_rng(
+                &key,
+                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed),
+                msg,
+                &mut one_shot,
+            )
+            .unwrap();
+            assert_eq!(init_data2, seed);
+            assert_eq!(
+                &one_shot[..n2],
+                &streamed[..],
+                "same key and init data must give the same ciphertext"
+            );
+        }
 
         // corrupting the ciphertext does not give back the plaintext (or fails to decrypt)
         let mut ct = vec![0u8; E::encrypt_out_len(len)];
@@ -205,14 +212,14 @@ impl TestFrameworkSimpleCipher {
         let need = E::encrypt_out_len(len);
         let mut short = vec![0u8; need - 1];
         match E::encrypt_out(&key, msg, &mut short) {
-            Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+            Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
             other => panic!("encrypt_out into a short buffer: {other:?}"),
         }
         let need = D::decrypt_out_max_len(ct_len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
             match D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut short) {
-                Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("decrypt_out into a short buffer: {other:?}"),
             }
         }
@@ -221,7 +228,7 @@ impl TestFrameworkSimpleCipher {
         if need > 0 {
             let mut short = vec![0u8; need - 1];
             match enc.do_update_out(msg, &mut short) {
-                Err(SymmetricCipherError::IncorrectOutputBufferLength(_, n)) => assert_eq!(n, need),
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("do_update_out into a short buffer: {other:?}"),
             }
         }
@@ -368,19 +375,25 @@ impl TestFrameworkBlockCipher {
         streamed.do_decrypt(&mut buf).unwrap();
         assert_eq!(buf, *one_block);
 
-        // the RNG-taking one-shot must give the streaming API's answer for the same RNG stream
-        let pinned = [0xA5u8; INIT_DATA_LEN];
-        let mut expected = *one_block;
-        let (mut streamed, iv_streamed) =
-            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned)).unwrap();
-        streamed.do_encrypt(&mut expected).unwrap();
-        let mut buf = *one_block;
-        let (n, iv) =
-            E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
-                .unwrap();
-        assert_eq!(n, BLOCK_LEN, "encrypt_rng must report the number of bytes written");
-        assert_eq!(iv, iv_streamed);
-        assert_eq!(buf, expected);
+        // The RNG-taking constructor is only exercised for a cipher that has init data to
+        // generate. Its contract requires an implementation with `INIT_DATA_LEN == 0` (ECB) to
+        // panic instead, so driving it here would fail that implementor for conforming.
+        if INIT_DATA_LEN > 0 {
+            // the RNG-taking one-shot must give the streaming API's answer for the same RNG stream
+            let pinned = [0xA5u8; INIT_DATA_LEN];
+            let mut expected = *one_block;
+            let (mut streamed, iv_streamed) =
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned))
+                    .unwrap();
+            streamed.do_encrypt(&mut expected).unwrap();
+            let mut buf = *one_block;
+            let (n, iv) =
+                E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
+                    .unwrap();
+            assert_eq!(n, BLOCK_LEN, "encrypt_rng must report the number of bytes written");
+            assert_eq!(iv, iv_streamed);
+            assert_eq!(buf, expected);
+        }
 
         // test that the iv is random (ie not the same on two runs). A mode with no init data at all
         // (ECB, INIT_DATA_LEN == 0) has nothing to compare: two empty arrays are always equal.
@@ -783,28 +796,34 @@ impl TestFrameworkStreamCipher {
         }
         assert_eq!(&buf[..], &DUMMY_SEED[..]);
 
-        // the RNG-taking one-shot must give the streaming API's answer for the same RNG stream,
-        // and the same init data.
-        let pinned = [0xA5u8; INIT_DATA_LEN];
-        let mut expected = *DUMMY_SEED;
-        let (mut streamed, iv_streamed) =
-            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned)).unwrap();
-        streamed.do_encrypt(&mut expected).unwrap();
-        let mut buf = *DUMMY_SEED;
-        let (n, iv) =
-            E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
-                .unwrap();
-        assert_eq!(n, buf.len(), "encrypt_rng must report the number of bytes written");
-        assert_eq!(iv, iv_streamed);
-        assert_eq!(&buf[..], &expected[..]);
-        // ...and a driven RNG determines the ciphertext: the same RNG stream again gives the same
-        // init data and ciphertext, so the ciphertext is a function of (key, init data) alone.
-        let mut buf2 = *DUMMY_SEED;
-        let (_, iv_again) =
-            E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf2)
-                .unwrap();
-        assert_eq!(iv, iv_again);
-        assert_eq!(&buf[..], &buf2[..]);
+        // The RNG-taking constructor is only exercised for a cipher that has init data to
+        // generate. Its contract requires an implementation with `INIT_DATA_LEN == 0` (ECB) to
+        // panic instead, so driving it here would fail that implementor for conforming.
+        if INIT_DATA_LEN > 0 {
+            // the RNG-taking one-shot must give the streaming API's answer for the same RNG stream,
+            // and the same init data.
+            let pinned = [0xA5u8; INIT_DATA_LEN];
+            let mut expected = *DUMMY_SEED;
+            let (mut streamed, iv_streamed) =
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned))
+                    .unwrap();
+            streamed.do_encrypt(&mut expected).unwrap();
+            let mut buf = *DUMMY_SEED;
+            let (n, iv) =
+                E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
+                    .unwrap();
+            assert_eq!(n, buf.len(), "encrypt_rng must report the number of bytes written");
+            assert_eq!(iv, iv_streamed);
+            assert_eq!(&buf[..], &expected[..]);
+            // ...and a driven RNG determines the ciphertext: the same RNG stream again gives the same
+            // init data and ciphertext, so the ciphertext is a function of (key, init data) alone.
+            let mut buf2 = *DUMMY_SEED;
+            let (_, iv_again) =
+                E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf2)
+                    .unwrap();
+            assert_eq!(iv, iv_again);
+            assert_eq!(&buf[..], &buf2[..]);
+        }
 
         // test that the init data is random (ie not the same on two runs). A cipher with no init
         // data at all (INIT_DATA_LEN == 0) has nothing to compare: two empty arrays are always equal.
