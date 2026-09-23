@@ -12,6 +12,7 @@ mod mac_cmd;
 mod mldsa_cmd;
 mod mlkem_cmd;
 mod rng_cmd;
+mod rsa_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
@@ -22,6 +23,7 @@ use crate::block_mode_cmd::BlockModeAction;
 use crate::ecdsa_cmd::ECDSAAction;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
+use crate::rsa_cmd::{RSAAction, RSAHash, RSAScheme};
 use crate::sha2_cmd::SHA2Variant;
 use crate::sm2_cmd::SM2Action;
 use clap::{Parser, Subcommand};
@@ -1321,6 +1323,174 @@ enum Subcommands {
         x: bool,
     },
 
+    /// RSA-1024 signature verification (RFC 8017 SS8.2), PKCS#1 v1.5 only. Verification-only: this
+    /// crate has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
+    RSA_1024 {
+        #[arg(long, value_enum)]
+        /// The signature scheme: only `pkcs1v15` is available at this modulus size.
+        scheme: RSAScheme,
+
+        #[arg(long, value_enum)]
+        /// The message digest: `sha256` or `sha384` only at this modulus size.
+        hash: RSAHash,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+    },
+
+    /// RSA-1536 signature verification (RFC 8017 SS8.2), PKCS#1 v1.5 only. Verification-only: this
+    /// crate has no RSA-1536 private key type at all. See rsa-2048 for --scheme/--hash.
+    RSA_1536 {
+        #[arg(long, value_enum)]
+        /// The signature scheme: only `pkcs1v15` is available at this modulus size.
+        scheme: RSAScheme,
+
+        #[arg(long, value_enum)]
+        /// The message digest: `sha256`, `sha384`, or `sha512` at this modulus size.
+        hash: RSAHash,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+    },
+
+    /// RSA-2048 key generation, signing and verification: RSASSA-PKCS1-v1_5 (RFC 8017 SS8.2) or
+    /// RSASSA-PSS (RFC 8017 SS8.1, or RFC 8702 SS3.2.1 with `--hash shake128`), selected by
+    /// `--scheme`/`--hash`. PSS draws a fresh salt from the OS RNG each time it signs. `keygen`
+    /// (FIPS 186-5 A.1.3, e = 65537) writes the private key to stdout and the public key to
+    /// `--pkfile`. Private/public key files use this crate's own raw fixed-width encoding (see
+    /// `RsaPrivateKey`/`RsaPublicKey`'s `# Encoding` docs), not PEM or ASN.1 DER.
+    RSA_2048 {
+        action: RSAAction,
+
+        #[arg(long, value_enum)]
+        /// The signature scheme.
+        scheme: RSAScheme,
+
+        #[arg(long, value_enum)]
+        /// The message digest: `sha256`, `sha384`, `sha512`, or (PSS only) `shake128`.
+        hash: RSAHash,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSA-3072 signing/verification. See rsa-2048.
+    RSA_3072 {
+        action: RSAAction,
+
+        #[arg(long, value_enum)]
+        /// The signature scheme.
+        scheme: RSAScheme,
+
+        #[arg(long, value_enum)]
+        /// The message digest: `sha256`, `sha384`, `sha512`, or (PSS only) `shake128`.
+        hash: RSAHash,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSA-4096 signing/verification. See rsa-2048; note `--hash shake256` (not shake128) is the
+    /// SHAKE choice wired up at this modulus size (RFC 8702 SS5).
+    RSA_4096 {
+        action: RSAAction,
+
+        #[arg(long, value_enum)]
+        /// The signature scheme.
+        scheme: RSAScheme,
+
+        #[arg(long, value_enum)]
+        /// The message digest: `sha256`, `sha384`, `sha512`, or (PSS only) `shake256`.
+        hash: RSAHash,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSA-8192 signing/verification. See rsa-2048; no PSS-SHAKE variant is wired up at this
+    /// modulus size (no Wycheproof vectors exist for it, and RFC 8702 SS5's "4096-bit or larger"
+    /// SHAKE256 recommendation is already covered by rsa-4096).
+    RSA_8192 {
+        action: RSAAction,
+
+        #[arg(long, value_enum)]
+        /// The signature scheme.
+        scheme: RSAScheme,
+
+        #[arg(long, value_enum)]
+        /// The message digest: `sha256`, `sha384`, or `sha512`.
+        hash: RSAHash,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The SM2 Digital Signature Algorithm (draft-shen-sm2-ecdsa-02 S5, GB/T 32918.2-2016),
     /// randomised only (the draft specifies no deterministic scheme). `--idfile` is mandatory for
     /// signing and verifying: it carries the signer's identity IDA, which every SM2 operation
@@ -1564,6 +1734,24 @@ fn main() {
         }
         Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x }) => {
             ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::RSA_1024 { scheme, hash, pkfile, sigfile }) => {
+            rsa_cmd::rsa_1024_cmd(scheme, hash, pkfile, sigfile);
+        }
+        Some(Subcommands::RSA_1536 { scheme, hash, pkfile, sigfile }) => {
+            rsa_cmd::rsa_1536_cmd(scheme, hash, pkfile, sigfile);
+        }
+        Some(Subcommands::RSA_2048 { action, scheme, hash, skfile, pkfile, sigfile, x }) => {
+            rsa_cmd::rsa_2048_cmd(action, scheme, hash, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::RSA_3072 { action, scheme, hash, skfile, pkfile, sigfile, x }) => {
+            rsa_cmd::rsa_3072_cmd(action, scheme, hash, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::RSA_4096 { action, scheme, hash, skfile, pkfile, sigfile, x }) => {
+            rsa_cmd::rsa_4096_cmd(action, scheme, hash, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::RSA_8192 { action, scheme, hash, skfile, pkfile, sigfile, x }) => {
+            rsa_cmd::rsa_8192_cmd(action, scheme, hash, skfile, pkfile, sigfile, *x);
         }
         Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
             sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
