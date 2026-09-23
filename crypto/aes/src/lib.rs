@@ -25,14 +25,16 @@
 //! let aes = AES_128::new(&key).expect("a valid AES-128 key");
 //!
 //! // FIPS 197 Appendix B.
-//! let mut block = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
-//!                  0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34];
+//! let mut block: [u8; 16] = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
+//!                            0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34];
 //! aes.encrypt_block(&mut block);
 //! assert_eq!(block, [0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb,
 //!                    0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32]);
 //!
-//! // The same value decrypts, from the same schedule -- there is no separate decryptor.
+//! // The same value decrypts, from the same instantiated aes object.
 //! aes.decrypt_block(&mut block);
+//!
+//! // `block` now contains the original plaintext again.
 //! assert_eq!(block, [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
 //!                    0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34]);
 //! ```
@@ -48,7 +50,7 @@
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
 //! let aes = AES_256::new(&key).expect("a valid AES-256 key");
 //!
@@ -116,15 +118,15 @@
 //! MIXCOLUMNS() in. The trouble is that a table indexed by a byte of the state is indexed by
 //! secret data, so on any CPU with a data cache the memory access pattern, and hence the timing,
 //! depends on the key. That is a practical, repeatedly-demonstrated attack, and it is not fixable
-//! while the lookup remains.
-//!
-//! Bouncy Castle's `AESLightEngine` in the Java and C# ports keeps two 256-byte S-box tables for
-//! exactly this reason -- to be *small*, not to be constant-time -- and leaks through both the
-//! cipher and the key schedule.
+//! with a lookup-table-based implementation.
 //!
 //! ## Bit-slicing
 //!
-//! This crate has no tables at all. The state is transposed so that each of eight `u32` words
+//! The SBox implementation is borrowed from J. Boyar and R. Peralta,
+//! "A new combinational logic minimization technique with applications to cryptology",
+//! <https://eprint.iacr.org/2009/191.pdf> and the accompanying `SLP_AES_113.txt`.
+//!
+//! It is "bit-sliced" in the sense that the two states are transposed so that each of eight `u32` words
 //! holds one *bit position* of every byte: word `q[k]` collects bit `k` of all the bytes. In that
 //! form the S-box becomes a fixed Boolean circuit -- 32 AND, 77 XOR and 4 XNOR gates, the
 //! 113-gate straight-line program of Boyar and Peralta -- and one `&` or `^` applies a gate to
