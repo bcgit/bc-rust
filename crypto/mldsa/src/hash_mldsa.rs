@@ -462,7 +462,9 @@ impl<
         let mut ph_m = [0u8; PH_LEN];
         _ = <P::PreHash as Default>::default().hash_out(msg, &mut ph_m);
 
-        Self::verify_ph_internal(&pk.pk, Some(&pk.A_hat()), &ph_m, ctx, sig)
+        // Borrow the matrix the expanded key already holds rather than calling `pk.A_hat()`,
+        // which returns a clone. The optimizer elides that clone today, but nothing guarantees it.
+        Self::verify_ph_internal(&pk.pk, Some(&pk.A_hat), &ph_m, ctx, sig)
     }
 
     fn verify_ph_internal(
@@ -514,10 +516,7 @@ impl<
                 sig_sized,
             ),
             None => MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::verify_mu(
-                pk,
-                Some(&pk.A_hat()),
-                &mu,
-                sig_sized,
+                pk, None, &mu, sig_sized,
             ),
         }
     }

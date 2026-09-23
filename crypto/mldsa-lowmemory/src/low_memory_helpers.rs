@@ -5,7 +5,6 @@
 use crate::aux_functions::{bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly, unpack_z_row};
 use crate::params::MLDSAParams;
 use crate::polynomial::Polynomial;
-use bouncycastle_core::errors::SignatureError;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 #[inline(always)]
@@ -43,8 +42,8 @@ pub(crate) fn compute_w_row<P: MLDSAParams>(
 pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     rho: &[u8; 32],
     sig: &[u8; SIG_LEN],
-    t1: &Polynomial,
-    c: &Polynomial,
+    t1: Polynomial,
+    c_hat: &Polynomial,
     idx: usize,
 ) -> Result<Polynomial, ()> {
     // Algorithm 8: line 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
@@ -72,15 +71,15 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
         Az_acc.add_ntt(&tmp);
     }
 
-    let ct1 = compute_ct1(t1.clone(), c.clone());
-    fn compute_ct1(mut t1_i: Polynomial, mut c: Polynomial) -> Polynomial {
-        t1_i.shift_left_d();
-        t1_i.ntt();
-        c.ntt();
-        t1_i.multiply_ntt(&c);
+    // NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑), computed in place in the buffer `t1` arrived in.
+    let ct1 = {
+        let mut ct1 = t1;
+        ct1.shift_left_d();
+        ct1.ntt();
+        ct1.multiply_ntt(c_hat);
 
-        t1_i
-    }
+        ct1
+    };
 
     Az_acc.sub(&ct1);
     Az_acc.inv_ntt();
@@ -89,34 +88,39 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     Ok(Az_acc)
 }
 
+/// 𝐳 is written into `z_out`, and `true` returned. `false` means the norm check rejected this
+/// component, and `z_out` then holds a partial value that the caller must discard.
 pub(crate) fn compute_z_component<P: MLDSAParams>(
-    s1: &Polynomial,
+    s1: Polynomial,
     rho_p_p: &[u8; 64],
     c_hat: &Polynomial,
     kappa: u16,
     col: usize,
-) -> Result<Option<Polynomial>, SignatureError> {
+    z_out: &mut Polynomial,
+) -> bool {
     let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
-    let mut s1_hat = s1.clone();
-    s1_hat.ntt();
-    s1_hat.multiply_ntt(c_hat);
-    let mut cs1 = s1_hat; // rename
-    cs1.inv_ntt();
-    let mut z = cs1;
-    z.add_ntt(&y);
 
-    if z.check_norm(P::gamma1_minus_beta) { Ok(None) } else { Ok(Some(z)) }
+    // 𝑐𝐬1 ← NTT−1(𝑐_hat ∘ NTT(𝐬1)), built in place in the caller's buffer.
+    *z_out = s1;
+    z_out.ntt();
+    z_out.multiply_ntt(c_hat);
+    z_out.inv_ntt();
+
+    // 𝐳 ← 𝐲 + 𝑐𝐬1
+    z_out.add_ntt(&y);
+
+    !z_out.check_norm(P::gamma1_minus_beta)
 }
 
 pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
-    s2: &Polynomial,
+    s2: Polynomial,
     w: &Polynomial,
     c_hat: &Polynomial,
-) -> Option<Polynomial> {
-    let mut s2_hat = s2.clone();
-    s2_hat.ntt();
-    s2_hat.multiply_ntt(c_hat);
-    let mut cs2 = s2_hat; // rename
+    w0cs2_out: &mut Polynomial,
+) -> bool {
+    let mut cs2 = s2;
+    cs2.ntt();
+    cs2.multiply_ntt(c_hat);
     cs2.inv_ntt();
 
     //  Note: this could be further optimized by using the optimization described in
@@ -125,23 +129,25 @@ pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
     //      and checking whether ‖r0‖∞ < γ2 − β and r1 = w1, it is equivalent to just check that
     //      ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part of w. If this check passes, w0 − cs2
     //      is the low part of w − cs2."
-    let mut w0cs2 = w.clone();
-    w0cs2.low_bits::<P>();
-    w0cs2.sub(&cs2);
-    if w0cs2.check_norm(P::gamma2_minus_beta) { None } else { Some(w0cs2) }
+    // `w` is still needed by the caller, so its low half is taken in the out-buffer.
+    *w0cs2_out = *w;
+    w0cs2_out.low_bits::<P>();
+    w0cs2_out.sub(&cs2);
+
+    !w0cs2_out.check_norm(P::gamma2_minus_beta)
 }
 
 pub(crate) fn compute_ct0_component<P: MLDSAParams>(
-    t0_row: &Polynomial,
+    t0_row: Polynomial,
     c_hat: &Polynomial,
-) -> Option<Polynomial> {
-    let mut t0_hat = t0_row.clone();
-    t0_hat.ntt();
-    t0_hat.multiply_ntt(c_hat);
-    let mut ct0 = t0_hat; // rename
-    ct0.inv_ntt();
+    ct0_out: &mut Polynomial,
+) -> bool {
+    *ct0_out = t0_row;
+    ct0_out.ntt();
+    ct0_out.multiply_ntt(c_hat);
+    ct0_out.inv_ntt();
 
-    if ct0.check_norm(P::gamma2) { None } else { Some(ct0) }
+    !ct0_out.check_norm(P::gamma2)
 }
 
 /// Unpack a single s value from the packed representation.

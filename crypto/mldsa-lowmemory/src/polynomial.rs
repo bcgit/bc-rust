@@ -18,6 +18,27 @@ pub(crate) struct Polynomial {
     pub(crate) coeffs: [i32; N],
 }
 
+/// One row of the hint vector 𝐡: `N` booleans, one per coefficient, packed one bit each,
+/// least-significant bit first. Use [`hint_get`] and [`hint_set`] rather than indexing it.
+pub(crate) type HintRow = [u8; N / 8];
+
+/// A hint row with every bit clear.
+pub(crate) const ZEROED_HINT_ROW: HintRow = [0u8; N / 8];
+
+/// Reads coefficient `i`'s hint bit, as the 0 or 1 that FIPS 204 treats as a boolean.
+#[inline(always)]
+pub(crate) fn hint_get(h: &HintRow, i: usize) -> u8 {
+    debug_assert!(i < N);
+    (h[i / 8] >> (i % 8)) & 1
+}
+
+/// Sets coefficient `i`'s hint bit. The row must have been zeroed first.
+#[inline(always)]
+pub(crate) fn hint_set(h: &mut HintRow, i: usize) {
+    debug_assert!(i < N);
+    h[i / 8] |= 1 << (i % 8);
+}
+
 /// Convenience function to avoid ".0" all over the place.
 impl Index<usize> for Polynomial {
     type Output = i32;
@@ -131,17 +152,22 @@ impl Polynomial {
         }
     }
 
-    /// Creates the hint vector, and also returns its hamming weight (ie the number of 1's).
-    pub(crate) fn make_hint_row<P: MLDSAParams>(&self, r: &Self) -> (Self, i32) {
-        let mut out = Polynomial::new();
+    /// Writes one row of the hint vector into `out`, and returns its hamming weight (ie the number
+    /// of 1's).
+    pub(crate) fn make_hint_row<P: MLDSAParams>(&self, r: &Self, out: &mut HintRow) -> i32 {
+        out.fill(0);
+
         let mut count = 0i32;
         for i in 0..N {
             let x = make_hint::<P>(self[i], r[i]);
-            out[i] = x;
+            debug_assert!(x == 0 || x == 1, "a hint is a boolean; see FIPS 204, Algorithm 39");
+            if x == 1 {
+                hint_set(out, i);
+            }
             count += x;
         }
 
-        (out, count)
+        count
     }
 
     /// SimpleBitPack(𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1), the per-coordinate body of
@@ -267,9 +293,9 @@ impl Polynomial {
         }
     }
 
-    pub(crate) fn use_hint<P: MLDSAParams>(&mut self, h: &Polynomial) {
+    pub(crate) fn use_hint<P: MLDSAParams>(&mut self, h: &HintRow) {
         for i in 0..N {
-            self[i] = use_hint::<P>(self[i], h[i]);
+            self[i] = use_hint::<P>(self[i], hint_get(h, i) as i32);
         }
     }
 }

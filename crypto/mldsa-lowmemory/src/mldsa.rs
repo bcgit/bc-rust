@@ -392,6 +392,7 @@ use crate::low_memory_helpers::{
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPrivateKeyTrait};
 use crate::mldsa_keys::{MLDSAPublicKeyInternalTrait, MLDSAPublicKeyTrait};
 use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
+use crate::polynomial::{Polynomial, ZEROED_HINT_ROW, hint_get};
 use crate::{
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey,
     MLDSA87PublicKey,
@@ -844,24 +845,23 @@ impl<
             // 18-23 (z path): compute and encode each z polynomial directly into the caller buffer.
             let mut rejected = false;
             for col in 0..P::l {
-                let z = match compute_z_component::<P>(
+                let mut z = Polynomial::new();
+                if !compute_z_component::<P>(
                     // [Optimization Note]:
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
                     // weirdly, in perf testing, this actually caused memory usage to go by a small amount;
                     // maybe because re-computing the intermediates adds more to the widest point of the alg?
-                    // &sk.compute_s1_row(col),
-                    &s_unpack::<P, _>(&s1_packed, col),
+                    // sk.compute_s1_row(col),
+                    s_unpack::<P, _>(&s1_packed, col),
                     &rho_p_p,
                     &c_hat,
                     kappa,
                     col,
-                )? {
-                    Some(z) => z,
-                    None => {
-                        rejected = true;
-                        break;
-                    }
-                };
+                    &mut z,
+                ) {
+                    rejected = true;
+                    break;
+                }
 
                 let start = z_offset + col * P::POLY_Z_PACKED_LEN;
                 bitpack_gamma1::<P>(&z, &mut output[start..start + P::POLY_Z_PACKED_LEN]);
@@ -877,40 +877,39 @@ impl<
             let mut hint_count = 0usize;
             for row in 0..P::k {
                 let mut w = compute_w_row::<P>(&sk.rho(), &rho_p_p, kappa, row);
-                let mut tmp = match compute_w0cs2_component::<P>(
+                let mut tmp = Polynomial::new();
+                if !compute_w0cs2_component::<P>(
                     // [Optimization Note]:
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                    // &sk.compute_s2_row(row),
-                    &s_unpack::<P, _>(&s2_packed, row),
+                    // sk.compute_s2_row(row),
+                    s_unpack::<P, _>(&s2_packed, row),
                     &w,
                     &c_hat,
+                    &mut tmp,
                 ) {
-                    Some(tmp) => tmp,
-                    None => {
-                        rejected = true;
-                        break;
-                    }
-                };
+                    rejected = true;
+                    break;
+                }
 
-                let ct0 = match compute_ct0_component::<P>(
+                let mut ct0 = Polynomial::new();
+                if !compute_ct0_component::<P>(
                     // [Optimization Note]:
                     // This is one of the places that a row of s1 can be re-computed instead of unpacked from the compressed form.
-                    // &sk.compute_t0_row(row), &c_hat) {
-                    &sk.compute_t0_row(row, &s1_packed, &s2_packed),
+                    // sk.compute_t0_row(row), &c_hat) {
+                    sk.compute_t0_row(row, &s1_packed, &s2_packed),
                     &c_hat,
+                    &mut ct0,
                 ) {
-                    Some(ct0) => ct0,
-                    None => {
-                        rejected = true;
-                        break;
-                    }
-                };
+                    rejected = true;
+                    break;
+                }
 
                 tmp.add_ntt(&ct0);
                 tmp.conditional_add_q();
 
                 w.high_bits::<P>();
-                let (hint_row, weight) = tmp.make_hint_row::<P>(&w);
+                let mut hint_row = ZEROED_HINT_ROW;
+                let weight = tmp.make_hint_row::<P>(&w, &mut hint_row);
                 let next_hint_count = hint_count + weight as usize;
 
                 // mutants note: don't have a test vector that exercises this condition,
@@ -921,7 +920,7 @@ impl<
                 }
 
                 for idx in 0..N {
-                    if hint_row[idx] != 0 {
+                    if hint_get(&hint_row, idx) != 0 {
                         output[hint_offset + hint_count] = idx as u8;
                         hint_count += 1;
                     }
@@ -1008,7 +1007,11 @@ impl<
         // skip because this function is being handed mu
 
         // 8: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
-        let c = sample_in_ball::<P>(&unpack_c_tilde::<P>(sig));
+        let mut c_hat = sample_in_ball::<P>(&unpack_c_tilde::<P>(sig));
+        // Deviation from the FIPS: line 9 below reads NTT(𝑐) inside the per-row expression, but 𝑐
+        // does not depend on the row, so it is transformed once here and the 𝑘 rows share it. Same
+        // value, 𝑘−1 fewer NTTs, and no per-row clone of 𝑐. The signer does the same at lines 16-17.
+        c_hat.ntt();
 
         // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
         // ▷ hash it; this should match 𝑐_tilde
@@ -1018,17 +1021,23 @@ impl<
         for row in 0..P::k {
             let mut wp_approx = match {
                 // 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
-                compute_wp_approx_row::<P, SIG_LEN>(pk.rho(), sig, &pk.unpack_t1_row(row), &c, row)
+                compute_wp_approx_row::<P, SIG_LEN>(
+                    pk.rho(),
+                    sig,
+                    pk.unpack_t1_row(row),
+                    &c_hat,
+                    row,
+                )
             } {
                 Ok(wp_approx) => wp_approx,
                 // means the norm check on z failed
                 Err(_) => return Err(SignatureError::SignatureVerificationFailed),
             };
 
-            let h_i = match unpack_h_row::<P, SIG_LEN>(row, &sig) {
-                Some(h_i) => h_i,
-                // means there were more than OMEGA bits set in the hint
-                None => return Err(SignatureError::SignatureVerificationFailed),
+            // `None` means the encoded hint is malformed: out-of-order indices, more than OMEGA
+            // bits set, or nonzero padding
+            let Some(h_i) = unpack_h_row::<P, SIG_LEN>(row, sig) else {
+                return Err(SignatureError::SignatureVerificationFailed);
             };
 
             // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
@@ -1366,7 +1375,9 @@ impl<
         if sig.len() != SIG_LEN {
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
-        Self::verify_mu(pk, &mu, &sig.try_into().unwrap())
+        // The length was checked above, so this conversion cannot fail.
+        let sig: &[u8; SIG_LEN] = sig.try_into().unwrap();
+        Self::verify_mu(pk, &mu, sig)
     }
 
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
@@ -1396,7 +1407,9 @@ impl<
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
 
-        Self::verify_mu(&self.pk.unwrap(), &mu, &sig.try_into().unwrap())
+        // The length was checked above, so this conversion cannot fail.
+        let sig: &[u8; SIG_LEN] = sig.try_into().unwrap();
+        Self::verify_mu(&self.pk.unwrap(), &mu, sig)
     }
 }
 

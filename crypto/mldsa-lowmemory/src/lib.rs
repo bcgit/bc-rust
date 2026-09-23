@@ -82,38 +82,37 @@
 //!
 //!
 //! ## Algorithm Peak Memory Usage
+//!
 //! The table below shows peak memory usage of the ML-DSA algorithms and the rough performanc (throughput) impact.
 //!
-//! Measuring peak application memory usage can be a bit tricky, and the numbers obtained depend heavily on how the
-//! measurement harness is designed. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
-//! over-estimate so that any deployment within an existing application will use incrementally less additional memory
-//! than the amount stated here.
-//!
-//! Our measurement methodology is to compile a simple standalone HelloWorld application that only calls the function under test
-//! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
-//! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
-//! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
-//! HelloWorld rust application.
-//!
-//! | Algorithm                 | Peak swap memory usage (kB) | Throughput (ops/s)  |
+//! | Algorithm                 | Peak stack memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
-//! | MLDSA44_lowmemory/KeyGen  | 12.6 (113.8)                | 11,800     (11,300) |
-//! | MLDSA65_lowmemory/KeyGen  | 15.0 (124.1)                | 5,500      (7.000)  |
-//! | MLDSA87_lowmemory/KeyGen  | 15.2 (197.8)                | 3,300      (4,200)  |
-//! | MLDSA44_lowmemory/Sign    | 24.8 (117.7)                | 850        (4,000)  |
-//! | MLDSA65_lowmemory/Sign    | 28.2 (159.6)                | 580        (2,900)  |
-//! | MLDSA87_lowmemory/Sign    | 31.1 (236.7)                | 315        (2,000)  |
-//! | MLDSA44_lowmemory/Verify  | 17.1 (73.0)                 | 10,100     (14,000) |
-//! | MLDSA65_lowmemory/Verify  | 18.0 (134.4)                | 6,300      (8,400)  |
-//! | MLDSA87_lowmemory/Verify  | 20.6 (211.6)                | 3,500      (5,000)  |
+//! | MLDSA44_lowmemory/KeyGen  | 12.3 (62.3)                 | 11,700     (11,400) |
+//! | MLDSA65_lowmemory/KeyGen  | 14.8 (93.9)                 | 6,800      (7,000)  |
+//! | MLDSA87_lowmemory/KeyGen  | 16.8 (141.4)                | 3,900      (4,200)  |
+//! | MLDSA44_lowmemory/Sign    | 22.3 (86.5)                 | 990        (3,400)  |
+//! | MLDSA65_lowmemory/Sign    | 27.9 (128.0)                | 490        (2,400)  |
+//! | MLDSA87_lowmemory/Sign    | 31.6 (187.3)                | 330        (1,700)  |
+//! | MLDSA44_lowmemory/Verify  | 15.2 (56.4)                 | 11,200     (13,200) |
+//! | MLDSA65_lowmemory/Verify  | 19.1 (86.2)                 | 6,400      (8,000)  |
+//! | MLDSA87_lowmemory/Verify  | 22.3 (130.0)                | 3,700      (4,800)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
-//! Performance throughput numbers were collected on my laptop using the library's provided benchmarks, so
-//! performance they should be taken with an extreme grain of salt.
 //!
+//! **Caveates**
+//!
+//! Throughput numbers are meant to show relative difference between the two implementations and not be
+//! absolute performance measurements.
+//!
+//! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
+//! Measurements include the public key and signature buffer, which is a realistic setting, but
+//! numbers would be lower if those were on the heap and excluded from the measurement.
 //! Actual values may vary based on build configuration and target architecture.
+//! The peak also depends on how the compiler lays out the measured function's stack frame relative
+//! to its caller and whether it elides copies at the call boundary, which is outside
+//! the library's control.
+//! This effect is small for the low-memory crates (well under 1 kB) and larger for the full implementations
+//! in parentheses (a few kB), so treat the latter as approximate.
 //!
 //! # Usage
 //!
