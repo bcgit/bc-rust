@@ -24,7 +24,9 @@
 //! layer and behind the CLI. (`Cfb` and `Cfb8` are stream ciphers and implement the stream traits
 //! instead.) Its `INIT_DATA_LEN` is 0: [`BlockCipherEncryptor::do_encrypt_init`]
 //! returns an empty array and draws nothing from the RNG, and
-//! [`BlockCipherDecryptor::do_decrypt_init`] takes an empty one.
+//! [`BlockCipherDecryptor::do_decrypt_init`] takes an empty one. With no init data to generate,
+//! ECB is the case [`BlockCipherEncryptor::do_encrypt_init_rng`] requires to panic rather than
+//! ignore the RNG it was handed.
 //!
 //! # Why it is here at all
 //!
@@ -114,13 +116,22 @@ where
         Ok((Self::new(key)?, []))
     }
 
-    /// As [`BlockCipherEncryptor::do_encrypt_init`]. Nothing is drawn from `rng`: there is no IV to
-    /// generate, so this exists only to satisfy the trait and is identical to the plain constructor.
+    /// Always panics: ECB generates no init data, so there is nothing for an RNG to do.
+    ///
+    /// # Panics
+    /// Unconditionally, as [`BlockCipherEncryptor::do_encrypt_init_rng`] requires of a mode whose
+    /// `INIT_DATA_LEN` is 0. Reaching for the RNG-taking constructor means the caller expects a
+    /// randomized mode, and ECB is not one -- SP 800-38A Table D.2 lists its IV column as "Not
+    /// applicable" -- so silently ignoring the RNG would leave that mistaken expectation
+    /// undisturbed. Use [`do_encrypt_init`](Self::do_encrypt_init), or a mode that has an IV.
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        _key: &KeyMaterial<KEY_LEN>,
         _rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
-        Self::do_encrypt_init(key)
+        unimplemented!(
+            "ECB has no initialization data, so it draws nothing from an RNG: use do_encrypt_init, \
+             or a mode with an IV if a randomized ciphertext was wanted"
+        )
     }
 
     /// The implementor hook (the flat `do_encrypt` is provided over it): `Cj = CIPH_K(Pj)` for every
