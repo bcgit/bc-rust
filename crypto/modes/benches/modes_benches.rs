@@ -44,6 +44,7 @@ use bouncycastle_core::traits::{
     AEADCipherEncryptor, Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook,
     SecurityStrength, StreamCipherDecryptor, StreamCipherEncryptor,
 };
+use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, Decrypting, Ecb, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -68,9 +69,9 @@ const CCM_TAG_LEN: usize = 16;
 type Aes128CcmEnc = Ccm<AES_128, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
 type Aes128CcmDec = Ccm<AES_128, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
 
-/// The buffering trait adapter needs a compile-time maximum message size. 4 KiB, not the 16 KiB
-/// the other groups use, because it is a stack buffer and the trait puts a second one of the same
-/// size on the stack at every one-shot call.
+/// The trait adapter needs a compile-time maximum for streaming. Its one-shots bypass that buffer,
+/// but using the same 4 KiB value and message keeps this comparison representative of the public
+/// alias a packet protocol would choose.
 const CCM_BUFFER_LEN: usize = 4096;
 type Aes128CcmEncryptor =
     CcmEncryptor<AES_128, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN, CCM_BUFFER_LEN>;
@@ -883,32 +884,28 @@ fn bench_ccm_aes128(c: &mut Criterion) {
     group.finish();
 }
 
-/// The buffering [`AEADCipherEncryptor`] path against the direct one, on a message that fits the
-/// buffer.
+/// The [`AEADCipherEncryptor`] one-shot against the inherent one-shot on the same message.
 ///
-/// The two do identical cipher work -- the trait path ends in the same `Ccm` -- so the gap is
-/// purely the two extra copies `BUFFER_LEN` forces: the caller's plaintext into the encryptor's
-/// buffer, and the finalization buffer into the caller's output.
-///
-/// Measured on the reference machine, that gap is **within noise** (25.5 against 25.7 MiB/s): two
-/// `memcpy`s of 4 KiB are nothing beside 512 AES calls. So the reason to prefer `Ccm` directly is
-/// the `2 * BUFFER_LEN` of memory and the compile-time message cap, not speed. If this ratio ever
-/// moves far from 1, the buffering path has started doing real work it should not be.
-fn bench_ccm_buffering_pair(c: &mut Criterion) {
+/// The trait override ends in the same `Ccm` implementation. A cheap deterministic RNG, created
+/// once outside the timed loop, isolates its nonce draw from OS entropy and DRBG construction.
+fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let key = key::<16>();
     let data = [0xA5u8; CCM_BUFFER_LEN];
     let no_aad: [u8; 0] = [];
+    let nonce = [0x24u8; CCM_NONCE_LEN];
+    let mut rng = FixedSeedRNG::<CCM_NONCE_LEN>::new(nonce);
 
-    let mut group = c.benchmark_group("modes::ccm::buffering");
+    let mut group = c.benchmark_group("modes::ccm::one_shot");
     group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
 
-    group.bench_function("AEADCipherEncryptor::encrypt_out 4KiB", |b| {
+    group.bench_function("AEADCipherEncryptor::encrypt_out_rng 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEncryptor::encrypt_out(
+                    Aes128CcmEncryptor::encrypt_out_rng(
                         black_box(&key),
+                        &mut rng,
                         &no_aad,
                         black_box(&data),
                         out,
@@ -920,10 +917,7 @@ fn bench_ccm_buffering_pair(c: &mut Criterion) {
         )
     });
 
-    // The same 4 KiB through `Ccm` directly, for the ratio. This one also draws no nonce, since
-    // `Ccm` takes it from the caller -- the DRBG draw `CcmEncryptor::do_encrypt_init` pays for is
-    // not measured separately here; `bench_init` above times that same draw for the other modes.
-    let nonce = [0x24u8; CCM_NONCE_LEN];
+    // The same 4 KiB and nonce through `Ccm` directly, for the ratio.
     group.bench_function("Ccm::encrypt_detached 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
@@ -949,6 +943,6 @@ fn bench_ccm_buffering_pair(c: &mut Criterion) {
 criterion_group!(
     benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_cfb8_aes128,
     bench_ctr_aes128, bench_ctr_aes256, bench_ecb_aes128, bench_ccm_aes128,
-    bench_ccm_buffering_pair, bench_init
+    bench_ccm_one_shot_pair, bench_init
 );
 criterion_main!(benches);

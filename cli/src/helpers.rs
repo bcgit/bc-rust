@@ -17,20 +17,10 @@ use std::process::exit;
 /// for a key, where a wrong guess only ever produces a mismatch, never a same-looking-different
 /// value.
 pub(crate) fn read_from_file_raw(filename: &str) -> Vec<u8> {
-    let file = File::open(filename);
-    if file.is_ok() {
-        let mut buf = Vec::<u8>::new();
-        match file.unwrap().read_to_end(&mut buf) {
-            Ok(_bytes_read) => buf,
-            Err(_) => {
-                eprintln!("Error: couldn't open file '{}'", &filename);
-                exit(-1);
-            }
-        }
-    } else {
-        eprintln!("Error: couldn't open file '{}'", &filename);
+    std::fs::read(filename).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't read file '{filename}': {e}");
         exit(-1);
-    }
+    })
 }
 
 /// Reads either bin or hex

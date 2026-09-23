@@ -992,7 +992,7 @@ enum Subcommands {
     /// a nonce of n bytes caps the payload at 2^(8*(15-n)) - 1 bytes, so 13 bytes allows only
     /// 64 KiB - 1 while 7 bytes is effectively unlimited; and Sec B.2 says a tag shorter than
     /// 8 bytes "shall not be used without a careful analysis of the risks". A 12-byte nonce with a
-    /// 16-byte tag is the usual choice and the default.
+    /// 16-byte tag is the usual choice; `--tag-len` defaults to 16, while the nonce must be given.
     ///
     /// UNLIKE EVERY OTHER CIPHER COMMAND HERE, THIS ONE DOES NOT STREAM: it reads all of stdin
     /// before doing any work, so memory use is proportional to the input. That is inherent to CCM,

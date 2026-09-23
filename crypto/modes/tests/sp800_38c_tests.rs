@@ -483,6 +483,33 @@ fn the_buffering_pair_accepts_a_message_that_exactly_fills_its_buffer() {
     assert!(enc.do_update_aad(&[0u8; 32]).is_ok(), "AAD exactly filling BUFFER_LEN is accepted");
 }
 
+/// The trait one-shots know both lengths up front, so they use `Ccm` directly rather than imposing
+/// the streaming adapter's fixed buffer on otherwise valid packets.
+#[test]
+fn trait_one_shots_are_not_capped_by_buffer_len() {
+    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, 64>;
+    type Dec = CcmDecryptor<AES_128, 16, 16, 12, 16, 64>;
+
+    let k = key::<16>(APPENDIX_C_KEY);
+    let aad = [0x3Cu8; 128];
+    let plaintext = [0xA5u8; 4096];
+    let mut ciphertext = [0u8; 4096];
+    let (nonce, written, tag) = Enc::encrypt_out_rng(
+        &k,
+        &mut FixedSeedRNG::<12>::new([0x24u8; 12]),
+        &aad,
+        &plaintext,
+        &mut ciphertext,
+    )
+    .expect("one-shot payload and AAD may exceed BUFFER_LEN");
+    assert_eq!(written, plaintext.len());
+
+    let mut opened = [0u8; 4096];
+    let opened_len = Dec::decrypt_out(&k, &nonce, &aad, &ciphertext[..written], &tag, &mut opened)
+        .expect("direct one-shot decryption");
+    assert_eq!(&opened[..opened_len], &plaintext);
+}
+
 /// Resuming a part-way-open keystream block into the batched fours/pairs path.
 ///
 /// None of the Appendix C vectors are long enough for this: the largest, C.4, is 32 bytes (two

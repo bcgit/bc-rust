@@ -26,6 +26,7 @@
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
 use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// The path to the binary under test, resolved by cargo.
 const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
@@ -340,6 +341,63 @@ fn tag_len_is_validated_and_must_match() {
     assert!(stderr.contains("authentication failed"), "got: {stderr}");
 }
 
+/// An invalid tag length is a command-line error, so it must be rejected without waiting for EOF
+/// on the payload pipe.
+#[test]
+fn invalid_tag_len_is_rejected_before_stdin_is_read() {
+    let mut child = Command::new(BC_RUST)
+        .args(["aes128-ccm", "encrypt", "--key", KEY_128, "--nonce", NONCE, "--tag-len", "5"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn bc-rust");
+
+    // Keep `child.stdin` open: exiting while it is open proves the command did not call
+    // `read_all_stdin` before validating the option.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if child.try_wait().expect("failed to poll bc-rust").is_some() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            child.kill().expect("failed to stop hung bc-rust");
+            let _ = child.wait();
+            panic!("invalid --tag-len waited for stdin EOF");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let output = child.wait_with_output().expect("failed to collect bc-rust output");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("tag-len") && stderr.contains("A.1"), "got: {stderr}");
+}
+
+#[test]
+fn nonce_file_read_errors_are_reported_as_read_errors() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after Unix epoch")
+        .as_nanos();
+    let missing = std::env::temp_dir()
+        .join(format!("bc_rust_ccm_missing_nonce_{}_{}", std::process::id(), unique))
+        .join("nonce.bin");
+    let stderr = run_err(
+        &[
+            "aes128-ccm",
+            "encrypt",
+            "--key",
+            KEY_128,
+            "--nonce-file",
+            missing.to_str().expect("temporary path is UTF-8"),
+        ],
+        b"data",
+    );
+    assert!(stderr.contains("couldn't read file"), "got: {stderr}");
+    assert!(stderr.contains("nonce.bin"), "the error should name the file: {stderr}");
+}
+
 /// Every nonce length A.1 permits works, and nothing else does. The nonce length is not written
 /// anywhere, so both sides must agree on it too.
 #[test]
@@ -460,5 +518,13 @@ fn the_subcommands_are_documented_in_help() {
     assert!(
         per_cmd.contains("never reuse a nonce"),
         "the help should warn about nonce reuse: {per_cmd}"
+    );
+    assert!(
+        per_cmd.contains("--tag-len") && per_cmd.contains("defaults to 16"),
+        "the help should identify the option that has a default: {per_cmd}"
+    );
+    assert!(
+        !per_cmd.contains("usual choice and the default"),
+        "the help must not claim the required nonce has a default: {per_cmd}"
     );
 }

@@ -188,12 +188,21 @@ fn run<P, const KEY_LEN: usize>(
 ) where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    // Reject this before opening nonce/AAD files or waiting for stdin. Appendix A.1: "t is an
+    // element of {4, 6, 8, 10, 12, 14, 16}".
+    if !matches!(tag_len, 4 | 6 | 8 | 10 | 12 | 14 | 16) {
+        eprintln!(
+            "Error: --tag-len is {tag_len}; CCM requires one of 4, 6, 8, 10, 12, 14, 16 \
+             (SP 800-38C Appendix A.1)."
+        );
+        exit(-1)
+    }
+
     let nonce_bytes = load_nonce(nonce, nonce_file);
     let aad_bytes = load_aad(aad);
     let input = read_all_stdin();
     let encrypt = matches!(action, BlockModeAction::Encrypt);
 
-    // Appendix A.1: "t is an element of {4, 6, 8, 10, 12, 14, 16}".
     macro_rules! with_tag_len {
         ($n:literal) => {
             match tag_len {
@@ -218,13 +227,7 @@ fn run<P, const KEY_LEN: usize>(
                 16 => go::<P, KEY_LEN, $n, 16>(
                     key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
                 ),
-                other => {
-                    eprintln!(
-                        "Error: --tag-len is {other}; CCM requires one of 4, 6, 8, 10, 12, 14, 16 \
-                         (SP 800-38C Appendix A.1)."
-                    );
-                    exit(-1)
-                }
+                _ => unreachable!("tag length was validated before stdin was read"),
             }
         };
     }

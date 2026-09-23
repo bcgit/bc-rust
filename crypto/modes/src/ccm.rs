@@ -114,11 +114,12 @@
 //!    `B0` is formed at construction and everything after it streams with **no buffering at all**:
 //!    each byte is MACed and XORed as it arrives, and the payload may be any length up to the `q`
 //!    limit. This is the efficient path and the one the one-shots use.
-//! 2. **Buffer.** [`CcmEncryptor`] / [`CcmDecryptor`] implement [`AEADCipherEncryptor`] /
-//!    [`AEADCipherDecryptor`], whose `do_encrypt_init` is handed a key and nothing else, so they
-//!    have no length from which to form `B0`. They accumulate the message in a fixed
-//!    `BUFFER_LEN`-byte array and do all the work at finalization. That is a real cost -- see
-//!    those types' docs -- and it is the price of the generic AEAD API, not of CCM.
+//! 2. **Buffer streaming calls.** [`CcmEncryptor`] / [`CcmDecryptor`] implement
+//!    [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], whose `do_encrypt_init` is handed a key
+//!    and nothing else, so they have no length from which to form `B0`. Their streaming methods
+//!    accumulate the message in a fixed `BUFFER_LEN`-byte array and do all the work at
+//!    finalization. Their one-shots already have both lengths and therefore use the first path
+//!    directly.
 //!
 //! A caller who reaches for CCM at all is in Sec 3's packet environment and knows the length, so
 //! (1) is the one to use; (2) exists so that CCM composes with code written against the trait.
@@ -178,8 +179,8 @@ use crate::{Decrypting, Encrypting};
 /// asked to make.
 ///
 /// [`CcmEncryptor`] and [`CcmDecryptor`] wrap these for the generic
-/// [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] traits, at the cost of buffering; see the
-/// module docs.
+/// [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] traits. Their streaming methods buffer; their
+/// one-shots delegate directly to this type. See the module docs.
 ///
 /// Asking an encryptor to verify a tag does not compile -- `do_decrypt_final` exists only on
 /// `Ccm<P, Decrypting, ..>`:
@@ -906,45 +907,6 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-/// Adapts [`Ccm`] to [`AEADCipherEncryptor`] by buffering the whole message.
-///
-/// [`AEADCipherEncryptor::do_encrypt_init`] is handed a key and nothing else, but CCM cannot form
-/// `B0` -- and so cannot authenticate anything at all -- until it knows the total payload length
-/// (Appendix A.2.1; see the module docs). This type therefore accumulates the AAD and the payload
-/// in two `BUFFER_LEN`-byte arrays and runs the whole of Sec 6.1 in
-/// [`do_encrypt_final`](AEADCipherEncryptor::do_encrypt_final), which is why `FINAL_LEN` is
-/// `BUFFER_LEN`: every ciphertext byte is "flushed at finalization", and
-/// [`update_out_len`](AEADCipherEncryptor::update_out_len) is identically `0`.
-///
-/// A message or an AAD longer than `BUFFER_LEN` is refused with
-/// [`SymmetricCipherError::GenericError`]. Pick `BUFFER_LEN` from the largest packet the protocol
-/// allows -- CCM is a packet mode (Sec 3), so there is such a number.
-///
-/// A `BUFFER_LEN` past what `NONCE_LEN` allows (A.1's `2^8q - 1`) does not compile, rather than
-/// buffering the whole message only to fail at [`do_encrypt_final`](AEADCipherEncryptor::do_encrypt_final):
-///
-/// ```compile_fail
-/// use bouncycastle_aes::AES_128;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::AEADCipherEncryptor;
-/// use bouncycastle_modes::CcmEncryptor;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// // NONCE_LEN = 13 gives q = 2, a 65535-byte limit; BUFFER_LEN = 100_000 exceeds it.
-/// let _ = CcmEncryptor::<AES_128, 16, 16, 13, 8, 100_000>::do_encrypt_init(&key);
-/// ```
-///
-/// See [`AEADCipherEncryptor`]'s "A length-dependent construction still has to buffer" section for
-/// why this trait was not reshaped to avoid the buffering instead.
-///
-/// # Memory
-///
-/// `2 * BUFFER_LEN` bytes in the value itself, plus the `FINAL_LEN`-byte buffer the trait's
-/// provided one-shots put on the stack: about `3 * BUFFER_LEN` in total through
-/// [`encrypt_out`](AEADCipherEncryptor::encrypt_out). The inherent [`Ccm`] API costs one block of
-/// each of chaining value, counter template and keystream regardless of message size, so **prefer
-/// it** unless you specifically need the trait.
 /// Shared buffering state for [`CcmEncryptor`] / [`CcmDecryptor`]: everything Sec 6 needs before
 /// it can run, factored out once because the two adapters need it in the identical shape (see
 /// [`CcmEncryptor`] for why buffering is here at all). The direction-specific parts -- what the
@@ -1041,17 +1003,9 @@ where
         self.data_len = end;
         Ok(())
     }
-
-    /// Consumes the buffer, handing back everything [`Ccm::from_perm`] needs to run the real
-    /// process, plus the buffered data and its length.
-    fn into_parts(
-        self,
-    ) -> (P, [u8; NONCE_LEN], [u8; BUFFER_LEN], usize, Secret<[u8; BUFFER_LEN]>, usize) {
-        (self.perm, self.nonce, self.aad, self.aad_len, self.data, self.data_len)
-    }
 }
 
-/// Adapts [`Ccm`] to [`AEADCipherEncryptor`] by buffering the whole message.
+/// Adapts [`Ccm`] to [`AEADCipherEncryptor`], buffering only genuinely streaming use.
 ///
 /// [`AEADCipherEncryptor::do_encrypt_init`] is handed a key and nothing else, but CCM cannot form
 /// `B0` -- and so cannot authenticate anything at all -- until it knows the total payload length
@@ -1061,9 +1015,10 @@ where
 /// `BUFFER_LEN`: every ciphertext byte is "flushed at finalization", and
 /// [`update_out_len`](AEADCipherEncryptor::update_out_len) is identically `0`.
 ///
-/// A message or an AAD longer than `BUFFER_LEN` is refused with
+/// A message or an AAD longer than `BUFFER_LEN` is refused by the streaming `do_*` methods with
 /// [`SymmetricCipherError::GenericError`]. Pick `BUFFER_LEN` from the largest packet the protocol
-/// allows -- CCM is a packet mode (Sec 3), so there is such a number.
+/// allows -- CCM is a packet mode (Sec 3), so there is such a number. The one-shot methods already
+/// have the complete lengths, so they bypass this buffer and accept data up to CCM's `q` limit.
 ///
 /// A `BUFFER_LEN` past what `NONCE_LEN` allows (A.1's `2^8q - 1`) does not compile, rather than
 /// buffering the whole message only to fail at [`do_encrypt_final`](AEADCipherEncryptor::do_encrypt_final):
@@ -1080,16 +1035,31 @@ where
 /// let _ = CcmEncryptor::<AES_128, 16, 16, 13, 8, 100_000>::do_encrypt_init(&key);
 /// ```
 ///
+/// # Random nonce length
+///
+/// The trait generates a random nonce rather than accepting a caller-managed counter. To keep the
+/// random-collision bound useful, `NONCE_LEN` must therefore be at least 12 here. The inherent
+/// [`Ccm`] API still supports every A.1 nonce length from 7 through 13 when the caller guarantees
+/// uniqueness.
+///
+/// ```compile_fail
+/// use bouncycastle_aes::AES_CCM_128_Encryptor;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::AEADCipherEncryptor;
+///
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// // A 7-byte nonce is valid for caller-managed Ccm, but too short for this random-nonce adapter.
+/// let _ = AES_CCM_128_Encryptor::<7, 16, 2048>::do_encrypt_init(&key);
+/// ```
+///
 /// See [`AEADCipherEncryptor`]'s "A length-dependent construction still has to buffer" section for
 /// why this trait was not reshaped to avoid the buffering instead.
 ///
 /// # Memory
 ///
-/// `2 * BUFFER_LEN` bytes in the value itself, plus the `FINAL_LEN`-byte buffer the trait's
-/// provided one-shots put on the stack: about `3 * BUFFER_LEN` in total through
-/// [`encrypt_out`](AEADCipherEncryptor::encrypt_out). The inherent [`Ccm`] API costs one block of
-/// each of chaining value, counter template and keystream regardless of message size, so **prefer
-/// it** unless you specifically need the trait.
+/// A streaming value holds `2 * BUFFER_LEN` bytes. The one-shots bypass that value and use the
+/// fixed-size inherent [`Ccm`] state directly, so their stack use is independent of `BUFFER_LEN`.
 pub struct CcmEncryptor<
     P,
     const KEY_LEN: usize,
@@ -1123,11 +1093,62 @@ impl<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const BUFFER_LEN: usize,
+> CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, BUFFER_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    fn check_random_nonce_len() {
+        const {
+            assert!(
+                NONCE_LEN >= 12,
+                "CCM: the random-nonce AEAD adapter requires NONCE_LEN >= 12; use Ccm directly with a caller-managed unique nonce for shorter lengths"
+            );
+        }
+    }
+}
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const BUFFER_LEN: usize,
 > AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, BUFFER_LEN>
     for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, BUFFER_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    fn encrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        let mut rng = HashDRBG_SHA512::new_from_os();
+        Self::encrypt_out_rng(key, &mut rng, aad, plaintext, ciphertext)
+    }
+
+    fn encrypt_out_rng(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
+        }
+        Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::check_shape();
+        Self::check_random_nonce_len();
+        let nonce = random_iv::<NONCE_LEN>(rng)?;
+        let (written, tag) =
+            Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached(
+                key, &nonce, aad, plaintext, ciphertext,
+            )?;
+        Ok((nonce, written, tag))
+    }
+
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
@@ -1142,6 +1163,7 @@ where
         // The shape check belongs here too: this type never calls `Ccm::new`, and without it a
         // `NONCE_LEN` or `TAG_LEN` A.1 forbids would not be caught until `do_encrypt_final`.
         Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::check_shape();
+        Self::check_random_nonce_len();
         const {
             // Without this, a `BUFFER_LEN` beyond what `NONCE_LEN` allows compiles fine and only
             // fails at `do_encrypt_final`, after the whole message has been buffered for nothing.
@@ -1198,22 +1220,22 @@ where
     /// it buffered are each no more than `BUFFER_LEN`. The `Result` return exists to satisfy
     /// [`AEADCipherEncryptor::do_encrypt_final`]'s signature.
     fn do_encrypt_final(
-        self,
+        mut self,
         output: &mut [u8; BUFFER_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        let (perm, nonce, aad, aad_len, mut data, len) = self.0.into_parts();
+        let len = self.0.data_len;
+        output[..len].copy_from_slice(&self.0.data[..len]);
         let mut ccm = Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::from_perm(
-            perm,
-            &nonce,
-            &aad[..aad_len],
+            self.0.perm,
+            &self.0.nonce,
+            &self.0.aad[..self.0.aad_len],
             len,
         )?;
-        output[..len].copy_from_slice(&data[..len]);
         // Scrub the plaintext copy as soon as the ciphertext is in `output`, rather than waiting
         // for `data` to drop at the end of this call: the buffer is large and this keeps the
         // window short.
         ccm.do_encrypt_update(&mut output[..len])?;
-        data.zeroize();
+        self.0.data.zeroize();
         let tag = ccm.do_encrypt_final()?;
         Ok((len, tag))
     }
@@ -1259,6 +1281,19 @@ impl<
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    fn decrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+            key, nonce, aad, ciphertext, tag, plaintext,
+        )
+    }
+
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -1313,20 +1348,20 @@ where
     /// `do_decrypt_init`'s `const` assertion already guarantees `BUFFER_LEN <= `
     /// [`Ccm::MAX_PAYLOAD_LEN`], the only other thing the construction this wraps can fail on.
     fn do_decrypt_final(
-        self,
+        mut self,
         tag: &[u8; TAG_LEN],
         output: &mut [u8; BUFFER_LEN],
     ) -> Result<usize, SymmetricCipherError> {
-        let (perm, nonce, aad, aad_len, mut data, len) = self.0.into_parts();
+        let len = self.0.data_len;
+        output[..len].copy_from_slice(&self.0.data[..len]);
         let mut ccm = Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::from_perm(
-            perm,
-            &nonce,
-            &aad[..aad_len],
+            self.0.perm,
+            &self.0.nonce,
+            &self.0.aad[..self.0.aad_len],
             len,
         )?;
-        output[..len].copy_from_slice(&data[..len]);
         ccm.do_decrypt_update(&mut output[..len])?;
-        data.zeroize();
+        self.0.data.zeroize();
         match ccm.do_decrypt_final(tag) {
             Ok(()) => Ok(len),
             Err(e) => {

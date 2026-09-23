@@ -310,8 +310,8 @@
 //!   passes" would suggest, because only one of the two passes pays the unbatched cost.
 //! * **It does not stream.** SP 800-38C Sec 3: "CCM is not designed to support partial processing
 //!   or stream processing", because the payload length is inside the first block the MAC covers.
-//!   `Ccm` handles that by taking the length up front, which costs nothing; code written against
-//!   the generic AEAD traits pays for it in buffering instead. See [`Ccm`].
+//!   `Ccm` handles that by taking the length up front, which costs nothing. The generic AEAD
+//!   adapters do the same for one-shots and buffer only genuinely streaming calls. See [`Ccm`].
 //! * **The payload is capped** by the nonce length, at `2^(8 * (15 - NONCE_LEN)) - 1` bytes.
 //! * **The nonce must be unique.** Reuse is worse than for CTR: it loses confidentiality *and*
 //!   enables forgery.
@@ -430,8 +430,8 @@
 //! size_of::<Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>>()
 //!     == align8(size_of::<P>() + 3 * BLOCK_LEN + 3 * size_of::<usize>() + 8)
 //!
-//! // The buffering AEAD-trait adapters, which is where CCM gets expensive: two BUFFER_LEN
-//! // arrays, and the trait's one-shots put a third of the same size on the stack.
+//! // The buffering AEAD-trait adapter values used by the streaming API: two BUFFER_LEN arrays.
+//! // Their one-shots bypass these values and use Ccm directly.
 //! size_of::<CcmEncryptor<P, .., BUFFER_LEN>>()
 //!     == align8(size_of::<P>() + 2 * BUFFER_LEN + NONCE_LEN + 2 * size_of::<usize>() + 1)
 //! ```
@@ -461,15 +461,13 @@
 //! because the nonce is stored inside the counter template rather than separately, and the tag is
 //! assembled at finalization rather than held.
 //!
-//! **[`CcmEncryptor`] and [`CcmDecryptor`] are a different order of magnitude**, and that is the
-//! one memory figure in this crate worth thinking about before choosing an API. They buffer the
-//! whole message, so at `BUFFER_LEN = 2048` an AES-128 encryptor is **4304 B**, and the AEAD
-//! trait's one-shots put another `BUFFER_LEN` on the stack as the finalization buffer -- about
-//! `3 * BUFFER_LEN` in total for a call to `encrypt_out`. Using [`Ccm`] directly costs 256 B for
-//! AES-128 (the table above) whatever the message length, and the benches measure no throughput
-//! difference between the two,
-//! so the buffering pair is worth it only when the generic trait is genuinely needed. See [`Ccm`]
-//! for why the buffering cannot be avoided in the trait.
+//! **Streaming [`CcmEncryptor`] and [`CcmDecryptor`] values are a different order of magnitude**,
+//! and that is the one memory figure in this crate worth thinking about before choosing an API.
+//! They buffer the whole message, so at `BUFFER_LEN = 2048` an AES-128 adapter is **4304 B**.
+//! Their one-shots override the trait defaults and use [`Ccm`] directly, costing 256 B for AES-128
+//! (the table above) regardless of `BUFFER_LEN`; the like-for-like benchmark compares that path
+//! with [`Ccm::encrypt_detached`]. See [`Ccm`] for why only the open-ended streaming methods must
+//! buffer.
 //!
 //! CFB8 is the same size as CBC because it stores the same thing: one block of input to the next
 //! cipher call. CFB adds one `usize` because its segment is a whole block and a call may end
