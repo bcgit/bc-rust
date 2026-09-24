@@ -19,12 +19,18 @@ pub struct TestFrameworkSymmetricCipher {
     /// round-trip, and every other length must be *rejected* by `do_final` / `encrypt_out` with a
     /// `PaddingError`, which the test then asserts instead.
     pub required_alignment: usize,
+    /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the longest message the
+    /// pair's streaming methods accept. `usize::MAX` (the default) means there is no limit. A
+    /// cipher that has to buffer the whole message before it can process any of it -- CCM, whose
+    /// `B0` block encodes the payload length -- sets its buffer's capacity here, and the test caps
+    /// every message it tries at that length.
+    pub max_message_len: usize,
 }
 
 impl TestFrameworkSymmetricCipher {
     ///
     pub fn new() -> Self {
-        Self { required_alignment: 1 }
+        Self { required_alignment: 1, max_message_len: usize::MAX }
     }
 
     /// Exercises the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] contract for a
@@ -62,7 +68,7 @@ impl TestFrameworkSymmetricCipher {
         .unwrap();
         // Enough plaintext lengths to cross several final-chunk boundaries (a block, for padding).
         let align = self.required_alignment.max(1);
-        let max_len = (3 * FINAL_LEN.max(1) + 5).next_multiple_of(align);
+        let max_len = (3 * FINAL_LEN.max(1) + 5).next_multiple_of(align).min(self.max_message_len);
 
         // one-shot round trip, every (accepted) length; every other length must be refused
         for len in 0..=max_len {
@@ -471,13 +477,16 @@ impl TestFrameworkBlockCipher {
 
 /// Instance of the test framework.
 pub struct TestFrameworkAEADCipher {
-    // Put any config options here
+    /// The longest message the pair's streaming methods accept; see
+    /// [`TestFrameworkSymmetricCipher::max_message_len`], which this is passed on to. `usize::MAX`
+    /// (the default) means there is no limit.
+    pub max_message_len: usize,
 }
 
 impl TestFrameworkAEADCipher {
     ///
     pub fn new() -> Self {
-        Self {}
+        Self { max_message_len: usize::MAX }
     }
 
     /// Exercises the [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] streaming contract for a
@@ -525,8 +534,9 @@ impl TestFrameworkAEADCipher {
             "FINAL_LEN must have room for the inline tag the decryptor holds back"
         );
         // No AAD and the tag inline is the plain symmetric-cipher contract.
-        TestFrameworkSymmetricCipher::new()
-            .test_encryptor_decryptor::<KEY_LEN, NONCE_LEN, FINAL_LEN, E, D>();
+        let mut symmetric = TestFrameworkSymmetricCipher::new();
+        symmetric.max_message_len = self.max_message_len;
+        symmetric.test_encryptor_decryptor::<KEY_LEN, NONCE_LEN, FINAL_LEN, E, D>();
 
         let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
             &DUMMY_SEED[..KEY_LEN],
@@ -537,7 +547,7 @@ impl TestFrameworkAEADCipher {
         let pinned = [0xA5u8; NONCE_LEN];
 
         // one-shot round trip, every length up to a few times the tag length
-        let max_len = 3 * TAG_LEN.max(1) + 5;
+        let max_len = (3 * TAG_LEN.max(1) + 5).min(self.max_message_len);
         for len in 0..=max_len {
             let msg = &DUMMY_SEED[..len];
             let mut ct = vec![0u8; E::encrypt_out_len_detached(len)];
@@ -756,7 +766,7 @@ impl TestFrameworkAEADCipher {
 
         // streaming in every chunking agrees with the one-shot, for both the AAD and the data.
         // The pinned RNG is what makes the nonce -- and so the ciphertext -- comparable.
-        let msg = &DUMMY_SEED[..max_len.max(17)];
+        let msg = &DUMMY_SEED[..max_len.max(17).min(self.max_message_len)];
         let mut ct_ref = vec![0u8; E::encrypt_out_len_detached(msg.len())];
         let (nonce_ref, ct_ref_len, tag_ref) = E::encrypt_out_rng_detached(
             &key,

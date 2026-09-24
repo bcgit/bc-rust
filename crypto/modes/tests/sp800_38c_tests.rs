@@ -20,7 +20,9 @@
 use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use bouncycastle_core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
@@ -335,15 +337,24 @@ fn empty_payload_and_empty_aad_are_permitted() {
     }
 }
 
+/// The shared framework, told the streaming capacity of a buffering pair, `FINAL_LEN - TAG_LEN`,
+/// so that it caps every message it streams at that length.
+fn framework(capacity: usize) -> TestFrameworkAEADCipher {
+    let mut framework = TestFrameworkAEADCipher::new();
+    framework.max_message_len = capacity;
+    framework
+}
+
 /// The whole [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] contract, through the shared
 /// framework, for the buffering [`CcmEncryptor`] / [`CcmDecryptor`] pair.
 ///
-/// `BUFFER_LEN` is 256, comfortably above the longest message the suite tries
-/// (`3 * TAG_LEN + 5 = 53`), and is also this pair's `FINAL_LEN`, since everything is flushed at
-/// finalization.
+/// `FINAL_LEN` is 256, so the streaming capacity `FINAL_LEN - TAG_LEN` is comfortably above the
+/// longest message the suite tries (`3 * FINAL_LEN + 5` in the symmetric-cipher part, capped by
+/// nothing here since its one-shots bypass the buffer, and `3 * TAG_LEN + 5 = 53` in the AEAD
+/// part). Everything is flushed at finalization.
 #[test]
 fn framework_streaming_contract() {
-    TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
+    framework(256 - 16).test_encryptor_decryptor::<
         16,
         12,
         16,
@@ -357,7 +368,7 @@ fn framework_streaming_contract() {
 /// key-policy checks run against every parameterization the CLI and the aliases expose.
 #[test]
 fn framework_streaming_contract_other_parameter_sets() {
-    TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
+    framework(256 - 16).test_encryptor_decryptor::<
         24,
         12,
         16,
@@ -365,7 +376,7 @@ fn framework_streaming_contract_other_parameter_sets() {
         CcmEncryptor<AES_192, 24, 16, 12, 16, 256>,
         CcmDecryptor<AES_192, 24, 16, 12, 16, 256>,
     >();
-    TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
+    framework(256 - 16).test_encryptor_decryptor::<
         32,
         12,
         16,
@@ -375,7 +386,7 @@ fn framework_streaming_contract_other_parameter_sets() {
     >();
     // A 13-byte nonce (q = 2) with an 8-byte tag: the parameterization IEEE 802.11 CCMP uses, and
     // the one A.1's narrowest length field applies to.
-    TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
+    framework(256 - 8).test_encryptor_decryptor::<
         16,
         13,
         8,
@@ -417,7 +428,7 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
         assert_eq!(enc.do_update_out(piece, &mut nothing).expect("update"), 0);
     }
     let mut flushed = [0u8; 256];
-    let (len, tag) = enc.do_encrypt_final(&mut flushed).expect("final");
+    let (len, tag) = enc.do_final_out_detached(&mut flushed).expect("final");
     assert_eq!(len, plaintext.len(), "everything is flushed at finalization");
     assert_eq!(&flushed[..len], want_ct, "C.3 ciphertext via the trait");
     assert_eq!(&tag[..], want_tag, "C.3 tag via the trait");
@@ -428,17 +439,35 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
         assert_eq!(dec.do_update_out(piece, &mut nothing).expect("update"), 0);
     }
     let mut out = [0u8; 256];
-    let n =
-        dec.do_decrypt_final(want_tag.try_into().expect("8 bytes"), &mut out).expect("tag check");
+    let n = dec
+        .do_final_out_detached(want_tag.try_into().expect("8 bytes"), &mut out)
+        .expect("tag check");
     assert_eq!(&out[..n], &plaintext[..], "C.3 plaintext via the trait");
+
+    // The inline layout through the inherited `SymmetricCipher*` methods: C.3's `C` is exactly
+    // `ciphertext || tag`, and the decryptor takes the tag back off its end.
+    let mut rng = FixedSeedRNG::<12>::new(nonce_seed);
+    let (mut enc, nonce) = Enc::do_encrypt_init_rng(&k, &mut rng).expect("init");
+    enc.do_update_aad(&aad).expect("aad");
+    enc.do_update_out(&plaintext, &mut nothing).expect("update");
+    let (inline, inline_len) = enc.do_final().expect("final");
+    assert_eq!(&inline[..inline_len], &c[..], "C.3 `C` via the inline do_final");
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
+    dec.do_update_aad(&aad).expect("aad");
+    for piece in c.chunks(5) {
+        assert_eq!(dec.do_update_out(piece, &mut nothing).expect("update"), 0);
+    }
+    let (out, n) = dec.do_final().expect("tag check");
+    assert_eq!(&out[..n], &plaintext[..], "C.3 plaintext via the inline do_final");
 }
 
-/// A message longer than `BUFFER_LEN` is refused rather than silently truncated, and so is an
-/// oversized AAD. This is the cost of the trait's length-free `do_encrypt_init`; see
+/// A message longer than the streaming capacity, `FINAL_LEN - TAG_LEN`, is refused rather than
+/// silently truncated, and so is an oversized AAD. This is the cost of the trait's length-free `do_encrypt_init`; see
 /// [`CcmEncryptor`].
 #[test]
 fn the_buffering_pair_refuses_a_message_past_its_buffer() {
-    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, 32>;
+    // A 32-byte capacity: `FINAL_LEN` leaves room for the 16-byte inline tag after it.
+    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
     let k = key::<16>(APPENDIX_C_KEY);
     let mut nothing = [0u8; 0];
 
@@ -460,17 +489,18 @@ fn the_buffering_pair_refuses_a_message_past_its_buffer() {
     assert!(matches!(enc.do_update_aad(&[0u8; 33]), Err(SymmetricCipherError::GenericError(_))));
 }
 
-/// Filling `BUFFER_LEN` *exactly* must be accepted, not refused: `CcmBuffer::do_update_aad` /
-/// `do_update_out` check `end > BUFFER_LEN`, so using the whole buffer is legitimate and only one
-/// byte more is not. Both boundary sides, in one call and split across two.
+/// Filling the streaming capacity *exactly* must be accepted, not refused: `CcmBuffer::do_update_aad`
+/// / `do_update_out` check `end > FINAL_LEN - TAG_LEN`, so using all of it is legitimate and only
+/// one byte more is not. Both boundary sides, in one call and split across two.
 #[test]
 fn the_buffering_pair_accepts_a_message_that_exactly_fills_its_buffer() {
-    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, 32>;
+    // A 32-byte capacity: `FINAL_LEN` leaves room for the 16-byte inline tag after it.
+    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
     let k = key::<16>(APPENDIX_C_KEY);
     let mut nothing = [0u8; 0];
 
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
-    assert_eq!(enc.do_update_out(&[0u8; 32], &mut nothing).expect("exactly fills BUFFER_LEN"), 0);
+    assert_eq!(enc.do_update_out(&[0u8; 32], &mut nothing).expect("exactly fills the capacity"), 0);
 
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
     assert_eq!(enc.do_update_out(&[0u8; 20], &mut nothing).expect("fits"), 0);
@@ -480,13 +510,69 @@ fn the_buffering_pair_accepts_a_message_that_exactly_fills_its_buffer() {
     );
 
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
-    assert!(enc.do_update_aad(&[0u8; 32]).is_ok(), "AAD exactly filling BUFFER_LEN is accepted");
+    assert!(enc.do_update_aad(&[0u8; 32]).is_ok(), "AAD exactly filling the capacity is accepted");
+}
+
+/// The decryptor cannot know until the final call whether the tag is inline, so it buffers up to
+/// the full `FINAL_LEN` -- a capacity-filling ciphertext with its tag after it -- and decrypts that
+/// through the inline `do_final`. The detached final holds the ciphertext to the same capacity as
+/// the encryptor, so the room kept for an inline tag cannot be used to smuggle a longer message
+/// past it.
+#[test]
+fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
+    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
+    type Dec = CcmDecryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
+    let k = key::<16>(APPENDIX_C_KEY);
+    let mut nothing = [0u8; 0];
+    let message = [0x5Au8; 32];
+
+    let (mut enc, nonce) = Enc::do_encrypt_init(&k).expect("init");
+    enc.do_update_out(&message, &mut nothing).expect("fills the capacity");
+    let (inline, inline_len) = enc.do_final().expect("final");
+    assert_eq!(inline_len, 48, "32 bytes of ciphertext and the 16-byte tag");
+
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
+    dec.do_update_out(&inline[..inline_len], &mut nothing)
+        .expect("all of FINAL_LEN may be buffered");
+    let (out, n) = dec.do_final().expect("tag check");
+    assert_eq!(&out[..n], &message[..]);
+
+    // One byte past FINAL_LEN is refused even though the tag might be inline.
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
+    assert!(matches!(
+        dec.do_update_out(&[0u8; 49], &mut nothing),
+        Err(SymmetricCipherError::GenericError(_))
+    ));
+
+    // Detached, the 48 buffered bytes would all be ciphertext: more than the capacity.
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
+    dec.do_update_out(&inline[..inline_len], &mut nothing).expect("buffered");
+    let mut out = [0u8; 48];
+    assert!(matches!(
+        dec.do_final_out_detached(&[0u8; 16], &mut out),
+        Err(SymmetricCipherError::GenericError(_))
+    ));
+
+    // ...and exactly the capacity is fine.
+    let mut detached = [0u8; 32];
+    let (_, _, tag) = Enc::encrypt_out_rng_detached(
+        &k,
+        &mut FixedSeedRNG::<12>::new(nonce),
+        &[],
+        &message,
+        &mut detached,
+    )
+    .expect("one-shot");
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
+    dec.do_update_out(&detached, &mut nothing).expect("buffered");
+    let n = dec.do_final_out_detached(&tag, &mut out).expect("tag check");
+    assert_eq!(&out[..n], &message[..]);
 }
 
 /// The trait one-shots know both lengths up front, so they use `Ccm` directly rather than imposing
 /// the streaming adapter's fixed buffer on otherwise valid packets.
 #[test]
-fn trait_one_shots_are_not_capped_by_buffer_len() {
+fn trait_one_shots_are_not_capped_by_final_len() {
     type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, 64>;
     type Dec = CcmDecryptor<AES_128, 16, 16, 12, 16, 64>;
 
@@ -494,19 +580,20 @@ fn trait_one_shots_are_not_capped_by_buffer_len() {
     let aad = [0x3Cu8; 128];
     let plaintext = [0xA5u8; 4096];
     let mut ciphertext = [0u8; 4096];
-    let (nonce, written, tag) = Enc::encrypt_out_rng(
+    let (nonce, written, tag) = Enc::encrypt_out_rng_detached(
         &k,
         &mut FixedSeedRNG::<12>::new([0x24u8; 12]),
         &aad,
         &plaintext,
         &mut ciphertext,
     )
-    .expect("one-shot payload and AAD may exceed BUFFER_LEN");
+    .expect("one-shot payload and AAD may exceed FINAL_LEN");
     assert_eq!(written, plaintext.len());
 
     let mut opened = [0u8; 4096];
-    let opened_len = Dec::decrypt_out(&k, &nonce, &aad, &ciphertext[..written], &tag, &mut opened)
-        .expect("direct one-shot decryption");
+    let opened_len =
+        Dec::decrypt_out_detached(&k, &nonce, &aad, &ciphertext[..written], &tag, &mut opened)
+            .expect("direct one-shot decryption");
     assert_eq!(&opened[..opened_len], &plaintext);
 }
 
@@ -658,7 +745,7 @@ fn each_direction_has_its_own_methods() {
 // ---- memory ------------------------------------------------------------------------------
 
 /// Pins the "Memory Usage" table in the crate docs: `Ccm` is 256/288/320 B for AES-128/192/256,
-/// independent of `NONCE_LEN`/`TAG_LEN`, and the buffering pair is `2 * BUFFER_LEN`.
+/// independent of `NONCE_LEN`/`TAG_LEN`, and the buffering pair is `2 * FINAL_LEN`.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
@@ -684,7 +771,7 @@ fn sizes_match_the_documented_memory_table() {
         size_of::<Ccm<AES_128, Decrypting, 16, 16, 12, 16>>()
     );
 
-    // The buffering adapters: 2 * BUFFER_LEN each (an `aad` array and a `data` array).
+    // The buffering adapters: 2 * FINAL_LEN each (an `aad` array and a `data` array).
     assert_eq!(
         size_of::<CcmEncryptor<AES_128, 16, 16, 12, 16, 4096>>(),
         size_of::<CcmDecryptor<AES_128, 16, 16, 12, 16, 4096>>()

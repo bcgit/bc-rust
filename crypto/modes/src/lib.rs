@@ -33,7 +33,9 @@
 //! authenticated data, and it produces a tag as well as a ciphertext, so it does not fit either of
 //! the traits above -- there is nowhere in them to put the AAD or the tag. It implements
 //! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead (through [`CcmEncryptor`] /
-//! [`CcmDecryptor`]), and its own inherent API is the one to reach for. Two other things set it
+//! [`CcmDecryptor`]), and through them [`SymmetricCipherEncryptor`] /
+//! [`SymmetricCipherDecryptor`] with no AAD and the tag inline; its own inherent API is the one to
+//! reach for. Two other things set it
 //! apart:
 //!
 //! * **There is an extra input and an extra output.** The AAD is authenticated but not encrypted,
@@ -430,10 +432,10 @@
 //! size_of::<Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>>()
 //!     == align8(size_of::<P>() + 3 * BLOCK_LEN + 3 * size_of::<usize>() + 8)
 //!
-//! // The buffering AEAD-trait adapter values used by the streaming API: two BUFFER_LEN arrays.
+//! // The buffering AEAD-trait adapter values used by the streaming API: two FINAL_LEN arrays.
 //! // Their one-shots bypass these values and use Ccm directly.
-//! size_of::<CcmEncryptor<P, .., BUFFER_LEN>>()
-//!     == align8(size_of::<P>() + 2 * BUFFER_LEN + NONCE_LEN + 2 * size_of::<usize>() + 1)
+//! size_of::<CcmEncryptor<P, .., FINAL_LEN>>()
+//!     == align8(size_of::<P>() + 2 * FINAL_LEN + NONCE_LEN + 2 * size_of::<usize>() + 1)
 //! ```
 //!
 //! | Combination | Permutation | Chain | Count | Total |
@@ -463,9 +465,9 @@
 //!
 //! **Streaming [`CcmEncryptor`] and [`CcmDecryptor`] values are a different order of magnitude**,
 //! and that is the one memory figure in this crate worth thinking about before choosing an API.
-//! They buffer the whole message, so at `BUFFER_LEN = 2048` an AES-128 adapter is **4304 B**.
+//! They buffer the whole message, so at `FINAL_LEN = 2048` an AES-128 adapter is **4304 B**.
 //! Their one-shots override the trait defaults and use [`Ccm`] directly, costing 256 B for AES-128
-//! (the table above) regardless of `BUFFER_LEN`; the like-for-like benchmark compares that path
+//! (the table above) regardless of `FINAL_LEN`; the like-for-like benchmark compares that path
 //! with [`Ccm::encrypt_detached`]. See [`Ccm`] for why only the open-ended streaming methods must
 //! buffer.
 //!

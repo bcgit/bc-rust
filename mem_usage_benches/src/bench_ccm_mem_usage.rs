@@ -133,32 +133,39 @@ fn bench_direct_encrypt_detached() {
 ///
 /// Expected to peak at roughly `3 * BUFFER_LEN` above `bench_direct_encrypt_detached`: the
 /// encryptor's own two buffers plus the `FINAL_LEN`-byte flush buffer that the trait's provided
-/// `encrypt_out` puts on the stack.
+/// `encrypt_out_detached` puts on the stack.
 fn bench_buffering_encrypt_out() {
-    eprintln!("CcmEncryptor::encrypt_out, 4 KiB");
+    eprintln!("CcmEncryptor::encrypt_out_detached, 4 KiB");
 
     let k = key::<16>();
     let plaintext = [0xA5u8; BUFFER_LEN];
     let mut ciphertext = [0u8; BUFFER_LEN];
     let (_, _, tag) =
-        Aes128CcmEncryptor::encrypt_out(&k, &[], &plaintext, &mut ciphertext).unwrap();
+        Aes128CcmEncryptor::encrypt_out_detached(&k, &[], &plaintext, &mut ciphertext).unwrap();
     print!("{:x?}", &tag);
 }
 
-/// The decrypting side of the same comparison; `do_decrypt_final` also decrypts into the caller's
+/// The decrypting side of the same comparison; `do_final_out_detached` also decrypts into the caller's
 /// `FINAL_LEN` buffer before checking the tag.
 fn bench_buffering_decrypt_out() {
-    eprintln!("CcmDecryptor::decrypt_out, 4 KiB");
+    eprintln!("CcmDecryptor::decrypt_out_detached, 4 KiB");
 
     let k = key::<16>();
     let plaintext = [0xA5u8; BUFFER_LEN];
     let mut ciphertext = [0u8; BUFFER_LEN];
     let (nonce, _, tag) =
-        Aes128CcmEncryptor::encrypt_out(&k, &[], &plaintext, &mut ciphertext).unwrap();
+        Aes128CcmEncryptor::encrypt_out_detached(&k, &[], &plaintext, &mut ciphertext).unwrap();
 
     let mut recovered = [0u8; BUFFER_LEN];
-    let n = Aes128CcmDecryptor::decrypt_out(&k, &nonce, &[], &ciphertext, &tag, &mut recovered)
-        .unwrap();
+    let n = Aes128CcmDecryptor::decrypt_out_detached(
+        &k,
+        &nonce,
+        &[],
+        &ciphertext,
+        &tag,
+        &mut recovered,
+    )
+    .unwrap();
     print!("{n}");
 }
 

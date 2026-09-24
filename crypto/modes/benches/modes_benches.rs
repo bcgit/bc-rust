@@ -898,12 +898,12 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let mut group = c.benchmark_group("modes::ccm::one_shot");
     group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
 
-    group.bench_function("AEADCipherEncryptor::encrypt_out_rng 4KiB", |b| {
+    group.bench_function("AEADCipherEncryptor::encrypt_out_rng_detached 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEncryptor::encrypt_out_rng(
+                    Aes128CcmEncryptor::encrypt_out_rng_detached(
                         black_box(&key),
                         &mut rng,
                         &no_aad,
