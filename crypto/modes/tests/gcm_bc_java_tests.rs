@@ -11,7 +11,7 @@
 
 use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::SymmetricCipherEncryptor;
+use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
@@ -206,24 +206,27 @@ where
     let expected_ct = hex::decode(&case.ct).expect("valid hex ct");
     let expected_tag = hex::decode(case.tag).expect("valid hex tag");
 
-    let mut data = pt.clone();
-    let (mut enc, got_iv) = Gcm::<P, Encrypting, KEY_LEN, 16>::do_encrypt_init_rng(
+    let mut data = vec![0u8; pt.len()];
+    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_out_rng_detached(
         &key,
         &mut FixedSeedRNG::<12>::new(iv),
+        &aad,
+        &pt,
+        &mut data,
     )
-    .expect("encrypt init");
+    .expect("encrypt");
     assert_eq!(got_iv, iv, "{}: the pinned RNG should reproduce the vector's IV", case.name);
-    enc.do_update_aad(&aad).unwrap();
-    enc.do_encrypt(&mut data).unwrap();
-    let tag = enc.finish();
 
     assert_eq!(data, expected_ct, "{}: ciphertext mismatch", case.name);
     assert_eq!(&tag[..], &expected_tag[..], "{}: tag mismatch", case.name);
 
     let tag_arr: [u8; 16] = expected_tag.try_into().expect("16-byte tag");
-    Gcm::<P, Decrypting, KEY_LEN, 16>::decrypt_detached(&key, &iv, &aad, &mut data, &tag_arr)
-        .unwrap_or_else(|e| panic!("{}: decrypt should have verified, got {e:?}", case.name));
-    assert_eq!(data, pt, "{}: decrypted plaintext mismatch", case.name);
+    let mut recovered = vec![0u8; data.len()];
+    Gcm::<P, Decrypting, KEY_LEN, 16>::decrypt_out_detached(
+        &key, &iv, &aad, &data, &tag_arr, &mut recovered,
+    )
+    .unwrap_or_else(|e| panic!("{}: decrypt should have verified, got {e:?}", case.name));
+    assert_eq!(recovered, pt, "{}: decrypted plaintext mismatch", case.name);
 }
 
 #[test]

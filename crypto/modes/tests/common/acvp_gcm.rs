@@ -15,7 +15,7 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::traits::{
-    SecurityStrength, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, SecurityStrength, SymmetricCipherDecryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
@@ -116,22 +116,24 @@ fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 ) where
     P: bouncycastle_core::traits::ElectronicCodeBook<KEY_LEN, 16>,
 {
-    let (mut enc, got_iv) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::do_encrypt_init_rng(
+    let mut ct = vec![0u8; data.len()];
+    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_out_rng_detached(
         key,
         &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
+        aad,
+        data,
+        &mut ct,
     )
-    .expect("encrypt init");
+    .expect("encrypt");
     assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
-    enc.do_update_aad(aad).expect("aad");
-    enc.do_encrypt(data).expect("encrypt");
-    let tag = enc.finish();
+    assert_eq!(written, data.len(), "GCM ciphertext is as long as the plaintext");
     assert_eq!(&tag[..], expected_tag, "tag mismatch");
+    data.copy_from_slice(&ct);
 }
 
 /// Runs one ACVP AES-GCM/GMAC decrypt case: decrypts `ct` under `key`/`aad`/`iv` and either
 /// compares against `expected_pt` (a valid case) or asserts `AEADTagCheckFailed` (a forgery) from
-/// both the detached one-shot and the inline `decrypt_out`, with the plaintext buffer left
-/// untouched in both.
+/// both the detached one-shot and the inline stream, with the one-shot's plaintext buffer zeroized.
 pub fn run_decrypt_case(
     key_bytes: &[u8],
     iv: [u8; GCM_NONCE_LEN],
@@ -174,13 +176,13 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     let tag_arr: [u8; TAG_LEN] = tag.try_into().expect("tag length matches TAG_LEN");
 
     // The detached one-shot: AAD-capable, and never releases plaintext before the tag checks out.
-    let mut data = ct.to_vec();
-    let one_shot_result = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached(
-        key, &iv, aad, &mut data, &tag_arr,
+    let mut data = vec![0xEEu8; ct.len()];
+    let one_shot_result = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_out_detached(
+        key, &iv, aad, ct, &tag_arr, &mut data,
     );
 
     // The inline `SymmetricCipherDecryptor` streaming view, `ciphertext || tag` through
-    // `do_update_out`/`do_final`, with AAD fed via the inherent `do_update_aad` first. Note this is
+    // `do_update_out`/`do_final`, with AAD fed via `do_update_aad` first. Note this is
     // *not* the AAD-less static `decrypt_out` one-shot (which has no AAD parameter at all and so
     // cannot be checked against these vectors, none of which have empty AAD): the streaming path
     // is where the inline layout meets AAD support, and unlike the one-shot it releases plaintext
@@ -211,12 +213,14 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
             assert_eq!(&inline_pt[..written], pt, "inline stream plaintext mismatch");
         }
         None => {
-            let before = ct.to_vec();
             assert!(
                 matches!(one_shot_result, Err(SymmetricCipherError::AEADTagCheckFailed)),
                 "expected AEADTagCheckFailed from the detached one-shot, got {one_shot_result:?}"
             );
-            assert_eq!(data, before, "a forged tag must leave the one-shot buffer untouched");
+            assert!(
+                data.iter().all(|&b| b == 0),
+                "a forged tag must leave the one-shot buffer zeroized"
+            );
 
             assert!(
                 matches!(inline_result, Err(SymmetricCipherError::AEADTagCheckFailed)),
