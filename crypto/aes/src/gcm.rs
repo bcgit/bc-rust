@@ -36,12 +36,12 @@ use bouncycastle_modes::Gcm;
 /// assert_eq!(&data, b"attack at dawn!!");
 /// ```
 ///
-/// Inline `ciphertext || tag`, through [`SimpleCipherEncryptor`](bouncycastle_core::traits::SimpleCipherEncryptor) / [`SimpleCipherDecryptor`](bouncycastle_core::traits::SimpleCipherDecryptor):
+/// Inline `ciphertext || tag`, through [`SymmetricCipherEncryptor`](bouncycastle_core::traits::SymmetricCipherEncryptor) / [`SymmetricCipherDecryptor`](bouncycastle_core::traits::SymmetricCipherDecryptor):
 ///
 /// ```
 /// use bouncycastle_aes::AES_GCM_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
@@ -63,7 +63,7 @@ use bouncycastle_modes::Gcm;
 /// ```
 /// use bouncycastle_aes::AES_GCM_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x99; 16], KeyType::SymmetricCipherKey).unwrap();

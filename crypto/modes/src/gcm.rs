@@ -26,7 +26,7 @@
 //!   [`Gcm::encrypt_detached`] / [`Gcm::encrypt_detached_rng`] / [`Gcm::decrypt_detached`]. This is
 //!   the spec's own interface: the tag is a separate value from the ciphertext (Algorithm 4's
 //!   `(C, T)`, Algorithm 5's separate `T` input).
-//! * The [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`] traits, with `FINAL_LEN = TAG_LEN`,
+//! * The [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits, with `FINAL_LEN = TAG_LEN`,
 //!   which give the *inline* `ciphertext || tag` layout, the one-shot `encrypt_out` / `decrypt_out`,
 //!   and the shared conformance suite. AAD has no place in that trait's signature, so use the
 //!   inherent [`Gcm::do_update_aad`] on the object it returns before feeding it any data; the two
@@ -65,7 +65,7 @@
 //! ```
 //! use bouncycastle_aes::AES_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
 //! type Aes256Gcm<Dir> = Gcm<AES_256, Dir, 32, 16>;
@@ -110,7 +110,7 @@
 //!   necessary, limit the number of unsuccessful verification attempts for each key."
 //! * **32- and 64-bit tags are not offered** (Appendix C); see the module docs above.
 //! * **Streaming decryption releases plaintext before the tag is checked; the one-shots do not.**
-//!   [`Gcm::do_decrypt`] and [`SimpleCipherDecryptor::do_update_out`] hand back plaintext as they go,
+//!   [`Gcm::do_decrypt`] and [`SymmetricCipherDecryptor::do_update_out`] hand back plaintext as they go,
 //!   which is unauthenticated until [`Gcm::finish`] / `do_final` succeeds -- do not act on it before
 //!   then. [`Gcm::decrypt_detached`] and the inline `decrypt_out` override verify the tag first and
 //!   release nothing at all on failure (Sec 7.2 permits checking the tag before computing the
@@ -134,8 +134,8 @@ use crate::{Ctr, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    Algorithm, ElectronicCodeBook, RNG, SecurityStrength, SimpleCipherDecryptor,
-    SimpleCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
+    Algorithm, ElectronicCodeBook, RNG, SecurityStrength, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -174,7 +174,7 @@ where
     /// `len(C)` in bytes so far; converted to bits at [`Gcm::tag_block`].
     data_len: u64,
     phase: Phase,
-    /// The last up to `TAG_LEN` bytes of ciphertext seen by [`SimpleCipherDecryptor::do_update_out`]
+    /// The last up to `TAG_LEN` bytes of ciphertext seen by [`SymmetricCipherDecryptor::do_update_out`]
     /// but not yet released, because they might be the tag. Meaningful only on the `Decrypting`
     /// side; kept on both directions rather than splitting the struct by `Dir` -- seeded random
     /// bytes are indistinguishable from a design that carries them deliberately, so this trades
@@ -241,8 +241,8 @@ where
     }
 
     /// Absorbs additional authenticated data. Any number of calls before the first call to
-    /// [`Gcm::do_encrypt`] / [`Gcm::do_decrypt`] / [`SimpleCipherEncryptor::do_update_out`] /
-    /// [`SimpleCipherDecryptor::do_update_out`]; a non-empty call after data has started is
+    /// [`Gcm::do_encrypt`] / [`Gcm::do_decrypt`] / [`SymmetricCipherEncryptor::do_update_out`] /
+    /// [`SymmetricCipherDecryptor::do_update_out`]; a non-empty call after data has started is
     /// [`SymmetricCipherError::StateError`] (Algorithm 4 absorbs `A` before `C` in one GHASH pass,
     /// D4). Empty AAD is always a no-op.
     pub fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
@@ -372,7 +372,8 @@ where
 }
 
 impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
-    SimpleCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN> for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
+    SymmetricCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN>
+    for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16>,
 {
@@ -404,10 +405,7 @@ where
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength(
-                "ciphertext",
-                plaintext.len(),
-            ));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         ciphertext[..plaintext.len()].copy_from_slice(plaintext);
         self.do_encrypt(&mut ciphertext[..plaintext.len()])?;
@@ -440,7 +438,8 @@ where
     /// As [`Gcm::do_encrypt`].
     pub fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_data(data)?;
-        self.ctr.do_decrypt(data)
+        self.ctr.do_decrypt(data)?;
+        Ok(())
     }
 
     /// Algorithm 5 steps 5-8: recomputes `T'` and compares it against `tag` in constant time.
@@ -479,7 +478,8 @@ where
         if !ct_eq_bytes(&computed[..TAG_LEN], tag) {
             return Err(SymmetricCipherError::AEADTagCheckFailed);
         }
-        gcm.ctr.do_decrypt(data)
+        gcm.ctr.do_decrypt(data)?;
+        Ok(())
     }
 
     /// One-shot: verifies the tag and, only if it matches, decrypts `data` in place. Releases
@@ -496,7 +496,8 @@ where
 }
 
 impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
-    SimpleCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN> for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
+    SymmetricCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN>
+    for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16>,
 {
@@ -524,7 +525,7 @@ where
     ) -> Result<usize, SymmetricCipherError> {
         let release = self.update_out_len(ciphertext.len());
         if plaintext.len() < release {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("plaintext", release));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
 
         // Bytes of the old tail that are now known to be ciphertext, then bytes of the new input
@@ -583,7 +584,7 @@ where
     ) -> Result<usize, SymmetricCipherError> {
         let needed = Self::decrypt_out_max_len(ciphertext.len());
         if plaintext.len() < needed {
-            return Err(SymmetricCipherError::IncorrectOutputBufferLength("plaintext", needed));
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         if ciphertext.len() < TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);

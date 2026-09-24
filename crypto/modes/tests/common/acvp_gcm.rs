@@ -14,7 +14,9 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{SecurityStrength, SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{
+    SecurityStrength, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
@@ -177,7 +179,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         key, &iv, aad, &mut data, &tag_arr,
     );
 
-    // The inline `SimpleCipherDecryptor` streaming view, `ciphertext || tag` through
+    // The inline `SymmetricCipherDecryptor` streaming view, `ciphertext || tag` through
     // `do_update_out`/`do_final`, with AAD fed via the inherent `do_update_aad` first. Note this is
     // *not* the AAD-less static `decrypt_out` one-shot (which has no AAD parameter at all and so
     // cannot be checked against these vectors, none of which have empty AAD): the streaming path

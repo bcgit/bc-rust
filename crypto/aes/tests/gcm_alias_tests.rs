@@ -1,14 +1,14 @@
 //! Tests for the AES-GCM aliases.
 //!
 //! The aliases are only type aliases, so what is worth testing is that they name the *right* type
-//! at both directions, that all three key lengths reach the shared `SimpleCipherEncryptor` /
-//! `SimpleCipherDecryptor` conformance suite (`TestFrameworkSimpleCipher`), and that a fresh nonce
+//! at both directions, that all three key lengths reach the shared `SymmetricCipherEncryptor` /
+//! `SymmetricCipherDecryptor` conformance suite (`TestFrameworkSymmetricCipher`), and that a fresh nonce
 //! is generated per encryption. Algorithm correctness itself is pinned by `bouncycastle-modes`'
 //! ACVP and bc-java known-answer suites.
 
 use bouncycastle_aes::{AES_128, AES_GCM_128, AES_GCM_192, AES_GCM_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSimpleCipher;
+use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricCipher;
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
@@ -25,11 +25,11 @@ fn the_alias_names_the_expected_type() {
     assert_eq!(size_of::<AES_GCM_128<Decrypting>>(), size_of::<Gcm<AES_128, Decrypting, 16, 16>>());
 }
 
-/// All three key lengths satisfy the shared `SimpleCipherEncryptor`/`SimpleCipherDecryptor`
+/// All three key lengths satisfy the shared `SymmetricCipherEncryptor`/`SymmetricCipherDecryptor`
 /// conformance suite -- the same one the padding adapters and the stream modes run.
 #[test]
 fn all_three_key_lengths_conform_to_the_simple_cipher_suite() {
-    let framework = TestFrameworkSimpleCipher::new();
+    let framework = TestFrameworkSymmetricCipher::new();
     framework
         .test_encryptor_decryptor::<16, 12, 16, AES_GCM_128<Encrypting>, AES_GCM_128<Decrypting>>();
     framework
