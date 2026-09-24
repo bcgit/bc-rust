@@ -28,13 +28,24 @@ pub(crate) fn rsavp1<const L: usize, const L2: usize, const L21: usize>(
     if nat::sub(s, pk.n()).1 != 1 {
         return Err(SignatureError::DecodingError("signature representative out of range"));
     }
+    Ok(public_exp::<L, L2, L21>(pk, s))
+}
+
+/// `x^e mod n` under the public key, with no range check of its own: RSAVP1's step 2 (RFC 8017
+/// §5.2.2), shared with any other primitive that exponentiates by `e` -- each caller applies its
+/// own specification's range check on `x` first, since those differ (RFC 8017 §5.2.2 step 1
+/// accepts "between 0 and n - 1").
+pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
+    pk: &RsaPublicKey<L>,
+    x: &[u64; L],
+) -> [u64; L] {
     let ctx = MontgomeryContext::<L>::new(pk.n())
         .expect("RsaPublicKey::new already validated n is odd and nonzero");
 
     let mut e_limbs = [0u64; L];
     e_limbs[0] = pk.e() as u64;
 
-    Ok(mod_pow::<L, L2, L21>(s, &e_limbs, &ctx))
+    mod_pow::<L, L2, L21>(x, &e_limbs, &ctx)
 }
 
 /// RSASP1 (RFC 8017 §5.2.1), CRT form (step 2.b, two-prime case): `s1 = m^dP mod p`, `s2 = m^dQ
@@ -57,6 +68,25 @@ pub(crate) fn rsasp1<
         return Err(SignatureError::DecodingError("message representative out of range"));
     }
 
+    Ok(crt_exp::<L, L2, L21, HALF, HALF2, HALF21>(sk, m))
+}
+
+/// `m^d mod n` through the CRT quintuple, with no range check of its own: RSASP1's step 2.b (RFC
+/// 8017 §5.2.1, two-prime case), shared with any other primitive that exponentiates by the private
+/// key -- each caller applies its own specification's range check on `m` first, since those
+/// differ (RFC 8017 §5.2.1 step 1 accepts "between 0 and n - 1"). `m < n` is all this function
+/// itself relies on.
+pub(crate) fn crt_exp<
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+>(
+    sk: &RsaPrivateKey<L, HALF>,
+    m: &[u64; L],
+) -> [u64; L] {
     let ctx_p = MontgomeryContext::<HALF>::new(sk.p())
         .expect("RsaPrivateKey::from_crt_components already validated p is odd and nonzero");
     let ctx_q = MontgomeryContext::<HALF>::new(sk.q())
@@ -92,7 +122,7 @@ pub(crate) fn rsasp1<
     let (s, carry) = nat::add(&s2_wide, &q_h);
     debug_assert_eq!(carry, 0, "CRT recombination must stay within n's width");
 
-    Ok(s)
+    s
 }
 
 #[cfg(test)]
