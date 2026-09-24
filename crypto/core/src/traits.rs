@@ -1,5 +1,7 @@
 //! Provides simplified abstracted APIs over classes of cryptographic primitives, such as Hash, KDF, etc.
 
+// Objects in this file should be sorted alphabetically, regardless of whether they are a trait, struct, or enum.
+
 use crate::errors::*;
 use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
@@ -566,21 +568,25 @@ pub trait BlockCipherDecryptor<
     }
 }
 
-/// The encryption half of a block cipher's streaming API. Strictly block-aligned: whole blocks in, whole
+/// The encryption half of a block cipher's API.
+///
+/// Strictly block-aligned: whole blocks in, whole
 /// blocks out, no finalization step. Padding of non-block-aligned data is handled by a separate layer
 /// (`PaddedEncryptor` / `PaddedDecryptor`) built on top of this trait.
 ///
-/// Encryption and decryption are separate traits (as with [`KEMEncapsulator`] / [`KEMDecapsulator`]) so
-/// that the direction can be encoded in the type, and so that a policy can permit decryption of an
-/// algorithm while forbidding new encryptions.
+/// Encryption and decryption are separate traits so that a policy can permit decryption of existing
+/// data while forbidding new encryptions.
 ///
-/// This trait allows for a block cipher to generate initialization data, such as an Initialization Vector (IV) or Counter (CTR)
-/// which is not technically part of the ciphertext, but must be transmitted along with the ciphertext in order for the
-/// recipient to perform successful decryption. The length of the initialization data is specified by the implementing struct
-/// via the `INIT_DATA_LEN` constant.
+/// This trait allows for a block cipher to generate initialization data, such as an Initialization
+/// Vector (IV) or Counter (CTR) which is not technically part of the ciphertext, but must be
+/// transmitted along with the ciphertext in order for the recipient to perform successful decryption.
+/// The length of the initialization data is specified by the implementing struct via the
+/// `INIT_DATA_LEN` constant.
+///
 /// In order for these APIs to be usable securely in all contexts, the init data will be generated
 /// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
-/// user to provide the init data. If you require this functionality, see the documentation for the underlying implementation.
+/// user to provide the init data to the encryptor.
+/// If you require this functionality, see the documentation for the underlying implementation.
 ///
 /// # Everything is in place
 ///
@@ -615,6 +621,15 @@ pub trait BlockCipherEncryptor<
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// As [`BlockCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -670,6 +685,11 @@ pub trait BlockCipherEncryptor<
         Ok((written, init_data))
     }
     /// As [`BlockCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_rng<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -683,10 +703,9 @@ pub trait BlockCipherEncryptor<
 
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
 ///
-/// This is the raw primitive a mode of operation is built on, not something to encrypt data with.
-/// It transforms exactly one block, so applying it directly to data is ECB (Sec 6.1), which is not
-/// confidential -- the trait is named for the mode it *is* when used that way, as a reminder. [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
-/// they carry initialization data and chaining state; this one carries only a key schedule.
+/// # 🚨 Security 🚨
+/// ECB is not secure for encrypting data; instead, it is a raw building block upon which
+/// secure modes such as CBC and GCM can be built.
 ///
 /// Implementors are expected to hold that key schedule in a zeroize-on-drop wrapper
 /// (`bouncycastle_utils::secret::Secret`), so it is scrubbed when the value is dropped.
@@ -1587,15 +1606,12 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     }
 }
 
-/// The encryption half of a stream cipher's streaming API. This is the stream-cipher counterpart
-/// of [`BlockCipherEncryptor`]: the same in-place, init-data-generating shape, but with no block
-/// length. A stream cipher applies its keystream byte by byte, so the data methods take a
-/// `&mut [u8]` of any length, and there is no alignment to check, no padding layer to reach for,
-/// and no finalization step.
+/// The encryption half of a stream cipher's streaming API.
+/// A stream cipher applies its keystream byte by byte, so the data methods take a
+/// `&mut [u8]` of any length, and there is no finalization step.
 ///
-/// Encryption and decryption are separate traits for the same reasons as
-/// [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]: the direction is encoded in the type, and a
-/// policy can permit decryption of an algorithm while forbidding new encryptions.
+/// Encryption and decryption are separate traits so that policy can permit decryption of an
+/// existing data while forbidding new encryptions.
 ///
 /// # You also get the arbitrary-length API for free
 ///
@@ -1641,6 +1657,15 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// As [`StreamCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1666,6 +1691,11 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
         Ok((written, init_data))
     }
     /// As [`StreamCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1933,6 +1963,15 @@ pub trait SymmetricCipherEncryptor<
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
     /// As [`do_encrypt_init`](Self::do_encrypt_init), but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -2023,6 +2062,11 @@ pub trait SymmetricCipherEncryptor<
     }
 
     /// As [`encrypt_out`](Self::encrypt_out), but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_out_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,

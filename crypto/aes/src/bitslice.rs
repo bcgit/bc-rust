@@ -12,7 +12,7 @@
 //! are always processed together; see the crate docs for why, and [`crate::aes`] for how a
 //! single-block call fills the unused half.
 //!
-//! # The layout, derived
+//! # The layout
 //!
 //! [`ortho`] transposes, within each byte-lane of the eight words, the 8x8 bit matrix indexed by
 //! (word number, bit number within the lane):

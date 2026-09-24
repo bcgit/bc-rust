@@ -31,7 +31,10 @@
 //! block traits. The block-aligned API, with compile-time length checks and in-place data methods,
 //! is `bouncycastle_modes::Ecb` itself, which these wrap. ECB has no IV, so `INIT_DATA_LEN` is 0:
 //! encryption returns an empty array and decryption takes one, and the ciphertext is exactly the
-//! padded plaintext with nothing prepended.
+//! padded plaintext with nothing prepended. The RNG-taking constructors inherited from that wrapped
+//! `Ecb` -- `do_encrypt_init_rng` and the `encrypt_out_rng` one-shot provided over it -- panic, as
+//! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
+//! generate; use the plain `do_encrypt_init` / `encrypt_out`.
 //!
 //! # How one alias covers both directions
 //!
