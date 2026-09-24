@@ -217,6 +217,14 @@ impl TestFrameworkSymmetricCipher {
                 other => panic!("decrypt_out into a short buffer: {other:?}"),
             }
         }
+        // ...and ones with room to spare are accepted: without this each `<` guard can be flipped
+        // to `>` and the short-buffer probes above still "pass".
+        let mut roomy = vec![0u8; E::encrypt_out_len(len) + 3];
+        let (_, n) = E::encrypt_out(&key, msg, &mut roomy).unwrap();
+        assert_eq!(n, E::encrypt_out_len(len), "encrypt_out into a roomy buffer");
+        let mut roomy = vec![0u8; need + 3];
+        let n = D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut roomy).unwrap();
+        assert_eq!(&roomy[..n], msg, "decrypt_out into a roomy buffer");
         let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
         let need = enc.update_out_len(len);
         if need > 0 {
@@ -465,8 +473,14 @@ impl TestFrameworkAEADCipher {
     /// authenticated cipher.
     ///
     /// Checks, in order:
-    /// * the one-shot round trip for every message length from 0 to a few times `TAG_LEN`, and
-    ///   that the tag is not the all-zero array;
+    /// * the whole [`TestFrameworkSymmetricCipher::test_encryptor_decryptor`] suite, since an AEAD
+    ///   with no associated data and the tag inline *is* a [`SymmetricCipherEncryptor`] /
+    ///   [`SymmetricCipherDecryptor`] pair, and that `FINAL_LEN` has room for the tag;
+    /// * the detached one-shot round trip for every message length from 0 to a few times
+    ///   `TAG_LEN`, and that the tag is not the all-zero array;
+    /// * the inline layout with associated data, one-shot and streaming, is exactly the detached
+    ///   ciphertext with the tag appended, and a stream shorter than the tag is a failed
+    ///   decryption;
     /// * streaming in every chunking, of both the AAD and the data, agrees with `update_out_len`
     ///   on every call and gives the one-shot's ciphertext and tag byte for byte, and decrypts in
     ///   every chunking;
@@ -474,18 +488,14 @@ impl TestFrameworkAEADCipher {
     ///   with no data still authenticates its AAD;
     /// * `do_update_aad` with non-empty AAD after the first `do_update_out` is refused with a
     ///   [`SymmetricCipherError::StateError`], and the refusal leaves the value usable;
-    /// * a tampered ciphertext, tag, AAD or nonce all fail the tag check, and the one-shot
-    ///   `decrypt` leaves no plaintext behind when they do;
+    /// * a tampered ciphertext, tag, AAD or nonce all fail the tag check, and the one-shots leave
+    ///   no plaintext behind when they do;
     /// * two encryptions under the same key draw different nonces;
     /// * a key of the wrong [`KeyType`] is rejected, and the security-strength policy matches
     ///   [`Algorithm::MAX_SECURITY_STRENGTH`].
     ///
-    /// This only ever drives `E`/`D` with `FINAL_LEN` bytes-or-fewer actually flushed at
-    /// finalization; it does not by itself prove that a *genuinely buffering* implementor's
-    /// `update_out_len` is honoured mid-stream (nothing here ever expects `do_update_out` to
-    /// return less than it was given). [`Self::test_buffering_toy`] pins that separately, against
-    /// a toy built to hold data back, since `E`/`D` here are supplied by the caller and might not
-    /// exercise it.
+    /// [`Self::test_buffering_toy`] separately pins that a cipher which holds back more than the
+    /// tag is handled correctly, since `E`/`D` here are supplied by the caller and might not.
     ///
     /// [`Algorithm::MAX_SECURITY_STRENGTH`]: bouncycastle_core::traits::Algorithm::MAX_SECURITY_STRENGTH
     pub fn test_encryptor_decryptor<
@@ -498,19 +508,28 @@ impl TestFrameworkAEADCipher {
     >(
         &self,
     ) {
+        assert!(
+            FINAL_LEN >= TAG_LEN,
+            "FINAL_LEN must have room for the inline tag the decryptor holds back"
+        );
+        // No AAD and the tag inline is the plain symmetric-cipher contract.
+        TestFrameworkSymmetricCipher::new()
+            .test_encryptor_decryptor::<KEY_LEN, NONCE_LEN, FINAL_LEN, E, D>();
+
         let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
             &DUMMY_SEED[..KEY_LEN],
             KeyType::SymmetricCipherKey,
         )
         .unwrap();
         let aad: &[u8] = b"some associated data";
+        let pinned = [0xA5u8; NONCE_LEN];
 
         // one-shot round trip, every length up to a few times the tag length
         let max_len = 3 * TAG_LEN.max(1) + 5;
         for len in 0..=max_len {
             let msg = &DUMMY_SEED[..len];
-            let mut ct = vec![0u8; E::encrypt_out_len(len)];
-            let (nonce, ct_len, tag) = E::encrypt_out(&key, aad, msg, &mut ct).unwrap();
+            let mut ct = vec![0u8; E::encrypt_out_len_detached(len)];
+            let (nonce, ct_len, tag) = E::encrypt_out_detached(&key, aad, msg, &mut ct).unwrap();
             ct.truncate(ct_len);
             assert_ne!(tag, [0u8; TAG_LEN], "len {len}: the tag must not be all zeros");
             // Only assert the ciphertext differs from the plaintext once there is enough of it for
@@ -518,84 +537,152 @@ impl TestFrameworkAEADCipher {
             if len >= 8 {
                 assert_ne!(&ct[..], msg, "len {len}: the ciphertext must not be the plaintext");
             }
-            let mut pt = vec![0u8; D::decrypt_out_max_len(ct.len())];
-            let pt_len = D::decrypt_out(&key, &nonce, aad, &ct, &tag, &mut pt).unwrap();
+            let mut pt = vec![0u8; D::decrypt_out_max_len_detached(ct.len())];
+            let pt_len = D::decrypt_out_detached(&key, &nonce, aad, &ct, &tag, &mut pt).unwrap();
             pt.truncate(pt_len);
             assert_eq!(&pt[..], msg, "one-shot round trip, len {len}");
 
             // the std one-shots agree with the _out ones for the same nonce
-            let (nonce2, ct2, tag2) = E::encrypt(&key, aad, msg).unwrap();
-            assert_eq!(ct2.len(), ct_len, "encrypt must return exactly the bytes written");
-            let pt2 = D::decrypt(&key, &nonce2, aad, &ct2, &tag2).unwrap();
+            let (nonce2, ct2, tag2) = E::encrypt_detached(&key, aad, msg).unwrap();
+            assert_eq!(ct2.len(), ct_len, "encrypt_detached must return exactly the bytes written");
+            let pt2 = D::decrypt_detached(&key, &nonce2, aad, &ct2, &tag2).unwrap();
             assert_eq!(pt2, msg, "std round trip, len {len}");
-            let pt3 = D::decrypt(&key, &nonce, aad, &ct, &tag).unwrap();
-            assert_eq!(pt3, msg, "decrypt must agree with decrypt_out");
+            let pt3 = D::decrypt_detached(&key, &nonce, aad, &ct, &tag).unwrap();
+            assert_eq!(pt3, msg, "decrypt_detached must agree with decrypt_out_detached");
 
-            // the inline `ciphertext || tag` layout: `tagged_encrypt` must write exactly the
-            // separate-tag ciphertext with the tag appended, and both the one-shot and the
-            // streaming finalizer must round trip it.
-            let mut inline = vec![0u8; E::tagged_encrypt_out_len(len)];
+            // the inline `ciphertext || tag` layout with AAD: `encrypt_out_with_aad` must write exactly
+            // the detached ciphertext with the tag appended -- the same bytes under the same
+            // nonce -- and both the one-shot and the streaming finalizer must round trip it.
+            let mut detached = vec![0u8; E::encrypt_out_len_detached(len)];
+            let (pinned_nonce, detached_len, detached_tag) = E::encrypt_out_rng_detached(
+                &key,
+                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                aad,
+                msg,
+                &mut detached,
+            )
+            .unwrap();
+            detached.truncate(detached_len);
+            detached.extend_from_slice(&detached_tag);
+
+            let mut inline = vec![0u8; E::encrypt_out_len(len)];
             let (inline_nonce, inline_len) =
-                E::tagged_encrypt(&key, aad, msg, &mut inline).unwrap();
+                E::encrypt_out_with_aad(&key, aad, msg, &mut inline).unwrap();
             assert_eq!(
                 inline_len,
-                E::encrypt_out_len(len) + TAG_LEN,
-                "tagged_encrypt must write the ciphertext plus the tag, len {len}"
+                E::encrypt_out_len_detached(len) + TAG_LEN,
+                "encrypt_out_with_aad must write the ciphertext plus the tag, len {len}"
             );
-            let mut pt4 = vec![0u8; D::tagged_decrypt_out_max_len(inline_len)];
+            let mut pt4 = vec![0u8; D::decrypt_out_max_len(inline_len)];
             let pt4_len =
-                D::tagged_decrypt(&key, &inline_nonce, aad, &inline[..inline_len], &mut pt4)
+                D::decrypt_out_with_aad(&key, &inline_nonce, aad, &inline[..inline_len], &mut pt4)
                     .unwrap();
             assert_eq!(&pt4[..pt4_len], msg, "tagged one-shot round trip, len {len}");
 
-            let (mut enc5, nonce5) = E::do_encrypt_init(&key).unwrap();
-            enc5.do_update_aad(aad).unwrap();
-            // `+ FINAL_LEN`: the finalizer wants room for a full flush plus the tag at the tail,
-            // which it cannot know the size of before it runs.
-            let mut inline5 = vec![0u8; E::tagged_encrypt_out_len(len) + FINAL_LEN];
-            let mut written5 = enc5.do_update_out(msg, &mut inline5).unwrap();
-            written5 += enc5.tagged_do_aead_encrypt_final(&mut inline5[written5..]).unwrap();
+            // ...and so must the RNG-driven and allocating inline-with-AAD one-shots. The roomy
+            // buffer is deliberate: see the `encrypt_out_rng_detached` probe below.
+            let mut inline_rng = vec![0u8; E::encrypt_out_len(len) + 3];
+            let (rng_nonce, rng_len) = E::encrypt_out_rng_with_aad(
+                &key,
+                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                aad,
+                msg,
+                &mut inline_rng,
+            )
+            .unwrap();
+            assert_eq!(rng_nonce, pinned_nonce, "the same RNG stream must give the same nonce");
             assert_eq!(
-                written5, inline_len,
-                "tagged streaming must write as much as the one-shot, len {len}"
+                &inline_rng[..rng_len],
+                &detached[..],
+                "len {len}: encrypt_out_rng_with_aad must be the detached ciphertext and its tag"
             );
-            let body5 = written5 - TAG_LEN;
+            // exactly the length it asks for must be enough too
+            let mut exact = vec![0u8; E::encrypt_out_len(len)];
+            let (_, exact_len) = E::encrypt_out_rng_with_aad(
+                &key,
+                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                aad,
+                msg,
+                &mut exact,
+            )
+            .unwrap();
+            assert_eq!(&exact[..exact_len], &detached[..], "len {len}: exact-size buffer");
+            let mut short = vec![0u8; E::encrypt_out_len(len) - 1];
+            match E::encrypt_out_rng_with_aad(
+                &key,
+                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                aad,
+                msg,
+                &mut short,
+            ) {
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
+                    assert_eq!(n, E::encrypt_out_len(len))
+                }
+                other => panic!("encrypt_out_rng_with_aad into a short buffer: {other:?}"),
+            }
+            let (alloc_nonce, alloc_ct) = E::encrypt_with_aad(&key, aad, msg).unwrap();
+            assert_eq!(
+                alloc_ct.len(),
+                inline_len,
+                "encrypt_with_aad must return the bytes written"
+            );
+            let alloc_pt = D::decrypt_with_aad(&key, &alloc_nonce, aad, &alloc_ct).unwrap();
+            assert_eq!(alloc_pt, msg, "allocating inline-with-AAD round trip, len {len}");
+
+            let (mut enc5, nonce5) =
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned)).unwrap();
+            assert_eq!(nonce5, pinned_nonce, "the same RNG stream must give the same nonce");
+            enc5.do_update_aad(aad).unwrap();
+            let mut inline5 = vec![0u8; enc5.update_out_len(len)];
+            let written5 = enc5.do_update_out(msg, &mut inline5).unwrap();
+            inline5.truncate(written5);
+            let (last5, last5_len) = enc5.do_final().unwrap();
+            inline5.extend_from_slice(&last5[..last5_len]);
+            assert_eq!(
+                inline5.len(),
+                inline_len,
+                "tagged streaming must write as much as the one-shot"
+            );
+            assert_eq!(
+                inline5, detached,
+                "len {len}: the inline layout must be the detached ciphertext followed by its tag"
+            );
             let mut dec5 = D::do_decrypt_init(&key, &nonce5).unwrap();
             dec5.do_update_aad(aad).unwrap();
-            let mut pt5 = vec![0u8; written5 + FINAL_LEN];
-            let mut got5 = dec5.do_update_out(&inline5[..body5], &mut pt5).unwrap();
-            got5 += dec5
-                .tagged_do_aead_decrypt_final(&inline5[body5..written5], &mut pt5[got5..])
-                .unwrap();
-            assert_eq!(&pt5[..got5], msg, "tagged streaming round trip, len {len}");
+            let mut pt5 = vec![0u8; dec5.update_out_len(inline5.len())];
+            let got5 = dec5.do_update_out(&inline5, &mut pt5).unwrap();
+            pt5.truncate(got5);
+            let (last, data_len) = dec5.do_final().unwrap();
+            pt5.extend_from_slice(&last[..data_len]);
+            assert_eq!(pt5, msg, "tagged streaming round trip, len {len}");
 
             // a stream that ends before a whole tag has been seen is not a short buffer, it is a
             // failed decryption
             if TAG_LEN > 0 {
-                let dec6 = D::do_decrypt_init(&key, &nonce5).unwrap();
-                let mut scratch = vec![0u8; written5 + FINAL_LEN];
+                let mut dec6 = D::do_decrypt_init(&key, &nonce5).unwrap();
+                dec6.do_update_aad(aad).unwrap();
+                let short = &inline5[..TAG_LEN - 1];
+                let mut scratch = vec![0u8; dec6.update_out_len(short.len())];
+                dec6.do_update_out(short, &mut scratch).unwrap();
                 assert!(
-                    matches!(
-                        dec6.tagged_do_aead_decrypt_final(&inline5[..TAG_LEN - 1], &mut scratch),
-                        Err(SymmetricCipherError::DecryptionFailed)
-                    ),
-                    "a tail shorter than the tag must be DecryptionFailed, len {len}"
+                    matches!(dec6.do_final(), Err(SymmetricCipherError::DecryptionFailed)),
+                    "a stream shorter than the tag must be DecryptionFailed, len {len}"
                 );
             }
 
             // too-short output buffers on the one-shots are refused with the required length,
             // before any work is done
-            let need = E::encrypt_out_len(len);
+            let need = E::encrypt_out_len_detached(len);
             if need > 0 {
                 let mut short = vec![0u8; need - 1];
-                match E::encrypt_out(&key, aad, msg, &mut short) {
+                match E::encrypt_out_detached(&key, aad, msg, &mut short) {
                     Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
-                    other => panic!("encrypt_out into a short buffer: {other:?}"),
+                    other => panic!("encrypt_out_detached into a short buffer: {other:?}"),
                 }
                 let mut short = vec![0u8; need - 1];
-                match E::encrypt_out_rng(
+                match E::encrypt_out_rng_detached(
                     &key,
                     &mut FixedSeedRNG::<NONCE_LEN>::new([0xA5u8; NONCE_LEN]),
                     aad,
@@ -605,13 +692,16 @@ impl TestFrameworkAEADCipher {
                     Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
-                    other => panic!("encrypt_out_rng into a short buffer: {other:?}"),
+                    other => panic!("encrypt_out_rng_detached into a short buffer: {other:?}"),
                 }
                 // ...and one with room to spare must be accepted: without this the guard can be
                 // flipped to `>` and every short-buffer probe still "passes", because the error
                 // then comes from `do_update_out` behind it with the same variant and length.
                 let mut roomy = vec![0u8; need + 3];
-                let (_, n, _) = E::encrypt_out_rng(
+                let (_, n, _) = E::encrypt_out_detached(&key, aad, msg, &mut roomy).unwrap();
+                assert_eq!(n, need, "encrypt_out_detached into a roomy buffer");
+                let mut roomy = vec![0u8; need + 3];
+                let (_, n, _) = E::encrypt_out_rng_detached(
                     &key,
                     &mut FixedSeedRNG::<NONCE_LEN>::new([0xA5u8; NONCE_LEN]),
                     aad,
@@ -619,16 +709,35 @@ impl TestFrameworkAEADCipher {
                     &mut roomy,
                 )
                 .unwrap();
-                assert_eq!(n, need, "encrypt_out_rng must write exactly encrypt_out_len bytes");
+                assert_eq!(
+                    n, need,
+                    "encrypt_out_rng_detached must write exactly encrypt_out_len_detached bytes"
+                );
             }
-            let need = D::decrypt_out_max_len(ct.len());
+            let need = E::encrypt_out_len(len);
+            let mut short = vec![0u8; need - 1];
+            match E::encrypt_out_with_aad(&key, aad, msg, &mut short) {
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
+                other => panic!("encrypt_out_with_aad into a short buffer: {other:?}"),
+            }
+            let need = D::decrypt_out_max_len_detached(ct.len());
             if need > 0 {
                 let mut short = vec![0u8; need - 1];
-                match D::decrypt_out(&key, &nonce, aad, &ct, &tag, &mut short) {
+                match D::decrypt_out_detached(&key, &nonce, aad, &ct, &tag, &mut short) {
                     Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
                         assert_eq!(n, need)
                     }
-                    other => panic!("decrypt_out into a short buffer: {other:?}"),
+                    other => panic!("decrypt_out_detached into a short buffer: {other:?}"),
+                }
+            }
+            let need = D::decrypt_out_max_len(inline_len);
+            if need > 0 {
+                let mut short = vec![0u8; need - 1];
+                match D::decrypt_out_with_aad(&key, &inline_nonce, aad, &inline, &mut short) {
+                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
+                        assert_eq!(n, need)
+                    }
+                    other => panic!("decrypt_out_with_aad into a short buffer: {other:?}"),
                 }
             }
         }
@@ -636,9 +745,8 @@ impl TestFrameworkAEADCipher {
         // streaming in every chunking agrees with the one-shot, for both the AAD and the data.
         // The pinned RNG is what makes the nonce -- and so the ciphertext -- comparable.
         let msg = &DUMMY_SEED[..max_len.max(17)];
-        let pinned = [0xA5u8; NONCE_LEN];
-        let mut ct_ref = vec![0u8; E::encrypt_out_len(msg.len())];
-        let (nonce_ref, ct_ref_len, tag_ref) = E::encrypt_out_rng(
+        let mut ct_ref = vec![0u8; E::encrypt_out_len_detached(msg.len())];
+        let (nonce_ref, ct_ref_len, tag_ref) = E::encrypt_out_rng_detached(
             &key,
             &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
             aad,
@@ -664,7 +772,11 @@ impl TestFrameworkAEADCipher {
                 ct.extend_from_slice(&buf[..n]);
             }
             let mut final_buf = [0u8; FINAL_LEN];
-            let (final_len, tag) = enc.do_encrypt_final(&mut final_buf).unwrap();
+            let (final_len, tag) = enc.do_final_out_detached(&mut final_buf).unwrap();
+            assert!(
+                final_len + TAG_LEN <= FINAL_LEN,
+                "chunk {chunk}: the detached flush must leave FINAL_LEN room for the tag"
+            );
             ct.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(ct, ct_ref, "chunk {chunk}: streaming must give the one-shot ciphertext");
             assert_eq!(tag, tag_ref, "chunk {chunk}: streaming must give the one-shot tag");
@@ -683,47 +795,47 @@ impl TestFrameworkAEADCipher {
                 pt.extend_from_slice(&buf[..n]);
             }
             let mut final_buf = [0u8; FINAL_LEN];
-            let final_len = dec.do_decrypt_final(&tag, &mut final_buf).unwrap();
+            let final_len = dec.do_final_out_detached(&tag, &mut final_buf).unwrap();
             pt.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(pt, msg, "chunk {chunk}: streaming round trip");
         }
 
-        // too-short output buffers on the streaming `do_update_out` are refused with the required
-        // length, before any work is done -- on both sides, not just the one-shots above.
-        if !msg.is_empty() {
-            let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
-            let need = enc.update_out_len(msg.len());
-            if need > 0 {
-                let mut short = vec![0u8; need - 1];
-                match enc.do_update_out(msg, &mut short) {
-                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
-                        assert_eq!(n, need)
-                    }
-                    other => panic!("encrypt do_update_out into a short buffer: {other:?}"),
-                }
-            }
-
-            let (mut dec, ct) = {
-                let (mut enc, nonce) = E::do_encrypt_init(&key).unwrap();
-                let mut ct = vec![0u8; enc.update_out_len(msg.len())];
-                enc.do_update_out(msg, &mut ct).unwrap();
-                (D::do_decrypt_init(&key, &nonce).unwrap(), ct)
-            };
-            let need = dec.update_out_len(ct.len());
-            if need > 0 {
-                let mut short = vec![0u8; need - 1];
-                match dec.do_update_out(&ct, &mut short) {
-                    Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
-                        assert_eq!(n, need)
-                    }
-                    other => panic!("decrypt do_update_out into a short buffer: {other:?}"),
-                }
-            }
-        }
+        // the array-returning finals agree with the `_out` ones the chunked loop above used
+        let (mut enc, nonce) =
+            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned)).unwrap();
+        enc.do_update_aad(aad).unwrap();
+        let mut ct = vec![0u8; enc.update_out_len(msg.len())];
+        let n = enc.do_update_out(msg, &mut ct).unwrap();
+        ct.truncate(n);
+        let (last, last_len, tag) = enc.do_final_detached().unwrap();
+        ct.extend_from_slice(&last[..last_len]);
+        assert_eq!(ct, ct_ref, "do_final_detached must give the one-shot ciphertext");
+        assert_eq!(tag, tag_ref, "do_final_detached must give the one-shot tag");
+        let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
+        dec.do_update_aad(aad).unwrap();
+        let mut pt = vec![0u8; dec.update_out_len(ct.len())];
+        let n = dec.do_update_out(&ct, &mut pt).unwrap();
+        pt.truncate(n);
+        let (last, data_len) = dec.do_final_detached(&tag).unwrap();
+        pt.extend_from_slice(&last[..data_len]);
+        assert_eq!(pt, msg, "do_final_detached must round trip");
+        let mut wrong_tag = tag;
+        wrong_tag[0] ^= 0xFF;
+        let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
+        dec.do_update_aad(aad).unwrap();
+        let mut pt = vec![0u8; dec.update_out_len(ct.len())];
+        dec.do_update_out(&ct, &mut pt).unwrap();
+        assert!(
+            matches!(
+                dec.do_final_detached(&wrong_tag),
+                Err(SymmetricCipherError::AEADTagCheckFailed)
+            ),
+            "do_final_detached must check the tag"
+        );
 
         // an empty AAD is a no-op: it must give exactly what absorbing no AAD at all gives
-        let mut with_empty = vec![0u8; E::encrypt_out_len(msg.len())];
-        let (nonce_empty, len_empty, tag_empty) = E::encrypt_out_rng(
+        let mut with_empty = vec![0u8; E::encrypt_out_len_detached(msg.len())];
+        let (nonce_empty, len_empty, tag_empty) = E::encrypt_out_rng_detached(
             &key,
             &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
             b"",
@@ -732,8 +844,8 @@ impl TestFrameworkAEADCipher {
         )
         .unwrap();
         with_empty.truncate(len_empty);
-        let mut without = vec![0u8; E::encrypt_out_len(msg.len())];
-        let (nonce_none, len_none, tag_none) = E::encrypt_out_rng(
+        let mut without = vec![0u8; E::encrypt_out_len_detached(msg.len())];
+        let (nonce_none, len_none, tag_none) = E::encrypt_out_rng_detached(
             &key,
             &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
             &[],
@@ -746,15 +858,32 @@ impl TestFrameworkAEADCipher {
         assert_eq!(tag_empty, tag_none, "an empty AAD must be a no-op");
         assert_eq!(with_empty, without, "an empty AAD must be a no-op");
 
+        // ...and no AAD at all is what the inherited `SymmetricCipherEncryptor` one-shot gives
+        let mut plain = vec![0u8; E::encrypt_out_len(msg.len())];
+        let (nonce_plain, len_plain) =
+            E::encrypt_out_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned), msg, &mut plain)
+                .unwrap();
+        assert_eq!(nonce_plain, nonce_none);
+        assert_eq!(&plain[..len_plain - TAG_LEN], &without[..], "no-AAD inline ciphertext");
+        assert_eq!(&plain[len_plain - TAG_LEN..len_plain], &tag_none, "no-AAD inline tag");
+
         // a message with no data at all still authenticates its AAD
-        let (nonce, _ct_len, tag) = E::encrypt_out(&key, aad, &[], &mut []).unwrap();
-        D::decrypt_out(&key, &nonce, aad, &[], &tag, &mut []).unwrap();
-        match D::decrypt_out(&key, &nonce, b"different associated data", &[], &tag, &mut []) {
+        let (nonce, _ct_len, tag) = E::encrypt_out_detached(&key, aad, &[], &mut []).unwrap();
+        D::decrypt_out_detached(&key, &nonce, aad, &[], &tag, &mut []).unwrap();
+        match D::decrypt_out_detached(
+            &key,
+            &nonce,
+            b"different associated data",
+            &[],
+            &tag,
+            &mut [],
+        ) {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             other => panic!("an empty message must still authenticate its AAD, got {other:?}"),
         };
 
-        // the AAD phase is over once data has been fed in -- on both sides
+        // the AAD phase is over once data has been fed in -- on both sides, and on the decrypting
+        // side even when all of it is still being held back as a possible tag
         let (mut enc, nonce) = E::do_encrypt_init(&key).unwrap();
         let mut ct = vec![0u8; enc.update_out_len(msg.len())];
         enc.do_update_out(msg, &mut ct).unwrap();
@@ -766,32 +895,36 @@ impl TestFrameworkAEADCipher {
         // state: the value is still good for the rest of the flow.
         enc.do_update_aad(b"").unwrap();
         let mut final_buf = [0u8; FINAL_LEN];
-        let (final_len, tag) = enc.do_encrypt_final(&mut final_buf).unwrap();
+        let (final_len, tag) = enc.do_final_out_detached(&mut final_buf).unwrap();
         ct.extend_from_slice(&final_buf[..final_len]);
 
         let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
-        let mut pt = vec![0u8; dec.update_out_len(ct.len())];
-        dec.do_update_out(&ct, &mut pt).unwrap();
+        let mut pt = vec![0u8; dec.update_out_len(1)];
+        let mut got = dec.do_update_out(&ct[..1], &mut pt).unwrap();
+        pt.truncate(got);
         match dec.do_update_aad(aad) {
             Err(SymmetricCipherError::StateError(_)) => { /* good */ }
             other => panic!("AAD after data must be refused, got {other:?}"),
         };
         dec.do_update_aad(b"").unwrap();
+        let mut rest = vec![0u8; dec.update_out_len(ct.len() - 1)];
+        got = dec.do_update_out(&ct[1..], &mut rest).unwrap();
+        pt.extend_from_slice(&rest[..got]);
         let mut final_buf = [0u8; FINAL_LEN];
-        let final_len = dec.do_decrypt_final(&tag, &mut final_buf).unwrap();
+        let final_len = dec.do_final_out_detached(&tag, &mut final_buf).unwrap();
         pt.extend_from_slice(&final_buf[..final_len]);
         assert_eq!(&pt[..], msg, "a refused do_update_aad must not disturb the state");
 
-        // tampering: every one of these must fail the tag check, and the one-shot must leave no
-        // plaintext behind when it does
-        let mut ct = vec![0u8; E::encrypt_out_len(msg.len())];
-        let (nonce, ct_len, tag) = E::encrypt_out(&key, aad, msg, &mut ct).unwrap();
+        // tampering: every one of these must fail the tag check, and the one-shots must leave no
+        // plaintext behind when they do
+        let mut ct = vec![0u8; E::encrypt_out_len_detached(msg.len())];
+        let (nonce, ct_len, tag) = E::encrypt_out_detached(&key, aad, msg, &mut ct).unwrap();
         ct.truncate(ct_len);
 
         let mut tampered = ct.clone();
         tampered[3] ^= 0xFF;
-        let mut buf = vec![0u8; D::decrypt_out_max_len(tampered.len())];
-        match D::decrypt_out(&key, &nonce, aad, &tampered, &tag, &mut buf) {
+        let mut buf = vec![0u8; D::decrypt_out_max_len_detached(tampered.len())];
+        match D::decrypt_out_detached(&key, &nonce, aad, &tampered, &tag, &mut buf) {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             other => panic!("a modified ciphertext must fail the tag check, got {other:?}"),
         };
@@ -800,16 +933,49 @@ impl TestFrameworkAEADCipher {
             "the one-shot decrypt must zeroize the buffer when the tag check fails"
         );
 
+        let mut tampered_inline = ct.clone();
+        tampered_inline.extend_from_slice(&tag);
+        tampered_inline[3] ^= 0xFF;
+        for with_aad in [false, true] {
+            let mut buf = vec![0u8; D::decrypt_out_max_len(tampered_inline.len())];
+            let result = if with_aad {
+                D::decrypt_out_with_aad(&key, &nonce, aad, &tampered_inline, &mut buf)
+            } else {
+                D::decrypt_out(&key, &nonce, &tampered_inline, &mut buf)
+            };
+            // Without the AAD the tag was never going to verify; either way what matters is the
+            // failure and the zeroized buffer.
+            match result {
+                Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
+                other => panic!("a modified inline ciphertext must fail, got {other:?}"),
+            };
+            assert!(
+                buf.iter().all(|&b| b == 0),
+                "the inline one-shot (aad {with_aad}) must zeroize the buffer on a failed check"
+            );
+        }
+        match D::decrypt_with_aad(&key, &nonce, aad, &tampered_inline) {
+            Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
+            other => panic!("decrypt_with_aad of a modified ciphertext must fail, got {other:?}"),
+        };
+
         let mut wrong_tag = tag;
         wrong_tag[0] ^= 0xFF;
-        let mut buf = vec![0u8; D::decrypt_out_max_len(ct.len())];
-        match D::decrypt_out(&key, &nonce, aad, &ct, &wrong_tag, &mut buf) {
+        let mut buf = vec![0u8; D::decrypt_out_max_len_detached(ct.len())];
+        match D::decrypt_out_detached(&key, &nonce, aad, &ct, &wrong_tag, &mut buf) {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             other => panic!("a modified tag must fail the tag check, got {other:?}"),
         };
 
-        let mut buf = vec![0u8; D::decrypt_out_max_len(ct.len())];
-        match D::decrypt_out(&key, &nonce, b"not the right associated data", &ct, &tag, &mut buf) {
+        let mut buf = vec![0u8; D::decrypt_out_max_len_detached(ct.len())];
+        match D::decrypt_out_detached(
+            &key,
+            &nonce,
+            b"not the right associated data",
+            &ct,
+            &tag,
+            &mut buf,
+        ) {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             other => panic!("a modified AAD must fail the tag check, got {other:?}"),
         };
@@ -817,8 +983,8 @@ impl TestFrameworkAEADCipher {
         if NONCE_LEN > 0 {
             let mut wrong_nonce = nonce;
             wrong_nonce[0] ^= 0xFF;
-            let mut buf = vec![0u8; D::decrypt_out_max_len(ct.len())];
-            match D::decrypt_out(&key, &wrong_nonce, aad, &ct, &tag, &mut buf) {
+            let mut buf = vec![0u8; D::decrypt_out_max_len_detached(ct.len())];
+            match D::decrypt_out_detached(&key, &wrong_nonce, aad, &ct, &tag, &mut buf) {
                 Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
                 other => panic!("a modified nonce must fail the tag check, got {other:?}"),
             };
@@ -829,108 +995,61 @@ impl TestFrameworkAEADCipher {
             assert_ne!(nonce1, nonce2);
         }
 
-        // error case: KeyMaterial of wrong type
-        let mac_key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
-                .unwrap();
-        match E::do_encrypt_init(&mac_key) {
-            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
-            _ => panic!("Unexpected error"),
-        };
-        match D::do_decrypt_init(&mac_key, &nonce) {
-            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
-            _ => panic!("Unexpected error"),
-        };
-
-        // error case: security strengths too weak and too strong
-        let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
-        let security_strengths = [
-            SecurityStrength::None,
-            SecurityStrength::_112bit,
-            SecurityStrength::_128bit,
-            SecurityStrength::_192bit,
-            SecurityStrength::_256bit,
-        ];
-        let mut strengths_tested = 0;
-        for ss in security_strengths.iter() {
-            // See the note in `test_plain_one_shots`: a KEY_LEN-byte key cannot be tagged above
-            // `from_bytes(KEY_LEN)` even inside `do_hazardous_operations`, so skip the strengths
-            // this key cannot carry.
-            if ss > &SecurityStrength::from_bytes(KEY_LEN) {
-                continue;
-            }
-
-            // Tag the key at an arbitrary strength for the purpose of this test.
-            do_hazardous_operations(&mut key, |key| key.set_security_strength(*ss)).unwrap();
-            strengths_tested += 1;
-
-            // Both directions must enforce the same policy.
-            let check_strength = |result: Result<(), SymmetricCipherError>| match result {
-                Ok(_) => {
-                    if ss >= &E::MAX_SECURITY_STRENGTH { /* good */
-                    } else {
-                        panic!("Should have been a strong enough key");
-                    }
-                }
-                Err(SymmetricCipherError::KeyMaterialError(_)) => {
-                    if ss < &E::MAX_SECURITY_STRENGTH { /* good */
-                    } else {
-                        panic!("Should not have accepted a key weaker than algorithm");
-                    }
-                }
-                _ => panic!("Unexpected error"),
-            };
-            check_strength(E::do_encrypt_init(&key).map(|_| ()));
-            check_strength(D::do_decrypt_init(&key, &nonce).map(|_| ()));
-        }
-        assert!(strengths_tested > 0, "strength sweep must not be vacuous");
+        // The key-type and security-strength checks on `do_encrypt_init` / `do_decrypt_init` are
+        // covered by the `TestFrameworkSymmetricCipher` suite run above.
     }
 
     /// Pins that a *genuinely buffering* [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] pair's
     /// `update_out_len` is honoured through every chunking, against a toy built to hold back up to
-    /// three bytes at a time before releasing them -- the property
-    /// [`Self::test_encryptor_decryptor`] cannot pin on its own, since a caller-supplied `E`/`D`
-    /// might never buffer (Ascon-AEAD128 never does). Modelled on the toy permutations
-    /// `crypto/modes/tests/common/mod.rs` uses for the equivalent block-cipher property.
+    /// three bytes at a time before releasing them -- more than the tag the decryptor has to hold
+    /// back anyway -- the property [`Self::test_encryptor_decryptor`] cannot pin on its own, since
+    /// a caller-supplied `E`/`D` might hold back nothing but the tag (Ascon-AEAD128 holds back
+    /// nothing else). Modelled on the toy permutations `crypto/modes/tests/common/mod.rs` uses for
+    /// the equivalent block-cipher property.
     ///
     /// The toy's "ciphertext" is the plaintext with a per-byte counter XORed in, released three
-    /// bytes behind what it has consumed (so `update_out_len(n)` is `0` for the first two bytes of
-    /// any run and `n` thereafter, once three bytes are already buffered); its "tag" is a length
-    /// check. Not remotely a real AEAD -- it exists solely to make holding data back observable.
+    /// bytes behind what it has consumed when encrypting and three plus `TAG_LEN` when decrypting;
+    /// its "tag" is a length check. Not remotely a real AEAD -- it exists solely to make holding
+    /// data back observable.
     pub fn test_buffering_toy(&self) {
         use bouncycastle_core::errors::SymmetricCipherError;
         use bouncycastle_core::key_material::{KeyMaterial, KeyType};
         use bouncycastle_core::traits::{
             AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SecurityStrength,
+            SymmetricCipherDecryptor, SymmetricCipherEncryptor,
         };
 
         const HOLD_BACK: usize = 3;
         const KEY_LEN: usize = 4;
         const NONCE_LEN: usize = 4;
         const TAG_LEN: usize = 1;
+        // What either side's final call can produce: the encryptor's held-back bytes plus the tag
+        // after them, or everything the decryptor held back.
+        const FINAL_LEN: usize = HOLD_BACK + TAG_LEN;
 
         struct Buffered {
+            hold: usize,
             pos: u8,
-            held: [u8; HOLD_BACK],
+            held: [u8; FINAL_LEN],
             held_len: usize,
             len_seen: usize,
         }
 
         impl Buffered {
-            fn new() -> Self {
-                Self { pos: 0, held: [0u8; HOLD_BACK], held_len: 0, len_seen: 0 }
+            fn new(hold: usize) -> Self {
+                Self { hold, pos: 0, held: [0u8; FINAL_LEN], held_len: 0, len_seen: 0 }
             }
 
-            /// Feeds `input` in, holding back the last `HOLD_BACK` bytes and releasing (XORed
-            /// with a running counter) everything older than that into `output`.
+            fn update_out_len(&self, input_len: usize) -> usize {
+                (self.held_len + input_len).saturating_sub(self.hold)
+            }
+
+            /// Feeds `input` in, holding back the last `hold` bytes and releasing (XORed with a
+            /// running counter) everything older than that into `output`.
             fn update_out(&mut self, input: &[u8], output: &mut [u8]) -> usize {
                 self.len_seen += input.len();
                 let total = self.held_len + input.len();
-                let releasable = total.saturating_sub(HOLD_BACK);
+                let releasable = total.saturating_sub(self.hold);
                 let from_held = self.held_len.min(releasable);
                 let from_new = releasable - from_held;
                 for (i, b) in self.held[..from_held].iter().enumerate() {
@@ -941,11 +1060,11 @@ impl TestFrameworkAEADCipher {
                     output[from_held + i] = *b ^ self.pos;
                     self.pos = self.pos.wrapping_add(1);
                 }
-                // The amount kept is `total - releasable`, which is `HOLD_BACK` once `total`
-                // reaches it but only `total` itself before that -- so the tail of `new_held`
-                // actually in use is `new_len`, not always the full array up to `HOLD_BACK`.
+                // The amount kept is `total - releasable`, which is `hold` once `total` reaches it
+                // but only `total` itself before that -- so the tail of `new_held` actually in use
+                // is `new_len`, not always the full `hold`.
                 let new_len = total - releasable;
-                let mut new_held = [0u8; HOLD_BACK];
+                let mut new_held = [0u8; FINAL_LEN];
                 let kept_from_held = self.held_len - from_held;
                 new_held[..kept_from_held].copy_from_slice(&self.held[from_held..self.held_len]);
                 new_held[kept_from_held..new_len].copy_from_slice(&input[from_new..]);
@@ -954,12 +1073,17 @@ impl TestFrameworkAEADCipher {
                 releasable
             }
 
-            fn finish(self, output: &mut [u8]) -> usize {
-                for (i, b) in self.held[..self.held_len].iter().enumerate() {
+            /// Releases the first `n` held-back bytes into `output`.
+            fn finish(&mut self, n: usize, output: &mut [u8]) {
+                for (i, b) in self.held[..n].iter().enumerate() {
                     output[i] = *b ^ self.pos;
+                    self.pos = self.pos.wrapping_add(1);
                 }
-                self.held_len
             }
+        }
+
+        fn toy_tag(data_len: usize) -> [u8; TAG_LEN] {
+            [(data_len % 256) as u8; TAG_LEN]
         }
 
         struct Enc(Buffered);
@@ -974,11 +1098,11 @@ impl TestFrameworkAEADCipher {
             const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
         }
 
-        impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, HOLD_BACK> for Enc {
+        impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, FINAL_LEN> for Enc {
             fn do_encrypt_init(
                 _key: &KeyMaterial<KEY_LEN>,
             ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-                Ok((Self(Buffered::new()), [0u8; NONCE_LEN]))
+                Ok((Self(Buffered::new(HOLD_BACK)), [0u8; NONCE_LEN]))
             }
             fn do_encrypt_init_rng(
                 key: &KeyMaterial<KEY_LEN>,
@@ -986,11 +1110,8 @@ impl TestFrameworkAEADCipher {
             ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
                 Self::do_encrypt_init(key)
             }
-            fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
-                Ok(())
-            }
             fn update_out_len(&self, input_len: usize) -> usize {
-                (self.0.held_len + input_len).saturating_sub(HOLD_BACK)
+                self.0.update_out_len(input_len)
             }
             fn do_update_out(
                 &mut self,
@@ -999,28 +1120,40 @@ impl TestFrameworkAEADCipher {
             ) -> Result<usize, SymmetricCipherError> {
                 Ok(self.0.update_out(plaintext, ciphertext))
             }
-            fn do_encrypt_final(
-                self,
-                output: &mut [u8; HOLD_BACK],
-            ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
-                let len_seen = self.0.len_seen;
-                let n = self.0.finish(output);
-                Ok((n, [(len_seen % 256) as u8; TAG_LEN]))
+            fn do_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+                let mut out = [0u8; FINAL_LEN];
+                let (n, tag) = self.do_final_out_detached(&mut out)?;
+                out[n..n + TAG_LEN].copy_from_slice(&tag);
+                Ok((out, n + TAG_LEN))
+            }
+            fn encrypt_out_len(plaintext_len: usize) -> usize {
+                plaintext_len + TAG_LEN
             }
         }
 
-        impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, HOLD_BACK> for Dec {
+        impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for Enc {
+            fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
+                Ok(())
+            }
+            fn do_final_out_detached(
+                mut self,
+                ciphertext: &mut [u8; FINAL_LEN],
+            ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+                let n = self.0.held_len;
+                self.0.finish(n, ciphertext);
+                Ok((n, toy_tag(self.0.len_seen)))
+            }
+        }
+
+        impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, FINAL_LEN> for Dec {
             fn do_decrypt_init(
                 _key: &KeyMaterial<KEY_LEN>,
                 _nonce: &[u8; NONCE_LEN],
             ) -> Result<Self, SymmetricCipherError> {
-                Ok(Self(Buffered::new()))
-            }
-            fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
-                Ok(())
+                Ok(Self(Buffered::new(FINAL_LEN)))
             }
             fn update_out_len(&self, input_len: usize) -> usize {
-                (self.0.held_len + input_len).saturating_sub(HOLD_BACK)
+                self.0.update_out_len(input_len)
             }
             fn do_update_out(
                 &mut self,
@@ -1029,14 +1162,35 @@ impl TestFrameworkAEADCipher {
             ) -> Result<usize, SymmetricCipherError> {
                 Ok(self.0.update_out(ciphertext, plaintext))
             }
-            fn do_decrypt_final(
-                self,
+            /// The last `TAG_LEN` held-back bytes are the tag, the rest ciphertext.
+            fn do_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+                let Some(n) = self.0.held_len.checked_sub(TAG_LEN) else {
+                    return Err(SymmetricCipherError::DecryptionFailed);
+                };
+                let mut out = [0u8; FINAL_LEN];
+                self.0.finish(n, &mut out);
+                if self.0.held[n..n + TAG_LEN] != toy_tag(self.0.len_seen - TAG_LEN) {
+                    return Err(SymmetricCipherError::AEADTagCheckFailed);
+                }
+                Ok((out, n))
+            }
+            fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+                ciphertext_len.saturating_sub(TAG_LEN)
+            }
+        }
+
+        impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for Dec {
+            fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
+                Ok(())
+            }
+            fn do_final_out_detached(
+                mut self,
                 tag: &[u8; TAG_LEN],
-                output: &mut [u8; HOLD_BACK],
+                plaintext: &mut [u8; FINAL_LEN],
             ) -> Result<usize, SymmetricCipherError> {
-                let len_seen = self.0.len_seen;
-                let n = self.0.finish(output);
-                if *tag != [(len_seen % 256) as u8; TAG_LEN] {
+                let n = self.0.held_len;
+                self.0.finish(n, plaintext);
+                if *tag != toy_tag(self.0.len_seen) {
                     return Err(SymmetricCipherError::AEADTagCheckFailed);
                 }
                 Ok(n)
@@ -1049,14 +1203,13 @@ impl TestFrameworkAEADCipher {
         )
         .unwrap();
 
-        for len in 0..=(3 * HOLD_BACK + 5) {
+        for len in 0..=(3 * FINAL_LEN + 5) {
             let msg = &DUMMY_SEED[..len];
-            let mut ct = vec![0u8; len + HOLD_BACK];
-            let (nonce, ct_len, tag) = Enc::encrypt_out(&key, b"", msg, &mut ct).unwrap();
-            ct.truncate(ct_len);
+            let mut ct = vec![0u8; len];
+            let (nonce, ct_len, tag) = Enc::encrypt_out_detached(&key, b"", msg, &mut ct).unwrap();
             assert_eq!(ct_len, len, "the toy never expands the data, only the finalizer flushes");
 
-            for chunk in [1usize, 2, 3, HOLD_BACK, HOLD_BACK + 1, len.max(1)] {
+            for chunk in [1usize, 2, 3, HOLD_BACK, FINAL_LEN, FINAL_LEN + 1, len.max(1)] {
                 let (mut enc, _) = Enc::do_encrypt_init(&key).unwrap();
                 let mut chunked = Vec::new();
                 for piece in msg.chunks(chunk) {
@@ -1066,8 +1219,8 @@ impl TestFrameworkAEADCipher {
                     assert_eq!(n, expect, "len {len} chunk {chunk}: update_out_len must be exact");
                     chunked.extend_from_slice(&buf[..n]);
                 }
-                let mut final_buf = [0u8; HOLD_BACK];
-                let (final_len, chunked_tag) = enc.do_encrypt_final(&mut final_buf).unwrap();
+                let mut final_buf = [0u8; FINAL_LEN];
+                let (final_len, chunked_tag) = enc.do_final_out_detached(&mut final_buf).unwrap();
                 chunked.extend_from_slice(&final_buf[..final_len]);
                 assert_eq!(chunked, ct, "len {len} chunk {chunk}: chunking must not be visible");
                 assert_eq!(
@@ -1075,6 +1228,8 @@ impl TestFrameworkAEADCipher {
                     "len {len} chunk {chunk}: tag must not depend on chunking"
                 );
 
+                // detached: the decryptor releases what it held back as a possible tag in
+                // `do_final_out_detached`, alongside what it held back of its own accord
                 let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
                 let mut pt = Vec::new();
                 for piece in ct.chunks(chunk) {
@@ -1084,55 +1239,85 @@ impl TestFrameworkAEADCipher {
                     assert_eq!(n, expect, "len {len} chunk {chunk}: update_out_len must be exact");
                     pt.extend_from_slice(&buf[..n]);
                 }
-                let mut final_buf = [0u8; HOLD_BACK];
-                let final_len = dec.do_decrypt_final(&tag, &mut final_buf).unwrap();
+                let mut final_buf = [0u8; FINAL_LEN];
+                let final_len = dec.do_final_out_detached(&tag, &mut final_buf).unwrap();
                 pt.extend_from_slice(&final_buf[..final_len]);
-                assert_eq!(pt, msg, "len {len} chunk {chunk}: round trip");
+                assert_eq!(pt, msg, "len {len} chunk {chunk}: detached round trip");
+
+                // inline: the same stream with the tag on the end, chunked the same way
+                let mut inline = ct.clone();
+                inline.extend_from_slice(&tag);
+                let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
+                let mut pt = Vec::new();
+                for piece in inline.chunks(chunk) {
+                    let expect = dec.update_out_len(piece.len());
+                    let mut buf = vec![0u8; expect];
+                    let n = dec.do_update_out(piece, &mut buf).unwrap();
+                    assert_eq!(n, expect, "len {len} chunk {chunk}: update_out_len must be exact");
+                    pt.extend_from_slice(&buf[..n]);
+                }
+                let (last, data_len) = dec.do_final().unwrap();
+                pt.extend_from_slice(&last[..data_len]);
+                assert_eq!(pt, msg, "len {len} chunk {chunk}: inline round trip");
             }
 
             // The inline `ciphertext || tag` layout, which is where a buffering cipher makes
-            // `tagged_do_aead_encrypt_final` do two things at once: flush the held-back bytes and
-            // then append the tag after them.
+            // `do_final` do two things at once: flush the held-back bytes and then append the tag
+            // after them.
             let (mut enc, nonce) = Enc::do_encrypt_init(&key).unwrap();
-            // `+ HOLD_BACK`: see the same sizing in `test_encryptor_decryptor`.
-            let mut inline = vec![0u8; Enc::tagged_encrypt_out_len(len) + HOLD_BACK];
-            let mut written = enc.do_update_out(msg, &mut inline).unwrap();
+            let mut inline = vec![0u8; enc.update_out_len(len)];
+            let written = enc.do_update_out(msg, &mut inline).unwrap();
             assert!(written < len || len == 0, "len {len}: the toy must be holding something back");
-            written += enc.tagged_do_aead_encrypt_final(&mut inline[written..]).unwrap();
+            let (last, last_len) = enc.do_final().unwrap();
+            inline.extend_from_slice(&last[..last_len]);
             assert_eq!(
-                written,
+                inline.len(),
                 len + TAG_LEN,
                 "len {len}: inline layout is the message plus a tag"
             );
 
-            // Stop a few bytes short of the tag as well, so the finalizer has real ciphertext to
-            // decrypt and not just a tag to check, and give it a buffer of exactly the length it
-            // asks for: that is what makes `update_out_len(..) + FINAL_LEN` observable, since with
-            // a generous buffer any arithmetic there would do.
-            let held_back = (TAG_LEN + 4).min(written);
-            let body = written - held_back;
-            let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
-            let mut pt = vec![0u8; written + HOLD_BACK];
-            let mut got = dec.do_update_out(&inline[..body], &mut pt).unwrap();
-            let need = dec.update_out_len(held_back - TAG_LEN) + HOLD_BACK;
-            got += dec
-                .tagged_do_aead_decrypt_final(&inline[body..written], &mut pt[got..got + need])
-                .unwrap();
-            assert_eq!(&pt[..got], msg, "len {len}: inline streaming round trip");
-
-            let mut one = vec![0u8; Enc::tagged_encrypt_out_len(len)];
-            let (one_nonce, one_len) = Enc::tagged_encrypt(&key, b"", msg, &mut one).unwrap();
-            assert_eq!(&one[..one_len], &inline[..written], "len {len}: one-shot must agree");
-            let mut back = vec![0u8; Dec::tagged_decrypt_out_max_len(one_len) + HOLD_BACK];
+            let mut one = vec![0u8; Enc::encrypt_out_len(len)];
+            let (one_nonce, one_len) = Enc::encrypt_out_with_aad(&key, b"", msg, &mut one).unwrap();
+            assert_eq!(&one[..one_len], &inline[..], "len {len}: one-shot must agree");
+            assert_eq!(one_nonce, nonce);
+            // Exactly the buffer it asks for: that is what makes the `+ data_len` arithmetic in
+            // the one-shot observable, since with a generous buffer any arithmetic there would do.
+            let mut back = vec![0u8; Dec::decrypt_out_max_len(one_len)];
             let back_len =
-                Dec::tagged_decrypt(&key, &one_nonce, b"", &one[..one_len], &mut back).unwrap();
+                Dec::decrypt_out_with_aad(&key, &one_nonce, b"", &one[..one_len], &mut back)
+                    .unwrap();
             assert_eq!(&back[..back_len], msg, "len {len}: inline one-shot round trip");
+
+            // Every other one-shot over the toy too: its final calls flush real data, which is
+            // what makes the `written + final_len` arithmetic in each of them observable.
+            let mut ct_rng = vec![0u8; len];
+            let (_, n_rng, tag_rng) = Enc::encrypt_out_rng_detached(
+                &key,
+                &mut FixedSeedRNG::<NONCE_LEN>::new([0u8; NONCE_LEN]),
+                b"",
+                msg,
+                &mut ct_rng,
+            )
+            .unwrap();
+            assert_eq!(&ct_rng[..n_rng], &ct[..], "len {len}: encrypt_out_rng_detached");
+            assert_eq!(tag_rng, tag, "len {len}: encrypt_out_rng_detached tag");
+            let mut back = vec![0u8; len];
+            let back_len =
+                Dec::decrypt_out_detached(&key, &nonce, b"", &ct, &tag, &mut back).unwrap();
+            assert_eq!(&back[..back_len], msg, "len {len}: decrypt_out_detached");
+            let mut plain = vec![0u8; Enc::encrypt_out_len(len)];
+            let (plain_nonce, plain_len) = Enc::encrypt_out(&key, msg, &mut plain).unwrap();
+            assert_eq!(&plain[..plain_len], &inline[..], "len {len}: encrypt_out");
+            let mut back = vec![0u8; Dec::decrypt_out_max_len(plain_len)];
+            let back_len =
+                Dec::decrypt_out(&key, &plain_nonce, &plain[..plain_len], &mut back).unwrap();
+            assert_eq!(&back[..back_len], msg, "len {len}: decrypt_out");
 
             // For any length past the hold-back window, at least one prefix of the input must be
             // held back rather than released immediately -- the property this whole test exists
-            // to pin. (For `len < HOLD_BACK` nothing is ever releasable until `do_encrypt_final`,
-            // which is also correct but does not exercise `do_update_out` returning less than it
-            // was given.)
+            // to pin. (For `len < HOLD_BACK` nothing is ever releasable until `do_final`, which is
+            // also correct but does not exercise `do_update_out` returning less than it was
+            // given.)
             if len > HOLD_BACK {
                 let (mut enc, _) = Enc::do_encrypt_init(&key).unwrap();
                 let first = &msg[..1];

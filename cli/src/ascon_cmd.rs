@@ -11,7 +11,10 @@ use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SecurityStrength};
+use bouncycastle::core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SecurityStrength, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle::hex;
 
 use crate::helpers;
@@ -142,7 +145,8 @@ pub(crate) fn aead128_cmd(
 }
 
 /// Generated-nonce encryption: drives [`AsconAead128Encryptor`] in the inline `ciphertext || tag`
-/// layout (`tagged_do_aead_encrypt_final`), writing the nonce it generated ahead of the stream.
+/// layout (the inherited [`SymmetricCipherEncryptor::do_final_out`]), writing the nonce it
+/// generated ahead of the stream.
 /// With an explicit nonce there is no nonce to write, so that case goes to
 /// [`aead128_encrypt_stream_with_explicit_nonce`] instead.
 fn aead128_encrypt_stream(
@@ -180,9 +184,9 @@ fn aead128_encrypt_stream(
         let written = cipher.do_update_out(&buf[..n], &mut out).unwrap();
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
-    // infallible: Ascon-AEAD128 has FINAL_LEN = 0, so `tail` only has to hold the 16-byte tag.
+    // infallible: Ascon-AEAD128 holds nothing back, so the inline final is only the 16-byte tag.
     let mut tail = [0u8; 16];
-    let tail_len = cipher.tagged_do_aead_encrypt_final(&mut tail).unwrap();
+    let tail_len = cipher.do_final_out(&mut tail).unwrap();
     helpers::write_bytes_or_hex(&tail[..tail_len], output_hex);
     if output_hex {
         println!();
@@ -220,10 +224,9 @@ fn aead128_encrypt_stream_with_explicit_nonce(
 }
 
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
-/// Everything but the last 16 bytes seen is released to [`AsconAead128Decryptor`] as soon as it is
-/// known not to be part of the tag; what is left at EOF goes to
-/// [`AEADCipherDecryptor::tagged_do_aead_decrypt_final`], which decrypts any ciphertext still in it
-/// and then checks the tag.
+/// [`AsconAead128Decryptor`] holds the last 16 bytes it has seen back itself, releasing everything
+/// before them as soon as it is known not to be part of the tag; at EOF
+/// [`SymmetricCipherDecryptor::do_final`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
     key: &KeyMaterial<16>,
     nonce: Option<&[u8; 16]>,
@@ -231,7 +234,6 @@ fn aead128_decrypt_stream(
     output_hex: bool,
 ) {
     const CHUNK: usize = 1024;
-    const TAG_LEN: usize = 16;
     let nonce = match nonce {
         Some(nonce) => *nonce,
         None => {
@@ -256,12 +258,6 @@ fn aead128_decrypt_stream(
         cipher.do_update_aad(ad).unwrap();
     }
 
-    // The tag is the last TAG_LEN bytes of the stream, and nothing says where the stream ends
-    // until it does, so the last TAG_LEN bytes seen are always held back in `tail` and only
-    // released once something newer has arrived behind them. At EOF whatever is still in `tail`
-    // is the tag, which `tagged_do_aead_decrypt_final` checks.
-    let mut tail = [0u8; TAG_LEN];
-    let mut tail_len = 0usize;
     let mut buf = [0u8; CHUNK];
     let mut out = [0u8; CHUNK];
     loop {
@@ -269,44 +265,15 @@ fn aead128_decrypt_stream(
         if n == 0 {
             break;
         }
-        let total = tail_len + n;
-        if total <= TAG_LEN {
-            // Everything seen so far might still be the tag.
-            tail[tail_len..total].copy_from_slice(&buf[..n]);
-            tail_len = total;
-            continue;
-        }
-
-        // Release the part of the old tail that is now known not to be the tag, then as much of
-        // the new input as is also known not to be; two calls over what is one contiguous run of
-        // ciphertext, which is the same to the cipher as one call over both.
-        let releasable = total - TAG_LEN;
-        let from_tail = tail_len.min(releasable);
-        let from_new = releasable - from_tail;
-        // infallible on both: `out` is CHUNK bytes and neither slice is longer than `buf`, and
-        // Ascon-AEAD128 writes exactly what it is given.
-        if from_tail > 0 {
-            let written = cipher.do_update_out(&tail[..from_tail], &mut out).unwrap();
-            helpers::write_bytes_or_hex(&out[..written], output_hex);
-        }
-        if from_new > 0 {
-            let written = cipher.do_update_out(&buf[..from_new], &mut out).unwrap();
-            helpers::write_bytes_or_hex(&out[..written], output_hex);
-        }
-
-        // Whatever was not released is the new tail: the end of the old one, then the end of this
-        // read. Those are exactly TAG_LEN bytes, since `total - releasable == TAG_LEN`.
-        let mut new_tail = [0u8; TAG_LEN];
-        let kept = tail_len - from_tail;
-        new_tail[..kept].copy_from_slice(&tail[from_tail..tail_len]);
-        new_tail[kept..].copy_from_slice(&buf[from_new..n]);
-        tail = new_tail;
-        tail_len = TAG_LEN;
+        // infallible: the decryptor releases at most what it has held back (16 bytes) plus what
+        // it is given, less the 16 it keeps, so never more than the `n <= CHUNK` bytes read.
+        let written = cipher.do_update_out(&buf[..n], &mut out).unwrap();
+        helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
 
-    match cipher.tagged_do_aead_decrypt_final(&tail[..tail_len], &mut out) {
-        Ok(last_len) => {
-            helpers::write_bytes_or_hex(&out[..last_len], output_hex);
+    match cipher.do_final() {
+        Ok((last, last_len)) => {
+            helpers::write_bytes_or_hex(&last[..last_len], output_hex);
             if output_hex {
                 println!();
             }

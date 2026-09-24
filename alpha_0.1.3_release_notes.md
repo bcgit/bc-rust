@@ -16,19 +16,28 @@
       Streaming decrypt releases plaintext before the final tag check, so callers must discard any
       output if finalization or the CLI exit status reports authentication failure.
 * `core` gains the streaming AEAD split: `AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN,
-  FINAL_LEN>` and `AEADCipherDecryptor<...>`, with AAD updates, exact `update_out_len`, detached
-  tags, one-shot helpers and a `FINAL_LEN` flush buffer for implementations that hold data back.
+  FINAL_LEN>` and `AEADCipherDecryptor<...>`, which extend `SymmetricCipherEncryptor<KEY_LEN,
+  NONCE_LEN, FINAL_LEN>` / `SymmetricCipherDecryptor<...>`. The inherited methods are the AEAD
+  with no associated data and the tag inline (`ciphertext || tag`), so an AEAD can be held and
+  used as a plain symmetric cipher; `FINAL_LEN` is the tag plus anything the cipher holds back,
+  and every decryptor holds back the last `TAG_LEN` bytes it has seen, since it cannot know which
+  layout its final call will ask for. The AEAD traits add `do_update_aad`; the detached-tag
+  methods, each named for the base method it mirrors plus `_detached` (`do_final_detached` /
+  `do_final_out_detached`, `encrypt_out_detached`, `encrypt_out_rng_detached`, `encrypt_detached`,
+  `decrypt_out_detached`, `decrypt_detached` and the `*_len_detached` sizing helpers); and the
+  inline-tag one-shots with AAD, named for their base method plus `_with_aad`
+  (`encrypt_out_with_aad`, `encrypt_out_rng_with_aad`, `encrypt_with_aad`, `decrypt_out_with_aad`,
+  `decrypt_with_aad`).
+  `SymmetricCipherDecryptor::decrypt_out` now zeroizes what it wrote when `do_final` fails, as the
+  AEAD one-shots always have.
   The older single-type `core::traits::AEADCipher`, which this splits and which had no
   implementors, is removed, along with its `core-test-framework` suites
   (`TestFrameworkAEADCipher::test` / `::test_plain_one_shots`).
   Mutation testing of the pair's defaults (`traits.rs`, scoped to `AEADCipher{En,De}cryptor` and
-  tested through `bouncycastle-core` + `bouncycastle-ascon`) reports 116 mutants, 95 caught, 19
-  unviable and 2 missed, the two being `written + final_len` -> `written - final_len` in
-  `encrypt_out_rng`, equivalent while every implementor has `FINAL_LEN = 0`.
-* The same pair carries the inline `ciphertext || tag` layout that most wire formats and files
-  use, as four default methods rather than a separate adapter type: `tagged_encrypt` /
-  `tagged_do_aead_encrypt_final` append the tag to the ciphertext stream, and `tagged_decrypt` /
-  `tagged_do_aead_decrypt_final` take it back off the end of one.
+  `SymmetricCipherDecryptor::decrypt_out`, tested through `bouncycastle-core` +
+  `bouncycastle-ascon`) reports 134 mutants, 107 caught, 27 unviable and none missed; the
+  `AsconAead128Encryptor` / `AsconAead128Decryptor` adapters report 76 mutants, 49 caught, 27
+  unviable and none missed.
 * ASCON testing covers the NIST LWC KAT sweeps from `bc-test-data` (1089 AEAD128, 1025 Hash256,
   1025 XOF128 and 1089 CXOF128 cases when the data repository is present), plus embedded always-on
   vectors. Mutation testing for `bouncycastle-ascon` reports 661 mutants, 558 caught, 97 unviable

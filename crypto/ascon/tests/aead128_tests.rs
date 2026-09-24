@@ -6,7 +6,8 @@
 //!   failures, determinism), driven through the inherent explicit-nonce API.
 //! - The shared conformance framework (`core-test-framework`), which exercises the
 //!   `AEADCipherEncryptor`/`AEADCipherDecryptor` pair, with internally-generated nonces, in both
-//!   the detached-tag and the inline `ciphertext || tag` (`tagged_*`) layouts.
+//!   the detached-tag (`*_detached`) and the inline `ciphertext || tag` layouts -- the latter also
+//!   through the `SymmetricCipherEncryptor`/`SymmetricCipherDecryptor` traits they extend.
 
 use bouncycastle_ascon::ascon_aead128::{
     AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
@@ -484,7 +485,7 @@ fn do_decrypt_update_on_encryptor_panics() {
 #[test]
 fn aead128_encryptor_decryptor_trait_framework() {
     TestFrameworkAEADCipher::new()
-        .test_encryptor_decryptor::<16, 16, 16, 0, AsconAead128Encryptor, AsconAead128Decryptor>();
+        .test_encryptor_decryptor::<16, 16, 16, 16, AsconAead128Encryptor, AsconAead128Decryptor>();
 }
 
 #[test]
@@ -493,13 +494,16 @@ fn aead_framework_buffering_toy() {
 }
 
 /// The two tag layouts must agree byte for byte: `direct_ciphertext || direct_tag`, produced by
-/// streaming [`AsconAead128Encryptor`] and taking the tag from `do_encrypt_final`, must equal what
+/// streaming [`AsconAead128Encryptor`] and taking the tag from `do_final_out_detached`, must equal what
 /// the inline layout produces for the same key, nonce (driven by the same RNG stream), AAD and
-/// message -- through both `tagged_encrypt` and `tagged_do_aead_encrypt_final` -- and either must
+/// message -- through both `encrypt_out_with_aad` and the inherited `do_final` -- and either must
 /// decrypt back to the original plaintext.
 #[test]
 fn aead128_tagged_and_direct_layouts_agree() {
-    use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+    use bouncycastle_core::traits::{
+        AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor,
+        SymmetricCipherEncryptor,
+    };
     use bouncycastle_core_test_framework::FixedSeedRNG;
 
     let km = key_material(&KEY);
@@ -515,8 +519,9 @@ fn aead128_tagged_and_direct_layouts_agree() {
         direct_enc.do_update_aad(aad).unwrap();
         let mut direct_ct = vec![0u8; pt.len()];
         direct_enc.do_update_out(&pt, &mut direct_ct).unwrap();
-        let mut nothing = [0u8; 0];
-        let (_, direct_tag) = direct_enc.do_encrypt_final(&mut nothing).unwrap();
+        let mut unused = [0u8; 16];
+        let (flushed, direct_tag) = direct_enc.do_final_out_detached(&mut unused).unwrap();
+        assert_eq!(flushed, 0, "Ascon-AEAD128 holds nothing back to flush");
         let mut direct_inline = direct_ct.clone();
         direct_inline.extend_from_slice(&direct_tag);
 
@@ -525,22 +530,24 @@ fn aead128_tagged_and_direct_layouts_agree() {
             AsconAead128Encryptor::do_encrypt_init_rng(&km, &mut FixedSeedRNG::<16>::new(pinned))
                 .unwrap();
         tagged_enc.do_update_aad(aad).unwrap();
-        let mut tagged_out = vec![0u8; AsconAead128Encryptor::tagged_encrypt_out_len(pt.len())];
-        let mut written = tagged_enc.do_update_out(&pt, &mut tagged_out).unwrap();
-        written += tagged_enc.tagged_do_aead_encrypt_final(&mut tagged_out[written..]).unwrap();
-        tagged_out.truncate(written);
+        let mut tagged_out = vec![0u8; AsconAead128Encryptor::encrypt_out_len(pt.len())];
+        let written = tagged_enc.do_update_out(&pt, &mut tagged_out).unwrap();
+        let mut last = [0u8; 16];
+        let last_len = tagged_enc.do_final_out(&mut last).unwrap();
+        tagged_out[written..written + last_len].copy_from_slice(&last[..last_len]);
+        tagged_out.truncate(written + last_len);
 
         assert_eq!(direct_nonce, tagged_nonce, "pt_len {pt_len}: same RNG stream, same nonce");
         assert_eq!(direct_inline, tagged_out, "pt_len {pt_len}: inline layout must agree");
 
         // inline tag, one-shot: its own generated nonce, so what must match is the round trip
         // and the length, not the bytes.
-        let mut one_shot = vec![0u8; AsconAead128Encryptor::tagged_encrypt_out_len(pt.len())];
+        let mut one_shot = vec![0u8; AsconAead128Encryptor::encrypt_out_len(pt.len())];
         let (one_nonce, one_len) =
-            AsconAead128Encryptor::tagged_encrypt(&km, aad, &pt, &mut one_shot).unwrap();
+            AsconAead128Encryptor::encrypt_out_with_aad(&km, aad, &pt, &mut one_shot).unwrap();
         assert_eq!(one_len, tagged_out.len(), "pt_len {pt_len}: one-shot writes the same length");
-        let mut one_back = vec![0u8; AsconAead128Decryptor::tagged_decrypt_out_max_len(one_len)];
-        let one_n = AsconAead128Decryptor::tagged_decrypt(
+        let mut one_back = vec![0u8; AsconAead128Decryptor::decrypt_out_max_len(one_len)];
+        let one_n = AsconAead128Decryptor::decrypt_out_with_aad(
             &km,
             &one_nonce,
             aad,
@@ -550,32 +557,73 @@ fn aead128_tagged_and_direct_layouts_agree() {
         .unwrap();
         assert_eq!(&one_back[..one_n], &pt[..], "pt_len {pt_len}: one-shot round trip");
 
-        // ...and all of it decrypts back, each through its own view.
+        // ...and all of it decrypts back, each through its own view. The decryptor holds the
+        // last 16 bytes back either way; detached, `do_final_out_detached` releases them.
         let mut direct_dec = AsconAead128Decryptor::do_decrypt_init(&km, &direct_nonce).unwrap();
         direct_dec.do_update_aad(aad).unwrap();
         let mut direct_pt = vec![0u8; direct_ct.len()];
-        direct_dec.do_update_out(&direct_ct, &mut direct_pt).unwrap();
-        direct_dec.do_decrypt_final(&direct_tag, &mut nothing).unwrap();
+        let got = direct_dec.do_update_out(&direct_ct, &mut direct_pt).unwrap();
+        assert_eq!(got, pt_len.saturating_sub(16), "pt_len {pt_len}: the last 16 bytes are held");
+        let mut last = [0u8; 16];
+        let last_len = direct_dec.do_final_out_detached(&direct_tag, &mut last).unwrap();
+        assert_eq!(got + last_len, pt_len, "pt_len {pt_len}: detached final releases the rest");
+        direct_pt[got..].copy_from_slice(&last[..last_len]);
         assert_eq!(direct_pt, pt, "pt_len {pt_len}: direct decrypt round trip");
 
         let mut tagged_dec = AsconAead128Decryptor::do_decrypt_init(&km, &tagged_nonce).unwrap();
         tagged_dec.do_update_aad(aad).unwrap();
-        let body = tagged_out.len() - 16;
         let mut tagged_pt = vec![0u8; tagged_out.len()];
-        let mut got = tagged_dec.do_update_out(&tagged_out[..body], &mut tagged_pt).unwrap();
-        got += tagged_dec
-            .tagged_do_aead_decrypt_final(&tagged_out[body..], &mut tagged_pt[got..])
-            .unwrap();
+        let got = tagged_dec.do_update_out(&tagged_out, &mut tagged_pt).unwrap();
+        assert_eq!(got, pt_len, "pt_len {pt_len}: all but the tag is released");
+        let (_, data_len) = tagged_dec.do_final().unwrap();
+        assert_eq!(data_len, 0, "pt_len {pt_len}: nothing but the tag was held back");
         assert_eq!(&tagged_pt[..got], &pt[..], "pt_len {pt_len}: tagged decrypt round trip");
 
-        let mut one_pt =
-            vec![0u8; AsconAead128Decryptor::tagged_decrypt_out_max_len(tagged_out.len())];
-        let n = AsconAead128Decryptor::tagged_decrypt(
+        let mut one_pt = vec![0u8; AsconAead128Decryptor::decrypt_out_max_len(tagged_out.len())];
+        let n = AsconAead128Decryptor::decrypt_out_with_aad(
             &km, &tagged_nonce, aad, &tagged_out, &mut one_pt,
         )
         .unwrap();
         assert_eq!(&one_pt[..n], &pt[..], "pt_len {pt_len}: streamed ciphertext, one-shot decrypt");
     }
+}
+
+/// With no associated data, the pair used purely as a [`SymmetricCipherEncryptor`] /
+/// [`SymmetricCipherDecryptor`] -- nonce driven to the KAT's by a fixed RNG -- reproduces the
+/// embedded NIST LWC vectors' `ciphertext || tag`, and decrypts them back.
+///
+/// [`SymmetricCipherEncryptor`]: bouncycastle_core::traits::SymmetricCipherEncryptor
+/// [`SymmetricCipherDecryptor`]: bouncycastle_core::traits::SymmetricCipherDecryptor
+#[test]
+fn aead128_symmetric_cipher_view_matches_kat() {
+    use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+    use bouncycastle_core_test_framework::FixedSeedRNG;
+
+    let km = key_material(&KEY);
+    // The NIST LWC AEAD KAT convention uses Key == Nonce == 000102…0F (i.e. KEY for both).
+    let kat_nonce = KEY;
+    let mut tested = 0;
+    for (pt_hex, ad_hex, ct_hex) in AEAD_KAT.iter().filter(|(_, ad, _)| ad.is_empty()) {
+        let pt = dh(pt_hex);
+        let expected = dh(ct_hex);
+        assert!(dh(ad_hex).is_empty());
+
+        let mut ct = vec![0u8; AsconAead128Encryptor::encrypt_out_len(pt.len())];
+        let (nonce, n) = AsconAead128Encryptor::encrypt_out_rng(
+            &km,
+            &mut FixedSeedRNG::<16>::new(kat_nonce),
+            &pt,
+            &mut ct,
+        )
+        .unwrap();
+        assert_eq!(nonce, kat_nonce);
+        assert_eq!(&ct[..n], &expected[..], "pt {pt_hex}: SymmetricCipherEncryptor view vs KAT");
+
+        let recovered = AsconAead128Decryptor::decrypt(&km, &kat_nonce, &expected).unwrap();
+        assert_eq!(recovered, pt, "pt {pt_hex}: SymmetricCipherDecryptor view vs KAT");
+        tested += 1;
+    }
+    assert!(tested >= 2, "the embedded KATs must include no-AD vectors");
 }
 
 #[test]

@@ -28,6 +28,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SecurityStrength, SuspendableKeyed,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -497,8 +498,13 @@ impl Algorithm for AsconAead128 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-/// Adapts [`AsconAead128`]'s encrypting direction to [`AEADCipherEncryptor`]; see the module docs
-/// for why this is a thin wrapper rather than a change to `AsconAead128` itself.
+/// Adapts [`AsconAead128`]'s encrypting direction to [`AEADCipherEncryptor`] and, through it,
+/// [`SymmetricCipherEncryptor`]; see the module docs for why this is a thin wrapper rather than a
+/// change to `AsconAead128` itself.
+///
+/// `FINAL_LEN` is `TAG_LEN`: Ascon-AEAD128 holds nothing back, so the inline
+/// [`SymmetricCipherEncryptor::do_final`] writes only the tag, and the detached
+/// [`AEADCipherEncryptor::do_final_out_detached`] writes nothing.
 pub struct AsconAead128Encryptor(AsconAead128);
 
 impl Algorithm for AsconAead128Encryptor {
@@ -506,7 +512,7 @@ impl Algorithm for AsconAead128Encryptor {
     const MAX_SECURITY_STRENGTH: SecurityStrength = AsconAead128::MAX_SECURITY_STRENGTH;
 }
 
-impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for AsconAead128Encryptor {
+impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Encryptor {
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
@@ -521,10 +527,6 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for AsconAead128Encrypt
         let mut nonce = [0u8; NONCE_LEN];
         rng.next_bytes_out(&mut nonce)?;
         Ok((Self(AsconAead128::new(key, &nonce, None, true)?), nonce))
-    }
-
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        self.0.do_update_aad(aad)
     }
 
     /// Ascon-AEAD128 never buffers: every byte given is a byte returned.
@@ -546,39 +548,68 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for AsconAead128Encrypt
         Ok(plaintext.len())
     }
 
-    /// `output` is always `[u8; 0]`: nothing is ever held back to flush.
-    fn do_encrypt_final(
+    /// The inline layout: nothing is held back, so the final buffer is exactly the tag.
+    fn do_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        Ok((self.0.do_encrypt_final(), TAG_LEN))
+    }
+
+    /// The ciphertext, which is as long as the plaintext, followed by the tag.
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        plaintext_len + TAG_LEN
+    }
+}
+
+impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128Encryptor {
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.0.do_update_aad(aad)
+    }
+
+    /// Nothing is ever held back to flush, so `ciphertext` is left untouched.
+    fn do_final_out_detached(
         self,
-        _output: &mut [u8; 0],
+        _ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         Ok((0, self.0.do_encrypt_final()))
     }
 }
 
-/// Adapts [`AsconAead128`]'s decrypting direction to [`AEADCipherDecryptor`]; see the module docs
-/// for why this is a thin wrapper rather than a change to `AsconAead128` itself.
-pub struct AsconAead128Decryptor(AsconAead128);
+/// Adapts [`AsconAead128`]'s decrypting direction to [`AEADCipherDecryptor`] and, through it,
+/// [`SymmetricCipherDecryptor`]; see the module docs for why this is a thin wrapper rather than a
+/// change to `AsconAead128` itself.
+///
+/// Unlike the inherent API this does hold data back: the last `TAG_LEN` bytes of ciphertext it has
+/// seen, since until the stream ends it cannot know whether they are the inline tag
+/// ([`SymmetricCipherDecryptor::do_final`]) or ciphertext with the tag carried separately
+/// ([`AEADCipherDecryptor::do_final_out_detached`]). They are ciphertext, not plaintext, so they need
+/// no [`Secret`] wrapper.
+pub struct AsconAead128Decryptor {
+    cipher: AsconAead128,
+    // The most recent `held_len` bytes of ciphertext, not yet given to `cipher`.
+    held: [u8; TAG_LEN],
+    // Always `min(TAG_LEN, total ciphertext seen)`.
+    held_len: usize,
+}
 
 impl Algorithm for AsconAead128Decryptor {
     const ALG_NAME: &'static str = AsconAead128::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = AsconAead128::MAX_SECURITY_STRENGTH;
 }
 
-impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for AsconAead128Decryptor {
+impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Decryptor {
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(AsconAead128::new(key, nonce, None, false)?))
+        Ok(Self {
+            cipher: AsconAead128::new(key, nonce, None, false)?,
+            held: [0u8; TAG_LEN],
+            held_len: 0,
+        })
     }
 
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        self.0.do_update_aad(aad)
-    }
-
-    /// Ascon-AEAD128 never buffers: every byte given is a byte returned.
+    /// Everything but the last `TAG_LEN` bytes seen so far is released.
     fn update_out_len(&self, input_len: usize) -> usize {
-        input_len
+        (self.held_len + input_len).saturating_sub(TAG_LEN)
     }
 
     fn do_update_out(
@@ -586,23 +617,73 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, 0> for AsconAead128Decrypt
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
+        let release = self.update_out_len(ciphertext.len());
+        if plaintext.len() < release {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
-        let out = &mut plaintext[..ciphertext.len()];
-        out.copy_from_slice(ciphertext);
-        self.0.do_decrypt_update(out);
-        Ok(ciphertext.len())
+        // The oldest bytes go first: the held-back ones, then the front of `ciphertext`.
+        let from_held = release.min(self.held_len);
+        let from_input = release - from_held;
+        let out = &mut plaintext[..release];
+        out[..from_held].copy_from_slice(&self.held[..from_held]);
+        out[from_held..].copy_from_slice(&ciphertext[..from_input]);
+        // Called even when `release` is 0: that is what ends the AAD phase in `cipher`, so a
+        // later non-empty `do_update_aad` is refused however little ciphertext has been seen.
+        self.cipher.do_decrypt_update(out);
+        // Keep the newest `TAG_LEN` (or fewer) bytes: what is left of `held`, then the tail of
+        // `ciphertext`.
+        let kept = self.held_len - from_held;
+        self.held.copy_within(from_held..self.held_len, 0);
+        let new_len = kept + ciphertext.len() - from_input;
+        self.held[kept..new_len].copy_from_slice(&ciphertext[from_input..]);
+        self.held_len = new_len;
+        Ok(release)
     }
 
-    /// `output` is always `[u8; 0]`: nothing is ever held back to flush.
-    fn do_decrypt_final(
-        self,
+    /// The inline layout: the held-back bytes are the tag, so there is no plaintext left to
+    /// release.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DecryptionFailed`] if fewer than `TAG_LEN` bytes were seen in all;
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
+    fn do_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        if self.held_len < TAG_LEN {
+            return Err(SymmetricCipherError::DecryptionFailed);
+        }
+        self.cipher.do_decrypt_final(&self.held)?;
+        Ok(([0u8; TAG_LEN], 0))
+    }
+
+    /// Everything but the trailing tag.
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+        ciphertext_len.saturating_sub(TAG_LEN)
+    }
+}
+
+impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128Decryptor {
+    /// # Errors
+    /// [`SymmetricCipherError::StateError`] if `aad` is non-empty and
+    /// [`SymmetricCipherDecryptor::do_update_out`] has already been called.
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.cipher.do_update_aad(aad)
+    }
+
+    /// The held-back bytes are ciphertext: decrypts them into `plaintext`, then checks `tag`. On a
+    /// failed check `plaintext` is zeroized, so the error leaves nothing unauthenticated behind in
+    /// it (what earlier `do_update_out` calls released is the caller's to scrub).
+    fn do_final_out_detached(
+        mut self,
         tag: &[u8; TAG_LEN],
-        _output: &mut [u8; 0],
+        plaintext: &mut [u8; TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
-        self.0.do_decrypt_final(tag)?;
-        Ok(0)
+        let n = self.held_len;
+        plaintext[..n].copy_from_slice(&self.held[..n]);
+        self.cipher.do_decrypt_update(&mut plaintext[..n]);
+        if let Err(e) = self.cipher.do_decrypt_final(tag) {
+            plaintext.fill(0);
+            return Err(e);
+        }
+        Ok(n)
     }
 }
 

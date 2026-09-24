@@ -50,11 +50,14 @@
 //! assert_eq!(&pt, plaintext);
 //! ```
 //!
-//! Authenticated encryption (streaming, detached tag):
+//! Authenticated encryption (streaming, detached tag). The decryptor holds back the last 16
+//! bytes it has seen, in case they are an inline tag, so `do_final_out_detached` is where they come out:
 //! ```
 //! use bouncycastle_ascon::ascon_aead128::{AsconAead128Decryptor, AsconAead128Encryptor};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+//! use bouncycastle_core::traits::{
+//!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+//! };
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
@@ -63,35 +66,45 @@
 //! enc.do_update_aad(b"associated data").unwrap();
 //! let mut ciphertext = [0u8; 16];
 //! enc.do_update_out(plaintext, &mut ciphertext).unwrap();
-//! let mut final_buf = [0u8; 0];
-//! let (_, tag) = enc.do_encrypt_final(&mut final_buf).unwrap();
+//! let mut final_buf = [0u8; 16];
+//! let (_, tag) = enc.do_final_out_detached(&mut final_buf).unwrap();
 //!
 //! let mut dec = AsconAead128Decryptor::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(b"associated data").unwrap();
 //! let mut recovered = [0u8; 16];
-//! dec.do_update_out(&ciphertext, &mut recovered).unwrap();
-//! dec.do_decrypt_final(&tag, &mut final_buf).unwrap(); // now authenticated
+//! let n = dec.do_update_out(&ciphertext, &mut recovered).unwrap(); // 0: all 16 held back
+//! let m = dec.do_final_out_detached(&tag, &mut final_buf).unwrap(); // now authenticated
+//! recovered[n..n + m].copy_from_slice(&final_buf[..m]);
 //! assert_eq!(&recovered, plaintext);
 //! ```
 //!
-//! For the inline `ciphertext || tag` layout that most wire formats and files use, the same pair
-//! has [`bouncycastle_core::traits::AEADCipherEncryptor::tagged_encrypt`] /
-//! [`bouncycastle_core::traits::AEADCipherDecryptor::tagged_decrypt`] as one-shots, and
-//! `tagged_do_aead_encrypt_final` / `tagged_do_aead_decrypt_final` for streaming:
+//! For the inline `ciphertext || tag` layout that most wire formats and files use, the pair is
+//! also a [`bouncycastle_core::traits::SymmetricCipherEncryptor`] /
+//! [`bouncycastle_core::traits::SymmetricCipherDecryptor`], which covers the no-AAD case --
+//! streaming, or through its `encrypt_out` / `decrypt_out` one-shots -- and
+//! [`bouncycastle_core::traits::AEADCipherEncryptor::encrypt_out_with_aad`] /
+//! [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_out_with_aad`] are the one-shots with AAD:
 //! ```
 //! use bouncycastle_ascon::ascon_aead128::{AsconAead128Decryptor, AsconAead128Encryptor};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+//! use bouncycastle_core::traits::{
+//!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+//! };
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let plaintext = b"secret message!!";
 //!
-//! let mut inline = [0u8; 32]; // AsconAead128Encryptor::tagged_encrypt_out_len(16)
-//! let (nonce, len) = AsconAead128Encryptor::tagged_encrypt(&key, b"", plaintext, &mut inline).unwrap();
+//! // No AAD: just a symmetric cipher.
+//! let mut inline = [0u8; 32]; // AsconAead128Encryptor::encrypt_out_len(16)
+//! let (nonce, len) = AsconAead128Encryptor::encrypt_out(&key, plaintext, &mut inline).unwrap();
 //! assert_eq!(len, plaintext.len() + 16); // ciphertext || tag
-//!
 //! let mut recovered = [0u8; 16];
-//! let n = AsconAead128Decryptor::tagged_decrypt(&key, &nonce, b"", &inline[..len], &mut recovered).unwrap();
+//! let n = AsconAead128Decryptor::decrypt_out(&key, &nonce, &inline[..len], &mut recovered).unwrap();
+//! assert_eq!(&recovered[..n], plaintext);
+//!
+//! // With AAD.
+//! let (nonce, len) = AsconAead128Encryptor::encrypt_out_with_aad(&key, b"aad", plaintext, &mut inline).unwrap();
+//! let n = AsconAead128Decryptor::decrypt_out_with_aad(&key, &nonce, b"aad", &inline[..len], &mut recovered).unwrap();
 //! assert_eq!(&recovered[..n], plaintext);
 //! ```
 //!
@@ -132,11 +145,15 @@
 //!   caller that needs a partial-byte final block should reach for SHA-3, which supports one.
 //! - **Decryption tag check failure:** a ciphertext decryption whose finalization returns
 //!   `Err(SymmetricCipherError::AEADTagCheckFailed)` must be treated as tampered, and the entire
-//!   plaintext rejected. The one-shot APIs ([`ascon_aead128::AsconAead128::decrypt`] and
-//!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_out`]) zeroize their output buffer
-//!   before returning that error. The streaming API ([`ascon_aead128::AsconAead128::do_decrypt_update`] /
-//!   [`ascon_aead128::AsconAead128::do_decrypt_final`] or
-//!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final`]) does not: plaintext
+//!   plaintext rejected. The one-shot APIs ([`ascon_aead128::AsconAead128::decrypt`],
+//!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_out_detached`],
+//!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_out_with_aad`] and
+//!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::decrypt_out`]) zeroize their output
+//!   buffer before returning that error. The streaming API
+//!   ([`ascon_aead128::AsconAead128::do_decrypt_update`] /
+//!   [`ascon_aead128::AsconAead128::do_decrypt_final`], or `do_update_out` followed by
+//!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_final_out_detached`] or
+//!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::do_final`]) does not: plaintext
 //!   bytes are necessarily written to the caller's buffer *before* the tag can be checked, so an
 //!   application streaming a large plaintext must have a way to cancel the operation or
 //!   transaction if finalization returns an error.
