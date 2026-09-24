@@ -3,7 +3,11 @@
 //! `rsa_pkcs1_4096_sig_gen_test.json`. `shake256` (not `shake128`) is the SHAKE choice wired up at
 //! this modulus size (RFC 8702 SS5).
 
-use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core::traits::{
+    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SignaturePrivateKey,
+    SignaturePublicKey, SignatureVerifier, Signer,
+};
+use bouncycastle_rsa::rsa_4096::{RSA4096KEMPrivateKey, RSA4096KEMPublicKey, RSASVE};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -210,6 +214,19 @@ fn bench_rsa_4096(c: &mut Criterion) {
             )
             .unwrap()
         })
+    });
+
+    // RSASVE (SP 800-56B Rev. 2 §7.2.1) under the same key material, re-read as KEM key types
+    // through the shared raw encoding. Encapsulation is one public-exponent modexp plus the RNG
+    // draw; decapsulation is the same CRT exponentiation signing does.
+    let kem_sk = RSA4096KEMPrivateKey::from_bytes(&sk.encode()).unwrap();
+    let kem_pk = RSA4096KEMPublicKey::from_bytes(&pk.encode()).unwrap();
+    let (_, kem_ct) = RSASVE::encaps(&kem_pk).unwrap();
+    group.bench_function("rsasve_encaps", |b| {
+        b.iter(|| black_box(RSASVE::encaps_rng(black_box(&kem_pk), &mut rng).unwrap()))
+    });
+    group.bench_function("rsasve_decaps", |b| {
+        b.iter(|| black_box(RSASVE::decaps(black_box(&kem_sk), black_box(&kem_ct)).unwrap()))
     });
 
     group.finish();

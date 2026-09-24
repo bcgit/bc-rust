@@ -30,8 +30,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SignaturePrivateKey,
+    SignaturePublicKey, SignatureVerifier, Signer,
 };
 use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 
@@ -58,6 +60,16 @@ fn print_key_sizes() {
     println!("size_of<RSA2048PrivateKey>: {} bytes", size_of::<rsa_2048::RSA2048PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 260);
     println!("size_of<RSA2048PublicKey>: {} bytes", size_of::<rsa_2048::RSA2048PublicKey>());
+    println!(
+        "size_of<RSA2048KEMPrivateKey>: {} bytes",
+        size_of::<rsa_2048::RSA2048KEMPrivateKey>()
+    );
+    println!("size_of<RSA2048KEMPublicKey>: {} bytes", size_of::<rsa_2048::RSA2048KEMPublicKey>());
+    println!(
+        "RSASVE ciphertext / shared secret: {} / {} bytes",
+        rsa_2048::CT_LEN,
+        rsa_2048::SS_LEN
+    );
     println!("signature: {} bytes", 256);
 
     println!("\nRSA-3072");
@@ -65,6 +77,16 @@ fn print_key_sizes() {
     println!("size_of<RSA3072PrivateKey>: {} bytes", size_of::<rsa_3072::RSA3072PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 388);
     println!("size_of<RSA3072PublicKey>: {} bytes", size_of::<rsa_3072::RSA3072PublicKey>());
+    println!(
+        "size_of<RSA3072KEMPrivateKey>: {} bytes",
+        size_of::<rsa_3072::RSA3072KEMPrivateKey>()
+    );
+    println!("size_of<RSA3072KEMPublicKey>: {} bytes", size_of::<rsa_3072::RSA3072KEMPublicKey>());
+    println!(
+        "RSASVE ciphertext / shared secret: {} / {} bytes",
+        rsa_3072::CT_LEN,
+        rsa_3072::SS_LEN
+    );
     println!("signature: {} bytes", 384);
 
     println!("\nRSA-4096");
@@ -72,6 +94,16 @@ fn print_key_sizes() {
     println!("size_of<RSA4096PrivateKey>: {} bytes", size_of::<rsa_4096::RSA4096PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 516);
     println!("size_of<RSA4096PublicKey>: {} bytes", size_of::<rsa_4096::RSA4096PublicKey>());
+    println!(
+        "size_of<RSA4096KEMPrivateKey>: {} bytes",
+        size_of::<rsa_4096::RSA4096KEMPrivateKey>()
+    );
+    println!("size_of<RSA4096KEMPublicKey>: {} bytes", size_of::<rsa_4096::RSA4096KEMPublicKey>());
+    println!(
+        "RSASVE ciphertext / shared secret: {} / {} bytes",
+        rsa_4096::CT_LEN,
+        rsa_4096::SS_LEN
+    );
     println!("signature: {} bytes", 512);
 
     println!("\nRSA-8192");
@@ -79,6 +111,16 @@ fn print_key_sizes() {
     println!("size_of<RSA8192PrivateKey>: {} bytes", size_of::<rsa_8192::RSA8192PrivateKey>());
     println!("public key on disk (n || e): {} bytes", 1028);
     println!("size_of<RSA8192PublicKey>: {} bytes", size_of::<rsa_8192::RSA8192PublicKey>());
+    println!(
+        "size_of<RSA8192KEMPrivateKey>: {} bytes",
+        size_of::<rsa_8192::RSA8192KEMPrivateKey>()
+    );
+    println!("size_of<RSA8192KEMPublicKey>: {} bytes", size_of::<rsa_8192::RSA8192KEMPublicKey>());
+    println!(
+        "RSASVE ciphertext / shared secret: {} / {} bytes",
+        rsa_8192::CT_LEN,
+        rsa_8192::SS_LEN
+    );
     println!("signature: {} bytes", 1024);
 }
 
@@ -293,6 +335,52 @@ fn bench_8192_verify() {
     }
 }
 
+/// RSASVE.GENERATE (SP 800-56B Rev. 2 §7.2.1.2): the `nLen`-byte `Z`/`z` buffers and one
+/// public-exponent `mod_pow` at the modulus width.
+fn bench_2048_rsasve_encaps() {
+    eprintln!("RSA-2048/RSASVE encaps");
+    let sk = genuine_2048_key();
+    let pk = rsa_2048::RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_2048::RSA2048KEMPublicKey::from_bytes(&pk.encode()).unwrap();
+    let (ss, ct) = rsa_2048::RSASVE::encaps(&pk).unwrap();
+    println!("{:x?}", ct);
+    println!("{}", ss.key_len());
+}
+
+/// RSASVE.RECOVER (SP 800-56B Rev. 2 §7.2.1.3): the same CRT exponentiation as signing, plus
+/// the `nLen`-byte `Z` buffer.
+fn bench_2048_rsasve_decaps() {
+    eprintln!("RSA-2048/RSASVE decaps");
+    let sk = rsa_2048::RSA2048KEMPrivateKey::from_bytes(&genuine_2048_key().encode()).unwrap();
+    let mut ct = [0x5Au8; rsa_2048::CT_LEN];
+    ct[0] = 0x01; // well inside (1, n - 1)
+    let ss = rsa_2048::RSASVE::decaps(&sk, &ct).unwrap();
+    println!("{}", ss.key_len());
+}
+
+/// RSASVE.GENERATE (SP 800-56B Rev. 2 §7.2.1.2): the `nLen`-byte `Z`/`z` buffers and one
+/// public-exponent `mod_pow` at the modulus width.
+fn bench_8192_rsasve_encaps() {
+    eprintln!("RSA-8192/RSASVE encaps");
+    let sk = genuine_8192_key();
+    let pk = rsa_8192::RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_8192::RSA8192KEMPublicKey::from_bytes(&pk.encode()).unwrap();
+    let (ss, ct) = rsa_8192::RSASVE::encaps(&pk).unwrap();
+    println!("{:x?}", ct);
+    println!("{}", ss.key_len());
+}
+
+/// RSASVE.RECOVER (SP 800-56B Rev. 2 §7.2.1.3): the same CRT exponentiation as signing, plus
+/// the `nLen`-byte `Z` buffer.
+fn bench_8192_rsasve_decaps() {
+    eprintln!("RSA-8192/RSASVE decaps");
+    let sk = rsa_8192::RSA8192KEMPrivateKey::from_bytes(&genuine_8192_key().encode()).unwrap();
+    let mut ct = [0x5Au8; rsa_8192::CT_LEN];
+    ct[0] = 0x01; // well inside (1, n - 1)
+    let ss = rsa_8192::RSASVE::decaps(&sk, &ct).unwrap();
+    println!("{}", ss.key_len());
+}
+
 fn main() {
     print_key_sizes()
     // bench_do_nothing()
@@ -302,4 +390,8 @@ fn main() {
     // bench_2048_verify()
     // bench_8192_sign()
     // bench_8192_verify()
+    // bench_2048_rsasve_encaps()
+    // bench_2048_rsasve_decaps()
+    // bench_8192_rsasve_encaps()
+    // bench_8192_rsasve_decaps()
 }

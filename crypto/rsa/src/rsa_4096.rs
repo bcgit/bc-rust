@@ -5,9 +5,12 @@ use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use crate::rsassa_pss::RSASSA_PSS;
 use crate::rsassa_pss_shake::RSASSA_PSS_SHAKE;
-use bouncycastle_core::errors::SignatureError;
+use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
+use bouncycastle_core::errors::{KEMError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{
+    KEMPrivateKey, KEMPublicKey, RNG, SignaturePrivateKey, SignaturePublicKey,
+};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_sha3::SHAKE256;
@@ -113,3 +116,74 @@ pub type RSASSA_PSS_SHA512 =
 #[allow(non_camel_case_types)]
 pub type RSASSA_PSS_SHAKE256 =
     RSASSA_PSS_SHAKE<SHAKE256, 64, 64, 136, 447, 64, 128, 129, 32, 64, 65, 512, SK_LEN, PK_LEN>;
+
+/// An RSA-4096 private key-establishment key for [`RSASVE`], kept apart from the signing key type
+/// [`RSA4096PrivateKey`] (see [`crate::rsasve`]'s `# Key separation`). It uses the same `SK_LEN`-byte
+/// encoding.
+pub type RSA4096KEMPrivateKey = RsaKEMPrivateKey<64, 32>;
+/// An RSA-4096 public key-establishment key for [`RSASVE`]; see [`RSA4096KEMPrivateKey`]. It uses
+/// the same `PK_LEN`-byte encoding.
+pub type RSA4096KEMPublicKey = RsaKEMPublicKey<64>;
+
+/// [`RSASVE`] ciphertext length: `nLen`, the modulus length in octets (SP 800-56B Rev. 2
+/// §7.2.1.2's output `C`).
+pub const CT_LEN: usize = 512;
+/// [`RSASVE`] shared-secret length: also `nLen` (§7.2.1.2's output `Z`). This is the raw secret
+/// value, not a derived key: see [`crate::rsasve`].
+pub const SS_LEN: usize = 512;
+
+/// RSASVE (SP 800-56B Rev. 2 §7.2.1) over RSA-4096 as a `KEMEncapsulator`/`KEMDecapsulator`:
+/// [`crate::rsasve::RSASVE`] at this size's widths and its 128-bit security strength.
+pub type RSASVE = crate::rsasve::RSASVE<64, 128, 129, 32, 64, 65, 512, 128>;
+
+impl RSASVE {
+    /// Generates a key-establishment key pair with [`keygen`] (FIPS 186-5 Appendix A.1.3,
+    /// `e = 65537`), sourcing the candidates from the library's default OS-backed RNG.
+    pub fn keygen() -> Result<(RSA4096KEMPublicKey, RSA4096KEMPrivateKey), KEMError> {
+        Self::keygen_from_rng(&mut DefaultRNG::default())
+    }
+
+    /// As [`Self::keygen`], but sourcing the candidates from the caller-provided RNG, with the
+    /// same RNG requirements as [`keygen_from_rng`].
+    pub fn keygen_from_rng(
+        rng: &mut dyn RNG,
+    ) -> Result<(RSA4096KEMPublicKey, RSA4096KEMPrivateKey), KEMError> {
+        crate::rsasve::keygen_from(keygen_from_rng(rng))
+    }
+}
+
+impl KEMPrivateKey<SK_LEN> for RSA4096KEMPrivateKey {
+    fn encode(&self) -> [u8; SK_LEN] {
+        self.0.encode_raw::<256, SK_LEN>()
+    }
+
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+        *out = self.0.encode_raw::<256, SK_LEN>();
+        SK_LEN
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+        let bytes: &[u8; SK_LEN] = bytes
+            .try_into()
+            .map_err(|_| KEMError::DecodingError("RSA-4096 private key must be 1280 bytes"))?;
+        crate::rsasve::private_key_from_bytes::<64, 32, 256, SK_LEN>(bytes)
+    }
+}
+
+impl KEMPublicKey<PK_LEN> for RSA4096KEMPublicKey {
+    fn encode(&self) -> [u8; PK_LEN] {
+        self.0.encode_raw::<512, PK_LEN>()
+    }
+
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        *out = self.0.encode_raw::<512, PK_LEN>();
+        PK_LEN
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+        let bytes: &[u8; PK_LEN] = bytes
+            .try_into()
+            .map_err(|_| KEMError::DecodingError("RSA-4096 public key must be 516 bytes"))?;
+        crate::rsasve::public_key_from_bytes::<64, 512, PK_LEN>(bytes)
+    }
+}
