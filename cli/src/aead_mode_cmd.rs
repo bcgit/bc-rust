@@ -3,8 +3,8 @@
 //! Parallel to [`crate::stream_mode_cmd`], but for [`bouncycastle::modes::Gcm`] rather than a
 //! [`StreamCipherEncryptor`](bouncycastle::core::traits::StreamCipherEncryptor) mode: GCM carries
 //! additional authenticated data and a tag, neither of which that trait has room for, so this
-//! module drives `Gcm`'s inherent `do_update_aad` / `do_encrypt` / `do_decrypt` / `finish` API
-//! directly instead of going through a shared trait.
+//! module drives it through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, which add
+//! `do_update_aad` to the symmetric-cipher streaming methods.
 //!
 //! # On-the-wire format: `nonce || ciphertext || tag`
 //!
@@ -32,7 +32,8 @@
 use crate::helpers::{read_from_file, write_bytes_or_hex};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{
-    ElectronicCodeBook, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle::hex;
 use bouncycastle::modes::{Decrypting, Encrypting, Gcm};
@@ -82,6 +83,7 @@ pub(crate) fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     });
 
     let mut buf = [0u8; CHUNK_LEN];
+    let mut out = [0u8; CHUNK_LEN];
     loop {
         let n = io::stdin().read(&mut buf).unwrap_or_else(|e| {
             eprintln!("Error: failed to read from stdin: {e}");
@@ -90,14 +92,19 @@ pub(crate) fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         if n == 0 {
             break;
         }
-        enc.do_encrypt(&mut buf[..n]).unwrap_or_else(|e| {
+        // GCM's encryptor holds nothing back, so `out` (as long as `buf`) always has room.
+        let written = enc.do_update_out(&buf[..n], &mut out).unwrap_or_else(|e| {
             eprintln!("Error: encryption failed: {e:?}");
             exit(-1);
         });
-        write_bytes_or_hex(&buf[..n], output_hex);
+        write_bytes_or_hex(&out[..written], output_hex);
     }
 
-    let tag = enc.finish();
+    // The detached final flushes nothing for GCM and returns the tag, written last.
+    let (_, _, tag) = enc.do_final_detached().unwrap_or_else(|e| {
+        eprintln!("Error: encryption failed: {e:?}");
+        exit(-1);
+    });
     write_bytes_or_hex(&tag, output_hex);
     finish(output_hex);
 }

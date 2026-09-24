@@ -17,24 +17,24 @@
 //! requires the *controlling protocol* to bound packet size and invocation counts (its Tables 1 and
 //! 2), which this library cannot enforce, so it does not offer the option.
 //!
-//! # Two views over the same engine
+//! # The API is the AEAD traits
 //!
-//! [`Gcm`] exposes GCM through two APIs that share the same underlying state:
+//! [`Gcm`] is used through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], with
+//! `FINAL_LEN = TAG_LEN`, and through the [`SymmetricCipherEncryptor`] /
+//! [`SymmetricCipherDecryptor`] traits they extend:
 //!
-//! * An **inherent, detached-tag streaming API** -- [`Gcm::do_update_aad`], [`Gcm::do_encrypt`] /
-//!   [`Gcm::do_decrypt`] (in place, nothing held back), and [`Gcm::finish`] -- plus the one-shots
-//!   [`Gcm::encrypt_detached`] / [`Gcm::encrypt_detached_rng`] / [`Gcm::decrypt_detached`]. This is
-//!   the spec's own interface: the tag is a separate value from the ciphertext (Algorithm 4's
-//!   `(C, T)`, Algorithm 5's separate `T` input).
-//! * The [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits, with `FINAL_LEN = TAG_LEN`,
-//!   which give the *inline* `ciphertext || tag` layout, the one-shot `encrypt_out` / `decrypt_out`,
-//!   and the shared conformance suite. AAD has no place in that trait's signature, so use the
-//!   inherent [`Gcm::do_update_aad`] on the object it returns before feeding it any data; the two
-//!   views operate on the same `ghash` and `phase` state, so this composes correctly.
+//! * The inherited symmetric-cipher methods are GCM with no AAD and the tag *inline*:
+//!   `ciphertext || tag`, streaming or through the `encrypt_out` / `decrypt_out` one-shots.
+//! * The AEAD traits add `do_update_aad`, the detached-tag `*_detached` methods -- the spec's own
+//!   interface, where the tag is a separate value from the ciphertext (Algorithm 4's `(C, T)`,
+//!   Algorithm 5's separate `T` input) -- and the inline one-shots with AAD, `*_with_aad`.
+//!
+//! The decryptor holds back the last `TAG_LEN` bytes it has seen, because until the stream ends it
+//! cannot know whether they are the inline tag or, detached, the end of the ciphertext.
 //!
 //! AAD must be supplied before any plaintext or ciphertext: SP 800-38D Algorithm 4 absorbs `A`
-//! before `C` in one GHASH pass, so AAD after data is [`SymmetricCipherError::StateError`] (empty
-//! AAD after data is a no-op, since it changes nothing).
+//! before `C` in one GHASH pass, so AAD after the first `do_update_out` is
+//! [`SymmetricCipherError::StateError`] (empty AAD after data is a no-op, since it changes nothing).
 //!
 //! # Usage Examples
 //!
@@ -43,6 +43,7 @@
 //! ```
 //! use bouncycastle_aes::AES_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
 //! type Aes128Gcm<Dir> = Gcm<AES_128, Dir, 16, 16>;
@@ -52,12 +53,15 @@
 //! let aad = b"header, sent in the clear";
 //! let plaintext = *b"attack at dawn!!";
 //!
-//! let mut data = plaintext;
-//! let (nonce, tag) = Aes128Gcm::<Encrypting>::encrypt_detached(&key, aad, &mut data).unwrap();
-//! assert_ne!(data, plaintext);
+//! let mut ciphertext = [0u8; 16];
+//! let (nonce, _, tag) =
+//!     Aes128Gcm::<Encrypting>::encrypt_out_detached(&key, aad, &plaintext, &mut ciphertext).unwrap();
+//! assert_ne!(ciphertext, plaintext);
 //!
-//! Aes128Gcm::<Decrypting>::decrypt_detached(&key, &nonce, aad, &mut data, &tag).unwrap();
-//! assert_eq!(data, plaintext);
+//! let mut recovered = [0u8; 16];
+//! Aes128Gcm::<Decrypting>::decrypt_out_detached(&key, &nonce, aad, &ciphertext, &tag, &mut recovered)
+//!     .unwrap();
+//! assert_eq!(recovered, plaintext);
 //! ```
 //!
 //! Inline `ciphertext || tag`, and streaming with AAD:
@@ -65,7 +69,9 @@
 //! ```
 //! use bouncycastle_aes::AES_256;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_core::traits::{
+//!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+//! };
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
 //! type Aes256Gcm<Dir> = Gcm<AES_256, Dir, 32, 16>;
@@ -110,11 +116,12 @@
 //!   necessary, limit the number of unsuccessful verification attempts for each key."
 //! * **32- and 64-bit tags are not offered** (Appendix C); see the module docs above.
 //! * **Streaming decryption releases plaintext before the tag is checked; the one-shots do not.**
-//!   [`Gcm::do_decrypt`] and [`SymmetricCipherDecryptor::do_update_out`] hand back plaintext as they go,
-//!   which is unauthenticated until [`Gcm::finish`] / `do_final` succeeds -- do not act on it before
-//!   then. [`Gcm::decrypt_detached`] and the inline `decrypt_out` override verify the tag first and
-//!   release nothing at all on failure (Sec 7.2 permits checking the tag before computing the
-//!   plaintext, and this is why the one-shot exists as more than init/update/final glued together).
+//!   [`SymmetricCipherDecryptor::do_update_out`] hands back plaintext as it goes, which is
+//!   unauthenticated until `do_final` / `do_final_detached` succeeds -- do not act on it before
+//!   then. The one-shots (`decrypt_out`, `decrypt_out_detached`, `decrypt_out_with_aad`) verify the
+//!   tag first and release nothing on failure, zeroizing the output buffer (Sec 7.2 permits
+//!   checking the tag before computing the plaintext, and this is why the one-shots are more than
+//!   init/update/final glued together).
 //! * **Intermediates are secret.** Sec 5.3: "the intermediate values in the execution of the GCM
 //!   functions shall be secret." `H`, the running GHASH accumulator, the pending partial block, the
 //!   tag mask `CIPH_K(J0)` and the CTR keystream all live in
@@ -126,7 +133,7 @@
 //!   (`bouncycastle_utils::ct::ct_eq_bytes`) touch no table indexed by secret data, with the same
 //!   caveats `bouncycastle-aes` states about compiler guarantees and side channels other than
 //!   timing.
-//! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `finish`/`do_final`: there
+//! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
 //!   is no separate `Gmac` type.
 
 use crate::ghash::Ghash;
@@ -134,8 +141,9 @@ use crate::{Ctr, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
-    Algorithm, ElectronicCodeBook, RNG, SecurityStrength, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, ElectronicCodeBook, RNG, SecurityStrength,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -240,12 +248,11 @@ where
         }
     }
 
-    /// Absorbs additional authenticated data. Any number of calls before the first call to
-    /// [`Gcm::do_encrypt`] / [`Gcm::do_decrypt`] / [`SymmetricCipherEncryptor::do_update_out`] /
-    /// [`SymmetricCipherDecryptor::do_update_out`]; a non-empty call after data has started is
-    /// [`SymmetricCipherError::StateError`] (Algorithm 4 absorbs `A` before `C` in one GHASH pass,
-    /// D4). Empty AAD is always a no-op.
-    pub fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+    /// Absorbs additional authenticated data: the body of both directions'
+    /// `AEADCipher*::do_update_aad`. Any number of calls before the first `do_update_out`; a
+    /// non-empty call after data has started is [`SymmetricCipherError::StateError`] (Algorithm 4
+    /// absorbs `A` before `C` in one GHASH pass, D4). Empty AAD is always a no-op.
+    fn absorb_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         if self.phase == Phase::Data {
             if aad.is_empty() {
                 return Ok(());
@@ -290,7 +297,7 @@ where
     /// Returns the full 16-byte block; callers truncate to `TAG_LEN`.
     ///
     /// The byte-to-bit multiplication (`* 8`) is not checked for overflow: `aad_len` and `data_len`
-    /// are accumulated with `checked_add` at every absorption (`do_update_aad`, `absorb_data`), so
+    /// are accumulated with `checked_add` at every absorption (`absorb_aad`, `absorb_data`), so
     /// reaching a count whose `* 8` could overflow `u64` would already require far more calls than
     /// are physically possible to make.
     fn tag_block(&mut self) -> [u8; 16] {
@@ -326,48 +333,20 @@ where
     /// [`SymmetricCipherError::StateError`] if the underlying `Ctr` counter would be exhausted --
     /// the SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits -- or if the AAD/data length
     /// bookkeeping would overflow. Nothing is consumed in either case.
-    pub fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    fn encrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.ctr.do_encrypt(data)?;
         self.absorb_data(data)
     }
 
     /// Algorithm 4 steps 4-6: finishes the message and returns the detached authentication tag,
     /// truncated to `TAG_LEN` bytes (`MSB_t`, step 6). Consumes the encryptor.
-    pub fn finish(mut self) -> [u8; TAG_LEN] {
-        // Covers an AAD-only or entirely empty message, where do_encrypt is never called.
+    fn finish(mut self) -> [u8; TAG_LEN] {
+        // Covers an AAD-only or entirely empty message, where no data was ever encrypted.
         self.begin_data_if_needed();
         let full = self.tag_block();
         let mut tag = [0u8; TAG_LEN];
         tag.copy_from_slice(&full[..TAG_LEN]);
         tag
-    }
-
-    /// One-shot: encrypts `data` in place under a fresh nonce, with `aad` as the additional
-    /// authenticated data. Returns the generated nonce and the detached tag. Sources randomness
-    /// from the library's default OS-backed RNG.
-    pub fn encrypt_detached(
-        key: &KeyMaterial<KEY_LEN>,
-        aad: &[u8],
-        data: &mut [u8],
-    ) -> Result<([u8; GCM_NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::encrypt_detached_rng(key, &mut rng, aad, data)
-    }
-
-    /// As [`Gcm::encrypt_detached`], but sources randomness from the provided RNG.
-    pub fn encrypt_detached_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        data: &mut [u8],
-    ) -> Result<([u8; GCM_NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        Self::check_shape();
-        let perm = P::new(key)?;
-        let nonce = crate::iv::random_iv::<GCM_NONCE_LEN>(rng)?;
-        let mut gcm = Self::setup(perm, nonce);
-        gcm.do_update_aad(aad)?;
-        gcm.do_encrypt(data)?;
-        Ok((nonce, gcm.finish()))
     }
 }
 
@@ -408,7 +387,7 @@ where
             return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         ciphertext[..plaintext.len()].copy_from_slice(plaintext);
-        self.do_encrypt(&mut ciphertext[..plaintext.len()])?;
+        self.encrypt_in_place(&mut ciphertext[..plaintext.len()])?;
         Ok(plaintext.len())
     }
 
@@ -422,6 +401,28 @@ where
     }
 }
 
+/// The AEAD view: [`AEADCipherEncryptor`] over the [`SymmetricCipherEncryptor`] impl above, with
+/// `FINAL_LEN = TAG_LEN`. The encryptor holds nothing back, so the detached final flushes nothing
+/// and returns only the tag.
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AEADCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16>,
+{
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.absorb_aad(aad)
+    }
+
+    /// Algorithm 4 steps 4-6; `ciphertext` is left untouched, since nothing is held back.
+    fn do_final_out_detached(
+        self,
+        _ciphertext: &mut [u8; TAG_LEN],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        Ok((0, self.finish()))
+    }
+}
+
 impl<P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16>,
@@ -430,13 +431,12 @@ where
     /// reverse of the encryptor's: GHASH must see ciphertext on both sides, so it is absorbed
     /// *before* GCTR turns it into plaintext here.
     ///
-    /// The plaintext this releases is **not yet authenticated** -- see [`Gcm::decrypt_detached`]
-    /// for the one-shot that does not have this exposure, and the module docs' Security
+    /// The plaintext this releases is **not yet authenticated**; see the module docs' Security
     /// Considerations section.
     ///
     /// # Errors
-    /// As [`Gcm::do_encrypt`].
-    pub fn do_decrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    /// As `encrypt_in_place`.
+    fn decrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_data(data)?;
         self.ctr.do_decrypt(data)?;
         Ok(())
@@ -444,11 +444,11 @@ where
 
     /// Algorithm 5 steps 5-8: recomputes `T'` and compares it against `tag` in constant time.
     /// Consumes the decryptor; `Ok(())` is the only thing that makes the plaintext released so far
-    /// (by [`Gcm::do_decrypt`]) trustworthy.
+    /// trustworthy.
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not match.
-    pub fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
+    fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         self.begin_data_if_needed();
         let full = self.tag_block();
         if ct_eq_bytes(&full[..TAG_LEN], tag) {
@@ -458,7 +458,8 @@ where
         }
     }
 
-    /// Shared by [`Gcm::decrypt_detached`] and the inline `decrypt_out` override: absorbs `aad` and
+    /// Shared by the trait one-shots (`decrypt_out`, `decrypt_out_detached`,
+    /// `decrypt_out_with_aad`): absorbs `aad` and
     /// `data` (still ciphertext) into GHASH and checks the tag *before* touching `data`, so no
     /// unauthenticated plaintext is ever written to the caller's buffer (Sec 7.2 explicitly permits
     /// checking the tag before computing the plaintext). Only on success is `data` decrypted.
@@ -472,7 +473,7 @@ where
         Self::check_shape();
         let perm = P::new(key)?;
         let mut gcm = Self::setup(perm, *nonce);
-        gcm.do_update_aad(aad)?;
+        gcm.absorb_aad(aad)?;
         gcm.absorb_data(data)?;
         let computed = gcm.tag_block();
         if !ct_eq_bytes(&computed[..TAG_LEN], tag) {
@@ -480,18 +481,6 @@ where
         }
         gcm.ctr.do_decrypt(data)?;
         Ok(())
-    }
-
-    /// One-shot: verifies the tag and, only if it matches, decrypts `data` in place. Releases
-    /// nothing on failure.
-    pub fn decrypt_detached(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; GCM_NONCE_LEN],
-        aad: &[u8],
-        data: &mut [u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        Self::verify_then_decrypt(key, nonce, aad, data, tag)
     }
 }
 
@@ -516,7 +505,7 @@ where
     }
 
     /// Releases every byte of `tail ++ ciphertext` except the last (up to) `TAG_LEN`, which become
-    /// the new tail. Decrypts (via [`Gcm::do_decrypt`]) exactly the bytes released this call, so
+    /// the new tail. Decrypts (via `decrypt_in_place`) exactly the bytes released this call, so
     /// GHASH absorbs each ciphertext byte exactly once across the whole stream.
     fn do_update_out(
         &mut self,
@@ -527,6 +516,11 @@ where
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
+        // Data has started even if every byte is still held back as a possible tag, so the AAD
+        // phase ends here rather than at the first byte released: otherwise a `do_update_aad`
+        // after a first call shorter than `TAG_LEN` would be accepted, and absorbed as if it came
+        // before the ciphertext (Algorithm 5 absorbs `A` before `C`).
+        self.begin_data_if_needed();
 
         // Bytes of the old tail that are now known to be ciphertext, then bytes of the new input
         // that are also released this call.
@@ -539,7 +533,7 @@ where
             plaintext[tail_release..release].copy_from_slice(&ciphertext[..input_release]);
         }
         if release > 0 {
-            self.do_decrypt(&mut plaintext[..release])?;
+            self.decrypt_in_place(&mut plaintext[..release])?;
         }
 
         // The new tail is whatever of (old tail ++ ciphertext) survives past `release` bytes --
@@ -582,20 +576,93 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        <Self as AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_out_with_aad(
+            key,
+            init_data,
+            &[],
+            ciphertext,
+            plaintext,
+        )
+    }
+}
+
+/// The AEAD view: [`AEADCipherDecryptor`] over the [`SymmetricCipherDecryptor`] impl above, with
+/// `FINAL_LEN = TAG_LEN`. The one-shots are overridden, as `decrypt_out` is, to check the tag
+/// before any plaintext is written.
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16>,
+{
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.absorb_aad(aad)
+    }
+
+    /// The detached layout: the up to `TAG_LEN` bytes held back as a possible tag are ciphertext
+    /// after all, so they are decrypted into `plaintext` before the tag is checked against `tag`
+    /// (Algorithm 5 steps 5-8). On failure `plaintext` is zeroized before the error is returned.
+    fn do_final_out_detached(
+        mut self,
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8; TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        let n = self.tail_len;
+        plaintext[..n].copy_from_slice(&self.tail[..n]);
+        self.decrypt_in_place(&mut plaintext[..n])?;
+        if let Err(e) = self.finish(tag) {
+            plaintext.fill(0);
+            return Err(e);
+        }
+        Ok(n)
+    }
+
+    /// Verifies `tag` before decrypting, so no unauthenticated plaintext reaches `plaintext`; on
+    /// failure what was written there is zeroized.
+    fn decrypt_out_detached(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; GCM_NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let len = ciphertext.len();
+        if plaintext.len() < len {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(len));
+        }
+        plaintext[..len].copy_from_slice(ciphertext);
+        Self::verify_then_decrypt(key, nonce, aad, &mut plaintext[..len], tag).inspect_err(
+            |_| {
+                // The buffer holds ciphertext rather than unauthenticated plaintext here, since the
+                // tag is checked before decryption, but the trait's contract is a zeroized buffer on
+                // failure, and a caller who ignores the `Result` should find nothing in it at all.
+                plaintext[..len].fill(0);
+            },
+        )?;
+        Ok(len)
+    }
+
+    /// The inline layout with AAD: splits the trailing `TAG_LEN` bytes off as the tag and verifies
+    /// it before decrypting, as the detached one-shot does, zeroizing `plaintext` on failure.
+    fn decrypt_out_with_aad(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; GCM_NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
         let needed = Self::decrypt_out_max_len(ciphertext.len());
         if plaintext.len() < needed {
             return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
-        if ciphertext.len() < TAG_LEN {
+        let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
             return Err(SymmetricCipherError::DecryptionFailed);
-        }
-        let ct_len = ciphertext.len() - TAG_LEN;
-        let tag: [u8; TAG_LEN] = ciphertext[ct_len..]
-            .try_into()
-            .expect("ciphertext.len() - ct_len == TAG_LEN by construction");
-
-        plaintext[..ct_len].copy_from_slice(&ciphertext[..ct_len]);
-        Self::verify_then_decrypt(key, init_data, &[], &mut plaintext[..ct_len], &tag)?;
-        Ok(ct_len)
+        };
+        let len = data.len();
+        plaintext[..len].copy_from_slice(data);
+        Self::verify_then_decrypt(key, nonce, aad, &mut plaintext[..len], tag)
+            .inspect_err(|_| plaintext[..len].fill(0))?;
+        Ok(len)
     }
 }
