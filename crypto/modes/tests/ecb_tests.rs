@@ -12,7 +12,7 @@
 
 mod common;
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
@@ -354,7 +354,7 @@ fn a_ciphertext_bit_error_affects_only_its_own_block() {
 /// must randomise `P2` (more than one bit differs) and leave `P1` and `P3` untouched.
 #[test]
 fn with_aes_a_ciphertext_bit_error_randomises_its_block() {
-    type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, 16>;
+    type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
     let key =
         KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
     let plaintext = [[0x00u8; 16], [0x11u8; 16], [0x22u8; 16]];
@@ -419,17 +419,17 @@ fn the_padding_layer_round_trips_every_length() {
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
-    assert_eq!(size_of::<Ecb<AES_128, Encrypting, 16, 16>>(), 176);
-    assert_eq!(size_of::<Ecb<AES_192, Encrypting, 24, 16>>(), 208);
-    assert_eq!(size_of::<Ecb<AES_256, Encrypting, 32, 16>>(), 240);
+    assert_eq!(size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>(), 176);
+    assert_eq!(size_of::<Ecb<AES192Internal, Encrypting, 24, 16>>(), 208);
+    assert_eq!(size_of::<Ecb<AES256Internal, Encrypting, 32, 16>>(), 240);
     assert_eq!(
-        size_of::<Ecb<AES_128, Encrypting, 16, 16>>(),
-        size_of::<Ecb<AES_128, Decrypting, 16, 16>>()
+        size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>(),
+        size_of::<Ecb<AES128Internal, Decrypting, 16, 16>>()
     );
-    assert_eq!(size_of::<Ecb<AES_256, Encrypting, 32, 16>>(), size_of::<AES_256>());
+    assert_eq!(size_of::<Ecb<AES256Internal, Encrypting, 32, 16>>(), size_of::<AES256Internal>());
     // One block smaller than CBC, which stores a chaining value.
     assert_eq!(
-        size_of::<Ecb<AES_128, Encrypting, 16, 16>>() + 16,
-        size_of::<Cbc<AES_128, Encrypting, 16, 16>>()
+        size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>() + 16,
+        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>()
     );
 }

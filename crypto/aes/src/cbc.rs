@@ -33,7 +33,7 @@
 //! its in-place data methods, is `bouncycastle_modes::Cbc` itself, which these wrap:
 //!
 //! ```text
-//! bouncycastle_modes::Cbc<AES_128, Encrypting, 16, 16>   // block-aligned, in place
+//! bouncycastle_modes::Cbc<AES128Internal, Encrypting, 16, 16>   // block-aligned, in place
 //! AES_CBC_128<Encrypting, PKCS7>                        // any length, padded
 //! ```
 //!
@@ -68,7 +68,7 @@
 //! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
 //! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
 //!
-//! There is no one-shot static on the permutation, because `AES_128::new(&key)?.encrypt_block(..)`
+//! There is no one-shot static on the permutation, because `AES128Internal::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
 //! arbitrary-length input and generate their own initialisation data.
 

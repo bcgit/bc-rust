@@ -37,7 +37,7 @@
 //! never calls the inverse cipher, so on an engine whose inverse is slower than its forward
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
-use bouncycastle_aes::{AES_128, AES_256};
+use bouncycastle_aes::{AES128Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -53,26 +53,26 @@ const BLOCK_LEN: usize = 16;
 const NUM_BLOCKS: usize = 1024;
 const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
-type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, BLOCK_LEN>;
-type Aes256Cbc<Dir> = Cbc<AES_256, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, BLOCK_LEN>;
-type Aes256Cfb<Dir> = Cfb<AES_256, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, BLOCK_LEN>;
-type Aes128Ctr<Dir> = Ctr<AES_128, Dir, 16, BLOCK_LEN, 12>;
-type Aes256Ctr<Dir> = Ctr<AES_256, Dir, 32, BLOCK_LEN, 12>;
-type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, BLOCK_LEN>;
+type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, 12>;
+type Aes256Ctr<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, 12>;
+type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;
 
 /// AES-128 with the pair methods **not** overridden, so they fall back to the trait defaults of
 /// two single-block calls.
 ///
-/// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES_128, ..>` against
+/// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES128Internal, ..>` against
 /// `Cbc<UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
 /// call granularity, same amount of data movement -- so the difference is attributable to
 /// `decrypt_2blocks` and nothing else.
 ///
 /// Comparing `N = 1` against `N = 8` does *not* isolate it: encryption, which can never pair, also
 /// speeds up substantially between those two, so call granularity dominates that comparison.
-struct UnpairedAes128(AES_128);
+struct UnpairedAes128(AES128Internal);
 
 impl Algorithm for UnpairedAes128 {
     const ALG_NAME: &'static str = "AES-128 (unpaired)";
@@ -81,13 +81,13 @@ impl Algorithm for UnpairedAes128 {
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(<AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
+        Ok(Self(<AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
     }
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
+        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
     }
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
+        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
     // encrypt_2blocks / decrypt_2blocks deliberately left as the trait defaults.
 }
