@@ -12,6 +12,8 @@ std = ["bouncycastle-core/std"]
 
 [dependencies]
 bouncycastle-core.workspace = true
+# Only for the `Encrypting` / `Decrypting` markers `Ascon_AEAD128<Dir>` takes; nothing else from it.
+bouncycastle-modes.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 

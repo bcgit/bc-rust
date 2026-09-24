@@ -488,6 +488,23 @@ fn aead128_encryptor_decryptor_trait_framework() {
         .test_encryptor_decryptor::<16, 16, 16, 16, AsconAead128Encryptor, AsconAead128Decryptor>();
 }
 
+/// The same conformance suite through [`Ascon_AEAD128`], which must resolve to the same pair.
+///
+/// [`Ascon_AEAD128`]: bouncycastle_ascon::Ascon_AEAD128
+#[test]
+fn aead128_dir_alias_trait_framework() {
+    use bouncycastle_ascon::Ascon_AEAD128;
+    use bouncycastle_modes::{Decrypting, Encrypting};
+    TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
+        16,
+        16,
+        16,
+        16,
+        Ascon_AEAD128<Encrypting>,
+        Ascon_AEAD128<Decrypting>,
+    >();
+}
+
 #[test]
 fn aead_framework_buffering_toy() {
     TestFrameworkAEADCipher::new().test_buffering_toy();

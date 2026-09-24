@@ -9,6 +9,8 @@
       `AsconAead128Encryptor` / `AsconAead128Decryptor` implement the generated-nonce
       `AEADCipherEncryptor` / `AEADCipherDecryptor` pair; the inherent `AsconAead128` API keeps the
       explicit-nonce, in-place streaming form (`new_encrypting` / `new_decrypting`).
+      `Ascon_AEAD128<Dir>` names the pair by direction (`Ascon_AEAD128<Encrypting>` /
+      `Ascon_AEAD128<Decrypting>`).
     * `bouncycastle-ascon` is re-exported as `bouncycastle::ascon`; `Ascon-Hash256` and
       `Ascon-XOF128` are registered in the factories, and the CLI adds `ascon-hash256`,
       `ascon-xof128`, `ascon-cxof128` and `ascon-aead128`. The AEAD command generates and prefixes

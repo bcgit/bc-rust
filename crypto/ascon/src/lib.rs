@@ -168,6 +168,7 @@ mod permutation;
 mod sponge;
 
 pub mod ascon_aead128;
+pub use ascon_aead128::Ascon_AEAD128;
 pub mod ascon_cxof128;
 pub mod ascon_hash256;
 pub mod ascon_xof128;
