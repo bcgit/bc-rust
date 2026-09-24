@@ -560,52 +560,128 @@ where
     }
 }
 
-/// Rust doesn't guarantee that anything can truly be constant-time under all compilation targets
-/// and optimization levels. The following presents the standard constant-time shape.
+// ---------------------------------------------------------------------------------------------
+// Byte-slice comparison helpers
+//
+// The core idea here is that the data-dependent state is routed through
+// volatile memory accesses on every iteration. The documentation of
+// `core::ptr::read_volatile` / `write_volatile` states that they "are guaranteed to not be elided
+// or reordered by the compiler" and that a volatile read "will actually access memory and not
+// e.g. be lowered to reusing data from a previous read". So once the accumulator has been
+// volatile-written and volatile-read back, the optimiser holds no facts about its value, and in
+// particular cannot introduce either of the two early exits that would otherwise be legal:
+//
+//   * leaving the loop once the accumulator is non-zero, because the final `== 0` is already
+//     decided (only legal if the compiler can see that the zero test is the sole consumer), and
+//   * leaving the loop once the accumulator is all-ones, because further ORs cannot change it
+//     (legal regardless of the consumer, which is why the barrier must be *inside* the loop).
+// ---------------------------------------------------------------------------------------------
+
+/// As a performance optimization, we compare one machine-word at a time, which we assume to be the same
+/// as the size of a `usize`.
+type AccWord = usize;
+const ACC_BYTES: usize = size_of::<AccWord>();
+
+/// The cor operation that implements the optimization barrier by performing a
+/// `*acc |= diff`, performed as a volatile store followed by a volatile load, so that the
+/// compiler retains no knowledge of the accumulator's value afterwards. See the module comment
+/// above for why this is the barrier used in this file.
+#[inline(always)]
+fn volatile_or_assign(acc: &mut AccWord, diff: AccWord) {
+    // SOUNDNESS:
+    //   * We first write_volatile to the accumulator so that the compiler does not own the written value.
+    //   * We then read_volatile back into `*acc` so that the compiler does not own the value of `*acc`
+    //     on exit, meaning that any read on `*acc` after this exits cannot be elided either.
+    // SAFETY:
+    //  * `acc` is a `&mut AccWord`, so it is non-null, aligned for `AccWord`, and points at an
+    //    initialised `AccWord` inside a live Rust allocation (the caller's stack frame). It is
+    //    therefore valid for both reads and writes for the whole call, which is exactly the
+    //    precondition of `write_volatile` and `read_volatile`.
+    //  * The `&mut` is exclusive, so no other reference can observe or race with these accesses.
+    //  * `AccWord` is `Copy` with no drop glue, so overwriting it and bitwise-copying it back
+    //    out neither leaks nor double-drops anything.
+    //  * Every bit pattern is a valid `AccWord`, so the value read back is always initialised.
+    unsafe {
+        core::ptr::write_volatile(acc, *acc | diff);
+        *acc = core::ptr::read_volatile(acc);
+    }
+}
+
+/// Constant-time equality of two byte slices.
+///
+/// The runtime depends on the *lengths* of the inputs, which are treated as public, but not on
+/// their contents or on the position of any difference. Slices of different lengths compare
+/// unequal immediately.
 pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    let mut result = 0u8;
-    for i in 0..a.len() {
-        result |= core::hint::black_box(a[i] ^ b[i]);
+    // Optimization: evaluate it one machine-word at a time.
+    // Both slices now have the same length, so the two chunkings line up exactly and the
+    // `zip`s below never drop an element.
+    let (words_a, tail_a) = a.as_chunks::<ACC_BYTES>();
+    let (words_b, tail_b) = b.as_chunks::<ACC_BYTES>();
+
+    let mut acc: AccWord = 0;
+    for (x, y) in words_a.iter().zip(words_b) {
+        volatile_or_assign(&mut acc, AccWord::from_ne_bytes(*x) ^ AccWord::from_ne_bytes(*y));
     }
-    result == 0
+    for (x, y) in tail_a.iter().zip(tail_b) {
+        volatile_or_assign(&mut acc, AccWord::from(x ^ y));
+    }
+    acc == 0
 }
 
-/// Rust doesn't guarantee that anything can truly be constant-time under all compilation targets
-/// and optimization levels. The following presents the standard constant-time shape.
+/// Constant-time check that every byte of `a` is zero.
+///
+/// The runtime depends on the length of `a`, which is treated as public, but not on its contents
+/// or on the position of the first non-zero byte. Same construction as [`ct_eq_bytes`] with the
+/// XOR against the second operand omitted.
 pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
-    let mut result = 0u8;
-    for i in 0..a.len() {
-        result |= core::hint::black_box(a[i]);
+    let (words, tail) = a.as_chunks::<ACC_BYTES>();
+
+    let mut acc: AccWord = 0;
+    for x in words {
+        volatile_or_assign(&mut acc, AccWord::from_ne_bytes(*x));
     }
-    result == 0
+    for x in tail {
+        volatile_or_assign(&mut acc, AccWord::from(*x));
+    }
+    acc == 0
 }
 
-/// Copies either the contents of `a` or `b` into `out` according to `take_a`
-/// and it does it in a constant-time manner without branching.
+/// Copies either the contents of `a` or `b` into `out` according to `take_a`, in a constant-time
+/// manner without branching on `take_a`.
+///
+/// `take_a` is expanded to an all-ones / all-zeros byte mask and the copy is `(a & mask) |
+/// (b & !mask)` for every byte. The mask is passed through a volatile store/load once before the
+/// loop, so the optimiser does not know it is one of only two values and cannot turn the masked
+/// arithmetic back into a branch or a conditional move keyed on `take_a`. This is the same
+/// placement as BoringSSL's `value_barrier_w(mask)` in `constant_time_select`; the mask does not
+/// change inside the loop, so there is nothing to hide per iteration.
 pub fn conditional_copy_bytes<const LEN: usize>(
     a: &[u8; LEN],
     b: &[u8; LEN],
     out: &mut [u8; LEN],
     take_a: bool,
 ) {
-    // we want the behaviour of
-    //  if take_a { 0xFF } else { 0x00 }
-    // but without using any branches that could leak timing signals
-    let mask: u8 = (take_a as u8)
-        | (take_a as u8) << 1
-        | (take_a as u8) << 2
-        | (take_a as u8) << 3
-        | (take_a as u8) << 4
-        | (take_a as u8) << 5
-        | (take_a as u8) << 6
-        | (take_a as u8) << 7;
-
+    // We want the behaviour of `if take_a { 0xFF } else { 0x00 }` without a branch. `true as u8`
+    // is exactly `1`, and `1u8.wrapping_neg()` is `0xFF`, while `0u8.wrapping_neg()` is `0`.
+    let mut mask: u8 = (take_a as u8).wrapping_neg();
     debug_assert_eq!(mask, if take_a { 0xFF } else { 0x00 });
 
+    // SAFETY:
+    //  * `&mut mask` is a reference to an initialised, aligned `u8` local on this stack frame, so
+    //    it is valid for reads and writes for the duration of both calls.
+    //  * The reference is exclusive; nothing else can observe `mask` during the two accesses.
+    //  * `u8` is `Copy` with no drop glue and every bit pattern is a valid `u8`, so the value
+    //    read back is initialised and nothing is leaked or double-dropped.
+    unsafe {
+        core::ptr::write_volatile(&mut mask, mask);
+        mask = core::ptr::read_volatile(&mask);
+    }
+
     for i in 0..LEN {
-        out[i] = core::hint::black_box(a[i] & mask) | core::hint::black_box(b[i] & !mask);
+        out[i] = (a[i] & mask) | (b[i] & !mask);
     }
 }
