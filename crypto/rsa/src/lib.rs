@@ -1,4 +1,5 @@
-//! RSA digital signatures: RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8), built on
+//! RSA digital signatures, RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8), and the RSASVE
+//! key-encapsulation mechanism (NIST SP 800-56B Rev. 2 §7.2.1), built on
 //! [`bouncycastle_ec`]'s constant-time limb arithmetic ([`bouncycastle_ec::nat`],
 //! [`bouncycastle_ec::montgomery`]) rather than a dedicated bignum type, for the same
 //! constant-time reasoning that motivates that crate's own custom-curve arithmetic: a modular
@@ -7,7 +8,8 @@
 //!
 //! # Scope
 //!
-//! Signature schemes only -- no RSAES-OAEP or RSAES-PKCS1-v1_5 encryption. Modulus sizes 2048
+//! Signature schemes, plus RSASVE as a KEM ([`rsasve`]; see below). There is no RSAES-OAEP or
+//! RSAES-PKCS1-v1_5 encryption, and so no KTS-OAEP. Modulus sizes 2048
 //! through 8192 bits ([`rsa_2048`], [`rsa_3072`], [`rsa_4096`], [`rsa_8192`]) support both signing
 //! and verification; 1024- and 1536-bit moduli ([`rsa_1024`], [`rsa_1536`]) support verification
 //! only, enforced by the absence of a private-key type (and so of any `Signer` impl) for those
@@ -25,6 +27,15 @@
 //! Appendix A.1.3, in [`keygen`]), the same pair the ECDSA crate's curves offer. The generic
 //! `rsassa_*` modules also expose `*_from_hash` entry points that take the message hash rather
 //! than the message, for a caller that already holds the digest.
+//!
+//! RSASVE (SP 800-56B Rev. 2 §7.2.1; BC FIPS Java's `FipsRSA.KTS_SVE`, JCA `RSA-KAS-KEM`;
+//! OpenSSL's `"RSASVE"` KEM operation) is `RSASVE` in each of the 2048/3072/4096/8192 size modules.
+//! It implements [`bouncycastle_core`]'s
+//! [`KEMEncapsulator`](bouncycastle_core::traits::KEMEncapsulator)/[`KEMDecapsulator`](bouncycastle_core::traits::KEMDecapsulator)
+//! over its own key types (`RSA2048KEMPrivateKey`/`RSA2048KEMPublicKey` and siblings), which are
+//! kept apart from the signing key types; see [`rsasve`]'s `# Key separation`. Key generation is
+//! `RSASVE::keygen`/`keygen_from_rng`, the same FIPS 186-5 generator the signature keys use. The
+//! shared secret is RSASVE's raw secret value `Z`, the full modulus length. It is not a derived key.
 //!
 //! # Usage Examples
 //!
@@ -114,6 +125,45 @@
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
+//! RSASVE through the `bouncycastle_core` KEM traits ([`rsa_2048::RSASVE`]). The shared secret is
+//! the raw `Z`, which goes through a KDF, as SP 800-56B's KAS1/KAS2 schemes require, before it is
+//! used as a key:
+//!
+//! ```
+//! use bouncycastle_core::key_material::KeyMaterialTrait;
+//! use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KDF};
+//! use bouncycastle_rsa::rsa_2048::{RSASVE, RSA2048KEMPrivateKey, RSA2048KEMPublicKey, CT_LEN};
+//! # const P: [u64; 16] = [0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9, 0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788, 0x978f6c35814f50ee, 0xe6a289ad4cfbf78f, 0x34d5681e5809d415, 0xbb028bda42eeb5d2, 0x41c56e4de086b0d5, 0x58b8d1e24f3b55d0, 0xfb5248247d98cb7d, 0xdc431050f782e894];
+//! # const Q: [u64; 16] = [0x669f140cfbc20f25, 0xb97bb03677207d95, 0xfd4e06f3ed7299d4, 0x160f90536abc9492, 0xf5b131f39098f7bc, 0xae8d72c57088d7ab, 0x89b94fbde542aba9, 0x3d3f9880ec47d5e0, 0x1378a6868af3b7a0, 0x5544070beb057c94, 0x16611debc472fac4, 0xe500ffb79f5b8868, 0x308a5e32196603b2, 0xea5fb19eb4eabc38, 0x122273ae3222b598, 0xbd1a81e7977f9898];
+//! # const D_P: [u64; 16] = [0x209f33f09515d7c1, 0xb4a9b37656917205, 0x276933bb07e4efb9, 0x8c14019808e00414, 0x289f96da220711e5, 0xfbbd2923d31532fe, 0xc06b414e61c0e1e7, 0x4c23c4588488961d, 0x4dc48ae34514759c, 0x9c786961ae3e2c35, 0x497e8d9c650688e0, 0x18bf08472612dbe5, 0x8885fb161870ee12, 0xf21d7c1479d99d47, 0x9121d91952ffd1c7, 0xa94b528b28f29159];
+//! # const D_Q: [u64; 16] = [0xf7597ffb68011d8d, 0x7b3cc538c4bab8c9, 0xa8fa480a81a925af, 0x6d6ede7251a383bf, 0x8a63f788ce3a0f85, 0x0b920502eb478bc9, 0x7e37e755edfe70d9, 0x9cf9948422a16555, 0x0d6d9ea1f2ef71fd, 0xf7efa32ea0cb6e00, 0x0629b114ca7f780f, 0xcf51176359654348, 0x540cdcbd4ad35435, 0x31c02ff1a2bc437c, 0xff2503df78bafed5, 0x3af0e72a933aef09];
+//! # const Q_INV: [u64; 16] = [0x552fe4bfce945f7b, 0x67e50c999c67247b, 0xfb54ef17be3b2853, 0x241f5921b5ad3983, 0x02de5eccd143cf31, 0x74e45f6fcc60f216, 0xafa5428a74f12708, 0x88d42294b6a2759b, 0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51, 0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163];
+//! // The same key material as above, as key-establishment keys. A fresh pair comes from
+//! // `RSASVE::keygen()?` instead.
+//! let sk = RSA2048KEMPrivateKey::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)?;
+//! let pk = RSA2048KEMPublicKey::new(sk.n(), 65537)?;
+//!
+//! // The encapsulating party: a fresh secret value Z and its ciphertext C = z^e mod n.
+//! let (z, ct) = RSASVE::encaps(&pk)?;
+//! assert_eq!(ct.len(), CT_LEN);
+//!
+//! // The private-key holder recovers the same Z from C.
+//! let z_again = RSASVE::decaps(&sk, &ct)?;
+//! assert_eq!(z_again, z);
+//!
+//! // Z is a shared secret, not a key: derive the key actually used, here with HKDF-SHA-256
+//! // (SP 800-56C Rev. 2's two-step method), binding in whatever context the protocol defines.
+//! let key = bouncycastle_sha2::hkdf::HKDF_SHA256::default()
+//!     .derive_key(&z, b"example protocol v1")
+//!     .expect("HKDF accepts any non-empty input key");
+//! assert_eq!(key.key_len(), 32);
+//!
+//! // A wrong-length ciphertext is an error. So is one outside (1, n - 1) (SP 800-56B §7.1.2.3).
+//! assert!(RSASVE::decaps(&sk, &ct[1..]).is_err());
+//! assert!(RSASVE::decaps(&sk, &[0u8; CT_LEN]).is_err());
+//! # Ok::<(), bouncycastle_core::errors::KEMError>(())
+//! ```
+//!
 //! RSASSA-PSS-SHAKE128/256 (RFC 8702 §3.2.1: [`rsa_2048::RSASSA_PSS_SHAKE128`],
 //! [`rsa_3072::RSASSA_PSS_SHAKE128`], [`rsa_4096::RSASSA_PSS_SHAKE256`], per §5's recommended
 //! pairing) have exactly the shape of `RSASSA_PSS_SHA256` above, `sign_randomized` and
@@ -140,6 +190,12 @@
 //! ([`rsa_2048`], [`rsa_3072`]) and SHAKE256 with RSA-4096 ([`rsa_4096`]), each validated against
 //! its own genuine Wycheproof `rsa_pss_*_shake*_test.json` vectors.
 //!
+//! RSASVE ([`rsasve`]) is implemented at 2048/3072/4096/8192. It is validated against NIST
+//! ACVP-Server's KAS-IFC-SSC (KAS1 at 2048, KAS2 at 3072, both directions) and SP 800-56B RSADP
+//! (CRT keys at 2048/3072/4096, out-of-range ciphertexts included) vectors, and against OpenSSL
+//! 3.0's `"RSASVE"` KEM operation at every size, 8192 included. See `tests/rsasve_tests.rs` for
+//! the sources.
+//!
 //! # Memory Usage
 //!
 //! | Key Object       | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
@@ -150,6 +206,20 @@
 //! | RSA-3072          | 388              | 392                | 960              | 1344               |
 //! | RSA-4096          | 516              | 520                | 1280             | 1792               |
 //! | RSA-8192          | 1028             | 1032               | 2560             | 3584               |
+//!
+//! The RSASVE key types (`RSA<N>KEMPublicKey`/`RSA<N>KEMPrivateKey`) have the same encodings
+//! and the same in-memory sizes as the signature key types above: each wraps one. An RSASVE
+//! ciphertext and shared secret are each `nLen` bytes, the same as a signature (256/384/512/1024
+//! at 2048/3072/4096/8192).
+//!
+//! Peak stack usage, as measured by `bench_rsa_mem_usage` under `valgrind --tool=massif
+//! --stacks=yes` (release build, x86-64):
+//!
+//! | Operation                  | RSA-2048 | RSA-8192 |
+//! |----------------------------|----------|----------|
+//! | PKCS#1 v1.5 sign (SHA-256) | 10120    | 34216    |
+//! | RSASVE encaps              | 10696    | 35464    |
+//! | RSASVE decaps              | 10744    | 40776    |
 //!
 //! All values are in bytes. "On disk" is the `SignaturePublicKey`/`SignaturePrivateKey` raw
 //! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
@@ -204,6 +274,32 @@
 //!   80 bits, RSA-1536 roughly 96); this crate offers no way to sign with either (see `# Scope`)
 //!   precisely so they can only be used to check signatures against legacy/third-party data, not
 //!   to produce new ones.
+//! - **RSASVE's shared secret is the raw secret value `Z`, not a key.** SP 800-56B Rev. 2 uses
+//!   RSASVE only inside KAS1/KAS2, which always pass `Z` through a key-derivation method (§5.5,
+//!   SP 800-56C) together with the parties' identifiers and other context. `Z` is uniform on
+//!   `(1, n - 1)`, not on all `nLen`-byte strings, and nothing binds it to either party or to the
+//!   protocol. Use it only as KDF input.
+//! - **RSASVE decapsulation does not authenticate the ciphertext.** Any `C` in `(1, n - 1)`
+//!   recovers *some* `Z`: RSASVE has no redundancy to check, so a corrupted or forged ciphertext
+//!   yields a different secret, not an error. Assurance that both sides hold the same key has to
+//!   come from key confirmation (SP 800-56B §5.6) or from the protocol's later use of the derived
+//!   key, and none of that is provided here.
+//! - **RSASVE decapsulation is RSADP on attacker-chosen input, and it is not blinded.** The
+//!   RSASP1 bullet above applies here with more force: a ciphertext is chosen by whoever sends
+//!   it, so an attacker who can observe a physical side channel during decapsulation needs no
+//!   more than the ability to submit ciphertexts. SP 800-56B §7.2.1.3's note (Håstad-Näslund
+//!   bit security) is the related concern: the recovered `Z` must not leak through timing either.
+//!   `decaps` itself is constant-time in `Z`, but what the caller does with `Z` is up to the
+//!   caller.
+//! - **RSASVE public exponents are limited to 32 bits.** SP 800-56B §6.2.1 allows
+//!   `65,537 <= e < 2^256`, but [`keys::RsaPublicKey`] holds `e` as a `u32`, so an RSASVE public
+//!   key with a larger `e` cannot be constructed. (ACVP's RSADP vectors use exponents of up to 56
+//!   bits, which is why only their decapsulation side is tested here: decapsulation never needs
+//!   `e`.)
+//! - **RSASVE key validation is partial.** The KEM key types check `e >= 65,537` and that `n` has
+//!   exactly the size's bit length, on top of the signature keys' checks. They do not run SP
+//!   800-89's remaining plausibility tests, and full RSA public-key validation is not specified by
+//!   SP 800-56B at all. See [`rsasve`]'s `# Key validation`.
 //! - **RSASSA-PSS's salt length is fixed to the hash's own output length** (RFC 8017 §9.1 note
 //!   4's "typical" choice) rather than being caller-configurable. A verifier that expects a
 //!   different salt length (including the zero-length salt some other implementations default
@@ -232,3 +328,4 @@ mod rsa_core;
 pub mod rsassa_pkcs1_v1_5;
 pub mod rsassa_pss;
 pub mod rsassa_pss_shake;
+pub mod rsasve;

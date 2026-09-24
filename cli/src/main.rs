@@ -17,6 +17,7 @@ mod mldsa_cmd;
 mod mlkem_cmd;
 mod rng_cmd;
 mod rsa_cmd;
+mod rsasve_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
@@ -28,6 +29,7 @@ use crate::ecdsa_cmd::ECDSAAction;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use crate::rsa_cmd::{RSAAction, RSAHash, RSAScheme};
+use crate::rsasve_cmd::RSASVEAction;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sm2_cmd::SM2Action;
 use clap::{Parser, Subcommand};
@@ -1675,6 +1677,102 @@ enum Subcommands {
         x: bool,
     },
 
+    /// RSASVE over RSA-2048: the RSA KEM of SP 800-56B Rev. 2 SS7.2.1 (BC FIPS Java's KTS_SVE /
+    /// RSA-KAS-KEM, OpenSSL's "RSASVE" kem op). `keygen` (FIPS 186-5 A.1.3, e = 65537) writes the
+    /// private key to stdout and the public key to `--pkfile`; key files use the same raw encoding
+    /// as rsa-2048's. The shared secret is the raw 256-byte secret value Z, to be passed through a
+    /// KDF before use.
+    RSASVE_2048 {
+        action: RSASVEAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for
+        /// decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSASVE over RSA-3072. See rsasve-2048.
+    RSASVE_3072 {
+        action: RSASVEAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for
+        /// decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSASVE over RSA-4096. See rsasve-2048.
+    RSASVE_4096 {
+        action: RSASVEAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for
+        /// decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// RSASVE over RSA-8192. See rsasve-2048.
+    RSASVE_8192 {
+        action: RSASVEAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps, or to write the generated public
+        /// key to for keygen
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for
+        /// decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// RSA-1024 signature verification (RFC 8017 SS8.2), PKCS#1 v1.5 only. Verification-only: this
     /// crate has no RSA-1024 private key type at all. See rsa-2048 for --scheme/--hash.
     RSA_1024 {
@@ -2165,6 +2263,18 @@ fn run() {
         }
         Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x }) => {
             ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::RSASVE_2048 { action, skfile, pkfile, ctfile, x }) => {
+            rsasve_cmd::rsasve_2048_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::RSASVE_3072 { action, skfile, pkfile, ctfile, x }) => {
+            rsasve_cmd::rsasve_3072_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::RSASVE_4096 { action, skfile, pkfile, ctfile, x }) => {
+            rsasve_cmd::rsasve_4096_cmd(action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::RSASVE_8192 { action, skfile, pkfile, ctfile, x }) => {
+            rsasve_cmd::rsasve_8192_cmd(action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::RSA_1024 { scheme, hash, pkfile, sigfile }) => {
             rsa_cmd::rsa_1024_cmd(scheme, hash, pkfile, sigfile);

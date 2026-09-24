@@ -4,7 +4,11 @@
 //! genuine key is the same one `tests/rsa_2048_pkcs1_v1_5_tests.rs` recovers from Wycheproof's
 //! `rsa_pkcs1_2048_sig_gen_test.json` (see that file for the full, sourced provenance).
 
-use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core::traits::{
+    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SignaturePrivateKey,
+    SignaturePublicKey, SignatureVerifier, Signer,
+};
+use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey, RSASVE};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -192,6 +196,19 @@ fn bench_rsa_2048(c: &mut Criterion) {
             )
             .unwrap()
         })
+    });
+
+    // RSASVE (SP 800-56B Rev. 2 §7.2.1) under the same key material, re-read as KEM key types
+    // through the shared raw encoding. Encapsulation is one public-exponent modexp plus the RNG
+    // draw; decapsulation is the same CRT exponentiation signing does.
+    let kem_sk = RSA2048KEMPrivateKey::from_bytes(&sk.encode()).unwrap();
+    let kem_pk = RSA2048KEMPublicKey::from_bytes(&pk.encode()).unwrap();
+    let (_, kem_ct) = RSASVE::encaps(&kem_pk).unwrap();
+    group.bench_function("rsasve_encaps", |b| {
+        b.iter(|| black_box(RSASVE::encaps_rng(black_box(&kem_pk), &mut rng).unwrap()))
+    });
+    group.bench_function("rsasve_decaps", |b| {
+        b.iter(|| black_box(RSASVE::decaps(black_box(&kem_sk), black_box(&kem_ct)).unwrap()))
     });
 
     group.finish();
