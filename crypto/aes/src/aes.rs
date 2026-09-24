@@ -1,4 +1,56 @@
-//! CIPHER() and INVCIPHER() (FIPS 197 Sec 5.1 and Sec 5.3), and the public engine types.
+//! CIPHER() and INVCIPHER() (FIPS 197 Sec 5.1 and Sec 5.3)
+//!
+//! # Usage
+//! ## Encrypting and decrypting a single block
+//!
+//! ```
+//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(
+//!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+//!       0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c],
+//!     KeyType::SymmetricCipherKey,
+//! ).expect("a 16-byte symmetric cipher key");
+//!
+//! let aes = AES128Internal::new(&key).expect("a valid AES-128 key");
+//!
+//! // FIPS 197 Appendix B.
+//! let mut block: [u8; 16] = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
+//!                            0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34];
+//! aes.encrypt_block(&mut block);
+//! assert_eq!(block, [0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb,
+//!                    0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32]);
+//!
+//! // The same value decrypts, from the same instantiated aes object.
+//! aes.decrypt_block(&mut block);
+//!
+//! // `block` now contains the original plaintext again.
+//! assert_eq!(block, [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
+//!                    0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34]);
+//! ```
+//!
+//! ## Two blocks at a time
+//!
+//! The bit-sliced state holds two blocks, so two independent blocks cost barely more than one.
+//! Where a caller has two, [`ElectronicCodeBook::encrypt_2blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_2blocks) is roughly twice the throughput of two
+//! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls:
+//!
+//! ```
+//! use bouncycastle_aes::AES256Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::ElectronicCodeBook;
+//!
+//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//! let aes = AES256Internal::new(&key).expect("a valid AES-256 key");
+//!
+//! let mut blocks = [[0u8; 16], [1u8; 16]];
+//! aes.encrypt_2blocks(&mut blocks);
+//! aes.decrypt_2blocks(&mut blocks);
+//! assert_eq!(blocks, [[0u8; 16], [1u8; 16]]);
+//! ```
 
 use crate::bitslice::{Block, Planes, pack, unpack};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
@@ -6,15 +58,23 @@ use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{AES128Params, AES192Params, AES256Params, AESParams, expand, round_key};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::traits::{Algorithm, SecurityStrength};
 use bouncycastle_utils::secret::Secret;
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use bouncycastle_core::traits::ElectronicCodeBook;
+// End imports needed for docs
 
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
 pub const BLOCK_LEN: usize = 16;
 
 /// The AES keyed permutation, parameterised by key length.
 ///
-/// Use the aliases [`AES_128`], [`AES_192`] and [`AES_256`] rather than naming this directly.
+/// This needs to be pub for the type aliases to work, but this is only a building-block for
+/// higher-level primitives and is not intended to be used directly.
+///
+/// Use the aliases [`AES128Internal`], [`AES192Internal`] and [`AES256Internal`] rather than naming this directly.
 /// `P` is sealed to the three parameter sets of FIPS 197 Sec 6.1, so no fourth instantiation
 /// exists.
 ///
@@ -22,21 +82,27 @@ pub const BLOCK_LEN: usize = 16;
 /// redacted from `Debug`. There is no direction flag and no initialisation state: both directions
 /// work from the same schedule (see [`ElectronicCodeBook::decrypt_2blocks`]), and a constructed value is always
 /// ready to use, so there is no `init()` or `reset()`.
-pub struct AES<P: AESParams> {
+pub struct AESInternal<P: AESParams> {
     schedule: Secret<P::Schedule>,
 }
 
 /// AES-128: 16-byte key, 10 rounds (FIPS 197 Sec 6.1).
+/// This needs to be pub for the type aliases to work, but this is only a building-block for
+/// higher-level primitives and is not intended to be used directly.
 #[allow(non_camel_case_types)]
-pub type AES_128 = AES<AES128Params>;
+pub type AES128Internal = AESInternal<AES128Params>;
 /// AES-192: 24-byte key, 12 rounds (FIPS 197 Sec 6.1).
+/// This needs to be pub for the type aliases to work, but this is only a building-block for
+/// higher-level primitives and is not intended to be used directly.
 #[allow(non_camel_case_types)]
-pub type AES_192 = AES<AES192Params>;
+pub type AES192Internal = AESInternal<AES192Params>;
 /// AES-256: 32-byte key, 14 rounds (FIPS 197 Sec 6.1).
+/// This needs to be pub for the type aliases to work, but this is only a building-block for
+/// higher-level primitives and is not intended to be used directly.
 #[allow(non_camel_case_types)]
-pub type AES_256 = AES<AES256Params>;
+pub type AES256Internal = AESInternal<AES256Params>;
 
-impl<P: AESParams> AES<P> {
+impl<P: AESParams> AESInternal<P> {
     /// Checks a key is fit to use before it is expanded.
     ///
     /// The key must be tagged [`KeyType::SymmetricCipherKey`], must be exactly `P::KEY_LEN` bytes
@@ -97,7 +163,7 @@ impl<P: AESParams> AES<P> {
     /// the two the other way round and needs a separate schedule with INVMIXCOLUMNS() applied to
     /// each round key (Algorithm 5, KEYEXPANSIONEIC()).
     ///
-    /// Following Algorithm 3 is therefore what allows one [`AES`] value to encrypt *and* decrypt
+    /// Following Algorithm 3 is therefore what allows one [`AESInternal`] value to encrypt *and* decrypt
     /// from a single stored schedule, with no second copy and no transformation at construction
     /// time -- which is the whole reason this crate can offer both directions at 176-240 bytes of
     /// state.
@@ -130,7 +196,7 @@ impl<P: AESParams> AES<P> {
     /// the decryption direction of CBC and CFB, but *not* CBC encryption, whose blocks are
     /// serially dependent.
     ///
-    /// Infallible: a constructed [`AES`] is always usable and every input length is fixed.
+    /// Infallible: a constructed [`AESInternal`] is always usable and every input length is fixed.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut q = pack(&blocks[0], &blocks[1]);
         self.cipher2(&mut q);
@@ -180,7 +246,7 @@ impl<P: AESParams> AES<P> {
 // Each `new` differs only in the `KeyMaterial<N>` capacity it accepts, which is what makes a
 // wrong-length key a compile error at the call site rather than a runtime error.
 
-impl AES_128 {
+impl AES128Internal {
     /// Expands a 16-byte key into an AES-128 schedule.
     ///
     /// # Errors
@@ -193,103 +259,35 @@ impl AES_128 {
     }
 }
 
-impl AES_192 {
-    /// Expands a 24-byte key into an AES-192 schedule. See [`AES_128::new`] for the error cases.
+impl AES192Internal {
+    /// Expands a 24-byte key into an AES-192 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<AES192Params>(key.ref_to_bytes()) })
     }
 }
 
-impl AES_256 {
-    /// Expands a 32-byte key into an AES-256 schedule. See [`AES_128::new`] for the error cases.
+impl AES256Internal {
+    /// Expands a 32-byte key into an AES-256 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<AES256Params>(key.ref_to_bytes()) })
     }
 }
 
-impl Algorithm for AES_128 {
+impl Algorithm for AES128Internal {
     const ALG_NAME: &'static str = AES128Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl Algorithm for AES_192 {
+impl Algorithm for AES192Internal {
     const ALG_NAME: &'static str = AES192Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
-impl Algorithm for AES_256 {
+impl Algorithm for AES256Internal {
     const ALG_NAME: &'static str = AES256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-}
-
-// The three `ElectronicCodeBook` impls are one-line delegations to the inherent methods above. They
-// are written out longhand rather than generated, for the `cargo mutants` reason given above.
-//
-// Each overrides `encrypt_2blocks` / `decrypt_2blocks`, because a pair of blocks is exactly what
-// the bit-sliced state holds: the pair form costs barely more than one block, where the default
-// (two single-block calls) would do four blocks' worth of work.
-
-impl ElectronicCodeBook<16, BLOCK_LEN> for AES_128 {
-    fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        AES_128::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        AES::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        AES::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AES::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AES::decrypt_2blocks(self, blocks)
-    }
-}
-
-impl ElectronicCodeBook<24, BLOCK_LEN> for AES_192 {
-    fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
-        AES_192::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        AES::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        AES::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AES::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AES::decrypt_2blocks(self, blocks)
-    }
-}
-
-impl ElectronicCodeBook<32, BLOCK_LEN> for AES_256 {
-    fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
-        AES_256::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        AES::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        AES::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AES::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AES::decrypt_2blocks(self, blocks)
-    }
-}
-
-impl<P: AESParams> core::fmt::Debug for AES<P> {
-    /// Prints the algorithm name only. The key schedule is secret and is never formatted.
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(P::ALG_NAME)
-    }
 }
 
 #[cfg(test)]
@@ -301,39 +299,39 @@ mod tests {
         // The "Memory Usage" table in the crate docs quotes these, and the whole point of the
         // crate is that they are this small: 4 * (Nr + 1) words of schedule, nothing else, and no
         // tables anywhere. If the representation grows, the docs are wrong -- fix both.
-        assert_eq!(size_of::<AES_128>(), 176, "AES-128: 4 * (10 + 1) words");
-        assert_eq!(size_of::<AES_192>(), 208, "AES-192: 4 * (12 + 1) words");
-        assert_eq!(size_of::<AES_256>(), 240, "AES-256: 4 * (14 + 1) words");
+        assert_eq!(size_of::<AES128Internal>(), 176, "AES-128: 4 * (10 + 1) words");
+        assert_eq!(size_of::<AES192Internal>(), 208, "AES-192: 4 * (12 + 1) words");
+        assert_eq!(size_of::<AES256Internal>(), 240, "AES-256: 4 * (14 + 1) words");
     }
 
     #[test]
     fn test_engine_size_is_exactly_the_schedule() {
         // No round counter, no direction flag, no initialised marker: the schedule is all there
         // is, which is what makes both directions available from one value at no extra cost.
-        assert_eq!(size_of::<AES_128>(), size_of::<<AES128Params as AESParams>::Schedule>());
-        assert_eq!(size_of::<AES_192>(), size_of::<<AES192Params as AESParams>::Schedule>());
-        assert_eq!(size_of::<AES_256>(), size_of::<<AES256Params as AESParams>::Schedule>());
+        assert_eq!(size_of::<AES128Internal>(), size_of::<<AES128Params as AESParams>::Schedule>());
+        assert_eq!(size_of::<AES192Internal>(), size_of::<<AES192Params as AESParams>::Schedule>());
+        assert_eq!(size_of::<AES256Internal>(), size_of::<<AES256Params as AESParams>::Schedule>());
     }
 
     #[test]
     fn test_alg_names() {
-        assert_eq!(<AES_128 as Algorithm>::ALG_NAME, "AES-128");
-        assert_eq!(<AES_192 as Algorithm>::ALG_NAME, "AES-192");
-        assert_eq!(<AES_256 as Algorithm>::ALG_NAME, "AES-256");
+        assert_eq!(<AES128Internal as Algorithm>::ALG_NAME, "AES-128");
+        assert_eq!(<AES192Internal as Algorithm>::ALG_NAME, "AES-192");
+        assert_eq!(<AES256Internal as Algorithm>::ALG_NAME, "AES-256");
     }
 
     #[test]
     fn test_max_security_strength_matches_the_key_length() {
         assert_eq!(
-            <AES_128 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <AES128Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(AES128Params::KEY_LEN)
         );
         assert_eq!(
-            <AES_192 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <AES192Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(AES192Params::KEY_LEN)
         );
         assert_eq!(
-            <AES_256 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <AES256Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(AES256Params::KEY_LEN)
         );
     }

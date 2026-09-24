@@ -6,7 +6,7 @@
 //! here is that its `INIT_DATA_LEN` is 0, so the projection must carry a different value than CBC's
 //! and the aliases must still resolve correctly.
 
-use bouncycastle_aes::{AES_128, AES_ECB_128, AES_ECB_192, AES_ECB_256};
+use bouncycastle_aes::{AES_ECB_128, AES_ECB_192, AES_ECB_256, AES128Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
@@ -24,11 +24,11 @@ fn the_aliases_name_the_expected_types() {
 
     assert_eq!(
         size_of::<AES_ECB_128<Encrypting, PKCS7>>(),
-        size_of::<PaddedEncryptor<Ecb<AES_128, Encrypting, 16, 16>, PKCS7, 16, 0, 16>>()
+        size_of::<PaddedEncryptor<Ecb<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 0, 16>>()
     );
     assert_eq!(
         size_of::<AES_ECB_128<Decrypting, PKCS7>>(),
-        size_of::<PaddedDecryptor<Ecb<AES_128, Decrypting, 16, 16>, PKCS7, 16, 0, 16>>()
+        size_of::<PaddedDecryptor<Ecb<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 0, 16>>()
     );
 }
 
