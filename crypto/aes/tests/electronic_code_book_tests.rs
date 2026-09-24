@@ -6,20 +6,20 @@
 //! properties matters here specifically: this crate overrides `encrypt_2blocks` and
 //! `decrypt_2blocks`, so the default implementation is not what runs.
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]
 fn aes128_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<16, BLOCK_LEN, AES_128>();
+    TestFrameworkElectronicCodeBook::new().test::<16, BLOCK_LEN, AES128Internal>();
 }
 
 #[test]
 fn aes192_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<24, BLOCK_LEN, AES_192>();
+    TestFrameworkElectronicCodeBook::new().test::<24, BLOCK_LEN, AES192Internal>();
 }
 
 #[test]
 fn aes256_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<32, BLOCK_LEN, AES_256>();
+    TestFrameworkElectronicCodeBook::new().test::<32, BLOCK_LEN, AES256Internal>();
 }

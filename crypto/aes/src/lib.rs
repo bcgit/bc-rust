@@ -1,113 +1,21 @@
 //! A constant-time, table-free AES block cipher engine (NIST FIPS 197).
 //!
-//! This crate provides the raw AES keyed permutation -- [`AES_128`], [`AES_192`] and [`AES_256`] --
+//! This crate provides the raw AES keyed permutation
 //! implemented as a Boolean circuit over bit-planes rather than as byte substitutions through a
 //! lookup table. That makes it both smaller and constant-time; see [Design](#design).
 //!
-//! It is a *permutation*, not a cipher you can encrypt data with. See
-//! [Security Considerations](#security-considerations).
-//!
 //! # Usage Examples
 //!
-//! ## Encrypting and decrypting a single block
+//! The raw AES permutation (as exposed by the [`AESInternal`] struct) is not secure to use by itself.
+//! For why, see [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
 //!
-//! ```
-//! use bouncycastle_aes::AES_128;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::ElectronicCodeBook;
+//! For ready-to-use primitives, see the documentation for one of the provided modes of operation:
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(
-//!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
-//!       0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c],
-//!     KeyType::SymmetricCipherKey,
-//! ).expect("a 16-byte symmetric cipher key");
-//!
-//! let aes = AES_128::new(&key).expect("a valid AES-128 key");
-//!
-//! // FIPS 197 Appendix B.
-//! let mut block: [u8; 16] = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
-//!                            0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34];
-//! aes.encrypt_block(&mut block);
-//! assert_eq!(block, [0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb,
-//!                    0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32]);
-//!
-//! // The same value decrypts, from the same instantiated aes object.
-//! aes.decrypt_block(&mut block);
-//!
-//! // `block` now contains the original plaintext again.
-//! assert_eq!(block, [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
-//!                    0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34]);
-//! ```
-//!
-//! ## Two blocks at a time
-//!
-//! The bit-sliced state holds two blocks, so two independent blocks cost barely more than one.
-//! Where a caller has two, [`ElectronicCodeBook::encrypt_2blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_2blocks) is roughly twice the throughput of two
-//! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls:
-//!
-//! ```
-//! use bouncycastle_aes::AES_256;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::ElectronicCodeBook;
-//!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//! let aes = AES_256::new(&key).expect("a valid AES-256 key");
-//!
-//! let mut blocks = [[0u8; 16], [1u8; 16]];
-//! aes.encrypt_2blocks(&mut blocks);
-//! aes.decrypt_2blocks(&mut blocks);
-//! assert_eq!(blocks, [[0u8; 16], [1u8; 16]]);
-//! ```
-//!
-//! ## Modes of operation
-//!
-//! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
-//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
-//! makes: [`AES_CBC_128`], [`AES_CBC_192`] and [`AES_CBC_256`] for CBC (SP 800-38A Sec 6.2), which
-//! take the direction **and a padding scheme**, and [`AES_CFB_128`], [`AES_CFB_192`] and
-//! [`AES_CFB_256`] for CFB128 (Sec 6.3), which take only the direction.
-//! [`AES_CFB8_128`], [`AES_CFB8_192`] and [`AES_CFB8_256`] give CFB8, the `s = 8` segment size,
-//! which is a different and non-interoperable mode costing one AES call per byte.
-//! [`AES_CTR_128`], [`AES_CTR_192`] and [`AES_CTR_256`] give CTR (Sec 6.5) with a 12-byte nonce
-//! and a 4-byte counter.
-//! [`AES_ECB_128`], [`AES_ECB_192`] and [`AES_ECB_256`] give ECB (Sec 6.1), which takes a padding
-//! scheme like CBC and has no IV, for interoperability and test vectors only -- see
-//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
-//!
-//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
-//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
-//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
-//! [`AES_CBC_128`] for why the scheme is named in the type.
-//!
-//! ```
-//! use bouncycastle_aes::AES_CBC_256;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
-//! use bouncycastle_padding::PKCS7;
-//!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
-//! let plaintext = [0x5Au8; 50];
-//!
-//! // The IV is generated for you and returned; there is no API for supplying one.
-//! let (iv, ciphertext) =
-//!     AES_CBC_256::<Encrypting, PKCS7>::encrypt(&key, &plaintext).expect("encryption");
-//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
-//!
-//! let recovered =
-//!     AES_CBC_256::<Decrypting, PKCS7>::decrypt(&key, &iv, &ciphertext).expect("decryption");
-//! assert_eq!(recovered, plaintext);
-//! ```
-//!
-//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
-//!
-//! There is no one-shot static on the permutation, because `AES_128::new(&key)?.encrypt_block(..)`
-//! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
-//! arbitrary-length input and generate their own initialisation data.
+//! * [AES_CBC](crate::cbc)
+//! * [AES_CFB](crate::cfb)
+//! * [AES_CFB8](crate::cfb8)
+//! * [AES_CTR](crate::ctr)
+//! * [AES_ECB](crate::ecb)
 //!
 //! # Design
 //!
@@ -141,7 +49,7 @@
 //! Decryption follows FIPS 197 Algorithm 3, the straight inverse cipher, rather than the
 //! equivalent inverse cipher of Sec 5.3.5. Algorithm 3 puts INVMIXCOLUMNS() after ADDROUNDKEY(),
 //! so it uses the *unmodified* key schedule; the equivalent inverse cipher would need a second
-//! schedule with each round key transformed. One [`AES_128`] value therefore encrypts and decrypts
+//! schedule with each round key transformed. One [`AES128Internal`] value therefore encrypts and decrypts
 //! from one stored schedule.
 //!
 //! # Memory Usage
@@ -152,9 +60,9 @@
 //!
 //! | Type | Key | `Nr` | Schedule (persistent) | Tables |
 //! |---|---|---|---|---|
-//! | [`AES_128`] | 16 B | 10 | 176 B | 0 B |
-//! | [`AES_192`] | 24 B | 12 | 208 B | 0 B |
-//! | [`AES_256`] | 32 B | 14 | 240 B | 0 B |
+//! | [`AES128Internal`] | 16 B | 10 | 176 B | 0 B |
+//! | [`AES192Internal`] | 24 B | 12 | 208 B | 0 B |
+//! | [`AES256Internal`] | 32 B | 14 | 240 B | 0 B |
 //!
 //! Per-call stack usage is independent of key length: 32 bytes of bit-sliced state for the two
 //! blocks, 32 bytes for the round key expanded from its compressed form, plus the S-box circuit's
@@ -169,7 +77,7 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`AES_128`] and friends transform exactly 16 bytes. Using them directly on data means ECB,
+//! [`AES128Internal`] and friends transform exactly 16 bytes. Using them directly on data means ECB,
 //! which is not confidential: identical plaintext blocks produce identical ciphertext blocks, so
 //! structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation, and
 //! prefer an authenticated one so that ciphertext tampering is detected.
@@ -221,17 +129,17 @@
 
 mod aes;
 mod bitslice;
-mod cbc;
-mod cfb;
-mod cfb8;
-mod ctr;
-mod ecb;
+pub mod cbc;
+pub mod cfb;
+pub mod cfb8;
+pub mod ctr;
+pub mod ecb;
 mod padded_mode;
 mod round;
 mod sbox;
 mod schedule;
 
-pub use aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
+pub use aes::{AES128Internal, AES192Internal, AES256Internal, AESInternal, BLOCK_LEN};
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
