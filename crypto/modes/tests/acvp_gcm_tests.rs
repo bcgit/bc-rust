@@ -9,7 +9,7 @@
 //! both directions -- 270 cases total. Not every decrypt case in this particular set is a
 //! forgery, but the ones that are all report `testPassed: false`; the valid-decrypt path is
 //! additionally exercised by round-tripping every encrypt case through both the detached one-shot
-//! and the inline `SimpleCipherDecryptor` streaming view (`acvp_gcm::run_decrypt_case`, below).
+//! and the inline `SymmetricCipherDecryptor` streaming view (`acvp_gcm::run_decrypt_case`, below).
 //!
 //! **Not covered here:** `bc-test-data` has no CAVP `.rsp` GCM vector files and no Wycheproof
 //! `aes_gcm_test.json` -- only `sm4_gcm_test.json` exists under `wycheproof/`, and there is no

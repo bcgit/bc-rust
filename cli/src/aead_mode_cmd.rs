@@ -10,7 +10,7 @@
 //!
 //! `encrypt` writes the generated 12-byte nonce first, then the ciphertext as it streams, then the
 //! 16-byte tag once stdin is exhausted. `decrypt` reads the 12-byte nonce first, then streams the
-//! rest of stdin through the inline decryptor -- which, per [`SimpleCipherDecryptor`]'s contract,
+//! rest of stdin through the inline decryptor -- which, per [`SymmetricCipherDecryptor`]'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
 //! `do_final`.
 //!
@@ -32,7 +32,7 @@
 use crate::helpers::{read_from_file, write_bytes_or_hex};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{
-    ElectronicCodeBook, SimpleCipherDecryptor, SimpleCipherEncryptor,
+    ElectronicCodeBook, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle::hex;
 use bouncycastle::modes::{Decrypting, Encrypting, Gcm};

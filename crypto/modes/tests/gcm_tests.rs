@@ -10,7 +10,7 @@ mod common;
 use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 use common::{TOY_LEN, Toy, toy_key};
 
@@ -218,7 +218,7 @@ fn one_shot_leaves_the_buffer_untouched_on_forgery_but_streaming_does_not() {
     }
 }
 
-/// The one-shots and the inline `SimpleCipherEncryptor`/`Decryptor` view round-trip with real AES
+/// The one-shots and the inline `SymmetricCipherEncryptor`/`Decryptor` view round-trip with real AES
 /// at all three key lengths, at a length that is not a whole number of blocks.
 #[test]
 fn the_aes_aliases_round_trip() {

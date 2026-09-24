@@ -11,7 +11,7 @@
 
 use bouncycastle_aes::{AES_128, AES_192, AES_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::SimpleCipherEncryptor;
+use bouncycastle_core::traits::SymmetricCipherEncryptor;
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
