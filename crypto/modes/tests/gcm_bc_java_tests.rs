@@ -9,7 +9,7 @@
 //! transcribed below, verified against the bc-java source read this session, with all-zero fields
 //! built programmatically rather than typed out (a zero key or plaintext cannot be mistyped).
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -235,9 +235,9 @@ fn bc_java_test_vectors_with_a_96_bit_iv() {
     for case in cases() {
         let key_len_bytes = case.key.len() / 2;
         match key_len_bytes {
-            16 => run::<AES_128, 16>(&case),
-            24 => run::<AES_192, 24>(&case),
-            32 => run::<AES_256, 32>(&case),
+            16 => run::<AES128Internal, 16>(&case),
+            24 => run::<AES192Internal, 24>(&case),
+            32 => run::<AES256Internal, 32>(&case),
             other => panic!("{}: unexpected key length {other} bytes", case.name),
         }
         checked += 1;

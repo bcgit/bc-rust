@@ -10,7 +10,7 @@
 //! branch (deriving `J0` from a GHASH of the IV) is not implemented -- see the `gcm` module docs in
 //! `bouncycastle-modes`.
 
-use crate::{AES_128, AES_192, AES_256};
+use crate::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_modes::Gcm;
 
 /// AES-128 in GCM with a 128-bit tag. `Dir` is [`bouncycastle_modes::Encrypting`] or
@@ -92,7 +92,7 @@ use bouncycastle_modes::Gcm;
 /// assert_eq!(&pt[..n + last_len], b"hello");
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_GCM_128<Dir> = Gcm<AES_128, Dir, 16, 16>;
+pub type AES_GCM_128<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
 
 /// AES-192 in GCM with a 128-bit tag. See [`AES_GCM_128`].
 ///
@@ -111,7 +111,7 @@ pub type AES_GCM_128<Dir> = Gcm<AES_128, Dir, 16, 16>;
 /// assert_eq!(&plaintext, message);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_GCM_192<Dir> = Gcm<AES_192, Dir, 24, 16>;
+pub type AES_GCM_192<Dir> = Gcm<AES192Internal, Dir, 24, 16>;
 
 /// AES-256 in GCM with a 128-bit tag. See [`AES_GCM_128`].
 ///
@@ -130,4 +130,4 @@ pub type AES_GCM_192<Dir> = Gcm<AES_192, Dir, 24, 16>;
 /// assert_eq!(&plaintext, message);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_GCM_256<Dir> = Gcm<AES_256, Dir, 32, 16>;
+pub type AES_GCM_256<Dir> = Gcm<AES256Internal, Dir, 32, 16>;

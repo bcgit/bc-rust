@@ -1,6 +1,6 @@
 //! Block cipher modes of operation (NIST SP 800-38A and SP 800-38C).
 //!
-//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES_128` and friends,
+//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES128Internal` and friends,
 //! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
 //! one block. This crate provides:
 //!
@@ -75,33 +75,33 @@
 //! too, plus its nonce and tag lengths:
 //!
 //! ```
-//! use bouncycastle_aes::{AES_128, AES_192, AES_256};
+//! use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 //! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Ecb};
 //!
-//! type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, 16>;
-//! type Aes192Cbc<Dir> = Cbc<AES_192, Dir, 24, 16>;
-//! type Aes256Cbc<Dir> = Cbc<AES_256, Dir, 32, 16>;
+//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
+//! type Aes192Cbc<Dir> = Cbc<AES192Internal, Dir, 24, 16>;
+//! type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, 16>;
 //!
-//! type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
-//! type Aes192Cfb<Dir> = Cfb<AES_192, Dir, 24, 16>;
-//! type Aes256Cfb<Dir> = Cfb<AES_256, Dir, 32, 16>;
+//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
+//! type Aes192Cfb<Dir> = Cfb<AES192Internal, Dir, 24, 16>;
+//! type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, 16>;
 //!
-//! type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, 16>;
+//! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
-//! type Aes128Ctr<Dir> = Ctr<AES_128, Dir, 16, 16, 12>;
+//! type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, 16, 12>;
 //!
-//! type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, 16>;
+//! type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
 //!
 //! // CCM takes the direction like the rest, plus the nonce length and the tag length -- both
 //! // real cryptographic choices rather than AES constants. The nonce length caps the payload
 //! // (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag length is the forgery bound;
 //! // 12 and 16 are the usual pair.
-//! type Aes128Ccm<Dir> = Ccm<AES_128, Dir, 16, 16, 12, 16>;
-//! type Aes256Ccm<Dir> = Ccm<AES_256, Dir, 32, 16, 12, 16>;
+//! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
+//! type Aes256Ccm<Dir> = Ccm<AES256Internal, Dir, 32, 16, 12, 16>;
 //! // A 13-byte nonce leaves q = 2, so a payload of at most 64 KiB - 1; 802.11 CCMP's pair.
-//! type Aes128CcmShortTag<Dir> = Ccm<AES_128, Dir, 16, 16, 13, 8>;
+//! type Aes128CcmShortTag<Dir> = Ccm<AES128Internal, Dir, 16, 16, 13, 8>;
 //! ```
 //!
 //! # Usage Examples
@@ -114,12 +114,12 @@
 //! [Security Considerations](#security-considerations)).
 //!
 //! ```
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //!
-//! type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, 16>;
+//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -140,12 +140,12 @@
 //! the concatenation:
 //!
 //! ```
-//! use bouncycastle_aes::AES_256;
+//! use bouncycastle_aes::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //!
-//! type Aes256Cbc<Dir> = Cbc<AES_256, Dir, 32, 16>;
+//! type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, 16>;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -169,13 +169,13 @@
 //! exactly as long as the plaintext:
 //!
 //! ```
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
 //!
-//! type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
-//! type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, 16>;
+//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
+//! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -200,12 +200,12 @@
 //! Streaming works at any byte boundary, and the chunking is not visible in the output:
 //!
 //! ```
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
 //!
-//! type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, 16>;
+//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -233,12 +233,12 @@
 //! The codebook property that makes it unsuitable for data is visible in the ciphertext:
 //!
 //! ```
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 //!
-//! type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, 16>;
+//! type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -259,11 +259,11 @@
 //! ciphertext has been altered:
 //!
 //! ```
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 //!
-//! type Aes128Ccm<Dir> = Ccm<AES_128, Dir, 16, 16, 12, 16>;
+//! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -291,12 +291,12 @@
 //! Using the wrong direction does not compile:
 //!
 //! ```compile_fail
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::BlockCipherDecryptor;
 //! use bouncycastle_modes::{Cbc, Encrypting};
 //!
-//! type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, 16>;
+//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
 //! // `Encrypting` does not implement `BlockCipherDecryptor`.
@@ -394,14 +394,14 @@
 //! an error at `do_final` rather than something padded -- for formats defined on whole blocks.
 //!
 //! ```
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //! use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
 //!
-//! type Enc = PaddedEncryptor<Cbc<AES_128, Encrypting, 16, 16>, PKCS7, 16, 16, 16>;
-//! type Dec = PaddedDecryptor<Cbc<AES_128, Decrypting, 16, 16>, PKCS7, 16, 16, 16>;
+//! type Enc = PaddedEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 16, 16>;
+//! type Dec = PaddedDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -467,7 +467,7 @@
 //! CCM is the largest of the streaming values, because it is the only mode running two mechanisms
 //! at once: the CBC-MAC needs its chaining value, and the CTR half needs both a keystream block and
 //! the counter template that generates it. It is **independent of `NONCE_LEN` and `TAG_LEN`** --
-//! `Ccm<AES_128, Encrypting, .., 7, 4>` and `Ccm<AES_128, Encrypting, .., 13, 16>` are both 256 B --
+//! `Ccm<AES128Internal, Encrypting, .., 7, 4>` and `Ccm<AES128Internal, Encrypting, .., 13, 16>` are both 256 B --
 //! because the nonce is stored inside the counter template rather than separately, and the tag is
 //! assembled at finalization rather than held.
 //!

@@ -14,7 +14,7 @@
 
 use crate::aead_mode_cmd::{decrypt_gcm, encrypt_gcm, load_aad};
 use crate::block_mode_cmd::{BlockModeAction, load_key};
-use bouncycastle::aes::{AES_128, AES_192, AES_256};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 
@@ -26,7 +26,7 @@ pub(crate) fn aes128_gcm_cmd(
     aad_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_128, 16>(
+    run::<AES128Internal, 16>(
         action,
         &load_key::<16>(key, key_file, "AES-128"),
         &load_aad(aad, aad_file),
@@ -42,7 +42,7 @@ pub(crate) fn aes192_gcm_cmd(
     aad_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_192, 24>(
+    run::<AES192Internal, 24>(
         action,
         &load_key::<24>(key, key_file, "AES-192"),
         &load_aad(aad, aad_file),
@@ -58,7 +58,7 @@ pub(crate) fn aes256_gcm_cmd(
     aad_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_256, 32>(
+    run::<AES256Internal, 32>(
         action,
         &load_key::<32>(key, key_file, "AES-256"),
         &load_aad(aad, aad_file),

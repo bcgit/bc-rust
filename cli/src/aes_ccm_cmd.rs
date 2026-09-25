@@ -44,7 +44,7 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::aes::{AES_128, AES_192, AES_256};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
@@ -65,7 +65,7 @@ pub(crate) fn aes128_ccm_cmd(
     tag_len: usize,
     output_hex: bool,
 ) {
-    run::<AES_128, 16>(
+    run::<AES128Internal, 16>(
         action,
         &load_key::<16>(key, key_file, "AES-128"),
         nonce,
@@ -87,7 +87,7 @@ pub(crate) fn aes192_ccm_cmd(
     tag_len: usize,
     output_hex: bool,
 ) {
-    run::<AES_192, 24>(
+    run::<AES192Internal, 24>(
         action,
         &load_key::<24>(key, key_file, "AES-192"),
         nonce,
@@ -109,7 +109,7 @@ pub(crate) fn aes256_ccm_cmd(
     tag_len: usize,
     output_hex: bool,
 ) {
-    run::<AES_256, 32>(
+    run::<AES256Internal, 32>(
         action,
         &load_key::<32>(key, key_file, "AES-256"),
         nonce,

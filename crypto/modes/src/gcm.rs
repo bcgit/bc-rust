@@ -41,12 +41,12 @@
 //! Detached tag, one-shot:
 //!
 //! ```
-//! use bouncycastle_aes::AES_128;
+//! use bouncycastle_aes::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
-//! type Aes128Gcm<Dir> = Gcm<AES_128, Dir, 16, 16>;
+//! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -67,14 +67,14 @@
 //! Inline `ciphertext || tag`, and streaming with AAD:
 //!
 //! ```
-//! use bouncycastle_aes::AES_256;
+//! use bouncycastle_aes::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
-//! type Aes256Gcm<Dir> = Gcm<AES_256, Dir, 32, 16>;
+//! type Aes256Gcm<Dir> = Gcm<AES256Internal, Dir, 32, 16>;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");

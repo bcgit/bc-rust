@@ -7,7 +7,7 @@
 //! generated per encryption. Algorithm correctness itself is pinned by `bouncycastle-modes`'
 //! ACVP and bc-java known-answer suites.
 
-use bouncycastle_aes::{AES_128, AES_GCM_128, AES_GCM_192, AES_GCM_256};
+use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
@@ -23,8 +23,14 @@ fn key<const N: usize>() -> KeyMaterial<N> {
 fn the_alias_names_the_expected_type() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<AES_GCM_128<Encrypting>>(), size_of::<Gcm<AES_128, Encrypting, 16, 16>>());
-    assert_eq!(size_of::<AES_GCM_128<Decrypting>>(), size_of::<Gcm<AES_128, Decrypting, 16, 16>>());
+    assert_eq!(
+        size_of::<AES_GCM_128<Encrypting>>(),
+        size_of::<Gcm<AES128Internal, Encrypting, 16, 16>>()
+    );
+    assert_eq!(
+        size_of::<AES_GCM_128<Decrypting>>(),
+        size_of::<Gcm<AES128Internal, Decrypting, 16, 16>>()
+    );
 }
 
 /// All three key lengths satisfy the shared AEAD conformance suite, which includes the

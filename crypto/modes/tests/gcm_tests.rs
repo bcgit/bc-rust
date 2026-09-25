@@ -7,7 +7,7 @@
 
 mod common;
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -266,9 +266,9 @@ fn the_aes_aliases_round_trip() {
         assert_eq!(&pt[..], &message[..]);
     }
 
-    check::<AES_128, 16>(&[0x11; 16]);
-    check::<AES_192, 24>(&[0x22; 24]);
-    check::<AES_256, 32>(&[0x33; 32]);
+    check::<AES128Internal, 16>(&[0x11; 16]);
+    check::<AES192Internal, 24>(&[0x22; 24]);
+    check::<AES256Internal, 32>(&[0x33; 32]);
 }
 
 /// The whole [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] contract -- which runs the
@@ -286,16 +286,16 @@ fn aead_trait_framework() {
         12,
         16,
         16,
-        Gcm<AES_128, Encrypting, 16, 16>,
-        Gcm<AES_128, Decrypting, 16, 16>,
+        Gcm<AES128Internal, Encrypting, 16, 16>,
+        Gcm<AES128Internal, Decrypting, 16, 16>,
     >();
     TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
         32,
         12,
         12,
         12,
-        Gcm<AES_256, Encrypting, 32, 12>,
-        Gcm<AES_256, Decrypting, 32, 12>,
+        Gcm<AES256Internal, Encrypting, 32, 12>,
+        Gcm<AES256Internal, Decrypting, 32, 12>,
     >();
 }
 
@@ -304,8 +304,8 @@ fn aead_trait_framework() {
 /// contract -- rather than holding the ciphertext they staged there.
 #[test]
 fn aead_trait_one_shots_release_nothing_on_forgery() {
-    type Enc = Gcm<AES_128, Encrypting, 16, 16>;
-    type Dec = Gcm<AES_128, Decrypting, 16, 16>;
+    type Enc = Gcm<AES128Internal, Encrypting, 16, 16>;
+    type Dec = Gcm<AES128Internal, Decrypting, 16, 16>;
 
     let key =
         KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();

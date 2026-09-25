@@ -135,41 +135,41 @@ use core::marker::PhantomData;
 /// A nonce as long as the block would leave no counter at all, and could not count:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// // A 16-byte nonce on a 16-byte block leaves a zero-byte counter.
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 16>::do_encrypt_init(&key);
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 16>::do_encrypt_init(&key);
 /// ```
 ///
 /// ...and a nonce shorter than `BLOCK_LEN - 4` would ask for a counter wider than this type
 /// supports:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// // An 11-byte nonce would give a 5-byte counter, past the 4-byte cap.
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 11>::do_encrypt_init(&key);
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 11>::do_encrypt_init(&key);
 /// ```
 ///
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
 /// ```
 ///
 /// # State
@@ -492,11 +492,11 @@ mod tests {
     //! integration test.
 
     use super::*;
-    use bouncycastle_aes::AES_128;
+    use bouncycastle_aes::AES128Internal;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::ElectronicCodeBook;
 
-    type ToyCtr = Ctr<AES_128, Encrypting, 16, 16, 12>;
+    type ToyCtr = Ctr<AES128Internal, Encrypting, 16, 16, 12>;
 
     fn key() -> KeyMaterial<16> {
         KeyMaterial::<16>::from_bytes_as_type(&[0x5Au8; 16], KeyType::SymmetricCipherKey)
@@ -510,11 +510,11 @@ mod tests {
     fn start_at_matches_start_after_discarding_blocks() {
         let nonce = [0x11u8; 12];
 
-        let mut from_start = ToyCtr::start(AES_128::new(&key()).unwrap(), nonce);
+        let mut from_start = ToyCtr::start(AES128Internal::new(&key()).unwrap(), nonce);
         let mut discarded = [0u8; 32];
         from_start.apply(&mut discarded).unwrap();
 
-        let mut from_start_at = ToyCtr::start_at(AES_128::new(&key()).unwrap(), nonce, 2);
+        let mut from_start_at = ToyCtr::start_at(AES128Internal::new(&key()).unwrap(), nonce, 2);
 
         let mut a = [0x42u8; 48];
         let mut b = a;
@@ -528,7 +528,7 @@ mod tests {
     /// 128-bit blocks) that GCM relies on `Ctr`'s existing "counter exhausted" error to enforce.
     #[test]
     fn start_at_capacity_is_block_limit_minus_the_starting_counter() {
-        let ctr = ToyCtr::start_at(AES_128::new(&key()).unwrap(), [0u8; 12], 2);
+        let ctr = ToyCtr::start_at(AES128Internal::new(&key()).unwrap(), [0u8; 12], 2);
         assert_eq!(ctr.remaining_capacity(), (ToyCtr::BLOCK_LIMIT - 2) * 16);
     }
 }

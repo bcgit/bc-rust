@@ -9,7 +9,7 @@
 
 #![allow(dead_code)]
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
@@ -100,9 +100,9 @@ pub fn run_encrypt_case(
         }};
     }
     match key_bytes.len() {
-        16 => dispatch!(AES_128, 16),
-        24 => dispatch!(AES_192, 24),
-        32 => dispatch!(AES_256, 32),
+        16 => dispatch!(AES128Internal, 16),
+        24 => dispatch!(AES192Internal, 24),
+        32 => dispatch!(AES256Internal, 32),
         other => panic!("unexpected AES key length {other}"),
     }
 }
@@ -156,9 +156,9 @@ pub fn run_decrypt_case(
         }};
     }
     match key_bytes.len() {
-        16 => dispatch!(AES_128, 16),
-        24 => dispatch!(AES_192, 24),
-        32 => dispatch!(AES_256, 32),
+        16 => dispatch!(AES128Internal, 16),
+        24 => dispatch!(AES192Internal, 24),
+        32 => dispatch!(AES256Internal, 32),
         other => panic!("unexpected AES key length {other}"),
     }
 }
