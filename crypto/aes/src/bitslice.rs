@@ -64,9 +64,6 @@
 //! byte. [`block_to_words`] makes that placement for one block as eight `u16`s, and each width's
 //! [`PlaneWord::pack`] puts every block's words into its lane and transposes all lanes at once.
 //!
-//! `test_layout_matches_the_documented_table` below pins the table exhaustively; every mask in
-//! this crate is only correct relative to it.
-//!
 //! # Provenance
 //!
 //! The three-stage masked-swap transpose is translated from BearSSL `src/symcipher/aes_ct.c`

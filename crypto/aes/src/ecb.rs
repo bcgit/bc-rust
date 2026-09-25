@@ -36,17 +36,17 @@
 //! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
 
-use crate::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::AESInternal;
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::bitslice::Block;
 use crate::padded_mode::PaddedMode;
+use crate::schedule::AESParams;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 
 // Imports needed for docs
-use crate::aes::AESInternal;
-use crate::bitslice::Block;
-use crate::schedule::AESParams;
-use bouncycastle_core::traits::ElectronicCodeBook;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
@@ -170,29 +170,22 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {
         AES128Internal::new(key)
     }
     fn encrypt_block(&self, block: &mut Block) {
-        AESInternal::encrypt_block(self, block)
+        Self::encrypt_block(self, block)
     }
     fn decrypt_block(&self, block: &mut Block) {
-        AESInternal::decrypt_block(self, block)
+        Self::decrypt_block(self, block)
     }
     fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AESInternal::encrypt_2blocks(self, blocks)
+        Self::encrypt_2blocks(self, blocks)
     }
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AESInternal::decrypt_2blocks(self, blocks)
+        Self::decrypt_2blocks(self, blocks)
     }
-    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
     fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            AESInternal::encrypt_2blocks(self, pair);
-        }
+        Self::encrypt_4blocks(self, blocks)
     }
     fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            AESInternal::decrypt_2blocks(self, pair);
-        }
+        Self::decrypt_4blocks(self, blocks)
     }
 }
 
@@ -201,29 +194,22 @@ impl ElectronicCodeBook<24, BLOCK_LEN> for AES192Internal {
         AES192Internal::new(key)
     }
     fn encrypt_block(&self, block: &mut Block) {
-        AESInternal::encrypt_block(self, block)
+        Self::encrypt_block(self, block)
     }
     fn decrypt_block(&self, block: &mut Block) {
-        AESInternal::decrypt_block(self, block)
+        Self::decrypt_block(self, block)
     }
     fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AESInternal::encrypt_2blocks(self, blocks)
+        Self::encrypt_2blocks(self, blocks)
     }
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AESInternal::decrypt_2blocks(self, blocks)
+        Self::decrypt_2blocks(self, blocks)
     }
-    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
     fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            AESInternal::encrypt_2blocks(self, pair);
-        }
+        Self::encrypt_4blocks(self, blocks)
     }
     fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            AESInternal::decrypt_2blocks(self, pair);
-        }
+        Self::decrypt_4blocks(self, blocks)
     }
 }
 
@@ -232,29 +218,22 @@ impl ElectronicCodeBook<32, BLOCK_LEN> for AES256Internal {
         AES256Internal::new(key)
     }
     fn encrypt_block(&self, block: &mut Block) {
-        AESInternal::encrypt_block(self, block)
+        Self::encrypt_block(self, block)
     }
     fn decrypt_block(&self, block: &mut Block) {
-        AESInternal::decrypt_block(self, block)
+        Self::decrypt_block(self, block)
     }
     fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AESInternal::encrypt_2blocks(self, blocks)
+        Self::encrypt_2blocks(self, blocks)
     }
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        AESInternal::decrypt_2blocks(self, blocks)
+        Self::decrypt_2blocks(self, blocks)
     }
-    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
     fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            AESInternal::encrypt_2blocks(self, pair);
-        }
+        Self::encrypt_4blocks(self, blocks)
     }
     fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            AESInternal::decrypt_2blocks(self, pair);
-        }
+        Self::decrypt_4blocks(self, blocks)
     }
 }
 

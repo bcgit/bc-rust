@@ -24,7 +24,7 @@
 
 mod common;
 
-use bouncycastle_aes::AES128Internal;
+use bouncycastle_aes::aes_internal::AES128Internal;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
