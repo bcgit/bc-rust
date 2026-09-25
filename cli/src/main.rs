@@ -3,6 +3,7 @@ mod aes_cfb8_cmd;
 mod aes_cfb_cmd;
 mod aes_ctr_cmd;
 mod aes_ecb_cmd;
+mod ascon_cmd;
 mod block_mode_cmd;
 mod encoders_cmd;
 mod helpers;
@@ -329,6 +330,93 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-Hash256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    AsconHash256 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-XOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform Ascon-CXOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconCXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        /// Customization string in hex (optional).
+        #[arg(long)]
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Ascon-AEAD128 authenticated encryption/decryption of the content provided on stdin
+    /// (NIST SP 800-232).
+    ///
+    /// On encrypt, a fresh nonce is generated and written as the FIRST 16 BYTES of the output,
+    /// followed by the ciphertext and then the 16-byte tag; on --decrypt the nonce is read back
+    /// from the first 16 bytes of the input, so the two compose directly in a pipeline. This is
+    /// the same convention the AES commands use for their IV. Decryption fails with a non-zero
+    /// exit status if the tag does not verify.
+    ///
+    /// --nonce/--nonce-file override that: the nonce is then neither written on encrypt nor read
+    /// on decrypt, and the stream is exactly ciphertext||tag in both directions. That override
+    /// exists for reproducing known-answer vectors; repeating a nonce under one key destroys both
+    /// the confidentiality and the authenticity of Ascon-AEAD128.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    ///
+    /// Security note: decryption streams its output, so plaintext bytes are written to stdout
+    /// before the authentication tag (the last 16 bytes of input) can be checked. Do not treat
+    /// the output as authentic until this command exits with status 0; a non-zero exit means the
+    /// input was tampered with and any plaintext already written must be discarded.
+    AsconAEAD128 {
+        /// The 128-bit key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 128-bit key in hex or binary.
+        #[arg(long)]
+        key_file: Option<String>,
+
+        /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
+        /// stream (see above), and reusing one under a given key breaks the cipher.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex (authenticated but not encrypted).
+        #[arg(long)]
+        ad: Option<String>,
+
+        /// Decrypt instead of encrypt.
+        #[arg(short, long)]
+        decrypt: bool,
+
+        #[arg(short)]
+        /// Output in hex format.
         x: bool,
     },
 
@@ -1170,7 +1258,23 @@ enum Subcommands {
     },
 }
 
+// The CLI body runs on a spawned thread with an explicit 8 MiB stack rather than directly on the
+// process's main thread, whose size this program does not control: on Linux it is `ulimit -s`
+// (8 MiB by default), and it can be a good deal smaller elsewhere or under a tightened limit. With
+// a 1 MiB main stack a debug build overflows during argument parsing -- in every subcommand, before
+// any algorithm runs -- so this is a property of the command tree, not of one algorithm's state.
+// 8 MiB is the usual Linux default; do not lower it without re-checking that case.
 fn main() {
+    std::thread::Builder::new()
+        .name("bc-rust-main".to_string())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(run)
+        .expect("failed to start CLI thread")
+        .join()
+        .expect("CLI thread panicked");
+}
+
+fn run() {
     let cli = Cli::parse();
 
     match &cli.subcommands {
@@ -1248,6 +1352,18 @@ fn main() {
         }
         Some(Subcommands::CSHAKE256 { length, customization, function_name, x }) => {
             sha3_cmd::cshake_cmd(256, *length, function_name, customization, *x);
+        }
+        Some(Subcommands::AsconHash256 { x }) => {
+            ascon_cmd::hash256_cmd(*x);
+        }
+        Some(Subcommands::AsconXOF128 { length, x }) => {
+            ascon_cmd::xof128_cmd(*length, *x);
+        }
+        Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
+            ascon_cmd::cxof128_cmd(customization, *length, *x);
+        }
+        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, decrypt, x }) => {
+            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, *decrypt, *x);
         }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
