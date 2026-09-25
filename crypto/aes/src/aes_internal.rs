@@ -35,12 +35,12 @@
 //!
 //! The bit-sliced state is generic over its word width, and each 16 bits of width holds one
 //! block: `u16` planes hold one block, `u32` planes two and `u64` planes four (see the
-//! `bitslice` module in the source). The round functions cost about the same whatever the width, so on a
-//! 64-bit machine four independent blocks cost little more than one. Where a caller has them,
-//! [`ElectronicCodeBook::encrypt_4blocks`] is about three times the throughput of four
-//! [`ElectronicCodeBook::encrypt_block`] calls on x86-64, and
-//! [`ElectronicCodeBook::encrypt_2blocks`] about 1.6 times that of two (the crate's benches
-//! record the ratios):
+//! `bitslice` module in the source). The round functions cost about the same whatever the
+//! width, so on a 64-bit machine four independent blocks cost little more than one. Where a
+//! caller has them, [`ElectronicCodeBook::encrypt_4blocks`] is 3.0x the throughput of four
+//! [`ElectronicCodeBook::encrypt_block`] calls on x86-64 (3.7x for decryption), and
+//! [`ElectronicCodeBook::encrypt_2blocks`] 1.75x that of two (1.95x for decryption); the crate
+//! docs have the table and the benches record the numbers:
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES256Internal;

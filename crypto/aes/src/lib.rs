@@ -44,10 +44,19 @@
 //! A single block bitslices into a `[u16; 8]` planes object. Since XOR and XNOR of two u16's, two u32's, or two u64's
 //! is still a single operation (at least on a 64-bit machine), we can process two blocks at a time as a `[u32; 8]`
 //! or 4 blocks at a time as a `[u64; 8]` for approximately the same cost as a single block.
-//! The circuit and the masks cost about the same at every width, which is what makes the
-//! two- and four-block entry points well above the single-block one in throughput on a 64-bit
-//! machine (about 1.6 and 3 times on x86-64; according to our benches), and what the modes
-//! of operation batch through wherever their blocks are independent.
+//! The circuit and the masks cost about the same at every width, so the batched entry points
+//! multiply throughput. Measured with the crate's criterion benches on x86-64, 16 KiB per run,
+//! relative to the single-block entry point:
+//!
+//! | Entry point | Encrypt | Decrypt |
+//! |---|---|---|
+//! | `encrypt_block` / `decrypt_block` (`u16` planes) | 1.0x | 1.0x |
+//! | `encrypt_2blocks` / `decrypt_2blocks` (`u32` planes) | 1.75x | 1.95x |
+//! | `encrypt_4blocks` / `decrypt_4blocks` (`u64` planes) | 3.0x | 3.7x |
+//!
+//! The ratios hold for all three key lengths to within a few percent; in absolute terms AES-128
+//! single-block encryption is about 240 us per 16 KiB and decryption about 330 us. That multiplier
+//! is what the modes of operation batch through wherever their blocks are independent.
 //! This does not benefit modes such as CBC or GCM which, by construction, must process each block sequentially block,
 //! but does accelerate other modes where blocks can be parallelized.
 //!

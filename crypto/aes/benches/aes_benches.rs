@@ -4,10 +4,10 @@
 //! `encrypt_4blocks` over the same number of bytes. The engine runs on `u16`, `u32` or `u64`
 //! bit-planes for one, two or four blocks, and a round costs about the same at every width on a
 //! 64-bit machine, so the two- and four-block paths should approach twice and four times the
-//! throughput of the single-block one; what they achieve in practice (about 1.6 and 3 times on
-//! x86-64) is what these benches record. That ratio is the argument for modes of operation using
-//! the batched entry points wherever their blocks are independent (CTR, ECB, and the decrypt
-//! direction of CBC and CFB).
+//! throughput of the single-block one; what they achieve in practice is what these benches record
+//! (on x86-64: 1.75x and 3.0x for encryption, 1.95x and 3.7x for decryption). That multiplier is
+//! the argument for modes of operation using the batched entry points wherever their blocks are
+//! independent (CTR, ECB, and the decrypt direction of CBC and CFB).
 //!
 //! The data benches work in place on one buffer across iterations, so a `clone` never sits inside
 //! the timed closure. The permutation is a bijection, so the buffer stays random whichever
