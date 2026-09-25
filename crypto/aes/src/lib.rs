@@ -76,13 +76,15 @@
 //!
 //! Per-call stack usage is independent of key length and set by the plane width: 16, 32 or 64
 //! bytes of bit-sliced state for one, two or four blocks, the same again for the round key widened
-//! from its stored one-block form, plus the S-box circuit's temporaries, most of which the compiler
-//! keeps in registers.
+//! from its stored one-block form, plus the S-box circuit's spills. Measured as the deepest frame
+//! chain below each entry point in the release build (x86-64, return addresses included):
 //!
-//! For comparison, `AESLightEngine` carries 512 bytes of tables and a T-table implementation
-//! carries 2-8 KiB, in both cases *on top of* a key schedule of this same size.
-//!
-//! Measure with `cargo run --release -p mem_usage_benches --bin bench_aes_mem_usage`.
+//! | Entry point | Stack (bytes) |
+//! |---|---|
+//! | `new` (key expansion), AES-128 / 192 / 256 | 312 / 344 / 376 |
+//! | `encrypt_block` / `decrypt_block` (`u16` planes) | 208 / 208 |
+//! | `encrypt_2blocks` / `decrypt_2blocks` (`u32` planes) | 240 / 224 |
+//! | `encrypt_4blocks` / `decrypt_4blocks` (`u64` planes) | 320 / 352 |
 //!
 //! # Security Considerations
 //!

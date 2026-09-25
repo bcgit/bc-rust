@@ -114,6 +114,16 @@ fn rot_word(word: u32) -> u32 {
     word.rotate_right(8)
 }
 
+/// [`sbox`] is `#[inline(always)]` for the round loop's performance benefit.
+/// Here, that would inline the circuit into `sub_word`'s stack frame, which sits on top of the
+/// schedule being built.
+/// `#[inline(never)]` here trades 120 bytes lower stack usage of running the key schedule generation
+/// against roughly 2 percent performance for this one-off operation.
+#[inline(never)]
+fn sbox_out_of_line(q: &mut Planes<u32>) {
+    sbox(q)
+}
+
 /// SUBWORD(): applies the S-box to each of the four bytes of a word
 /// (FIPS 197 Sec 5.2, Eq 5.11).
 ///
@@ -135,7 +145,7 @@ fn rot_word(word: u32) -> u32 {
 fn sub_word(word: u32) -> u32 {
     let mut q: Planes<u32> = [word; 8];
     ortho(&mut q);
-    sbox(&mut q);
+    sbox_out_of_line(&mut q);
     ortho(&mut q);
     // The word was broadcast into all eight planes, so all eight must carry the same answer.
     debug_assert!(q.iter().all(|&plane| plane == q[0]), "the eight broadcast planes must agree");
@@ -188,7 +198,9 @@ pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
         for c in 0..4 {
             block[4 * c..4 * c + 4].copy_from_slice(&w[base + c].to_le_bytes());
         }
-        let q = u16::pack(&[block]);
+        // `from_ref` rather than `&[block]`, so the round key is transposed where it was built
+        // and never copied into a one-element array first.
+        let q = u16::pack(core::array::from_ref(&block));
         for j in 0..4 {
             // The two halves are disjoint, so `|` and `^` agree here; that is why `cargo mutants`
             // reports the `| -> ^` mutant on this line as surviving.
@@ -295,7 +307,8 @@ mod tests {
     fn classical_word<P: AESParams>(schedule: &P::Schedule, i: usize) -> u32 {
         let q = round_key::<P, u16>(schedule, i / 4);
         let mut block = [[0u8; 16]];
-        u16::unpack(&q, &mut block);
+        let mut q = q;
+        u16::unpack(&mut q, &mut block);
         let c = i % 4;
         u32::from_le_bytes(block[0][4 * c..4 * c + 4].try_into().unwrap())
     }

@@ -129,8 +129,9 @@ pub(crate) trait PlaneWord:
     /// Loads the blocks into bit-planes, block `b` into lane `b`.
     fn pack(blocks: &Self::Blocks) -> Planes<Self>;
 
-    /// Reads the blocks back out of the bit-planes; the exact inverse of [`PlaneWord::pack`].
-    fn unpack(q: &Planes<Self>, blocks: &mut Self::Blocks);
+    /// Reads the blocks back out of the bit-planes, in place; the exact inverse of
+    /// [`PlaneWord::pack`]. Takes the planes mutably so the untranspose needs no copy of them.
+    fn unpack(q: &mut Planes<Self>, blocks: &mut Self::Blocks);
 }
 
 /// The eight pre-transpose words of one block.
@@ -171,16 +172,17 @@ impl PlaneWord for u16 {
         self.rotate_right(n)
     }
 
+    #[inline(always)]
     fn pack(blocks: &[Block; 1]) -> Planes<Self> {
         let mut q = block_to_words(&blocks[0]);
         ortho(&mut q);
         q
     }
 
-    fn unpack(q: &Planes<Self>, blocks: &mut [Block; 1]) {
-        let mut q = *q;
-        ortho(&mut q);
-        words_to_block(&q, &mut blocks[0]);
+    #[inline(always)]
+    fn unpack(q: &mut Planes<Self>, blocks: &mut [Block; 1]) {
+        ortho(q);
+        words_to_block(q, &mut blocks[0]);
     }
 }
 
@@ -197,6 +199,7 @@ impl PlaneWord for u32 {
         x | (x << 16)
     }
 
+    #[inline(always)]
     fn pack(blocks: &[Block; 2]) -> Planes<Self> {
         let a = block_to_words(&blocks[0]);
         let b = block_to_words(&blocks[1]);
@@ -209,12 +212,12 @@ impl PlaneWord for u32 {
         q
     }
 
-    fn unpack(q: &Planes<Self>, blocks: &mut [Block; 2]) {
-        let mut q = *q;
-        ortho(&mut q);
+    #[inline(always)]
+    fn unpack(q: &mut Planes<Self>, blocks: &mut [Block; 2]) {
+        ortho(q);
         // `as u16` truncates to the low lane, which is the intent.
-        words_to_block(&q.map(|w| w as u16), &mut blocks[0]);
-        words_to_block(&q.map(|w| (w >> 16) as u16), &mut blocks[1]);
+        words_to_block(&core::array::from_fn(|i| q[i] as u16), &mut blocks[0]);
+        words_to_block(&core::array::from_fn(|i| (q[i] >> 16) as u16), &mut blocks[1]);
     }
 }
 
@@ -231,6 +234,7 @@ impl PlaneWord for u64 {
         x | (x << 16) | (x << 32) | (x << 48)
     }
 
+    #[inline(always)]
     fn pack(blocks: &[Block; 4]) -> Planes<Self> {
         let a = block_to_words(&blocks[0]);
         let b = block_to_words(&blocks[1]);
@@ -246,14 +250,14 @@ impl PlaneWord for u64 {
         q
     }
 
-    fn unpack(q: &Planes<Self>, blocks: &mut [Block; 4]) {
-        let mut q = *q;
-        ortho(&mut q);
+    #[inline(always)]
+    fn unpack(q: &mut Planes<Self>, blocks: &mut [Block; 4]) {
+        ortho(q);
         // `as u16` truncates to the low lane, which is the intent.
-        words_to_block(&q.map(|w| w as u16), &mut blocks[0]);
-        words_to_block(&q.map(|w| (w >> 16) as u16), &mut blocks[1]);
-        words_to_block(&q.map(|w| (w >> 32) as u16), &mut blocks[2]);
-        words_to_block(&q.map(|w| (w >> 48) as u16), &mut blocks[3]);
+        words_to_block(&core::array::from_fn(|i| q[i] as u16), &mut blocks[0]);
+        words_to_block(&core::array::from_fn(|i| (q[i] >> 16) as u16), &mut blocks[1]);
+        words_to_block(&core::array::from_fn(|i| (q[i] >> 32) as u16), &mut blocks[2]);
+        words_to_block(&core::array::from_fn(|i| (q[i] >> 48) as u16), &mut blocks[3]);
     }
 }
 
@@ -386,7 +390,7 @@ mod tests {
         for seed in 0..64 {
             let blocks = pseudo_random_blocks::<T>(seed);
             let mut out = T::Blocks::default();
-            T::unpack(&T::pack(&blocks), &mut out);
+            T::unpack(&mut T::pack(&blocks), &mut out);
             assert_eq!(out.as_ref(), blocks.as_ref());
         }
     }
