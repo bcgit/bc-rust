@@ -204,8 +204,28 @@ impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for TDES {
     fn decrypt_block(&self, block: &mut Block) {
         TDES::decrypt_block(self, block)
     }
-    // The pair and four-block methods keep their defaults: the engine has no natural unit larger
-    // than one block, so there is nothing to gain from overriding them.
+    // The engine has no natural unit larger than one block, so the pair and four-block methods
+    // are single-block loops.
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        for block in blocks.iter_mut() {
+            TDES::encrypt_block(self, block)
+        }
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        for block in blocks.iter_mut() {
+            TDES::decrypt_block(self, block)
+        }
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        for block in blocks.iter_mut() {
+            TDES::encrypt_block(self, block)
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        for block in blocks.iter_mut() {
+            TDES::decrypt_block(self, block)
+        }
+    }
 }
 
 impl core::fmt::Debug for TDES {

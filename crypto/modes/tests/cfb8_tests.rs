@@ -13,7 +13,7 @@
 
 mod common;
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -411,9 +411,9 @@ fn aes_chunking_matches_a_single_call() {
         }
     }
 
-    check::<AES_128, 16>("AES-128");
-    check::<AES_192, 24>("AES-192");
-    check::<AES_256, 32>("AES-256");
+    check::<AES128Internal, 16>("AES-128");
+    check::<AES192Internal, 24>("AES-192");
+    check::<AES256Internal, 32>("AES-256");
 }
 
 /// The pair path in `do_decrypt` must actually be taken.
@@ -422,7 +422,7 @@ fn aes_chunking_matches_a_single_call() {
 /// is correct. CFB8 decryption batches through `encrypt_2blocks`, so with this permutation six
 /// bytes handed over together come out wrong while the same bytes one at a time come out right.
 ///
-/// Two, not four: the trait's default `encrypt_4blocks` is two `encrypt_2blocks` calls, so four
+/// Two, not four: [`SwappedPairToy`]'s `encrypt_4blocks` is two `encrypt_2blocks` calls, so four
 /// bytes would also be wrong and would not distinguish the two paths.
 #[test]
 fn the_pair_path_is_really_used() {
@@ -526,7 +526,7 @@ fn one_shots_agree_with_the_streaming_api() {
 /// block cipher's diffusion rather than of the mode, and the byte-local toy cannot show it.
 #[test]
 fn a_ciphertext_bit_error_damages_exactly_sixteen_following_bytes() {
-    type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, 16>;
+    type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
     const LEN: usize = 48;
 
     let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -686,26 +686,29 @@ fn every_length_round_trips_without_padding() {
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<Cfb8<AES_128, Encrypting, 16, 16>>(), 176 + 16);
-    assert_eq!(size_of::<Cfb8<AES_192, Encrypting, 24, 16>>(), 208 + 16);
-    assert_eq!(size_of::<Cfb8<AES_256, Encrypting, 32, 16>>(), 240 + 16);
+    assert_eq!(size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>(), 176 + 16);
+    assert_eq!(size_of::<Cfb8<AES192Internal, Encrypting, 24, 16>>(), 208 + 16);
+    assert_eq!(size_of::<Cfb8<AES256Internal, Encrypting, 32, 16>>(), 240 + 16);
 
     // The direction marker is free, and does not change the layout.
     assert_eq!(
-        size_of::<Cfb8<AES_128, Encrypting, 16, 16>>(),
-        size_of::<Cfb8<AES_128, Decrypting, 16, 16>>()
+        size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>(),
+        size_of::<Cfb8<AES128Internal, Decrypting, 16, 16>>()
     );
 
     // ...and the general rule the docs state.
-    assert_eq!(size_of::<Cfb8<AES_256, Encrypting, 32, 16>>(), size_of::<AES_256>() + 16);
+    assert_eq!(
+        size_of::<Cfb8<AES256Internal, Encrypting, 32, 16>>(),
+        size_of::<AES256Internal>() + 16
+    );
 
     // The docs say CFB8 is the same size as CBC, and one `usize` smaller than CFB.
     assert_eq!(
-        size_of::<Cfb8<AES_128, Encrypting, 16, 16>>(),
-        size_of::<Cbc<AES_128, Encrypting, 16, 16>>()
+        size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>(),
+        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>()
     );
     assert_eq!(
-        size_of::<Cfb8<AES_128, Encrypting, 16, 16>>() + size_of::<usize>(),
-        size_of::<Cfb<AES_128, Encrypting, 16, 16>>()
+        size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>() + size_of::<usize>(),
+        size_of::<Cfb<AES128Internal, Encrypting, 16, 16>>()
     );
 }

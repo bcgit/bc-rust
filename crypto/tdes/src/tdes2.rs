@@ -122,6 +122,27 @@ impl ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN> for TDES2Key {
     fn decrypt_block(&self, block: &mut Block) {
         TDES2Key::decrypt_block(self, block)
     }
+    // As for `TDES`: no unit larger than one block, so the batch methods are single-block loops.
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::encrypt_block(self, block)
+        }
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::decrypt_block(self, block)
+        }
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::encrypt_block(self, block)
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::decrypt_block(self, block)
+        }
+    }
 }
 
 impl core::fmt::Debug for TDES2Key {

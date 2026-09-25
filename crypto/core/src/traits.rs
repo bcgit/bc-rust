@@ -378,61 +378,44 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
 
     /// The forward cipher function on two *independent* blocks, in place.
     ///
-    /// Provided as two [`ElectronicCodeBook::encrypt_block`] calls. Bit-sliced implementations
-    /// override it, because a pair of blocks is their natural unit of work and costs barely more
-    /// than one; see `bouncycastle-aes`.
+    /// Required, with no default, so that every implementor decides for itself how to run a pair.
+    /// A bit-sliced engine whose natural unit is a pair (see `bouncycastle-aes`) runs both blocks
+    /// in one pass for barely more than the cost of one; an engine with no unit wider than a block
+    /// makes two [`ElectronicCodeBook::encrypt_block`] calls. A default of two single-block calls
+    /// would be right only for the second kind, and silently wrong -- twice the work, with nothing
+    /// failing -- for a wider engine that forgot to override it.
     ///
-    /// Overrides must be indistinguishable from the default, including the order of the two
-    /// results. `TestFrameworkElectronicCodeBook` pins that.
+    /// Must be indistinguishable from two [`ElectronicCodeBook::encrypt_block`] calls, including
+    /// the order of the two results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes whose structure is parallel -- CBC decryption, CFB decryption, CTR -- should prefer
     /// this. CBC and CFB *encryption* cannot use it: each input block depends on the previous
     /// output.
-    fn encrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
-        let [a, b] = blocks;
-        self.encrypt_block(a);
-        self.encrypt_block(b);
-    }
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]);
 
     /// The inverse cipher function on two *independent* blocks, in place.
     /// See [`ElectronicCodeBook::encrypt_2blocks`].
-    fn decrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
-        let [a, b] = blocks;
-        self.decrypt_block(a);
-        self.decrypt_block(b);
-    }
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]);
 
     /// The forward cipher function on four *independent* blocks, in place.
     ///
-    /// Provided as two [`ElectronicCodeBook::encrypt_2blocks`] calls, so an implementation that
-    /// overrides only the pair form gets its benefit here too. An engine whose natural unit is
-    /// larger than a pair overrides this directly: a bit-sliced engine whose S-box circuit
-    /// substitutes four blocks per pass runs the four as one full pass rather than two half-empty
-    /// pair calls. Four is the unit because it is the widest any engine in this library fills:
-    /// AES fills a pair, and the `u16`- and `u32`-plane engines (SM4, Camellia, ARIA) fill four.
+    /// Required for the same reason as [`ElectronicCodeBook::encrypt_2blocks`]. An engine whose
+    /// natural unit is a pair runs the four as two pair calls; a bit-sliced engine whose S-box
+    /// circuit substitutes four blocks per pass runs them as one full pass rather than two
+    /// half-empty pair calls. Four is the unit because it is the widest any engine in this library
+    /// fills: AES fills a pair, and the `u16`- and `u32`-plane engines (SM4, Camellia, ARIA) fill
+    /// four.
     ///
-    /// Overrides must be indistinguishable from the default, including the order of the four
-    /// results. `TestFrameworkElectronicCodeBook` pins that.
+    /// Must be indistinguishable from four [`ElectronicCodeBook::encrypt_block`] calls, including
+    /// the order of the four results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes with parallel structure chunk their data into fours first, then pairs, then single
     /// blocks; see CBC decryption in `bouncycastle-modes`.
-    fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
-        // Four is a multiple of two, so the remainder is empty.
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            self.encrypt_2blocks(pair);
-        }
-    }
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
 
     /// The inverse cipher function on four *independent* blocks, in place.
     /// See [`ElectronicCodeBook::encrypt_4blocks`].
-    fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
-        // Four is a multiple of two, so the remainder is empty.
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            self.decrypt_2blocks(pair);
-        }
-    }
+    fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
 }
 
 /// A hash function is a cryptographic primitive that takes an input of any length and produces a fixed-size output.
