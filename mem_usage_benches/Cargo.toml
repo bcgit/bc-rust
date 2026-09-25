@@ -22,3 +22,7 @@ path = "src/bench_sha3_mem_usage.rs"
 [[bin]]
 name = "bench_aes_mem_usage"
 path = "src/bench_aes_mem_usage.rs"
+
+[[bin]]
+name = "bench_camellia_mem_usage"
+path = "src/bench_camellia_mem_usage.rs"

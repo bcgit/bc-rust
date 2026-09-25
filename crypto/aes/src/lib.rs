@@ -134,7 +134,6 @@ pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
 pub mod ecb;
-mod padded_mode;
 mod round;
 mod sbox;
 mod schedule;
