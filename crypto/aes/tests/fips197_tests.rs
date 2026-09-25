@@ -1,20 +1,20 @@
 //! Known-answer tests from NIST FIPS 197 itself.
 //!
-//! Appendix B -- the worked single-block AES-128 encryption -- plus its inverse, the two-block
-//! path, and key-handling behaviour.
+//! Appendix B -- the worked single-block AES-128 encryption -- plus its inverse, the two- and
+//! four-block paths, and key-handling behaviour.
 //!
 //! The Appendix A key expansions are **not** tested here. The key schedule is deliberately not
 //! public API (it is a `Secret` field), and a round-trip through the cipher cannot check it: a
 //! wrong `w[i]` is used by encryption and decryption alike, so the round trip still succeeds.
 //! Every word of all three expansions is instead checked against Appendix A inside
-//! `src/schedule.rs`, where the stored schedule can be decompressed and compared directly.
+//! `src/schedule.rs`, where the stored schedule can be unpacked and compared directly.
 //!
 //! Known-answer coverage for AES-192 and AES-256, which Appendix B does not reach, is in
 //! `sp800_38a_tests.rs` and `bc-test-data.rs`.
 //!
 //! All values here are transcribed from the published FIPS 197 (Update 1) PDF.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
 
@@ -93,7 +93,7 @@ fn appendix_b_two_block_path_agrees_with_the_single_block_path() {
         0x32,
     ];
 
-    // Pairing the Appendix B block with an unrelated one must not disturb either half.
+    // Batching the Appendix B block with unrelated ones must not disturb any of them.
     let other = [0xAAu8; 16];
     let mut other_alone = other;
     aes.encrypt_block(&mut other_alone);
@@ -103,11 +103,22 @@ fn appendix_b_two_block_path_agrees_with_the_single_block_path() {
     assert_eq!(pair[0], expected);
     assert_eq!(pair[1], other_alone);
 
-    // ...and in the other slot, which is a different bit position in the interleave.
+    // ...and in the other slot, which is a different lane of the bit-planes.
     let mut pair = [other, input];
     aes.encrypt_2blocks(&mut pair);
     assert_eq!(pair[0], other_alone);
     assert_eq!(pair[1], expected);
+
+    // ...and in each of the four lanes of the four-block path.
+    for slot in 0..4 {
+        let mut four = [other; 4];
+        four[slot] = input;
+        aes.encrypt_4blocks(&mut four);
+        for (i, block) in four.iter().enumerate() {
+            let want = if i == slot { expected } else { other_alone };
+            assert_eq!(*block, want, "slot {slot}, block {i}");
+        }
+    }
 }
 
 /// Encryption and decryption are inverses, under each Appendix A key.

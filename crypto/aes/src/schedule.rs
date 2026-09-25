@@ -3,18 +3,20 @@
 //! # Storage
 //!
 //! The schedule is `4 * (Nr + 1)` words -- 44, 52 or 60 -- exactly as FIPS 197 Sec 5.2 defines
-//! it, so 176, 208 or 240 bytes. It is stored in a **compressed** bit-sliced form: because
-//! bit-slicing is a permutation of bits it does not change the size, and because both interleaved
-//! blocks are encrypted under the same key the two halves of a bit-sliced round key are
-//! identical, so only one of every pair of words needs keeping. [`round_key`] re-doubles a single
-//! round key onto the stack when the round loop needs it.
+//! it, so 176, 208 or 240 bytes. It is stored **bit-sliced at the one-block width**: each
+//! 16-byte round key is transposed into eight `u16` planes exactly as a block is (see
+//! [`crate::bitslice`]), and two planes are kept per `u32` word of the array, so bit-slicing
+//! changes nothing about the size. Every block in a wider state is encrypted under the same key,
+//! so the round key at `u32` or `u64` width is the `u16` form replicated into every block's lane;
+//! [`round_key`] does that replication onto the stack when the round loop needs it, at whatever
+//! width the round loop is running.
 //!
-//! The alternative -- storing the doubled 8-plane form -- would need 352, 416 or 480 bytes, and
-//! holding the classical schedule *and* a bit-sliced copy would be worse still. Since low memory
-//! is the point of this crate, neither is done: [`expand`] writes the classical schedule into the
-//! final array and then rewrites it in place, one round key at a time, using eight words of
-//! stack. In particular it does not mirror BearSSL's `uint32_t skey[120]` (480-byte) scratch
-//! buffer.
+//! The alternative -- storing a round key per width, or the widest form -- would multiply the
+//! size, and holding the classical schedule *and* a bit-sliced copy would be worse still. Since
+//! low memory is the point of this crate, neither is done: [`expand`] writes the classical
+//! schedule into the final array and then rewrites it in place, one round key at a time, using
+//! a few words of stack. In particular, it does not mirror BearSSL's `uint32_t skey[120]`
+//! (480-byte) scratch buffer.
 //!
 //! # Constant-time
 //!
@@ -23,7 +25,7 @@
 //! the bit-sliced circuit in [`crate::sbox`]. A table-driven "light" AES that only removes the
 //! tables from the cipher, and not from the key schedule, still leaks through the schedule.
 
-use crate::bitslice::{Planes, ortho};
+use crate::bitslice::{Block, PlaneWord, Planes, ortho};
 use crate::sbox::sbox;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
@@ -61,7 +63,7 @@ pub trait AESParams: AESParamsInternalTrait {
     const NR: usize;
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     const ALG_NAME: &'static str;
-    /// `[u32; 4 * (NR + 1)]` -- the compressed schedule. See the module docs.
+    /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule. See the module docs.
     type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
 }
 
@@ -120,18 +122,18 @@ fn rot_word(word: u32) -> u32 {
 ///
 /// after [`ortho`], plane `q[k]` bit `8L + i` equals bit `8L + k` of the *input* word `q[i]` --
 /// and every input word is the same `word`, so that bit is bit `k` of byte `L` of `word`
-/// regardless of `i`. In the layout of [`crate::bitslice`], the bit positions `8L + i` for
-/// `i = 0..8` are all four columns of row `L`, in both blocks. So the transposed state holds byte
-/// `L` of `word` in every position of row `L`, one S-box pass substitutes all four bytes (sixteen
-/// times over, redundantly), and transposing back reassembles the word. All eight planes then
-/// hold the same result, so `q[0]` is SUBWORD(`word`); `test_sub_word_fills_every_plane` checks
-/// that.
+/// regardless of `i`. So the transposed state holds byte `L` of `word` in all eight positions of
+/// byte-lane `L`; since the S-box circuit acts on each bit position independently, it does not
+/// matter that this is not the block layout of [`crate::bitslice`]. One S-box pass substitutes
+/// all four bytes (eight times over, redundantly), and transposing back reassembles the word. All
+/// eight planes then hold the same result, so `q[0]` is SUBWORD(`word`);
+/// `test_sub_word_fills_every_plane` checks that.
 ///
 /// It costs a full 113-gate S-box evaluation to substitute four bytes, which is wasteful, but it
 /// happens `Nr` or so times per key rather than per block. Translated from BearSSL
 /// `aes_ct.c:sub_word`.
 fn sub_word(word: u32) -> u32 {
-    let mut q: Planes = [word; 8];
+    let mut q: Planes<u32> = [word; 8];
     ortho(&mut q);
     sbox(&mut q);
     ortho(&mut q);
@@ -140,16 +142,16 @@ fn sub_word(word: u32) -> u32 {
     q[0]
 }
 
-/// KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2), returning the compressed bit-sliced schedule.
+/// KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2), returning the bit-sliced schedule.
 ///
-/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::aes`] checks that before calling, so this
+/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::aes_internal`] checks that before calling, so this
 /// cannot fail and takes no `Result`.
 ///
 /// Algorithm 2 is followed literally -- lines 2-6 copy the key into `w[0..Nk]`, lines 7-16 derive
 /// the rest -- and then the finished schedule is rewritten in place into the storage form
 /// described in the module docs. Verified against the worked expansions in FIPS 197
-/// Appendix A.1, A.2 and A.3 by the tests at the bottom of this file, which decompress the
-/// stored schedule and compare every w[i].
+/// Appendix A.1, A.2 and A.3 by the tests at the bottom of this file, which unpack the stored
+/// schedule and compare every `w[i]`.
 pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
     debug_assert_eq!(key.len(), P::KEY_LEN);
 
@@ -177,50 +179,50 @@ pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
         w[i] = temp;
     }
 
-    // Rewrite in place into the compressed bit-sliced form, one 4-word round key at a time.
-    // Both interleaved blocks use the same key, so each round key is bit-sliced with the word
-    // duplicated into both halves; the two halves are then identical and one bit of each pair is
-    // redundant, so the even-position bits of the first word and the odd-position bits of the
-    // second are packed into a single stored word.
+    // Rewrite in place into the bit-sliced form, one 4-word round key at a time. A round key is
+    // the 16 bytes of w[4*round .. 4*round + 4], which by Eq 3.6 is a block with s[r,c] the byte
+    // `r` of word `c`, so it is transposed exactly as a block is, at the one-block width. The
+    // eight `u16` planes go back into the same four `u32` slots, two per word.
     for base in (0..w.len()).step_by(4) {
-        let mut q: Planes = [0u32; 8];
-        for j in 0..4 {
-            q[2 * j] = w[base + j];
-            q[2 * j + 1] = w[base + j];
+        let mut block: Block = [0; crate::BLOCK_LEN];
+        for c in 0..4 {
+            block[4 * c..4 * c + 4].copy_from_slice(&w[base + c].to_le_bytes());
         }
-        ortho(&mut q);
+        let q = u16::pack(&[block]);
         for j in 0..4 {
-            // The two masks are complementary, so the operands are disjoint and `|` and `^` agree.
-            // That is why `cargo mutants` reports the `| -> ^` mutant here as surviving.
-            w[base + j] = (q[2 * j] & 0x5555_5555) | (q[2 * j + 1] & 0xAAAA_AAAA);
+            // The two halves are disjoint, so `|` and `^` agree here; that is why `cargo mutants`
+            // reports the `| -> ^` mutant on this line as surviving.
+            w[base + j] = u32::from(q[2 * j]) | (u32::from(q[2 * j + 1]) << 16);
         }
     }
 
     schedule
 }
 
-/// Re-doubles round key `round` of a compressed schedule into its eight-plane form.
+/// Widens round key `round` of the schedule into its eight-plane form at plane width `T`.
 ///
-/// The inverse of the packing at the end of [`expand`]: the even-position bits are spread back
-/// over both positions of each pair, and likewise the odd-position bits, giving the two identical
-/// halves that [`crate::round::add_round_key`] expects. Eight words of stack, built fresh each
+/// The inverse of the packing at the end of [`expand`], followed by the replication: each stored
+/// `u16` plane is unpacked from its half of a `u32` word and [`PlaneWord::splat`] into every
+/// block's lane, which is the round key [`crate::round::add_round_key`] expects, since every
+/// block is under the same key. Eight words of stack at the width of the state, built fresh each
 /// round rather than stored.
 ///
-/// Translated from BearSSL `aes_ct.c:br_aes_ct_skey_expand`.
+/// Corresponds to BearSSL `aes_ct.c:br_aes_ct_skey_expand`, which does the same job for its own
+/// (interleaved) layout.
 #[inline(always)]
-pub(crate) fn round_key<P: AESParams>(schedule: &P::Schedule, round: usize) -> Planes {
+pub(crate) fn round_key<P: AESParams, T: PlaneWord>(
+    schedule: &P::Schedule,
+    round: usize,
+) -> Planes<T> {
     debug_assert!(round <= P::NR);
     let w = schedule.as_ref();
-    let mut sk: Planes = [0u32; 8];
+    let mut sk: Planes<T> = [T::splat(0); 8];
     for j in 0..4 {
         let packed = w[4 * round + j];
-        let even = packed & 0x5555_5555;
-        let odd = packed & 0xAAAA_AAAA;
-        // `even` occupies only even bit positions and `even << 1` only odd ones (and vice versa
-        // for `odd`), so both spreads combine disjoint operands and `|` and `^` agree. Hence the
-        // two `| -> ^` mutants `cargo mutants` reports here as surviving.
-        sk[2 * j] = even | (even << 1);
-        sk[2 * j + 1] = odd | (odd >> 1);
+        // `as u16` truncates to the low half, which is the intent: plane 2j is in the low half
+        // and plane 2j + 1 in the high half.
+        sk[2 * j] = T::splat(packed as u16);
+        sk[2 * j + 1] = T::splat((packed >> 16) as u16);
     }
     sk
 }
@@ -286,16 +288,16 @@ mod tests {
 
     /// Recovers the classical `w[i]` from a stored schedule.
     ///
-    /// [`round_key`] undoes the pair-compression, and [`ortho`] then undoes the bit-slicing,
-    /// leaving the duplicated pre-slicing words with `w[4*round + j]` in position `2j`. This is
-    /// what lets the Appendix A vectors test the real [`expand`] output rather than a
-    /// reimplementation of it.
+    /// [`round_key`] at the one-block width gives the round key as eight `u16` planes, and
+    /// unpacking those as a block undoes the bit-slicing, leaving the round key's 16 bytes with
+    /// `w[4*round + c]` at bytes `4c..4c+4`. This is what lets the Appendix A vectors test the
+    /// real [`expand`] output rather than a reimplementation of it.
     fn classical_word<P: AESParams>(schedule: &P::Schedule, i: usize) -> u32 {
-        let mut q = round_key::<P>(schedule, i / 4);
-        ortho(&mut q);
-        let j = i % 4;
-        assert_eq!(q[2 * j], q[2 * j + 1], "both interleaved halves hold the same round key");
-        q[2 * j]
+        let q = round_key::<P, u16>(schedule, i / 4);
+        let mut block = [[0u8; 16]];
+        u16::unpack(&q, &mut block);
+        let c = i % 4;
+        u32::from_le_bytes(block[0][4 * c..4 * c + 4].try_into().unwrap())
     }
 
     /// Compares a whole expansion against an Appendix A table.
@@ -377,7 +379,7 @@ mod tests {
         // The doc comment claims all eight planes end up holding SUBWORD(word); if that ever
         // stopped being true, picking q[0] would be an arbitrary choice rather than a correct one.
         let word = 0x1234_5678u32;
-        let mut q: Planes = [word; 8];
+        let mut q: Planes<u32> = [word; 8];
         ortho(&mut q);
         sbox(&mut q);
         ortho(&mut q);
@@ -386,9 +388,10 @@ mod tests {
     }
 
     #[test]
-    fn test_round_key_inverts_the_compression() {
-        // Round-tripping a known schedule: expand(), then round_key() for every round, and check
-        // the recovered planes match bit-slicing the classical words directly.
+    fn test_round_key_is_the_bit_sliced_round_key_at_every_width() {
+        // Round-tripping a known schedule: expand(), then round_key() for every round and width,
+        // and check the recovered planes match bit-slicing the classical round key directly as
+        // a block -- one copy of it per lane.
         let key = [
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
@@ -410,14 +413,25 @@ mod tests {
         }
 
         for round in 0..=AES128Params::NR {
-            let got = round_key::<AES128Params>(&schedule, round);
-            let mut expected: Planes = [0u32; 8];
-            for j in 0..4 {
-                expected[2 * j] = w[4 * round + j];
-                expected[2 * j + 1] = w[4 * round + j];
+            let mut block = [0u8; 16];
+            for c in 0..4 {
+                block[4 * c..4 * c + 4].copy_from_slice(&w[4 * round + c].to_le_bytes());
             }
-            ortho(&mut expected);
-            assert_eq!(got, expected, "round {round}");
+            assert_eq!(
+                round_key::<AES128Params, u16>(&schedule, round),
+                u16::pack(&[block]),
+                "round {round}, u16"
+            );
+            assert_eq!(
+                round_key::<AES128Params, u32>(&schedule, round),
+                u32::pack(&[block; 2]),
+                "round {round}, u32"
+            );
+            assert_eq!(
+                round_key::<AES128Params, u64>(&schedule, round),
+                u64::pack(&[block; 4]),
+                "round {round}, u64"
+            );
         }
     }
 

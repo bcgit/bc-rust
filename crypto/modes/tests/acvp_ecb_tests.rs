@@ -17,7 +17,7 @@
 //! declared direction. The MCT (Monte Carlo) groups carry a `resultsArray` defined by the ACVP AES
 //! specification rather than SP 800-38A and are skipped, with the count reported.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };

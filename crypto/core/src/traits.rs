@@ -392,7 +392,6 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     /// half-empty pair calls. Four is the unit because it is the widest any engine in this library
     /// fills: AES fills a pair, and the `u16`- and `u32`-plane engines (SM4, Camellia, ARIA) fill
     /// four.
-    ///
     /// Must be indistinguishable from four [`ElectronicCodeBook::encrypt_block`] calls, including
     /// the order of the four results. `TestFrameworkElectronicCodeBook` pins that.
     ///

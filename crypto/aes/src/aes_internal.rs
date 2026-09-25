@@ -4,7 +4,7 @@
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
@@ -31,14 +31,19 @@
 //!                    0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34]);
 //! ```
 //!
-//! ## Two blocks at a time
+//! ## Two or four blocks at a time
 //!
-//! The bit-sliced state holds two blocks, so two independent blocks cost barely more than one.
-//! Where a caller has two, [`ElectronicCodeBook::encrypt_2blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_2blocks) is roughly twice the throughput of two
-//! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block) calls:
+//! The bit-sliced state is generic over its word width, and each 16 bits of width holds one
+//! block: `u16` planes hold one block, `u32` planes two and `u64` planes four (see the
+//! `bitslice` module in the source). The round functions cost about the same whatever the width, so on a
+//! 64-bit machine four independent blocks cost little more than one. Where a caller has them,
+//! [`ElectronicCodeBook::encrypt_4blocks`] is about three times the throughput of four
+//! [`ElectronicCodeBook::encrypt_block`] calls on x86-64, and
+//! [`ElectronicCodeBook::encrypt_2blocks`] about 1.6 times that of two (the crate's benches
+//! record the ratios):
 //!
 //! ```
-//! use bouncycastle_aes::AES256Internal;
+//! use bouncycastle_aes::aes_internal::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::ElectronicCodeBook;
 //!
@@ -46,13 +51,18 @@
 //!     .expect("a 32-byte symmetric cipher key");
 //! let aes = AES256Internal::new(&key).expect("a valid AES-256 key");
 //!
-//! let mut blocks = [[0u8; 16], [1u8; 16]];
-//! aes.encrypt_2blocks(&mut blocks);
-//! aes.decrypt_2blocks(&mut blocks);
-//! assert_eq!(blocks, [[0u8; 16], [1u8; 16]]);
+//! let mut pair = [[0u8; 16], [1u8; 16]];
+//! aes.encrypt_2blocks(&mut pair);
+//! aes.decrypt_2blocks(&mut pair);
+//! assert_eq!(pair, [[0u8; 16], [1u8; 16]]);
+//!
+//! let mut four = [[0u8; 16], [1u8; 16], [2u8; 16], [3u8; 16]];
+//! aes.encrypt_4blocks(&mut four);
+//! aes.decrypt_4blocks(&mut four);
+//! assert_eq!(four, [[0u8; 16], [1u8; 16], [2u8; 16], [3u8; 16]]);
 //! ```
 
-use crate::bitslice::{Block, Planes, pack, unpack};
+use crate::bitslice::{Block, PlaneWord, Planes};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
 use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{AES128Params, AES192Params, AES256Params, AESParams, expand, round_key};
@@ -80,7 +90,7 @@ pub const BLOCK_LEN: usize = 16;
 ///
 /// The only state is the key schedule, held in a [`Secret`] so that it is zeroized on drop and
 /// redacted from `Debug`. There is no direction flag and no initialisation state: both directions
-/// work from the same schedule (see [`ElectronicCodeBook::decrypt_2blocks`]), and a constructed value is always
+/// work from the same schedule (see the `inv_cipher` method), and a constructed value is always
 /// ready to use, so there is no `init()` or `reset()`.
 pub struct AESInternal<P: AESParams> {
     schedule: Secret<P::Schedule>,
@@ -133,29 +143,32 @@ impl<P: AESParams> AESInternal<P> {
         Ok(())
     }
 
-    /// CIPHER() on two blocks at once (FIPS 197 Sec 5.1, Algorithm 1).
+    /// CIPHER() on every block in the state at once (FIPS 197 Sec 5.1, Algorithm 1).
+    ///
+    /// `T` is the plane width, and so the number of blocks: one, two or four. The body is the
+    /// same at every width; see [`crate::bitslice`].
     ///
     /// Algorithm 1 line by line: line 3 is the initial ADDROUNDKEY() with `w[0..3]`; lines 4-9 are
     /// the `Nr - 1` full rounds; lines 10-13 are the final round, which omits MIXCOLUMNS().
-    fn cipher2(&self, q: &mut Planes) {
+    fn cipher<T: PlaneWord>(&self, q: &mut Planes<T>) {
         // line 3: state = state XOR w[0..3]
-        add_round_key(q, &round_key::<P>(&self.schedule, 0));
+        add_round_key(q, &round_key::<P, T>(&self.schedule, 0));
 
         // lines 4-9: for round from 1 to Nr - 1
         for round in 1..P::NR {
             sbox(q); // line 5, SUBBYTES()
             shift_rows(q); // line 6, SHIFTROWS()
             mix_columns(q); // line 7, MIXCOLUMNS()
-            add_round_key(q, &round_key::<P>(&self.schedule, round)); // line 8
+            add_round_key(q, &round_key::<P, T>(&self.schedule, round)); // line 8
         }
 
         // lines 10-12: the final round has no MIXCOLUMNS()
         sbox(q);
         shift_rows(q);
-        add_round_key(q, &round_key::<P>(&self.schedule, P::NR));
+        add_round_key(q, &round_key::<P, T>(&self.schedule, P::NR));
     }
 
-    /// INVCIPHER() on two blocks at once (FIPS 197 Sec 5.3, Algorithm 3).
+    /// INVCIPHER() on every block in the state at once (FIPS 197 Sec 5.3, Algorithm 3).
     ///
     /// This is the **straight** inverse cipher of Algorithm 3, not the equivalent inverse cipher
     /// of Sec 5.3.5. That matters: Algorithm 3 applies INVMIXCOLUMNS() *after* ADDROUNDKEY(),
@@ -170,73 +183,80 @@ impl<P: AESParams> AESInternal<P> {
     ///
     /// Line by line: line 3 is ADDROUNDKEY() with the last round key; lines 4-9 are the
     /// `Nr - 1` full inverse rounds; lines 10-13 are the final one, which omits INVMIXCOLUMNS().
-    fn inv_cipher2(&self, q: &mut Planes) {
+    fn inv_cipher<T: PlaneWord>(&self, q: &mut Planes<T>) {
         // line 3: state = state XOR w[4*Nr .. 4*Nr+3]
-        add_round_key(q, &round_key::<P>(&self.schedule, P::NR));
+        add_round_key(q, &round_key::<P, T>(&self.schedule, P::NR));
 
         // lines 4-9: for round from Nr - 1 down to 1
         for round in (1..P::NR).rev() {
             inv_shift_rows(q); // line 5, INVSHIFTROWS()
             inv_sbox(q); // line 6, INVSUBBYTES()
-            add_round_key(q, &round_key::<P>(&self.schedule, round)); // line 7
+            add_round_key(q, &round_key::<P, T>(&self.schedule, round)); // line 7
             inv_mix_columns(q); // line 8, INVMIXCOLUMNS()
         }
 
         // lines 10-12: the final inverse round has no INVMIXCOLUMNS()
         inv_shift_rows(q);
         inv_sbox(q);
-        add_round_key(q, &round_key::<P>(&self.schedule, 0));
+        add_round_key(q, &round_key::<P, T>(&self.schedule, 0));
     }
 
-    /// Encrypts two blocks in place.
+    /// Encrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::cipher`],
+    /// transpose out.
+    #[inline(always)]
+    fn encrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
+        let mut q = T::pack(blocks);
+        self.cipher(&mut q);
+        T::unpack(&q, blocks);
+    }
+
+    /// Decrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::inv_cipher`],
+    /// transpose out.
+    #[inline(always)]
+    fn decrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
+        let mut q = T::pack(blocks);
+        self.inv_cipher(&mut q);
+        T::unpack(&q, blocks);
+    }
+
+    /// Encrypts one block in place, on `u16` planes.
     ///
-    /// This is the natural unit of work: the bit-sliced state holds two blocks, so two blocks cost
-    /// almost exactly what one does. Prefer this over two [`ElectronicCodeBook::encrypt_block`] calls whenever
-    /// two blocks are available and independent -- which, for a mode of operation, means CTR, or
-    /// the decryption direction of CBC and CFB, but *not* CBC encryption, whose blocks are
-    /// serially dependent.
+    /// This is the right call when only one block is available -- CBC and CFB encryption, whose
+    /// blocks are serially dependent -- and it does no wasted work: the `u16` state holds
+    /// exactly one block. Where two or four independent blocks are available, which for a mode
+    /// of operation means CTR or the decryption direction of CBC and CFB, prefer
+    /// [`Self::encrypt_2blocks`] or [`Self::encrypt_4blocks`], which cost little more per call.
     ///
     /// Infallible: a constructed [`AESInternal`] is always usable and every input length is fixed.
-    pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        let mut q = pack(&blocks[0], &blocks[1]);
-        self.cipher2(&mut q);
-        let (a, b) = blocks.split_at_mut(1);
-        unpack(&q, &mut a[0], &mut b[0]);
-    }
-
-    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_2blocks`].
-    pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        let mut q = pack(&blocks[0], &blocks[1]);
-        self.inv_cipher2(&mut q);
-        let (a, b) = blocks.split_at_mut(1);
-        unpack(&q, &mut a[0], &mut b[0]);
-    }
-
-    /// Encrypts one block in place.
-    ///
-    /// The bit-sliced state always holds two blocks, so a single-block call duplicates the block
-    /// into both halves and discards one result: it does twice the necessary work. Use
-    /// [`ElectronicCodeBook::encrypt_2blocks`] where two blocks are available.
-    ///
-    /// Duplicating the block costs exactly what filling the unused half with zeros would, and it
-    /// buys a free self-check: the two halves must come out equal, which `debug_assert` verifies.
-    /// That is the whole reason for the choice -- it is not a security property, since the unused
-    /// half is never returned either way.
     pub(crate) fn encrypt_block(&self, block: &mut Block) {
-        let mut q = pack(block, block);
-        self.cipher2(&mut q);
-        let mut discard = [0u8; BLOCK_LEN];
-        unpack(&q, block, &mut discard);
-        debug_assert_eq!(*block, discard, "the two interleaved halves must agree");
+        self.encrypt::<u16>(core::array::from_mut(block));
     }
 
-    /// Decrypts one block in place. See [`ElectronicCodeBook::encrypt_block`] for the two-blocks-at-once caveat.
+    /// Decrypts one block in place, on `u16` planes. See [`Self::encrypt_block`].
     pub(crate) fn decrypt_block(&self, block: &mut Block) {
-        let mut q = pack(block, block);
-        self.inv_cipher2(&mut q);
-        let mut discard = [0u8; BLOCK_LEN];
-        unpack(&q, block, &mut discard);
-        debug_assert_eq!(*block, discard, "the two interleaved halves must agree");
+        self.decrypt::<u16>(core::array::from_mut(block));
+    }
+
+    /// Encrypts two independent blocks in place, on `u32` planes, for about the cost of one.
+    /// See [`Self::encrypt_block`] for when to use which.
+    pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        self.encrypt::<u32>(blocks);
+    }
+
+    /// Decrypts two independent blocks in place, on `u32` planes. See [`Self::encrypt_block`].
+    pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        self.decrypt::<u32>(blocks);
+    }
+
+    /// Encrypts four independent blocks in place, on `u64` planes, for about the cost of one.
+    /// See [`Self::encrypt_block`] for when to use which.
+    pub(crate) fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        self.encrypt::<u64>(blocks);
+    }
+
+    /// Decrypts four independent blocks in place, on `u64` planes. See [`Self::encrypt_block`].
+    pub(crate) fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        self.decrypt::<u64>(blocks);
     }
 }
 

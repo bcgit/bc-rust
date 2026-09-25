@@ -36,7 +36,7 @@
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
 //! than in SP 800-38A, and implementing it from anything else would be guesswork.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };

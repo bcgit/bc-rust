@@ -9,7 +9,7 @@
 //! different, non-interoperable mode with its own aliases -- [`AES_CFB8_128`](crate::AES_CFB8_128)
 //! and friends -- and `s = 1` is not implemented; see the `bouncycastle_modes::Cfb` docs.
 
-use crate::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_modes::Cfb;
 
 /// AES-128 in CFB128 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

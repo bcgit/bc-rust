@@ -15,7 +15,8 @@
 //!
 //! Transcribed from the published SP 800-38A PDF, sections F.1.1 through F.1.6.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use bouncycastle_aes::BLOCK_LEN;
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_hex as hex;
@@ -139,9 +140,9 @@ fn f_1_6_ecb_aes256_decrypt() {
 
 /// The two-block entry points must produce exactly the single-block answers.
 ///
-/// This is the test that pins the interleave: a mistake in which bit of each pair belongs to
-/// which block shows up here and nowhere in the single-block tests, because a single-block call
-/// puts the same data in both halves.
+/// This is the test that pins the lane placement: a mistake in which 16-bit lane of the planes a
+/// block's bits belong to shows up here and nowhere in the single-block tests, because a
+/// single-block call has only one lane.
 #[test]
 fn two_block_path_matches_the_f_1_vectors() {
     let aes = AES128Internal::new(&key_material::<16>(KEY_128)).unwrap();
@@ -174,4 +175,37 @@ fn two_block_path_is_slot_symmetric() {
     assert_eq!(forward[1], reversed[0]);
     assert_eq!(forward[0], block(CIPHERTEXTS_256[0]));
     assert_eq!(forward[1], block(CIPHERTEXTS_256[1]));
+}
+
+// ---- the four-block path against the same vectors ------------------------------------------
+
+/// The four-block entry points must produce exactly the single-block answers.
+///
+/// F.1 has exactly four blocks, so one call covers the whole vector. As with the pair test, this
+/// is what pins the four 16-bit lanes of the `u64` planes to the four slots, in order.
+#[test]
+fn four_block_path_matches_the_f_1_vectors() {
+    let aes = AES192Internal::new(&key_material::<24>(KEY_192)).unwrap();
+
+    let mut four = PLAINTEXTS.map(block);
+    aes.encrypt_4blocks(&mut four);
+    assert_eq!(four, CIPHERTEXTS_192.map(block));
+
+    aes.decrypt_4blocks(&mut four);
+    assert_eq!(four, PLAINTEXTS.map(block));
+}
+
+/// Permuting the four slots must permute the four results, and nothing else.
+#[test]
+fn four_block_path_is_slot_symmetric() {
+    let aes = AES256Internal::new(&key_material::<32>(KEY_256)).unwrap();
+
+    // Every cyclic rotation of the four F.1 plaintexts.
+    for shift in 0..4 {
+        let mut four: [_; 4] = core::array::from_fn(|i| block(PLAINTEXTS[(i + shift) % 4]));
+        aes.encrypt_4blocks(&mut four);
+        for i in 0..4 {
+            assert_eq!(four[i], block(CIPHERTEXTS_256[(i + shift) % 4]), "shift {shift}, slot {i}");
+        }
+    }
 }

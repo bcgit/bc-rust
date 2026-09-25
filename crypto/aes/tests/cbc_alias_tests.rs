@@ -5,7 +5,8 @@
 //! the padding scheme changes the behaviour rather than being decorative. The mode and the padding
 //! layer are tested in their own crates; this checks the wiring between them.
 
-use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256, AES128Internal};
+use bouncycastle_aes::aes_internal::AES128Internal;
+use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};

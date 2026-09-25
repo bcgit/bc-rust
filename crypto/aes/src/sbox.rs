@@ -13,9 +13,10 @@
 //! access and no secret-dependent branch. The two functions here are the only place in the crate
 //! where secret data meets non-linear logic; everything else is XOR, rotate and mask.
 //!
-//! Because the planes hold sixteen byte positions of two blocks at once, one pass of the circuit
-//! substitutes all 32 bytes -- the whole SUBBYTES() transformation of two blocks -- rather than
-//! one byte.
+//! Because the planes hold all sixteen byte positions of every block in the state at once -- one,
+//! two or four blocks, by the plane width (see [`crate::bitslice`]) -- one pass of the circuit is
+//! the whole SUBBYTES() transformation of all of them, rather than one byte. The circuit is the
+//! same gates whatever the width: nothing in it knows where one block ends and the next begins.
 //!
 //! # What the circuit computes
 //!
@@ -38,22 +39,29 @@
 //! The gate list is a mechanical transcription of `SLP_AES_113.txt`: `+` became `^`, `x` became
 //! `&`, `#` became `!(.. ^ ..)`, and the SLP variable names are unchanged apart from case. It is
 //! not independently meaningful line by line and should not be "tidied"; it is verified as a
-//! whole by `test_sbox_matches_fips197_table_4`, which checks all 256 inputs against Table 4.
+//! whole by the known-answer tests in `tests/` (FIPS 197 Appendix B, SP 800-38A F.1 and the ACVP
+//! vectors), which push every one of the 256 byte values through it many times over, and
+//! `cargo mutants` confirms those tests kill every gate mutation but the one noted at `t37`.
+//! There are no unit tests in this file for that reason.
 //!
 //! # Bit numbering
 //!
 //! The SLP numbers its inputs `U0..U7` and outputs `S0..S7` with **`U0` as the most significant
 //! bit** of the byte, which is the reverse of the plane index. So `U0` is plane `q[7]` and `U7`
-//! is plane `q[0]`, and likewise for the outputs. `test_sbox_matches_fips197_table_4` is what
-//! pins this down -- reversing it produces a wrong S-box, not a subtly different one.
+//! is plane `q[0]`, and likewise for the outputs. The known-answer tests are what pin this down
+//! -- reversing it produces a wrong S-box, not a subtly different one.
 
-use crate::bitslice::Planes;
+use crate::bitslice::{PlaneWord, Planes};
 
-/// SUBBYTES(): applies the AES S-box to every byte position of both blocks in `q`
+/// SUBBYTES(): applies the AES S-box to every byte position of every block in `q`
 /// (FIPS 197 Sec 5.1.1, the transformation tabulated in Table 4).
 ///
 /// The 113-gate Boyar-Peralta circuit, transcribed from `SLP_AES_113.txt`. See the module docs.
-pub(crate) fn sbox(q: &mut Planes) {
+// `#[inline(always)]` is a measured choice:
+// Inlining lets the planes live in registers across the whole round.
+// On x86-64 that is worth about 15-20%.
+#[inline(always)]
+pub(crate) fn sbox<T: PlaneWord>(q: &mut Planes<T>) {
     // SLP inputs U0..U7, most-significant bit first, so U0 is the highest plane.
     let u0 = q[7];
     let u1 = q[6];
@@ -128,7 +136,7 @@ pub(crate) fn sbox(q: &mut Planes) {
     // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
     // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
     // bytes, so XOR and OR agree here. It is the only one of the circuit's 77 XOR gates with that
-    // property -- every other `^ -> |` mutant is killed by `test_sbox_matches_fips197_table_4`.
+    // property -- every other `^ -> |` mutant is killed by the known-answer tests in `tests/`.
     let t37 = t36 ^ t34;
     let t38 = t27 ^ t36;
     let t39 = t29 & t38;
@@ -199,7 +207,7 @@ pub(crate) fn sbox(q: &mut Planes) {
     q[0] = s7;
 }
 
-/// INVSUBBYTES(): applies the inverse AES S-box to every byte position of both blocks in `q`
+/// INVSUBBYTES(): applies the inverse AES S-box to every byte position of every block in `q`
 /// (FIPS 197 Sec 5.3.2, the transformation tabulated in Table 6).
 ///
 /// Rather than a second 113-gate circuit, this reuses [`sbox`] by conjugating it with the
@@ -215,11 +223,14 @@ pub(crate) fn sbox(q: &mut Planes) {
 ///
 /// So applying [`inv_affine`], then the forward circuit, then [`inv_affine`] again yields the
 /// inverse S-box, at the cost of 16 extra XORs and 8 complements instead of a whole second
-/// circuit. Verified exhaustively against Table 6 by `test_inv_sbox_matches_fips197_table_6`.
+/// circuit. Verified against Table 6 by the decryption known-answer tests in `tests/`
+/// (SP 800-38A F.1.2/4/6 and the ACVP decrypt vectors), and against [`sbox`] by the ECB
+/// conformance suite's inverse checks.
 ///
 /// The derivation and the layer below are from BearSSL `aes_ct_dec.c`
 /// (`br_aes_ct_bitslice_invSbox`).
-pub(crate) fn inv_sbox(q: &mut Planes) {
+#[inline(always)]
+pub(crate) fn inv_sbox<T: PlaneWord>(q: &mut Planes<T>) {
     inv_affine(q);
     sbox(q);
     inv_affine(q);
@@ -229,7 +240,8 @@ pub(crate) fn inv_sbox(q: &mut Planes) {
 ///
 /// The complements on planes 0, 1, 5 and 6 are the `^ {63}`; the eight three-term XORs are `B`.
 /// Translated from BearSSL `aes_ct_dec.c:br_aes_ct_bitslice_invSbox`.
-fn inv_affine(q: &mut Planes) {
+#[inline(always)]
+fn inv_affine<T: PlaneWord>(q: &mut Planes<T>) {
     let q0 = !q[0];
     let q1 = !q[1];
     let q2 = q[2];
@@ -246,136 +258,4 @@ fn inv_affine(q: &mut Planes) {
     q[2] = q4 ^ q7 ^ q1;
     q[1] = q3 ^ q6 ^ q0;
     q[0] = q2 ^ q5 ^ q7;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bitslice::{pack, unpack};
-
-    /// FIPS 197 Table 4 (SBOX), transcribed from the published PDF. Test-only: the
-    /// implementation evaluates the S-box as a Boolean circuit and never indexes a table.
-    #[rustfmt::skip]
-    const SBOX_TABLE_4: [u8; 256] = [
-        0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
-        0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
-        0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
-        0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
-        0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
-        0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
-        0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
-        0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
-        0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
-        0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
-        0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
-        0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
-        0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
-        0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
-        0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
-        0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16,
-    ];
-
-    /// FIPS 197 Table 6 (INVSBOX), transcribed from the published PDF. Test-only.
-    #[rustfmt::skip]
-    const INVSBOX_TABLE_6: [u8; 256] = [
-        0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
-        0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
-        0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e,
-        0x08, 0x2e, 0xa1, 0x66, 0x28, 0xd9, 0x24, 0xb2, 0x76, 0x5b, 0xa2, 0x49, 0x6d, 0x8b, 0xd1, 0x25,
-        0x72, 0xf8, 0xf6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xd4, 0xa4, 0x5c, 0xcc, 0x5d, 0x65, 0xb6, 0x92,
-        0x6c, 0x70, 0x48, 0x50, 0xfd, 0xed, 0xb9, 0xda, 0x5e, 0x15, 0x46, 0x57, 0xa7, 0x8d, 0x9d, 0x84,
-        0x90, 0xd8, 0xab, 0x00, 0x8c, 0xbc, 0xd3, 0x0a, 0xf7, 0xe4, 0x58, 0x05, 0xb8, 0xb3, 0x45, 0x06,
-        0xd0, 0x2c, 0x1e, 0x8f, 0xca, 0x3f, 0x0f, 0x02, 0xc1, 0xaf, 0xbd, 0x03, 0x01, 0x13, 0x8a, 0x6b,
-        0x3a, 0x91, 0x11, 0x41, 0x4f, 0x67, 0xdc, 0xea, 0x97, 0xf2, 0xcf, 0xce, 0xf0, 0xb4, 0xe6, 0x73,
-        0x96, 0xac, 0x74, 0x22, 0xe7, 0xad, 0x35, 0x85, 0xe2, 0xf9, 0x37, 0xe8, 0x1c, 0x75, 0xdf, 0x6e,
-        0x47, 0xf1, 0x1a, 0x71, 0x1d, 0x29, 0xc5, 0x89, 0x6f, 0xb7, 0x62, 0x0e, 0xaa, 0x18, 0xbe, 0x1b,
-        0xfc, 0x56, 0x3e, 0x4b, 0xc6, 0xd2, 0x79, 0x20, 0x9a, 0xdb, 0xc0, 0xfe, 0x78, 0xcd, 0x5a, 0xf4,
-        0x1f, 0xdd, 0xa8, 0x33, 0x88, 0x07, 0xc7, 0x31, 0xb1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xec, 0x5f,
-        0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef,
-        0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61,
-        0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d,
-    ];
-
-    /// Runs a plane transformation over a block placed in both halves, returning the A half.
-    ///
-    /// Filling both halves means a wrong interleave shows up as a difference between the two
-    /// blocks rather than silently passing.
-    fn apply(f: fn(&mut Planes), block: [u8; 16]) -> [u8; 16] {
-        let mut q = pack(&block, &block);
-        f(&mut q);
-        let mut a = [0u8; 16];
-        let mut b = [0u8; 16];
-        unpack(&q, &mut a, &mut b);
-        assert_eq!(a, b, "the two interleaved blocks must transform identically");
-        a
-    }
-
-    #[test]
-    fn test_sbox_matches_fips197_table_4() {
-        // Exhaustive over the whole domain: this is the test that makes the 113 gates
-        // trustworthy, so it must stay exhaustive.
-        for x in 0..=255u8 {
-            let out = apply(sbox, [x; 16]);
-            assert!(
-                out.iter().all(|&b| b == out[0]),
-                "all 16 byte positions must substitute alike, x={x:#04x}"
-            );
-            assert_eq!(
-                out[0], SBOX_TABLE_4[x as usize],
-                "SBOX({x:#04x}) should be {:#04x}",
-                SBOX_TABLE_4[x as usize]
-            );
-        }
-    }
-
-    #[test]
-    fn test_inv_sbox_matches_fips197_table_6() {
-        for x in 0..=255u8 {
-            let out = apply(inv_sbox, [x; 16]);
-            assert_eq!(
-                out[0], INVSBOX_TABLE_6[x as usize],
-                "INVSBOX({x:#04x}) should be {:#04x}",
-                INVSBOX_TABLE_6[x as usize]
-            );
-        }
-    }
-
-    #[test]
-    fn test_inv_sbox_inverts_sbox() {
-        for x in 0..=255u8 {
-            let mut q = pack(&[x; 16], &[x.wrapping_add(1); 16]);
-            sbox(&mut q);
-            inv_sbox(&mut q);
-            let mut a = [0u8; 16];
-            let mut b = [0u8; 16];
-            unpack(&q, &mut a, &mut b);
-            assert_eq!(a, [x; 16]);
-            assert_eq!(b, [x.wrapping_add(1); 16]);
-        }
-    }
-
-    #[test]
-    fn test_sbox_worked_example_from_section_5_1_1() {
-        // FIPS 197 Sec 5.1.1: "if s(r,c) = {53} ... s'(r,c) = {ed}".
-        assert_eq!(apply(sbox, [0x53; 16])[0], 0xed);
-        assert_eq!(SBOX_TABLE_4[0x53], 0xed);
-    }
-
-    #[test]
-    fn test_the_two_spec_tables_are_inverses() {
-        // Guards the transcription of both tables against a typo in either one.
-        for x in 0..=255u8 {
-            assert_eq!(INVSBOX_TABLE_6[SBOX_TABLE_4[x as usize] as usize], x);
-        }
-    }
-
-    #[test]
-    fn test_sbox_operates_on_each_byte_position_independently() {
-        // A block of distinct values, so a mask error that mixes byte positions is caught.
-        let block: [u8; 16] = core::array::from_fn(|i| (i as u8) * 17);
-        let out = apply(sbox, block);
-        for i in 0..16 {
-            assert_eq!(out[i], SBOX_TABLE_4[block[i] as usize], "byte position {i}");
-        }
-    }
 }

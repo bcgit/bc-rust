@@ -26,8 +26,10 @@
 //! Unlike ML-KEM and ML-DSA, AES has no interesting stack profile: there is no polynomial
 //! arithmetic and no sampling, so peak usage is a small constant plus the key schedule. The
 //! numbers worth recording in the crate docs are the ones `print_struct_sizes` prints -- the
-//! persistent size of each engine -- and the confirmation that per-block work is a fixed, small
-//! amount of stack independent of key length.
+//! persistent size of each engine -- and the confirmation that per-call work is a fixed, small
+//! amount of stack independent of key length, set only by the entry point: the one-, two- and
+//! four-block calls run on `u16`, `u32` and `u64` bit-planes, so their working state is 16, 32
+//! and 64 bytes plus the same again for the widened round key.
 //!
 //! The point of comparison is that a table-driven AES adds 256 B (`AESLightEngine`) to 8 KiB
 //! (T-tables) of static data on top of these numbers; this implementation adds zero.
@@ -35,7 +37,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::ElectronicCodeBook;
 
@@ -51,7 +53,7 @@ fn print_struct_sizes() {
     use core::mem::size_of;
 
     // FIPS 197 Sec 5.2: the schedule is 4 * (Nr + 1) words, so 176 / 208 / 240 bytes. The
-    // bit-sliced form is stored compressed, so bit-slicing adds nothing to these.
+    // bit-sliced form is stored at the one-block width, so bit-slicing adds nothing to these.
     println!("size_of<AES128Internal>: {}", size_of::<AES128Internal>());
     println!("size_of<AES192Internal>: {}", size_of::<AES192Internal>());
     println!("size_of<AES256Internal>: {}", size_of::<AES256Internal>());
@@ -123,6 +125,15 @@ fn bench_aes256_encrypt_2blocks() {
     print!("{blocks:x?}");
 }
 
+fn bench_aes256_encrypt_4blocks() {
+    eprintln!("AES256Internal::encrypt_4blocks");
+
+    let aes = AES256Internal::new(&key::<32>()).unwrap();
+    let mut blocks = [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
+    aes.encrypt_4blocks(&mut blocks);
+    print!("{blocks:x?}");
+}
+
 fn main() {
     print_struct_sizes()
     // bench_do_nothing()
@@ -133,4 +144,5 @@ fn main() {
     // bench_aes256_encrypt_block()
     // bench_aes256_decrypt_block()
     // bench_aes256_encrypt_2blocks()
+    // bench_aes256_encrypt_4blocks()
 }

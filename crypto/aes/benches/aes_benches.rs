@@ -1,16 +1,20 @@
 //! Criterion benchmarks for the bit-sliced AES permutation.
 //!
-//! The comparison that matters here is `encrypt_block` against `encrypt_2blocks` over the same
-//! number of bytes. The bit-sliced state holds two blocks, so a single-block call does twice the
-//! necessary work; the two-block path should be close to twice the throughput. That ratio is the
-//! argument for modes of operation using the two-block entry points wherever their blocks are
-//! independent (CTR, and the decrypt direction of CBC and CFB).
+//! The comparison that matters here is `encrypt_block` against `encrypt_2blocks` and
+//! `encrypt_4blocks` over the same number of bytes. The engine runs on `u16`, `u32` or `u64`
+//! bit-planes for one, two or four blocks, and a round costs about the same at every width on a
+//! 64-bit machine, so the two- and four-block paths should approach twice and four times the
+//! throughput of the single-block one; what they achieve in practice (about 1.6 and 3 times on
+//! x86-64) is what these benches record. That ratio is the argument for modes of operation using
+//! the batched entry points wherever their blocks are independent (CTR, ECB, and the decrypt
+//! direction of CBC and CFB).
 //!
 //! The data benches work in place on one buffer across iterations, so a `clone` never sits inside
 //! the timed closure. The permutation is a bijection, so the buffer stays random whichever
 //! direction ran last, and the contents never influence the timing of a constant-time cipher.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use bouncycastle_aes::BLOCK_LEN;
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
 use bouncycastle_rng as rng;
@@ -61,8 +65,8 @@ fn bench_key_expansion(c: &mut Criterion) {
     group.finish();
 }
 
-/// The four data benches every key length gets: 16 KiB through the one-block and two-block entry
-/// points, in each direction.
+/// The six data benches every key length gets: 16 KiB through the one-, two- and four-block
+/// entry points, in each direction.
 fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
     group: &mut BenchmarkGroup<'_, WallTime>,
     aes: &C,
@@ -90,6 +94,17 @@ fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_L
         })
     });
 
+    group.bench_function("16KiB -- .encrypt_4blocks() x256", |b| {
+        b.iter(|| {
+            for four in blocks.chunks_exact_mut(4) {
+                // `try_into` cannot fail: `chunks_exact_mut(4)` yields slices of length 4.
+                let four: &mut [[u8; BLOCK_LEN]; 4] = four.try_into().unwrap();
+                aes.encrypt_4blocks(black_box(four));
+            }
+            black_box(&blocks);
+        })
+    });
+
     group.bench_function("16KiB -- .decrypt_block() x1024", |b| {
         b.iter(|| {
             for block in blocks.iter_mut() {
@@ -104,6 +119,16 @@ fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_L
             for pair in blocks.chunks_exact_mut(2) {
                 let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
                 aes.decrypt_2blocks(black_box(pair));
+            }
+            black_box(&blocks);
+        })
+    });
+
+    group.bench_function("16KiB -- .decrypt_4blocks() x256", |b| {
+        b.iter(|| {
+            for four in blocks.chunks_exact_mut(4) {
+                let four: &mut [[u8; BLOCK_LEN]; 4] = four.try_into().unwrap();
+                aes.decrypt_4blocks(black_box(four));
             }
             black_box(&blocks);
         })
