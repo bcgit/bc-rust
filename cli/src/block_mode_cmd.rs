@@ -66,19 +66,16 @@ pub(crate) const BLOCK_LEN: usize = 16;
 /// block at a time; it is bounded, so its cost does not scale with the input.
 pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 
-/// Which direction to run. Shared by every mode subcommand.
+/// Which direction to run. Shared by every mode subcommand, including CCM's, whose framing (a
+/// caller-supplied `--nonce` that is never written to the output, plus AAD and a tag) is
+/// different enough from the rest that it is not summarized here -- see the specific subcommand's
+/// own `--help` (`bc-rust aes128-ccm --help` and friends) for what `encrypt`/`decrypt` actually do
+/// for the mode you are running.
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum BlockModeAction {
-    /// Encrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 a freshly generated IV is written as the first 16 bytes of the
-    /// output, and for CTR a 12-byte nonce, so that `decrypt` can read it back; ECB has neither and
-    /// writes none. The `-cbc` and `-ecb` commands need the input to be a multiple of 16 bytes;
-    /// `-cfb`, `-cfb8` and `-ctr` take any length. See the individual subcommand's help.
+    /// Encrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
     Encrypt,
-    /// Decrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 the first 16 bytes of input are taken as the IV, and for CTR the
-    /// first 12 as the nonce, as written by `encrypt`; ECB has neither and reads none. See
-    /// `encrypt` for the input-length rule.
+    /// Decrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
     Decrypt,
 }
 

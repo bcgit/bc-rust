@@ -12,6 +12,7 @@
 //! For ready-to-use primitives, see the documentation for one of the provided modes of operation:
 //!
 //! * [AES_CBC](crate::cbc)
+//! * [AES_CCM](crate::ccm)
 //! * [AES_CFB](crate::cfb)
 //! * [AES_CFB8](crate::cfb8)
 //! * [AES_CTR](crate::ctr)
@@ -130,6 +131,7 @@
 mod aes;
 mod bitslice;
 pub mod cbc;
+pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
@@ -141,6 +143,11 @@ mod schedule;
 
 pub use aes::{AES128Internal, AES192Internal, AES256Internal, AESInternal, BLOCK_LEN};
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+pub use ccm::{
+    AES_CCM_128, AES_CCM_128_Decryptor, AES_CCM_128_Encryptor, AES_CCM_192, AES_CCM_192_Decryptor,
+    AES_CCM_192_Encryptor, AES_CCM_256, AES_CCM_256_Decryptor, AES_CCM_256_Encryptor,
+    CCM_NONCE_LEN, CCM_TAG_LEN,
+};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
