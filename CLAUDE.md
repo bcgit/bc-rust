@@ -54,8 +54,14 @@ Quality / mutation testing:
 
 ```
 ./dev_scripts/quality_stats.sh ./crypto    # lines-of-code, docstring & fallibility metrics; CI publishes this
-cargo mutants                              # config in .cargo/mutants.toml (output: custom_mutants_output/)
+cargo mutants -p bouncycastle-sha3         # config in .cargo/mutants.toml (output: custom_mutants_output/)
 ```
+
+`-p` is as non-optional here as `--workspace` is for build and test, and for the same reason: a bare
+`cargo mutants` examines only the root `bouncycastle` package, whose single `src/lib.rs` yields no
+mutants, so it prints "No mutants found under the active filters" and exits **0**. See
+[the mutation-testing mechanics](#notes-on-testing) for scoping a run to one file, for crates whose
+tests live elsewhere, and for the test-data symlink.
 
 Stack-memory benches are separate binaries under `mem_usage_benches/src/`, each declared as a
 `[[bin]]` in that crate's `Cargo.toml`:
@@ -165,7 +171,11 @@ Rules when working from the downloaded copy:
 What a crate must be tested against — including the mutation-testing expectation, the trait test framework, and the
 external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING.md. Repo-specific mechanics:
 
-- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`).
+- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`). Four things about running it here:
+  - **Always pass `-p <crate>`.** Without it only the root package is examined, which has no mutants, and the run "passes" vacuously — see [Common commands](#common-commands).
+  - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
+  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from `sha3` and `factory`, so a `-p bouncycastle-core` run alone reports them all as missed.
+  - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
 - A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
 - For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation.

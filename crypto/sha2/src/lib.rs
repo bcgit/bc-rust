@@ -258,7 +258,10 @@ pub type SHA512_256 = SHA512t<256>;
 ///
 /// Crate-private (aka "sealed") on purpose: it cannot be implemented outside this crate, so the
 /// only parameter sets that exist are the NIST-approved ones below.
-trait SHA256InitValue: HashAlgParams {
+///
+/// `Clone` because [`Hash`] requires it: a hash mid-stream can be forked and finished several
+/// ways from one absorbed prefix.
+trait SHA256InitValue: HashAlgParams + Clone {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.2 / 5.3.3.
     const H0: [u32; 8];
 }
@@ -266,8 +269,8 @@ trait SHA256InitValue: HashAlgParams {
 /// The SHA-512 family (SHA-384, SHA-512, SHA-512/t) shares one compression function and differs
 /// only in the initial hash value and the output truncation, so each member supplies its H(0) here.
 ///
-/// Crate-private for the same reason as [`SHA256InitValue`].
-trait SHA512InitValue: HashAlgParams {
+/// Crate-private for the same reason as [`SHA256InitValue`], and `Clone` for the same reason.
+trait SHA512InitValue: HashAlgParams + Clone {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.4 / 5.3.5 / 5.3.6.
     const H0: [u64; 8];
 }
