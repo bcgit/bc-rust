@@ -207,7 +207,7 @@ impl<P: AESParams> AESInternal<P> {
     fn encrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
         let mut q = T::pack(blocks);
         self.cipher(&mut q);
-        T::unpack(&q, blocks);
+        T::unpack(&mut q, blocks);
     }
 
     /// Decrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::inv_cipher`],
@@ -216,7 +216,7 @@ impl<P: AESParams> AESInternal<P> {
     fn decrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
         let mut q = T::pack(blocks);
         self.inv_cipher(&mut q);
-        T::unpack(&q, blocks);
+        T::unpack(&mut q, blocks);
     }
 
     /// Encrypts one block in place, on `u16` planes.
