@@ -422,7 +422,7 @@ fn aes_chunking_matches_a_single_call() {
 /// is correct. CFB8 decryption batches through `encrypt_2blocks`, so with this permutation six
 /// bytes handed over together come out wrong while the same bytes one at a time come out right.
 ///
-/// Two, not four: the trait's default `encrypt_4blocks` is two `encrypt_2blocks` calls, so four
+/// Two, not four: [`SwappedPairToy`]'s `encrypt_4blocks` is two `encrypt_2blocks` calls, so four
 /// bytes would also be wrong and would not distinguish the two paths.
 #[test]
 fn the_pair_path_is_really_used() {
