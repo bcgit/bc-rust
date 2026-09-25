@@ -25,7 +25,7 @@
 //! the counter starting at zero, so the two line up exactly when the IV's low four bytes are zero,
 //! which is why the IV above ends in `00000000`. See the [`Ctr`] module docs.
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -142,17 +142,17 @@ where
 
 #[test]
 fn aes128_ctr_matches_openssl() {
-    check::<AES_128, 16>("AES-128", KEY_128, CT_128);
+    check::<AES128Internal, 16>("AES-128", KEY_128, CT_128);
 }
 
 #[test]
 fn aes192_ctr_matches_openssl() {
-    check::<AES_192, 24>("AES-192", KEY_192, CT_192);
+    check::<AES192Internal, 24>("AES-192", KEY_192, CT_192);
 }
 
 #[test]
 fn aes256_ctr_matches_openssl() {
-    check::<AES_256, 32>("AES-256", KEY_256, CT_256);
+    check::<AES256Internal, 32>("AES-256", KEY_256, CT_256);
 }
 
 /// The vectors must actually depend on the counter advancing: the second block of ciphertext must

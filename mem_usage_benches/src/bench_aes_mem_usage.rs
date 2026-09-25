@@ -35,7 +35,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::{AES_128, AES_192, AES_256};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::ElectronicCodeBook;
 
@@ -52,9 +52,9 @@ fn print_struct_sizes() {
 
     // FIPS 197 Sec 5.2: the schedule is 4 * (Nr + 1) words, so 176 / 208 / 240 bytes. The
     // bit-sliced form is stored compressed, so bit-slicing adds nothing to these.
-    println!("size_of<AES_128>: {}", size_of::<AES_128>());
-    println!("size_of<AES_192>: {}", size_of::<AES_192>());
-    println!("size_of<AES_256>: {}", size_of::<AES_256>());
+    println!("size_of<AES128Internal>: {}", size_of::<AES128Internal>());
+    println!("size_of<AES192Internal>: {}", size_of::<AES192Internal>());
+    println!("size_of<AES256Internal>: {}", size_of::<AES256Internal>());
 }
 
 fn key<const N: usize>() -> KeyMaterial<N> {
@@ -67,57 +67,57 @@ fn key<const N: usize>() -> KeyMaterial<N> {
 }
 
 fn bench_aes128_key_expansion() {
-    eprintln!("AES_128::new (key expansion)");
+    eprintln!("AES128Internal::new (key expansion)");
 
-    let aes = AES_128::new(&key::<16>()).unwrap();
+    let aes = AES128Internal::new(&key::<16>()).unwrap();
     print!("{aes:?}");
 }
 
 fn bench_aes192_key_expansion() {
-    eprintln!("AES_192::new (key expansion)");
+    eprintln!("AES192Internal::new (key expansion)");
 
-    let aes = AES_192::new(&key::<24>()).unwrap();
+    let aes = AES192Internal::new(&key::<24>()).unwrap();
     print!("{aes:?}");
 }
 
 fn bench_aes256_key_expansion() {
-    eprintln!("AES_256::new (key expansion)");
+    eprintln!("AES256Internal::new (key expansion)");
 
-    let aes = AES_256::new(&key::<32>()).unwrap();
+    let aes = AES256Internal::new(&key::<32>()).unwrap();
     print!("{aes:?}");
 }
 
 fn bench_aes128_encrypt_block() {
-    eprintln!("AES_128::encrypt_block");
+    eprintln!("AES128Internal::encrypt_block");
 
-    let aes = AES_128::new(&key::<16>()).unwrap();
+    let aes = AES128Internal::new(&key::<16>()).unwrap();
     let mut block = [0x11u8; 16];
     aes.encrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_aes256_encrypt_block() {
-    eprintln!("AES_256::encrypt_block");
+    eprintln!("AES256Internal::encrypt_block");
 
-    let aes = AES_256::new(&key::<32>()).unwrap();
+    let aes = AES256Internal::new(&key::<32>()).unwrap();
     let mut block = [0x11u8; 16];
     aes.encrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_aes256_decrypt_block() {
-    eprintln!("AES_256::decrypt_block");
+    eprintln!("AES256Internal::decrypt_block");
 
-    let aes = AES_256::new(&key::<32>()).unwrap();
+    let aes = AES256Internal::new(&key::<32>()).unwrap();
     let mut block = [0x11u8; 16];
     aes.decrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_aes256_encrypt_2blocks() {
-    eprintln!("AES_256::encrypt_2blocks");
+    eprintln!("AES256Internal::encrypt_2blocks");
 
-    let aes = AES_256::new(&key::<32>()).unwrap();
+    let aes = AES256Internal::new(&key::<32>()).unwrap();
     let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
     aes.encrypt_2blocks(&mut blocks);
     print!("{blocks:x?}");
