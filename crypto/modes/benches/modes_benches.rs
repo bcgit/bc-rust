@@ -41,10 +41,11 @@ use bouncycastle_aes::{AES128Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
-    StreamCipherDecryptor, StreamCipherEncryptor,
+    AEADCipherEncryptor, Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook,
+    SecurityStrength, StreamCipherDecryptor, StreamCipherEncryptor,
 };
-use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ctr, Decrypting, Ecb, Encrypting};
+use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, Decrypting, Ecb, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -58,6 +59,22 @@ type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, BLOCK_LEN>;
 type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
 type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, BLOCK_LEN>;
 type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
+
+/// CCM at the parameters the ACVP vectors and most protocols use: a 12-byte nonce and a full
+/// 16-byte tag. The direction is in the type as for the other modes, but the two directions are
+/// separate aliases here rather than one generic over `Dir`, because CCM's one-shots live on the
+/// direction-specific impl blocks.
+const CCM_NONCE_LEN: usize = 12;
+const CCM_TAG_LEN: usize = 16;
+type Aes128CcmEnc = Ccm<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
+type Aes128CcmDec = Ccm<AES128Internal, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
+
+/// The trait adapter needs a compile-time maximum for streaming. Its one-shots bypass that buffer,
+/// but using the same 4 KiB value and message keeps this comparison representative of the public
+/// alias a packet protocol would choose.
+const CCM_BUFFER_LEN: usize = 4096;
+type Aes128CcmEncryptor =
+    CcmEncryptor<AES128Internal, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN, CCM_BUFFER_LEN>;
 type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, 12>;
 type Aes256Ctr<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, 12>;
 type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;
@@ -761,8 +778,192 @@ fn bench_init(c: &mut Criterion) {
     group.finish();
 }
 
+/// CCM (SP 800-38C), which is the only authenticated mode here and the only one that costs
+/// **two** cipher calls per block -- but only one of the two batches.
+///
+/// Sec 5.2 builds CCM out of CTR for confidentiality and CBC-MAC for authenticity, over the same
+/// key, so every payload block goes through the forward cipher twice: once as a counter block and
+/// once as a CBC-MAC input. The CBC-MAC half is serial by construction (Sec 6.1 step 3: `Yi` is
+/// the cipher of `Bi XOR Yi-1`), so unlike [`Ctr`] and the decrypt direction of `Cbc`/`Cfb` it has
+/// no pair or four path -- but the CTR half has exactly `Ctr`'s parallelism (A.3's `Ctrj` depends
+/// only on `j`), and `Ccm::apply_keystream` batches it the same way. So CCM sits *between* CTR's
+/// two numbers, not at a fixed fraction of either:
+///
+/// * against `modes::ctr::AES_128/16KiB encrypt -- N=1`, CTR's unbatched single-block path, CCM
+///   should be noticeably better than half -- one full unbatched pass (the MAC) plus a batched
+///   pass that costs much less than a second unbatched one would;
+/// * against CTR's `N=8` batched path, CCM should be noticeably better than a quarter, for the
+///   same reason: only the MAC half pays the unbatched price.
+///
+/// Measured on the reference machine: 36 MiB/s for CCM against 52 MiB/s for CTR `N=1` (CCM at
+/// ~69%, not ~50%) and 103 MiB/s for CTR `N=8` (CCM at ~35%, not ~25%) -- both above the naive
+/// "two full unbatched passes" ratios, which is the batched CTR half showing up.
+///
+/// Encryption and decryption should be within noise of each other: Sec 6.1 and Sec 6.2 do the same
+/// work in the opposite order (MAC-then-XOR versus XOR-then-MAC), and only the forward cipher is
+/// ever used, so the inverse cipher's cost never enters.
+///
+/// The AAD is measured separately, and is the cheap half: it is absorbed into the CBC-MAC only,
+/// one unbatched cipher call per block, against the payload's one unbatched call plus one batched
+/// call. Batching the keystream narrows this gap from the naive "twice the payload's throughput"
+/// to about **1.5x** -- measured 52 MiB/s AAD-only against 36 MiB/s for the payload -- and AAD-only
+/// throughput should now sit close to CTR's *unbatched* number, since both are exactly one
+/// unbatched cipher call per block.
+fn bench_ccm_aes128(c: &mut Criterion) {
+    let key = key::<16>();
+    let nonce = [0x24u8; CCM_NONCE_LEN];
+    let data = [0xA5u8; DATA_LEN];
+    let no_aad: [u8; 0] = [];
+
+    let mut group = c.benchmark_group("modes::ccm::AES_128");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    group.bench_function("encrypt 16KiB, no AAD", |b| {
+        b.iter_batched_ref(
+            || [0u8; DATA_LEN],
+            |out| {
+                black_box(
+                    Aes128CcmEnc::encrypt_detached(
+                        black_box(&key),
+                        &nonce,
+                        &no_aad,
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // Encrypt once outside the loop so decryption measures a ciphertext that authenticates: a
+    // failing tag check would short-circuit the comparison and measure the wrong thing.
+    let mut ciphertext = [0u8; DATA_LEN];
+    let (_, tag) =
+        Aes128CcmEnc::encrypt_detached(&key, &nonce, &no_aad, &data, &mut ciphertext).unwrap();
+
+    group.bench_function("decrypt 16KiB, no AAD", |b| {
+        b.iter_batched_ref(
+            || [0u8; DATA_LEN],
+            |out| {
+                black_box(
+                    Aes128CcmDec::decrypt_detached(
+                        black_box(&key),
+                        &nonce,
+                        &no_aad,
+                        black_box(&ciphertext),
+                        &tag,
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // The same payload with 16 KiB of AAD alongside it. The difference from the no-AAD case is one
+    // cipher call per AAD block, so this should cost about 1.5x the no-AAD case for 2x the bytes.
+    group.bench_function("encrypt 16KiB with 16KiB AAD", |b| {
+        b.iter_batched_ref(
+            || [0u8; DATA_LEN],
+            |out| {
+                black_box(
+                    Aes128CcmEnc::encrypt_detached(
+                        black_box(&key),
+                        &nonce,
+                        black_box(&data),
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // AAD only: CCM as a pure authentication mode, which Sec 5.3's footnote calls out as the
+    // empty-payload degenerate case. One cipher call per block, so this is the CTR-comparable half.
+    group.bench_function("authenticate 16KiB AAD, empty payload", |b| {
+        b.iter(|| {
+            let mut out: [u8; 0] = [];
+            black_box(
+                Aes128CcmEnc::encrypt_detached(
+                    black_box(&key),
+                    &nonce,
+                    black_box(&data),
+                    &no_aad,
+                    &mut out,
+                )
+                .unwrap(),
+            )
+        })
+    });
+
+    group.finish();
+}
+
+/// The [`AEADCipherEncryptor`] one-shot against the inherent one-shot on the same message.
+///
+/// The trait override ends in the same `Ccm` implementation. A cheap deterministic RNG, created
+/// once outside the timed loop, isolates its nonce draw from OS entropy and DRBG construction.
+fn bench_ccm_one_shot_pair(c: &mut Criterion) {
+    let key = key::<16>();
+    let data = [0xA5u8; CCM_BUFFER_LEN];
+    let no_aad: [u8; 0] = [];
+    let nonce = [0x24u8; CCM_NONCE_LEN];
+    let mut rng = FixedSeedRNG::<CCM_NONCE_LEN>::new(nonce);
+
+    let mut group = c.benchmark_group("modes::ccm::one_shot");
+    group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
+
+    group.bench_function("AEADCipherEncryptor::encrypt_out_rng_detached 4KiB", |b| {
+        b.iter_batched_ref(
+            || [0u8; CCM_BUFFER_LEN],
+            |out| {
+                black_box(
+                    Aes128CcmEncryptor::encrypt_out_rng_detached(
+                        black_box(&key),
+                        &mut rng,
+                        &no_aad,
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // The same 4 KiB and nonce through `Ccm` directly, for the ratio.
+    group.bench_function("Ccm::encrypt_detached 4KiB", |b| {
+        b.iter_batched_ref(
+            || [0u8; CCM_BUFFER_LEN],
+            |out| {
+                black_box(
+                    Aes128CcmEnc::encrypt_detached(
+                        black_box(&key),
+                        &nonce,
+                        &no_aad,
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_cfb8_aes128,
-    bench_ctr_aes128, bench_ctr_aes256, bench_ecb_aes128, bench_init
+    bench_ctr_aes128, bench_ctr_aes256, bench_ecb_aes128, bench_ccm_aes128,
+    bench_ccm_one_shot_pair, bench_init
 );
 criterion_main!(benches);
