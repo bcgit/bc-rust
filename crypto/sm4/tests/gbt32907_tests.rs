@@ -117,7 +117,7 @@ fn a_1_6_example_6_one_million_encryptions() {
     assert_eq!(block, CT_4_ITERATED);
 }
 
-/// The two-block trait defaults must agree with the single-block known answers, in both slots.
+/// The two-block trait methods must agree with the single-block known answers, in both slots.
 #[test]
 fn pair_methods_reproduce_the_appendix_ciphertexts() {
     let sm4 = SM4::new(&key_material(&KEY_1)).unwrap();
