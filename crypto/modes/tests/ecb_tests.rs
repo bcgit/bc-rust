@@ -12,7 +12,7 @@
 
 mod common;
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
@@ -176,35 +176,43 @@ fn ecb_is_deterministic_and_leaks_equal_blocks() {
     assert_eq!(ct_a[0], ct_a[3]);
     assert_ne!(ct_a[0], ct_a[1], "different plaintext blocks give different ciphertext blocks");
 
-    // The one-shots see the same thing: `encrypt` returns the empty init data and is repeatable.
+    // The one-shot sees the same thing: `encrypt` returns the empty init data and is repeatable.
+    // (The RNG-taking one-shot is not an alternative here -- it panics; see below.)
     let flat: [u8; 4 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
     let mut once = flat;
     let (n_a, init_a): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt(&key, &mut once).unwrap();
     assert_eq!(n_a, once.len(), "encrypt must report the number of bytes written");
     let mut twice = flat;
-    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt_rng(
-        &key,
-        &mut FixedSeedRNG::<TOY_LEN>::new([0xAB; TOY_LEN]),
-        &mut twice,
-    )
-    .unwrap();
-    assert_eq!(n_b, twice.len(), "encrypt_rng must report the number of bytes written");
+    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt(&key, &mut twice).unwrap();
+    assert_eq!(n_b, twice.len(), "encrypt must report the number of bytes written");
     assert_eq!(init_a, init_b);
-    assert_eq!(once, twice, "the RNG variant draws nothing, so it changes nothing");
+    assert_eq!(once, twice, "no init data and no randomness, so the one-shot is repeatable");
     assert_eq!(once, *ct_a.as_flattened());
 }
 
-/// The RNG-taking constructor must not consume from the RNG: there is no IV to generate. A
-/// fixed-seed RNG of the wrong width would panic on its first draw, so this is observable.
+/// The RNG-taking constructor must panic rather than quietly ignore the RNG. ECB has no init data
+/// to generate (SP 800-38A Table D.2 lists its IV column as "Not applicable"), so a caller reaching
+/// for `do_encrypt_init_rng` has mistaken ECB for a randomized mode;
+/// [`BlockCipherEncryptor::do_encrypt_init_rng`]'s contract requires an implementation with
+/// `INIT_DATA_LEN == 0` to say so. It is a programmer error, not bad input, hence a panic and not a
+/// [`SymmetricCipherError`].
 #[test]
-fn the_rng_constructor_draws_nothing() {
+#[should_panic(expected = "ECB has no initialization data")]
+fn the_rng_constructor_panics() {
     let key = toy_key();
     let mut rng = FixedSeedRNG::<0>::new([]);
-    let (mut enc, init) = ToyEcb::<Encrypting>::do_encrypt_init_rng(&key, &mut rng).unwrap();
-    assert_eq!(init, []);
+    let _ = ToyEcb::<Encrypting>::do_encrypt_init_rng(&key, &mut rng);
+}
+
+/// ...and so does the one-shot provided over it: `encrypt_rng` is `do_encrypt_init_rng` followed by
+/// `do_encrypt`, so it panics in the same case and for the same reason. Pinned separately because
+/// it is the call a user is most likely to reach for.
+#[test]
+#[should_panic(expected = "ECB has no initialization data")]
+fn the_rng_one_shot_panics() {
+    let key = toy_key();
     let mut block = [0x42u8; TOY_LEN];
-    enc.do_encrypt(&mut block).unwrap();
-    assert_eq!(block, enc_flat(&mut encryptor(), &[0x42u8; TOY_LEN]));
+    let _ = ToyEcb::<Encrypting>::encrypt_rng(&key, &mut FixedSeedRNG::<0>::new([]), &mut block);
 }
 
 // ---- batching: pairs and fours, in both directions ----------------------------------------
@@ -346,7 +354,7 @@ fn a_ciphertext_bit_error_affects_only_its_own_block() {
 /// must randomise `P2` (more than one bit differs) and leave `P1` and `P3` untouched.
 #[test]
 fn with_aes_a_ciphertext_bit_error_randomises_its_block() {
-    type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, 16>;
+    type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
     let key =
         KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
     let plaintext = [[0x00u8; 16], [0x11u8; 16], [0x22u8; 16]];
@@ -411,17 +419,17 @@ fn the_padding_layer_round_trips_every_length() {
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
-    assert_eq!(size_of::<Ecb<AES_128, Encrypting, 16, 16>>(), 176);
-    assert_eq!(size_of::<Ecb<AES_192, Encrypting, 24, 16>>(), 208);
-    assert_eq!(size_of::<Ecb<AES_256, Encrypting, 32, 16>>(), 240);
+    assert_eq!(size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>(), 176);
+    assert_eq!(size_of::<Ecb<AES192Internal, Encrypting, 24, 16>>(), 208);
+    assert_eq!(size_of::<Ecb<AES256Internal, Encrypting, 32, 16>>(), 240);
     assert_eq!(
-        size_of::<Ecb<AES_128, Encrypting, 16, 16>>(),
-        size_of::<Ecb<AES_128, Decrypting, 16, 16>>()
+        size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>(),
+        size_of::<Ecb<AES128Internal, Decrypting, 16, 16>>()
     );
-    assert_eq!(size_of::<Ecb<AES_256, Encrypting, 32, 16>>(), size_of::<AES_256>());
+    assert_eq!(size_of::<Ecb<AES256Internal, Encrypting, 32, 16>>(), size_of::<AES256Internal>());
     // One block smaller than CBC, which stores a chaining value.
     assert_eq!(
-        size_of::<Ecb<AES_128, Encrypting, 16, 16>>() + 16,
-        size_of::<Cbc<AES_128, Encrypting, 16, 16>>()
+        size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>() + 16,
+        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>()
     );
 }

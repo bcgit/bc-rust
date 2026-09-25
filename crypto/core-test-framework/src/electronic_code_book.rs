@@ -31,8 +31,8 @@ impl TestFrameworkElectronicCodeBook {
     /// * the permutation actually permutes (a block is not left unchanged);
     /// * distinct inputs give distinct outputs, i.e. it is injective on the blocks tested;
     /// * `encrypt_2blocks` agrees with two `encrypt_block` calls **including their order**, and
-    ///   likewise for `decrypt_2blocks` -- this is what pins an override to the default's
-    ///   semantics, and it is the reason the pair methods are worth having in the trait at all;
+    ///   likewise for `decrypt_2blocks` -- this is what pins each implementor's pair methods to
+    ///   single-block semantics, and it is the reason the pair methods are worth having in the trait at all;
     /// * the pair methods round-trip each other;
     /// * `encrypt_4blocks` / `decrypt_4blocks` likewise agree with four single-block calls in
     ///   order, and round-trip each other;
@@ -85,7 +85,7 @@ impl TestFrameworkElectronicCodeBook {
         }
 
         // The pair methods must be indistinguishable from the single-block ones, in both slots.
-        // An override that swapped the two results, or that processed only one of them, fails here.
+        // An implementation that swapped the two results, or processed only one of them, fails here.
         for pair in blocks.as_chunks::<2>().0.iter() {
             let [a, b] = pair;
 
@@ -111,7 +111,7 @@ impl TestFrameworkElectronicCodeBook {
         }
 
         // The four-block methods must be indistinguishable from four single-block calls, in every
-        // slot, whether they are the trait default (four pair calls) or an override.
+        // slot, however the implementor builds them (two pair calls, one four-lane pass, or singly).
         let fours = blocks.as_chunks::<4>().0;
         assert!(
             !fours.is_empty(),

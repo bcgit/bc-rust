@@ -1,5 +1,7 @@
 //! Provides simplified abstracted APIs over classes of cryptographic primitives, such as Hash, KDF, etc.
 
+// Objects in this file should be sorted alphabetically, regardless of whether they are a trait, struct, or enum.
+
 use crate::errors::*;
 use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
@@ -566,21 +568,25 @@ pub trait BlockCipherDecryptor<
     }
 }
 
-/// The encryption half of a block cipher's streaming API. Strictly block-aligned: whole blocks in, whole
+/// The encryption half of a block cipher's API.
+///
+/// Strictly block-aligned: whole blocks in, whole
 /// blocks out, no finalization step. Padding of non-block-aligned data is handled by a separate layer
 /// (`PaddedEncryptor` / `PaddedDecryptor`) built on top of this trait.
 ///
-/// Encryption and decryption are separate traits (as with [`KEMEncapsulator`] / [`KEMDecapsulator`]) so
-/// that the direction can be encoded in the type, and so that a policy can permit decryption of an
-/// algorithm while forbidding new encryptions.
+/// Encryption and decryption are separate traits so that a policy can permit decryption of existing
+/// data while forbidding new encryptions.
 ///
-/// This trait allows for a block cipher to generate initialization data, such as an Initialization Vector (IV) or Counter (CTR)
-/// which is not technically part of the ciphertext, but must be transmitted along with the ciphertext in order for the
-/// recipient to perform successful decryption. The length of the initialization data is specified by the implementing struct
-/// via the `INIT_DATA_LEN` constant.
+/// This trait allows for a block cipher to generate initialization data, such as an Initialization
+/// Vector (IV) or Counter (CTR) which is not technically part of the ciphertext, but must be
+/// transmitted along with the ciphertext in order for the recipient to perform successful decryption.
+/// The length of the initialization data is specified by the implementing struct via the
+/// `INIT_DATA_LEN` constant.
+///
 /// In order for these APIs to be usable securely in all contexts, the init data will be generated
 /// securely by the block cipher implementation and returned along with the ciphertext, and there is no API for the
-/// user to provide the init data. If you require this functionality, see the documentation for the underlying implementation.
+/// user to provide the init data to the encryptor.
+/// If you require this functionality, see the documentation for the underlying implementation.
 ///
 /// # Everything is in place
 ///
@@ -615,6 +621,15 @@ pub trait BlockCipherEncryptor<
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// As [`BlockCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -670,6 +685,11 @@ pub trait BlockCipherEncryptor<
         Ok((written, init_data))
     }
     /// As [`BlockCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_rng<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -683,10 +703,9 @@ pub trait BlockCipherEncryptor<
 
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
 ///
-/// This is the raw primitive a mode of operation is built on, not something to encrypt data with.
-/// It transforms exactly one block, so applying it directly to data is ECB (Sec 6.1), which is not
-/// confidential -- the trait is named for the mode it *is* when used that way, as a reminder. [`BlockCipherEncryptor`] and [`BlockCipherDecryptor`] are the *mode* traits --
-/// they carry initialization data and chaining state; this one carries only a key schedule.
+/// # 🚨 Security 🚨
+/// ECB is not secure for encrypting data; instead, it is a raw building block upon which
+/// secure modes such as CBC and GCM can be built.
 ///
 /// Implementors are expected to hold that key schedule in a zeroize-on-drop wrapper
 /// (`bouncycastle_utils::secret::Secret`), so it is scrubbed when the value is dropped.
@@ -715,61 +734,44 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
 
     /// The forward cipher function on two *independent* blocks, in place.
     ///
-    /// Provided as two [`ElectronicCodeBook::encrypt_block`] calls. Bit-sliced implementations
-    /// override it, because a pair of blocks is their natural unit of work and costs barely more
-    /// than one; see `bouncycastle-aes`.
+    /// Required, with no default, so that every implementor decides for itself how to run a pair.
+    /// A bit-sliced engine whose natural unit is a pair (see `bouncycastle-aes`) runs both blocks
+    /// in one pass for barely more than the cost of one; an engine with no unit wider than a block
+    /// makes two [`ElectronicCodeBook::encrypt_block`] calls. A default of two single-block calls
+    /// would be right only for the second kind, and silently wrong -- twice the work, with nothing
+    /// failing -- for a wider engine that forgot to override it.
     ///
-    /// Overrides must be indistinguishable from the default, including the order of the two
-    /// results. `TestFrameworkElectronicCodeBook` pins that.
+    /// Must be indistinguishable from two [`ElectronicCodeBook::encrypt_block`] calls, including
+    /// the order of the two results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes whose structure is parallel -- CBC decryption, CFB decryption, CTR -- should prefer
     /// this. CBC and CFB *encryption* cannot use it: each input block depends on the previous
     /// output.
-    fn encrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
-        let [a, b] = blocks;
-        self.encrypt_block(a);
-        self.encrypt_block(b);
-    }
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]);
 
     /// The inverse cipher function on two *independent* blocks, in place.
     /// See [`ElectronicCodeBook::encrypt_2blocks`].
-    fn decrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
-        let [a, b] = blocks;
-        self.decrypt_block(a);
-        self.decrypt_block(b);
-    }
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]);
 
     /// The forward cipher function on four *independent* blocks, in place.
     ///
-    /// Provided as two [`ElectronicCodeBook::encrypt_2blocks`] calls, so an implementation that
-    /// overrides only the pair form gets its benefit here too. An engine whose natural unit is
-    /// larger than a pair overrides this directly: a bit-sliced engine whose S-box circuit
-    /// substitutes four blocks per pass runs the four as one full pass rather than two half-empty
-    /// pair calls. Four is the unit because it is the widest any engine in this library fills:
-    /// AES fills a pair, and the `u16`- and `u32`-plane engines (SM4, Camellia, ARIA) fill four.
+    /// Required for the same reason as [`ElectronicCodeBook::encrypt_2blocks`]. An engine whose
+    /// natural unit is a pair runs the four as two pair calls; a bit-sliced engine whose S-box
+    /// circuit substitutes four blocks per pass runs them as one full pass rather than two
+    /// half-empty pair calls. Four is the unit because it is the widest any engine in this library
+    /// fills: AES fills a pair, and the `u16`- and `u32`-plane engines (SM4, Camellia, ARIA) fill
+    /// four.
     ///
-    /// Overrides must be indistinguishable from the default, including the order of the four
-    /// results. `TestFrameworkElectronicCodeBook` pins that.
+    /// Must be indistinguishable from four [`ElectronicCodeBook::encrypt_block`] calls, including
+    /// the order of the four results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes with parallel structure chunk their data into fours first, then pairs, then single
     /// blocks; see CBC decryption in `bouncycastle-modes`.
-    fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
-        // Four is a multiple of two, so the remainder is empty.
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            self.encrypt_2blocks(pair);
-        }
-    }
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
 
     /// The inverse cipher function on four *independent* blocks, in place.
     /// See [`ElectronicCodeBook::encrypt_4blocks`].
-    fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
-        // Four is a multiple of two, so the remainder is empty.
-        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
-        for pair in pairs {
-            self.decrypt_2blocks(pair);
-        }
-    }
+    fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
 }
 
 /// A hash function is a cryptographic primitive that takes an input of any length and produces a fixed-size output.
@@ -1587,15 +1589,12 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     }
 }
 
-/// The encryption half of a stream cipher's streaming API. This is the stream-cipher counterpart
-/// of [`BlockCipherEncryptor`]: the same in-place, init-data-generating shape, but with no block
-/// length. A stream cipher applies its keystream byte by byte, so the data methods take a
-/// `&mut [u8]` of any length, and there is no alignment to check, no padding layer to reach for,
-/// and no finalization step.
+/// The encryption half of a stream cipher's streaming API.
+/// A stream cipher applies its keystream byte by byte, so the data methods take a
+/// `&mut [u8]` of any length, and there is no finalization step.
 ///
-/// Encryption and decryption are separate traits for the same reasons as
-/// [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]: the direction is encoded in the type, and a
-/// policy can permit decryption of an algorithm while forbidding new encryptions.
+/// Encryption and decryption are separate traits so that policy can permit decryption of an
+/// existing data while forbidding new encryptions.
 ///
 /// # You also get the arbitrary-length API for free
 ///
@@ -1641,6 +1640,15 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// As [`StreamCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1666,6 +1674,11 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
         Ok((written, init_data))
     }
     /// As [`StreamCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1933,6 +1946,15 @@ pub trait SymmetricCipherEncryptor<
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
     /// As [`do_encrypt_init`](Self::do_encrypt_init), but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
+    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
+    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
+    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
+    /// programmer error, not bad input, so it is a panic rather than a
+    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
+    /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -2023,6 +2045,11 @@ pub trait SymmetricCipherEncryptor<
     }
 
     /// As [`encrypt_out`](Self::encrypt_out), but sources randomness from the provided RNG.
+    ///
+    /// # Panics
+    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
+    /// to consume. See that method for why.
     fn encrypt_out_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,

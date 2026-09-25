@@ -6,7 +6,7 @@
 //! both is parallel, and this implementation hands blocks to the permutation's batch methods --
 //! fours first, then pairs, then the remainder singly: for CBC that is `decrypt_4blocks` /
 //! `decrypt_2blocks`, for CFB it is `encrypt_4blocks` / `encrypt_2blocks`, since CFB uses the
-//! forward function in both directions. AES overrides only the pair form, so its fours are two
+//! forward function in both directions. AES's natural unit is a pair, so its fours are two
 //! pairs. With the bit-sliced AES, whose two-block path costs barely more than one block,
 //! decryption should therefore run at roughly twice the throughput of encryption. That gap is the
 //! entire justification for the batch methods on `ElectronicCodeBook`, so if it disappears,
@@ -37,7 +37,7 @@
 //! never calls the inverse cipher, so on an engine whose inverse is slower than its forward
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
-use bouncycastle_aes::{AES_128, AES_256};
+use bouncycastle_aes::{AES128Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -53,26 +53,26 @@ const BLOCK_LEN: usize = 16;
 const NUM_BLOCKS: usize = 1024;
 const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
-type Aes128Cbc<Dir> = Cbc<AES_128, Dir, 16, BLOCK_LEN>;
-type Aes256Cbc<Dir> = Cbc<AES_256, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb<Dir> = Cfb<AES_128, Dir, 16, BLOCK_LEN>;
-type Aes256Cfb<Dir> = Cfb<AES_256, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb8<Dir> = Cfb8<AES_128, Dir, 16, BLOCK_LEN>;
-type Aes128Ctr<Dir> = Ctr<AES_128, Dir, 16, BLOCK_LEN, 12>;
-type Aes256Ctr<Dir> = Ctr<AES_256, Dir, 32, BLOCK_LEN, 12>;
-type Aes128Ecb<Dir> = Ecb<AES_128, Dir, 16, BLOCK_LEN>;
+type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, 12>;
+type Aes256Ctr<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, 12>;
+type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;
 
-/// AES-128 with the pair methods **not** overridden, so they fall back to the trait defaults of
-/// two single-block calls.
+/// AES-128 with the batch methods implemented as single-block loops instead of AES's bit-sliced
+/// pair.
 ///
-/// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES_128, ..>` against
+/// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES128Internal, ..>` against
 /// `Cbc<UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
 /// call granularity, same amount of data movement -- so the difference is attributable to
 /// `decrypt_2blocks` and nothing else.
 ///
 /// Comparing `N = 1` against `N = 8` does *not* isolate it: encryption, which can never pair, also
 /// speeds up substantially between those two, so call granularity dominates that comparison.
-struct UnpairedAes128(AES_128);
+struct UnpairedAes128(AES128Internal);
 
 impl Algorithm for UnpairedAes128 {
     const ALG_NAME: &'static str = "AES-128 (unpaired)";
@@ -81,15 +81,36 @@ impl Algorithm for UnpairedAes128 {
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(<AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
+        Ok(Self(<AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
     }
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
+        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
     }
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES_128 as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
+        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
-    // encrypt_2blocks / decrypt_2blocks deliberately left as the trait defaults.
+    // Deliberately single-block loops, as a cipher with no unit wider than a block would write
+    // them, bypassing AES's bit-sliced pair.
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
+        for block in blocks.iter_mut() {
+            self.encrypt_block(block);
+        }
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
+        for block in blocks.iter_mut() {
+            self.decrypt_block(block);
+        }
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
+        for block in blocks.iter_mut() {
+            self.encrypt_block(block);
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
+        for block in blocks.iter_mut() {
+            self.decrypt_block(block);
+        }
+    }
 }
 
 type UnpairedAes128Cbc<Dir> = Cbc<UnpairedAes128, Dir, 16, BLOCK_LEN>;
@@ -219,7 +240,7 @@ fn bench_aes128(c: &mut Criterion) {
         )
     });
 
-    // The controlled comparison: identical N, identical cipher, pair methods overridden vs not.
+    // The controlled comparison: identical N, identical cipher, bit-sliced pair vs single-block loops.
     // This pair of numbers -- and only this pair -- measures what `decrypt_2blocks` buys.
     group.bench_function("16KiB decrypt -- N=8, pair path (2blocks overridden)", |b| {
         b.iter_batched(
@@ -237,7 +258,7 @@ fn bench_aes128(c: &mut Criterion) {
         )
     });
 
-    group.bench_function("16KiB decrypt -- N=8, no pair path (trait default)", |b| {
+    group.bench_function("16KiB decrypt -- N=8, no pair path (single-block loops)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -400,7 +421,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         });
     }
 
-    // The controlled comparison: identical N, identical cipher, pair methods overridden vs not.
+    // The controlled comparison: identical N, identical cipher, bit-sliced pair vs single-block loops.
     // This pair of numbers -- and only this pair -- measures what `encrypt_2blocks` buys CFB.
     group.bench_function("16KiB decrypt -- N=8, pair path (2blocks overridden)", |b| {
         b.iter_batched(
@@ -418,7 +439,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         )
     });
 
-    group.bench_function("16KiB decrypt -- N=8, no pair path (trait default)", |b| {
+    group.bench_function("16KiB decrypt -- N=8, no pair path (single-block loops)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
@@ -682,8 +703,8 @@ fn bench_ecb_aes128(c: &mut Criterion) {
         )
     });
 
-    // The controlled comparison: identical N, identical cipher, batch methods overridden vs not.
-    group.bench_function("16KiB encrypt -- N=8, no pair path (trait default)", |b| {
+    // The controlled comparison: identical N, identical cipher, bit-sliced pair vs single-block loops.
+    group.bench_function("16KiB encrypt -- N=8, no pair path (single-block loops)", |b| {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
