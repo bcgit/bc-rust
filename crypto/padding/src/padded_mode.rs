@@ -12,18 +12,19 @@
 //! pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
 //!     Cbc<AES128Internal, Encrypting, 16, 16>,   // what Encrypting resolves to
 //!     Cbc<AES128Internal, Decrypting, 16, 16>,   // what Decrypting resolves to
-//!     Pad, 16, 16,
+//!     Pad, 16, 16, 16,
 //! >>::Mode;
 //! ```
 //!
-//! One trait serves every block mode, since it is parameterised by the encryptor and decryptor
-//! types rather than by the mode: CBC passes its two directions and `INIT_DATA_LEN = BLOCK_LEN`,
-//! ECB passes its two and `INIT_DATA_LEN = 0`.
+//! One trait serves every block mode and every cipher, since it is parameterised by the encryptor
+//! and decryptor types rather than by the mode: CBC passes its two directions and
+//! `INIT_DATA_LEN = BLOCK_LEN`, ECB passes its two and `INIT_DATA_LEN = 0`. It lives here, with the
+//! two adapters it selects between, so that every block cipher crate can write its aliases the
+//! same way.
 
-use crate::BLOCK_LEN;
+use crate::{PaddedDecryptor, PaddedEncryptor};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding};
 use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::{PaddedDecryptor, PaddedEncryptor};
 
 /// Projects a direction marker onto the padded adapter for that direction.
 ///
@@ -32,8 +33,14 @@ use bouncycastle_padding::{PaddedDecryptor, PaddedEncryptor};
 ///
 /// `Enc` and `Dec` are the two directions of the underlying block mode, `Pad` is the padding
 /// scheme, and `INIT_DATA_LEN` is the mode's: the block length for a mode with an IV, 0 for ECB.
-pub trait PaddedMode<Enc, Dec, Pad, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
-where
+pub trait PaddedMode<
+    Enc,
+    Dec,
+    Pad,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+> where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Pad: BlockCipherPadding<BLOCK_LEN>,
@@ -43,8 +50,8 @@ where
     type Mode;
 }
 
-impl<Enc, Dec, Pad, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
-    PaddedMode<Enc, Dec, Pad, KEY_LEN, INIT_DATA_LEN> for Encrypting
+impl<Enc, Dec, Pad, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedMode<Enc, Dec, Pad, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> for Encrypting
 where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
@@ -53,8 +60,8 @@ where
     type Mode = PaddedEncryptor<Enc, Pad, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
 }
 
-impl<Enc, Dec, Pad, const KEY_LEN: usize, const INIT_DATA_LEN: usize>
-    PaddedMode<Enc, Dec, Pad, KEY_LEN, INIT_DATA_LEN> for Decrypting
+impl<Enc, Dec, Pad, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedMode<Enc, Dec, Pad, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> for Decrypting
 where
     Enc: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     Dec: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,

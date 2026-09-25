@@ -37,10 +37,10 @@
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
 
 use crate::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
-use crate::padded_mode::PaddedMode;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle_padding::PaddedMode;
 
 // Imports needed for docs
 use crate::aes::AESInternal;
@@ -109,6 +109,7 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     16,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-192 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
@@ -136,6 +137,7 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     24,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 /// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
@@ -163,6 +165,7 @@ pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
     Pad,
     32,
     0,
+    BLOCK_LEN,
 >>::Mode;
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {

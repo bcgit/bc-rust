@@ -3,6 +3,10 @@ mod aes_cfb8_cmd;
 mod aes_cfb_cmd;
 mod aes_ctr_cmd;
 mod aes_ecb_cmd;
+mod aria_cbc_cmd;
+mod aria_cfb8_cmd;
+mod aria_cfb_cmd;
+mod aria_ctr_cmd;
 mod block_mode_cmd;
 mod encoders_cmd;
 mod helpers;
@@ -956,6 +960,295 @@ enum Subcommands {
         x: bool,
     },
 
+    /// ARIA-128 in CBC mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; the key
+    /// and block are both 16 bytes, as for AES-128.
+    ARIA128_CBC {
+        action: BlockModeAction,
+
+        /// The 16-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-192 in CBC mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    ARIA192_CBC {
+        action: BlockModeAction,
+
+        /// The 24-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 in CBC mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// key length differs.
+    ARIA256_CBC {
+        action: BlockModeAction,
+
+        /// The 32-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-128 in CFB128 mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.3 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// The segment size is the full block, i.e. CFB128. The 8-bit variant is a different,
+    /// non-interoperable mode; use `aria128-cfb8` for that.
+    ///
+    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; the key and block
+    /// are both 16 bytes, as for AES-128.
+    ARIA128_CFB {
+        action: BlockModeAction,
+
+        /// The 16-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-192 in CFB128 mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.3 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aria128-cfb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    ARIA192_CFB {
+        action: BlockModeAction,
+
+        /// The 24-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 in CFB128 mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.3 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `aria128-cfb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    ARIA256_CFB {
+        action: BlockModeAction,
+
+        /// The 32-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-128 in CFB8 mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// The segment size is one byte. This is a DIFFERENT, NON-INTEROPERABLE mode from the CFB128 of
+    /// `aria128-cfb`: the two ciphertexts agree only on their first byte. It also costs one ARIA
+    /// call per byte, sixteen times the work, so prefer `aria128-cfb` unless a byte-granular
+    /// self-synchronising stream is required or the format demands CFB8.
+    ///
+    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; the key and block
+    /// are both 16 bytes, as for AES-128.
+    ARIA128_CFB8 {
+        action: BlockModeAction,
+
+        /// The 16-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-192 in CFB8 mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// See `aria128-cfb8` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    ARIA192_CFB8 {
+        action: BlockModeAction,
+
+        /// The 24-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 in CFB8 mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// See `aria128-cfb8` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    ARIA256_CFB8 {
+        action: BlockModeAction,
+
+        /// The 32-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-128 in CTR mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming stdin
+    /// to stdout.
+    ///
+    /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
+    /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
+    /// repeating keystream. On `encrypt` the nonce is written as the FIRST 12 BYTES of the output
+    /// and on `decrypt` it is read back from there -- 12, not the 16 the other modes write.
+    ///
+    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings, including why a
+    /// repeated nonce is fatal and why CTR is the most malleable mode here.
+    ARIA128_CTR {
+        action: BlockModeAction,
+
+        /// The 16-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-192 in CTR mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming stdin
+    /// to stdout.
+    ///
+    /// See `aria128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    ARIA192_CTR {
+        action: BlockModeAction,
+
+        /// The 24-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 in CTR mode (RFC 5794 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming stdin
+    /// to stdout.
+    ///
+    /// See `aria128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    ARIA256_CTR {
+        action: BlockModeAction,
+
+        /// The 32-byte ARIA key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -1335,6 +1628,42 @@ fn main() {
         }
         Some(Subcommands::AES256_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes256_ecb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA128_CBC { action, key, key_file, x }) => {
+            aria_cbc_cmd::aria128_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA192_CBC { action, key, key_file, x }) => {
+            aria_cbc_cmd::aria192_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA256_CBC { action, key, key_file, x }) => {
+            aria_cbc_cmd::aria256_cbc_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA128_CFB { action, key, key_file, x }) => {
+            aria_cfb_cmd::aria128_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA192_CFB { action, key, key_file, x }) => {
+            aria_cfb_cmd::aria192_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA256_CFB { action, key, key_file, x }) => {
+            aria_cfb_cmd::aria256_cfb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA128_CFB8 { action, key, key_file, x }) => {
+            aria_cfb8_cmd::aria128_cfb8_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA192_CFB8 { action, key, key_file, x }) => {
+            aria_cfb8_cmd::aria192_cfb8_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA256_CFB8 { action, key, key_file, x }) => {
+            aria_cfb8_cmd::aria256_cfb8_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA128_CTR { action, key, key_file, x }) => {
+            aria_ctr_cmd::aria128_ctr_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA192_CTR { action, key, key_file, x }) => {
+            aria_ctr_cmd::aria192_ctr_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA256_CTR { action, key, key_file, x }) => {
+            aria_ctr_cmd::aria256_ctr_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
