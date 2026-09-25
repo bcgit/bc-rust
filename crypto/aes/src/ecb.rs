@@ -181,6 +181,19 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         AESInternal::decrypt_2blocks(self, blocks)
     }
+    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::encrypt_2blocks(self, pair);
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::decrypt_2blocks(self, pair);
+        }
+    }
 }
 
 impl ElectronicCodeBook<24, BLOCK_LEN> for AES192Internal {
@@ -199,6 +212,19 @@ impl ElectronicCodeBook<24, BLOCK_LEN> for AES192Internal {
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         AESInternal::decrypt_2blocks(self, blocks)
     }
+    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::encrypt_2blocks(self, pair);
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::decrypt_2blocks(self, pair);
+        }
+    }
 }
 
 impl ElectronicCodeBook<32, BLOCK_LEN> for AES256Internal {
@@ -216,6 +242,19 @@ impl ElectronicCodeBook<32, BLOCK_LEN> for AES256Internal {
     }
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         AESInternal::decrypt_2blocks(self, blocks)
+    }
+    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::encrypt_2blocks(self, pair);
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::decrypt_2blocks(self, pair);
+        }
     }
 }
 
