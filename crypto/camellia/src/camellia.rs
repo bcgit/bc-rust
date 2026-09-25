@@ -133,7 +133,7 @@ impl<P: CamelliaParams> Camellia<P> {
 
     /// Encrypts two blocks in place, in lanes 0 and 1; the other two lanes carry copies of the
     /// first and are discarded. Two blocks for the price of four, but twice as good as two
-    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method is overridden.
+    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method uses it.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -199,9 +199,9 @@ impl Algorithm for Camellia_256 {
 // The three `ElectronicCodeBook` impls are one-line delegations to the inherent methods above,
 // written out longhand rather than generated because `cargo mutants` cannot see into macro bodies.
 //
-// Each overrides the pair and four-block methods: two blocks in two of the four lanes cost one
-// circuit pass per round where the default would cost two, and four blocks are one full pass
-// where the default (two pair calls) would be two.
+// Each fills the lanes in its pair and four-block methods: two blocks in two of the four lanes
+// cost one circuit pass per round where two single-block calls would cost two, and four blocks
+// are one full pass where two pair calls would be two.
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for Camellia_128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
