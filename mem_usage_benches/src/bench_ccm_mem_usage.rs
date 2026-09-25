@@ -46,7 +46,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::{AES_128, AES_192, AES_256};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle::modes::{Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting};
@@ -59,9 +59,9 @@ const TAG_LEN: usize = 16;
 /// enough that `3 * BUFFER_LEN` is a sane amount of stack.
 const BUFFER_LEN: usize = 4096;
 
-type Aes128Ccm<Dir> = Ccm<AES_128, Dir, 16, 16, NONCE_LEN, TAG_LEN>;
-type Aes128CcmEncryptor = CcmEncryptor<AES_128, 16, 16, NONCE_LEN, TAG_LEN, BUFFER_LEN>;
-type Aes128CcmDecryptor = CcmDecryptor<AES_128, 16, 16, NONCE_LEN, TAG_LEN, BUFFER_LEN>;
+type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, NONCE_LEN, TAG_LEN>;
+type Aes128CcmEncryptor = CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, BUFFER_LEN>;
+type Aes128CcmDecryptor = CcmDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, BUFFER_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[0x42u8; N], KeyType::SymmetricCipherKey).unwrap()
@@ -83,32 +83,32 @@ fn print_struct_sizes() {
     use core::mem::size_of;
 
     eprintln!("--- Ccm: permutation + 3 blocks + 4 counters, independent of nonce/tag length ---");
-    eprintln!("Ccm<AES_128, .., 12, 16>  {:>7} B", size_of::<Aes128Ccm<Encrypting>>());
+    eprintln!("Ccm<AES128Internal, .., 12, 16>  {:>7} B", size_of::<Aes128Ccm<Encrypting>>());
     eprintln!(
-        "Ccm<AES_128, .., 7, 4>    {:>7} B",
-        size_of::<Ccm<AES_128, Encrypting, 16, 16, 7, 4>>()
+        "Ccm<AES128Internal, .., 7, 4>    {:>7} B",
+        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 7, 4>>()
     );
     eprintln!(
-        "Ccm<AES_128, .., 13, 16>  {:>7} B",
-        size_of::<Ccm<AES_128, Encrypting, 16, 16, 13, 16>>()
+        "Ccm<AES128Internal, .., 13, 16>  {:>7} B",
+        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 13, 16>>()
     );
     eprintln!(
-        "Ccm<AES_192, .., 12, 16>  {:>7} B",
-        size_of::<Ccm<AES_192, Encrypting, 24, 16, 12, 16>>()
+        "Ccm<AES192Internal, .., 12, 16>  {:>7} B",
+        size_of::<Ccm<AES192Internal, Encrypting, 24, 16, 12, 16>>()
     );
     eprintln!(
-        "Ccm<AES_256, .., 12, 16>  {:>7} B",
-        size_of::<Ccm<AES_256, Encrypting, 32, 16, 12, 16>>()
+        "Ccm<AES256Internal, .., 12, 16>  {:>7} B",
+        size_of::<Ccm<AES256Internal, Encrypting, 32, 16, 12, 16>>()
     );
     eprintln!("Decrypting is the same size:");
-    eprintln!("Ccm<AES_128, Decrypting>  {:>7} B", size_of::<Aes128Ccm<Decrypting>>());
+    eprintln!("Ccm<AES128Internal, Decrypting>  {:>7} B", size_of::<Aes128Ccm<Decrypting>>());
 
     eprintln!("--- the buffering trait adapters: 2 * BUFFER_LEN each ---");
     eprintln!("CcmEncryptor<.., 4096>    {:>7} B", size_of::<Aes128CcmEncryptor>());
     eprintln!("CcmDecryptor<.., 4096>    {:>7} B", size_of::<Aes128CcmDecryptor>());
     eprintln!(
         "CcmEncryptor<.., 256>     {:>7} B",
-        size_of::<CcmEncryptor<AES_128, 16, 16, NONCE_LEN, TAG_LEN, 256>>()
+        size_of::<CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 256>>()
     );
 
     print!("{}", size_of::<Aes128Ccm<Encrypting>>());

@@ -75,6 +75,31 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
             *b = (*b ^ *k).rotate_right(1);
         }
     }
+
+    // The toy has no unit wider than a block, so the batch methods are single-block loops.
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+        for block in blocks.iter_mut() {
+            self.encrypt_block(block);
+        }
+    }
+
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+        for block in blocks.iter_mut() {
+            self.decrypt_block(block);
+        }
+    }
+
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {
+        for block in blocks.iter_mut() {
+            self.encrypt_block(block);
+        }
+    }
+
+    fn decrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {
+        for block in blocks.iter_mut() {
+            self.decrypt_block(block);
+        }
+    }
 }
 
 /// A deliberately broken toy whose pair methods **swap** their two results.
@@ -117,6 +142,22 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
         self.inner.decrypt_block(&mut blocks[0]);
         self.inner.decrypt_block(&mut blocks[1]);
         blocks.swap(0, 1);
+    }
+
+    // Two (swapped) pair calls, so four blocks are wrong too: the fault is in the pair path, and
+    // a mode that batches fours still goes through it.
+    fn encrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            self.encrypt_2blocks(pair);
+        }
+    }
+
+    fn decrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            self.decrypt_2blocks(pair);
+        }
     }
 }
 
@@ -197,6 +238,14 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {
 
     fn decrypt_block(&self, block: &mut [u8; TOY_LEN]) {
         self.inner.decrypt_block(block);
+    }
+
+    fn encrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+        self.inner.encrypt_2blocks(blocks);
+    }
+
+    fn decrypt_2blocks(&self, blocks: &mut [[u8; TOY_LEN]; 2]) {
+        self.inner.decrypt_2blocks(blocks);
     }
 
     fn encrypt_4blocks(&self, blocks: &mut [[u8; TOY_LEN]; 4]) {

@@ -188,13 +188,13 @@ use crate::{Decrypting, Encrypting};
 /// `Ccm<P, Decrypting, ..>`:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
-/// let ccm = Ccm::<AES_128, Encrypting, 16, 16, 12, 16>::new(&key, &[0u8; 12], &[], 0).unwrap();
+/// let ccm = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 16>::new(&key, &[0u8; 12], &[], 0).unwrap();
 /// ccm.do_decrypt_final(&[0u8; 16]).unwrap();
 /// ```
 ///
@@ -202,40 +202,40 @@ use crate::{Decrypting, Encrypting};
 /// producing a tag over data it never encrypted:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Decrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
-/// let ccm = Ccm::<AES_128, Decrypting, 16, 16, 12, 16>::new(&key, &[0u8; 12], &[], 0).unwrap();
+/// let ccm = Ccm::<AES128Internal, Decrypting, 16, 16, 12, 16>::new(&key, &[0u8; 12], &[], 0).unwrap();
 /// let _tag = ccm.do_encrypt_final().unwrap();
 /// ```
 ///
 /// A nonce length A.1 does not permit does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
 /// // n = 6 is not in {7, ..., 13}: it would make q = 9, which A.1 does not allow.
-/// let _ = Ccm::<AES_128, Encrypting, 16, 16, 6, 16>::new(&key, &[0u8; 6], &[], 0);
+/// let _ = Ccm::<AES128Internal, Encrypting, 16, 16, 6, 16>::new(&key, &[0u8; 6], &[], 0);
 /// ```
 ///
 /// Nor does an odd tag length:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
 /// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
-/// let _ = Ccm::<AES_128, Encrypting, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
+/// let _ = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
 /// ```
 pub struct Ccm<
     P,
@@ -1052,7 +1052,7 @@ where
 /// rather than buffering the whole message only to fail at finalization:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::CcmEncryptor;
@@ -1060,7 +1060,7 @@ where
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
 /// // NONCE_LEN = 13 gives q = 2, a 65535-byte limit; FINAL_LEN - TAG_LEN = 99_992 exceeds it.
-/// let _ = CcmEncryptor::<AES_128, 16, 16, 13, 8, 100_000>::do_encrypt_init(&key);
+/// let _ = CcmEncryptor::<AES128Internal, 16, 16, 13, 8, 100_000>::do_encrypt_init(&key);
 /// ```
 ///
 /// # Random nonce length
@@ -1622,6 +1622,10 @@ mod tests {
         }
         fn encrypt_block(&self, _block: &mut [u8; 16]) {}
         fn decrypt_block(&self, _block: &mut [u8; 16]) {}
+        fn encrypt_2blocks(&self, _blocks: &mut [[u8; 16]; 2]) {}
+        fn decrypt_2blocks(&self, _blocks: &mut [[u8; 16]; 2]) {}
+        fn encrypt_4blocks(&self, _blocks: &mut [[u8; 16]; 4]) {}
+        fn decrypt_4blocks(&self, _blocks: &mut [[u8; 16]; 4]) {}
     }
 
     fn key() -> KeyMaterial<16> {

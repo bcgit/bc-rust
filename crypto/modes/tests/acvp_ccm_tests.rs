@@ -45,7 +45,7 @@
 //! The 6 Monte Carlo groups that the CTR and CBC sets have do not exist here: every group in this
 //! set is `testType: "AFT"`, so nothing is skipped for that reason.
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
@@ -224,12 +224,12 @@ fn run_case(
     // runtime values. The body is one expression, and each arm is its own instantiation, so
     // `cargo mutants` still sees the code it expands to.
     match (key_len, tag_len) {
-        (128, 96) => dispatch!(16, 12, AES_128),
-        (128, 128) => dispatch!(16, 16, AES_128),
-        (192, 96) => dispatch!(24, 12, AES_192),
-        (192, 128) => dispatch!(24, 16, AES_192),
-        (256, 96) => dispatch!(32, 12, AES_256),
-        (256, 128) => dispatch!(32, 16, AES_256),
+        (128, 96) => dispatch!(16, 12, AES128Internal),
+        (128, 128) => dispatch!(16, 16, AES128Internal),
+        (192, 96) => dispatch!(24, 12, AES192Internal),
+        (192, 128) => dispatch!(24, 16, AES192Internal),
+        (256, 96) => dispatch!(32, 12, AES256Internal),
+        (256, 128) => dispatch!(32, 16, AES256Internal),
         other => panic!("tcId {tc_id}: unexpected (keyLen, tagLen) {other:?}"),
     }
 }

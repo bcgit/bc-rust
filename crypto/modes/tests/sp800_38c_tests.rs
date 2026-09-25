@@ -17,7 +17,7 @@
 //! decryption-verification process of CCM is straightforward to construct"), so the decryption
 //! direction is checked by round-tripping each vector's own `C` back to its `P`.
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -217,7 +217,7 @@ fn check_vector<
 /// `n = 7`, so `q = 8`: the widest length field A.1 allows, and the shortest permitted tag.
 #[test]
 fn appendix_c1() {
-    check_vector::<16, 7, 4, AES_128>(
+    check_vector::<16, 7, 4, AES128Internal>(
         "C.1",
         APPENDIX_C_KEY,
         "10111213141516",
@@ -234,7 +234,7 @@ fn appendix_c1() {
 /// "minimum number of '0' bits, possibly none" is none.
 #[test]
 fn appendix_c2() {
-    check_vector::<16, 8, 6, AES_128>(
+    check_vector::<16, 8, 6, AES128Internal>(
         "C.2",
         APPENDIX_C_KEY,
         "1011121314151617",
@@ -251,7 +251,7 @@ fn appendix_c2() {
 /// the payload spans two counter blocks.
 #[test]
 fn appendix_c3() {
-    check_vector::<16, 12, 8, AES_128>(
+    check_vector::<16, 12, 8, AES128Internal>(
         "C.3",
         APPENDIX_C_KEY,
         "101112131415161718191a1b",
@@ -282,7 +282,7 @@ fn appendix_c4() {
     }
     assert_eq!(aad.len(), 65536, "Alen = 524288 bits");
 
-    check_vector::<16, 13, 14, AES_128>(
+    check_vector::<16, 13, 14, AES128Internal>(
         "C.4",
         APPENDIX_C_KEY,
         "101112131415161718191a1b1c",
@@ -305,8 +305,8 @@ fn appendix_c4() {
 /// combinations of empty/non-empty are accepted, give distinct tags, and round-trip.
 #[test]
 fn empty_payload_and_empty_aad_are_permitted() {
-    type Enc = Ccm<AES_128, Encrypting, 16, 16, 12, 16>;
-    type Dec = Ccm<AES_128, Decrypting, 16, 16, 12, 16>;
+    type Enc = Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>;
+    type Dec = Ccm<AES128Internal, Decrypting, 16, 16, 12, 16>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0x42u8; 12];
     let aad = b"header";
@@ -359,8 +359,8 @@ fn framework_streaming_contract() {
         12,
         16,
         256,
-        CcmEncryptor<AES_128, 16, 16, 12, 16, 256>,
-        CcmDecryptor<AES_128, 16, 16, 12, 16, 256>,
+        CcmEncryptor<AES128Internal, 16, 16, 12, 16, 256>,
+        CcmDecryptor<AES128Internal, 16, 16, 12, 16, 256>,
     >();
 }
 
@@ -373,16 +373,16 @@ fn framework_streaming_contract_other_parameter_sets() {
         12,
         16,
         256,
-        CcmEncryptor<AES_192, 24, 16, 12, 16, 256>,
-        CcmDecryptor<AES_192, 24, 16, 12, 16, 256>,
+        CcmEncryptor<AES192Internal, 24, 16, 12, 16, 256>,
+        CcmDecryptor<AES192Internal, 24, 16, 12, 16, 256>,
     >();
     framework(256 - 16).test_encryptor_decryptor::<
         32,
         12,
         16,
         256,
-        CcmEncryptor<AES_256, 32, 16, 12, 16, 256>,
-        CcmDecryptor<AES_256, 32, 16, 12, 16, 256>,
+        CcmEncryptor<AES256Internal, 32, 16, 12, 16, 256>,
+        CcmDecryptor<AES256Internal, 32, 16, 12, 16, 256>,
     >();
     // A 13-byte nonce (q = 2) with an 8-byte tag: the parameterization IEEE 802.11 CCMP uses, and
     // the one A.1's narrowest length field applies to.
@@ -391,8 +391,8 @@ fn framework_streaming_contract_other_parameter_sets() {
         13,
         8,
         256,
-        CcmEncryptor<AES_128, 16, 16, 13, 8, 256>,
-        CcmDecryptor<AES_128, 16, 16, 13, 8, 256>,
+        CcmEncryptor<AES128Internal, 16, 16, 13, 8, 256>,
+        CcmDecryptor<AES128Internal, 16, 16, 13, 8, 256>,
     >();
 }
 
@@ -401,8 +401,8 @@ fn framework_streaming_contract_other_parameter_sets() {
 /// which is what `do_encrypt_init_rng` and a fixed-output RNG provide.
 #[test]
 fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
-    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 8, 256>;
-    type Dec = CcmDecryptor<AES_128, 16, 16, 12, 8, 256>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 8, 256>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 8, 256>;
 
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce_bytes = hex::decode("101112131415161718191a1b").unwrap();
@@ -467,7 +467,7 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
 #[test]
 fn the_buffering_pair_refuses_a_message_past_its_buffer() {
     // A 32-byte capacity: `FINAL_LEN` leaves room for the 16-byte inline tag after it.
-    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, { 32 + 16 }>;
     let k = key::<16>(APPENDIX_C_KEY);
     let mut nothing = [0u8; 0];
 
@@ -495,7 +495,7 @@ fn the_buffering_pair_refuses_a_message_past_its_buffer() {
 #[test]
 fn the_buffering_pair_accepts_a_message_that_exactly_fills_its_buffer() {
     // A 32-byte capacity: `FINAL_LEN` leaves room for the 16-byte inline tag after it.
-    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, { 32 + 16 }>;
     let k = key::<16>(APPENDIX_C_KEY);
     let mut nothing = [0u8; 0];
 
@@ -520,8 +520,8 @@ fn the_buffering_pair_accepts_a_message_that_exactly_fills_its_buffer() {
 /// past it.
 #[test]
 fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
-    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
-    type Dec = CcmDecryptor<AES_128, 16, 16, 12, 16, { 32 + 16 }>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, { 32 + 16 }>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, { 32 + 16 }>;
     let k = key::<16>(APPENDIX_C_KEY);
     let mut nothing = [0u8; 0];
     let message = [0x5Au8; 32];
@@ -573,8 +573,8 @@ fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
 /// the streaming adapter's fixed buffer on otherwise valid packets.
 #[test]
 fn trait_one_shots_are_not_capped_by_final_len() {
-    type Enc = CcmEncryptor<AES_128, 16, 16, 12, 16, 64>;
-    type Dec = CcmDecryptor<AES_128, 16, 16, 12, 16, 64>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 64>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 64>;
 
     let k = key::<16>(APPENDIX_C_KEY);
     let aad = [0x3Cu8; 128];
@@ -610,7 +610,7 @@ fn trait_one_shots_are_not_capped_by_final_len() {
 /// plaintext, which does not go anywhere near this split.
 #[test]
 fn resuming_a_part_way_open_block_agrees_with_a_one_shot() {
-    type Enc = Ccm<AES_128, Encrypting, 16, 16, 12, 16>;
+    type Enc = Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0x24u8; 12];
     let aad = b"header";
@@ -641,8 +641,8 @@ fn resuming_a_part_way_open_block_agrees_with_a_one_shot() {
 /// footnote, and must authenticate.
 #[test]
 fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
-    type Enc = Ccm<AES_128, Encrypting, 16, 16, 12, 16>;
-    type Dec = Ccm<AES_128, Decrypting, 16, 16, 12, 16>;
+    type Enc = Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>;
+    type Dec = Ccm<AES128Internal, Decrypting, 16, 16, 12, 16>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0u8; 12];
     let mut out = [0u8; 16];
@@ -667,8 +667,8 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
 /// An output buffer that is too short is refused with the length required, before any work.
 #[test]
 fn undersized_output_buffers_are_refused() {
-    type Enc = Ccm<AES_128, Encrypting, 16, 16, 12, 16>;
-    type Dec = Ccm<AES_128, Decrypting, 16, 16, 12, 16>;
+    type Enc = Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>;
+    type Dec = Ccm<AES128Internal, Decrypting, 16, 16, 12, 16>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0u8; 12];
     let plaintext = [0xAAu8; 24];
@@ -694,8 +694,8 @@ fn undersized_output_buffers_are_refused() {
 /// A key of the wrong [`KeyType`] is rejected by every entry point, in both directions.
 #[test]
 fn a_non_cipher_key_is_rejected() {
-    type Enc = Ccm<AES_128, Encrypting, 16, 16, 12, 16>;
-    type Dec = Ccm<AES_128, Decrypting, 16, 16, 12, 16>;
+    type Enc = Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>;
+    type Dec = Ccm<AES128Internal, Decrypting, 16, 16, 12, 16>;
     let wrong =
         KeyMaterial::<16>::from_bytes_as_type(&[0x11; 16], KeyType::MACKey).expect("a MAC key");
     let mut out = [0u8; 16];
@@ -726,8 +726,8 @@ fn a_non_cipher_key_is_rejected() {
 /// `compile_fail` cannot express.
 #[test]
 fn each_direction_has_its_own_methods() {
-    type Enc = Ccm<AES_128, Encrypting, 16, 16, 12, 16>;
-    type Dec = Ccm<AES_128, Decrypting, 16, 16, 12, 16>;
+    type Enc = Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>;
+    type Dec = Ccm<AES128Internal, Decrypting, 16, 16, 12, 16>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0x55u8; 12];
 
@@ -750,33 +750,33 @@ fn each_direction_has_its_own_methods() {
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(), 256);
-    assert_eq!(size_of::<Ccm<AES_192, Encrypting, 24, 16, 12, 16>>(), 288);
-    assert_eq!(size_of::<Ccm<AES_256, Encrypting, 32, 16, 12, 16>>(), 320);
+    assert_eq!(size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>>(), 256);
+    assert_eq!(size_of::<Ccm<AES192Internal, Encrypting, 24, 16, 12, 16>>(), 288);
+    assert_eq!(size_of::<Ccm<AES256Internal, Encrypting, 32, 16, 12, 16>>(), 320);
 
     // Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and the
     // tag is assembled at finalization, not held.
     assert_eq!(
-        size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(),
-        size_of::<Ccm<AES_128, Encrypting, 16, 16, 7, 4>>()
+        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>>(),
+        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 7, 4>>()
     );
     assert_eq!(
-        size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(),
-        size_of::<Ccm<AES_128, Encrypting, 16, 16, 13, 16>>()
+        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>>(),
+        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 13, 16>>()
     );
 
     // The direction marker is free, and does not change the layout.
     assert_eq!(
-        size_of::<Ccm<AES_128, Encrypting, 16, 16, 12, 16>>(),
-        size_of::<Ccm<AES_128, Decrypting, 16, 16, 12, 16>>()
+        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>>(),
+        size_of::<Ccm<AES128Internal, Decrypting, 16, 16, 12, 16>>()
     );
 
     // The buffering adapters: 2 * FINAL_LEN each (an `aad` array and a `data` array).
     assert_eq!(
-        size_of::<CcmEncryptor<AES_128, 16, 16, 12, 16, 4096>>(),
-        size_of::<CcmDecryptor<AES_128, 16, 16, 12, 16, 4096>>()
+        size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 4096>>(),
+        size_of::<CcmDecryptor<AES128Internal, 16, 16, 12, 16, 4096>>()
     );
-    assert!(size_of::<CcmEncryptor<AES_128, 16, 16, 12, 16, 4096>>() >= 2 * 4096);
+    assert!(size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 4096>>() >= 2 * 4096);
 }
 
 // ---- moved from crypto/modes/src/ccm.rs's in-file unit tests -----------------------------
@@ -790,12 +790,12 @@ fn payload_longer_than_the_q_limit_is_refused() {
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
     assert!(
-        Ccm::<AES_128, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65535).is_ok(),
+        Ccm::<AES128Internal, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65535).is_ok(),
         "2^16 - 1 is the largest payload q = 2 can encode"
     );
     assert!(
         matches!(
-            Ccm::<AES_128, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65536),
+            Ccm::<AES128Internal, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65536),
             Err(SymmetricCipherError::GenericError(_))
         ),
         "2^16 does not fit [p]_16"
@@ -808,7 +808,7 @@ fn payload_longer_than_the_q_limit_is_refused() {
 fn a_short_or_long_payload_is_refused() {
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-    let mut ccm = Ccm::<AES_128, Encrypting, 16, 16, 7, 4>::new(&k, &nonce, &[], 8).unwrap();
+    let mut ccm = Ccm::<AES128Internal, Encrypting, 16, 16, 7, 4>::new(&k, &nonce, &[], 8).unwrap();
     let mut too_much = [0u8; 9];
     assert!(
         matches!(ccm.do_encrypt_update(&mut too_much), Err(SymmetricCipherError::StateError(_))),
