@@ -2,8 +2,9 @@
 //!
 //! The framework checks the properties every implementor must have -- both directions are
 //! inverses, the permutation is injective, the pair methods are indistinguishable from two
-//! single-block calls, and the key checks behave. `SM4` does not override the pair methods, so
-//! here the framework is exercising the trait's defaults over the single-block implementation.
+//! single-block calls, and the key checks behave. `SM4`'s pair and four-block methods fill the
+//! circuit's lanes rather than calling the single-block path, so the equivalence is not true by
+//! construction.
 
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN, SM4};

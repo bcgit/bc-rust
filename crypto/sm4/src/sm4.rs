@@ -122,7 +122,7 @@ impl SM4 {
 
     /// Encrypts two blocks in place, in lanes 0 and 1; the other two lanes carry copies of the
     /// first and are discarded. Two blocks for the price of four, but twice as good as two
-    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method is overridden.
+    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method uses it.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -209,9 +209,9 @@ impl Algorithm for SM4 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-/// One-line delegations to the inherent methods. The pair and four-block methods are overridden:
-/// two blocks in two of the four lanes cost one circuit pass per round where the default would
-/// cost two, and four blocks are one full pass where the default (two pair calls) would be two.
+/// One-line delegations to the inherent methods. The pair and four-block methods use the lanes:
+/// two blocks in two of the four lanes cost one circuit pass per round where two single-block
+/// calls would cost two, and four blocks are one full pass where two pair calls would be two.
 impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4 {
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
         SM4::new(key)
