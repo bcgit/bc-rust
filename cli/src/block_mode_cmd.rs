@@ -1,9 +1,12 @@
-//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,ecb}`.
+//! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,ecb}` and
+//! `tdes-{cbc,ecb}`.
 //!
 //! Everything here is mode-independent -- key loading, stdin framing, block-alignment enforcement,
 //! output formatting -- and is generic over the mode via [`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it, so the
-//! commands cannot drift apart on the parts that matter for correctness.
+//! [`BlockCipherDecryptor`]. `aes_cbc_cmd`, `aes_ecb_cmd`, `tdes_cbc_cmd` and `tdes_ecb_cmd` are thin
+//! dispatchers over it, so the commands cannot drift apart on the parts that matter for correctness.
+//! The block length is a const parameter -- 16 for AES, 8 for TDES -- so the framing below is
+//! written once for both.
 //!
 //! The CFB and CTR commands are stream ciphers and live in [`crate::stream_mode_cmd`] instead;
 //! they share
@@ -31,8 +34,8 @@
 //! # Input must be block-aligned
 //!
 //! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
-//! commands apply no padding, so input that is not a multiple of 16 bytes is rejected rather than
-//! silently padded. (The CFB commands have no such requirement; see [`crate::stream_mode_cmd`].)
+//! commands apply no padding, so input that is not a multiple of the block length (16 bytes for AES,
+//! 8 for TDES) is rejected rather than silently padded. (The CFB commands have no such requirement; see [`crate::stream_mode_cmd`].)
 //! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
 //!
@@ -56,36 +59,47 @@ use std::io::{Read, Write};
 use std::process::exit;
 use std::{fs, io};
 
-/// The AES block length in bytes.
-pub(crate) const BLOCK_LEN: usize = 16;
-
-/// Bytes processed per call: 1 KiB = 64 blocks, matching the other streaming commands.
+/// Bytes processed per call: 1 KiB, matching the other streaming commands. That is 64 AES blocks
+/// or 128 TDES blocks; every block length the commands use divides it, which `do_*` checks at
+/// compile time.
 ///
 /// A full chunk goes through `do_*::<CHUNK_LEN>` in one call, in place, which for decryption means
-/// 32 pairs down the mode's two-block path. The at-most-63-block tail at end of input goes one
-/// block at a time; it is bounded, so its cost does not scale with the input.
-pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
+/// the mode's eight-block and two-block paths. The sub-chunk tail at end of input goes one block at
+/// a time; it is bounded, so its cost does not scale with the input.
+pub(crate) const CHUNK_LEN: usize = 1024;
 
 /// Which direction to run. Shared by every mode subcommand.
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum BlockModeAction {
     /// Encrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 a freshly generated IV is written as the first 16 bytes of the
-    /// output, and for CTR a 12-byte nonce, so that `decrypt` can read it back; ECB has neither and
-    /// writes none. The `-cbc` and `-ecb` commands need the input to be a multiple of 16 bytes;
-    /// `-cfb`, `-cfb8` and `-ctr` take any length. See the individual subcommand's help.
+    /// For CBC, CFB and CFB8 a freshly generated IV, one block long (16 bytes for AES, 8 for
+    /// TDES), is written as the first bytes of the output, and for CTR a nonce (12 bytes for AES,
+    /// 6 for TDES), so that `decrypt` can read it back; ECB has neither and writes none. The
+    /// `-cbc` and `-ecb` commands need the input to be a multiple of the block length; `-cfb`,
+    /// `-cfb8` and `-ctr` take any length. See the individual subcommand's help.
     Encrypt,
     /// Decrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 the first 16 bytes of input are taken as the IV, and for CTR the
-    /// first 12 as the nonce, as written by `encrypt`; ECB has neither and reads none. See
-    /// `encrypt` for the input-length rule.
+    /// For CBC, CFB and CFB8 the first block of input is taken as the IV, and for CTR the leading
+    /// bytes as the nonce, as written by `encrypt`; ECB has neither and reads none. See `encrypt`
+    /// for the input-length rule.
+    Decrypt,
+}
+
+/// The only action the `tdes2-*` commands offer. Two-key TDEA is disallowed for encryption (NIST
+/// SP 800-131A Rev 2 Table 1) and the library will not compile an encrypting mode over it, so the
+/// command line does not have the word: `tdes2-cbc encrypt` is rejected by the argument parser.
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum DecryptOnlyAction {
+    /// Decrypt stdin to stdout, exactly as the corresponding `tdes-*` command's `decrypt` does:
+    /// the IV or nonce is read from the leading bytes of the input, as written by whatever
+    /// legacy system produced the ciphertext.
     Decrypt,
 }
 
 /// Loads the key from `--key` (hex) or `--key-file` (binary or hex), and checks its length.
 ///
-/// `KEY_LEN` is exact: AES has three key lengths and the command selects one, so a key of the
-/// wrong length is a mistake rather than something to truncate or pad.
+/// `KEY_LEN` is exact: each command selects one key length (AES has three, TDES one), so a key of
+/// the wrong length is a mistake rather than something to truncate or pad.
 pub(crate) fn load_key<const KEY_LEN: usize>(
     key: &Option<String>,
     key_file: &Option<String>,
@@ -149,7 +163,12 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
 /// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
 /// ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "ECB"); it has no
 /// effect on the output.
-pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+pub(crate) fn encrypt_stream<
+    E,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
     mode: &str,
@@ -167,7 +186,7 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     }
 
     // The cipher works in place: `data` holds plaintext on the way in and ciphertext on the way out.
-    stream_aligned(mode, |data| {
+    stream_aligned::<BLOCK_LEN>(mode, |data| {
         if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
             // Cannot fail: none of these modes has a per-IV data limit.
             enc.do_encrypt(chunk).unwrap();
@@ -185,7 +204,12 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 
 /// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from the first
 /// `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB.
-pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+pub(crate) fn decrypt_stream<
+    D,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
     mode: &str,
@@ -209,9 +233,9 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
         exit(-1);
     });
 
-    stream_aligned(mode, |data| {
+    stream_aligned::<BLOCK_LEN>(mode, |data| {
         if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
-            // A full chunk is 32 pairs, so this is the mode's two-block path.
+            // A full chunk is many whole blocks, so this is the mode's batched paths.
             dec.do_decrypt(chunk).unwrap();
         } else {
             for block in data.as_chunks_mut::<BLOCK_LEN>().0 {
@@ -231,7 +255,7 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 ///
 /// Input whose total length is not a multiple of `BLOCK_LEN` is an error, because none of these
 /// modes is defined on a partial block and these commands do not pad.
-fn stream_aligned(mode: &str, mut process: impl FnMut(&mut [u8])) {
+fn stream_aligned<const BLOCK_LEN: usize>(mode: &str, mut process: impl FnMut(&mut [u8])) {
     let mut buf = [0u8; CHUNK_LEN];
     let mut filled = 0usize;
 

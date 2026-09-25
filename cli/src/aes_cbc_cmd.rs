@@ -9,8 +9,8 @@
 //! of the *next* block's plaintext (Appendix D). Do not decrypt data you have not authenticated
 //! separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key};
-use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
+use crate::block_mode_cmd::{BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
@@ -55,12 +55,12 @@ fn run<P, const KEY_LEN: usize>(
 {
     match action {
         BlockModeAction::Encrypt => {
-            encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
+            encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN, BLOCK_LEN>(
                 key, output_hex, MODE,
             )
         }
         BlockModeAction::Decrypt => {
-            decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
+            decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN, BLOCK_LEN>(
                 key, output_hex, MODE,
             )
         }

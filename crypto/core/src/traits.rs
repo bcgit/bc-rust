@@ -357,6 +357,19 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     /// [`SymmetricCipherError::KeyMaterialError`].
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError>;
 
+    /// Whether this permutation may be used to *apply* cryptographic protection, i.e. as the
+    /// cipher of an encrypting mode.
+    ///
+    /// `true` for every current cipher. `false` marks a permutation kept only to process data that
+    /// was protected in the past -- two-key TDEA, which NIST SP 800-131A Rev 2 Table 1 lists as
+    /// "Disallowed" for encryption and "Legacy use" for decryption. A mode of operation checks this
+    /// in an inline `const` when its `Encrypting` direction is constructed, so encrypting with such
+    /// a permutation is a compile error at the call site, while its `Decrypting` direction is
+    /// unaffected. The block methods themselves are not gated: a decrypting CFB or CTR needs the
+    /// forward cipher function, and a raw permutation is not something to encrypt data with in any
+    /// case (see the trait docs).
+    const ENCRYPTION_APPROVED: bool = true;
+
     /// The forward cipher function, in place.
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]);
 

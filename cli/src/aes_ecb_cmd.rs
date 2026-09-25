@@ -15,8 +15,8 @@
 //! exist for interoperability with systems that use ECB and for driving test vectors; for data, use
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key};
-use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
+use crate::block_mode_cmd::{BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Decrypting, Ecb, Encrypting};
@@ -62,12 +62,12 @@ fn run<P, const KEY_LEN: usize>(
 {
     match action {
         BlockModeAction::Encrypt => {
-            encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
+            encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0, BLOCK_LEN>(
                 key, output_hex, MODE,
             )
         }
         BlockModeAction::Decrypt => {
-            decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
+            decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0, BLOCK_LEN>(
                 key, output_hex, MODE,
             )
         }

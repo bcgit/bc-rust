@@ -33,9 +33,9 @@
 //! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
 //! one.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::block_mode_cmd::{BlockModeAction, load_key};
 use crate::stream_mode_cmd::run_stream_mode;
-use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal, CTR_NONCE_LEN};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN, CTR_NONCE_LEN};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Ctr, Decrypting, Encrypting};

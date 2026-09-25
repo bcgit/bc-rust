@@ -26,9 +26,9 @@
 //! of the plaintext in the *same* block, so an attacker edits the block they aimed at, at the cost
 //! of randomising the next one. Do not decrypt data you have not authenticated separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::block_mode_cmd::{BlockModeAction, load_key};
 use crate::stream_mode_cmd::run_stream_mode;
-use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cfb, Decrypting, Encrypting};

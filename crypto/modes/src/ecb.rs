@@ -113,6 +113,12 @@ where
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         Ok((Self::new(key)?, []))
     }
 

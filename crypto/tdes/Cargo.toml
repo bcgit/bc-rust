@@ -1,0 +1,23 @@
+[package]
+name = "bouncycastle-tdes"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-utils.workspace = true
+# Only for the TDES mode type aliases in `cbc.rs`, `cfb.rs`, `cfb8.rs`, `ctr.rs` and `ecb.rs`; the
+# engine itself does not use it.
+bouncycastle-modes.workspace = true
+# Only for the padded TDES-CBC and TDES-ECB aliases; the engine itself does not use it.
+bouncycastle-padding.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "tdes_benches"
+harness = false
