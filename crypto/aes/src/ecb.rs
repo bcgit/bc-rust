@@ -35,17 +35,18 @@
 //! `Ecb` -- `do_encrypt_init_rng` and the `encrypt_out_rng` one-shot provided over it -- panic, as
 //! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
-//!
-//! # How one alias covers both directions
-//!
-//! See [`PaddedMode`], which is the projection that lets `Dir` select between the encryptor and the
-//! decryptor adapter. `Dir` must be [`Encrypting`] or [`Decrypting`], as before.
 
-use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
+use crate::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 use bouncycastle_padding::PaddedMode;
 
 // Imports needed for docs
+use crate::aes::AESInternal;
+use crate::bitslice::Block;
+use crate::schedule::AESParams;
+use bouncycastle_core::traits::ElectronicCodeBook;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
@@ -103,8 +104,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES_128, Encrypting, 16, BLOCK_LEN>,
-    Ecb<AES_128, Decrypting, 16, BLOCK_LEN>,
+    Ecb<AES128Internal, Encrypting, 16, BLOCK_LEN>,
+    Ecb<AES128Internal, Decrypting, 16, BLOCK_LEN>,
     Pad,
     16,
     0,
@@ -131,8 +132,8 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES_192, Encrypting, 24, BLOCK_LEN>,
-    Ecb<AES_192, Decrypting, 24, BLOCK_LEN>,
+    Ecb<AES192Internal, Encrypting, 24, BLOCK_LEN>,
+    Ecb<AES192Internal, Decrypting, 24, BLOCK_LEN>,
     Pad,
     24,
     0,
@@ -159,10 +160,110 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES_256, Encrypting, 32, BLOCK_LEN>,
-    Ecb<AES_256, Decrypting, 32, BLOCK_LEN>,
+    Ecb<AES256Internal, Encrypting, 32, BLOCK_LEN>,
+    Ecb<AES256Internal, Decrypting, 32, BLOCK_LEN>,
     Pad,
     32,
     0,
     BLOCK_LEN,
 >>::Mode;
+
+impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {
+    fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+        AES128Internal::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        AESInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        AESInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AESInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AESInternal::decrypt_2blocks(self, blocks)
+    }
+    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::encrypt_2blocks(self, pair);
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::decrypt_2blocks(self, pair);
+        }
+    }
+}
+
+impl ElectronicCodeBook<24, BLOCK_LEN> for AES192Internal {
+    fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
+        AES192Internal::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        AESInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        AESInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AESInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AESInternal::decrypt_2blocks(self, blocks)
+    }
+    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::encrypt_2blocks(self, pair);
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::decrypt_2blocks(self, pair);
+        }
+    }
+}
+
+impl ElectronicCodeBook<32, BLOCK_LEN> for AES256Internal {
+    fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
+        AES256Internal::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        AESInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        AESInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AESInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        AESInternal::decrypt_2blocks(self, blocks)
+    }
+    // A pair is the bit-sliced engine's natural unit, so four blocks are two pair calls.
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::encrypt_2blocks(self, pair);
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        let (pairs, _) = blocks.as_mut_slice().as_chunks_mut::<2>();
+        for pair in pairs {
+            AESInternal::decrypt_2blocks(self, pair);
+        }
+    }
+}
+
+impl<P: AESParams> core::fmt::Debug for AESInternal<P> {
+    /// Prints the algorithm name only. The key schedule is secret and is never formatted.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(P::ALG_NAME)
+    }
+}
