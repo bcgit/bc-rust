@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use bouncycastle_core::traits::SecurityStrength;
+    use bouncycastle_core::security_strength::SecurityStrength;
 
     #[test]
     fn test_security_strength() {

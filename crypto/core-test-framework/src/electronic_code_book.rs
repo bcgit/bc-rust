@@ -5,7 +5,8 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::ElectronicCodeBook;
 
 /// Instance of the test framework.
 pub struct TestFrameworkElectronicCodeBook {

@@ -21,9 +21,8 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::{
     KeyMaterial256, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{
-    SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier,
-};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureVerifier};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa::{
     MLDSA44, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey,

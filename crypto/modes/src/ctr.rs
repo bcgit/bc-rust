@@ -112,9 +112,9 @@ use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, ElectronicCodeBook, RNG, SecurityStrength, StreamCipherDecryptor,
-    StreamCipherEncryptor,
+    Algorithm, ElectronicCodeBook, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
@@ -135,7 +135,7 @@ use core::marker::PhantomData;
 /// A nonce as long as the block would leave no counter at all, and could not count:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
@@ -149,7 +149,7 @@ use core::marker::PhantomData;
 /// supports:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
@@ -162,7 +162,7 @@ use core::marker::PhantomData;
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};

@@ -114,7 +114,8 @@ mod sm3;
 pub mod hmac;
 
 pub use self::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]

@@ -6,7 +6,8 @@ mod sha3_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;

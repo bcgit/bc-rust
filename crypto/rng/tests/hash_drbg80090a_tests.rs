@@ -4,7 +4,8 @@ mod tests {
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial256, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{RNG, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::RNG;
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_rng::Sp80090ADrbg;
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};

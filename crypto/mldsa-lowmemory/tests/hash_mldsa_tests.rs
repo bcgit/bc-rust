@@ -6,6 +6,7 @@ mod hash_mldsa_tests {
     use super::*;
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+    use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{Hash, PHSignatureVerifier, PHSigner};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_mldsa_lowmemory::{
@@ -237,7 +238,7 @@ mod hash_mldsa_tests {
 
     #[test]
     fn algorithm_names_strengths_and_oids() {
-        use bouncycastle_core::traits::{Algorithm, AlgorithmOID, SecurityStrength};
+        use bouncycastle_core::traits::{Algorithm, AlgorithmOID};
 
         // `Algorithm` is implemented once, generically over the pairing, so nothing else states
         // these per algorithm.

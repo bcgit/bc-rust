@@ -225,7 +225,9 @@ use bouncycastle_hkdf::HKDF;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{KDF, SecurityStrength, SuspendableKeyed, XOF};
+use bouncycastle_core::security_strength::SecurityStrength;
+#[allow(unused_imports)]
+use bouncycastle_core::traits::{KDF, SuspendableKeyed, XOF};
 
 /*** String constants ***/
 ///

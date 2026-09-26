@@ -29,16 +29,16 @@
 //! This implementation uses that: decryption walks the ciphertext four blocks at a time through
 //! [`ElectronicCodeBook::decrypt_4blocks`], then any remaining pair through
 //! [`ElectronicCodeBook::decrypt_2blocks`], then the last block singly. A bit-sliced engine
-//! computes a pair (AES) or four blocks (SM4) for barely more than the cost of one. Encryption
-//! cannot, and does not.
+//! computes two or four blocks (AES, on `u32` or `u64` planes) for barely more than the cost of
+//! one. Encryption cannot, and does not.
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, RNG,
-    SecurityStrength,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;

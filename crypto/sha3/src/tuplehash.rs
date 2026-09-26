@@ -5,7 +5,8 @@ use crate::cshake::{CSHAKEInternal, absorb_encoded_string_into};
 use crate::length_bound_squeezer::LengthBoundSqueezer;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 
 /// The function-name string every TupleHash binds, per SP 800-185 Sec 5.3.
 const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";

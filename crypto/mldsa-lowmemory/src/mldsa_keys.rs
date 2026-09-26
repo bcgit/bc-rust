@@ -11,9 +11,8 @@ use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{
-    Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer,
-};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Hash, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -381,6 +380,8 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
                 A_elem.multiply_ntt(&s1_hat);
                 t_hat_i.add_ntt(&A_elem);
             }
+            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+            t_hat_i.reduce32();
             t_hat_i.inv_ntt();
 
             t_hat_i
