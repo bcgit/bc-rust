@@ -574,6 +574,8 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
             let A_hat = expandA::<P>(&self.rho);
 
             let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
+            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+            t_ntt.reduce32();
             t_ntt.inv_ntt();
             t_ntt
         };
