@@ -71,7 +71,8 @@ use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{AES128Params, AES192Params, AES256Params, AESParams, expand, round_key};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
 
 // Imports needed for docs
