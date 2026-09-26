@@ -1,8 +1,10 @@
 //! A constant-time, table-free AES block cipher engine (NIST FIPS 197).
 //!
-//! This crate provides the raw AES keyed permutation
-//! implemented as a Boolean circuit over bit-planes rather than as byte substitutions through a
-//! lookup table. That makes it both smaller and constant-time; see [Design](#design).
+//! This crate provides the raw AES keyed permutation implemented as a Boolean circuit over bit-planes
+//! rather than as byte substitutions through a lookup table, which makes it both smaller and constant-time;
+//! see [Design](#design).
+//!
+//! This crate also provides various ready-to-use AES-based modes of operation.
 //!
 //! # Usage Examples
 //!
@@ -99,22 +101,23 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`AES128Internal`](aes_internal::AES128Internal) and friends transform exactly 16 bytes. Using them directly on data means ECB,
-//! which is not confidential: identical plaintext blocks produce identical ciphertext blocks, so
-//! structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation, and
-//! prefer an authenticated one so that ciphertext tampering is detected.
-//!
-//! The [`AES_ECB_128`] / [`AES_ECB_192`] / [`AES_ECB_256`] aliases give that same block-by-block
-//! operation the mode API, so that systems and specifications which require ECB -- and test-vector
-//! harnesses -- can use it through the same interface as the other modes. Like the CBC aliases they
-//! carry a padding scheme, which is what lets them accept data of any length. Neither the mode API
-//! nor the padding makes ECB confidential; the warning above applies to them unchanged.
+//! [`AES128Internal`](aes_internal::AES128Internal) and friends transform exactly 16 bytes.
+//! Using them directly on data is equivalent to the [Electronic Code Book (ECB)](crate::ecb) mode,
+//! which does not provide proper confidentiality in most contexts since the same plaintext block
+//! will produce the same ciphertext block every time, so structure in the plaintext survives encryption.
+//! **Do not do it.** Use a ready-to-use mode of operation, and
+//! prefer an authenticated one (AEAD) so that ciphertext tampering is detected.
 //!
 //! ## Constant-time properties
 //!
 //! By construction there is no secret-dependent memory access and no secret-dependent branch,
-//! in the cipher *or* in the key schedule -- SUBWORD() goes through the same circuit as
-//! SUBBYTES(). The only branches are the round loops, which count over the public `Nr`.
+//! in the cipher (sbox) *or* in the key load (key schedule expansion)
+//! The only branches are the round loops, which count over the public `Nr`.
+//!
+//! This guarantee is "by construction" at the source code level only since no guarantees can be made
+//! against the compiler optimizing the provided code into non-constant time assembly. For uses that
+//! require constant-time guarantees that strong, then a library that uses inline assembly for critical
+//! sections might be more appropriate.
 //!
 //! Caveats worth stating plainly:
 //!
