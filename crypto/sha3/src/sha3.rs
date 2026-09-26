@@ -47,8 +47,9 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     /// Appends the SHA3 domain-separation suffix and pads as per FIPS 202 s. 6.1, then squeezes the digest.
     ///
     /// Private, infallible body shared by [`Hash::do_final_out`] and [`Hash::do_final_partial_bits_out`].
-    /// `num_partial_bits` (0..=7, validated by the caller) trailing message bits are taken from the
-    /// least significant bits of `partial_byte` (FIPS 202 Appendix B.1 bit ordering). FIPS 202 s. 6.1
+    /// The `num_partial_bits` (0..=7, validated by the caller) trailing message bits are the most
+    /// significant bits of `partial_byte`, leading bit first (ASN.1 BIT STRING order); they are reversed
+    /// below into the FIPS 202 Appendix B.1 bit ordering that Keccak absorbs. FIPS 202 s. 6.1
     /// defines SHA3-d(M) = KECCAK[c](M || 01, d), so the two suffix bits are appended directly above
     /// the message bits; pad10*1 is then applied by the sponge when it switches to squeezing.
     ///
@@ -65,8 +66,12 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
 
         // Mutants note: This is just bit-setting into empty space.
         // It works the same regardless of whether it's OR or XOR.
-        let mut final_input: u16 =
-            ((partial_byte as u16) & ((1 << num_partial_bits) - 1)) | (0x02 << num_partial_bits);
+        // The public convention puts the message bits in the most significant bits of partial_byte,
+        // leading bit first (ASN.1 BIT STRING order, X.690 s. 8.6.2.1). Keccak absorbs a byte
+        // LSB-first: FIPS 202 Algorithm 10 (h2b) step 3 sets message bit T[8i + j] = b_ij, the bit
+        // of weight 2^j in byte i. So reverse the bit order and keep the low num_partial_bits bits.
+        let message_bits = (partial_byte.reverse_bits() as u16) & ((1 << num_partial_bits) - 1);
+        let mut final_input: u16 = message_bits | (0x02 << num_partial_bits);
         let mut final_bits = num_partial_bits + 2;
 
         // If message bits + suffix fill a whole byte, absorb it as a normal byte first.

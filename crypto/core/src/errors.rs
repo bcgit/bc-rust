@@ -170,18 +170,43 @@ pub enum SymmetricCipherError {
     AEADTagCheckFailed,
     ///
     DecryptionFailed,
-    /// Indicates that the output buffer is not large enough to hold the requested output.
-    /// The usize represents the required buffer length.
-    IncorrectOutputBufferLength(&'static str, usize),
+    /// The caller's output buffer is too small for what this call would write. The usize is the
+    /// minimum length the buffer needs for the same call to succeed on a retry; the call consumed
+    /// no input and left the cipher's state untouched, so retrying with a buffer at least that
+    /// long produces exactly what the refused call would have.
+    OutputBufferTooSmall(usize),
     ///
     KeyMaterialError(KeyMaterialError),
+    ///
+    PaddingError(PaddingError),
     ///
     RNGError(RNGError),
     ///
     StateError(&'static str),
 }
 
+/// Errors from a [`crate::traits::BlockCipherPadding`] scheme.
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PaddingError {
+    /// `pad()` was asked to pad more data than fits in a block alongside at least one byte of padding.
+    /// The usize is the maximum permitted data length (`BLOCK_LEN - 1`).
+    DataLengthTooLong(usize),
+    /// `unpad()` found the block does not carry well-formed padding. Deliberately carries no detail
+    /// about *how* the padding was malformed.
+    InvalidPadding,
+    /// `pad()` was asked to add padding by a scheme that adds none (`NoPadding`): the data was not
+    /// a whole number of blocks, and the caller must align it.
+    PaddingNotPermitted,
+}
+
 /*** Promotion functions ***/
+impl From<PaddingError> for SymmetricCipherError {
+    fn from(e: PaddingError) -> SymmetricCipherError {
+        Self::PaddingError(e)
+    }
+}
+
 impl From<KeyMaterialError> for SymmetricCipherError {
     fn from(e: KeyMaterialError) -> SymmetricCipherError {
         Self::KeyMaterialError(e)

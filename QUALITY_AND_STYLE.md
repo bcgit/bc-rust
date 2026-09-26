@@ -63,7 +63,16 @@ which parts were done for a very specific reason and should not be changed on a 
 
 ## Naming Conventions
 
-All normal rust naming convensions from clippy apply. In addition, some library-specific naming conventions:
+All normal rust naming conventions from clippy apply, with one exception:
+
+* Where a type, constant or variable corresponds to something a specification (FIPS, RFC, etc) names, keep the
+  specification's spelling and capitalization, and `#[allow(non_camel_case_types)]`, `#[allow(non_snake_case)]` or
+  `#[allow(non_upper_case_globals)]` the item locally. So the FIPS 204 signature algorithm is `MLDSA65`, not `MlDsa44`,
+  and it's `AES_CBC_128`, not `AesCbc128`, and if a specification writes `A` for a matrix and `a` for a vector then
+  `let A = ...; let a = ...;` is the right thing to do for code readability and correspondence with the spec. The point
+  is that a reviewer with the specification open can match names by eye; that matters more here than rust convention.
+
+In addition, some library-specific naming conventions:
 
 * In constants, "LEN" is the length of a value in bytes (typically used for sizing arrays), whereas "SIZE" is a value in
   bits (typically used as a security parameter). For example SHA256 could have constants `HASH_SIZE = 256` and
@@ -87,6 +96,12 @@ subsequent calls can be made to this object (as opposed to the usual pattern of 
 very little) object state to track and return errors about.
 
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
+
+Any function that writes into a caller-provided output buffer must report how many bytes it wrote, as a `usize` in
+its `Ok` value (on its own, or alongside anything else the function needs to return, such as a generated IV). This
+holds even when the count is fully determined by the input -- a fixed-length `[u8; LEN]` buffer, say, always writes
+exactly `LEN` -- so that callers never have to remember which output-buffer methods report their length and which
+don't.
 
 ## Fallibility
 
@@ -127,6 +142,36 @@ to the equivalent unrolled code. Simply reducing the number of lines of code is 
 Note that rust macros tend not to play well with a lot of dev tooling for compiler errors, debuggers, profilers, and
 `cargo mutants`, which is a good reason to avoid macros in core algorithm or data processing code. Macros can be used
 more freely within test code.
+
+## Unit tests vs integration tests
+
+Unit tests are test code (and supporting helper functions) embedded in src/**.rs files. They have access to
+crate-private or module-private functions and constants.
+
+Integration tests are test code (and supporting helper functions) in tests/**.rs files. They test the crate's code from
+the outside -- ie through its public APIs -- since tests/ is a separate crate from src/.
+
+In general, integration tests are preferred over unit tests. This is for a number of reasons:
+
+* To reduce reviewer burden; reviewers will typically focus more effort on the src/ than the tests/, so we want to keep
+  src/ as short as is reasonable.
+* Usually it is easier to determine what is the correct behaviour at the public API level. For example, this is the
+  level at which we typically have KATs and test vectors.
+* Tools like cargo mutants are very helpful at detecting branches that are not exercisable via the public APIs, which
+  often is an indicator that the branch isn't doing what you think it's doing, or is simply not useful and can be
+  deleted. Unit tests that bypass the public APIs to pin these sorts of branches obscure the fact that this code is
+  unreachable.
+
+Unit tests are reasonable to include in the following cases:
+
+* There is high-risk code (usually meaning that it is complex code whose behaviour is not obvious from inspection) where
+  unit tests help to document the behaviour and protect against accidental breakage via a benign-looking change.
+* AND where known answer tests are available.
+* AND where this behaviour cannot be tested from integration tests.
+
+When writing unit tests, they should be contained with an `mod tests` at the bottom of the file, and ALL helper
+functions that support the unit tests must be contained within that module. The intention is to clearly signal to a code
+reviewer what is test code vs functional code.
 
 # Docs
 

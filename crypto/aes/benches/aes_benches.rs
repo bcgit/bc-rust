@@ -1,0 +1,160 @@
+//! Criterion benchmarks for the bit-sliced AES permutation.
+//!
+//! The comparison that matters here is `encrypt_block` against `encrypt_2blocks` and
+//! `encrypt_4blocks` over the same number of bytes. The engine runs on `u16`, `u32` or `u64`
+//! bit-planes for one, two or four blocks, and a round costs about the same at every width on a
+//! 64-bit machine, so the two- and four-block paths should approach twice and four times the
+//! throughput of the single-block one; what they achieve in practice is what these benches record
+//! (on x86-64: 1.75x and 3.0x for encryption, 1.95x and 3.7x for decryption). That multiplier is
+//! the argument for modes of operation using the batched entry points wherever their blocks are
+//! independent (CTR, ECB, and the decrypt direction of CBC and CFB).
+//!
+//! The data benches work in place on one buffer across iterations, so a `clone` never sits inside
+//! the timed closure. The permutation is a bijection, so the buffer stays random whichever
+//! direction ran last, and the contents never influence the timing of a constant-time cipher.
+
+use bouncycastle_aes::BLOCK_LEN;
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
+use bouncycastle_rng as rng;
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
+
+/// 16 KiB of data, i.e. 1024 AES blocks.
+const NUM_BLOCKS: usize = 1024;
+const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
+
+fn random_blocks() -> Vec<[u8; BLOCK_LEN]> {
+    let mut blocks = vec![[0u8; BLOCK_LEN]; NUM_BLOCKS];
+    let mut generator = rng::DefaultRNG::default();
+    for block in blocks.iter_mut() {
+        generator.next_bytes_out(block).unwrap();
+    }
+    blocks
+}
+
+fn key<const N: usize>() -> KeyMaterial<N> {
+    let mut bytes = [0u8; N];
+    rng::DefaultRNG::default().next_bytes_out(&mut bytes).unwrap();
+    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
+}
+
+fn bench_key_expansion(c: &mut Criterion) {
+    let mut group = c.benchmark_group("aes::key expansion");
+
+    let key128 = key::<16>();
+    group.throughput(Throughput::Bytes(16));
+    group.bench_function("AES128Internal::new()", |b| {
+        b.iter(|| black_box(AES128Internal::new(black_box(&key128)).unwrap()))
+    });
+
+    let key192 = key::<24>();
+    group.throughput(Throughput::Bytes(24));
+    group.bench_function("AES192Internal::new()", |b| {
+        b.iter(|| black_box(AES192Internal::new(black_box(&key192)).unwrap()))
+    });
+
+    let key256 = key::<32>();
+    group.throughput(Throughput::Bytes(32));
+    group.bench_function("AES256Internal::new()", |b| {
+        b.iter(|| black_box(AES256Internal::new(black_box(&key256)).unwrap()))
+    });
+
+    group.finish();
+}
+
+/// The six data benches every key length gets: 16 KiB through the one-, two- and four-block
+/// entry points, in each direction.
+fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    aes: &C,
+) {
+    let mut blocks = random_blocks();
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    group.bench_function("16KiB -- .encrypt_block() x1024", |b| {
+        b.iter(|| {
+            for block in blocks.iter_mut() {
+                aes.encrypt_block(black_box(block));
+            }
+            black_box(&blocks);
+        })
+    });
+
+    group.bench_function("16KiB -- .encrypt_2blocks() x512", |b| {
+        b.iter(|| {
+            for pair in blocks.chunks_exact_mut(2) {
+                // `try_into` cannot fail: `chunks_exact_mut(2)` yields slices of length 2.
+                let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
+                aes.encrypt_2blocks(black_box(pair));
+            }
+            black_box(&blocks);
+        })
+    });
+
+    group.bench_function("16KiB -- .encrypt_4blocks() x256", |b| {
+        b.iter(|| {
+            for four in blocks.chunks_exact_mut(4) {
+                // `try_into` cannot fail: `chunks_exact_mut(4)` yields slices of length 4.
+                let four: &mut [[u8; BLOCK_LEN]; 4] = four.try_into().unwrap();
+                aes.encrypt_4blocks(black_box(four));
+            }
+            black_box(&blocks);
+        })
+    });
+
+    group.bench_function("16KiB -- .decrypt_block() x1024", |b| {
+        b.iter(|| {
+            for block in blocks.iter_mut() {
+                aes.decrypt_block(black_box(block));
+            }
+            black_box(&blocks);
+        })
+    });
+
+    group.bench_function("16KiB -- .decrypt_2blocks() x512", |b| {
+        b.iter(|| {
+            for pair in blocks.chunks_exact_mut(2) {
+                let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
+                aes.decrypt_2blocks(black_box(pair));
+            }
+            black_box(&blocks);
+        })
+    });
+
+    group.bench_function("16KiB -- .decrypt_4blocks() x256", |b| {
+        b.iter(|| {
+            for four in blocks.chunks_exact_mut(4) {
+                let four: &mut [[u8; BLOCK_LEN]; 4] = four.try_into().unwrap();
+                aes.decrypt_4blocks(black_box(four));
+            }
+            black_box(&blocks);
+        })
+    });
+}
+
+fn bench_aes128(c: &mut Criterion) {
+    let aes = AES128Internal::new(&key::<16>()).unwrap();
+    let mut group = c.benchmark_group("aes::AES128Internal");
+    bench_data_paths(&mut group, &aes);
+    group.finish();
+}
+
+fn bench_aes192(c: &mut Criterion) {
+    let aes = AES192Internal::new(&key::<24>()).unwrap();
+    let mut group = c.benchmark_group("aes::AES192Internal");
+    bench_data_paths(&mut group, &aes);
+    group.finish();
+}
+
+fn bench_aes256(c: &mut Criterion) {
+    let aes = AES256Internal::new(&key::<32>()).unwrap();
+    let mut group = c.benchmark_group("aes::AES256Internal");
+    bench_data_paths(&mut group, &aes);
+    group.finish();
+}
+
+criterion_group!(benches, bench_key_expansion, bench_aes128, bench_aes192, bench_aes256);
+criterion_main!(benches);

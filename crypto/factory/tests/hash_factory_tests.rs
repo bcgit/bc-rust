@@ -54,6 +54,69 @@ mod hash_factory_tests {
             let sha2 = HashFactory::new(sha2::SHA512_NAME).unwrap();
             assert_eq!(sha2.output_len(), 64);
             assert_eq!(sha2.hash(&DUMMY_SEED[..512]), b"\xed\xb9\xbe\xd7\x21\xaa\x6a\x5f\x6f\xbc\x66\x19\xd3\xa3\xc2\xbe\x3d\x04\x30\x43\xf0\x5a\x9a\xeb\xc7\xb1\x19\x7a\x2a\xa9\xc4\x9a\x57\xd5\xdd\xd4\x67\x4c\x17\x85\x78\x50\x88\xd9\xf1\xff\x42\xc7\x97\xa0\x2a\xdc\x9b\x81\x7a\x13\x9a\x50\x97\x0d\xa6\xc9\x95\x24");
+
+            // SHA512/224 -- "abc" vector from the NIST example file SHA512_224.pdf
+            let sha2 = HashFactory::new("SHA512/224").unwrap();
+            assert_eq!(sha2.output_len(), 28);
+            assert_eq!(sha2.hash(b"abc"), b"\x46\x34\x27\x0f\x70\x7b\x6a\x54\xda\xae\x75\x30\x46\x08\x42\xe2\x0e\x37\xed\x26\x5c\xee\xe9\xa4\x3e\x89\x24\xaa");
+
+            let sha2 = HashFactory::new(sha2::SHA512_224_NAME).unwrap();
+            assert_eq!(sha2.output_len(), 28);
+            assert_eq!(sha2.hash(b"abc"), b"\x46\x34\x27\x0f\x70\x7b\x6a\x54\xda\xae\x75\x30\x46\x08\x42\xe2\x0e\x37\xed\x26\x5c\xee\xe9\xa4\x3e\x89\x24\xaa");
+
+            // SHA512/256 -- "abc" vector from the NIST example file SHA512_256.pdf
+            let sha2 = HashFactory::new("SHA512/256").unwrap();
+            assert_eq!(sha2.output_len(), 32);
+            assert_eq!(sha2.hash(b"abc"), b"\x53\x04\x8e\x26\x81\x94\x1e\xf9\x9b\x2e\x29\xb7\x6b\x4c\x7d\xab\xe4\xc2\xd0\xc6\x34\xfc\x6d\x46\xe0\xe2\xf1\x31\x07\xe7\xaf\x23");
+
+            let sha2 = HashFactory::new(sha2::SHA512_256_NAME).unwrap();
+            assert_eq!(sha2.output_len(), 32);
+            assert_eq!(sha2.hash(b"abc"), b"\x53\x04\x8e\x26\x81\x94\x1e\xf9\x9b\x2e\x29\xb7\x6b\x4c\x7d\xab\xe4\xc2\xd0\xc6\x34\xfc\x6d\x46\xe0\xe2\xf1\x31\x07\xe7\xaf\x23");
+
+            // The remaining pass-throughs, on the same "abc" vectors: streaming, the _out variants
+            // and block_bitlen.
+            let expected_224 = HashFactory::new("SHA512/224").unwrap().hash(b"abc");
+            let expected_256 = HashFactory::new("SHA512/256").unwrap().hash(b"abc");
+            for (name, expected) in [("SHA512/224", &expected_224), ("SHA512/256", &expected_256)] {
+                let mut sha2 = HashFactory::new(name).unwrap();
+                assert_eq!(sha2.block_bitlen(), 1024);
+                sha2.do_update(b"a");
+                sha2.do_update(b"bc");
+                assert_eq!(&sha2.do_final(), expected);
+
+                let mut sha2 = HashFactory::new(name).unwrap();
+                sha2.do_update(b"abc");
+                let mut out = vec![0xffu8; expected.len()];
+                assert_eq!(sha2.do_final_out(&mut out), expected.len());
+                assert_eq!(&out, expected);
+
+                let mut out = vec![0xffu8; expected.len()];
+                assert_eq!(
+                    HashFactory::new(name).unwrap().hash_out(b"abc", &mut out),
+                    expected.len()
+                );
+                assert_eq!(&out, expected);
+            }
+        }
+
+        #[test]
+        fn sm3_hash_tests() {
+            use bouncycastle_sm3 as sm3;
+            // Expected values: GB/T 32905-2016 Appendix A ("abc") and openssl dgst -sm3 (DUMMY_SEED[..512]).
+            for name in ["SM3", sm3::SM3_NAME] {
+                let h = HashFactory::new(name).unwrap();
+                assert_eq!(h.output_len(), 32);
+                assert_eq!(h.block_bitlen(), 512);
+                assert_eq!(
+                    h.hash(&DUMMY_SEED[..512]),
+                    b"\xb2\x1f\x83\x0d\xca\x06\xbe\x8b\x67\x8c\xf9\x87\xf2\x6b\x9a\x43\x6e\x1b\x42\x79\x63\xb4\x45\x03\x32\xf0\x12\x70\xbd\x2d\xf7\x5c"
+                );
+                let h = HashFactory::new(name).unwrap();
+                assert_eq!(
+                    h.hash(b"abc"),
+                    b"\x66\xc7\xf0\xf4\x62\xee\xed\xd9\xd1\xf2\xd4\x6b\xdc\x10\xe4\xe2\x41\x67\xc4\x87\x5c\xf2\xf7\xa2\x29\x7d\xa0\x2b\x8f\x4b\xa8\xe0"
+                );
+            }
         }
 
         #[test]
