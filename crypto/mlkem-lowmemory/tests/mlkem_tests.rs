@@ -5,8 +5,9 @@ mod mlkem_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
     };
+    use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength, XOF,
+        KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, XOF,
     };
     use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_hex as hex;
@@ -725,7 +726,7 @@ mod mlkem_tests {
 
     #[test]
     fn algorithm_names_and_oids() {
-        use bouncycastle_core::traits::{Algorithm, AlgorithmOID, SecurityStrength};
+        use bouncycastle_core::traits::{Algorithm, AlgorithmOID};
 
         // `Algorithm` and `AlgorithmOID` are implemented once, generically over the parameter set,
         // so nothing else states these per algorithm. Pinned here so that a wrong wiring of the

@@ -51,7 +51,8 @@
 //! See [`do_hazardous_operations`] for documentation and sample code.
 
 use crate::errors::{KeyMaterialError, SuspendableError};
-use crate::traits::{RNG, SecurityStrength};
+use crate::security_strength::SecurityStrength;
+use crate::traits::RNG;
 use bouncycastle_utils::{ct, min, secret::Secret};
 
 use core::cmp::{Ordering, PartialOrd};

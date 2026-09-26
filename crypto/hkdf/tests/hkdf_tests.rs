@@ -6,7 +6,8 @@ mod hkdf_tests {
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
         KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{HashAlgParams, KDF, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{HashAlgParams, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;

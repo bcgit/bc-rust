@@ -40,8 +40,9 @@
 use bouncycastle_aes::aes_internal::{AES128Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook,
     StreamCipherDecryptor, StreamCipherEncryptor,
 };
 use bouncycastle_modes::{Cbc, Cfb, Cfb8, Ctr, Decrypting, Ecb, Encrypting};

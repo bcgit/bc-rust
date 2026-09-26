@@ -29,7 +29,8 @@
 use crate::{AlgorithmFactory, FactoryError};
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, Hash};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::{
     SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_224_NAME, SHA512_256_NAME, SHA512_NAME,

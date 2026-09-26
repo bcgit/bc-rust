@@ -146,7 +146,8 @@ pub use self::sha256::SHA256Internal;
 use self::sha256::{SHA224_H0, SHA256_H0};
 pub use self::sha512::SHA512Internal;
 use self::sha512::{SHA384_H0, SHA512_H0, sha512t_h0};
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]

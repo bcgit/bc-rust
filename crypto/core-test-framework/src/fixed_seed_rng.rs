@@ -3,7 +3,8 @@
 use bouncycastle_core::errors::{KeyMaterialError, RNGError};
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{RNG, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::RNG;
 
 /// A test-only fake [`RNG`] that produces a fixed, fully deterministic byte stream.
 ///

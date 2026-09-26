@@ -81,9 +81,10 @@ use crate::{
 };
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, PHSignatureVerifier, PHSigner, RNG, SecurityStrength,
-    SignatureVerifier, Signer, XOF,
+    Algorithm, AlgorithmOID, Hash, PHSignatureVerifier, PHSigner, RNG, SignatureVerifier, Signer,
+    XOF,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;

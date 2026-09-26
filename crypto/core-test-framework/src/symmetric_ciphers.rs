@@ -5,10 +5,10 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipher, BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 
 /// Instance of the test framework.

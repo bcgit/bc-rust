@@ -7,7 +7,8 @@ mod shake_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{KDF, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;

@@ -5,9 +5,9 @@ mod mldsa_tests {
     use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+    use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-        Suspendable,
+        RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer, Suspendable,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::FixedSeedRNG;

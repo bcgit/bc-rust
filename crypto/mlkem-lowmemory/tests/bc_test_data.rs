@@ -9,7 +9,8 @@ mod bc_test_data {
     use bouncycastle_core::key_material::{
         KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
     };
-    use bouncycastle_core::traits::{KEMPublicKey, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::KEMPublicKey;
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem_lowmemory::mlkem::{
         MLKEM512_FULL_SK_LEN, MLKEM768_FULL_SK_LEN, MLKEM1024_FULL_SK_LEN,

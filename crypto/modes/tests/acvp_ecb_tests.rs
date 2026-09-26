@@ -21,9 +21,8 @@ use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Inter
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
-};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 use serde_json::Value;

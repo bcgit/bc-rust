@@ -398,8 +398,9 @@ use crate::{
 };
 use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable, XOF,
+    Algorithm, AlgorithmOID, RNG, SignatureVerifier, Signer, Suspendable, XOF,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
@@ -413,6 +414,7 @@ use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{PHSignatureVerifier, PHSigner};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+
 /*** Constants ***/
 
 ///

@@ -35,7 +35,8 @@
 
 use crate::{AlgorithmFactory, FactoryError};
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{KDF, SecurityStrength, XOF};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{KDF, XOF};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 
