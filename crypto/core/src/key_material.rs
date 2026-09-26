@@ -725,7 +725,7 @@ impl<const KEY_LEN: usize> KeyMaterialInternalTrait for KeyMaterial<KEY_LEN> {
 ///
 /// ```rust
 /// use bouncycastle_core::key_material::{KeyType, KeyMaterial256, KeyMaterialTrait, do_hazardous_operations};
-/// use bouncycastle_core::traits::SecurityStrength;
+/// use bouncycastle_core::security_strength::SecurityStrength;
 ///
 /// // Let's create an all-zero key
 /// let mut key = KeyMaterial256::default();
@@ -746,7 +746,7 @@ impl<const KEY_LEN: usize> KeyMaterialInternalTrait for KeyMaterial<KEY_LEN> {
 ///
 /// ```rust
 /// use bouncycastle_core::key_material::{KeyType, KeyMaterial256, KeyMaterialTrait, do_hazardous_operations};
-/// use bouncycastle_core::traits::SecurityStrength;
+/// use bouncycastle_core::security_strength::SecurityStrength;
 ///
 /// // Let's create an all-zero key
 /// let mut key = KeyMaterial256::default();
@@ -772,7 +772,7 @@ impl<const KEY_LEN: usize> KeyMaterialInternalTrait for KeyMaterial<KEY_LEN> {
 ///
 /// ```rust
 /// use bouncycastle_core::key_material::{KeyType, KeyMaterial512, KeyMaterialTrait, do_hazardous_operations};
-/// use bouncycastle_core::traits::SecurityStrength;
+/// use bouncycastle_core::security_strength::SecurityStrength;
 ///
 /// // In this example, we initialize a KeyMateriol512 (64 bytes) with only 32 bytes of input.
 /// let mut key = KeyMaterial512::from_bytes_as_type(
