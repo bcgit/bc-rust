@@ -29,13 +29,12 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SecurityStrength,
-};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};

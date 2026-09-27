@@ -22,7 +22,8 @@
 
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey};
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem::{
     MLKEM512, MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768, MLKEM768PrivateKey,

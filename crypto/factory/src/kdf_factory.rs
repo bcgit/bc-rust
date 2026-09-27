@@ -50,7 +50,8 @@
 use crate::{AlgorithmFactory, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
-use bouncycastle_core::traits::{KDF, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::KDF;
 use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{

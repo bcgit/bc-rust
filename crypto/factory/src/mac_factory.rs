@@ -73,7 +73,8 @@
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
-use bouncycastle_core::traits::{MAC, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::MAC;
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::hmac::{
     HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_224_NAME,

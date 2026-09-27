@@ -212,7 +212,9 @@ fn streaming_and_verification() {
 fn weak_keys_are_refused_unless_allowed() {
     let weak = KeyMaterial::<16>::from_bytes_as_type(&[0x01u8; 16], KeyType::MACKey)
         .expect("a valid 16-byte MAC key");
-    assert!(weak.security_strength() < bouncycastle_core::traits::SecurityStrength::_256bit);
+    assert!(
+        weak.security_strength() < bouncycastle_core::security_strength::SecurityStrength::_256bit
+    );
 
     assert!(KMAC256::new(&weak).is_err(), "a 128-bit key must not instantiate KMAC256");
     assert!(KMAC256::new_allow_weak_key(&weak).is_ok(), "... unless explicitly allowed");

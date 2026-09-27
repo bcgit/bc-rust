@@ -17,9 +17,9 @@ use bouncycastle_core::errors::{KEMError, RNGError};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, SecurityStrength, XOF,
-    XOFSqueezer,
+    Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOF, XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};

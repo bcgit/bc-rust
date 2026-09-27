@@ -3,7 +3,8 @@
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
-use bouncycastle_core::traits::{KDF, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::KDF;
 
 /// Instance of the test framework.
 pub struct TestFrameworkKDF {

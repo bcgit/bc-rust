@@ -5,8 +5,8 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{
     KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::MAC;
-use bouncycastle_core::traits::SecurityStrength;
 
 /// Instance of the test framework.
 pub struct TestFrameworkMAC {

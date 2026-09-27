@@ -10,7 +10,7 @@
 //! the work of [`AES_CFB_128`](crate::AES_CFB_128). See the `bouncycastle_modes::Cfb8` docs for
 //! when that is the right trade.
 
-use crate::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_modes::Cfb8;
 
 /// AES-128 in CFB8 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

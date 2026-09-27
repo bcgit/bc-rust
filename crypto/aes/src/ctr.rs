@@ -13,7 +13,7 @@
 //! repeating keystream. A shorter message limit in exchange for more nonce bits is available by
 //! naming `Ctr` directly with a 13, 14 or 15-byte nonce.
 
-use crate::aes::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_modes::Ctr;
 
 /// The nonce length these aliases use, leaving a 4-byte counter.

@@ -5,9 +5,10 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    SecurityStrength, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 
@@ -1026,9 +1027,10 @@ impl TestFrameworkAEADCipher {
     pub fn test_buffering_toy(&self) {
         use bouncycastle_core::errors::SymmetricCipherError;
         use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+        use bouncycastle_core::security_strength::SecurityStrength;
         use bouncycastle_core::traits::{
-            AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SecurityStrength,
-            SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+            AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SymmetricCipherDecryptor,
+            SymmetricCipherEncryptor,
         };
 
         const HOLD_BACK: usize = 3;

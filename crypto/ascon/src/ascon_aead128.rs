@@ -25,9 +25,10 @@ use core::fmt::{self, Debug, Display, Formatter};
 
 use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SecurityStrength, SuspendableKeyed,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_modes::{Decrypting, Encrypting};

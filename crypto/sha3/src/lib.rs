@@ -190,7 +190,8 @@
 #![allow(private_bounds)]
 
 use crate::keccak::KeccakSize;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 
 // imports needed for docs
 #[allow(unused_imports)]

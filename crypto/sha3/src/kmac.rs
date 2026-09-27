@@ -6,7 +6,8 @@ use crate::length_bound_squeezer::LengthBoundSqueezer;
 use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, SecurityStrength, XOF, XOFSqueezer};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF, XOFSqueezer};
 use bouncycastle_utils::ct;
 
 /// The function-name string every KMAC binds, per SP 800-185 Sec 4.3. Fixed by the specification:

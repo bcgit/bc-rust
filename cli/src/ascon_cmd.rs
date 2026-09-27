@@ -11,9 +11,9 @@ use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
+use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SecurityStrength, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle::hex;
 

@@ -6,10 +6,9 @@ use crate::keccak::{
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_core::traits::{
-    Algorithm, Hash, KDF, SecurityStrength, Suspendable, XOF, XOFSqueezer,
-};
+use bouncycastle_core::traits::{Algorithm, Hash, KDF, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::{max, min};
 
 /// Internal struct for SHAKE.
