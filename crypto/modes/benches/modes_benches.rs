@@ -42,7 +42,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook,
+    AEADCipherEncryptor, Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook,
     StreamCipherDecryptor, StreamCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
