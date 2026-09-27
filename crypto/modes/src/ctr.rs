@@ -112,9 +112,9 @@ use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, ElectronicCodeBook, RNG, SecurityStrength, StreamCipherDecryptor,
-    StreamCipherEncryptor,
+    Algorithm, ElectronicCodeBook, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
@@ -135,41 +135,41 @@ use core::marker::PhantomData;
 /// A nonce as long as the block would leave no counter at all, and could not count:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// // A 16-byte nonce on a 16-byte block leaves a zero-byte counter.
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 16>::do_encrypt_init(&key);
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 16>::do_encrypt_init(&key);
 /// ```
 ///
 /// ...and a nonce shorter than `BLOCK_LEN - 4` would ask for a counter wider than this type
 /// supports:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// // An 11-byte nonce would give a 5-byte counter, past the 4-byte cap.
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 11>::do_encrypt_init(&key);
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 11>::do_encrypt_init(&key);
 /// ```
 ///
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_aes::AES_128;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::StreamCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
-/// let _ = Ctr::<AES_128, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
+/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
 /// ```
 ///
 /// # State

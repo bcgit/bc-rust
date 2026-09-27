@@ -49,7 +49,8 @@ use crate::helpers::write_bytes_or_hex;
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SecurityStrength};
+use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle::hex;
 use clap::ValueEnum;
 use std::io::{Read, Write};

@@ -33,12 +33,13 @@
 //! this boundary) are counted as skipped rather than silently dropped, and the counts are asserted
 //! at the end so a change in the vector file's shape is visible.
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 use serde_json::Value;
@@ -164,19 +165,19 @@ fn dispatch(
         ($n:literal, $t:literal) => {
             match key_len_bytes {
                 16 => {
-                    run_case::<16, $n, $t, AES_128>(
+                    run_case::<16, $n, $t, AES128Internal>(
                         tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
                     );
                     true
                 }
                 24 => {
-                    run_case::<24, $n, $t, AES_192>(
+                    run_case::<24, $n, $t, AES192Internal>(
                         tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
                     );
                     true
                 }
                 32 => {
-                    run_case::<32, $n, $t, AES_256>(
+                    run_case::<32, $n, $t, AES256Internal>(
                         tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
                     );
                     true

@@ -1,6 +1,6 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::key_material::KeyType;
-use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_utils::secret::Secret;
 
 const KECCAK_ROUND_CONSTANTS: [u64; 24] = [

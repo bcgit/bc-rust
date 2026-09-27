@@ -29,7 +29,9 @@ especially in low-level crypto code, that there are multiple correct ways to wri
 swapping an OR for an XOR results in functionally equivalent code.
 
 Where the behaviour of a function is critical to test but cannot be tested from outside the crate because it is on a
-private function, in-line tests in the source file should be used.
+private function, in-line tests in the source file should be used. In-file unit tests go in a single #[cfg (test)] `mod
+tests {}` block at the end of the file, not as bare #[test] functions beside the code. Any helper functions needed for
+testing must also be contained within the `mod tests {}` block.
 
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
 behaviours and error conditions that are common to all implementations of that trait.
@@ -67,10 +69,10 @@ All normal rust naming conventions from clippy apply, with one exception:
 
 * Where a type, constant or variable corresponds to something a specification (FIPS, RFC, etc) names, keep the
   specification's spelling and capitalization, and `#[allow(non_camel_case_types)]`, `#[allow(non_snake_case)]` or
-  `#[allow(non_upper_case_globals)]` the item locally. So the FIPS 197 cipher is `AES_128`, not `Aes128`, its CBC
-  mode is `AES_CBC_128`, not `AesCbc128`, and if a specification writes `A` for a matrix and `a` for a vector then
-  `let A = ...; let a = ...;` is the right thing to do. The point is that a reviewer with the specification open can
-  match names by eye; that matters more here than rust convention.
+  `#[allow(non_upper_case_globals)]` the item locally. So the FIPS 204 signature algorithm is `MLDSA65`, not `MlDsa44`,
+  and it's `AES_CBC_128`, not `AesCbc128`, and if a specification writes `A` for a matrix and `a` for a vector then
+  `let A = ...; let a = ...;` is the right thing to do for code readability and correspondence with the spec. The point
+  is that a reviewer with the specification open can match names by eye; that matters more here than rust convention.
 
 In addition, some library-specific naming conventions:
 

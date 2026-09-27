@@ -3,8 +3,9 @@
 //! Sponge mode over `Ascon-p[12]` with rate = 64 bits, capacity = 256 bits.
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, Suspendable};
 use bouncycastle_utils::secret::Secret;
 
 use crate::sponge::{RATE, Sponge};

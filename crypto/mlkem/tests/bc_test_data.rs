@@ -6,9 +6,8 @@
 mod bc_test_data {
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-    use bouncycastle_core::traits::{
-        KEMDecapsulator, KEMPrivateKey, KEMPublicKey, SecurityStrength,
-    };
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey};
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem::{
         MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey, MLKEM512PublicKey,

@@ -6,8 +6,9 @@
 //! extendable output stream.
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::Secret;
 
 use crate::sponge::{RATE, Sponge};

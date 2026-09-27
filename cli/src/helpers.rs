@@ -1,7 +1,8 @@
 use bouncycastle::core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle::core::traits::{Hash, SecurityStrength, XOF, XOFSqueezer};
+use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle::hex;
 use std::fs::File;
 use std::io;

@@ -35,14 +35,15 @@
 //! `Ecb` -- `do_encrypt_init_rng` and the `encrypt_out_rng` one-shot provided over it -- panic, as
 //! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
-//!
-//! # How one alias covers both directions
-//!
-//! See [`PaddedMode`], which is the projection that lets `Dir` select between the encryptor and the
-//! decryptor adapter. `Dir` must be [`Encrypting`] or [`Decrypting`], as before.
 
+use crate::aes_internal::AESInternal;
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::bitslice::Block;
 use crate::padded_mode::PaddedMode;
-use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
+use crate::schedule::AESParams;
+use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 
 // Imports needed for docs
@@ -103,8 +104,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES_128, Encrypting, 16, BLOCK_LEN>,
-    Ecb<AES_128, Decrypting, 16, BLOCK_LEN>,
+    Ecb<AES128Internal, Encrypting, 16, BLOCK_LEN>,
+    Ecb<AES128Internal, Decrypting, 16, BLOCK_LEN>,
     Pad,
     16,
     0,
@@ -130,8 +131,8 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES_192, Encrypting, 24, BLOCK_LEN>,
-    Ecb<AES_192, Decrypting, 24, BLOCK_LEN>,
+    Ecb<AES192Internal, Encrypting, 24, BLOCK_LEN>,
+    Ecb<AES192Internal, Decrypting, 24, BLOCK_LEN>,
     Pad,
     24,
     0,
@@ -157,9 +158,88 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES_256, Encrypting, 32, BLOCK_LEN>,
-    Ecb<AES_256, Decrypting, 32, BLOCK_LEN>,
+    Ecb<AES256Internal, Encrypting, 32, BLOCK_LEN>,
+    Ecb<AES256Internal, Decrypting, 32, BLOCK_LEN>,
     Pad,
     32,
     0,
 >>::Mode;
+
+impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {
+    fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+        AES128Internal::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        Self::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        Self::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        Self::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        Self::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        Self::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        Self::decrypt_4blocks(self, blocks)
+    }
+}
+
+impl ElectronicCodeBook<24, BLOCK_LEN> for AES192Internal {
+    fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
+        AES192Internal::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        Self::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        Self::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        Self::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        Self::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        Self::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        Self::decrypt_4blocks(self, blocks)
+    }
+}
+
+impl ElectronicCodeBook<32, BLOCK_LEN> for AES256Internal {
+    fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
+        AES256Internal::new(key)
+    }
+    fn encrypt_block(&self, block: &mut Block) {
+        Self::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        Self::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        Self::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        Self::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        Self::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        Self::decrypt_4blocks(self, blocks)
+    }
+}
+
+impl<P: AESParams> core::fmt::Debug for AESInternal<P> {
+    /// Prints the algorithm name only. The key schedule is secret and is never formatted.
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(P::ALG_NAME)
+    }
+}

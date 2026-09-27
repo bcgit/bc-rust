@@ -1,22 +1,23 @@
 //! Known-answer tests from NIST FIPS 197 itself.
 //!
-//! Appendix B -- the worked single-block AES-128 encryption -- plus its inverse, the two-block
-//! path, and key-handling behaviour.
+//! Appendix B -- the worked single-block AES-128 encryption -- plus its inverse, the two- and
+//! four-block paths, and key-handling behaviour.
 //!
 //! The Appendix A key expansions are **not** tested here. The key schedule is deliberately not
 //! public API (it is a `Secret` field), and a round-trip through the cipher cannot check it: a
 //! wrong `w[i]` is used by encryption and decryption alike, so the round trip still succeeds.
 //! Every word of all three expansions is instead checked against Appendix A inside
-//! `src/schedule.rs`, where the stored schedule can be decompressed and compared directly.
+//! `src/schedule.rs`, where the stored schedule can be unpacked and compared directly.
 //!
 //! Known-answer coverage for AES-192 and AES-256, which Appendix B does not reach, is in
 //! `sp800_38a_tests.rs` and `bc-test-data.rs`.
 //!
 //! All values here are transcribed from the published FIPS 197 (Update 1) PDF.
 
-use bouncycastle_aes::{AES_128, AES_192, AES_256};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::ElectronicCodeBook;
 
 /// Appendix A.1 / Appendix B key: `2b7e151628aed2a6abf7158809cf4f3c`.
 const KEY_128: [u8; 16] = [
@@ -47,7 +48,7 @@ fn appendix_b_encrypts_the_documented_block() {
     //             Key   = 2b 7e 15 16 28 ae d2 a6 ab f7 15 88 09 cf 4f 3c
     // The final state printed as "output" reads, column by column (Eq 3.7):
     //             39 25 84 1d 02 dc 09 fb dc 11 85 97 19 6a 0b 32
-    let aes = AES_128::new(&key_material(&KEY_128)).unwrap();
+    let aes = AES128Internal::new(&key_material(&KEY_128)).unwrap();
 
     let mut block = [
         0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07,
@@ -65,7 +66,7 @@ fn appendix_b_encrypts_the_documented_block() {
 
 #[test]
 fn appendix_b_decrypts_back_to_the_documented_input() {
-    let aes = AES_128::new(&key_material(&KEY_128)).unwrap();
+    let aes = AES128Internal::new(&key_material(&KEY_128)).unwrap();
 
     let mut block = [
         0x39, 0x25, 0x84, 0x1d, 0x02, 0xdc, 0x09, 0xfb, 0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b,
@@ -83,7 +84,7 @@ fn appendix_b_decrypts_back_to_the_documented_input() {
 
 #[test]
 fn appendix_b_two_block_path_agrees_with_the_single_block_path() {
-    let aes = AES_128::new(&key_material(&KEY_128)).unwrap();
+    let aes = AES128Internal::new(&key_material(&KEY_128)).unwrap();
     let input = [
         0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d, 0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07,
         0x34,
@@ -93,7 +94,7 @@ fn appendix_b_two_block_path_agrees_with_the_single_block_path() {
         0x32,
     ];
 
-    // Pairing the Appendix B block with an unrelated one must not disturb either half.
+    // Batching the Appendix B block with unrelated ones must not disturb any of them.
     let other = [0xAAu8; 16];
     let mut other_alone = other;
     aes.encrypt_block(&mut other_alone);
@@ -103,11 +104,22 @@ fn appendix_b_two_block_path_agrees_with_the_single_block_path() {
     assert_eq!(pair[0], expected);
     assert_eq!(pair[1], other_alone);
 
-    // ...and in the other slot, which is a different bit position in the interleave.
+    // ...and in the other slot, which is a different lane of the bit-planes.
     let mut pair = [other, input];
     aes.encrypt_2blocks(&mut pair);
     assert_eq!(pair[0], other_alone);
     assert_eq!(pair[1], expected);
+
+    // ...and in each of the four lanes of the four-block path.
+    for slot in 0..4 {
+        let mut four = [other; 4];
+        four[slot] = input;
+        aes.encrypt_4blocks(&mut four);
+        for (i, block) in four.iter().enumerate() {
+            let want = if i == slot { expected } else { other_alone };
+            assert_eq!(*block, want, "slot {slot}, block {i}");
+        }
+    }
 }
 
 /// Encryption and decryption are inverses, under each Appendix A key.
@@ -117,9 +129,9 @@ fn appendix_b_two_block_path_agrees_with_the_single_block_path() {
 /// deliberately makes no claim about the schedule being *correct* -- see the module docs.
 #[test]
 fn encryption_and_decryption_are_inverses_for_all_three_key_lengths() {
-    let aes128 = AES_128::new(&key_material(&KEY_128)).unwrap();
-    let aes192 = AES_192::new(&key_material(&KEY_192)).unwrap();
-    let aes256 = AES_256::new(&key_material(&KEY_256)).unwrap();
+    let aes128 = AES128Internal::new(&key_material(&KEY_128)).unwrap();
+    let aes192 = AES192Internal::new(&key_material(&KEY_192)).unwrap();
+    let aes256 = AES256Internal::new(&key_material(&KEY_256)).unwrap();
 
     for block in [[0u8; 16], [0xFFu8; 16], core::array::from_fn(|i| i as u8)] {
         let mut b = block;
@@ -149,9 +161,11 @@ fn encryption_and_decryption_are_inverses_for_all_three_key_lengths() {
 fn the_three_key_lengths_are_distinct_permutations() {
     // A key whose first 16 bytes are shared, so only Nk/Nr and the extra key bytes differ.
     let shared = [0x11u8; 32];
-    let aes128 = AES_128::new(&key_material::<16>(&shared[..16].try_into().unwrap())).unwrap();
-    let aes192 = AES_192::new(&key_material::<24>(&shared[..24].try_into().unwrap())).unwrap();
-    let aes256 = AES_256::new(&key_material(&shared)).unwrap();
+    let aes128 =
+        AES128Internal::new(&key_material::<16>(&shared[..16].try_into().unwrap())).unwrap();
+    let aes192 =
+        AES192Internal::new(&key_material::<24>(&shared[..24].try_into().unwrap())).unwrap();
+    let aes256 = AES256Internal::new(&key_material(&shared)).unwrap();
 
     let block = [0x42u8; 16];
     let mut b128 = block;
@@ -173,10 +187,10 @@ fn a_key_of_the_wrong_type_is_rejected() {
     // KeyType::Seed is not a cipher key: a seed reused directly as an AES key is a real mistake
     // and the type system tracks enough to catch it.
     let key = KeyMaterial::<16>::from_bytes_as_type(&[0x01; 16], KeyType::Seed).unwrap();
-    assert!(AES_128::new(&key).is_err());
+    assert!(AES128Internal::new(&key).is_err());
 
     let key = KeyMaterial::<16>::from_bytes_as_type(&[0x01; 16], KeyType::MACKey).unwrap();
-    assert!(AES_128::new(&key).is_err());
+    assert!(AES128Internal::new(&key).is_err());
 }
 
 #[test]
@@ -185,7 +199,7 @@ fn a_key_of_the_wrong_length_is_rejected() {
     // parameter set. This is the one length error the const generic cannot catch by itself.
     let key =
         KeyMaterial::<32>::from_bytes_as_type(&[0x01; 16], KeyType::SymmetricCipherKey).unwrap();
-    assert!(AES_256::new(&key).is_err());
+    assert!(AES256Internal::new(&key).is_err());
 }
 
 #[test]
@@ -200,7 +214,7 @@ fn a_key_carrying_too_low_a_security_strength_is_rejected() {
 
     key.set_security_strength(SecurityStrength::_128bit).unwrap();
     assert!(
-        AES_256::new(&key).is_err(),
+        AES256Internal::new(&key).is_err(),
         "AES-256 must reject a 32-byte key only derived at the 128-bit strength"
     );
 
@@ -208,20 +222,20 @@ fn a_key_carrying_too_low_a_security_strength_is_rejected() {
     // not about anything else having gone wrong with the key.
     let good =
         KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey).unwrap();
-    assert!(AES_256::new(&good).is_ok());
+    assert!(AES256Internal::new(&good).is_ok());
 }
 
 #[test]
 fn a_correctly_typed_key_of_each_length_is_accepted() {
-    assert!(AES_128::new(&key_material(&KEY_128)).is_ok());
-    assert!(AES_192::new(&key_material(&KEY_192)).is_ok());
-    assert!(AES_256::new(&key_material(&KEY_256)).is_ok());
+    assert!(AES128Internal::new(&key_material(&KEY_128)).is_ok());
+    assert!(AES192Internal::new(&key_material(&KEY_192)).is_ok());
+    assert!(AES256Internal::new(&key_material(&KEY_256)).is_ok());
 }
 
 #[test]
 fn debug_does_not_print_the_key_schedule() {
     // The schedule is secret; `Debug` must not be a way to leak it.
-    let aes = AES_128::new(&key_material(&KEY_128)).unwrap();
+    let aes = AES128Internal::new(&key_material(&KEY_128)).unwrap();
     let rendered = format!("{aes:?}");
     assert_eq!(rendered, "AES-128");
     // No byte of the key should appear as hex in the output.

@@ -489,9 +489,9 @@ use crate::{
 };
 use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable,
-    XOF, XOFSqueezer,
+    Algorithm, AlgorithmOID, Hash, RNG, SignatureVerifier, Signer, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
@@ -723,6 +723,8 @@ impl<
         let (t1, mut t0) = {
             // scope for t
             let mut t = t_hat;
+            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+            t.reduce32();
             t.inv_ntt();
             t.add_vector_ntt(&s2);
             t.conditional_add_q();
@@ -830,6 +832,8 @@ impl<
                 let mut y_hat = y.clone();
                 y_hat.ntt();
                 let mut w = A_hat.matrix_vector_ntt(&y_hat);
+                // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+                w.reduce32();
                 w.inv_ntt();
                 w.conditional_add_q();
                 w
@@ -1011,6 +1015,10 @@ impl<
                 t1_shift_hat.scalar_vector_ntt(&c_hat)
             };
             let mut wp_approx = Az.sub_vector(&ct1);
+            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see `Polynomial::reduce32`. Here it
+            // is security-critical: 𝐳 and 𝐭1 are attacker-controlled, and without it a crafted
+            // signature overflows the butterflies (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
+            wp_approx.reduce32();
             wp_approx.inv_ntt();
             wp_approx.conditional_add_q();
 
@@ -1326,6 +1334,8 @@ impl<
                 let mut y_hat = y.clone();
                 y_hat.ntt();
                 let mut w = A_hat.matrix_vector_ntt(&y_hat);
+                // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+                w.reduce32();
                 w.inv_ntt();
                 w.conditional_add_q();
                 w
@@ -1410,6 +1420,8 @@ impl<
 
                 // while s2_hat is in scope, derive t0
                 let mut t = t_hat;
+                // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+                t.reduce32();
                 t.inv_ntt();
                 t.add_vector_ntt(&s2);
                 t.conditional_add_q();

@@ -7,9 +7,10 @@
 
 use bouncycastle_core::errors::{KeyMaterialError, PaddingError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SecurityStrength,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::{

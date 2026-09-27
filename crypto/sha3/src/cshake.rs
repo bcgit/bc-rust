@@ -4,7 +4,8 @@ use crate::SHAKEParams;
 use crate::shake::{SHAKEInternal, SHAKESqueezer};
 use crate::xof_utils::left_encode;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Algorithm, Hash, SecurityStrength, XOF, XOFSqueezer};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 
 /// The domain separator cSHAKE absorbs in place of SHAKE's `1111`: the `00` of SP 800-185 Sec 3.3,
 /// two zero bits, which is what keeps a customized instance separate from plain SHAKE.

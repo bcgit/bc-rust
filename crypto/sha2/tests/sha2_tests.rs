@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod sha2_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
-    use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams};
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_sha2::*;
 
