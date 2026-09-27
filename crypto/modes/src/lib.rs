@@ -75,7 +75,7 @@
 //! too, plus its nonce and tag lengths:
 //!
 //! ```
-//! use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+//! use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 //! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Ecb};
 //!
 //! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
@@ -114,7 +114,7 @@
 //! [Security Considerations](#security-considerations)).
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
@@ -140,7 +140,7 @@
 //! the concatenation:
 //!
 //! ```
-//! use bouncycastle_aes::AES256Internal;
+//! use bouncycastle_aes::aes_internal::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
@@ -169,7 +169,7 @@
 //! exactly as long as the plaintext:
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
@@ -200,7 +200,7 @@
 //! Streaming works at any byte boundary, and the chunking is not visible in the output:
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
@@ -233,7 +233,7 @@
 //! The codebook property that makes it unsuitable for data is visible in the ciphertext:
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
@@ -259,7 +259,7 @@
 //! ciphertext has been altered:
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 //!
@@ -291,7 +291,7 @@
 //! Using the wrong direction does not compile:
 //!
 //! ```compile_fail
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::BlockCipherDecryptor;
 //! use bouncycastle_modes::{Cbc, Encrypting};
@@ -394,7 +394,7 @@
 //! an error at `do_final` rather than something padded -- for formats defined on whole blocks.
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};

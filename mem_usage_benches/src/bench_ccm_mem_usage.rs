@@ -46,7 +46,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle::modes::{Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting};

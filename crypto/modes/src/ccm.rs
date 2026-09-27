@@ -157,8 +157,9 @@
 use crate::iv::random_iv;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, ElectronicCodeBook, RNG, SecurityStrength,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, ElectronicCodeBook, RNG,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
@@ -188,7 +189,7 @@ use crate::{Decrypting, Encrypting};
 /// `Ccm<P, Decrypting, ..>`:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
@@ -202,7 +203,7 @@ use crate::{Decrypting, Encrypting};
 /// producing a tag over data it never encrypted:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Decrypting};
 ///
@@ -215,7 +216,7 @@ use crate::{Decrypting, Encrypting};
 /// A nonce length A.1 does not permit does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
@@ -228,7 +229,7 @@ use crate::{Decrypting, Encrypting};
 /// Nor does an odd tag length:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
@@ -1052,7 +1053,7 @@ where
 /// rather than buffering the whole message only to fail at finalization:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::AES128Internal;
+/// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::CcmEncryptor;

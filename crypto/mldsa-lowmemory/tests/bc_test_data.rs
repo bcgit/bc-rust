@@ -18,9 +18,9 @@ mod bc_test_data {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+    use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        Hash, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, XOF,
-        XOFSqueezer,
+        Hash, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, XOF, XOFSqueezer,
     };
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa_lowmemory::{

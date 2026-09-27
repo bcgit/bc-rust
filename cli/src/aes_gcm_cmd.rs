@@ -14,7 +14,7 @@
 
 use crate::aead_mode_cmd::{decrypt_gcm, encrypt_gcm, load_aad};
 use crate::block_mode_cmd::{BlockModeAction, load_key};
-use bouncycastle::aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 

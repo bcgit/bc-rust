@@ -35,7 +35,7 @@ use crate::hash_drbg80090a::{
 };
 use bouncycastle_core::errors::RNGError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
-use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_core::security_strength::SecurityStrength;
 
 // needed for docs
 #[allow(unused_imports)]

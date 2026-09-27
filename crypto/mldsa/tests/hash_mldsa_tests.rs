@@ -2,8 +2,9 @@
 mod hash_mldsa_tests {
     use bouncycastle_core::errors::SignatureError;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+    use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        Hash, PHSignatureVerifier, PHSigner, SecurityStrength, SignatureVerifier, Signer,
+        Hash, PHSignatureVerifier, PHSigner, SignatureVerifier, Signer,
     };
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_hex as hex;

@@ -10,7 +10,7 @@
 //! branch (deriving `J0` from a GHASH of the IV) is not implemented -- see the `gcm` module docs in
 //! `bouncycastle-modes`.
 
-use crate::{AES128Internal, AES192Internal, AES256Internal};
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_modes::Gcm;
 
 /// AES-128 in GCM with a 128-bit tag. `Dir` is [`bouncycastle_modes::Encrypting`] or

@@ -41,7 +41,7 @@
 //! Detached tag, one-shot:
 //!
 //! ```
-//! use bouncycastle_aes::AES128Internal;
+//! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
@@ -67,7 +67,7 @@
 //! Inline `ciphertext || tag`, and streaming with AAD:
 //!
 //! ```
-//! use bouncycastle_aes::AES256Internal;
+//! use bouncycastle_aes::aes_internal::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -140,8 +140,9 @@ use crate::ghash::Ghash;
 use crate::{Ctr, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, ElectronicCodeBook, RNG, SecurityStrength,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, ElectronicCodeBook, RNG,
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };

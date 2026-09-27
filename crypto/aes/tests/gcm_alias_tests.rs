@@ -7,7 +7,8 @@
 //! generated per encryption. Algorithm correctness itself is pinned by `bouncycastle-modes`'
 //! ACVP and bc-java known-answer suites.
 
-use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Internal};
+use bouncycastle_aes::aes_internal::AES128Internal;
+use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;

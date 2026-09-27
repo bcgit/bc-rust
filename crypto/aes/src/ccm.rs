@@ -47,7 +47,7 @@
 //! `FINAL_LEN` their streaming methods require; their one-shots bypass it. See
 //! [`CcmEncryptor`](bouncycastle_modes::CcmEncryptor) for why.
 
-use crate::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_modes::{Ccm, CcmDecryptor, CcmEncryptor};
 
 // Imports needed for docs

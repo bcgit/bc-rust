@@ -16,7 +16,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
 

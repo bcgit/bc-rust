@@ -17,7 +17,7 @@
 //! checks that, which ties the mode to [`ElectronicCodeBook`] and confirms the transcription: a
 //! typo in either column would break the equality.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_hex as hex;

@@ -9,7 +9,8 @@ use bouncycastle_core::errors::{KeyMaterialError, RNGError};
 use bouncycastle_core::key_material::{
     KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{Hash, HashAlgParams, RNG, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Hash, HashAlgParams, RNG};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{min, secret::Secret};
 

@@ -9,7 +9,7 @@
 //! transcribed below, verified against the bc-java source read this session, with all-zero fields
 //! built programmatically rather than typed out (a zero key or plaintext cannot be mistyped).
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -192,9 +192,9 @@ where
     if key.key_type() != KeyType::SymmetricCipherKey {
         bouncycastle_core::key_material::do_hazardous_operations(&mut key, |k| {
             k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(bouncycastle_core::traits::SecurityStrength::from_bytes(
-                KEY_LEN,
-            ))
+            k.set_security_strength(
+                bouncycastle_core::security_strength::SecurityStrength::from_bytes(KEY_LEN),
+            )
         })
         .expect("promoting a known-zero test key");
     }

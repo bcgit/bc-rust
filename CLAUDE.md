@@ -26,10 +26,25 @@ previous session's reading of them.
 Where this file and one of those documents disagree, the document wins — and say so, so the stale line here gets
 fixed.
 
+## Project status: ALPHA
+
+The library is pre-1.0 alpha (workspace version `0.1.x`, release branches named `release/<ver>alpha`) and has no
+users to protect yet. Until the first stable release:
+
+- **Breaking changes are fine.** Public API shape, trait signatures, crate layout and encodings may change in any
+  PR without deprecation cycles, compatibility shims, or migration notes. Prefer the right design over continuity.
+- **Security bugs are ordinary bugs.** Fix them on a normal branch and PR, with a regression test and a plain
+  description of the defect and its impact. No security advisory, CVE, embargo, or coordinated release is needed.
+  SECURITY.md's reporting address still applies to reports from outside the project.
+
+Revisit this section at the first non-alpha release.
+
 ## Toolchain
 
-- Uses Rust **nightly** (pinned in `rust-toolchain.toml`) — `core/src/lib.rs` uses `#![feature(adt_const_params)]`.
-- 2024 edition (set workspace-wide in the root `Cargo.toml`).
+- Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
+  nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
+  `rustfmt` job installs nightly.
+- 2024 edition (set workspace-wide in the root `Cargo.toml`), which needs Rust 1.85 or later.
 
 ## Common commands
 

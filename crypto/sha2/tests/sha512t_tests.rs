@@ -19,7 +19,8 @@
 //! A wrong H(0) for a given t changes every digest for that t, so these digests pin the IV
 //! Generation Function -- including which decimal branch it took -- as well as the truncation.
 
-use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams};
 use bouncycastle_sha2::{SHA512_224, SHA512_224_NAME, SHA512_256, SHA512_256_NAME, SHA512t};
 
 // The generic name and output length must keep reproducing exactly what the two approved

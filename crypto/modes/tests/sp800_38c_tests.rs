@@ -17,7 +17,7 @@
 //! decryption-verification process of CCM is straightforward to construct"), so the decryption
 //! direction is checked by round-tripping each vector's own `C` back to its `P`.
 
-use bouncycastle_aes::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{

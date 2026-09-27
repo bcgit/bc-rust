@@ -12,7 +12,8 @@ use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
 use bouncycastle_sha3::SHA3_256;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
