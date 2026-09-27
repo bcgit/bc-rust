@@ -440,6 +440,67 @@ fn a_payload_past_the_q_limit_is_rejected_with_the_numbers() {
     let ok = vec![0u8; 65535];
     let sealed = run_ok(&["aes128-ccm", "encrypt", "--key", KEY_128, "--nonce", &nonce], &ok);
     assert_eq!(sealed.len(), 65535 + 16);
+
+    // The decrypt side hits the same limit on the input minus its tag, and must explain it the
+    // same way rather than dumping the raw error: 65536 bytes of ciphertext plus a 16-byte tag.
+    let too_big_sealed = vec![0u8; 65536 + 16];
+    let stderr =
+        run_err(&["aes128-ccm", "decrypt", "--key", KEY_128, "--nonce", &nonce], &too_big_sealed);
+    assert!(stderr.contains("65535"), "the decrypt message should give the limit: {stderr}");
+    assert!(stderr.contains("65536"), "and the actual payload length: {stderr}");
+    assert!(stderr.contains("shorter nonce"), "and the remedy: {stderr}");
+    assert!(!stderr.contains("GenericError"), "not the Debug form: {stderr}");
+}
+
+/// A nonce file ending in a newline -- the `echo` without `-n` mistake -- is used as it is, since
+/// stripping it would collapse two different nonces into one (see `load_nonce`), but is warned
+/// about, because every length in 7..=13 is valid and the only other symptom would be a failed tag
+/// check on the far side.
+#[test]
+fn a_nonce_file_ending_in_a_newline_is_used_as_is_but_warned_about() {
+    let dir = std::env::temp_dir().join(format!("bc_rust_ccm_cli_nonce_nl_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let path = dir.join("nonce_with_newline.bin");
+    let mut with_newline = unhex(NONCE);
+    with_newline.push(b'\n');
+    std::fs::write(&path, &with_newline).expect("write nonce file");
+
+    let plaintext = b"thirteen bytes of nonce, the last one a newline";
+    let output = run(
+        &["aes128-ccm", "encrypt", "--key", KEY_128, "--nonce-file", path.to_str().unwrap()],
+        plaintext,
+    );
+    assert!(output.status.success(), "the file is still a valid 13-byte nonce");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("newline"), "the trailing newline must be warned about: {stderr}");
+    assert!(stderr.contains("echo -n"), "and the remedy given: {stderr}");
+
+    // The 13 bytes, newline included, are the nonce: decrypting with exactly those via --nonce
+    // succeeds, and with the 12-byte nonce the file was meant to hold, it does not.
+    let recovered = run_ok(
+        &["aes128-ccm", "decrypt", "--key", KEY_128, "--nonce", &hex(&with_newline)],
+        &output.stdout,
+    );
+    assert_eq!(recovered, plaintext);
+    let stderr =
+        run_err(&["aes128-ccm", "decrypt", "--key", KEY_128, "--nonce", NONCE], &output.stdout);
+    assert!(stderr.contains("authentication failed"), "got: {stderr}");
+
+    // A file without the newline draws no warning.
+    let clean_path = dir.join("nonce_clean.bin");
+    std::fs::write(&clean_path, unhex(NONCE)).expect("write nonce file");
+    let output = run(
+        &["aes128-ccm", "encrypt", "--key", KEY_128, "--nonce-file", clean_path.to_str().unwrap()],
+        plaintext,
+    );
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "no warning for a clean file: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// Sec 6.2 step 1: a `C` too short to contain a tag is rejected before anything else.
