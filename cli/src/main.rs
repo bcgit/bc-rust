@@ -1129,7 +1129,7 @@ enum Subcommands {
     /// exhausted. There is deliberately no `--iv` flag: a repeated GCM nonce is worse than merely
     /// unwise, since it lets an attacker recover the hash subkey (SP 800-38D Appendix A).
     ///
-    /// `--aad` (hex) or `--aad-file` (binary or hex) supply the additional authenticated data,
+    /// `--aad` (hex) or `--aad-file` (raw bytes) supply the additional authenticated data,
     /// which is covered by the tag but not encrypted; if neither is given, AAD is empty.
     ///
     /// Input may be ANY length: GCM needs no padding.
@@ -1158,7 +1158,7 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the additional authenticated data, in binary or hex.
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
         /// If both aad and aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
@@ -1189,7 +1189,7 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the additional authenticated data, in binary or hex.
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
         /// If both aad and aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
@@ -1220,7 +1220,7 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the additional authenticated data, in binary or hex.
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
         /// If both aad and aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
