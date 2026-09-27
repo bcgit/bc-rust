@@ -11,7 +11,9 @@ use bouncycastle_aes::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -25,11 +27,15 @@ fn the_aliases_name_the_expected_types() {
 
     assert_eq!(
         size_of::<AES_ECB_128<Encrypting, PKCS7>>(),
-        size_of::<PaddedEncryptor<Ecb<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 0, 16>>()
+        size_of::<
+            PaddedBlockCipherEncryptor<Ecb<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 0, 16>,
+        >()
     );
     assert_eq!(
         size_of::<AES_ECB_128<Decrypting, PKCS7>>(),
-        size_of::<PaddedDecryptor<Ecb<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 0, 16>>()
+        size_of::<
+            PaddedBlockCipherDecryptor<Ecb<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 0, 16>,
+        >()
     );
 }
 
