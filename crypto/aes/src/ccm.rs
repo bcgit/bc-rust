@@ -21,7 +21,7 @@
 //! * **`NONCE_LEN` (the spec's `n`) fixes the maximum payload.** A.1 requires `n + q = 15`, and
 //!   `q` bounds the payload at `2^8q - 1` bytes. So a 13-byte nonce caps a message at 64 KiB - 1,
 //!   and a 7-byte nonce lifts the cap entirely at the cost of nonce space. See
-//!   [`Ccm`](bouncycastle_modes::Ccm) for the table.
+//!   [`Ccm`] for the table.
 //! * **`TAG_LEN` (the spec's `t`) is the forgery bound.** Sec B.2: "a value of Tlen that is less
 //!   than 64 shall not be used without a careful analysis of the risks of accepting inauthentic
 //!   data as authentic".
@@ -40,12 +40,12 @@
 //!
 //! # Generic streaming needs the buffering pair
 //!
-//! These aliases are for [`Ccm`](bouncycastle_modes::Ccm) itself: its one-shots and its
+//! These aliases are for [`Ccm`] itself: its one-shots and its
 //! length-declared streaming API, neither of which buffers. Code written against
 //! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] wants
 //! [`AES_CCM_128_Encryptor`] / [`AES_CCM_128_Decryptor`] instead, which carry the extra
 //! `FINAL_LEN` their streaming methods require; their one-shots bypass it. See
-//! [`CcmEncryptor`](bouncycastle_modes::CcmEncryptor) for why.
+//! [`CcmEncryptor`] for why.
 
 use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_modes::{Ccm, CcmDecryptor, CcmEncryptor};
