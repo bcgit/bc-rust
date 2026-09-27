@@ -59,7 +59,7 @@
 //! bench_oneshot_encrypt_out_detached    36 184 B   = direct + 1.3 KB: the DRBG the nonce is drawn from
 //! bench_streaming_encrypt              134 968 B   ~ 7 * FINAL_LEN above the message array
 //! bench_streaming_encrypt_detached     135 000 B   the same
-//! bench_streaming_decrypt              149 976 B   ~ 7 * FINAL_LEN above the sealed array
+//! bench_streaming_decrypt              149 976 B   ~ 7 * FINAL_LEN above the message and sealed arrays
 //! ```
 //!
 //! Two things to take from that. The one-shot really does bypass the buffers: it is within the
@@ -190,8 +190,9 @@ fn bench_direct_encrypt_detached() {
 /// The same message through the buffering encryptor's **streaming** methods, which is the only
 /// path that touches its buffers: `do_encrypt_init` builds the `2 * FINAL_LEN` value,
 /// `do_update_out` fills it and writes nothing, and `do_final` returns a third `[u8; FINAL_LEN]`
-/// by value. Measures about `7 * FINAL_LEN` above `bench_direct_encrypt_detached`; see the module
-/// docs for why that is more than the three arrays.
+/// by value. Measures about `7 * FINAL_LEN` above the message array -- about `6 * FINAL_LEN` above
+/// `bench_direct_encrypt_detached`, which also holds a ciphertext array -- see the module docs for
+/// why that is more than the three arrays.
 fn bench_streaming_encrypt() {
     eprintln!(
         "CcmEncryptor do_encrypt_init/do_update_out/do_final, {MESSAGE_LEN} B in 1 KiB chunks"
@@ -230,7 +231,7 @@ fn bench_streaming_encrypt_detached() {
 
 /// The decrypting side of the same comparison, with the tag inline: the decryptor buffers the
 /// whole `ciphertext || tag` and `do_final` returns the `[u8; FINAL_LEN]` plaintext by value, so
-/// the expectation is the same `7 * FINAL_LEN` or so, above the sealed array.
+/// the expectation is the same `7 * FINAL_LEN` or so, above the message and sealed arrays.
 ///
 /// The sealed message is produced with the direct one-shot so that only the streaming decrypt
 /// is under measurement; massif reports the peak across the whole process, and the direct path
