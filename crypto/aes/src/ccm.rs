@@ -181,9 +181,15 @@ pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// one; see [`CcmEncryptor`]. The one-shot methods bypass that buffer and accept data up to CCM's
 /// nonce-dependent payload limit.
 ///
+/// Note that the AAD shares that one bound although it is never part of the output: pick
+/// `FINAL_LEN >= max(largest payload, largest AAD) + TAG_LEN`. A protocol whose authenticated
+/// header can outgrow its payload pays for the header in every `[u8; FINAL_LEN]` the trait puts on
+/// the stack, and is better served by [`AES_CCM_128`], which takes the AAD by reference.
+///
 /// The nonce is generated here, unlike [`AES_CCM_128`]'s caller-supplied nonce. Consequently this
-/// adapter requires `NONCE_LEN >= 12`; use [`AES_CCM_128`] with a caller-managed unique nonce for
-/// shorter A.1 nonce lengths.
+/// adapter pair requires `NONCE_LEN >= 12` -- the decryptor too, so that a parameter set which
+/// compiles for one side compiles for the other; use [`AES_CCM_128`] with a caller-managed unique
+/// nonce for shorter A.1 nonce lengths.
 ///
 /// ```
 /// use bouncycastle_aes::{AES_CCM_128_Decryptor, AES_CCM_128_Encryptor};
