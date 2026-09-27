@@ -315,7 +315,8 @@ where
     /// block is used up and capacity has already been checked.
     #[inline]
     fn refill(&mut self) {
-        // Encrypted in place in the `Secret`: `Oj` never sits in a plain stack array.
+        // Enciphered in place inside the `Secret`, so no copy of the keystream block is ever left
+        // on the stack unzeroized; the counter block it starts from is public.
         *self.keystream = self.counter_block();
         self.perm.encrypt_block(&mut self.keystream);
         self.next_counter += 1;
@@ -340,19 +341,22 @@ where
     /// The counter blocks are built first -- they depend only on the nonce and the index, not on
     /// the data or on each other's cipher output -- so the `N` forward ciphers are independent.
     /// This is the parallelism Sec 6.5 describes, and it applies to both directions.
+    ///
+    /// `keystream` is the caller's scratch for the `N` blocks of `Oj`: [`Self::apply`] holds it in
+    /// a [`Secret`] for the whole call, so the batched keystream gets the same drop-time scrub as
+    /// the single-block buffer in `self` without a fresh allocation and scrub per batch.
     #[inline]
     fn apply_batch<const N: usize>(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]; N],
+        keystream: &mut [[u8; BLOCK_LEN]; N],
         batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
     ) {
-        // Live keystream until XORed in, so it gets the same drop-time scrub as `self.keystream`.
-        let mut keystream: Secret<[[u8; BLOCK_LEN]; N]> = Secret::new();
         for slot in keystream.iter_mut() {
             *slot = self.counter_block();
             self.next_counter += 1;
         }
-        batch(&self.perm, &mut keystream);
+        batch(&self.perm, keystream);
         for (block, o) in blocks.iter_mut().zip(keystream.iter()) {
             for (b, o) in block.iter_mut().zip(o.iter()) {
                 *b ^= *o;
@@ -363,13 +367,13 @@ where
     }
 
     /// XORs one whole block at a block boundary.
+    ///
+    /// Goes through the `Secret` keystream buffer rather than a plain local for the same reason
+    /// [`Self::refill`] does: a whole block of `Oj` must not be left on the stack unzeroized.
     #[inline]
     fn apply_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
-        let mut o: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        *o = self.counter_block();
-        self.perm.encrypt_block(&mut o);
-        self.next_counter += 1;
-        for (b, o) in block.iter_mut().zip(o.iter()) {
+        self.refill();
+        for (b, o) in block.iter_mut().zip(self.keystream.iter()) {
             *b ^= *o;
         }
         self.used = BLOCK_LEN;
@@ -392,14 +396,18 @@ where
         let (head, rest) = data.split_at_mut(head_len);
         self.apply_bytes(head);
 
+        // Scratch for the batched keystream, one per width and per call rather than per batch:
+        // held in a `Secret` so it is zeroized when this call returns, like the block in `self`.
         let (blocks, tail) = rest.as_chunks_mut::<BLOCK_LEN>();
         let (fours, rest_blocks) = blocks.as_chunks_mut::<4>();
+        let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
         for four in fours.iter_mut() {
-            self.apply_batch(four, P::encrypt_4blocks);
+            self.apply_batch(four, &mut ks4, P::encrypt_4blocks);
         }
         let (pairs, single) = rest_blocks.as_chunks_mut::<2>();
+        let mut ks2: Secret<[[u8; BLOCK_LEN]; 2]> = Secret::new();
         for pair in pairs.iter_mut() {
-            self.apply_batch(pair, P::encrypt_2blocks);
+            self.apply_batch(pair, &mut ks2, P::encrypt_2blocks);
         }
         for block in single.iter_mut() {
             self.apply_one(block);

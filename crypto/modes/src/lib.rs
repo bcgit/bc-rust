@@ -542,7 +542,7 @@
 //! that read its position back out of those bytes could not tell "just started" from "used up".
 //! The keystream block is held in a `Secret`: unlike a chaining value it is live key material for
 //! the bytes not yet consumed. The transient keystream blocks of its batch paths are `Secret`s for
-//! the same reason, which costs a zeroizing write per batch.
+//! the same reason: one per batch width, held for the whole call and zeroized once at its end.
 //!
 //! The data methods work in place. The batch paths in a decryptor are the transient cost: a
 //! `[[u8; BLOCK_LEN]; 4]` of stack for the four-block path -- 64 B on AES -- and a

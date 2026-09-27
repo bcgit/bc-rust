@@ -21,7 +21,7 @@
 //! * **`NONCE_LEN` (the spec's `n`) fixes the maximum payload.** A.1 requires `n + q = 15`, and
 //!   `q` bounds the payload at `2^8q - 1` bytes. So a 13-byte nonce caps a message at 64 KiB - 1,
 //!   and a 7-byte nonce lifts the cap entirely at the cost of nonce space. See
-//!   [`Ccm`](bouncycastle_modes::Ccm) for the table.
+//!   [`Ccm`] for the table.
 //! * **`TAG_LEN` (the spec's `t`) is the forgery bound.** Sec B.2: "a value of Tlen that is less
 //!   than 64 shall not be used without a careful analysis of the risks of accepting inauthentic
 //!   data as authentic".
@@ -40,12 +40,12 @@
 //!
 //! # Generic streaming needs the buffering pair
 //!
-//! These aliases are for [`Ccm`](bouncycastle_modes::Ccm) itself: its one-shots and its
+//! These aliases are for [`Ccm`] itself: its one-shots and its
 //! length-declared streaming API, neither of which buffers. Code written against
 //! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] wants
 //! [`AES_CCM_128_Encryptor`] / [`AES_CCM_128_Decryptor`] instead, which carry the extra
 //! `FINAL_LEN` their streaming methods require; their one-shots bypass it. See
-//! [`CcmEncryptor`](bouncycastle_modes::CcmEncryptor) for why.
+//! [`CcmEncryptor`] for why.
 
 use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_modes::{Ccm, CcmDecryptor, CcmEncryptor};
@@ -181,9 +181,15 @@ pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// one; see [`CcmEncryptor`]. The one-shot methods bypass that buffer and accept data up to CCM's
 /// nonce-dependent payload limit.
 ///
+/// Note that the AAD shares that one bound although it is never part of the output: pick
+/// `FINAL_LEN >= max(largest payload, largest AAD) + TAG_LEN`. A protocol whose authenticated
+/// header can outgrow its payload pays for the header in every `[u8; FINAL_LEN]` the trait puts on
+/// the stack, and is better served by [`AES_CCM_128`], which takes the AAD by reference.
+///
 /// The nonce is generated here, unlike [`AES_CCM_128`]'s caller-supplied nonce. Consequently this
-/// adapter requires `NONCE_LEN >= 12`; use [`AES_CCM_128`] with a caller-managed unique nonce for
-/// shorter A.1 nonce lengths.
+/// adapter pair requires `NONCE_LEN >= 12` -- the decryptor too, so that a parameter set which
+/// compiles for one side compiles for the other; use [`AES_CCM_128`] with a caller-managed unique
+/// nonce for shorter A.1 nonce lengths.
 ///
 /// ```
 /// use bouncycastle_aes::{AES_CCM_128_Decryptor, AES_CCM_128_Encryptor};

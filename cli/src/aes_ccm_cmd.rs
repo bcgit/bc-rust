@@ -129,9 +129,27 @@ pub(crate) fn aes256_ccm_cmd(
 /// [`helpers::read_from_file`] uses for keys: a repeated nonce under one key is fatal for CCM (see
 /// the module docs), so two distinct binary nonce files that happen to look like hex text of the
 /// same value must not silently collapse to the same nonce.
+///
+/// For the same reason a trailing newline is **not** stripped: a 13-byte file ending in `0x0a` and
+/// the 12-byte file without it are two different nonces, and silently treating them as one would
+/// be exactly the collapse above. But every length from 7 to 13 is valid, so a 12-byte nonce
+/// written with `echo` rather than `echo -n` is accepted as a *different*, 13-byte nonce, and the
+/// only symptom is a failed tag check on the other side. That case is warned about on stderr so it
+/// is not a silent one; the bytes are still used exactly as they are.
 fn load_nonce(nonce: &Option<String>, nonce_file: &Option<String>) -> Vec<u8> {
     let bytes = if let Some(file) = nonce_file {
-        helpers::read_from_file_raw(file)
+        let bytes = helpers::read_from_file_raw(file);
+        if bytes.last() == Some(&b'\n') {
+            eprintln!(
+                "Warning: nonce file '{file}' ends with a newline byte (0x0a), which is used as \
+                 part of the nonce."
+            );
+            eprintln!(
+                "         If that is not intended (for example the file was written by `echo`), \
+                 write it with `printf` or `echo -n`."
+            );
+        }
+        bytes
     } else if let Some(v) = nonce {
         hex::decode(v).unwrap_or_else(|_| {
             eprintln!("Error: nonce is not valid hex.");
@@ -249,6 +267,29 @@ fn run<P, const KEY_LEN: usize>(
     }
 }
 
+/// Reports [`Ccm::new`]'s refusal of a payload past the `q` limit and exits.
+///
+/// The only [`SymmetricCipherError::GenericError`] `new` can return is that limit: A.1's
+/// `p < 2^8q`, where `q = 15 - n`. Both directions hit it -- the decrypt side on the input minus
+/// its tag -- so both report it here, with the numbers, since the fix is a shorter nonce.
+fn payload_past_the_q_limit<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
+    msg: &str,
+    payload_len: usize,
+) -> !
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    eprintln!("Error: {msg}");
+    eprintln!(
+        "       Payload is {payload_len} bytes; with a {NONCE_LEN}-byte nonce, q = {} and the \
+         limit is {} bytes.",
+        15 - NONCE_LEN,
+        Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
+    );
+    eprintln!("       Use a shorter nonce for a larger payload.");
+    exit(-1)
+}
+
 /// One fully-instantiated CCM run.
 ///
 /// `input` is processed in place through [`Ccm`]'s own streaming API rather than through the
@@ -292,18 +333,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 }
             }
             Err(SymmetricCipherError::GenericError(msg)) => {
-                // The only `GenericError` `new` can return is the payload limit: A.1's `p < 2^8q`,
-                // where `q = 15 - n`. Report it with the numbers, since the fix is a shorter nonce.
-                eprintln!("Error: {msg}");
-                eprintln!(
-                    "       Input is {} bytes; with a {NONCE_LEN}-byte nonce, q = {} and the \
-                     limit is {} bytes.",
-                    input.len(),
-                    15 - NONCE_LEN,
-                    Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
-                );
-                eprintln!("       Use a shorter nonce for a larger payload.");
-                exit(-1)
+                payload_past_the_q_limit::<P, KEY_LEN, NONCE_LEN, TAG_LEN>(msg, input.len())
             }
             Err(e) => {
                 eprintln!("Error: AES-CCM encryption failed: {e:?}");
@@ -347,6 +377,9 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                         exit(-1)
                     }
                 }
+            }
+            Err(SymmetricCipherError::GenericError(msg)) => {
+                payload_past_the_q_limit::<P, KEY_LEN, NONCE_LEN, TAG_LEN>(msg, data.len())
             }
             Err(e) => {
                 eprintln!("Error: AES-CCM decryption failed: {e:?}");
