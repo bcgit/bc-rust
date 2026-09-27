@@ -230,6 +230,43 @@ fn missing_aad_on_one_side_fails_authentication() {
     );
 }
 
+/// `--aad-file` is raw bytes, never hex-or-raw guessed like `--key-file`: a binary header that
+/// happens to parse as hex text must be authenticated as the bytes in the file, or the tag will not
+/// verify against any other GCM implementation given the same file. Each case encrypts with the
+/// file and decrypts with `--aad` set to the hex of the file's exact bytes.
+#[test]
+fn aad_file_is_raw_bytes_not_hex_decoded() {
+    let dir = std::env::temp_dir().join(format!("bc_rust_gcm_cli_aad_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let plaintext = unhex(PLAINTEXT);
+
+    let cases: [(&str, &[u8]); 3] = [
+        // ASCII that is also valid hex text: hex-decoding would authenticate 2 bytes, not 4.
+        ("ascii_hex", b"cafe"),
+        // Sixteen zero bytes, which the hex decoder skips entirely: decoding would authenticate
+        // empty AAD.
+        ("zeros", &[0u8; 16]),
+        // A trailing backslash, which sent the hex decoder's `\x` handling past the end of the
+        // buffer.
+        ("trailing_backslash", b"header\\"),
+    ];
+    for (name, aad) in cases {
+        let path = dir.join(name);
+        std::fs::write(&path, aad).expect("write AAD file");
+        let aad_hex: String = aad.iter().map(|b| format!("{b:02x}")).collect();
+
+        let ciphertext = run_ok(
+            &["aes128-gcm", "encrypt", "--key", KEY_128, "--aad-file", path.to_str().unwrap()],
+            &plaintext,
+        );
+        let recovered =
+            run_ok(&["aes128-gcm", "decrypt", "--key", KEY_128, "--aad", &aad_hex], &ciphertext);
+        assert_eq!(recovered, plaintext, "case {name}");
+    }
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 // ---- tamper detection --------------------------------------------------------------------------
 
 /// A tampered ciphertext byte must be rejected, non-zero exit.

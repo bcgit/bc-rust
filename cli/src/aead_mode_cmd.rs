@@ -25,11 +25,17 @@
 //!
 //! # AAD
 //!
-//! `--aad <hex>` or `--aad-file <path>` (binary or hex); if neither is given, AAD is empty. Fed to
-//! the engine in one call before any ciphertext, matching SP 800-38D Algorithm 4's requirement that
-//! AAD precede data.
+//! `--aad <hex>` or `--aad-file <path>`; if neither is given, AAD is empty. Fed to the engine in
+//! one call before any ciphertext, matching SP 800-38D Algorithm 4's requirement that AAD precede
+//! data.
+//!
+//! `--aad-file` is read as raw bytes ([`read_from_file_raw`]), never hex-decoded. The
+//! hex-or-raw guess `--key-file` uses would change what is authenticated without any error: a
+//! binary header that happens to parse as hex text (`cafe`, or sixteen zero bytes, which the hex
+//! decoder skips) would be authenticated as its decoding, and the tag would not verify against any
+//! other GCM implementation given the same file.
 
-use crate::helpers::{read_from_file, write_bytes_or_hex};
+use crate::helpers::{read_from_file_raw, write_bytes_or_hex};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
@@ -46,11 +52,11 @@ use std::process::exit;
 /// its own tuning.
 const CHUNK_LEN: usize = 1024;
 
-/// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (binary or hex).
-/// Empty if neither is given: AAD is optional, unlike the key.
+/// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; see the
+/// module docs for why not hex). Empty if neither is given: AAD is optional, unlike the key.
 pub(crate) fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
     if let Some(path) = aad_file {
-        read_from_file(path)
+        read_from_file_raw(path)
     } else if let Some(hex_str) = aad {
         hex::decode(hex_str).unwrap_or_else(|_| {
             eprintln!("Error: `--aad` must be hex. Use `--aad-file` for raw bytes.");
