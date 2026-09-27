@@ -21,7 +21,7 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Decrypting, Ecb, Encrypting};
-use bouncycastle_padding::{PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyEcb<Dir> = Ecb<Toy, Dir, TOY_LEN, TOY_LEN>;
@@ -396,8 +396,8 @@ fn a_key_of_the_wrong_type_is_rejected() {
 /// like the other modes; its `INIT_DATA_LEN` of 0 flows through the adapters as an empty array.
 #[test]
 fn the_padding_layer_round_trips_every_length() {
-    type Enc = PaddedEncryptor<ToyEcb<Encrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
-    type Dec = PaddedDecryptor<ToyEcb<Decrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
+    type Enc = PaddedBlockCipherEncryptor<ToyEcb<Encrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
+    type Dec = PaddedBlockCipherDecryptor<ToyEcb<Decrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
 
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext: Vec<u8> = (0..len).map(|i| (i * 5 + 3) as u8).collect();

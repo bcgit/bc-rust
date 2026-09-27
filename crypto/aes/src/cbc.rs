@@ -80,7 +80,9 @@ use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 // end of imports needed for docs
 
 /// AES-128 in CBC mode with a padding scheme.

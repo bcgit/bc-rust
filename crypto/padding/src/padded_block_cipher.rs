@@ -1,4 +1,4 @@
-//! [`PaddedEncryptor`] / [`PaddedDecryptor`]: adapt a block-aligned [`BlockCipherEncryptor`] /
+//! [`PaddedBlockCipherEncryptor`] / [`PaddedBlockCipherDecryptor`]: adapt a block-aligned [`BlockCipherEncryptor`] /
 //! [`BlockCipherDecryptor`] to arbitrary-length data using a [`BlockCipherPadding`] scheme.
 //!
 //! The public API is the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits, whose
@@ -29,7 +29,7 @@ const GROUP: usize = 8;
 /// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
 /// input length for one that never does (`NoPadding`, which rejects an unaligned input at
 /// `do_final`). The buffered partial plaintext block is held in a [`Secret`].
-pub struct PaddedEncryptor<
+pub struct PaddedBlockCipherEncryptor<
     E,
     P,
     const KEY_LEN: usize,
@@ -39,26 +39,15 @@ pub struct PaddedEncryptor<
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
-    inner: E,
+    encryptor: E,
+    _padding: PhantomData<P>,
     /// Partial plaintext block; `buf_len < BLOCK_LEN` between calls.
     buf: Secret<[u8; BLOCK_LEN]>,
     buf_len: usize,
-    _padding: PhantomData<P>,
-}
-
-impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
-where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    P: BlockCipherPadding<BLOCK_LEN>,
-{
-    fn wrap(inner: E) -> Self {
-        Self { inner, buf: Secret::new(), buf_len: 0, _padding: PhantomData }
-    }
 }
 
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
@@ -71,7 +60,7 @@ where
 
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
-    for PaddedEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
@@ -79,16 +68,16 @@ where
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let (inner, init_data) = E::do_encrypt_init(key)?;
-        Ok((Self::wrap(inner), init_data))
+        let (encryptor, init_data) = E::do_encrypt_init(key)?;
+        Ok((Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }, init_data))
     }
 
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let (inner, init_data) = E::do_encrypt_init_rng(key, rng)?;
-        Ok((Self::wrap(inner), init_data))
+        let (encryptor, init_data) = E::do_encrypt_init_rng(key, rng)?;
+        Ok((Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }, init_data))
     }
 
     /// Whole blocks among the buffered bytes plus `input_len`.
@@ -109,6 +98,9 @@ where
         }
         // out_len is a multiple of BLOCK_LEN, so the remainder of this split is empty.
         let (mut out_blocks, _) = ciphertext[..out_len].as_chunks_mut::<BLOCK_LEN>();
+
+        // Turn this into a mutable pointer so that we can walk the pointer down the data.
+        // Note only the pointer is mut, the data remains immutable `&[u8]`.
         let mut plaintext = plaintext;
 
         // 1. Top up a previously buffered partial block.
@@ -125,7 +117,7 @@ where
             // The cipher works in place, so the block is encrypted inside the `Secret` and only
             // ciphertext is copied out of it.
             if let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut() {
-                self.inner.do_encrypt_blocks(from_mut(&mut *self.buf))?;
+                self.encryptor.do_encrypt_blocks(from_mut(&mut *self.buf))?;
                 *first = *self.buf;
                 out_blocks = rest;
             }
@@ -139,10 +131,10 @@ where
         out_blocks.copy_from_slice(in_blocks);
         let (out_groups, out_tail) = out_blocks.as_chunks_mut::<GROUP>();
         for group in out_groups.iter_mut() {
-            self.inner.do_encrypt_blocks(group)?;
+            self.encryptor.do_encrypt_blocks(group)?;
         }
         for block in out_tail.iter_mut() {
-            self.inner.do_encrypt_blocks(from_mut(block))?;
+            self.encryptor.do_encrypt_blocks(from_mut(block))?;
         }
 
         // 3. Buffer the trailing partial block (remainder.len() < BLOCK_LEN).
@@ -160,7 +152,7 @@ where
     /// [`SymmetricCipherError::PaddingError`] here, which is the alignment check such a scheme
     /// exists to provide.
     fn do_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
-        let Self { mut inner, mut buf, buf_len, .. } = self;
+        let Self { encryptor: mut inner, mut buf, buf_len, .. } = self;
         if buf_len == 0 && !P::ALWAYS_PADS {
             return Ok(([0u8; BLOCK_LEN], 0));
         }
@@ -177,12 +169,12 @@ where
     }
 }
 
-/// Decrypts data produced by a [`PaddedEncryptor`] with the matching cipher and padding.
+/// Decrypts data produced by a [`PaddedBlockCipherEncryptor`] with the matching cipher and padding.
 ///
 /// Only the last block carries padding, so [`do_update_out`](Self::do_update_out) always withholds
 /// the most recent complete block and [`do_final`](Self::do_final) unpads it. One-shot:
 /// [`decrypt_out`](Self::decrypt_out).
-pub struct PaddedDecryptor<
+pub struct PaddedBlockCipherDecryptor<
     D,
     P,
     const KEY_LEN: usize,
@@ -192,17 +184,17 @@ pub struct PaddedDecryptor<
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
-    inner: D,
+    decryptor: D,
+    _padding: PhantomData<P>,
     /// Partial ciphertext block; `buf_len < BLOCK_LEN` between calls.
     buf: [u8; BLOCK_LEN],
     buf_len: usize,
     /// Most recent complete ciphertext block, withheld in case it is the last.
     held: Option<[u8; BLOCK_LEN]>,
-    _padding: PhantomData<P>,
 }
 
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
@@ -215,7 +207,7 @@ where
 
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
-    for PaddedDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
@@ -225,11 +217,11 @@ where
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Ok(Self {
-            inner: D::do_decrypt_init(key, init_data)?,
+            decryptor: D::do_decrypt_init(key, init_data)?,
+            _padding: PhantomData,
             buf: [0u8; BLOCK_LEN],
             buf_len: 0,
             held: None,
-            _padding: PhantomData,
         })
     }
 
@@ -269,7 +261,7 @@ where
                 && let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut()
             {
                 *first = prev;
-                self.inner.do_decrypt_blocks(from_mut(first))?;
+                self.decryptor.do_decrypt_blocks(from_mut(first))?;
                 out_blocks = rest;
             }
         }
@@ -282,7 +274,7 @@ where
                 && let Some((first, rest)) = core::mem::take(&mut out_blocks).split_first_mut()
             {
                 *first = prev;
-                self.inner.do_decrypt_blocks(from_mut(first))?;
+                self.decryptor.do_decrypt_blocks(from_mut(first))?;
                 out_blocks = rest;
             }
             // Then every block of this call except the new held one: copied into the output and
@@ -291,10 +283,10 @@ where
             out_blocks.copy_from_slice(release);
             let (out_groups, out_tail) = out_blocks.as_chunks_mut::<GROUP>();
             for group in out_groups.iter_mut() {
-                self.inner.do_decrypt_blocks(group)?;
+                self.decryptor.do_decrypt_blocks(group)?;
             }
             for block in out_tail.iter_mut() {
-                self.inner.do_decrypt_blocks(from_mut(block))?;
+                self.decryptor.do_decrypt_blocks(from_mut(block))?;
             }
         }
 
@@ -310,7 +302,7 @@ where
     /// padding is malformed. Under a scheme that adds nothing, an empty ciphertext is the empty
     /// message and every held block is entirely data.
     fn do_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
-        let Self { mut inner, buf_len, held, .. } = self;
+        let Self { decryptor: mut inner, buf_len, held, .. } = self;
         if buf_len != 0 {
             return Err(SymmetricCipherError::DecryptionFailed);
         }

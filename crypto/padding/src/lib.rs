@@ -1,9 +1,14 @@
 //! Block padding schemes implementing [`bouncycastle_core::traits::BlockCipherPadding`].
 //!
-//! * [`PKCS7`] — the padding scheme of RFC 5652 §6.3.
+//! The following padding schemes are provided:
+//!
 //! * [`NoPadding`] — adds nothing and refuses to: for data that must already be a whole number of
 //!   blocks, where a partial final block is a caller error rather than something to pad.
-//! * [`PaddedEncryptor`] / [`PaddedDecryptor`] — adapt a block-aligned
+//! * [`PKCS7`] — the padding scheme of RFC 5652 §6.3.
+//!
+//! The following structs are provided:
+//!
+//! * [`PaddedBlockCipherEncryptor`] / [`PaddedBlockCipherDecryptor`] — adapt a block-aligned
 //!   [`BlockCipherEncryptor`](bouncycastle_core::traits::BlockCipherEncryptor) /
 //!   [`BlockCipherDecryptor`](bouncycastle_core::traits::BlockCipherDecryptor) to arbitrary-length
 //!   data, streaming or one-shot. With [`NoPadding`] they instead *enforce* block alignment: an
@@ -70,8 +75,8 @@
 #![forbid(missing_docs)]
 #![no_std]
 
-mod padded;
-pub use padded::{PaddedDecryptor, PaddedEncryptor};
+mod padded_block_cipher;
+pub use padded_block_cipher::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 use bouncycastle_core::errors::PaddingError;
 use bouncycastle_core::traits::BlockCipherPadding;
@@ -145,8 +150,8 @@ impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for PKCS7 {
 /// `pad` never writes anything -- it returns [`PaddingError::PaddingNotPermitted`] whenever it is
 /// called, because being called means there was a partial block to pad -- and `unpad` reports the
 /// whole block as data. Since [`ALWAYS_PADS`](BlockCipherPadding::ALWAYS_PADS) is `false`, a
-/// [`PaddedEncryptor`] over it emits no final block for an aligned message and fails at
-/// `do_final` for an unaligned one, and a [`PaddedDecryptor`] releases every block as data. The
+/// [`PaddedBlockCipherEncryptor`] over it emits no final block for an aligned message and fails at
+/// `do_final` for an unaligned one, and a [`PaddedBlockCipherDecryptor`] releases every block as data. The
 /// adapters thereby turn "the caller must supply whole blocks" into a checked error instead of a
 /// silent assumption, which is what this scheme is for: interoperating with formats that are
 /// defined on whole blocks (and, when used with ECB, with the raw block-by-block operation they

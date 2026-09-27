@@ -16,7 +16,9 @@ use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkBlockCipher, TestFrameworkSymmetricCipher,
 };
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 use bouncycastle_rng::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256};
 
 const B: usize = 8;
@@ -88,11 +90,11 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
     }
 }
 
-type Enc = PaddedEncryptor<ToyCbc, PKCS7, B, B, B>;
-type Dec = PaddedDecryptor<ToyCbc, PKCS7, B, B, B>;
+type Enc = PaddedBlockCipherEncryptor<ToyCbc, PKCS7, B, B, B>;
+type Dec = PaddedBlockCipherDecryptor<ToyCbc, PKCS7, B, B, B>;
 /// The same adapters over `NoPadding`: an alignment check rather than a padding scheme.
-type EncNP = PaddedEncryptor<ToyCbc, NoPadding, B, B, B>;
-type DecNP = PaddedDecryptor<ToyCbc, NoPadding, B, B, B>;
+type EncNP = PaddedBlockCipherEncryptor<ToyCbc, NoPadding, B, B, B>;
+type DecNP = PaddedBlockCipherDecryptor<ToyCbc, NoPadding, B, B, B>;
 
 fn key() -> KeyMaterial<B> {
     KeyMaterial::<B>::from_bytes_as_type(&[0x5a; B], KeyType::SymmetricCipherKey).unwrap()

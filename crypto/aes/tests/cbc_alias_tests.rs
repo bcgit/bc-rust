@@ -10,7 +10,9 @@ use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -28,11 +30,15 @@ fn the_aliases_name_the_expected_types() {
 
     assert_eq!(
         size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
-        size_of::<PaddedEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 16, 16>>()
+        size_of::<
+            PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 16, 16>,
+        >()
     );
     assert_eq!(
         size_of::<AES_CBC_128<Decrypting, PKCS7>>(),
-        size_of::<PaddedDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 16, 16>>()
+        size_of::<
+            PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 16, 16>,
+        >()
     );
 
     // The two directions are genuinely different types, so the encryptor and the decryptor do not
