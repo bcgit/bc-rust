@@ -15,7 +15,7 @@ fn roundtrip_all_lengths<const K: usize>() {
         }
         let original = block;
 
-        <PKCS7 as BlockCipherPadding<K>>::pad(&mut block, data_len).unwrap();
+        PKCS7::pad(&mut block, data_len).unwrap();
 
         // data untouched
         assert_eq!(&block[..data_len], &original[..data_len]);
@@ -50,15 +50,15 @@ fn rfc5652_worked_examples() {
     // ..., "k k ... k k -- if lth mod k = 0".
     const K: usize = 16;
     let mut b = [0xFFu8; K];
-    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, K - 1).unwrap();
+    PKCS7::pad(&mut b, K - 1).unwrap();
     assert_eq!(b[K - 1], 0x01);
 
     let mut b = [0xFFu8; K];
-    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, K - 2).unwrap();
+    PKCS7::pad(&mut b, K - 2).unwrap();
     assert_eq!(&b[K - 2..], &[0x02, 0x02]);
 
     let mut b = [0xFFu8; K];
-    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, 0).unwrap();
+    PKCS7::pad(&mut b, 0).unwrap();
     assert_eq!(b, [K as u8; K]);
 }
 
@@ -121,7 +121,7 @@ fn unpad_ignores_data_bytes_that_happen_to_equal_pad_value() {
     // data bytes equal to the pad value must not confuse the length recovery
     const K: usize = 16;
     let mut b = [0x03u8; K]; // 13 data bytes all 0x03, then 3 bytes of 0x03 padding
-    <PKCS7 as BlockCipherPadding<K>>::pad(&mut b, 13).unwrap();
+    PKCS7::pad(&mut b, 13).unwrap();
     assert_eq!(b, [0x03u8; K]);
     assert_eq!(<PKCS7 as BlockCipherPadding<K>>::unpad(&b), Ok(13));
 }
