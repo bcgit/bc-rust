@@ -487,6 +487,62 @@ fn the_buffering_pair_refuses_a_message_past_its_buffer() {
 
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
     assert!(matches!(enc.do_update_aad(&[0u8; 33]), Err(SymmetricCipherError::GenericError(_))));
+
+    // The encryptor's bound is `FINAL_LEN - TAG_LEN`, not `FINAL_LEN`, and its message must say
+    // so: 33 bytes is refused although it is well inside the 48-byte `FINAL_LEN`.
+    let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
+    match enc.do_update_out(&[0u8; 33], &mut nothing) {
+        Err(SymmetricCipherError::GenericError(msg)) => assert!(
+            msg.contains("FINAL_LEN - TAG_LEN"),
+            "the encryptor's refusal must name its real bound, got: {msg}"
+        ),
+        other => panic!("expected GenericError, got {other:?}"),
+    }
+}
+
+/// An empty `do_update_out` is a no-op and does not close the AAD phase, on either side. The
+/// trait makes an empty `aad` a no-op "at any point" so that a generic caller may pass one
+/// unconditionally; a caller whose reader hands back an empty first chunk, or that calls
+/// `do_update_out(&[])` before deciding on AAD, gets the same treatment here. Only a non-empty
+/// call starts the data phase.
+#[test]
+fn an_empty_update_does_not_close_the_aad_phase() {
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 64>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 64>;
+    let k = key::<16>(APPENDIX_C_KEY);
+    let mut nothing = [0u8; 0];
+    let aad = b"header";
+    let message = b"payload";
+
+    let (mut enc, nonce) = Enc::do_encrypt_init(&k).expect("init");
+    enc.do_update_out(&[], &mut nothing).expect("an empty update is a no-op");
+    enc.do_update_aad(aad).expect("the AAD phase is still open after an empty update");
+    enc.do_update_out(message, &mut nothing).expect("buffered");
+    assert!(
+        matches!(enc.do_update_aad(aad), Err(SymmetricCipherError::StateError(_))),
+        "a non-empty update still closes the AAD phase"
+    );
+    let (sealed, sealed_len) = enc.do_final().expect("final");
+
+    // The AAD really was absorbed: the direct API with the same AAD must agree, and the
+    // decryptor, given the same empty-then-AAD sequence, must verify it.
+    let mut expected = [0u8; 64];
+    let n = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 16>::encrypt(
+        &k, &nonce, aad, message, &mut expected,
+    )
+    .expect("direct");
+    assert_eq!(&sealed[..sealed_len], &expected[..n]);
+
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
+    dec.do_update_out(&[], &mut nothing).expect("an empty update is a no-op");
+    dec.do_update_aad(aad).expect("the AAD phase is still open after an empty update");
+    dec.do_update_out(&sealed[..sealed_len], &mut nothing).expect("buffered");
+    assert!(
+        matches!(dec.do_update_aad(aad), Err(SymmetricCipherError::StateError(_))),
+        "a non-empty update still closes the AAD phase"
+    );
+    let (opened, opened_len) = dec.do_final().expect("tag check");
+    assert_eq!(&opened[..opened_len], message);
 }
 
 /// Filling the streaming capacity *exactly* must be accepted, not refused: `CcmBuffer::do_update_aad`
@@ -639,21 +695,43 @@ fn resuming_a_part_way_open_block_agrees_with_a_one_shot() {
 ///
 /// A `C` of exactly `TAG_LEN` octets is *not* too short: it is the empty payload of Sec 5.3's
 /// footnote, and must authenticate.
+///
+/// All three inline entry points -- the inherent one-shot, the buffering decryptor's `do_final`
+/// and its `decrypt_out_with_aad` -- must report the same malformed input with the same variant,
+/// [`SymmetricCipherError::DecryptionFailed`], which is what [`SymmetricCipherDecryptor::do_final`]
+/// specifies for a malformed ciphertext; a caller telling "malformed" from "inauthentic" must not
+/// get a different answer depending on which one it used.
 #[test]
 fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
     type Enc = Ccm<AES128Internal, Encrypting, 16, 16, 12, 16>;
     type Dec = Ccm<AES128Internal, Decrypting, 16, 16, 12, 16>;
+    type StreamDec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 64>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0u8; 12];
     let mut out = [0u8; 16];
+    let mut nothing = [0u8; 0];
 
     for len in 0..16 {
+        let short = vec![0u8; len];
         assert!(
             matches!(
-                Dec::decrypt(&k, &nonce, &[], &vec![0u8; len], &mut out),
-                Err(SymmetricCipherError::GenericError(_))
+                Dec::decrypt(&k, &nonce, &[], &short, &mut out),
+                Err(SymmetricCipherError::DecryptionFailed)
             ),
-            "a {len}-byte C cannot carry a 16-byte tag"
+            "a {len}-byte C cannot carry a 16-byte tag (Ccm::decrypt)"
+        );
+        assert!(
+            matches!(
+                StreamDec::decrypt_out_with_aad(&k, &nonce, &[], &short, &mut out),
+                Err(SymmetricCipherError::DecryptionFailed)
+            ),
+            "a {len}-byte C cannot carry a 16-byte tag (decrypt_out_with_aad)"
+        );
+        let mut dec = StreamDec::do_decrypt_init(&k, &nonce).expect("init");
+        dec.do_update_out(&short, &mut nothing).expect("buffered");
+        assert!(
+            matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)),
+            "a {len}-byte C cannot carry a 16-byte tag (do_final)"
         );
     }
 

@@ -139,7 +139,10 @@
 //! **`TAG_LEN` is a security parameter.** Sec B.2: "a value of Tlen that is less than 64 shall not
 //! be used without a careful analysis of the risks of accepting inauthentic data as authentic", and
 //! it gives the bound `Tlen >= lg(MaxErrs / Risk)`. A `TAG_LEN` of 4 or 6 is permitted by A.1 and
-//! accepted here, because protocols and the ACVP vectors use short tags; prefer 16.
+//! accepted here: the spec's own Appendix C.1 and C.2 examples use `Tlen=32` and `Tlen=48`, i.e.
+//! `t = 4` and `t = 6`, and constrained protocols do the same. Prefer 16. (Those two examples are
+//! what exercises the short tags in this crate's tests; the ACVP set it also runs uses only 96- and
+//! 128-bit tags.)
 //!
 //! **The key is for CCM only.** Sec 5.1: "The key shall be kept secret and shall only be used for
 //! the CCM mode", and "The total number of invocations of the block cipher algorithm during the
@@ -590,19 +593,23 @@ where
     /// parallelism [`crate::Ctr`] uses, and unrelated to the CBC-MAC, which stays byte-at-a-time
     /// serial (Sec 6.1 step 3: `Yi` depends on `Yi-1`) in [`Self::mac_absorb`]. Only the counter
     /// half batches; nothing here changes what the MAC absorbs or when.
+    ///
+    /// `ks` is the caller's scratch for the `N` blocks of `Sj`: [`Self::apply_keystream`] holds it
+    /// in a [`Secret`] for the whole call, so the batched keystream gets the same drop-time scrub
+    /// as the single-block `ks` in `self` without a fresh allocation and scrub per batch. The same
+    /// arrangement as [`crate::Ctr`]'s.
     #[inline]
     fn apply_keystream_batch<const N: usize>(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]; N],
+        ks: &mut [[u8; BLOCK_LEN]; N],
         batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
     ) {
-        // Batched payload keystream, so give it the same drop-time scrub as the single-block `ks`.
-        let mut ks: Secret<[[u8; BLOCK_LEN]; N]> = Secret::new();
         for slot in ks.iter_mut() {
             *slot = self.counter_block(self.next_ctr);
             self.next_ctr += 1;
         }
-        batch(&self.perm, &mut ks);
+        batch(&self.perm, ks);
         for (block, k) in blocks.iter_mut().zip(ks.iter()) {
             for (b, k) in block.iter_mut().zip(k.iter()) {
                 *b ^= *k;
@@ -631,14 +638,18 @@ where
         let (head, rest) = data.split_at_mut(core::cmp::min(head_len, data.len()));
         self.apply_keystream_bytes(head);
 
+        // Scratch for the batched keystream, one per width and per call rather than per batch:
+        // held in a `Secret` so it is zeroized when this call returns, like `ks` in `self`.
         let (blocks, tail) = rest.as_chunks_mut::<BLOCK_LEN>();
         let (fours, rest_blocks) = blocks.as_chunks_mut::<4>();
+        let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
         for four in fours.iter_mut() {
-            self.apply_keystream_batch(four, P::encrypt_4blocks);
+            self.apply_keystream_batch(four, &mut ks4, P::encrypt_4blocks);
         }
         let (pairs, single) = rest_blocks.as_chunks_mut::<2>();
+        let mut ks2: Secret<[[u8; BLOCK_LEN]; 2]> = Secret::new();
         for pair in pairs.iter_mut() {
-            self.apply_keystream_batch(pair, P::encrypt_2blocks);
+            self.apply_keystream_batch(pair, &mut ks2, P::encrypt_2blocks);
         }
         for block in single.iter_mut() {
             self.apply_keystream_bytes(block);
@@ -864,9 +875,12 @@ where
     /// trailing `TAG_LEN` bytes off `ciphertext` as the tag -- step 6's `LSB_Tlen(C)`.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::GenericError`] for Sec 6.2 step 1, "If Clen <= Tlen, then return
-    /// INVALID", which is a malformed input rather than a failed check; otherwise as
-    /// [`Self::decrypt_detached`].
+    /// [`SymmetricCipherError::DecryptionFailed`] for Sec 6.2 step 1, "If Clen <= Tlen, then
+    /// return INVALID": a malformed input rather than a failed check, reported with the variant
+    /// [`SymmetricCipherDecryptor::do_final`] specifies for a malformed ciphertext so that every
+    /// inline entry point -- this one, [`CcmDecryptor::do_final`] and
+    /// [`CcmDecryptor::decrypt_out_with_aad`](AEADCipherDecryptor::decrypt_out_with_aad) -- agrees
+    /// on the same input. Otherwise as [`Self::decrypt_detached`].
     pub fn decrypt(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -885,9 +899,7 @@ where
         // valid -- Sec 5.3's footnote, "The payload may also be empty". So the octet test here
         // admits equality, which is what `split_last_chunk` does.
         let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
-            return Err(SymmetricCipherError::GenericError(
-                "CCM ciphertext shorter than the tag (SP 800-38C Sec 6.2 step 1)",
-            ));
+            return Err(SymmetricCipherError::DecryptionFailed);
         };
         Self::decrypt_detached(key, nonce, aad, data, tag, plaintext)
     }
@@ -942,7 +954,8 @@ struct CcmBuffer<
     // either way held until finalization, so wrapped so it is zeroized on drop.
     data: Secret<[u8; FINAL_LEN]>,
     data_len: usize,
-    // Set by the first `do_update_out`, which closes the AAD phase (see `do_update_aad`).
+    // Set by the first non-empty `do_update_out`, which closes the AAD phase (see
+    // `do_update_aad`).
     data_started: bool,
 }
 
@@ -961,7 +974,28 @@ where
     /// `FINAL_LEN` once the inline tag has room.
     const CAPACITY: usize = FINAL_LEN - TAG_LEN;
 
+    /// The compile-time nonce-length floor for the trait adapters, run from every entry point of
+    /// both [`CcmEncryptor`] and [`CcmDecryptor`], one-shots included.
+    ///
+    /// The encrypting side draws its nonce at random, and the random-collision bound is only
+    /// useful from 96 bits up. The decrypting side is given its nonce, so it has no such need of
+    /// its own; it carries the same floor so that the pair stays symmetric -- a `NONCE_LEN` for
+    /// which `CcmDecryptor` compiles but `CcmEncryptor` does not would be a trap for code written
+    /// against the generic traits, which instantiates both with one set of parameters. The
+    /// inherent [`Ccm`] API supports every A.1 length from 7 through 13 under a caller-managed
+    /// nonce.
+    #[inline]
+    fn check_random_nonce_len() {
+        const {
+            assert!(
+                NONCE_LEN >= 12,
+                "CCM: the random-nonce AEAD adapters require NONCE_LEN >= 12; use Ccm directly with a caller-managed unique nonce for shorter lengths"
+            );
+        }
+    }
+
     fn new(perm: P, nonce: [u8; NONCE_LEN]) -> Self {
+        Self::check_random_nonce_len();
         const {
             // `FINAL_LEN` has to hold the tag the inline `do_final` appends; without this,
             // `CAPACITY` would underflow at compile time with a less helpful message.
@@ -1015,16 +1049,31 @@ where
     /// before the payload length is known, so the whole ciphertext or plaintext comes out at
     /// finalization.
     ///
+    /// An empty `data` is a no-op, and in particular does **not** close the AAD phase: the trait
+    /// makes an empty `aad` a no-op "at any point" so that a generic caller can pass one
+    /// unconditionally, and a caller looping over a reader that returns an empty first chunk
+    /// deserves the same on this side. Only a non-empty call is the start of the data phase.
+    ///
     /// # Errors
-    /// [`SymmetricCipherError::GenericError`] if the total would exceed `limit`. Nothing is
-    /// consumed in that case.
-    fn do_update_out(&mut self, data: &[u8], limit: usize) -> Result<(), SymmetricCipherError> {
+    /// [`SymmetricCipherError::GenericError`], carrying `too_long`, if the total would exceed
+    /// `limit`. Nothing is consumed in that case. The two callers have different limits -- the
+    /// encryptor's is [`Self::CAPACITY`], the decryptor's `FINAL_LEN` -- so each supplies the
+    /// message that names its own bound.
+    fn do_update_out(
+        &mut self,
+        data: &[u8],
+        limit: usize,
+        too_long: &'static str,
+    ) -> Result<(), SymmetricCipherError> {
+        if data.is_empty() {
+            return Ok(());
+        }
         // Set before the length check so that a refused oversized call still closes the AAD phase:
         // the phase order is about call history, and this call happened.
         self.data_started = true;
         let end = self.data_len + data.len();
         if end > limit {
-            return Err(SymmetricCipherError::GenericError("CCM: data longer than FINAL_LEN"));
+            return Err(SymmetricCipherError::GenericError(too_long));
         }
         self.data[self.data_len..end].copy_from_slice(data);
         self.data_len = end;
@@ -1050,6 +1099,15 @@ where
 /// already have the complete lengths, so they bypass this buffer and accept data up to CCM's `q`
 /// limit.
 ///
+/// **The AAD shares `FINAL_LEN`'s bound although it is never part of the output.** The AAD is
+/// buffered in its own `FINAL_LEN`-byte array, and `FINAL_LEN - TAG_LEN` is its capacity too, so a
+/// protocol whose authenticated header can be longer than its payload has to size `FINAL_LEN` for
+/// the header: `FINAL_LEN >= max(largest payload, largest AAD) + TAG_LEN`. That is a property of
+/// this adapter's single size parameter, not of CCM -- A.1 bounds `a` only at `2^64` -- and the
+/// cost of oversizing is every `[u8; FINAL_LEN]` the trait puts on the stack, so a header-heavy
+/// protocol is better served by the inherent [`Ccm`] API, which takes the whole AAD by reference
+/// and buffers nothing.
+///
 /// A `FINAL_LEN - TAG_LEN` past what `NONCE_LEN` allows (A.1's `2^8q - 1`) does not compile,
 /// rather than buffering the whole message only to fail at finalization:
 ///
@@ -1068,8 +1126,9 @@ where
 /// # Random nonce length
 ///
 /// The trait generates a random nonce rather than accepting a caller-managed counter. To keep the
-/// random-collision bound useful, `NONCE_LEN` must therefore be at least 12 here. The inherent
-/// [`Ccm`] API still supports every A.1 nonce length from 7 through 13 when the caller guarantees
+/// random-collision bound useful, `NONCE_LEN` must therefore be at least 12 here, and
+/// [`CcmDecryptor`] carries the same floor so that the pair stays symmetric. The inherent [`Ccm`]
+/// API still supports every A.1 nonce length from 7 through 13 when the caller guarantees
 /// uniqueness.
 ///
 /// ```compile_fail
@@ -1081,6 +1140,19 @@ where
 ///     .unwrap();
 /// // A 7-byte nonce is valid for caller-managed Ccm, but too short for this random-nonce adapter.
 /// let _ = AES_CCM_128_Encryptor::<7, 16, 2064>::do_encrypt_init(&key);
+/// ```
+///
+/// The decryptor is given its nonce rather than drawing one, but refuses the same lengths, so a
+/// parameter set that compiles for one side compiles for the other:
+///
+/// ```compile_fail
+/// use bouncycastle_aes::AES_CCM_128_Decryptor;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::SymmetricCipherDecryptor;
+///
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// let _ = AES_CCM_128_Decryptor::<7, 16, 2064>::do_decrypt_init(&key, &[0u8; 7]);
 /// ```
 ///
 /// See [`AEADCipherEncryptor`]'s "A length-dependent construction still has to buffer" section for
@@ -1127,15 +1199,6 @@ impl<
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
-    fn check_random_nonce_len() {
-        const {
-            assert!(
-                NONCE_LEN >= 12,
-                "CCM: the random-nonce AEAD adapter requires NONCE_LEN >= 12; use Ccm directly with a caller-managed unique nonce for shorter lengths"
-            );
-        }
-    }
-
     /// Every one-shot comes here: they already have both lengths, so they skip the buffer and run
     /// the inherent non-buffering [`Ccm::encrypt_detached`] under a freshly drawn nonce.
     fn one_shot(
@@ -1149,7 +1212,7 @@ where
             return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
         Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::check_shape();
-        Self::check_random_nonce_len();
+        CcmBuffer::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>::check_random_nonce_len();
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         let (written, tag) =
             Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached(
@@ -1201,9 +1264,9 @@ where
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         // The shape check belongs here too: this type never calls `Ccm::new`, and without it a
-        // `NONCE_LEN` or `TAG_LEN` A.1 forbids would not be caught until finalization.
+        // `NONCE_LEN` or `TAG_LEN` A.1 forbids would not be caught until finalization. The
+        // random-nonce floor is `CcmBuffer::new`'s.
         Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::check_shape();
-        Self::check_random_nonce_len();
         // `P::new`'s own checks are the only key validation needed, exactly as for `Ccm` itself
         // and every other mode in this crate; `random_iv` is CBC/CFB's same OS-backed draw --
         // Sec 5.3 asks only for uniqueness, not CBC/CFB's unpredictability, but a CSPRNG draw is
@@ -1220,7 +1283,7 @@ where
     }
 
     /// Buffers `plaintext` and writes nothing, per [`Self::update_out_len`]. `ciphertext` is
-    /// untouched and may be empty.
+    /// untouched and may be empty. An empty `plaintext` is a no-op and leaves the AAD phase open.
     ///
     /// # Errors
     /// [`SymmetricCipherError::GenericError`] if the total would exceed `FINAL_LEN - TAG_LEN`.
@@ -1232,6 +1295,7 @@ where
         self.0.do_update_out(
             plaintext,
             CcmBuffer::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>::CAPACITY,
+            "CCM: plaintext longer than FINAL_LEN - TAG_LEN, the streaming capacity",
         )?;
         Ok(0)
     }
@@ -1375,6 +1439,10 @@ where
 /// with the tag inline, the tag after it -- because until the final call it cannot know which
 /// layout it is being given. With the tag detached the ciphertext is still held to
 /// `FINAL_LEN - TAG_LEN`, the same limit the encryptor applies.
+///
+/// `NONCE_LEN` must be at least 12, as for [`CcmEncryptor`]: the nonce is supplied here rather
+/// than drawn, but the pair is kept symmetric so that a parameter set which compiles for one side
+/// compiles for the other. See "Random nonce length" on [`CcmEncryptor`].
 pub struct CcmDecryptor<
     P,
     const KEY_LEN: usize,
@@ -1458,7 +1526,7 @@ where
     ) -> Result<Self, SymmetricCipherError> {
         Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::check_shape();
         // `P::new`'s own checks are the only key validation needed; see the encryptor's identical
-        // reasoning. `CcmBuffer::new` carries the `FINAL_LEN` assertions.
+        // reasoning. `CcmBuffer::new` carries the `FINAL_LEN` assertions and the nonce floor.
         let perm = P::new(key)?;
         Ok(Self(CcmBuffer::new(perm, *nonce)))
     }
@@ -1470,7 +1538,8 @@ where
         0
     }
 
-    /// Buffers `ciphertext` and writes nothing, per [`Self::update_out_len`].
+    /// Buffers `ciphertext` and writes nothing, per [`Self::update_out_len`]. An empty
+    /// `ciphertext` is a no-op and leaves the AAD phase open.
     ///
     /// # Errors
     /// [`SymmetricCipherError::GenericError`] if the total would exceed `FINAL_LEN`.
@@ -1479,7 +1548,7 @@ where
         ciphertext: &[u8],
         _plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        self.0.do_update_out(ciphertext, FINAL_LEN)?;
+        self.0.do_update_out(ciphertext, FINAL_LEN, "CCM: ciphertext longer than FINAL_LEN")?;
         Ok(0)
     }
 
@@ -1562,6 +1631,9 @@ where
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        // The one-shots never construct a `CcmBuffer`, so the nonce floor is asserted here, as
+        // the encryptor's `one_shot` does.
+        CcmBuffer::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>::check_random_nonce_len();
         Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
             key, nonce, aad, ciphertext, tag, plaintext,
         )
@@ -1589,9 +1661,7 @@ where
         let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
             return Err(SymmetricCipherError::DecryptionFailed);
         };
-        Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
-            key, nonce, aad, data, tag, plaintext,
-        )
+        Self::decrypt_out_detached(key, nonce, aad, data, tag, plaintext)
     }
 }
 
