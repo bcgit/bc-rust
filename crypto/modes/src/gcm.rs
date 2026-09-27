@@ -216,22 +216,21 @@ where
     fn setup(perm: P, nonce: [u8; GCM_NONCE_LEN]) -> Self {
         Self::check_shape();
 
-        // Step 1: H = CIPH_K(0^128).
-        let mut h = [0u8; 16];
+        // Step 1: H = CIPH_K(0^128). Encrypted in place inside a `Secret` so that `H` is never
+        // held in an unzeroized stack array (Sec 5.3; Appendix A on what `H` gives an attacker).
+        let mut h: Secret<[u8; 16]> = Secret::new();
         perm.encrypt_block(&mut h);
 
-        // Step 2 (len(IV) = 96 branch, the only one this type implements): J0 = IV || 0^31 || 1.
-        let mut j0 = [0u8; 16];
-        j0[..GCM_NONCE_LEN].copy_from_slice(&nonce);
-        j0[15] = 1;
-
+        // Step 2 (len(IV) = 96 branch, the only one this type implements): J0 = IV || 0^31 || 1,
+        // built directly in the `Secret` that will hold CIPH_K(J0).
+        //
         // Precompute CIPH_K(J0) now, while J0 is fully known: step 6's GCTR_K(J0, S) reduces to
         // S (+) CIPH_K(J0) because S is exactly one block (Algorithm 3 with a single, complete
         // input block), so this one-time mask is all GCTR at J0 will ever be asked to produce.
-        let mut ek_j0_bytes = j0;
-        perm.encrypt_block(&mut ek_j0_bytes);
         let mut ek_j0: Secret<[u8; 16]> = Secret::new();
-        *ek_j0 = ek_j0_bytes;
+        ek_j0[..GCM_NONCE_LEN].copy_from_slice(&nonce);
+        ek_j0[15] = 1;
+        perm.encrypt_block(&mut ek_j0);
 
         // Step 3's inc32(J0): J0's rightmost 32 bits are 1, so inc32(J0) has counter field 2.
         let ctr = Ctr::start_at(perm, nonce, 2);
@@ -295,23 +294,22 @@ where
 
     /// Algorithm 4 steps 4-6 / Algorithm 5 steps 5-7: pads GHASH to the block boundary (the `0^u`
     /// of step 5), appends `[len(A)]_64 || [len(C)]_64`, and masks the result with `CIPH_K(J0)`.
-    /// Returns the full 16-byte block; callers truncate to `TAG_LEN`.
+    /// Writes the full 16-byte block to `out`; callers truncate to `TAG_LEN`. `out` is a `Secret`
+    /// because on the decrypting side it is the expected tag `T'`, which forges the rejected
+    /// ciphertext if it survives a failed comparison.
     ///
     /// The byte-to-bit multiplication (`* 8`) is not checked for overflow: `aad_len` and `data_len`
     /// are accumulated with `checked_add` at every absorption (`absorb_aad`, `absorb_data`), so
     /// reaching a count whose `* 8` could overflow `u64` would already require far more calls than
     /// are physically possible to make.
-    fn tag_block(&mut self) -> [u8; 16] {
+    fn tag_block(&mut self, out: &mut Secret<[u8; 16]>) {
         self.ghash.pad_to_block();
         let aad_bits = self.aad_len * 8;
         let data_bits = self.data_len * 8;
-        let s = self.ghash.finish(aad_bits, data_bits);
-        let ek_j0 = *self.ek_j0;
-        let mut out = [0u8; 16];
-        for i in 0..16 {
-            out[i] = s[i] ^ ek_j0[i];
+        self.ghash.finish(aad_bits, data_bits, out);
+        for (o, m) in out.iter_mut().zip(self.ek_j0.iter()) {
+            *o ^= m;
         }
-        out
     }
 }
 
@@ -344,7 +342,8 @@ where
     fn finish(mut self) -> [u8; TAG_LEN] {
         // Covers an AAD-only or entirely empty message, where no data was ever encrypted.
         self.begin_data_if_needed();
-        let full = self.tag_block();
+        let mut full: Secret<[u8; 16]> = Secret::new();
+        self.tag_block(&mut full);
         let mut tag = [0u8; TAG_LEN];
         tag.copy_from_slice(&full[..TAG_LEN]);
         tag
@@ -451,7 +450,8 @@ where
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not match.
     fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         self.begin_data_if_needed();
-        let full = self.tag_block();
+        let mut full: Secret<[u8; 16]> = Secret::new();
+        self.tag_block(&mut full);
         if ct_eq_bytes(&full[..TAG_LEN], tag) {
             Ok(())
         } else {
@@ -476,7 +476,8 @@ where
         let mut gcm = Self::setup(perm, *nonce);
         gcm.absorb_aad(aad)?;
         gcm.absorb_data(data)?;
-        let computed = gcm.tag_block();
+        let mut computed: Secret<[u8; 16]> = Secret::new();
+        gcm.tag_block(&mut computed);
         if !ct_eq_bytes(&computed[..TAG_LEN], tag) {
             return Err(SymmetricCipherError::AEADTagCheckFailed);
         }
