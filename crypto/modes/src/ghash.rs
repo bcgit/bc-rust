@@ -41,7 +41,9 @@ fn block_from_bytes(b: &[u8; 16]) -> Block {
     ]
 }
 
-/// Inverse of [`block_from_bytes`].
+/// Inverse of [`block_from_bytes`]. Used only by the tests: [`Ghash::finish`] writes `S` straight
+/// into the caller's `Secret` rather than returning it through a stack array.
+#[cfg(test)]
 fn block_to_bytes(x: &Block) -> [u8; 16] {
     let mut out = [0u8; 16];
     out[..8].copy_from_slice(&x[0].to_be_bytes());
@@ -187,17 +189,20 @@ impl Ghash {
     /// `Y_0 = 0^128` (Algorithm 2 step 2), keyed by the hash subkey `H`.
     pub(crate) fn new(h: &[u8; 16]) -> Self {
         let mut hs: Secret<Block> = Secret::new();
-        *hs = block_from_bytes(h);
+        hs[0] = u64::from_be_bytes(h[..8].try_into().expect("first half of H is 8 bytes"));
+        hs[1] = u64::from_be_bytes(h[8..].try_into().expect("second half of H is 8 bytes"));
         Self { h: hs, y: Secret::new(), pending: Secret::new(), pending_len: 0 }
     }
 
-    /// `Y_i = (Y_{i-1} (+) X_i) . H` for one whole block `X_i`.
-    fn absorb(&mut self, block: &[u8; 16]) {
+    /// `Y_i = (Y_{i-1} (+) X_i) . H` for one whole block `X_i`, updating `Y` in place.
+    ///
+    /// An associated function over the two fields rather than a `&mut self` method, so that
+    /// `pending` can be passed as `block` without first being copied out of its `Secret`.
+    fn absorb(y: &mut Secret<Block>, h: &Secret<Block>, block: &[u8; 16]) {
         let xi = block_from_bytes(block);
-        let mut acc = *self.y;
-        acc[0] ^= xi[0];
-        acc[1] ^= xi[1];
-        *self.y = mul(&acc, &self.h);
+        y[0] ^= xi[0];
+        y[1] ^= xi[1];
+        **y = mul(y, h);
     }
 
     /// Absorbs whole blocks of `data` immediately and buffers any remainder for the next call.
@@ -214,14 +219,13 @@ impl Ghash {
             if self.pending_len < 16 {
                 return;
             }
-            let block = *self.pending;
-            self.absorb(&block);
+            Self::absorb(&mut self.y, &self.h, &self.pending);
             self.pending_len = 0;
         }
 
         let (blocks, rest) = data.as_chunks::<16>();
         for block in blocks {
-            self.absorb(block);
+            Self::absorb(&mut self.y, &self.h, block);
         }
         (*self.pending)[..rest.len()].copy_from_slice(rest);
         self.pending_len = rest.len();
@@ -235,13 +239,12 @@ impl Ghash {
             return;
         }
         (*self.pending)[self.pending_len..].fill(0);
-        let block = *self.pending;
-        self.absorb(&block);
+        Self::absorb(&mut self.y, &self.h, &self.pending);
         self.pending_len = 0;
     }
 
-    /// Appends `[aad_bits]_64 || [data_bits]_64` (Algorithm 4 step 5's final block) and returns
-    /// `Y_m`, i.e. `S`.
+    /// Appends `[aad_bits]_64 || [data_bits]_64` (Algorithm 4 step 5's final block) and writes
+    /// `Y_m`, i.e. `S`, to `out` -- a `Secret`, since `S` is the tag with its mask removed.
     ///
     /// Takes `&mut self` rather than `self` -- `Gcm`'s verify-before-decrypt one-shot needs the rest
     /// of its own state (the `Ctr` field) after computing the tag, so consuming `Ghash` here would
@@ -250,7 +253,7 @@ impl Ghash {
     /// phase already (the `0^v` and `0^u` of step 5), so by the time `finish` runs there is nothing
     /// pending except this one final length block, and no caller should call `update` or
     /// `pad_to_block` again afterward.
-    pub(crate) fn finish(&mut self, aad_bits: u64, data_bits: u64) -> [u8; 16] {
+    pub(crate) fn finish(&mut self, aad_bits: u64, data_bits: u64, out: &mut Secret<[u8; 16]>) {
         debug_assert_eq!(
             self.pending_len, 0,
             "caller must pad_to_block before finish: nothing but the length block may be pending"
@@ -258,8 +261,9 @@ impl Ghash {
         let mut len_block = [0u8; 16];
         len_block[..8].copy_from_slice(&aad_bits.to_be_bytes());
         len_block[8..].copy_from_slice(&data_bits.to_be_bytes());
-        self.absorb(&len_block);
-        block_to_bytes(&self.y)
+        Self::absorb(&mut self.y, &self.h, &len_block);
+        out[..8].copy_from_slice(&self.y[0].to_be_bytes());
+        out[8..].copy_from_slice(&self.y[1].to_be_bytes());
     }
 }
 
@@ -388,7 +392,9 @@ mod tests {
             expected[1] ^= xi[1];
             expected = mul_reference(&expected, &h);
 
-            assert_eq!(block_to_bytes(&expected), g.finish(0, 0), "n={n}");
+            let mut s: Secret<[u8; 16]> = Secret::new();
+            g.finish(0, 0, &mut s);
+            assert_eq!(block_to_bytes(&expected), *s, "n={n}");
         }
         // Silence the unused full-message `y` computed above; it documents the general recurrence.
         let _ = y;
@@ -404,14 +410,17 @@ mod tests {
         let mut whole = Ghash::new(&h_bytes);
         whole.update(&data);
         whole.pad_to_block();
-        let expected = whole.finish(0, data.len() as u64 * 8);
+        let mut expected: Secret<[u8; 16]> = Secret::new();
+        whole.finish(0, data.len() as u64 * 8, &mut expected);
 
         for split in 0..=data.len() {
             let mut g = Ghash::new(&h_bytes);
             g.update(&data[..split]);
             g.update(&data[split..]);
             g.pad_to_block();
-            assert_eq!(g.finish(0, data.len() as u64 * 8), expected, "split at {split}");
+            let mut s: Secret<[u8; 16]> = Secret::new();
+            g.finish(0, data.len() as u64 * 8, &mut s);
+            assert_eq!(*s, *expected, "split at {split}");
         }
     }
 }
