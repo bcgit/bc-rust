@@ -105,6 +105,8 @@
 //! the next call so the caller's chunking is invisible in the output. Those bytes are unused
 //! keystream: XORed with nothing, they reveal nothing about the message, but they *are* live
 //! keystream for the next bytes of it, so the buffer is held in a `Secret` and zeroized on drop.
+//! So is every transient keystream block the batch and single-block paths produce, since each is
+//! the same kind of value until it has been XORed in.
 //! That is the difference from `Cfb`, whose retained bytes are `CIPH_K` of a public block and are
 //! deliberately not wrapped.
 
@@ -291,9 +293,9 @@ where
     /// block is used up and capacity has already been checked.
     #[inline]
     fn refill(&mut self) {
-        let mut block = self.counter_block();
-        self.perm.encrypt_block(&mut block);
-        (*self.keystream).copy_from_slice(&block);
+        // Encrypted in place in the `Secret`: `Oj` never sits in a plain stack array.
+        *self.keystream = self.counter_block();
+        self.perm.encrypt_block(&mut self.keystream);
         self.next_counter += 1;
         self.used = 0;
     }
@@ -322,7 +324,8 @@ where
         blocks: &mut [[u8; BLOCK_LEN]; N],
         batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
     ) {
-        let mut keystream = [[0u8; BLOCK_LEN]; N];
+        // Live keystream until XORed in, so it gets the same drop-time scrub as `self.keystream`.
+        let mut keystream: Secret<[[u8; BLOCK_LEN]; N]> = Secret::new();
         for slot in keystream.iter_mut() {
             *slot = self.counter_block();
             self.next_counter += 1;
@@ -340,7 +343,8 @@ where
     /// XORs one whole block at a block boundary.
     #[inline]
     fn apply_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
-        let mut o = self.counter_block();
+        let mut o: Secret<[u8; BLOCK_LEN]> = Secret::new();
+        *o = self.counter_block();
         self.perm.encrypt_block(&mut o);
         self.next_counter += 1;
         for (b, o) in block.iter_mut().zip(o.iter()) {
