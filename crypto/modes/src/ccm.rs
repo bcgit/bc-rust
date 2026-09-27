@@ -596,7 +596,8 @@ where
         blocks: &mut [[u8; BLOCK_LEN]; N],
         batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
     ) {
-        let mut ks = [[0u8; BLOCK_LEN]; N];
+        // Batched payload keystream, so give it the same drop-time scrub as the single-block `ks`.
+        let mut ks: Secret<[[u8; BLOCK_LEN]; N]> = Secret::new();
         for slot in ks.iter_mut() {
             *slot = self.counter_block(self.next_ctr);
             self.next_ctr += 1;
