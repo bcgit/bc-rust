@@ -105,6 +105,8 @@
 //! the next call so the caller's chunking is invisible in the output. Those bytes are unused
 //! keystream: XORed with nothing, they reveal nothing about the message, but they *are* live
 //! keystream for the next bytes of it, so the buffer is held in a `Secret` and zeroized on drop.
+//! So is every transient keystream block the batch and single-block paths produce, since each is
+//! the same kind of value until it has been XORed in.
 //! That is the difference from `Cfb`, whose retained bytes are `CIPH_K` of a public block and are
 //! deliberately not wrapped.
 

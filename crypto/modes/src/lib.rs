@@ -482,8 +482,9 @@
 //! keystream cannot be recomputed without them. Its counter is a `u64` rather than the 1-to-4
 //! counter bytes so that exhaustion is representable -- the counter field itself wraps, and a mode
 //! that read its position back out of those bytes could not tell "just started" from "used up".
-//! The keystream block is the one buffer in this crate held in a `Secret`: unlike a chaining value
-//! it is live key material for the bytes not yet consumed.
+//! The keystream block is held in a `Secret`: unlike a chaining value it is live key material for
+//! the bytes not yet consumed. The transient keystream blocks of its batch paths are `Secret`s for
+//! the same reason: one per batch width, held for the whole call and zeroized once at its end.
 //!
 //! The data methods work in place. The batch paths in a decryptor are the transient cost: a
 //! `[[u8; BLOCK_LEN]; 4]` of stack for the four-block path -- 64 B on AES -- and a
