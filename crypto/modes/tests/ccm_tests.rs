@@ -461,8 +461,9 @@ fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
 }
 
 /// Tests a large payload that would blow the Linux stack limit if we try to hard-copy it.
+/// Tests the inherent APIs on CCM.
 #[test]
-fn test_large_payload() {
+fn test_large_payload_inherent() {
     // 5 mb payload
     const LARGE_LEN: usize = 5 * 1024 * 1024;
     // The streaming adapters need `FINAL_LEN` to hold the whole payload plus the inline tag.
@@ -484,6 +485,20 @@ fn test_large_payload() {
         .unwrap();
     assert_eq!(n, LARGE_LEN);
     assert_eq!(back, plaintext, "inherent round trip");
+}
+
+/// Tests a large payload that would blow the Linux stack limit if we try to hard-copy it.
+/// Tests the SymmetricCipher APIs on CCM.
+#[test]
+fn test_large_payload_symmetric_cipher() {
+    // 5 mb payload
+    const LARGE_LEN: usize = 5 * 1024 * 1024;
+    // The streaming adapters need `FINAL_LEN` to hold the whole payload plus the inline tag.
+    const LARGE_FINAL_LEN: usize = LARGE_LEN + TAG_LEN;
+    let key = toy_key();
+    let nonce = pinned_nonce();
+    let aad = b"header";
+    let plaintext = message(LARGE_LEN);
 
     // round-tripped through the SymmetricCipherEncryptor / Decryptor for CCM
     type Enc = CcmEncryptor<Toy, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, LARGE_FINAL_LEN>;
