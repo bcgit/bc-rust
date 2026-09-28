@@ -23,10 +23,10 @@
 // u8`) at every bare `assert_eq!(byte_array, [])` in *those* files too -- `ecb_tests.rs` hit this
 // exactly. Giving it its own module path keeps that ambiguity local to the two files that actually
 // need ACVP JSON parsing.
-#[path = "common/acvp_gcm.rs"]
-mod acvp_gcm;
+#[path = "common/acvp_gcm_helpers.rs"]
+mod acvp_gcm_helpers;
 
-use acvp_gcm::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case, test_data_dir};
+use acvp_gcm_helpers::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case, test_data_dir};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
