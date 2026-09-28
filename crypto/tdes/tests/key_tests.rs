@@ -12,7 +12,8 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
 
 /// Sec 3.3.2, "Keys that are considered weak are (in hexadecimal format)".

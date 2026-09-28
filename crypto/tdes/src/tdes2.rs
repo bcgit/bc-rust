@@ -7,7 +7,8 @@ use crate::tdes::{
 };
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
 use bouncycastle_utils::secret::Secret;
 
 /// The length of a two-key TDEA key bundle in bytes: `Key1 || Key2`, with `Key3 = Key1`
@@ -121,6 +122,27 @@ impl ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN> for TDES2Key {
     }
     fn decrypt_block(&self, block: &mut Block) {
         TDES2Key::decrypt_block(self, block)
+    }
+    // As for `TDES`: no unit larger than one block, so the batch methods are single-block loops.
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::encrypt_block(self, block)
+        }
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::decrypt_block(self, block)
+        }
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::encrypt_block(self, block)
+        }
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+        for block in blocks.iter_mut() {
+            TDES2Key::decrypt_block(self, block)
+        }
     }
 }
 

@@ -1,8 +1,8 @@
 //! Criterion benchmarks for the constant-time TDES engine.
 //!
-//! The permutation processes one block per call and does not override the pair or four-block
-//! entry points, so the figures to watch are the single-block throughput in each direction and the
-//! cost of key expansion. The `encrypt_4blocks` case is included to confirm that the default
+//! The permutation processes one block per call and its pair and four-block entry points are
+//! single-block loops, so the figures to watch are the single-block throughput in each direction
+//! and the cost of key expansion. The `encrypt_4blocks` case is included to confirm that the
 //! four-block path costs the same as four single-block calls, i.e. that nothing is lost by a mode
 //! preferring it.
 
