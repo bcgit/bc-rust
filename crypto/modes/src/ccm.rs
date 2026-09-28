@@ -616,7 +616,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length.
-    pub fn do_encrypt_update(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    pub fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.mac_absorb(data);
         self.apply_keystream(data);
@@ -659,7 +659,7 @@ where
         let mut ccm = Self::new(key, nonce, aad, plaintext.len())?;
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
-        ccm.do_encrypt_update(out)?;
+        ccm.do_encrypt(out)?;
         let tag = ccm.do_encrypt_final()?;
         Ok((plaintext.len(), tag))
     }
@@ -983,7 +983,7 @@ where
 /// form `B0` -- and so cannot authenticate anything at all -- until it knows the total payload
 /// length (Appendix A.2.1; see the module docs). This type therefore accumulates the AAD and the
 /// payload in two `FINAL_LEN`-byte arrays and runs the whole of Sec 6.1 at finalization, so
-/// [`update_out_len`](SymmetricCipherEncryptor::update_out_len) is identically `0` and every
+/// [`update_out_len`](SymmetricCipherEncryptor::do_encrypt_out_len) is identically `0` and every
 /// ciphertext byte comes out of the final call.
 ///
 /// # Nonce length
@@ -1121,16 +1121,16 @@ where
 
     /// Identically `0`: nothing can be released before the payload length is known, so the whole
     /// ciphertext comes out of the final call.
-    fn update_out_len(&self, _input_len: usize) -> usize {
+    fn do_encrypt_out_len(&self, _input_len: usize) -> usize {
         0
     }
 
-    /// Buffers `plaintext` and writes nothing, per [`Self::update_out_len`]. `ciphertext` is
+    /// Buffers `plaintext` and writes nothing, per [`Self::do_decrypt_out_len`]. `ciphertext` is
     /// untouched and may be empty. An empty `plaintext` is a no-op and leaves the AAD phase open.
     ///
     /// # Errors
     /// [`SymmetricCipherError::GenericError`] if the total would exceed `FINAL_LEN - TAG_LEN`.
-    fn do_update_out(
+    fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         _ciphertext: &mut [u8],
@@ -1227,7 +1227,7 @@ where
         // Scrub the plaintext copy as soon as the ciphertext is in `ciphertext`, rather than
         // waiting for `data` to drop at the end of this call: the buffer is large and this keeps
         // the window short.
-        ccm.do_encrypt_update(&mut ciphertext[..len])?;
+        ccm.do_encrypt(&mut ciphertext[..len])?;
         self.0.data.zeroize();
         let tag = ccm.do_encrypt_final()?;
         Ok((len, tag))
@@ -1377,16 +1377,16 @@ where
     /// Identically `0`. This is the one thing a CCM decryptor gets *right* by being forced to
     /// buffer: it releases no plaintext at all before the tag has been checked, so
     /// [`AEADCipherDecryptor`]'s warning about unauthenticated output cannot bite a caller here.
-    fn update_out_len(&self, _input_len: usize) -> usize {
+    fn do_decrypt_out_len(&self, _input_len: usize) -> usize {
         0
     }
 
-    /// Buffers `ciphertext` and writes nothing, per [`Self::update_out_len`]. An empty
+    /// Buffers `ciphertext` and writes nothing, per [`Self::do_decrypt_out_len`]. An empty
     /// `ciphertext` is a no-op and leaves the AAD phase open.
     ///
     /// # Errors
     /// [`SymmetricCipherError::GenericError`] if the total would exceed `FINAL_LEN`.
-    fn do_update_out(
+    fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         _plaintext: &mut [u8],

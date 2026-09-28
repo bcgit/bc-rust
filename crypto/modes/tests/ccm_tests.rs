@@ -75,7 +75,7 @@ fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
     .unwrap();
     let mut data = plaintext.to_vec();
     for piece in data.chunks_mut(chunk) {
-        ccm.do_encrypt_update(piece).unwrap();
+        ccm.do_encrypt(piece).unwrap();
     }
     let tag = ccm.do_encrypt_final().unwrap();
     (data, tag)
@@ -222,8 +222,8 @@ fn every_split_agrees_with_the_one_shot_in_both_directions() {
         let mut enc = ToyCcm::<Encrypting>::new(&toy_key(), &nonce, aad, plaintext.len()).unwrap();
         let mut streamed = plaintext.clone();
         let (head, rest) = streamed.split_at_mut(split);
-        enc.do_encrypt_update(head).unwrap();
-        enc.do_encrypt_update(rest).unwrap();
+        enc.do_encrypt(head).unwrap();
+        enc.do_encrypt(rest).unwrap();
         assert_eq!(enc.do_encrypt_final().unwrap(), tag, "tag, split at {split}");
         assert_eq!(streamed, ct, "ciphertext, split at {split}");
 
@@ -444,7 +444,7 @@ fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
 
     let mut dec = Dec::do_decrypt_init(&toy_key(), &nonce).unwrap();
     dec.do_update_aad(b"aad").unwrap();
-    assert_eq!(dec.do_update_out(&ct, &mut nothing).unwrap(), 0, "nothing is released mid-stream");
+    assert_eq!(dec.do_decrypt_out(&ct, &mut nothing).unwrap(), 0, "nothing is released mid-stream");
     let mut detached = [0xEEu8; 64];
     assert!(matches!(
         dec.do_final_out_detached(&tag, &mut detached),
@@ -456,7 +456,7 @@ fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
     inline.extend_from_slice(&tag);
     let mut dec = Dec::do_decrypt_init(&toy_key(), &nonce).unwrap();
     dec.do_update_aad(b"aad").unwrap();
-    assert_eq!(dec.do_update_out(&inline, &mut nothing).unwrap(), 0);
+    assert_eq!(dec.do_decrypt_out(&inline, &mut nothing).unwrap(), 0);
     assert!(matches!(dec.do_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
 }
 
@@ -505,14 +505,14 @@ fn test_large_payload_symmetric_cipher() {
     type Dec = CcmDecryptor<Toy, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, LARGE_FINAL_LEN>;
 
     let (mut enc, stream_nonce) = Enc::do_encrypt_init(&key).unwrap();
-    assert_eq!(enc.update_out_len(LARGE_LEN), 0, "CCM releases nothing mid-stream");
-    assert_eq!(enc.do_update_out(&plaintext, &mut []).unwrap(), 0);
+    assert_eq!(enc.do_encrypt_out_len(LARGE_LEN), 0, "CCM releases nothing mid-stream");
+    assert_eq!(enc.do_encrypt_out(&plaintext, &mut []).unwrap(), 0);
     let (sealed, sealed_len) = enc.do_final().unwrap();
     assert_eq!(sealed_len, LARGE_LEN + TAG_LEN, "ciphertext || tag");
     assert_ne!(&sealed[..LARGE_LEN], &plaintext[..], "must actually encrypt");
 
     let mut dec = Dec::do_decrypt_init(&key, &stream_nonce).unwrap();
-    assert_eq!(dec.do_update_out(&sealed[..sealed_len], &mut []).unwrap(), 0);
+    assert_eq!(dec.do_decrypt_out(&sealed[..sealed_len], &mut []).unwrap(), 0);
     let (opened, opened_len) = dec.do_final().unwrap();
     assert_eq!(opened_len, LARGE_LEN);
     assert_eq!(&opened[..opened_len], &plaintext[..], "streaming round trip");

@@ -131,7 +131,7 @@ fn check_vector<
             .expect("streaming init");
         let mut streamed = plaintext.clone();
         for piece in streamed.chunks_mut(chunk) {
-            ccm.do_encrypt_update(piece).expect("update");
+            ccm.do_encrypt(piece).expect("update");
         }
         let streamed_tag = ccm.do_encrypt_final().expect("final");
         assert_eq!(streamed, want_ct, "{name}: ciphertext, streamed in {chunk}-byte chunks");
@@ -426,8 +426,8 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
     enc.do_update_aad(&aad[5..]).expect("aad 2");
     let mut nothing = [0u8; 0];
     for piece in plaintext.chunks(7) {
-        assert_eq!(enc.update_out_len(piece.len()), 0, "CCM releases nothing mid-stream");
-        assert_eq!(enc.do_update_out(piece, &mut nothing).expect("update"), 0);
+        assert_eq!(enc.do_encrypt_out_len(piece.len()), 0, "CCM releases nothing mid-stream");
+        assert_eq!(enc.do_encrypt_out(piece, &mut nothing).expect("update"), 0);
     }
     let mut flushed = [0u8; 256];
     let (len, tag) = enc.do_final_out_detached(&mut flushed).expect("final");
@@ -438,7 +438,7 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
     dec.do_update_aad(&aad).expect("aad");
     for piece in want_ct.chunks(5) {
-        assert_eq!(dec.do_update_out(piece, &mut nothing).expect("update"), 0);
+        assert_eq!(dec.do_decrypt_out(piece, &mut nothing).expect("update"), 0);
     }
     let mut out = [0u8; 256];
     let n = dec
@@ -451,13 +451,13 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
     let mut rng = FixedSeedRNG::<12>::new(nonce_seed);
     let (mut enc, nonce) = Enc::do_encrypt_init_rng(&k, &mut rng).expect("init");
     enc.do_update_aad(&aad).expect("aad");
-    enc.do_update_out(&plaintext, &mut nothing).expect("update");
+    enc.do_encrypt_out(&plaintext, &mut nothing).expect("update");
     let (inline, inline_len) = enc.do_final().expect("final");
     assert_eq!(&inline[..inline_len], &c[..], "C.3 `C` via the inline do_final");
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
     dec.do_update_aad(&aad).expect("aad");
     for piece in c.chunks(5) {
-        assert_eq!(dec.do_update_out(piece, &mut nothing).expect("update"), 0);
+        assert_eq!(dec.do_decrypt_out(piece, &mut nothing).expect("update"), 0);
     }
     let (out, n) = dec.do_final().expect("tag check");
     assert_eq!(&out[..n], &plaintext[..], "C.3 plaintext via the inline do_final");
@@ -475,15 +475,15 @@ fn the_buffering_pair_refuses_a_message_past_its_buffer() {
 
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
     assert!(matches!(
-        enc.do_update_out(&[0u8; 33], &mut nothing),
+        enc.do_encrypt_out(&[0u8; 33], &mut nothing),
         Err(SymmetricCipherError::GenericError(_))
     ));
 
     // In two calls that together overflow, the first must succeed and the second be refused.
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
-    assert_eq!(enc.do_update_out(&[0u8; 20], &mut nothing).expect("fits"), 0);
+    assert_eq!(enc.do_encrypt_out(&[0u8; 20], &mut nothing).expect("fits"), 0);
     assert!(matches!(
-        enc.do_update_out(&[0u8; 13], &mut nothing),
+        enc.do_encrypt_out(&[0u8; 13], &mut nothing),
         Err(SymmetricCipherError::GenericError(_))
     ));
 
@@ -493,7 +493,7 @@ fn the_buffering_pair_refuses_a_message_past_its_buffer() {
     // The encryptor's bound is `FINAL_LEN - TAG_LEN`, not `FINAL_LEN`, and its message must say
     // so: 33 bytes is refused although it is well inside the 48-byte `FINAL_LEN`.
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
-    match enc.do_update_out(&[0u8; 33], &mut nothing) {
+    match enc.do_encrypt_out(&[0u8; 33], &mut nothing) {
         Err(SymmetricCipherError::GenericError(msg)) => assert!(
             msg.contains("FINAL_LEN - TAG_LEN"),
             "the encryptor's refusal must name its real bound, got: {msg}"
@@ -517,9 +517,9 @@ fn an_empty_update_does_not_close_the_aad_phase() {
     let message = b"payload";
 
     let (mut enc, nonce) = Enc::do_encrypt_init(&k).expect("init");
-    enc.do_update_out(&[], &mut nothing).expect("an empty update is a no-op");
+    enc.do_encrypt_out(&[], &mut nothing).expect("an empty update is a no-op");
     enc.do_update_aad(aad).expect("the AAD phase is still open after an empty update");
-    enc.do_update_out(message, &mut nothing).expect("buffered");
+    enc.do_encrypt_out(message, &mut nothing).expect("buffered");
     assert!(
         matches!(enc.do_update_aad(aad), Err(SymmetricCipherError::StateError(_))),
         "a non-empty update still closes the AAD phase"
@@ -536,9 +536,9 @@ fn an_empty_update_does_not_close_the_aad_phase() {
     assert_eq!(&sealed[..sealed_len], &expected[..n]);
 
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
-    dec.do_update_out(&[], &mut nothing).expect("an empty update is a no-op");
+    dec.do_decrypt_out(&[], &mut nothing).expect("an empty update is a no-op");
     dec.do_update_aad(aad).expect("the AAD phase is still open after an empty update");
-    dec.do_update_out(&sealed[..sealed_len], &mut nothing).expect("buffered");
+    dec.do_decrypt_out(&sealed[..sealed_len], &mut nothing).expect("buffered");
     assert!(
         matches!(dec.do_update_aad(aad), Err(SymmetricCipherError::StateError(_))),
         "a non-empty update still closes the AAD phase"
@@ -558,12 +558,15 @@ fn the_buffering_pair_accepts_a_message_that_exactly_fills_its_buffer() {
     let mut nothing = [0u8; 0];
 
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
-    assert_eq!(enc.do_update_out(&[0u8; 32], &mut nothing).expect("exactly fills the capacity"), 0);
+    assert_eq!(
+        enc.do_encrypt_out(&[0u8; 32], &mut nothing).expect("exactly fills the capacity"),
+        0
+    );
 
     let (mut enc, _) = Enc::do_encrypt_init(&k).expect("init");
-    assert_eq!(enc.do_update_out(&[0u8; 20], &mut nothing).expect("fits"), 0);
+    assert_eq!(enc.do_encrypt_out(&[0u8; 20], &mut nothing).expect("fits"), 0);
     assert_eq!(
-        enc.do_update_out(&[0u8; 12], &mut nothing).expect("exactly fills the remaining space"),
+        enc.do_encrypt_out(&[0u8; 12], &mut nothing).expect("exactly fills the remaining space"),
         0
     );
 
@@ -585,12 +588,12 @@ fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
     let message = [0x5Au8; 32];
 
     let (mut enc, nonce) = Enc::do_encrypt_init(&k).expect("init");
-    enc.do_update_out(&message, &mut nothing).expect("fills the capacity");
+    enc.do_encrypt_out(&message, &mut nothing).expect("fills the capacity");
     let (inline, inline_len) = enc.do_final().expect("final");
     assert_eq!(inline_len, 48, "32 bytes of ciphertext and the 16-byte tag");
 
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
-    dec.do_update_out(&inline[..inline_len], &mut nothing)
+    dec.do_decrypt_out(&inline[..inline_len], &mut nothing)
         .expect("all of FINAL_LEN may be buffered");
     let (out, n) = dec.do_final().expect("tag check");
     assert_eq!(&out[..n], &message[..]);
@@ -598,13 +601,13 @@ fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
     // One byte past FINAL_LEN is refused even though the tag might be inline.
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
     assert!(matches!(
-        dec.do_update_out(&[0u8; 49], &mut nothing),
+        dec.do_decrypt_out(&[0u8; 49], &mut nothing),
         Err(SymmetricCipherError::GenericError(_))
     ));
 
     // Detached, the 48 buffered bytes would all be ciphertext: more than the capacity.
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
-    dec.do_update_out(&inline[..inline_len], &mut nothing).expect("buffered");
+    dec.do_decrypt_out(&inline[..inline_len], &mut nothing).expect("buffered");
     let mut out = [0u8; 48];
     assert!(matches!(
         dec.do_final_out_detached(&[0u8; 16], &mut out),
@@ -622,7 +625,7 @@ fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
     )
     .expect("one-shot");
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
-    dec.do_update_out(&detached, &mut nothing).expect("buffered");
+    dec.do_decrypt_out(&detached, &mut nothing).expect("buffered");
     let n = dec.do_final_out_detached(&tag, &mut out).expect("tag check");
     assert_eq!(&out[..n], &message[..]);
 }
@@ -684,8 +687,8 @@ fn resuming_a_part_way_open_block_agrees_with_a_one_shot() {
         let mut ccm = Enc::new(&k, &nonce, aad, plaintext.len()).expect("streaming init");
         let mut streamed = plaintext.clone();
         let (head, rest) = streamed.split_at_mut(first);
-        ccm.do_encrypt_update(head).expect("small first update");
-        ccm.do_encrypt_update(rest).expect("large second update");
+        ccm.do_encrypt(head).expect("small first update");
+        ccm.do_encrypt(rest).expect("large second update");
         let tag = ccm.do_encrypt_final().expect("final");
         assert_eq!(streamed, reference, "ciphertext, resuming a {first}-byte-open block");
         assert_eq!(tag, reference_tag, "tag, resuming a {first}-byte-open block");
@@ -730,7 +733,7 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
             "a {len}-byte C cannot carry a 16-byte tag (decrypt_out_with_aad)"
         );
         let mut dec = StreamDec::do_decrypt_init(&k, &nonce).expect("init");
-        dec.do_update_out(&short, &mut nothing).expect("buffered");
+        dec.do_decrypt_out(&short, &mut nothing).expect("buffered");
         assert!(
             matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)),
             "a {len}-byte C cannot carry a 16-byte tag (do_final)"
@@ -813,7 +816,7 @@ fn each_direction_has_its_own_methods() {
 
     let mut enc = Enc::new(&k, &nonce, b"aad", 4).expect("encrypt init");
     let mut data = [1u8, 2, 3, 4];
-    enc.do_encrypt_update(&mut data).expect("encrypt update");
+    enc.do_encrypt(&mut data).expect("encrypt update");
     let tag = enc.do_encrypt_final().expect("encrypt final");
 
     let mut dec = Dec::new(&k, &nonce, b"aad", 4).expect("decrypt init");
@@ -891,11 +894,11 @@ fn a_short_or_long_payload_is_refused() {
     let mut ccm = Ccm::<AES128Internal, Encrypting, 16, 16, 7, 4>::new(&k, &nonce, &[], 8).unwrap();
     let mut too_much = [0u8; 9];
     assert!(
-        matches!(ccm.do_encrypt_update(&mut too_much), Err(SymmetricCipherError::StateError(_))),
+        matches!(ccm.do_encrypt(&mut too_much), Err(SymmetricCipherError::StateError(_))),
         "9 bytes against a declared 8"
     );
     let mut some = [0u8; 4];
-    ccm.do_encrypt_update(&mut some).expect("4 of the 8 declared bytes");
+    ccm.do_encrypt(&mut some).expect("4 of the 8 declared bytes");
     assert!(
         matches!(ccm.do_encrypt_final(), Err(SymmetricCipherError::StateError(_))),
         "finalizing 4 bytes short"

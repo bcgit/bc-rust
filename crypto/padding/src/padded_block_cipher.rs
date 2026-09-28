@@ -23,7 +23,7 @@ const GROUP: usize = 8;
 
 /// Encrypts arbitrary-length data with a block cipher `E`, padding the final block with `P`.
 ///
-/// Stream with [`SymmetricCipherEncryptor::do_update_out`] then
+/// Stream with [`SymmetricCipherEncryptor::do_encrypt_out`] then
 /// [`SymmetricCipherEncryptor::do_final`], or use the one-shot
 /// [`SymmetricCipherEncryptor::encrypt_out`]. Output is
 /// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
@@ -81,18 +81,18 @@ where
     }
 
     /// Whole blocks among the buffered bytes plus `input_len`.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         (self.buf_len + input_len) / BLOCK_LEN * BLOCK_LEN
     }
 
     /// Encrypts all whole blocks available (buffered + `plaintext`) into `ciphertext`, buffering the
     /// remainder.
-    fn do_update_out(
+    fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        let out_len = self.update_out_len(plaintext.len());
+        let out_len = self.do_encrypt_out_len(plaintext.len());
         if ciphertext.len() < out_len {
             return Err(SymmetricCipherError::OutputBufferTooSmall(out_len));
         }
@@ -171,7 +171,7 @@ where
 
 /// Decrypts data produced by a [`PaddedBlockCipherEncryptor`] with the matching cipher and padding.
 ///
-/// Only the last block carries padding, so [`do_update_out`](Self::do_update_out) always withholds
+/// Only the last block carries padding, so [`do_update_out`](Self::do_decrypt_out) always withholds
 /// the most recent complete block and [`do_final`](Self::do_final) unpads it. One-shot:
 /// [`decrypt_out`](Self::decrypt_out).
 pub struct PaddedBlockCipherDecryptor<
@@ -226,18 +226,18 @@ where
     }
 
     /// All complete blocks but the most recent one are released.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         let complete = self.held.is_some() as usize + (self.buf_len + input_len) / BLOCK_LEN;
         complete.saturating_sub(1) * BLOCK_LEN
     }
 
     /// Decrypts all complete blocks except the most recent into `plaintext`, buffering the remainder.
-    fn do_update_out(
+    fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        let out_len = self.update_out_len(ciphertext.len());
+        let out_len = self.do_decrypt_out_len(ciphertext.len());
         if plaintext.len() < out_len {
             return Err(SymmetricCipherError::OutputBufferTooSmall(out_len));
         }

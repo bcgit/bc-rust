@@ -88,7 +88,7 @@ fn the_two_apis_agree_byte_for_byte() {
                 )
                 .unwrap();
             let mut out = vec![0u8; plaintext.len()];
-            let n = dec_as_sym.do_update_out(&in_place, &mut out).unwrap();
+            let n = dec_as_sym.do_decrypt_out(&in_place, &mut out).unwrap();
             let (last, last_len) = dec_as_sym.do_final().unwrap();
             assert_eq!(n, plaintext.len(), "{name}, len {len}: everything is released immediately");
             assert_eq!(last, [0u8; 0], "{name}: a stream cipher has no final output");
@@ -117,7 +117,7 @@ fn the_input_buffer_is_not_modified() {
         )
         .unwrap();
     let mut ciphertext = vec![0u8; plaintext.len()];
-    enc.do_update_out(&plaintext, &mut ciphertext).unwrap();
+    enc.do_encrypt_out(&plaintext, &mut ciphertext).unwrap();
 
     assert_eq!(plaintext, original, "the plaintext must be left alone");
     assert_ne!(ciphertext, original, "...and the ciphertext must actually be encrypted");
@@ -144,7 +144,7 @@ fn the_length_predictions_are_exact() {
         let (enc, _) =
             <ToyCtr<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, 12, 0>>::do_encrypt_init(&key)
                 .unwrap();
-        assert_eq!(enc.update_out_len(len), len, "update_out_len is the identity");
+        assert_eq!(enc.do_encrypt_out_len(len), len, "update_out_len is the identity");
     }
 }
 
@@ -164,7 +164,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
         .unwrap();
 
     let mut too_small = vec![0u8; plaintext.len() - 1];
-    match enc.do_update_out(&plaintext, &mut too_small) {
+    match enc.do_encrypt_out(&plaintext, &mut too_small) {
         Err(SymmetricCipherError::OutputBufferTooSmall(needed)) => {
             assert_eq!(needed, plaintext.len(), "the error carries the required length");
         }
@@ -174,7 +174,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
     // Nothing was consumed, so the keystream has not advanced: the retry must give exactly what a
     // fresh encryptor under the same init data would.
     let mut big_enough = vec![0u8; plaintext.len()];
-    enc.do_update_out(&plaintext, &mut big_enough).unwrap();
+    enc.do_encrypt_out(&plaintext, &mut big_enough).unwrap();
 
     let (mut fresh, _) =
         <ToyCfb<Encrypting> as StreamCipherEncryptor<TOY_LEN, TOY_LEN>>::do_encrypt_init_rng(
@@ -213,7 +213,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
         .unwrap();
 
     let mut too_small = vec![0u8; ciphertext.len() - 1];
-    match dec.do_update_out(&ciphertext, &mut too_small) {
+    match dec.do_decrypt_out(&ciphertext, &mut too_small) {
         Err(SymmetricCipherError::OutputBufferTooSmall(needed)) => {
             assert_eq!(needed, ciphertext.len(), "the error carries the required length");
         }
@@ -222,7 +222,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
 
     // Nothing was consumed, so the retry recovers the plaintext exactly.
     let mut big_enough = vec![0u8; ciphertext.len()];
-    let n = dec.do_update_out(&ciphertext, &mut big_enough).unwrap();
+    let n = dec.do_decrypt_out(&ciphertext, &mut big_enough).unwrap();
     assert_eq!(n, ciphertext.len());
     assert_eq!(big_enough, plaintext, "the refused call must not have advanced the keystream");
 
@@ -234,7 +234,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
             &key, &init,
         )
         .unwrap();
-    let n = dec.do_update_out(&ciphertext, &mut oversized).expect("an oversized buffer is fine");
+    let n = dec.do_decrypt_out(&ciphertext, &mut oversized).expect("an oversized buffer is fine");
     assert_eq!(n, ciphertext.len());
     assert_eq!(&oversized[..n], &plaintext[..], "the data lands in the leading bytes");
     assert!(oversized[n..].iter().all(|&b| b == 0xAA), "the rest is left alone");

@@ -81,8 +81,8 @@ impl TestFrameworkSymmetricCipher {
                     other => panic!("len {len} is not aligned and must be refused, got {other:?}"),
                 }
                 let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
-                let mut buf = vec![0u8; enc.update_out_len(len)];
-                enc.do_update_out(msg, &mut buf).unwrap();
+                let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
+                enc.do_encrypt_out(msg, &mut buf).unwrap();
                 assert!(
                     matches!(enc.do_final(), Err(SymmetricCipherError::PaddingError(_))),
                     "len {len}: streaming do_final must refuse an unaligned message"
@@ -117,9 +117,9 @@ impl TestFrameworkSymmetricCipher {
             let (mut enc, init_data) = E::do_encrypt_init(&key).unwrap();
             let mut ct = Vec::new();
             for piece in msg.chunks(chunk) {
-                let expect = enc.update_out_len(piece.len());
+                let expect = enc.do_encrypt_out_len(piece.len());
                 let mut buf = vec![0u8; expect];
-                let n = enc.do_update_out(piece, &mut buf).unwrap();
+                let n = enc.do_encrypt_out(piece, &mut buf).unwrap();
                 assert_eq!(n, expect, "update_out_len must be exact (encrypt, chunk {chunk})");
                 ct.extend_from_slice(&buf[..n]);
             }
@@ -147,9 +147,9 @@ impl TestFrameworkSymmetricCipher {
                 let mut dec = D::do_decrypt_init(&key, &init_data).unwrap();
                 let mut rec = Vec::new();
                 for piece in ct.chunks(chunk) {
-                    let expect = dec.update_out_len(piece.len());
+                    let expect = dec.do_decrypt_out_len(piece.len());
                     let mut buf = vec![0u8; expect];
-                    let n = dec.do_update_out(piece, &mut buf).unwrap();
+                    let n = dec.do_decrypt_out(piece, &mut buf).unwrap();
                     assert_eq!(n, expect, "update_out_len must be exact (decrypt, chunk {chunk})");
                     rec.extend_from_slice(&buf[..n]);
                 }
@@ -175,8 +175,8 @@ impl TestFrameworkSymmetricCipher {
                 E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed))
                     .unwrap();
             assert_eq!(init_data, seed, "a fixed RNG must yield its stream as the init data");
-            let mut streamed = vec![0u8; enc.update_out_len(len)];
-            let n = enc.do_update_out(msg, &mut streamed).unwrap();
+            let mut streamed = vec![0u8; enc.do_encrypt_out_len(len)];
+            let n = enc.do_encrypt_out(msg, &mut streamed).unwrap();
             streamed.truncate(n);
             let (last, last_len) = enc.do_final().unwrap();
             streamed.extend_from_slice(&last[..last_len]);
@@ -239,10 +239,10 @@ impl TestFrameworkSymmetricCipher {
         let n = D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut roomy).unwrap();
         assert_eq!(&roomy[..n], msg, "decrypt_out into a roomy buffer");
         let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
-        let need = enc.update_out_len(len);
+        let need = enc.do_encrypt_out_len(len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
-            match enc.do_update_out(msg, &mut short) {
+            match enc.do_encrypt_out(msg, &mut short) {
                 Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("do_update_out into a short buffer: {other:?}"),
             }
@@ -656,8 +656,8 @@ impl TestFrameworkAEADCipher {
                 E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned)).unwrap();
             assert_eq!(nonce5, pinned_nonce, "the same RNG stream must give the same nonce");
             enc5.do_update_aad(aad).unwrap();
-            let mut inline5 = vec![0u8; enc5.update_out_len(len)];
-            let written5 = enc5.do_update_out(msg, &mut inline5).unwrap();
+            let mut inline5 = vec![0u8; enc5.do_encrypt_out_len(len)];
+            let written5 = enc5.do_encrypt_out(msg, &mut inline5).unwrap();
             inline5.truncate(written5);
             let (last5, last5_len) = enc5.do_final().unwrap();
             inline5.extend_from_slice(&last5[..last5_len]);
@@ -672,8 +672,8 @@ impl TestFrameworkAEADCipher {
             );
             let mut dec5 = D::do_decrypt_init(&key, &nonce5).unwrap();
             dec5.do_update_aad(aad).unwrap();
-            let mut pt5 = vec![0u8; dec5.update_out_len(inline5.len())];
-            let got5 = dec5.do_update_out(&inline5, &mut pt5).unwrap();
+            let mut pt5 = vec![0u8; dec5.do_decrypt_out_len(inline5.len())];
+            let got5 = dec5.do_decrypt_out(&inline5, &mut pt5).unwrap();
             pt5.truncate(got5);
             let (last, data_len) = dec5.do_final().unwrap();
             pt5.extend_from_slice(&last[..data_len]);
@@ -685,8 +685,8 @@ impl TestFrameworkAEADCipher {
                 let mut dec6 = D::do_decrypt_init(&key, &nonce5).unwrap();
                 dec6.do_update_aad(aad).unwrap();
                 let short = &inline5[..TAG_LEN - 1];
-                let mut scratch = vec![0u8; dec6.update_out_len(short.len())];
-                dec6.do_update_out(short, &mut scratch).unwrap();
+                let mut scratch = vec![0u8; dec6.do_decrypt_out_len(short.len())];
+                dec6.do_decrypt_out(short, &mut scratch).unwrap();
                 assert!(
                     matches!(dec6.do_final(), Err(SymmetricCipherError::DecryptionFailed)),
                     "a stream shorter than the tag must be DecryptionFailed, len {len}"
@@ -788,9 +788,9 @@ impl TestFrameworkAEADCipher {
             }
             let mut ct = Vec::new();
             for piece in msg.chunks(chunk) {
-                let expect = enc.update_out_len(piece.len());
+                let expect = enc.do_encrypt_out_len(piece.len());
                 let mut buf = vec![0u8; expect];
-                let n = enc.do_update_out(piece, &mut buf).unwrap();
+                let n = enc.do_encrypt_out(piece, &mut buf).unwrap();
                 assert_eq!(n, expect, "chunk {chunk}: update_out_len must be exact (encrypt)");
                 ct.extend_from_slice(&buf[..n]);
             }
@@ -811,9 +811,9 @@ impl TestFrameworkAEADCipher {
             }
             let mut pt = Vec::new();
             for piece in ct.chunks(chunk) {
-                let expect = dec.update_out_len(piece.len());
+                let expect = dec.do_decrypt_out_len(piece.len());
                 let mut buf = vec![0u8; expect];
-                let n = dec.do_update_out(piece, &mut buf).unwrap();
+                let n = dec.do_decrypt_out(piece, &mut buf).unwrap();
                 assert_eq!(n, expect, "chunk {chunk}: update_out_len must be exact (decrypt)");
                 pt.extend_from_slice(&buf[..n]);
             }
@@ -827,8 +827,8 @@ impl TestFrameworkAEADCipher {
         let (mut enc, nonce) =
             E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned)).unwrap();
         enc.do_update_aad(aad).unwrap();
-        let mut ct = vec![0u8; enc.update_out_len(msg.len())];
-        let n = enc.do_update_out(msg, &mut ct).unwrap();
+        let mut ct = vec![0u8; enc.do_encrypt_out_len(msg.len())];
+        let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
         ct.truncate(n);
         let (last, last_len, tag) = enc.do_final_detached().unwrap();
         ct.extend_from_slice(&last[..last_len]);
@@ -836,8 +836,8 @@ impl TestFrameworkAEADCipher {
         assert_eq!(tag, tag_ref, "do_final_detached must give the one-shot tag");
         let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
         dec.do_update_aad(aad).unwrap();
-        let mut pt = vec![0u8; dec.update_out_len(ct.len())];
-        let n = dec.do_update_out(&ct, &mut pt).unwrap();
+        let mut pt = vec![0u8; dec.do_decrypt_out_len(ct.len())];
+        let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();
         pt.truncate(n);
         let (last, data_len) = dec.do_final_detached(&tag).unwrap();
         pt.extend_from_slice(&last[..data_len]);
@@ -846,8 +846,8 @@ impl TestFrameworkAEADCipher {
         wrong_tag[0] ^= 0xFF;
         let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
         dec.do_update_aad(aad).unwrap();
-        let mut pt = vec![0u8; dec.update_out_len(ct.len())];
-        dec.do_update_out(&ct, &mut pt).unwrap();
+        let mut pt = vec![0u8; dec.do_decrypt_out_len(ct.len())];
+        dec.do_decrypt_out(&ct, &mut pt).unwrap();
         assert!(
             matches!(
                 dec.do_final_detached(&wrong_tag),
@@ -908,8 +908,8 @@ impl TestFrameworkAEADCipher {
         // the AAD phase is over once data has been fed in -- on both sides, and on the decrypting
         // side even when all of it is still being held back as a possible tag
         let (mut enc, nonce) = E::do_encrypt_init(&key).unwrap();
-        let mut ct = vec![0u8; enc.update_out_len(msg.len())];
-        enc.do_update_out(msg, &mut ct).unwrap();
+        let mut ct = vec![0u8; enc.do_encrypt_out_len(msg.len())];
+        enc.do_encrypt_out(msg, &mut ct).unwrap();
         match enc.do_update_aad(aad) {
             Err(SymmetricCipherError::StateError(_)) => { /* good */ }
             other => panic!("AAD after data must be refused, got {other:?}"),
@@ -922,16 +922,16 @@ impl TestFrameworkAEADCipher {
         ct.extend_from_slice(&final_buf[..final_len]);
 
         let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
-        let mut pt = vec![0u8; dec.update_out_len(1)];
-        let mut got = dec.do_update_out(&ct[..1], &mut pt).unwrap();
+        let mut pt = vec![0u8; dec.do_decrypt_out_len(1)];
+        let mut got = dec.do_decrypt_out(&ct[..1], &mut pt).unwrap();
         pt.truncate(got);
         match dec.do_update_aad(aad) {
             Err(SymmetricCipherError::StateError(_)) => { /* good */ }
             other => panic!("AAD after data must be refused, got {other:?}"),
         };
         dec.do_update_aad(b"").unwrap();
-        let mut rest = vec![0u8; dec.update_out_len(ct.len() - 1)];
-        got = dec.do_update_out(&ct[1..], &mut rest).unwrap();
+        let mut rest = vec![0u8; dec.do_decrypt_out_len(ct.len() - 1)];
+        got = dec.do_decrypt_out(&ct[1..], &mut rest).unwrap();
         pt.extend_from_slice(&rest[..got]);
         let mut final_buf = [0u8; FINAL_LEN];
         let final_len = dec.do_final_out_detached(&tag, &mut final_buf).unwrap();
@@ -1134,10 +1134,10 @@ impl TestFrameworkAEADCipher {
             ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
                 Self::do_encrypt_init(key)
             }
-            fn update_out_len(&self, input_len: usize) -> usize {
+            fn do_encrypt_out_len(&self, input_len: usize) -> usize {
                 self.0.update_out_len(input_len)
             }
-            fn do_update_out(
+            fn do_encrypt_out(
                 &mut self,
                 plaintext: &[u8],
                 ciphertext: &mut [u8],
@@ -1176,10 +1176,10 @@ impl TestFrameworkAEADCipher {
             ) -> Result<Self, SymmetricCipherError> {
                 Ok(Self(Buffered::new(FINAL_LEN)))
             }
-            fn update_out_len(&self, input_len: usize) -> usize {
+            fn do_decrypt_out_len(&self, input_len: usize) -> usize {
                 self.0.update_out_len(input_len)
             }
-            fn do_update_out(
+            fn do_decrypt_out(
                 &mut self,
                 ciphertext: &[u8],
                 plaintext: &mut [u8],
@@ -1237,9 +1237,9 @@ impl TestFrameworkAEADCipher {
                 let (mut enc, _) = Enc::do_encrypt_init(&key).unwrap();
                 let mut chunked = Vec::new();
                 for piece in msg.chunks(chunk) {
-                    let expect = enc.update_out_len(piece.len());
+                    let expect = enc.do_encrypt_out_len(piece.len());
                     let mut buf = vec![0u8; expect];
-                    let n = enc.do_update_out(piece, &mut buf).unwrap();
+                    let n = enc.do_encrypt_out(piece, &mut buf).unwrap();
                     assert_eq!(n, expect, "len {len} chunk {chunk}: update_out_len must be exact");
                     chunked.extend_from_slice(&buf[..n]);
                 }
@@ -1257,9 +1257,9 @@ impl TestFrameworkAEADCipher {
                 let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
                 let mut pt = Vec::new();
                 for piece in ct.chunks(chunk) {
-                    let expect = dec.update_out_len(piece.len());
+                    let expect = dec.do_decrypt_out_len(piece.len());
                     let mut buf = vec![0u8; expect];
-                    let n = dec.do_update_out(piece, &mut buf).unwrap();
+                    let n = dec.do_decrypt_out(piece, &mut buf).unwrap();
                     assert_eq!(n, expect, "len {len} chunk {chunk}: update_out_len must be exact");
                     pt.extend_from_slice(&buf[..n]);
                 }
@@ -1274,9 +1274,9 @@ impl TestFrameworkAEADCipher {
                 let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
                 let mut pt = Vec::new();
                 for piece in inline.chunks(chunk) {
-                    let expect = dec.update_out_len(piece.len());
+                    let expect = dec.do_decrypt_out_len(piece.len());
                     let mut buf = vec![0u8; expect];
-                    let n = dec.do_update_out(piece, &mut buf).unwrap();
+                    let n = dec.do_decrypt_out(piece, &mut buf).unwrap();
                     assert_eq!(n, expect, "len {len} chunk {chunk}: update_out_len must be exact");
                     pt.extend_from_slice(&buf[..n]);
                 }
@@ -1289,8 +1289,8 @@ impl TestFrameworkAEADCipher {
             // `do_final` do two things at once: flush the held-back bytes and then append the tag
             // after them.
             let (mut enc, nonce) = Enc::do_encrypt_init(&key).unwrap();
-            let mut inline = vec![0u8; enc.update_out_len(len)];
-            let written = enc.do_update_out(msg, &mut inline).unwrap();
+            let mut inline = vec![0u8; enc.do_encrypt_out_len(len)];
+            let written = enc.do_encrypt_out(msg, &mut inline).unwrap();
             assert!(written < len || len == 0, "len {len}: the toy must be holding something back");
             let (last, last_len) = enc.do_final().unwrap();
             inline.extend_from_slice(&last[..last_len]);
@@ -1345,8 +1345,8 @@ impl TestFrameworkAEADCipher {
             if len > HOLD_BACK {
                 let (mut enc, _) = Enc::do_encrypt_init(&key).unwrap();
                 let first = &msg[..1];
-                let mut buf = vec![0u8; enc.update_out_len(first.len())];
-                let n = enc.do_update_out(first, &mut buf).unwrap();
+                let mut buf = vec![0u8; enc.do_encrypt_out_len(first.len())];
+                let n = enc.do_encrypt_out(first, &mut buf).unwrap();
                 assert_eq!(n, 0, "len {len}: the first byte alone must be held back, not released");
             }
         }

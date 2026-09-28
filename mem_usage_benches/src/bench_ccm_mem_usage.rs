@@ -203,7 +203,7 @@ fn bench_streaming_encrypt() {
     let plaintext = core::hint::black_box(&plaintext);
     let (mut enc, _nonce) = Aes128CcmEncryptor::do_encrypt_init(&k).unwrap();
     for chunk in plaintext.chunks(1024) {
-        enc.do_update_out(chunk, &mut []).unwrap();
+        enc.do_encrypt_out(chunk, &mut []).unwrap();
     }
     let (sealed, n) = enc.do_final().unwrap();
     print!("{:x?}", &sealed[n - TAG_LEN..n]);
@@ -222,7 +222,7 @@ fn bench_streaming_encrypt_detached() {
     let plaintext = core::hint::black_box(&plaintext);
     let (mut enc, _nonce) = Aes128CcmEncryptor::do_encrypt_init(&k).unwrap();
     for chunk in plaintext.chunks(1024) {
-        enc.do_update_out(chunk, &mut []).unwrap();
+        enc.do_encrypt_out(chunk, &mut []).unwrap();
     }
     let mut ciphertext = [0u8; FINAL_LEN];
     let (_, tag) = enc.do_final_out_detached(&mut ciphertext).unwrap();
@@ -250,7 +250,7 @@ fn bench_streaming_decrypt() {
 
     let mut dec = Aes128CcmDecryptor::do_decrypt_init(&k, &nonce).unwrap();
     for chunk in sealed[..n].chunks(1024) {
-        dec.do_update_out(chunk, &mut []).unwrap();
+        dec.do_decrypt_out(chunk, &mut []).unwrap();
     }
     let (opened, m) = dec.do_final().unwrap();
     print!("{}", opened[..m].len());
@@ -284,7 +284,7 @@ fn bench_direct_streaming() {
     let data = core::hint::black_box(&mut data);
     let mut ccm = Aes128Ccm::<Encrypting>::new(&k, &nonce, &[], data.len()).unwrap();
     for chunk in data.chunks_mut(1024) {
-        ccm.do_encrypt_update(chunk).unwrap();
+        ccm.do_encrypt(chunk).unwrap();
     }
     let tag = ccm.do_encrypt_final().unwrap();
     print!("{:x?}", &tag);

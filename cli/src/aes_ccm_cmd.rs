@@ -324,7 +324,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 // and only call supplying it, so `take_owed` can never see too much and `owed`
                 // can never be left nonzero: neither of these can fail on the path that reaches
                 // them.
-                ccm.do_encrypt_update(&mut input).expect("declared length matches what was sent");
+                ccm.do_encrypt(&mut input).expect("declared length matches what was sent");
                 let tag = ccm.do_encrypt_final().expect("declared length was fully supplied");
                 helpers::write_bytes_or_hex(&input, output_hex);
                 helpers::write_bytes_or_hex(&tag, output_hex);
