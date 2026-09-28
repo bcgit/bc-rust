@@ -72,7 +72,7 @@
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
 //! arbitrary-length input and generate their own initialisation data.
 
-use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_padding::PaddedMode;
 

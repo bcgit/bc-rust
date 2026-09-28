@@ -10,8 +10,8 @@
 //!
 //! ```text
 //! pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
-//!     Cbc<AES_128, Encrypting, 16, 16>,   // what Encrypting resolves to
-//!     Cbc<AES_128, Decrypting, 16, 16>,   // what Decrypting resolves to
+//!     Cbc<AES128Internal, Encrypting, 16, 16>,   // what Encrypting resolves to
+//!     Cbc<AES128Internal, Decrypting, 16, 16>,   // what Decrypting resolves to
 //!     Pad, 16, 16, 16,
 //! >>::Mode;
 //! ```
@@ -22,8 +22,8 @@
 //! two adapters it selects between, so that every block cipher crate can write its aliases the
 //! same way.
 
-use crate::{PaddedDecryptor, PaddedEncryptor};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, Padding};
+use crate::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding};
 use bouncycastle_modes::{Decrypting, Encrypting};
 
 /// Projects a direction marker onto the padded adapter for that direction.
