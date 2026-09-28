@@ -125,7 +125,7 @@
 //! * **Intermediates are secret.** Sec 5.3: "the intermediate values in the execution of the GCM
 //!   functions shall be secret." `H`, the running GHASH accumulator, the pending partial block, the
 //!   tag mask `CIPH_K(J0)` and the CTR keystream all live in
-//!   [`Secret`](bouncycastle_utils::secret::Secret).
+//!   [`Secret`].
 //! * **The `2^39 - 256`-bit plaintext bound (Sec 5.2.1.1) is `Ctr`'s own counter-exhaustion error.**
 //!   GCTR runs from counter 2 (D6), leaving `2^32 - 2` blocks, i.e. exactly `2^39 - 256` bits, before
 //!   `Ctr` refuses with [`SymmetricCipherError::StateError`].

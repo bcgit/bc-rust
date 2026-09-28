@@ -26,7 +26,7 @@
 //!
 //! * `LSB_{b-s}(I_{j-1})` becomes `LSB_0(I_{j-1})`, the empty bit string, so the concatenation
 //!   leaves `Ij = C_{j-1}`. Sec 6.3's alternative description agrees: the previous input block
-//!   "circularly shift[s] s positions to the left, and then the ciphertext segment replaces the s
+//!   "circularly shift`[s]` s positions to the left, and then the ciphertext segment replaces the s
 //!   least significant bits of the result" -- shifting a whole block by its own width and replacing
 //!   every bit of it is just assignment.
 //! * `MSB_s(Oj)` becomes `MSB_b(Oj)`, which is `Oj`. No part of the output block is discarded, so
@@ -121,6 +121,68 @@
 //! pairs through [`ElectronicCodeBook::encrypt_2blocks`], which a bit-sliced engine computes for
 //! barely more than the cost of one block. Encryption cannot, and does not. Only the bytes that
 //! complete an open segment, and the bytes that open the final short one, go singly.
+//!
+//!
+//! # Usage Examples
+//!
+//! The direction is part of the type: [`Cfb<P, Encrypting, ..>`](Cfb) implements
+//! [`StreamCipherEncryptor`] and nothing else, and [`Cfb<P, Decrypting, ..>`](Cfb) implements
+//! [`StreamCipherDecryptor`] and nothing else.
+//!
+//! They take a `&mut [u8]` of any length; there is no padding layer and the ciphertext is exactly
+//! as long as the plaintext:
+//!
+//! ```
+//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
+//!
+//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
+//! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//!
+//! // Start with the plaintext.
+//! let plaintext = b"the quick brown fox!!";
+//! let mut data = *plaintext;
+//!
+//! let (_, iv) = Aes128Cfb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//!
+//! // `data` now contains the ciphertext
+//!
+//! Aes128Cfb::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+//! assert_eq!(data, *b"the quick brown fox!!");
+//! ```
+//!
+//! Streaming works at any byte boundary, and the chunking is not visible in the output:
+//!
+//! ```
+//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
+//!
+//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let mut data = [0x5Au8; 40];
+//!
+//! let (mut encryptor, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&key).expect("init");
+//!
+//! // Just to prove that this can handle arbitrary sizes, we'll feed in
+//! //  7 bytes, then 33: neither is a whole block.
+//! encryptor.do_encrypt(&mut data[..7]).expect("first chunk");
+//! encryptor.do_encrypt(&mut data[7..]).expect("the rest");
+//!
+//! // Decrypting in a different chunking must also agree.
+//! let mut decryptor = Aes128Cfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
+//! decryptor.do_decrypt(&mut data[..19]).expect("first chunk");
+//! decryptor.do_decrypt(&mut data[19..]).expect("the rest");
+//! assert_eq!(data, [0x5Au8; 40]);
+//! ```
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
@@ -146,15 +208,6 @@ use core::marker::PhantomData;
 /// runtime check.
 ///
 /// The initialization data is one block, so `INIT_DATA_LEN == BLOCK_LEN`.
-///
-/// # State
-///
-/// The permutation (which owns the key schedule, and is responsible for keeping it in a
-/// zeroize-on-drop wrapper), one block, and a byte count. The block is `Ij`, `Oj` and `I_{j+1}` in
-/// turn -- see the module docs, "One buffer, three roles" -- which is what lets a call end at any
-/// byte and the next one pick up where it left off. That is one `usize` more than `Cbc` carries;
-/// the module docs explain why the unused keystream it may hold between calls is not wrapped in a
-/// `Secret`.
 pub struct Cfb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -362,6 +415,8 @@ where
     /// there is no pair path here; the block-aligned middle goes one cipher call per block, and
     /// only the bytes that complete an open segment or open the final short one go singly. See the
     /// module docs. Never fails: CFB has no per-IV data limit.
+    ///
+    /// Infallible -- cannot produce an error.
     fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let len = data.len();
         let (head, blocks, tail) = self.split(data);

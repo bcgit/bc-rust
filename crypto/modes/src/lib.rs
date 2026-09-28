@@ -9,15 +9,15 @@
 //!
 //! This crate provides:
 //!
-//! | Mode | Type | Spec | Notes |
+//! | Mode | Mod | Spec | Notes |
 //! |---|---|---|---|
-//! | ECB | [`Ecb`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
-//! | CBC | [`Cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
-//! | CFB | [`Cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
-//! | CFB8 | [`Cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
-//! | CTR | [`Ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
-//! | CCM | [`Ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
-//! | GCM | [`Gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
+//! | ECB | [`ecb`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
+//! | CBC | [`cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
+//! | CFB | [`cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
+//! | CFB8 | [`cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
+//! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
+//! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
+//! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
 //!
 //! They divide three ways.
 //!
@@ -111,187 +111,8 @@
 //!
 //! ## Encrypting and decrypting
 //!
-//! The direction is part of the type: [`Cbc<P, Encrypting, ..>`](Cbc) implements
-//! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<P, Decrypting, ..>`](Cbc) implements
-//! [`BlockCipherDecryptor`] and nothing else. [`Cfb`] and [`Cfb8`] are the same, with
-//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] in place of the block traits. The IV is
-//! generated for you and returned; there is no API for supplying your own (see
-//! [Security Considerations](#security-considerations)).
+//! See each sub-module for usage docs on that mode.
 //!
-//! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-//!
-//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//!
-//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
-//! let plaintext: [u8; 48] = *b"The quick brown fox jumps over the lazy dog. OK!";
-//!
-//! // One shot, in place: encrypts under a freshly generated IV, which is returned.
-//! let mut data = plaintext;
-//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
-//! assert_ne!(data, plaintext);
-//!
-//! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
-//! assert_eq!(data, plaintext);
-//! ```
-//!
-//! Streaming, for data that arrives in pieces. A sequence of calls is equivalent to one call over
-//! the concatenation:
-//!
-//! ```
-//! use bouncycastle_aes::aes_internal::AES256Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-//!
-//! type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, 16>;
-//!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//!
-//! let (mut encryptor, iv) =
-//!     Aes256Cbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
-//! let mut first = [0xAAu8; 16];
-//! let mut rest = [0xBBu8; 32];
-//! encryptor.do_encrypt(&mut first).expect("block 1");
-//! encryptor.do_encrypt(&mut rest).expect("blocks 2-3");
-//!
-//! let mut decryptor = Aes256Cbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
-//! decryptor.do_decrypt(&mut first).unwrap();
-//! decryptor.do_decrypt(&mut rest).unwrap();
-//! assert_eq!(first, [0xAAu8; 16]);
-//! assert_eq!(rest, [0xBBu8; 32]);
-//! ```
-//!
-//! CFB and CFB8 have the same shape and the same IV convention, but they take a `&mut [u8]` of any
-//! length rather than a block-aligned array, so there is no padding layer and the ciphertext is
-//! exactly as long as the plaintext:
-//!
-//! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
-//!
-//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
-//! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! // 21 bytes: not a whole number of blocks, which a stream cipher does not care about.
-//! let plaintext = *b"the quick brown fox!!";
-//!
-//! let mut ciphertext = plaintext;
-//! let (_, iv) = Aes128Cfb::<Encrypting>::encrypt(&key, &mut ciphertext).expect("encryption");
-//! assert_eq!(ciphertext.len(), plaintext.len());
-//!
-//! let mut recovered = ciphertext;
-//! Aes128Cfb::<Decrypting>::decrypt(&key, &iv, &mut recovered).expect("decryption");
-//! assert_eq!(recovered, plaintext);
-//!
-//! // CFB8 is a *different mode*, not a variant: nothing at the type level stops you pairing it
-//! // with a CFB ciphertext, and it will not recover the plaintext.
-//! let mut as_if_cfb8 = ciphertext;
-//! Aes128Cfb8::<Decrypting>::decrypt(&key, &iv, &mut as_if_cfb8).expect("decryption");
-//! assert_ne!(as_if_cfb8, plaintext);
-//! ```
-//!
-//! Streaming works at any byte boundary, and the chunking is not visible in the output:
-//!
-//! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
-//!
-//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! let plaintext = [0x5Au8; 40];
-//!
-//! let (mut encryptor, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&key).expect("init");
-//! let mut chunked = plaintext;
-//! // 7 bytes, then 33: neither is a whole block, and the second call finishes the segment the
-//! // first one left open.
-//! encryptor.do_encrypt(&mut chunked[..7]).expect("first chunk");
-//! encryptor.do_encrypt(&mut chunked[7..]).expect("the rest");
-//!
-//! // A single call under the same key and IV gives the identical ciphertext.
-//! let (mut encryptor, _) = Aes128Cfb::<Encrypting>::do_encrypt_init(&key).expect("init");
-//! let mut decryptor = Aes128Cfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
-//! let mut recovered = chunked;
-//! // Decrypting in yet another chunking must also agree.
-//! decryptor.do_decrypt(&mut recovered[..19]).expect("first chunk");
-//! decryptor.do_decrypt(&mut recovered[19..]).expect("the rest");
-//! assert_eq!(recovered, plaintext);
-//! let _ = &mut encryptor;
-//! ```
-//!
-//! ECB has the same shape with no IV: `encrypt` returns an empty array and `decrypt` takes one.
-//! The codebook property that makes it unsuitable for data is visible in the ciphertext:
-//!
-//! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
-//!
-//! type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! let plaintext = [0x5Au8; 32]; // two equal blocks
-//!
-//! let mut data = plaintext;
-//! let (_, no_iv): (usize, [u8; 0]) = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
-//! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
-//!
-//! Aes128Ecb::<Decrypting>::decrypt(&key, &no_iv, &mut data).expect("decryption");
-//! assert_eq!(data, plaintext);
-//! ```
-//!
-//! CCM is shaped differently from all of the above, because it is authenticated. The
-//! nonce is supplied rather than generated, and there is an extra input (the AAD, authenticated but
-//! not encrypted) and an extra output (the tag). Decryption either returns the plaintext or fails
-//! -- it never returns plausible-looking rubbish the way the unauthenticated modes do when the
-//! ciphertext has been altered:
-//!
-//! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
-//!
-//! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! // Supplied, not generated -- and it must never repeat under this key.
-//! let nonce = [0x01u8; 12];
-//! let header = b"authenticated, not encrypted";
-//! let message = b"any length: CCM pads internally";
-//!
-//! // The spec's own layout (SP 800-38C Sec 6.1 step 8): `ciphertext || tag`.
-//! let mut sealed = vec![0u8; message.len() + 16];
-//! Aes128Ccm::<Encrypting>::encrypt(&key, &nonce, header, message, &mut sealed).expect("encryption");
-//!
-//! let mut opened = vec![0u8; message.len()];
-//! let n = Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &sealed, &mut opened).expect("decryption");
-//! assert_eq!(&opened[..n], message);
-//!
-//! // Any change to the ciphertext, the tag, the header or the nonce is detected -- which is the
-//! // whole difference from the five modes above.
-//! let mut tampered = sealed.clone();
-//! tampered[0] ^= 1;
-//! assert!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &tampered, &mut opened).is_err());
-//! assert!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, b"other header", &sealed, &mut opened).is_err());
-//! ```
 //!
 //! GCM gives the same guarantee through the AEAD traits, with the nonce generated and returned
 //! like the other modes' IVs; see [`Gcm`] for the detached and streaming forms:
@@ -749,13 +570,13 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-mod cbc;
-mod ccm;
-mod cfb;
-mod cfb8;
-mod ctr;
-mod ecb;
-mod gcm;
+pub mod cbc;
+pub mod ccm;
+pub mod cfb;
+pub mod cfb8;
+pub mod ctr;
+pub mod ecb;
+pub mod gcm;
 mod ghash;
 mod iv;
 

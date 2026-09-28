@@ -8,7 +8,7 @@
 //! an error if a caller matches exhaustively against the current set of variants.
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum HashError {
     ///
@@ -24,7 +24,7 @@ pub enum HashError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KeyMaterialError {
     ///
@@ -44,7 +44,7 @@ pub enum KeyMaterialError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KDFError {
     ///
@@ -60,7 +60,7 @@ pub enum KDFError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KEMError {
     ///
@@ -84,7 +84,7 @@ pub enum KEMError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MACError {
     ///
@@ -100,7 +100,7 @@ pub enum MACError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RNGError {
     ///
@@ -127,7 +127,7 @@ pub enum RNGError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SuspendableError {
     /// The serialized state was produced by a library version incompatible with this one.
@@ -137,7 +137,7 @@ pub enum SuspendableError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SignatureError {
     ///
@@ -161,7 +161,7 @@ pub enum SignatureError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SymmetricCipherError {
     ///

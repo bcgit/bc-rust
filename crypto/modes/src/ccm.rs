@@ -1,102 +1,72 @@
 //! The CCM mode of operation: Counter with Cipher Block Chaining-Message Authentication Code
 //! (NIST SP 800-38C, May 2004, errata update 07-20-2007).
+//! Sec 6.1, the generation-encryption process, and Sec 6.2, the decryption-verification process.
 //!
-//! CCM is the one mode in this crate that is *authenticated*: it produces a tag as well as a
-//! ciphertext, and decryption either returns the plaintext or refuses. It is built from two
-//! mechanisms this crate already has, under a single key (Sec 5.2: "The same key, K, is used for
-//! both the CTR and CBC-MAC mechanisms within CCM"):
+//! CCM is an *authenticated* mode: it produces a tag as well as a ciphertext, and decryption either
+//! returns the plaintext or a [`SymmetricCipherError::AEADTagCheckFailed`].
+//! It is built from two mechanisms under a single key: (Sec 5.2):
+//! "The same key, K, is used for both the CTR and CBC-MAC mechanisms within CCM".
 //!
-//! * **CTR** for confidentiality, over the counter blocks of Appendix A.3;
-//! * **CBC-MAC** for authenticity, over the formatted blocks of Appendix A.2.
-//!
-//! Only the forward cipher function is ever used, in both directions (Sec 3: "Only the forward
-//! cipher function of the block cipher algorithm is used within these primitives"), so a
+//! Only the forward cipher function is ever used, in both directions, so a
 //! permutation that implements nothing but `encrypt_block` works here.
 //!
-//! # The specification
-//!
-//! Sec 6.1, the generation-encryption process, quoted verbatim:
-//!
-//! ```text
-//! 1.  Apply the formatting function to (N, A, P) to produce the blocks B0, B1, ..., Br.
-//! 2.  Set Y0 = CIPH_K(B0).
-//! 3.  For i = 1 to r, do Yi = CIPH_K(Bi XOR Yi-1).
-//! 4.  Set T = MSB_Tlen(Yr).
-//! 5.  Apply the counter generation function to generate the counter blocks Ctr0, Ctr1,
-//!     ..., Ctrm, where m = ceil(Plen/128).
-//! 6.  For j = 0 to m, do Sj = CIPH_K(Ctrj).
-//! 7.  Set S = S1 || S2 || ... || Sm.
-//! 8.  Return C = (P XOR MSB_Plen(S)) || (T XOR MSB_Tlen(S0)).
-//! ```
-//!
-//! Sec 6.2, the decryption-verification process, quoted verbatim:
-//!
-//! ```text
-//! 1.  If Clen <= Tlen, then return INVALID.
-//! 2.  Apply the counter generation function to generate the counter blocks Ctr0, Ctr1,
-//!     ..., Ctrm, where m = ceil((Clen - Tlen)/128).
-//! 3.  For j = 0 to m, do Sj = CIPH_K(Ctrj).
-//! 4.  Set S = S1 || S2 || ... || Sm.
-//! 5.  Set P = MSB_Clen-Tlen(C) XOR MSB_Clen-Tlen(S).
-//! 6.  Set T = LSB_Tlen(C) XOR MSB_Tlen(S0).
-//! 7.  If N, A, or P is not valid, as discussed in Section 5.4, then return INVALID, else
-//!     apply the formatting function to (N, A, P) to produce the blocks B0, B1, ..., Br.
-//! 8.  Set Y0 = CIPH_K(B0).
-//! 9.  For i = 1 to r, do Yj = CIPH_K(Bi XOR Yi-1).
-//! 10. If T != MSB_Tlen(Yr), then return INVALID, else return P.
-//! ```
-//!
-//! Note step 8's `T XOR MSB_Tlen(S0)`: the tag CCM transmits is the CBC-MAC value **encrypted**
-//! under the counter block `Ctr0`, which is reserved for exactly that and never used for payload
-//! keystream -- step 7 starts the payload at `S1`.
-//!
-//! ## Where the ciphertext ends and the tag begins
+//! ## Returning the ciphertext ends the tag
 //!
 //! Step 8 returns a single string, `ciphertext || tag`. This type offers both layouts: the inherent
 //! [`Ccm::encrypt`] / [`Ccm::decrypt`] produce and consume the spec's own inline string, and the
 //! detached pair [`Ccm::encrypt_detached`] / [`Ccm::decrypt_detached`] keeps the tag separate,
 //! which is the shape [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] use.
 //!
-//! # Formatting: the parameters are the const generics
+//! # Usage Examples
+//! The nonce is supplied rather than generated, and there is an extra input (the AAD, authenticated but
+//! not encrypted) and an extra output (the tag).
+//! Decryption either returns the plaintext or fails with [`SymmetricCipherError::AEADTagCheckFailed`]
+//! -- it never returns plausible-looking rubbish the way the unauthenticated modes do when the
+//! ciphertext has been altered.
 //!
-//! Appendix A gives "an example of a formatting function and counter generation function"; Sec 5.4
-//! permits others, but A's is the one every deployment of CCM uses -- it is what makes this
-//! "essentially equivalent to the specification of CCM in the draft amendment to the IEEE Standard
-//! 802.11" (Appendix A) -- and it is the only one implemented here. Its length conditions (A.1),
-//! quoted verbatim:
+//! ```
+//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core::errors::SymmetricCipherError;
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 //!
-//! ```text
-//! * t is an element of {4, 6, 8, 10, 12, 14, 16};
-//! * q is an element of {2, 3, 4, 5, 6, 7, 8};
-//! * n is an element of {7, 8, 9, 10, 11, 12, 13}
-//! * n+q=15;
-//! * a<2^64.
+//! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//!
+//! // Supplied, not generated
+//! // It is the caller's responsibility that it never repeat under this key.
+//! let nonce = [0x01u8; 12];
+//!
+//! let header = b"authenticated, not encrypted";
+//! let message = b"any length: CCM pads internally";
+//!
+//! // The spec's own layout (SP 800-38C Sec 6.1 step 8): `ciphertext || tag`.
+//! let mut ct_and_tag = vec![0u8; message.len() + 16];
+//! Aes128Ccm::<Encrypting>::encrypt(&key, &nonce, header, message, &mut ct_and_tag).expect("encryption");
+//!
+//! let mut recovered_plaintext = vec![0u8; message.len()];
+//! let n = Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &ct_and_tag, &mut recovered_plaintext).expect("decryption");
+//! assert_eq!(&recovered_plaintext[..n], message);
+//!
+//! // If we tamper with any byte of the ciphertext, then this fails with a SymmetricCipherError::AEADTagCheckFailed
+//! let mut tampered = ct_and_tag.clone();
+//! tampered[0] ^= 1;
+//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &tampered, &mut recovered_plaintext).unwrap_err(),
+//!             SymmetricCipherError::AEADTagCheckFailed);
+//!
+//! // Same if we provide the correct ciphertext and tag, but change the authenticated data
+//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, b"other header", &ct_and_tag, &mut recovered_plaintext).unwrap_err(),
+//!             SymmetricCipherError::AEADTagCheckFailed);
 //! ```
 //!
-//! `t` is `TAG_LEN` and `n` is `NONCE_LEN`, so **`q` is not a parameter**: `n + q = 15` fixes it at
-//! `15 - NONCE_LEN`, and A.1 says as much ("a choice for q determines the value of n, namely,
-//! n=15-q"). All four of the first conditions are therefore properties of the const parameters and
-//! are `const` assertions in the constructor: a `NONCE_LEN` or `TAG_LEN` A.1 does not permit is a
-//! **compile** error at the call site, not a runtime `Err`. The fifth, `a < 2^64`, cannot be
-//! violated by a `&[u8]` whose length is a `usize`, so there is nothing to check.
+//! # CCM is not a stream cipher
 //!
-//! ## `q` trades nonce space against payload size
-//!
-//! Because `n + q = 15`, a longer nonce means a shorter length field, and `q` bounds the payload:
-//! A.1's "by definition, p<2^8q". A.1 calls this "a tradeoff between the maximum number of
-//! invocations of CCM under a given key and the maximum payload length for those invocations":
-//!
-//! | `NONCE_LEN` (n) | q | max payload |
-//! |---|---|---|
-//! | 7 | 8 | 2^64 - 1 bytes (no bound in practice) |
-//! | 11 | 4 | 4 GiB - 1 |
-//! | 12 | 3 | 16 MiB - 1 |
-//! | 13 | 2 | 64 KiB - 1 |
-//!
-//! A payload past that limit is refused with [`SymmetricCipherError::GenericError`]: both the
-//! counter and the length field `Q` would overflow, and `Q` is what the MAC commits to.
-//!
-//! # CCM is not a streaming mode, and what this crate does about it
+//! It does not have an indefinite-length streaming mode.
+//! The reason is `B0`. Appendix A.2.1 puts `Q`, the payload's octet length, *inside the first block
+//! the CBC-MAC absorbs*, so nothing at all can be authenticated until the total payload length is
+//! known.
 //!
 //! Sec 3 is explicit:
 //!
@@ -104,58 +74,29 @@
 //! > storage before CCM is applied; CCM is not designed to support partial processing or stream
 //! > processing.
 //!
-//! The reason is `B0`. Appendix A.2.1 puts `Q`, the payload's octet length, *inside the first block
-//! the CBC-MAC absorbs*, so nothing at all can be authenticated until the total payload length is
-//! known. [`Ctr`](crate::Ctr) and [`Cfb`](crate::Cfb) can hash as they go; CCM structurally cannot.
-//!
-//! There are exactly two honest ways to live with that, and this module provides both:
-//!
-//! 1. **Declare the length up front.** [`Ccm::new`] takes the whole AAD and the payload length, so
-//!    `B0` is formed at construction and everything after it streams with **no buffering at all**:
-//!    each byte is MACed and XORed as it arrives, and the payload may be any length up to the `q`
-//!    limit. This is the efficient path and the one the one-shots use.
-//! 2. **Buffer streaming calls.** [`CcmEncryptor`] / [`CcmDecryptor`] implement
-//!    [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], and through them
-//!    [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], whose `do_encrypt_init` is
-//!    handed a key and nothing else, so they have no length from which to form `B0`. Their
-//!    streaming methods accumulate the message in a fixed `FINAL_LEN`-byte array and do all the
-//!    work at finalization. Their one-shots already have both lengths and therefore use the first path
-//!    directly.
-//!
-//! A caller who reaches for CCM at all is in Sec 3's packet environment and knows the length, so
-//! (1) is the one to use; (2) exists so that CCM composes with code written against the trait.
+//! This is different from the `do_encrypt()` mode, often referred to as a "streaming mode" where
+//! the content is processed in batches; so long as the total expected length is known up-front.
 //!
 //! # Security considerations
 //!
-//! **The nonce must never repeat under one key.** Sec 5.3: "any two distinct data pairs to be
-//! protected by CCM during the lifetime of the key shall be assigned distinct nonces". A repeat is
-//! worse here than in an unauthenticated mode: it reuses the CTR keystream, and Appendix B.1's
+//! **The nonce must never repeat under one key.**
+//! Sec 5.3: "any two distinct data pairs to be
+//! protected by CCM during the lifetime of the key shall be assigned distinct nonces".
+//! A repeat is worse here than in an unauthenticated mode: it reuses the CTR keystream, and Appendix B.1's
 //! footnote describes the resulting forgery -- an attacker who can "induce the
 //! decryption-verification process to reuse the nonce" can flip any chosen bit of the payload. The
-//! nonce is *not* required to be random ("The nonce is not required to be random"), only unique, so
+//! nonce is *not* required to be random, only unique, so
 //! a counter is a valid and often better choice; every deterministic entry point here takes the
-//! nonce from the caller, and the entry points that generate one draw it from the library's DRBG.
+//! nonce from the caller, and should be drawn from the library's DRBG.
 //!
 //! **`TAG_LEN` is a security parameter.** Sec B.2: "a value of Tlen that is less than 64 shall not
 //! be used without a careful analysis of the risks of accepting inauthentic data as authentic", and
-//! it gives the bound `Tlen >= lg(MaxErrs / Risk)`. A `TAG_LEN` of 4 or 6 is permitted by A.1 and
-//! accepted here: the spec's own Appendix C.1 and C.2 examples use `Tlen=32` and `Tlen=48`, i.e.
-//! `t = 4` and `t = 6`, and constrained protocols do the same. Prefer 16. (Those two examples are
-//! what exercises the short tags in this crate's tests; the ACVP set it also runs uses only 96- and
-//! 128-bit tags.)
+//! it gives the bound `Tlen >= lg(MaxErrs / Risk)`. A `TAG_LEN` of 4 or 6 bytes is permitted by A.1 and
+//! accepted here: the spec's own Appendix C.1 and C.2 examples use `Tlen=32` and `Tlen=48`.
 //!
 //! **The key is for CCM only.** Sec 5.1: "The key shall be kept secret and shall only be used for
 //! the CCM mode", and "The total number of invocations of the block cipher algorithm during the
 //! lifetime of the key shall be limited to 2^61".
-//!
-//! **A failed tag check reveals nothing.** Sec 6.2: "the payload P and the MAC T shall not be
-//! revealed", and an unauthorized party must not be able to distinguish a step 7 failure from a
-//! step 10 failure, "for example, from the timing of the error message". Step 7 cannot fail here --
-//! the const parameters and the declared length make `N`, `A` and `P` valid by construction -- so
-//! there is only one failure path, the constant-time comparison in [`Ccm::do_decrypt_final`]. The
-//! one-shots zeroize the plaintext buffer before returning the error. The streaming API cannot; see
-//! [`AEADCipherDecryptor`]'s own warning that what `do_update_out` released is not authenticated
-//! until the final call returns `Ok`.
 
 use crate::iv::random_iv;
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -174,47 +115,11 @@ use crate::{Decrypting, Encrypting};
 
 /// CCM (SP 800-38C) over any [`ElectronicCodeBook`] with a 128-bit block.
 ///
-/// `NONCE_LEN` is the spec's `n` and `TAG_LEN` its `t`; `q`, the width of the length field, is
-/// `15 - NONCE_LEN`, because A.1 requires `n + q = 15`. See the module docs for the permitted
-/// values -- all checked at compile time -- and for the payload limit `q` implies.
-///
-/// `Dir` is [`Encrypting`] or [`Decrypting`], exactly as for the other modes in this crate:
-/// `Ccm<P, Encrypting, ..>` has Sec 6.1's methods and nothing else, and `Ccm<P, Decrypting, ..>`
-/// has Sec 6.2's. Using the wrong direction is a compile error rather than a runtime one, and there
-/// is no state to police: pointing a decryptor at a plaintext is not a mistake this type can be
-/// asked to make.
-///
-/// [`CcmEncryptor`] and [`CcmDecryptor`] wrap these for the generic
-/// [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] traits. Their streaming methods buffer; their
-/// one-shots delegate directly to this type. See the module docs.
+/// `Dir` is [`Encrypting`] or [`Decrypting`], `Ccm<P, Encrypting, ..>` has Sec 6.1's methods and
+/// nothing else, and `Ccm<P, Decrypting, ..>` has Sec 6.2's.
 ///
 /// Asking an encryptor to verify a tag does not compile -- `do_decrypt_final` exists only on
 /// `Ccm<P, Decrypting, ..>`:
-///
-/// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_modes::{Ccm, Encrypting};
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// let ccm = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 16>::new(&key, &[0u8; 12], &[], 0).unwrap();
-/// ccm.do_decrypt_final(&[0u8; 16]).unwrap();
-/// ```
-///
-/// And nor does the reverse -- a decryptor has no `do_encrypt_final`, so it cannot be tricked into
-/// producing a tag over data it never encrypted:
-///
-/// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_modes::{Ccm, Decrypting};
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// let ccm = Ccm::<AES128Internal, Decrypting, 16, 16, 12, 16>::new(&key, &[0u8; 12], &[], 0).unwrap();
-/// let _tag = ccm.do_encrypt_final().unwrap();
-/// ```
 ///
 /// A nonce length A.1 does not permit does not compile:
 ///
@@ -888,16 +793,6 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        // Sec 6.2 step 1, "If Clen <= Tlen, then return INVALID", and the split of step 6's
-        // `LSB_Tlen(C)` off the end, in one operation: `split_last_chunk` is `None` exactly when
-        // the string is too short to contain a tag, and otherwise hands back the tag already typed
-        // as `&[u8; TAG_LEN]`. Doing it in two steps would leave an arithmetic split followed by an
-        // array conversion that cannot fail but still has to be handled.
-        //
-        // Note the spec's `Clen <= Tlen` is on the *bit* lengths of a string that also carries the
-        // payload; a `C` of exactly `TAG_LEN` octets is an empty payload plus its tag, which is
-        // valid -- Sec 5.3's footnote, "The payload may also be empty". So the octet test here
-        // admits equality, which is what `split_last_chunk` does.
         let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
             return Err(SymmetricCipherError::DecryptionFailed);
         };
@@ -1091,39 +986,7 @@ where
 /// [`update_out_len`](SymmetricCipherEncryptor::update_out_len) is identically `0` and every
 /// ciphertext byte comes out of the final call.
 ///
-/// `FINAL_LEN` is the size of that final output with the tag inline: the whole ciphertext followed
-/// by the `TAG_LEN`-byte tag. So the largest message -- and the largest AAD -- the streaming `do_*`
-/// methods accept is `FINAL_LEN - TAG_LEN`, and anything longer is refused with
-/// [`SymmetricCipherError::GenericError`]. Pick it from the largest packet the protocol allows
-/// plus the tag -- CCM is a packet mode (Sec 3), so there is such a number. The one-shot methods
-/// already have the complete lengths, so they bypass this buffer and accept data up to CCM's `q`
-/// limit.
-///
-/// **The AAD shares `FINAL_LEN`'s bound although it is never part of the output.** The AAD is
-/// buffered in its own `FINAL_LEN`-byte array, and `FINAL_LEN - TAG_LEN` is its capacity too, so a
-/// protocol whose authenticated header can be longer than its payload has to size `FINAL_LEN` for
-/// the header: `FINAL_LEN >= max(largest payload, largest AAD) + TAG_LEN`. That is a property of
-/// this adapter's single size parameter, not of CCM -- A.1 bounds `a` only at `2^64` -- and the
-/// cost of oversizing is every `[u8; FINAL_LEN]` the trait puts on the stack, so a header-heavy
-/// protocol is better served by the inherent [`Ccm`] API, which takes the whole AAD by reference
-/// and buffers nothing.
-///
-/// A `FINAL_LEN - TAG_LEN` past what `NONCE_LEN` allows (A.1's `2^8q - 1`) does not compile,
-/// rather than buffering the whole message only to fail at finalization:
-///
-/// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::CcmEncryptor;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// // NONCE_LEN = 13 gives q = 2, a 65535-byte limit; FINAL_LEN - TAG_LEN = 99_992 exceeds it.
-/// let _ = CcmEncryptor::<AES128Internal, 16, 16, 13, 8, 100_000>::do_encrypt_init(&key);
-/// ```
-///
-/// # Random nonce length
+/// # Nonce length
 ///
 /// The trait generates a random nonce rather than accepting a caller-managed counter. To keep the
 /// random-collision bound useful, `NONCE_LEN` must therefore be at least 12 here, and
@@ -1131,29 +994,9 @@ where
 /// API still supports every A.1 nonce length from 7 through 13 when the caller guarantees
 /// uniqueness.
 ///
-/// ```compile_fail
-/// use bouncycastle_aes::AES_CCM_128_Encryptor;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// // A 7-byte nonce is valid for caller-managed Ccm, but too short for this random-nonce adapter.
-/// let _ = AES_CCM_128_Encryptor::<7, 16, 2064>::do_encrypt_init(&key);
-/// ```
-///
 /// The decryptor is given its nonce rather than drawing one, but refuses the same lengths, so a
 /// parameter set that compiles for one side compiles for the other:
 ///
-/// ```compile_fail
-/// use bouncycastle_aes::AES_CCM_128_Decryptor;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherDecryptor;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// let _ = AES_CCM_128_Decryptor::<7, 16, 2064>::do_decrypt_init(&key, &[0u8; 7]);
-/// ```
 ///
 /// See [`AEADCipherEncryptor`]'s "A length-dependent construction still has to buffer" section for
 /// why this trait was not reshaped to avoid the buffering instead.

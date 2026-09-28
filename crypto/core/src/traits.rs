@@ -15,9 +15,8 @@ use crate::key_material::KeyMaterial;
 use crate::key_material::KeyType;
 // end of imports needed for docs
 
-/// What the allocating one-shot [`AEADCipherEncryptor::encrypt_detached`] hands back: the nonce it
-/// generated, the ciphertext, and the tag, in that order. A named type because the bare triple is
-/// past what is readable inline (clippy's `type_complexity`).
+/// What the allocating one-shot [`AEADCipherEncryptor::encrypt_detached`] hands back:
+/// `(nonce, ciphertext, tag)`
 #[cfg(feature = "std")]
 pub type AEADEncrypted<const NONCE_LEN: usize, const TAG_LEN: usize> =
     ([u8; NONCE_LEN], Vec<u8>, [u8; TAG_LEN]);

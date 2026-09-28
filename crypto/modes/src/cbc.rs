@@ -1,23 +1,5 @@
 //! The Cipher Block Chaining mode of operation (NIST SP 800-38A Sec 6.2).
 //!
-//! # The specification
-//!
-//! SP 800-38A Sec 6.2 defines the mode as, quoting verbatim:
-//!
-//! ```text
-//! CBC Encryption:  C1 = CIPH_K(P1 XOR IV);
-//!                  Cj = CIPH_K(Pj XOR Cj-1)      for j = 2 ... n.
-//!
-//! CBC Decryption:  P1 = CIPH^-1_K(C1) XOR IV;
-//!                  Pj = CIPH^-1_K(Cj) XOR Cj-1   for j = 2 ... n.
-//! ```
-//!
-//! The `j = 1` and `j >= 2` cases differ only in that the first one uses the IV where the others
-//! use the previous ciphertext block. So this implementation keeps a single `chain` field holding
-//! "whatever gets XORed next", initialised to the IV and replaced by each ciphertext block as it
-//! is produced or consumed. That is the equivalence being used, and it is why there is no special
-//! case for the first block anywhere below.
-//!
 //! # Parallel decryption
 //!
 //! Sec 6.2 notes that in CBC decryption "the input blocks for the inverse cipher function, i.e.,
@@ -31,6 +13,64 @@
 //! [`ElectronicCodeBook::decrypt_2blocks`], then the last block singly. A bit-sliced engine
 //! computes two or four blocks (AES, on `u32` or `u64` planes) for barely more than the cost of
 //! one. Encryption cannot, and does not.
+//!
+//! # Usage Examples
+//!
+//! The direction is part of the type: [`Cbc<P, Encrypting, ..>`](Cbc) implements
+//! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<P, Decrypting, ..>`](Cbc) implements
+//! [`BlockCipherDecryptor`] and nothing else.
+//! The IV is generated and returned; there is no API for supplying one.
+//!
+//! ```
+//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
+//!
+//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//!
+//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
+//! let plaintext: [u8; 48] = *b"The quick brown fox jumps over the lazy dog. OK!";
+//!
+//! // One shot, in place: encrypts under a freshly generated IV, which is returned.
+//! let mut data = plaintext;
+//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! assert_ne!(data, plaintext);
+//!
+//! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
+//! ```
+//!
+//! Streaming, for data that arrives in pieces. A sequence of calls is equivalent to one call over
+//! the concatenation:
+//!
+//! ```
+//! use bouncycastle_aes::aes_internal::AES256Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
+//!
+//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 32, 16>;
+//!
+//! let key = KeyMaterial256::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//!
+//! let (mut encryptor, iv) =
+//!     Aes128Cbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
+//! let mut first = [0xAAu8; 16];
+//! let mut rest = [0xBBu8; 32];
+//! encryptor.do_encrypt(&mut first).expect("block 1");
+//! encryptor.do_encrypt(&mut rest).expect("blocks 2-3");
+//!
+//! let mut decryptor = Aes128Cbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
+//! decryptor.do_decrypt(&mut first).unwrap();
+//! decryptor.do_decrypt(&mut rest).unwrap();
+//! assert_eq!(first, [0xAAu8; 16]);
+//! assert_eq!(rest, [0xBBu8; 32]);
+//! ```
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};

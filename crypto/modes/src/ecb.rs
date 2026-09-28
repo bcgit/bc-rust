@@ -1,37 +1,39 @@
 //! The Electronic Codebook mode of operation (NIST SP 800-38A Sec 6.1).
 //!
-//! # The specification
-//!
 //! "In ECB encryption, the forward cipher function is applied directly and independently to each
 //! block of the plaintext. The resulting sequence of output blocks is the ciphertext. In ECB
 //! decryption, the inverse cipher function is applied directly and independently to each block of
 //! the ciphertext. The resulting sequence of output blocks is the plaintext."
 //!
+//! # Usage Examples
+//!
+//! ECB has the same shape with no IV: `encrypt` returns an empty array and `decrypt` takes one.
+//! The codebook property that makes it unsuitable for data is visible in the ciphertext:
+//!
+//! ```
+//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+//!
+//! type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let mut data = [0x5Au8; 32]; // two equal blocks
+//!
+//! let (bytes_written, no_iv): (usize, [u8; 0]) = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! assert_eq!(no_iv.len(), 0, "EBC mode returns the IV as an empty array");
+//! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
+//!
+//! Aes128Ecb::<Decrypting>::decrypt(&key, &[], &mut data).expect("decryption");
+//! assert_eq!(data, [0x5Au8; 32]);
+//! ```
+//!
 //! # A mode with no state
 //!
 //! This mode is a fixed permutation determined by the key acting on a single block.
 //! There is no IV and no chaining.
-//!
-//! What this type adds is
-//! the [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] shape shared with `Cbc` -- the direction
-//! in the type, the streaming and one-shot methods with their compile-time length checks, and the
-//! batching -- so ECB can stand wherever the other block modes can, including under the padding
-//! layer and behind the CLI. (`Cfb` and `Cfb8` are stream ciphers and implement the stream traits
-//! instead.) Its `INIT_DATA_LEN` is 0: [`BlockCipherEncryptor::do_encrypt_init`]
-//! returns an empty array and draws nothing from the RNG, and
-//! [`BlockCipherDecryptor::do_decrypt_init`] takes an empty one. With no init data to generate,
-//! ECB is the case [`BlockCipherEncryptor::do_encrypt_init_rng`] requires to panic rather than
-//! ignore the RNG it was handed.
-//!
-//! # Why it is here at all
-//!
-//! Sec 6.1: "In the ECB mode, under a given key, any given plaintext block always gets encrypted to
-//! the same ciphertext block. If this property is undesirable in a particular application, the ECB
-//! mode should not be used." It is undesirable in nearly every application -- equal plaintext blocks
-//! give equal ciphertext blocks, so the structure of the plaintext shows through the ciphertext, and
-//! blocks can be reordered, repeated or removed without anything to detect it. ECB is provided for
-//! interoperability with systems and specifications that use it, and for driving test vectors; it is
-//! not a way to encrypt data. See the crate docs, "Security Considerations".
 //!
 //! # Both directions are parallel
 //!
@@ -52,7 +54,7 @@ use bouncycastle_core::traits::{
 };
 use core::marker::PhantomData;
 
-/// ECB mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
+/// ECB mode over any permutation that impls [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
 /// **Not a confidentiality mode for data**: see the module docs and the crate's "Security
 /// Considerations". Provided for interoperability and test vectors.
@@ -62,10 +64,7 @@ use core::marker::PhantomData;
 /// decryption methods at all -- using one in the wrong direction is a compile error rather than a
 /// runtime check.
 ///
-/// There is no initialization data, so `INIT_DATA_LEN == 0`.
-///
 /// # State
-///
 /// Only the permutation, which owns the key schedule and is responsible for keeping it in a
 /// zeroize-on-drop wrapper. Nothing chains from one block to the next, so unlike `Cbc` and `Cfb`
 /// there is no block of chaining value: `size_of::<Ecb<P, ..>>() == size_of::<P>()`.
