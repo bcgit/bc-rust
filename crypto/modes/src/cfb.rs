@@ -134,7 +134,7 @@
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
 //!

@@ -49,23 +49,23 @@
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES256Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 //!
-//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 32, 16>;
+//! type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, 16>;
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
 //!
 //! let (mut encryptor, iv) =
-//!     Aes128Cbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
+//!     Aes256Cbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
 //! let mut first = [0xAAu8; 16];
 //! let mut rest = [0xBBu8; 32];
 //! encryptor.do_encrypt(&mut first).expect("block 1");
 //! encryptor.do_encrypt(&mut rest).expect("blocks 2-3");
 //!
-//! let mut decryptor = Aes128Cbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
+//! let mut decryptor = Aes256Cbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
 //! decryptor.do_decrypt(&mut first).unwrap();
 //! decryptor.do_decrypt(&mut rest).unwrap();
 //! assert_eq!(first, [0xAAu8; 16]);
