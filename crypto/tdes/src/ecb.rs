@@ -28,7 +28,7 @@
 //!
 //! # This is the arbitrary-length API
 //!
-//! A padded alias implements [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`], not the
+//! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
 //! block traits. The block-aligned API, with compile-time length checks and in-place data methods,
 //! is `bouncycastle_modes::Ecb` itself, which this wraps. ECB has no IV, so `INIT_DATA_LEN` is 0:
 //! encryption returns an empty array and decryption takes one, and the ciphertext is exactly the
@@ -42,11 +42,11 @@
 use crate::padded_mode::PaddedMode;
 use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
-use bouncycastle_padding::PaddedDecryptor;
+use bouncycastle_padding::PaddedBlockCipherDecryptor;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
 use bouncycastle_padding::{NoPadding, PKCS7};
 // end of imports needed for docs
@@ -63,7 +63,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 /// use bouncycastle_tdes::TDES_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 /// use bouncycastle_padding::PKCS7;
 ///
@@ -90,7 +90,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 /// use bouncycastle_tdes::TDES_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::NoPadding;
 ///
@@ -114,14 +114,14 @@ pub type TDES_ECB<Dir, Pad> = <Dir as PaddedMode<
 /// Two-key TDES in ECB mode with a padding scheme, **decryption only**.
 ///
 /// `Pad` is [`PKCS7`] or [`NoPadding`]. There is no direction parameter: two-key TDEA is disallowed
-/// for encryption (SP 800-131A Rev 2 Table 1), so this is the [`PaddedDecryptor`] alone; see
+/// for encryption (SP 800-131A Rev 2 Table 1), so this is the [`PaddedBlockCipherDecryptor`] alone; see
 /// [`TDES2Key`]. There is no IV, so decryption takes an empty array. The ECB warning in the module
 /// docs applies unchanged.
 ///
 /// ```
 /// use bouncycastle_tdes::TDES2_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherDecryptor;
+/// use bouncycastle_core::traits::SymmetricCipherDecryptor;
 /// use bouncycastle_padding::NoPadding;
 ///
 /// // NIST CAVP TECBMMT2.rsp, [DECRYPT] COUNT = 0: KEY1 || KEY2 (KEY3 = KEY1).
@@ -136,7 +136,7 @@ pub type TDES_ECB<Dir, Pad> = <Dir as PaddedMode<
 /// assert_eq!(plaintext, [0xd8, 0xda, 0x89, 0x29, 0x88, 0x78, 0xed, 0x7d]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type TDES2_ECB<Pad> = PaddedDecryptor<
+pub type TDES2_ECB<Pad> = PaddedBlockCipherDecryptor<
     Ecb<TDES2Key, Decrypting, KEY_LEN_2KEY, BLOCK_LEN>,
     Pad,
     KEY_LEN_2KEY,

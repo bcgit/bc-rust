@@ -28,7 +28,7 @@
 //!
 //! # This is the arbitrary-length API
 //!
-//! A padded alias implements [`SimpleCipherEncryptor`] / [`SimpleCipherDecryptor`], not the
+//! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
 //! block traits: `encrypt_out` / `decrypt_out` and the streaming `do_update_out` / `do_final`, all
 //! taking a `&[u8]` of any length. The block-aligned API, with its compile-time length checks and
 //! its in-place data methods, is `bouncycastle_modes::Cbc` itself, which this wraps:
@@ -40,7 +40,7 @@
 //!
 //! # How one alias covers both directions
 //!
-//! `PaddedEncryptor` and `PaddedDecryptor` are two distinct types, so a plain type alias cannot
+//! `PaddedBlockCipherEncryptor` and `PaddedBlockCipherDecryptor` are two distinct types, so a plain type alias cannot
 //! select between them on a `Dir` parameter. [`PaddedMode`] does it instead: it is implemented for
 //! each direction marker and projects to the right adapter, and the alias is written as that
 //! projection. The only visible consequence is that `Dir` must be
@@ -50,13 +50,13 @@
 use crate::padded_mode::PaddedMode;
 use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::PaddedDecryptor;
+use bouncycastle_padding::PaddedBlockCipherDecryptor;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
+use bouncycastle_padding::{NoPadding, PKCS7, PaddedBlockCipherEncryptor};
 // end of imports needed for docs
 
 /// TDES in CBC mode with a padding scheme.
@@ -68,7 +68,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
 /// ```
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 /// use bouncycastle_padding::PKCS7;
 ///
@@ -97,7 +97,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
 /// ```
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::NoPadding;
 ///
@@ -122,7 +122,7 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedEncryptor};
 /// ```compile_fail
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::{NoPadding, PKCS7};
 ///
@@ -144,14 +144,14 @@ pub type TDES_CBC<Dir, Pad> = <Dir as PaddedMode<
 /// Two-key TDES in CBC mode with a padding scheme, **decryption only**.
 ///
 /// `Pad` is [`PKCS7`] or [`NoPadding`]. There is no direction parameter: two-key TDEA is disallowed
-/// for encryption (SP 800-131A Rev 2 Table 1), so this is the [`PaddedDecryptor`] alone, and
+/// for encryption (SP 800-131A Rev 2 Table 1), so this is the [`PaddedBlockCipherDecryptor`] alone, and
 /// `Cbc<TDES2Key, Encrypting, ..>` does not compile; see [`TDES2Key`]. The IV is one 8-byte block,
 /// supplied by the caller as it was received.
 ///
 /// ```
 /// use bouncycastle_tdes::TDES2_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherDecryptor;
+/// use bouncycastle_core::traits::SymmetricCipherDecryptor;
 /// use bouncycastle_padding::NoPadding;
 ///
 /// // NIST CAVP TCBCMMT2.rsp, [DECRYPT] COUNT = 0: KEY1 || KEY2 (KEY3 = KEY1).
@@ -167,7 +167,7 @@ pub type TDES_CBC<Dir, Pad> = <Dir as PaddedMode<
 /// assert_eq!(plaintext, [0x06, 0x11, 0xa4, 0x74, 0xfb, 0x09, 0x09, 0x78]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type TDES2_CBC<Pad> = PaddedDecryptor<
+pub type TDES2_CBC<Pad> = PaddedBlockCipherDecryptor<
     Cbc<TDES2Key, Decrypting, KEY_LEN_2KEY, BLOCK_LEN>,
     Pad,
     KEY_LEN_2KEY,
