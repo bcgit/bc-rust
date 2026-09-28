@@ -6,9 +6,11 @@
 //! layer are tested in their own crates; this checks the wiring between them at the 8-byte block.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, TDES, TDES_CBC};
 
 fn key() -> KeyMaterial<KEY_LEN> {
@@ -25,7 +27,7 @@ fn the_alias_names_the_expected_types() {
     assert_eq!(
         size_of::<TDES_CBC<Encrypting, PKCS7>>(),
         size_of::<
-            PaddedEncryptor<
+            PaddedBlockCipherEncryptor<
                 Cbc<TDES, Encrypting, KEY_LEN, BLOCK_LEN>,
                 PKCS7,
                 KEY_LEN,
@@ -37,7 +39,7 @@ fn the_alias_names_the_expected_types() {
     assert_eq!(
         size_of::<TDES_CBC<Decrypting, PKCS7>>(),
         size_of::<
-            PaddedDecryptor<
+            PaddedBlockCipherDecryptor<
                 Cbc<TDES, Decrypting, KEY_LEN, BLOCK_LEN>,
                 PKCS7,
                 KEY_LEN,

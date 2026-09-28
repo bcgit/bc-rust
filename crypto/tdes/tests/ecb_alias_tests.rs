@@ -7,9 +7,11 @@
 //! value than CBC's.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, TDES, TDES_ECB};
 
 fn key() -> KeyMaterial<KEY_LEN> {
@@ -26,7 +28,7 @@ fn the_alias_names_the_expected_types() {
     assert_eq!(
         size_of::<TDES_ECB<Encrypting, PKCS7>>(),
         size_of::<
-            PaddedEncryptor<
+            PaddedBlockCipherEncryptor<
                 Ecb<TDES, Encrypting, KEY_LEN, BLOCK_LEN>,
                 PKCS7,
                 KEY_LEN,
@@ -38,7 +40,7 @@ fn the_alias_names_the_expected_types() {
     assert_eq!(
         size_of::<TDES_ECB<Decrypting, PKCS7>>(),
         size_of::<
-            PaddedDecryptor<
+            PaddedBlockCipherDecryptor<
                 Ecb<TDES, Decrypting, KEY_LEN, BLOCK_LEN>,
                 PKCS7,
                 KEY_LEN,

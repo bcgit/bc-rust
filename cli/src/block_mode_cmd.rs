@@ -76,17 +76,9 @@ pub(crate) const CHUNK_LEN: usize = 1024;
 /// for the mode you are running.
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum BlockModeAction {
-    /// Encrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 a freshly generated IV, one block long (16 bytes for AES, 8 for
-    /// TDES), is written as the first bytes of the output, and for CTR a nonce (12 bytes for AES,
-    /// 6 for TDES), so that `decrypt` can read it back; ECB has neither and writes none. The
-    /// `-cbc` and `-ecb` commands need the input to be a multiple of the block length; `-cfb`,
-    /// `-cfb8` and `-ctr` take any length. See the individual subcommand's help.
+    /// Encrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
     Encrypt,
-    /// Decrypt stdin to stdout.
-    /// For CBC, CFB and CFB8 the first block of input is taken as the IV, and for CTR the leading
-    /// bytes as the nonce, as written by `encrypt`; ECB has neither and reads none. See `encrypt`
-    /// for the input-length rule.
+    /// Decrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
     Decrypt,
 }
 

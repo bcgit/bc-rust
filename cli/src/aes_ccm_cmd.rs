@@ -44,6 +44,7 @@
 use std::io::{self, Read};
 use std::process::exit;
 
+use bouncycastle::aes::BLOCK_LEN;
 use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::key_material::KeyMaterial;
@@ -51,7 +52,7 @@ use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::hex;
 use bouncycastle::modes::{Ccm, Decrypting, Encrypting};
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::block_mode_cmd::{BlockModeAction, load_key};
 use crate::helpers;
 
 /// AES-128 CCM. See the module docs and the subcommand help.

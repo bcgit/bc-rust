@@ -179,7 +179,7 @@ fn check_ecb<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
     }
     assert_eq!(buf, case.plaintext, "{name}: decrypt");
 
-    // The default four-block methods must give the same answers; the longer cases (up to ten
+    // The four-block methods must give the same answers; the longer cases (up to ten
     // blocks) exercise them, with the remainder going through single blocks.
     {
         let (blocks, _) = buf.as_chunks_mut::<BLOCK_LEN>();

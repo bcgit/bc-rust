@@ -10,7 +10,8 @@
 //! separately.
 
 use crate::block_mode_cmd::{BlockModeAction, decrypt_stream, encrypt_stream, load_key};
-use bouncycastle::aes::{AES_128, AES_192, AES_256, BLOCK_LEN};
+use bouncycastle::aes::BLOCK_LEN;
+use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
