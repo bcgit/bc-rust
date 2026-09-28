@@ -19,7 +19,7 @@
 //! # Ciphertext and tag are separate fields, unlike the ACVP set
 //!
 //! Wycheproof's AEAD schema carries `ct` and `tag` as distinct fields (the `aead_test_schema_v1`
-//! schema), so these cases go through [`Ccm::encrypt_detached`] / [`Ccm::decrypt_detached`], not
+//! schema), so these cases go through [`Ccm::encrypt_out_detached`] / [`Ccm::decrypt_out_detached`], not
 //! the inline pair `acvp_ccm_tests.rs` uses.
 //!
 //! # Most of the parameter space cannot be dispatched to at all, by design
@@ -94,8 +94,8 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// Runs one case at a fully-instantiated `(KEY_LEN, NONCE_LEN, TAG_LEN, P)`.
 ///
 /// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag`
-/// ([`Ccm::encrypt_detached`]), and `expected_ct`/`expected_tag` must decrypt back to `msg`
-/// ([`Ccm::decrypt_detached`]). For `result: "invalid"`, only the decrypt direction is checked --
+/// ([`Ccm::encrypt_out_detached`]), and `expected_ct`/`expected_tag` must decrypt back to `msg`
+/// ([`Ccm::decrypt_out_detached`]). For `result: "invalid"`, only the decrypt direction is checked --
 /// re-encrypting `msg` has no reason to reproduce a deliberately corrupted `ct`/`tag` -- and it
 /// must fail the tag check rather than return a payload.
 #[allow(clippy::too_many_arguments)]
@@ -120,7 +120,7 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
     if valid {
         let mut ct = vec![0u8; msg.len()];
         let (written, got_tag) =
-            Ccm::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_detached(
+            Ccm::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_out_detached(
                 &key, &nonce, aad, msg, &mut ct,
             )
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
@@ -130,7 +130,7 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
     }
 
     let mut plaintext = vec![0u8; expected_ct.len()];
-    match Ccm::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_detached(
+    match Ccm::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
         &key, &nonce, aad, expected_ct, &tag, &mut plaintext,
     ) {
         Ok(n) => {

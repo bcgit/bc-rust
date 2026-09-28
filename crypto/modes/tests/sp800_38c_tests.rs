@@ -86,7 +86,7 @@ fn check_vector<
 
     // --- Sec 6.1, detached tag ---
     let mut ct = vec![0u8; plaintext.len()];
-    let (written, tag) = Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached(
+    let (written, tag) = Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::encrypt_out_detached(
         &k, &nonce, aad, &plaintext, &mut ct,
     )
     .expect("encryption");
@@ -96,15 +96,16 @@ fn check_vector<
 
     // --- Sec 6.1, the appendix's own inline `ciphertext || tag` layout ---
     let mut inline = vec![0u8; plaintext.len() + TAG_LEN];
-    let n =
-        Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::encrypt(&k, &nonce, aad, &plaintext, &mut inline)
-            .expect("encryption");
+    let n = Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::encrypt_out(
+        &k, &nonce, aad, &plaintext, &mut inline,
+    )
+    .expect("encryption");
     assert_eq!(n, c.len(), "{name}: inline output length");
     assert_eq!(inline, c, "{name}: the whole C string of Appendix C");
 
     // --- Sec 6.2, both layouts ---
     let mut recovered = vec![0u8; plaintext.len()];
-    let n = Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+    let n = Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
         &k,
         &nonce,
         aad,
@@ -117,7 +118,7 @@ fn check_vector<
     assert_eq!(recovered, plaintext, "{name}: detached round trip");
 
     let mut recovered = vec![0u8; plaintext.len()];
-    let n = Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt(&k, &nonce, aad, &c, &mut recovered)
+    let n = Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out(&k, &nonce, aad, &c, &mut recovered)
         .expect("decryption");
     assert_eq!(n, plaintext.len());
     assert_eq!(recovered, plaintext, "{name}: inline round trip");
@@ -152,7 +153,7 @@ fn check_vector<
         bad[i] ^= 0x80;
         let mut out = vec![0u8; plaintext.len()];
         assert!(
-            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
                 &k, &nonce, aad, want_ct, &bad, &mut out
             )),
             "{name}: a flipped bit in tag byte {i} must be caught"
@@ -167,7 +168,7 @@ fn check_vector<
         bad_ct[0] ^= 0x01;
         let mut out = vec![0u8; plaintext.len()];
         assert!(
-            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
                 &k, &nonce, aad, &bad_ct, tag_arr, &mut out
             )),
             "{name}: a modified ciphertext must be caught"
@@ -178,7 +179,7 @@ fn check_vector<
         bad_aad[0] ^= 0x01;
         let mut out = vec![0u8; plaintext.len()];
         assert!(
-            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
                 &k, &nonce, &bad_aad, want_ct, tag_arr, &mut out
             )),
             "{name}: CCM authenticates the AAD as well as the payload"
@@ -189,7 +190,7 @@ fn check_vector<
     if aad.len() > 1 {
         let mut out = vec![0u8; plaintext.len()];
         assert!(
-            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+            is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
                 &k,
                 &nonce,
                 &aad[..aad.len() - 1],
@@ -205,7 +206,7 @@ fn check_vector<
     bad_nonce[0] ^= 0x01;
     let mut out = vec![0u8; plaintext.len()];
     assert!(
-        is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+        is_tag_failure(Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
             &k, &bad_nonce, aad, want_ct, tag_arr, &mut out
         )),
         "{name}: the nonce is authenticated"
@@ -317,11 +318,12 @@ fn empty_payload_and_empty_aad_are_permitted() {
         [(&[][..], &[][..]), (&aad[..], &[][..]), (&[][..], &payload[..]), (&aad[..], &payload[..])]
     {
         let mut ct = vec![0u8; p.len()];
-        let (written, tag) = Enc::encrypt_detached(&k, &nonce, a, p, &mut ct).expect("encryption");
+        let (written, tag) =
+            Enc::encrypt_out_detached(&k, &nonce, a, p, &mut ct).expect("encryption");
         assert_eq!(written, p.len());
 
         let mut back = vec![0u8; p.len()];
-        let n = Dec::decrypt_detached(&k, &nonce, a, &ct, &tag, &mut back).expect("decryption");
+        let n = Dec::decrypt_out_detached(&k, &nonce, a, &ct, &tag, &mut back).expect("decryption");
         assert_eq!(n, p.len());
         assert_eq!(back, p, "round trip with aad {} / payload {}", a.len(), p.len());
         tags.push(tag);
@@ -527,7 +529,7 @@ fn an_empty_update_does_not_close_the_aad_phase() {
     // The AAD really was absorbed: the direct API with the same AAD must agree, and the
     // decryptor, given the same empty-then-AAD sequence, must verify it.
     let mut expected = [0u8; 64];
-    let n = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 16>::encrypt(
+    let n = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 16>::encrypt_out(
         &k, &nonce, aad, message, &mut expected,
     )
     .expect("direct");
@@ -676,7 +678,7 @@ fn resuming_a_part_way_open_block_agrees_with_a_one_shot() {
 
     let mut reference = vec![0u8; plaintext.len()];
     let (_, reference_tag) =
-        Enc::encrypt_detached(&k, &nonce, aad, &plaintext, &mut reference).expect("one-shot");
+        Enc::encrypt_out_detached(&k, &nonce, aad, &plaintext, &mut reference).expect("one-shot");
 
     for first in [1usize, 3, 5, 15] {
         let mut ccm = Enc::new(&k, &nonce, aad, plaintext.len()).expect("streaming init");
@@ -715,10 +717,10 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
         let short = vec![0u8; len];
         assert!(
             matches!(
-                Dec::decrypt(&k, &nonce, &[], &short, &mut out),
+                Dec::decrypt_out(&k, &nonce, &[], &short, &mut out),
                 Err(SymmetricCipherError::DecryptionFailed)
             ),
-            "a {len}-byte C cannot carry a 16-byte tag (Ccm::decrypt)"
+            "a {len}-byte C cannot carry a 16-byte tag (Ccm::decrypt_out)"
         );
         assert!(
             matches!(
@@ -737,9 +739,9 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
 
     // Exactly TAG_LEN: an empty payload plus its tag, which must verify.
     let mut inline = [0u8; 16];
-    let n = Enc::encrypt(&k, &nonce, &[], &[], &mut inline).expect("encryption");
+    let n = Enc::encrypt_out(&k, &nonce, &[], &[], &mut inline).expect("encryption");
     assert_eq!(n, 16);
-    assert_eq!(Dec::decrypt(&k, &nonce, &[], &inline, &mut out).expect("decryption"), 0);
+    assert_eq!(Dec::decrypt_out(&k, &nonce, &[], &inline, &mut out).expect("decryption"), 0);
 }
 
 /// An output buffer that is too short is refused with the length required, before any work.
@@ -753,20 +755,20 @@ fn undersized_output_buffers_are_refused() {
 
     let mut too_small = [0u8; 23];
     assert_eq!(
-        buffer_len_error(Enc::encrypt_detached(&k, &nonce, &[], &plaintext, &mut too_small)),
+        buffer_len_error(Enc::encrypt_out_detached(&k, &nonce, &[], &plaintext, &mut too_small)),
         Some(24)
     );
 
     let mut too_small = [0u8; 39];
     assert_eq!(
-        buffer_len_error(Enc::encrypt(&k, &nonce, &[], &plaintext, &mut too_small)),
+        buffer_len_error(Enc::encrypt_out(&k, &nonce, &[], &plaintext, &mut too_small)),
         Some(40)
     );
 
     let mut ct = [0u8; 40];
-    Enc::encrypt(&k, &nonce, &[], &plaintext, &mut ct).expect("encryption");
+    Enc::encrypt_out(&k, &nonce, &[], &plaintext, &mut ct).expect("encryption");
     let mut too_small = [0u8; 23];
-    assert_eq!(buffer_len_error(Dec::decrypt(&k, &nonce, &[], &ct, &mut too_small)), Some(24));
+    assert_eq!(buffer_len_error(Dec::decrypt_out(&k, &nonce, &[], &ct, &mut too_small)), Some(24));
 }
 
 /// A key of the wrong [`KeyType`] is rejected by every entry point, in both directions.
@@ -778,7 +780,7 @@ fn a_non_cipher_key_is_rejected() {
         KeyMaterial::<16>::from_bytes_as_type(&[0x11; 16], KeyType::MACKey).expect("a MAC key");
     let mut out = [0u8; 16];
     assert!(matches!(
-        Enc::encrypt_detached(&wrong, &[0u8; 12], &[], &[], &mut out),
+        Enc::encrypt_out_detached(&wrong, &[0u8; 12], &[], &[], &mut out),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
     assert!(matches!(
@@ -786,7 +788,7 @@ fn a_non_cipher_key_is_rejected() {
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
     assert!(matches!(
-        Dec::decrypt(&wrong, &[0u8; 12], &[], &[0u8; 16], &mut out),
+        Dec::decrypt_out(&wrong, &[0u8; 12], &[], &[0u8; 16], &mut out),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
     assert!(matches!(

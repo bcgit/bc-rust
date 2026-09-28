@@ -115,7 +115,7 @@ fn key<const N: usize>() -> KeyMaterial<N> {
 /// The message every bench processes, filled at run time and then only ever reached through a
 /// `black_box`ed reference, so that it is a whole stack array in every bench alike. Without that,
 /// a `[0xA5; N]` literal is a constant the compiler may keep in read-only data in one bench, or
-/// fuse straight into the copy `encrypt_detached` makes in another, and the two paths that do
+/// fuse straight into the copy `encrypt_out_detached` makes in another, and the two paths that do
 /// identical work measured a whole `MESSAGE_LEN` apart.
 fn message() -> [u8; MESSAGE_LEN] {
     let mut m = [0u8; MESSAGE_LEN];
@@ -174,7 +174,7 @@ fn print_struct_sizes() {
 /// nothing else. This is the baseline for both `bench_streaming_encrypt` and
 /// `bench_oneshot_encrypt_out_detached`.
 fn bench_direct_encrypt_detached() {
-    eprintln!("Ccm::encrypt_detached, {MESSAGE_LEN} B");
+    eprintln!("Ccm::encrypt_out_detached, {MESSAGE_LEN} B");
 
     let k = key::<16>();
     let nonce = [0x24u8; NONCE_LEN];
@@ -182,7 +182,7 @@ fn bench_direct_encrypt_detached() {
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
     let (_, tag) =
-        Aes128Ccm::<Encrypting>::encrypt_detached(&k, &nonce, &[], plaintext, &mut ciphertext)
+        Aes128Ccm::<Encrypting>::encrypt_out_detached(&k, &nonce, &[], plaintext, &mut ciphertext)
             .unwrap();
     print!("{:x?}", &tag);
 }
@@ -246,7 +246,7 @@ fn bench_streaming_decrypt() {
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
     let mut sealed = [0u8; FINAL_LEN];
-    let n = Aes128Ccm::<Encrypting>::encrypt(&k, &nonce, &[], plaintext, &mut sealed).unwrap();
+    let n = Aes128Ccm::<Encrypting>::encrypt_out(&k, &nonce, &[], plaintext, &mut sealed).unwrap();
 
     let mut dec = Aes128CcmDecryptor::do_decrypt_init(&k, &nonce).unwrap();
     for chunk in sealed[..n].chunks(1024) {

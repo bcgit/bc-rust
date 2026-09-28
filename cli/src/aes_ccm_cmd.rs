@@ -293,7 +293,7 @@ where
 /// One fully-instantiated CCM run.
 ///
 /// `input` is processed in place through [`Ccm`]'s own streaming API rather than through the
-/// one-shot [`Ccm::encrypt`]/[`Ccm::decrypt`], which each need a second, freshly allocated buffer
+/// one-shot [`Ccm::encrypt_out`]/[`Ccm::decrypt_out`], which each need a second, freshly allocated buffer
 /// the size of `input`: the declared-length constructor already has everything a one-shot needs,
 /// so there is no second buffer to allocate or copy into.
 fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
@@ -343,7 +343,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     } else {
         // `split_last_chunk_mut` is `None` exactly when there is no room for a `TAG_LEN`-byte tag,
         // which is the same octet-level test (and the same allowance for an empty payload plus its
-        // tag) that `Ccm::decrypt`'s own doc comment explains for Sec 6.2 step 1.
+        // tag) that `Ccm::decrypt_out`'s own doc comment explains for Sec 6.2 step 1.
         let Some((data, tag)) = input.split_last_chunk_mut::<TAG_LEN>() else {
             eprintln!(
                 "Error: input is {} bytes, shorter than the {TAG_LEN}-byte tag it must end with.",

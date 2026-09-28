@@ -824,7 +824,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached(
+                    Aes128CcmEnc::encrypt_out_detached(
                         black_box(&key),
                         &nonce,
                         &no_aad,
@@ -842,14 +842,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
     // failing tag check would short-circuit the comparison and measure the wrong thing.
     let mut ciphertext = [0u8; DATA_LEN];
     let (_, tag) =
-        Aes128CcmEnc::encrypt_detached(&key, &nonce, &no_aad, &data, &mut ciphertext).unwrap();
+        Aes128CcmEnc::encrypt_out_detached(&key, &nonce, &no_aad, &data, &mut ciphertext).unwrap();
 
     group.bench_function("decrypt 16KiB, no AAD", |b| {
         b.iter_batched_ref(
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128CcmDec::decrypt_detached(
+                    Aes128CcmDec::decrypt_out_detached(
                         black_box(&key),
                         &nonce,
                         &no_aad,
@@ -871,7 +871,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached(
+                    Aes128CcmEnc::encrypt_out_detached(
                         black_box(&key),
                         &nonce,
                         black_box(&data),
@@ -891,7 +891,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128CcmEnc::encrypt_detached(
+                Aes128CcmEnc::encrypt_out_detached(
                     black_box(&key),
                     &nonce,
                     black_box(&data),
@@ -940,12 +940,12 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     });
 
     // The same 4 KiB and nonce through `Ccm` directly, for the ratio.
-    group.bench_function("Ccm::encrypt_detached 4KiB", |b| {
+    group.bench_function("Ccm::encrypt_out_detached 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached(
+                    Aes128CcmEnc::encrypt_out_detached(
                         black_box(&key),
                         &nonce,
                         &no_aad,

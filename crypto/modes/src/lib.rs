@@ -345,7 +345,7 @@
 //! They buffer the whole message, so at `FINAL_LEN = 2048` an AES-128 adapter is **4304 B**.
 //! Their one-shots override the trait defaults and use [`Ccm`] directly, costing 256 B for AES-128
 //! (the table above) regardless of `FINAL_LEN`; the like-for-like benchmark compares that path
-//! with [`Ccm::encrypt_detached`]. See [`Ccm`] for why only the open-ended streaming methods must
+//! with [`Ccm::encrypt_out_detached`]. See [`Ccm`] for why only the open-ended streaming methods must
 //! buffer.
 //!
 //! CFB8 is the same size as CBC because it stores the same thing: one block of input to the next

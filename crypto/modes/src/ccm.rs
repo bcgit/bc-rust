@@ -13,8 +13,8 @@
 //! ## Returning the ciphertext ends the tag
 //!
 //! Step 8 returns a single string, `ciphertext || tag`. This type offers both layouts: the inherent
-//! [`Ccm::encrypt`] / [`Ccm::decrypt`] produce and consume the spec's own inline string, and the
-//! detached pair [`Ccm::encrypt_detached`] / [`Ccm::decrypt_detached`] keeps the tag separate,
+//! [`Ccm::encrypt_out`] / [`Ccm::decrypt_out`] produce and consume the spec's own inline string, and the
+//! detached pair [`Ccm::encrypt_out_detached`] / [`Ccm::decrypt_out_detached`] keeps the tag separate,
 //! which is the shape [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] use.
 //!
 //! # Usage Examples
@@ -44,20 +44,20 @@
 //!
 //! // The spec's own layout (SP 800-38C Sec 6.1 step 8): `ciphertext || tag`.
 //! let mut ct_and_tag = vec![0u8; message.len() + 16];
-//! Aes128Ccm::<Encrypting>::encrypt(&key, &nonce, header, message, &mut ct_and_tag).expect("encryption");
+//! Aes128Ccm::<Encrypting>::encrypt_out(&key, &nonce, header, message, &mut ct_and_tag).expect("encryption");
 //!
 //! let mut recovered_plaintext = vec![0u8; message.len()];
-//! let n = Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &ct_and_tag, &mut recovered_plaintext).expect("decryption");
+//! let n = Aes128Ccm::<Decrypting>::decrypt_out(&key, &nonce, header, &ct_and_tag, &mut recovered_plaintext).expect("decryption");
 //! assert_eq!(&recovered_plaintext[..n], message);
 //!
 //! // If we tamper with any byte of the ciphertext, then this fails with a SymmetricCipherError::AEADTagCheckFailed
 //! let mut tampered = ct_and_tag.clone();
 //! tampered[0] ^= 1;
-//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, header, &tampered, &mut recovered_plaintext).unwrap_err(),
+//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt_out(&key, &nonce, header, &tampered, &mut recovered_plaintext).unwrap_err(),
 //!             SymmetricCipherError::AEADTagCheckFailed);
 //!
 //! // Same if we provide the correct ciphertext and tag, but change the authenticated data
-//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt(&key, &nonce, b"other header", &ct_and_tag, &mut recovered_plaintext).unwrap_err(),
+//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt_out(&key, &nonce, b"other header", &ct_and_tag, &mut recovered_plaintext).unwrap_err(),
 //!             SymmetricCipherError::AEADTagCheckFailed);
 //! ```
 //!
@@ -641,12 +641,12 @@ where
     /// One-shot generation-encryption with a **detached** tag (Sec 6.1).
     ///
     /// Writes `plaintext.len()` bytes of ciphertext into `ciphertext` and returns that count with
-    /// the tag. For the spec's own inline `ciphertext || tag` string, use [`Self::encrypt`].
+    /// the tag. For the spec's own inline `ciphertext || tag` string, use [`Self::encrypt_out`].
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, plus
     /// [`Self::new`]'s errors.
-    pub fn encrypt_detached(
+    pub fn encrypt_out_detached(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -670,8 +670,8 @@ where
     /// `ciphertext` needs `plaintext.len() + TAG_LEN` bytes; the return is how many were written.
     ///
     /// # Errors
-    /// As [`Self::encrypt_detached`].
-    pub fn encrypt(
+    /// As [`Self::encrypt_out_detached`].
+    pub fn encrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -683,7 +683,7 @@ where
             return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let (data, tag_out) = ciphertext[..needed].split_at_mut(plaintext.len());
-        let (_, tag) = Self::encrypt_detached(key, nonce, aad, plaintext, data)?;
+        let (_, tag) = Self::encrypt_out_detached(key, nonce, aad, plaintext, data)?;
         tag_out.copy_from_slice(&tag);
         Ok(needed)
     }
@@ -748,7 +748,7 @@ where
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify,
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, plus
     /// [`Self::new`]'s errors.
-    pub fn decrypt_detached(
+    pub fn decrypt_out_detached(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -785,8 +785,8 @@ where
     /// [`SymmetricCipherDecryptor::do_final`] specifies for a malformed ciphertext so that every
     /// inline entry point -- this one, [`CcmDecryptor::do_final`] and
     /// [`CcmDecryptor::decrypt_out_with_aad`](AEADCipherDecryptor::decrypt_out_with_aad) -- agrees
-    /// on the same input. Otherwise as [`Self::decrypt_detached`].
-    pub fn decrypt(
+    /// on the same input. Otherwise as [`Self::decrypt_out_detached`].
+    pub fn decrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -796,7 +796,7 @@ where
         let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
             return Err(SymmetricCipherError::DecryptionFailed);
         };
-        Self::decrypt_detached(key, nonce, aad, data, tag, plaintext)
+        Self::decrypt_out_detached(key, nonce, aad, data, tag, plaintext)
     }
 }
 
@@ -1043,7 +1043,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Every one-shot comes here: they already have both lengths, so they skip the buffer and run
-    /// the inherent non-buffering [`Ccm::encrypt_detached`] under a freshly drawn nonce.
+    /// the inherent non-buffering [`Ccm::encrypt_out_detached`] under a freshly drawn nonce.
     fn one_shot(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1058,7 +1058,7 @@ where
         CcmBuffer::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>::check_random_nonce_len();
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         let (written, tag) =
-            Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached(
+            Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_out_detached(
                 key, &nonce, aad, plaintext, ciphertext,
             )?;
         Ok((nonce, written, tag))
@@ -1477,19 +1477,19 @@ where
         // The one-shots never construct a `CcmBuffer`, so the nonce floor is asserted here, as
         // the encryptor's `one_shot` does.
         CcmBuffer::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>::check_random_nonce_len();
-        Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached(
+        Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_out_detached(
             key, nonce, aad, ciphertext, tag, plaintext,
         )
     }
 
     /// Splits the trailing `TAG_LEN` bytes off as the tag and runs the non-buffering
-    /// [`Ccm::decrypt_detached`], checking the output buffer first so that a short one is reported
+    /// [`Ccm::decrypt_out_detached`], checking the output buffer first so that a short one is reported
     /// before a short ciphertext.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short;
     /// [`SymmetricCipherError::DecryptionFailed`] if `ciphertext` is shorter than the tag;
-    /// otherwise as [`Ccm::decrypt_detached`].
+    /// otherwise as [`Ccm::decrypt_out_detached`].
     fn decrypt_out_with_aad(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],

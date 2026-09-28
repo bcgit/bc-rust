@@ -88,18 +88,18 @@ pub const CCM_TAG_LEN: usize = 16;
 ///
 /// // The spec's own layout: ciphertext with the tag appended (Sec 6.1 step 8).
 /// let mut sealed = vec![0u8; message.len() + CCM_TAG_LEN];
-/// let n = Ccm128::<Encrypting>::encrypt(&key, &nonce, header, message, &mut sealed).expect("encryption");
+/// let n = Ccm128::<Encrypting>::encrypt_out(&key, &nonce, header, message, &mut sealed).expect("encryption");
 /// assert_eq!(n, sealed.len());
 ///
 /// let mut opened = vec![0u8; message.len()];
-/// let n = Ccm128::<Decrypting>::decrypt(&key, &nonce, header, &sealed, &mut opened).expect("decryption");
+/// let n = Ccm128::<Decrypting>::decrypt_out(&key, &nonce, header, &sealed, &mut opened).expect("decryption");
 /// assert_eq!(&opened[..n], message);
 ///
 /// // Tampering with either the ciphertext or the header is caught.
 /// let mut tampered = sealed.clone();
 /// tampered[0] ^= 1;
-/// assert!(Ccm128::<Decrypting>::decrypt(&key, &nonce, header, &tampered, &mut opened).is_err());
-/// assert!(Ccm128::<Decrypting>::decrypt(&key, &nonce, b"other header", &sealed, &mut opened).is_err());
+/// assert!(Ccm128::<Decrypting>::decrypt_out(&key, &nonce, header, &tampered, &mut opened).is_err());
+/// assert!(Ccm128::<Decrypting>::decrypt_out(&key, &nonce, b"other header", &sealed, &mut opened).is_err());
 /// ```
 ///
 /// A detached tag, for a wire format that carries it separately:
@@ -116,11 +116,11 @@ pub const CCM_TAG_LEN: usize = 16;
 /// let message = b"a short packet";
 ///
 /// let mut ct = vec![0u8; message.len()];
-/// let (n, tag) = Ccm128::<Encrypting>::encrypt_detached(&key, &nonce, &[], message, &mut ct).unwrap();
+/// let (n, tag) = Ccm128::<Encrypting>::encrypt_out_detached(&key, &nonce, &[], message, &mut ct).unwrap();
 /// assert_eq!(n, message.len(), "CCM never expands the payload");
 ///
 /// let mut pt = vec![0u8; message.len()];
-/// Ccm128::<Decrypting>::decrypt_detached(&key, &nonce, &[], &ct, &tag, &mut pt).unwrap();
+/// Ccm128::<Decrypting>::decrypt_out_detached(&key, &nonce, &[], &ct, &tag, &mut pt).unwrap();
 /// assert_eq!(&pt[..], message);
 /// ```
 #[allow(non_camel_case_types)]
@@ -141,9 +141,9 @@ pub type AES_CCM_128<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// let message = [0u8; 30];
 ///
 /// let mut sealed = vec![0u8; message.len() + CCM_TAG_LEN];
-/// Ccm192::<Encrypting>::encrypt(&key, &nonce, &[], &message, &mut sealed).unwrap();
+/// Ccm192::<Encrypting>::encrypt_out(&key, &nonce, &[], &message, &mut sealed).unwrap();
 /// let mut opened = vec![0u8; message.len()];
-/// Ccm192::<Decrypting>::decrypt(&key, &nonce, &[], &sealed, &mut opened).unwrap();
+/// Ccm192::<Decrypting>::decrypt_out(&key, &nonce, &[], &sealed, &mut opened).unwrap();
 /// assert_eq!(opened, message);
 /// ```
 #[allow(non_camel_case_types)]
@@ -164,9 +164,9 @@ pub type AES_CCM_192<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// let message = [0u8; 30];
 ///
 /// let mut sealed = vec![0u8; message.len() + CCM_TAG_LEN];
-/// Ccm256::<Encrypting>::encrypt(&key, &nonce, &[], &message, &mut sealed).unwrap();
+/// Ccm256::<Encrypting>::encrypt_out(&key, &nonce, &[], &message, &mut sealed).unwrap();
 /// let mut opened = vec![0u8; message.len()];
-/// Ccm256::<Decrypting>::decrypt(&key, &nonce, &[], &sealed, &mut opened).unwrap();
+/// Ccm256::<Decrypting>::decrypt_out(&key, &nonce, &[], &sealed, &mut opened).unwrap();
 /// assert_eq!(opened, message);
 /// ```
 #[allow(non_camel_case_types)]
