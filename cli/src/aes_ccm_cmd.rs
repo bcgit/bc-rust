@@ -19,6 +19,12 @@
 //! command to point at a multi-gigabyte file. `aes256-ctr` piped through a separate MAC, or
 //! `ascon-aead128`, are the streaming alternatives.
 //!
+//! The AAD is different: `--aad-file` is streamed. CCM needs the AAD's length before its first
+//! byte (A.2.2 puts the encoding of `a` in front of `A`), and a regular file's size is known
+//! before it is read, so the file is declared by its size and fed to the MAC in 1 KiB chunks
+//! without ever being held whole. A file with no size to declare -- a pipe, `/dev/stdin` -- is
+//! read whole instead.
+//!
 //! # The nonce is supplied, not generated
 //!
 //! This is the one cipher command here with a `--nonce` flag. The other modes generate their IV or
@@ -41,6 +47,7 @@
 //!
 //! The output layout is Sec 6.1 step 8's own: `ciphertext || tag`.
 
+use std::fs::File;
 use std::io::{self, Read};
 use std::process::exit;
 
@@ -54,6 +61,9 @@ use bouncycastle::modes::{Ccm, Decrypting, Encrypting};
 use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
 use crate::helpers;
 
+/// Bytes of `--aad-file` read per call, matching the other commands' streaming chunk.
+const CHUNK_LEN: usize = 1024;
+
 /// AES-128 CCM. See the module docs and the subcommand help.
 pub(crate) fn aes128_ccm_cmd(
     action: &BlockModeAction,
@@ -62,6 +72,7 @@ pub(crate) fn aes128_ccm_cmd(
     nonce: &Option<String>,
     nonce_file: &Option<String>,
     aad: &Option<String>,
+    aad_file: &Option<String>,
     tag_len: usize,
     output_hex: bool,
 ) {
@@ -71,6 +82,7 @@ pub(crate) fn aes128_ccm_cmd(
         nonce,
         nonce_file,
         aad,
+        aad_file,
         tag_len,
         output_hex,
     );
@@ -84,6 +96,7 @@ pub(crate) fn aes192_ccm_cmd(
     nonce: &Option<String>,
     nonce_file: &Option<String>,
     aad: &Option<String>,
+    aad_file: &Option<String>,
     tag_len: usize,
     output_hex: bool,
 ) {
@@ -93,6 +106,7 @@ pub(crate) fn aes192_ccm_cmd(
         nonce,
         nonce_file,
         aad,
+        aad_file,
         tag_len,
         output_hex,
     );
@@ -106,6 +120,7 @@ pub(crate) fn aes256_ccm_cmd(
     nonce: &Option<String>,
     nonce_file: &Option<String>,
     aad: &Option<String>,
+    aad_file: &Option<String>,
     tag_len: usize,
     output_hex: bool,
 ) {
@@ -115,6 +130,7 @@ pub(crate) fn aes256_ccm_cmd(
         nonce,
         nonce_file,
         aad,
+        aad_file,
         tag_len,
         output_hex,
     );
@@ -172,13 +188,98 @@ fn load_nonce(nonce: &Option<String>, nonce_file: &Option<String>) -> Vec<u8> {
     bytes
 }
 
-fn load_aad(aad: &Option<String>) -> Vec<u8> {
-    match aad {
-        Some(v) => hex::decode(v).unwrap_or_else(|_| {
-            eprintln!("Error: associated data is not valid hex.");
+/// Where the AAD comes from.
+enum Aad {
+    /// `--aad` (hex), a `--aad-file` with no size to declare, or no AAD at all: held whole.
+    Bytes(Vec<u8>),
+    /// A `--aad-file` that is a regular file: declared by its size and read in [`CHUNK_LEN`]
+    /// pieces by [`feed_aad`], never held whole.
+    File { file: File, path: String, len: usize },
+}
+
+impl Aad {
+    /// The AAD length to declare to [`Ccm::new_with_lengths`].
+    fn len(&self) -> usize {
+        match self {
+            Aad::Bytes(bytes) => bytes.len(),
+            Aad::File { len, .. } => *len,
+        }
+    }
+}
+
+/// Loads the AAD from `--aad-file` (raw bytes, never hex-decoded) or `--aad` (hex); the file wins
+/// if both are given, as for `aes*-gcm`. Empty if neither is given.
+///
+/// A regular file is only opened and sized here; [`feed_aad`] reads it. Anything else -- a pipe, a
+/// character device -- has no size to declare in advance, so it is read whole.
+fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Aad {
+    if let Some(path) = aad_file {
+        let file = File::open(path).unwrap_or_else(|e| {
+            eprintln!("Error: couldn't read file '{path}': {e}");
             exit(-1)
-        }),
-        None => Vec::new(),
+        });
+        let metadata = file.metadata().unwrap_or_else(|e| {
+            eprintln!("Error: couldn't read file '{path}': {e}");
+            exit(-1)
+        });
+        if !metadata.is_file() {
+            return Aad::Bytes(helpers::read_from_file_raw(path));
+        }
+        let Ok(len) = usize::try_from(metadata.len()) else {
+            eprintln!("Error: AAD file '{path}' is too large for this platform.");
+            exit(-1)
+        };
+        Aad::File { file, path: path.clone(), len }
+    } else if let Some(v) = aad {
+        Aad::Bytes(hex::decode(v).unwrap_or_else(|_| {
+            eprintln!("Error: associated data is not valid hex. Use --aad-file for raw bytes.");
+            exit(-1)
+        }))
+    } else {
+        Aad::Bytes(Vec::new())
+    }
+}
+
+/// Supplies all of the AAD declared as [`Aad::len`] to `ccm`, reading an [`Aad::File`] a chunk at
+/// a time.
+///
+/// The declared length is the file's size when it was opened. If the file changes size while it
+/// is being read, the declared length is wrong, and the tag would be computed over a length
+/// encoding that does not match the AAD; that is reported and the command exits rather than
+/// producing it.
+fn feed_aad<P, Dir, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
+    ccm: &mut Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
+    aad: &mut Aad,
+) where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    match aad {
+        Aad::Bytes(bytes) => {
+            // Declared as exactly `bytes.len()`, and supplied in this one call.
+            ccm.do_update_aad(bytes).expect("declared AAD length matches what was sent");
+        }
+        Aad::File { file, path, len } => {
+            let mut buf = [0u8; CHUNK_LEN];
+            let mut read = 0usize;
+            loop {
+                let n = file.read(&mut buf).unwrap_or_else(|e| {
+                    eprintln!("Error: couldn't read file '{path}': {e}");
+                    exit(-1)
+                });
+                if n == 0 {
+                    break;
+                }
+                read += n;
+                if ccm.do_update_aad(&buf[..n]).is_err() {
+                    eprintln!("Error: AAD file '{path}' grew while it was being read.");
+                    exit(-1)
+                }
+            }
+            if read != *len {
+                eprintln!("Error: AAD file '{path}' shrank while it was being read.");
+                exit(-1)
+            }
+        }
     }
 }
 
@@ -201,6 +302,7 @@ fn run<P, const KEY_LEN: usize>(
     nonce: &Option<String>,
     nonce_file: &Option<String>,
     aad: &Option<String>,
+    aad_file: &Option<String>,
     tag_len: usize,
     output_hex: bool,
 ) where
@@ -217,33 +319,33 @@ fn run<P, const KEY_LEN: usize>(
     }
 
     let nonce_bytes = load_nonce(nonce, nonce_file);
-    let aad_bytes = load_aad(aad);
+    let mut aad = load_aad(aad, aad_file);
     let input = read_all_stdin();
     let encrypt = matches!(action, BlockModeAction::Encrypt);
 
     macro_rules! with_tag_len {
         ($n:literal) => {
             match tag_len {
-                4 => go::<P, KEY_LEN, $n, 4>(
-                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
-                ),
-                6 => go::<P, KEY_LEN, $n, 6>(
-                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
-                ),
-                8 => go::<P, KEY_LEN, $n, 8>(
-                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
-                ),
+                4 => {
+                    go::<P, KEY_LEN, $n, 4>(key, &nonce_bytes, &mut aad, input, encrypt, output_hex)
+                }
+                6 => {
+                    go::<P, KEY_LEN, $n, 6>(key, &nonce_bytes, &mut aad, input, encrypt, output_hex)
+                }
+                8 => {
+                    go::<P, KEY_LEN, $n, 8>(key, &nonce_bytes, &mut aad, input, encrypt, output_hex)
+                }
                 10 => go::<P, KEY_LEN, $n, 10>(
-                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
+                    key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
                 12 => go::<P, KEY_LEN, $n, 12>(
-                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
+                    key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
                 14 => go::<P, KEY_LEN, $n, 14>(
-                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
+                    key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
                 16 => go::<P, KEY_LEN, $n, 16>(
-                    key, &nonce_bytes, &aad_bytes, input, encrypt, output_hex,
+                    key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
                 _ => unreachable!("tag length was validated before stdin was read"),
             }
@@ -267,9 +369,9 @@ fn run<P, const KEY_LEN: usize>(
     }
 }
 
-/// Reports [`Ccm::new`]'s refusal of a payload past the `q` limit and exits.
+/// Reports [`Ccm::new_with_lengths`]'s refusal of a payload past the `q` limit and exits.
 ///
-/// The only [`SymmetricCipherError::GenericError`] `new` can return is that limit: A.1's
+/// The only [`SymmetricCipherError::GenericError`] it can return is that limit: A.1's
 /// `p < 2^8q`, where `q = 15 - n`. Both directions hit it -- the decrypt side on the input minus
 /// its tag -- so both report it here, with the numbers, since the fix is a shorter nonce.
 fn payload_past_the_q_limit<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
@@ -295,11 +397,12 @@ where
 /// `input` is processed in place through [`Ccm`]'s own streaming API rather than through the
 /// one-shot [`Ccm::encrypt_out`]/[`Ccm::decrypt_out`], which each need a second, freshly allocated buffer
 /// the size of `input`: the declared-length constructor already has everything a one-shot needs,
-/// so there is no second buffer to allocate or copy into.
+/// so there is no second buffer to allocate or copy into. The AAD goes in through
+/// [`Ccm::new_with_lengths`] and [`feed_aad`], so a `--aad-file` is streamed rather than loaded.
 fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     nonce_bytes: &[u8],
-    aad: &[u8],
+    aad: &mut Aad,
     mut input: Vec<u8>,
     encrypt: bool,
     output_hex: bool,
@@ -318,8 +421,14 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     };
 
     if encrypt {
-        match Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new(key, &nonce, aad, input.len()) {
+        match Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new_with_lengths(
+            key,
+            &nonce,
+            aad.len(),
+            input.len(),
+        ) {
             Ok(mut ccm) => {
+                feed_aad(&mut ccm, aad);
                 // `new` already accepted this exact length as `input.len()`, and this is the one
                 // and only call supplying it, so `take_owed` can never see too much and `owed`
                 // can never be left nonzero: neither of these can fail on the path that reaches
@@ -351,8 +460,14 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
             );
             exit(-1)
         };
-        match Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new(key, &nonce, aad, data.len()) {
+        match Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new_with_lengths(
+            key,
+            &nonce,
+            aad.len(),
+            data.len(),
+        ) {
             Ok(mut ccm) => {
+                feed_aad(&mut ccm, aad);
                 // As the encrypt arm above: `data.len()` is exactly the length just declared, and
                 // it is supplied in this one call, so this cannot fail.
                 ccm.do_decrypt_update(data).expect("declared length matches what was sent");
