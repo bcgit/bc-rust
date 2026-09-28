@@ -99,7 +99,7 @@ pub(crate) fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
             break;
         }
         // GCM's encryptor holds nothing back, so `out` (as long as `buf`) always has room.
-        let written = enc.do_update_out(&buf[..n], &mut out).unwrap_or_else(|e| {
+        let written = enc.do_encrypt_out(&buf[..n], &mut out).unwrap_or_else(|e| {
             eprintln!("Error: encryption failed: {e:?}");
             exit(-1);
         });
@@ -152,9 +152,9 @@ pub(crate) fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         if n == 0 {
             break;
         }
-        let out_len = dec.update_out_len(n);
+        let out_len = dec.do_decrypt_out_len(n);
         let mut out = vec![0u8; out_len];
-        dec.do_update_out(&buf[..n], &mut out).unwrap_or_else(|e| {
+        dec.do_decrypt_out(&buf[..n], &mut out).unwrap_or_else(|e| {
             eprintln!("Error: decryption failed: {e:?}");
             exit(-1);
         });

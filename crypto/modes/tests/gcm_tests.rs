@@ -46,7 +46,7 @@ fn aad_after_data_is_a_state_error_unless_empty() {
     let (mut enc, _nonce) = ToyGcm::<Encrypting, 16>::do_encrypt_init(&key).unwrap();
     enc.do_update_aad(b"header").unwrap();
     let mut out = [0u8; 8];
-    enc.do_update_out(&[0x11u8; 8], &mut out).unwrap();
+    enc.do_encrypt_out(&[0x11u8; 8], &mut out).unwrap();
 
     match enc.do_update_aad(b"too late") {
         Err(SymmetricCipherError::StateError(_)) => {}
@@ -65,7 +65,7 @@ fn aad_after_held_back_data_is_still_a_state_error() {
     let key = toy_key();
     let mut dec = ToyGcm::<Decrypting, 16>::do_decrypt_init(&key, &[0u8; 12]).unwrap();
     let mut nothing = [0u8; 0];
-    assert_eq!(dec.do_update_out(&[0x22u8; 5], &mut nothing).unwrap(), 0, "all held back");
+    assert_eq!(dec.do_decrypt_out(&[0x22u8; 5], &mut nothing).unwrap(), 0, "all held back");
     match dec.do_update_aad(b"too late") {
         Err(SymmetricCipherError::StateError(_)) => {}
         other => panic!("expected StateError, got {other:?}"),
@@ -93,8 +93,8 @@ fn chunking_is_independent_for_aad_and_data() {
             enc.do_update_aad(&aad[..aad_split]).unwrap();
             enc.do_update_aad(&aad[aad_split..]).unwrap();
             let mut ct = [0u8; 50];
-            let n = enc.do_update_out(&message[..data_split], &mut ct).unwrap();
-            enc.do_update_out(&message[data_split..], &mut ct[n..]).unwrap();
+            let n = enc.do_encrypt_out(&message[..data_split], &mut ct).unwrap();
+            enc.do_encrypt_out(&message[data_split..], &mut ct[n..]).unwrap();
             let (_, _, tag) = enc.do_final_detached().unwrap();
             assert_eq!(&ct[..], &expected_ct[..], "aad_split {aad_split}, data_split {data_split}");
             assert_eq!(tag, expected_tag, "aad_split {aad_split}, data_split {data_split}");
@@ -191,17 +191,17 @@ fn update_out_len_is_exact_across_irregular_chunking() {
         if piece.is_empty() {
             continue;
         }
-        let expect = dec.update_out_len(piece.len());
+        let expect = dec.do_decrypt_out_len(piece.len());
         let mut buf = vec![0u8; expect];
-        let n = dec.do_update_out(piece, &mut buf).unwrap();
+        let n = dec.do_decrypt_out(piece, &mut buf).unwrap();
         assert_eq!(n, expect, "chunk {chunk}");
         released += piece.len();
     }
     // Drain whatever remains.
     let rest = &full_ct[released..];
-    let expect = dec.update_out_len(rest.len());
+    let expect = dec.do_decrypt_out_len(rest.len());
     let mut buf = vec![0u8; expect];
-    dec.do_update_out(rest, &mut buf).unwrap();
+    dec.do_decrypt_out(rest, &mut buf).unwrap();
     let (_last, last_len) = dec.do_final().unwrap();
     assert_eq!(last_len, 0);
 }
@@ -230,7 +230,7 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
     let mut dec = ToyGcm::<Decrypting, 16>::do_decrypt_init(&key, &nonce).unwrap();
     dec.do_update_aad(b"aad").unwrap();
     let mut streaming_buf = [0u8; 19];
-    let released = dec.do_update_out(&ct, &mut streaming_buf).unwrap();
+    let released = dec.do_decrypt_out(&ct, &mut streaming_buf).unwrap();
     assert_eq!(released, 3, "19 bytes in, the last 16 held back");
     assert_eq!(&streaming_buf[..3], &message[..3], "streaming already produced plaintext");
     match dec.do_final_detached(&tag) {

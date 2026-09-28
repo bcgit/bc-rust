@@ -47,7 +47,7 @@ where
     }
 
     /// A stream cipher buffers nothing, so every input byte produces exactly one output byte.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
 
@@ -58,7 +58,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// `plaintext`, checked before anything is consumed; otherwise whatever `do_encrypt` returns.
-    fn do_update_out(
+    fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -103,7 +103,7 @@ where
     }
 
     /// A stream cipher holds nothing back, so every input byte can be released immediately.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
 
@@ -113,7 +113,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// `ciphertext`, checked before anything is consumed; otherwise whatever `do_decrypt` returns.
-    fn do_update_out(
+    fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
