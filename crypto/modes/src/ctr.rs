@@ -249,6 +249,28 @@ where
         }
     }
 
+    /// As [`start`](Self::start), but the counter of the *next* block is `counter` instead of 0.
+    ///
+    /// GCM's GCTR (SP 800-38D Sec 6.5) runs the data through this mode starting at `inc32(J0)`,
+    /// whose counter field is `2` -- see `gcm.rs`. Crate-private because the public API's contract
+    /// is that a message starts at counter 0; only `gcm.rs` needs otherwise.
+    #[inline]
+    pub(crate) fn start_at(perm: P, nonce: [u8; INIT_DATA_LEN], counter: u64) -> Self {
+        Self::check_shape();
+        debug_assert!(
+            counter < Self::BLOCK_LIMIT,
+            "start_at must not be handed an already-exhausted counter"
+        );
+        Self {
+            perm,
+            nonce,
+            next_counter: counter,
+            keystream: Secret::new(),
+            used: BLOCK_LEN,
+            _dir: PhantomData,
+        }
+    }
+
     /// `Tj = N | [j]m`: the nonce followed by the counter, big-endian, in the trailing `CTR_LEN`
     /// bytes.
     ///
@@ -293,7 +315,8 @@ where
     /// block is used up and capacity has already been checked.
     #[inline]
     fn refill(&mut self) {
-        // Encrypted in place in the `Secret`: `Oj` never sits in a plain stack array.
+        // Enciphered in place inside the `Secret`, so no copy of the keystream block is ever left
+        // on the stack unzeroized; the counter block it starts from is public.
         *self.keystream = self.counter_block();
         self.perm.encrypt_block(&mut self.keystream);
         self.next_counter += 1;
@@ -318,19 +341,22 @@ where
     /// The counter blocks are built first -- they depend only on the nonce and the index, not on
     /// the data or on each other's cipher output -- so the `N` forward ciphers are independent.
     /// This is the parallelism Sec 6.5 describes, and it applies to both directions.
+    ///
+    /// `keystream` is the caller's scratch for the `N` blocks of `Oj`: [`Self::apply`] holds it in
+    /// a [`Secret`] for the whole call, so the batched keystream gets the same drop-time scrub as
+    /// the single-block buffer in `self` without a fresh allocation and scrub per batch.
     #[inline]
     fn apply_batch<const N: usize>(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]; N],
+        keystream: &mut [[u8; BLOCK_LEN]; N],
         batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
     ) {
-        // Live keystream until XORed in, so it gets the same drop-time scrub as `self.keystream`.
-        let mut keystream: Secret<[[u8; BLOCK_LEN]; N]> = Secret::new();
         for slot in keystream.iter_mut() {
             *slot = self.counter_block();
             self.next_counter += 1;
         }
-        batch(&self.perm, &mut keystream);
+        batch(&self.perm, keystream);
         for (block, o) in blocks.iter_mut().zip(keystream.iter()) {
             for (b, o) in block.iter_mut().zip(o.iter()) {
                 *b ^= *o;
@@ -341,13 +367,13 @@ where
     }
 
     /// XORs one whole block at a block boundary.
+    ///
+    /// Goes through the `Secret` keystream buffer rather than a plain local for the same reason
+    /// [`Self::refill`] does: a whole block of `Oj` must not be left on the stack unzeroized.
     #[inline]
     fn apply_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
-        let mut o: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        *o = self.counter_block();
-        self.perm.encrypt_block(&mut o);
-        self.next_counter += 1;
-        for (b, o) in block.iter_mut().zip(o.iter()) {
+        self.refill();
+        for (b, o) in block.iter_mut().zip(self.keystream.iter()) {
             *b ^= *o;
         }
         self.used = BLOCK_LEN;
@@ -370,14 +396,18 @@ where
         let (head, rest) = data.split_at_mut(head_len);
         self.apply_bytes(head);
 
+        // Scratch for the batched keystream, one per width and per call rather than per batch:
+        // held in a `Secret` so it is zeroized when this call returns, like the block in `self`.
         let (blocks, tail) = rest.as_chunks_mut::<BLOCK_LEN>();
         let (fours, rest_blocks) = blocks.as_chunks_mut::<4>();
+        let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
         for four in fours.iter_mut() {
-            self.apply_batch(four, P::encrypt_4blocks);
+            self.apply_batch(four, &mut ks4, P::encrypt_4blocks);
         }
         let (pairs, single) = rest_blocks.as_chunks_mut::<2>();
+        let mut ks2: Secret<[[u8; BLOCK_LEN]; 2]> = Secret::new();
         for pair in pairs.iter_mut() {
-            self.apply_batch(pair, P::encrypt_2blocks);
+            self.apply_batch(pair, &mut ks2, P::encrypt_2blocks);
         }
         for block in single.iter_mut() {
             self.apply_one(block);
@@ -463,5 +493,54 @@ where
         let len = data.len();
         self.apply(data)?;
         Ok(len)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Unit tests for `start_at`, which is `pub(crate)` and so cannot be reached from
+    //! `tests/ctr_tests.rs` -- exactly the "high-risk code that cannot be reached through the
+    //! public API" case QUALITY_AND_STYLE.md carves out for a unit test here rather than an
+    //! integration test.
+
+    use super::*;
+    use bouncycastle_aes::aes_internal::AES128Internal;
+    use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle_core::traits::ElectronicCodeBook;
+
+    type ToyCtr = Ctr<AES128Internal, Encrypting, 16, 16, 12>;
+
+    fn key() -> KeyMaterial<16> {
+        KeyMaterial::<16>::from_bytes_as_type(&[0x5Au8; 16], KeyType::SymmetricCipherKey)
+            .expect("a valid AES-128 key")
+    }
+
+    /// `start_at(.., 2)` must produce the same keystream as `start` after its first two blocks
+    /// (32 bytes) have been discarded. This is what lets GCM's GCTR (SP 800-38D Sec 6.5) begin at
+    /// `inc32(J0)`, whose counter field is 2 -- see `gcm.rs`.
+    #[test]
+    fn start_at_matches_start_after_discarding_blocks() {
+        let nonce = [0x11u8; 12];
+
+        let mut from_start = ToyCtr::start(AES128Internal::new(&key()).unwrap(), nonce);
+        let mut discarded = [0u8; 32];
+        from_start.apply(&mut discarded).unwrap();
+
+        let mut from_start_at = ToyCtr::start_at(AES128Internal::new(&key()).unwrap(), nonce, 2);
+
+        let mut a = [0x42u8; 48];
+        let mut b = a;
+        from_start.apply(&mut a).unwrap();
+        from_start_at.apply(&mut b).unwrap();
+        assert_eq!(a, b, "start_at(.., 2) must agree with start() past its first two blocks");
+    }
+
+    /// The capacity left after starting at counter 2 is exactly `2^32 - 2` blocks -- the SP
+    /// 800-38D Sec 5.2.1.1 plaintext length bound (`len(P) <= 2^39 - 256` bits, i.e. `2^32 - 2`
+    /// 128-bit blocks) that GCM relies on `Ctr`'s existing "counter exhausted" error to enforce.
+    #[test]
+    fn start_at_capacity_is_block_limit_minus_the_starting_counter() {
+        let ctr = ToyCtr::start_at(AES128Internal::new(&key()).unwrap(), [0u8; 12], 2);
+        assert_eq!(ctr.remaining_capacity(), (ToyCtr::BLOCK_LIMIT - 2) * 16);
     }
 }

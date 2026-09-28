@@ -179,7 +179,7 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyTrait<P, PK_LEN>
 
     fn compute_tr(&self) -> [u8; 64] {
         let mut tr = [0u8; 64];
-        H::new().hash_xof_out(&self.encode(), &mut tr);
+        H::new().xof_out(&self.encode(), &mut tr);
 
         tr
     }

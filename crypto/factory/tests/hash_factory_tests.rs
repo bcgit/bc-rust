@@ -160,8 +160,32 @@ mod hash_factory_tests {
 
         #[test]
         fn sha3_xof_tests() {
-            assert_eq!(XOFFactory::new("SHAKE128").unwrap().hash_xof(&DUMMY_SEED[..512], 32), b"\x88\x90\xed\x20\x4d\x22\x89\xe1\x72\xe9\xae\x68\x48\x18\x23\x77\x08\x20\x90\x80\x60\xa4\xdf\x33\x51\xa3\xf1\x84\xeb\xb6\xdd\x0f");
-            assert_eq!(XOFFactory::new("SHAKE256").unwrap().hash_xof(&DUMMY_SEED[..512], 32), b"\xa1\xd7\x18\x85\xb0\xa8\x41\xf0\x3d\x1d\xc7\xf2\x73\x8a\x15\xcc\x98\x40\x71\xa1\x7f\xfe\xd5\xec\xac\xb9\xf5\x87\x20\xa4\x73\xbe");
+            assert_eq!(XOFFactory::new("SHAKE128").unwrap().xof(&DUMMY_SEED[..512], 32), b"\x88\x90\xed\x20\x4d\x22\x89\xe1\x72\xe9\xae\x68\x48\x18\x23\x77\x08\x20\x90\x80\x60\xa4\xdf\x33\x51\xa3\xf1\x84\xeb\xb6\xdd\x0f");
+            assert_eq!(XOFFactory::new("SHAKE256").unwrap().xof(&DUMMY_SEED[..512], 32), b"\xa1\xd7\x18\x85\xb0\xa8\x41\xf0\x3d\x1d\xc7\xf2\x73\x8a\x15\xcc\x98\x40\x71\xa1\x7f\xfe\xd5\xec\xac\xb9\xf5\x87\x20\xa4\x73\xbe");
+        }
+
+        #[test]
+        fn ascon_hash_tests() {
+            use bouncycastle_ascon::ASCON_HASH256_NAME;
+            use bouncycastle_ascon::ascon_hash256::AsconHash256;
+            use bouncycastle_factory::FactoryError;
+
+            let direct = AsconHash256::new().hash(&DUMMY_SEED[..512]);
+
+            // Construct by literal name and by the crate's name constant; both must match the
+            // direct implementation.
+            let by_name = HashFactory::new("Ascon-Hash256").unwrap();
+            assert_eq!(by_name.output_len(), 32);
+            assert_eq!(by_name.hash(&DUMMY_SEED[..512]), direct);
+
+            let by_const = HashFactory::new(ASCON_HASH256_NAME).unwrap();
+            assert_eq!(by_const.hash(&DUMMY_SEED[..512]), direct);
+
+            // Unknown algorithm names are still rejected.
+            assert!(matches!(
+                HashFactory::new("Ascon-Hash999"),
+                Err(FactoryError::UnsupportedAlgorithm(_))
+            ));
         }
 
         #[test]
