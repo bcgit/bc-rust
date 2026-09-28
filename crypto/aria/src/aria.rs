@@ -4,7 +4,8 @@ use crate::round::{RoundKey, diffuse, rounds};
 use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams, ek, expand};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
 use bouncycastle_utils::secret::Secret;
 
 /// The ARIA block length in bytes: 16 (RFC 5794 Sec 1.1, "encrypts 128-bit blocks").
