@@ -378,10 +378,10 @@ impl TestFrameworkBlockCipher {
         // covered by the modes crate's tests with a concrete BLOCK_LEN.
         let one_block: &[u8; BLOCK_LEN] = &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0[0];
         let mut buf = *one_block;
-        let (n, iv) = E::encrypt(&key, &mut buf).unwrap();
+        let (n, iv) = E::encrypt_in_place(&key, &mut buf).unwrap();
         assert_eq!(n, BLOCK_LEN, "encrypt must report the number of bytes written");
         let ct = buf;
-        let n = D::decrypt(&key, &iv, &mut buf).unwrap();
+        let n = D::decrypt_in_place(&key, &iv, &mut buf).unwrap();
         assert_eq!(n, BLOCK_LEN, "decrypt must report the number of bytes written");
         assert_eq!(buf, *one_block);
         // ...and it must agree with the streaming API under the same init data.
@@ -402,9 +402,12 @@ impl TestFrameworkBlockCipher {
                     .unwrap();
             streamed.do_encrypt(&mut expected).unwrap();
             let mut buf = *one_block;
-            let (n, iv) =
-                E::encrypt_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf)
-                    .unwrap();
+            let (n, iv) = E::encrypt_in_place_rng(
+                &key,
+                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned),
+                &mut buf,
+            )
+            .unwrap();
             assert_eq!(n, BLOCK_LEN, "encrypt_rng must report the number of bytes written");
             assert_eq!(iv, iv_streamed);
             assert_eq!(buf, expected);

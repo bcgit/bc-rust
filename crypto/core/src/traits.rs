@@ -580,9 +580,9 @@ pub trait BlockCipherDecryptor<
     }
 
     /// One-shot: decrypts `LEN` bytes in place from the given init data. `LEN % BLOCK_LEN == 0` is
-    /// checked at compile time exactly as for [`BlockCipherEncryptor::encrypt`]. Returns the
+    /// checked at compile time exactly as for [`BlockCipherEncryptor::encrypt_in_place`]. Returns the
     /// number of bytes written; see [`Self::do_decrypt_blocks`].
-    fn decrypt<const LEN: usize>(
+    fn decrypt_in_place<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
         data: &mut [u8; LEN],
@@ -699,7 +699,7 @@ pub trait BlockCipherEncryptor<
     /// One-shot: encrypts `LEN` bytes in place under a fresh init, and returns the number of
     /// bytes written (see [`Self::do_encrypt_blocks`]) alongside the generated init data.
     /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs.
-    fn encrypt<const LEN: usize>(
+    fn encrypt_in_place<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         data: &mut [u8; LEN],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
@@ -707,13 +707,13 @@ pub trait BlockCipherEncryptor<
         let written = enc.do_encrypt(data)?;
         Ok((written, init_data))
     }
-    /// As [`BlockCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    /// As [`BlockCipherEncryptor::encrypt_in_place`], but sources randomness from the provided RNG.
     ///
     /// # Panics
     /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
     /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
     /// to consume. See that method for why.
-    fn encrypt_rng<const LEN: usize>(
+    fn encrypt_in_place_rng<const LEN: usize>(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
         data: &mut [u8; LEN],

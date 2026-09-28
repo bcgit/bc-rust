@@ -37,10 +37,10 @@
 //!
 //! // One shot, in place: encrypts under a freshly generated IV, which is returned.
 //! let mut data = plaintext;
-//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
-//! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+//! Aes128Cbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
