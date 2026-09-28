@@ -158,11 +158,13 @@
 
 pub mod aes_internal;
 mod bitslice;
-mod cbc;
-mod cfb;
-mod cfb8;
-mod ctr;
-mod ecb;
+pub mod cbc;
+pub mod ccm;
+pub mod cfb;
+pub mod cfb8;
+pub mod ctr;
+pub mod ecb;
+pub mod gcm;
 mod round;
 mod sbox;
 mod schedule;
