@@ -84,7 +84,7 @@
 //! use bouncycastle_sm4::SM4_CBC;
 //! use bouncycastle_core::traits::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
 //! use bouncycastle_padding::PKCS7;
 //!

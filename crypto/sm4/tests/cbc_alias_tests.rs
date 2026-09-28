@@ -6,9 +6,11 @@
 //! padding layer are tested in their own right elsewhere; this checks the wiring between them.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedDecryptor, PaddedEncryptor};
+use bouncycastle_padding::{
+    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
+};
 use bouncycastle_sm4::{SM4, SM4_CBC};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
@@ -23,11 +25,11 @@ fn the_aliases_name_the_expected_types() {
 
     assert_eq!(
         size_of::<SM4_CBC<Encrypting, PKCS7>>(),
-        size_of::<PaddedEncryptor<Cbc<SM4, Encrypting, 16, 16>, PKCS7, 16, 16, 16>>()
+        size_of::<PaddedBlockCipherEncryptor<Cbc<SM4, Encrypting, 16, 16>, PKCS7, 16, 16, 16>>()
     );
     assert_eq!(
         size_of::<SM4_CBC<Decrypting, PKCS7>>(),
-        size_of::<PaddedDecryptor<Cbc<SM4, Decrypting, 16, 16>, PKCS7, 16, 16, 16>>()
+        size_of::<PaddedBlockCipherDecryptor<Cbc<SM4, Decrypting, 16, 16>, PKCS7, 16, 16, 16>>()
     );
 }
 
@@ -37,8 +39,8 @@ fn the_aliases_name_the_expected_types() {
 fn every_key_length_round_trips() {
     fn check<const N: usize, Enc, Dec>(name: &str)
     where
-        Enc: SimpleCipherEncryptor<N, 16, 16>,
-        Dec: SimpleCipherDecryptor<N, 16, 16>,
+        Enc: SymmetricCipherEncryptor<N, 16, 16>,
+        Dec: SymmetricCipherDecryptor<N, 16, 16>,
     {
         for len in [0usize, 1, 15, 16, 17, 64] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 11 + 3) as u8).collect();

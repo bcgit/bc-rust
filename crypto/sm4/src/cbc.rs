@@ -25,7 +25,7 @@ use bouncycastle_padding::PaddedMode;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
 use bouncycastle_padding::{NoPadding, PKCS7};
 // end of imports needed for docs
@@ -39,7 +39,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 /// use bouncycastle_sm4::SM4_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 /// use bouncycastle_padding::PKCS7;
 ///
@@ -60,7 +60,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 /// use bouncycastle_sm4::SM4_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SimpleCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
 /// use bouncycastle_padding::NoPadding;
 ///
