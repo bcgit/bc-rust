@@ -11,7 +11,7 @@
 //!
 //! This mode is a fixed permutation determined by the key acting on a single block.
 //! There is no IV and no chaining.
-//! 
+//!
 //! What this type adds is
 //! the [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] shape shared with `Cbc` -- the direction
 //! in the type, the streaming and one-shot methods with their compile-time length checks, and the
@@ -38,10 +38,10 @@
 //! Sec 6.1: "In ECB encryption and ECB decryption, multiple forward cipher functions and inverse
 //! cipher functions can be computed in parallel".
 //!
-//! To take advantage of this parallelism, this mode exposes 
-//! ([`ElectronicCodeBook::encrypt_4blocks`] / [`ElectronicCodeBook::encrypt_2blocks`] and their
-//! inverses), which may represent a speed-up over iterating one block at a time, depending on the
-//! implementation of the underlying cipher.
+//! To take advantage of this parallelism, this mode batches both directions through the
+//! permutation's four-block and pair methods ([`ElectronicCodeBook::encrypt_4blocks`] /
+//! [`ElectronicCodeBook::encrypt_2blocks`] and their inverses), which may represent a speed-up over
+//! iterating one block at a time, depending on the implementation of the underlying cipher.
 
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;

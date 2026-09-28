@@ -1,4 +1,4 @@
-//! Tests for PaddedEncryptor / PaddedDecryptor.
+//! Tests for PaddedBlockCipherEncryptor / PaddedBlockCipherDecryptor.
 //!
 //! No real block cipher exists in the workspace yet, so these tests drive the adapters with a toy
 //! CBC-style cipher whose "block permutation" is XOR with the key. It is cryptographically worthless

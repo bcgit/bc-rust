@@ -596,7 +596,7 @@ pub trait BlockCipherDecryptor<
 ///
 /// Strictly block-aligned: whole blocks in, whole
 /// blocks out, no finalization step. Padding of non-block-aligned data is handled by a separate layer
-/// (`PaddedEncryptor` / `PaddedDecryptor`) built on top of this trait.
+/// (`PaddedBlockCipherEncryptor` / `PaddedBlockCipherDecryptor`) built on top of this trait.
 ///
 /// Encryption and decryption are separate traits so that a policy can permit decryption of existing
 /// data while forbidding new encryptions.

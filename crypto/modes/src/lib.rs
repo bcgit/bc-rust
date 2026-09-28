@@ -28,33 +28,12 @@
 //! any length in, the same length out, no padding, no finalization -- see
 //! [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
 //!
-//! **CCM and GCM are AEADs** they authenticate the ciphertext to detect ciphertext tampering, and
-//! can also take additional (non-encrypted) data (AAD) that is also protected by the ciphertext authentication
-//! tag. Both implement [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, and through them
-//! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with no option to provide AAD, and the tag inline.
-//!
-//! # Notes on CCM Mode
-//! CCM reaches the AEAD traits through [`CcmEncryptor`] / [`CcmDecryptor`]; its own inherent API is
-//! the one to reach for. Two other things set it apart:
-//!
-//! * **There is an extra input and an extra output.** The AAD is authenticated but not encrypted,
-//!   and the tag has to travel with the ciphertext; `Ccm` offers both the spec's inline
-//!   `ciphertext || tag` layout and a detached-tag pair.
-//! * **The nonce is supplied, not generated.** CCM requires the nonce to be unique but *not*
-//!   unpredictable (SP 800-38C Sec 5.3), which is the opposite of the IV requirement the other
-//!   modes have, so a caller with a counter can do better than this crate's DRBG.
-//!
-//! # Notes on GCM Mode
-//! GCM is built from CTR and a universal hash. CBC-MAC.
-//! [`Gcm`] implements the AEAD traits itself, with `FINAL_LEN = TAG_LEN`: the traits are
-//! its whole API, the inline `ciphertext || tag` view through the symmetric-cipher methods and the
-//! spec's detached `(C, T)` pair through the `*_detached` methods. It differs from CCM in the other
-//! direction on both counts above -- its 12-byte nonce is generated from the library's default RNG
-//! rather than supplied, because a repeated GCM nonce gives away the hash subkey (SP 800-38D
-//! Appendix A), and it streams. See [`Gcm`].
-//!
-//! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
-//! -- which, for a new design, one of them usually is.
+//! **CCM and GCM are AEADs**: they authenticate the ciphertext to detect ciphertext tampering, and
+//! can also take additional (non-encrypted) data (AAD) that is protected by the same
+//! authentication tag. The traits above have nowhere to put the AAD or the tag, so both implement
+//! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, and through them
+//! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with no option to provide AAD, and
+//! the tag inline.
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
@@ -66,11 +45,35 @@
 //! non-interoperable modes** whose ciphertexts differ from the first byte. "CFB" unqualified is
 //! ambiguous between them; see [`Cfb8`] for the cost difference, which is a factor of 16 on AES.
 //!
+//! # Notes on CCM Mode
 //!
-//! # Usage guidance
+//! CCM reaches the AEAD traits through [`CcmEncryptor`] / [`CcmDecryptor`]; its own inherent API is
+//! the one to reach for. Two other things set it apart:
 //!
-//! These usage examples are for implementing a concrete cipher on top of a mode, and will use AES-128 as an example.
-//! These usage docs are intended for library developers, not end-users.
+//! * **There is an extra input and an extra output.** The AAD is authenticated but not encrypted,
+//!   and the tag has to travel with the ciphertext; `Ccm` offers both the spec's inline
+//!   `ciphertext || tag` layout and a detached-tag pair.
+//! * **The nonce is supplied, not generated.** CCM requires the nonce to be unique but *not*
+//!   unpredictable (SP 800-38C Sec 5.3), which is the opposite of the IV requirement the other
+//!   modes have, so a caller with a counter can do better than this crate's DRBG.
+//!
+//! # Notes on GCM Mode
+//!
+//! GCM is built from CTR and a universal hash (GHASH), where CCM uses a CBC-MAC.
+//! [`Gcm`] implements the AEAD traits itself, with `FINAL_LEN = TAG_LEN`: the traits are
+//! its whole API, the inline `ciphertext || tag` view through the symmetric-cipher methods and the
+//! spec's detached `(C, T)` pair through the `*_detached` methods. It differs from CCM in the other
+//! direction on both counts above -- its 12-byte nonce is generated from the library's default RNG
+//! rather than supplied, because a repeated GCM nonce gives away the hash subkey (SP 800-38D
+//! Appendix A), and it streams. See [`Gcm`].
+//!
+//! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
+//! -- which, for a new design, one of them usually is.
+//!
+//! # Usage Examples
+//!
+//! These usage examples are for implementing a concrete cipher on top of a mode, and use AES-128 as
+//! the example. They are intended for library developers, not end-users.
 //!
 //! ## Defining type aliases
 //!
@@ -82,10 +85,10 @@
 //! direction too, plus its nonce and tag lengths, and GCM takes the direction and its tag length:
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
-//! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Ecb, Gcm};
+//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
 //!
-//! // CBC, CFB, and CBF8 take a permutation, a direction, key length, and a block length.
+//! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
 //! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
 //! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
 //! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
@@ -96,17 +99,17 @@
 //!
 //! // CCM takes the permutation, a direction, key length, and a block length like the rest,
 //! // plus the nonce length and the tag length -- both CCM-specific choices rather than AES params.
-//! // real cryptographic choices rather than AES constants. The nonce length caps the payload
-//! // (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag length is the forgery bound;
-//! // 12 and 16 are the usual pair.
+//! // The nonce length caps the payload (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag
+//! // length is the forgery bound; 12 and 16 are the usual pair.
 //! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
 //!
-//! // GCM mode is specified in NIST SP 800-38D, which fixes the nonce to always be 12 bytes (SP 800-38D Sec
-//! // 5.2.1.1's recommended 96 bits), and the block is always 16, so neither is a parameter.
+//! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
+//! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
+//! // parameter.
 //! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
 //! ```
 //!
-//! ## Usage
+//! ## Encrypting and decrypting
 //!
 //! The direction is part of the type: [`Cbc<P, Encrypting, ..>`](Cbc) implements
 //! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<P, Decrypting, ..>`](Cbc) implements
@@ -431,11 +434,12 @@
 //! Appendix A puts the formatting of non-aligned data outside the scope of the recommendation.
 //!
 //! So arbitrary-length data needs a padding layer **for CBC only**. That layer is not in this
-//! crate: it is `bouncycastle-padding`, whose `PaddedEncryptor` / `PaddedDecryptor` wrap any
-//! [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] pair, so a block mode gets arbitrary-length
-//! support by being wrapped rather than by growing padding logic of its own. The same adapters
-//! over `bouncycastle-padding`'s `NoPadding` give the opposite guarantee -- an unaligned message is
-//! an error at `do_final` rather than something padded -- for formats defined on whole blocks.
+//! crate: it is `bouncycastle-padding`, whose `PaddedBlockCipherEncryptor` /
+//! `PaddedBlockCipherDecryptor` wrap any [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] pair,
+//! so a block mode gets arbitrary-length support by being wrapped rather than by growing padding
+//! logic of its own. The same adapters over `bouncycastle-padding`'s `NoPadding` give the opposite
+//! guarantee -- an unaligned message is an error at `do_final` rather than something padded -- for
+//! formats defined on whole blocks.
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES128Internal;

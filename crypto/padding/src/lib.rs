@@ -52,13 +52,13 @@
 //!
 //! # Memory Usage
 //!
-//! | Operation             | Stack (excluding the caller's buffers and the inner cipher) |
-//! |-----------------------|-------------------------------------------------------------|
-//! | `PKCS7::pad`          | O(1)                                                        |
-//! | `PKCS7::unpad`        | O(1)                                                        |
-//! | `NoPadding::pad` / `unpad` | O(1), touches no data                                  |
-//! | `PaddedEncryptor`     | one `BLOCK_LEN` buffer (in a `Secret`) + a length            |
-//! | `PaddedDecryptor`     | two `BLOCK_LEN` buffers + a length                          |
+//! | Operation                    | Stack (excluding the caller's buffers and the inner cipher) |
+//! |------------------------------|-------------------------------------------------------------|
+//! | `PKCS7::pad`                 | O(1)                                                        |
+//! | `PKCS7::unpad`               | O(1)                                                        |
+//! | `NoPadding::pad` / `unpad`   | O(1), touches no data                                       |
+//! | `PaddedBlockCipherEncryptor` | one `BLOCK_LEN` buffer (in a `Secret`) + a length           |
+//! | `PaddedBlockCipherDecryptor` | two `BLOCK_LEN` buffers + a length                          |
 //!
 //! # Security Considerations
 //!

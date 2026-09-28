@@ -16,9 +16,9 @@ use bouncycastle_core::traits::{
 pub struct TestFrameworkSymmetricCipher {
     /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the plaintext length
     /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
-    /// -- the block length, for a `PaddedEncryptor` over `NoPadding` -- means only multiples of it
-    /// round-trip, and every other length must be *rejected* by `do_final` / `encrypt_out` with a
-    /// `PaddingError`, which the test then asserts instead.
+    /// -- the block length, for a `PaddedBlockCipherEncryptor` over `NoPadding` -- means only
+    /// multiples of it round-trip, and every other length must be *rejected* by `do_final` /
+    /// `encrypt_out` with a `PaddingError`, which the test then asserts instead.
     pub required_alignment: usize,
     /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the longest message the
     /// pair's streaming methods accept. `usize::MAX` (the default) means there is no limit. A
