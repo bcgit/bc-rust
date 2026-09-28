@@ -19,6 +19,7 @@
 //! * [AES_CFB8](crate::cfb8)
 //! * [AES_CTR](crate::ctr)
 //! * [AES_ECB](crate::ecb)
+//! * [AES_GCM](crate::gcm)
 //!
 //! # Design
 //!
@@ -163,6 +164,7 @@ pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
 pub mod ecb;
+pub mod gcm;
 mod padded_mode;
 mod round;
 mod sbox;
@@ -179,3 +181,4 @@ pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
+pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
