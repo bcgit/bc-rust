@@ -36,7 +36,13 @@
 //! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
 
-use crate::{AES_128, AES_192, AES_256, BLOCK_LEN};
+use crate::aes_internal::AESInternal;
+use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::bitslice::Block;
+use crate::schedule::AESParams;
+use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 use bouncycastle_padding::PaddedMode;
 

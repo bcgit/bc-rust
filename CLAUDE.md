@@ -41,17 +41,10 @@ Revisit this section at the first non-alpha release.
 
 ## Toolchain
 
-- **The workspace builds on stable.** There is no `rust-toolchain.toml` anywhere in the tree and no
-  crate enables a `#![feature(...)]` gate — the `adt_const_params` and `unsized_const_params` lines
-  in `crypto/mldsa/src/lib.rs` are commented out. CI's build, test and doc jobs install whatever
-  `dtolnay/rust-toolchain@stable` gives them (Rust 1.98.1 at the time of writing) and pass on it.
-  If your default toolchain is nightly, nightly-only code will compile locally and fail in CI, so
-  keep the workspace stable-clean.
-- **Formatting is checked with nightly rustfmt.** `rust-style.yml` does `rustup override set
-  nightly` before `cargo fmt --all --check`, unlike the other jobs, which stay on stable. Match that
-  when checking formatting locally.
-- 2024 edition (set workspace-wide in the root `Cargo.toml`), so the toolchain has to be new enough
-  to know that edition.
+- Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
+  nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
+  `rustfmt` job installs nightly.
+- 2024 edition (set workspace-wide in the root `Cargo.toml`), which needs Rust 1.85 or later.
 
 ## Common commands
 
