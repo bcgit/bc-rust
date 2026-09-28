@@ -91,7 +91,9 @@ fn block_cipher_vector_test<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN,
             .expect("a key");
     bouncycastle_core::key_material::do_hazardous_operations(&mut km, |k| {
         k.set_key_type(KeyType::SymmetricCipherKey)?;
-        k.set_security_strength(bouncycastle_core::traits::SecurityStrength::from_bytes(KEY_LEN))
+        k.set_security_strength(bouncycastle_core::security_strength::SecurityStrength::from_bytes(
+            KEY_LEN,
+        ))
     })
     .expect("retagging the key");
     let engine = P::new(&km).expect("a valid key");

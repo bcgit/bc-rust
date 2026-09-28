@@ -16,7 +16,8 @@ use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256}
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
-use bouncycastle_core::traits::{ElectronicCodeBook, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::ElectronicCodeBook;
 use common::bytes;
 use ntt_cryptrec_data::{CAMELLIA_128, CAMELLIA_192, CAMELLIA_256, KeySet};
 

@@ -25,7 +25,7 @@
 
 use bouncycastle_camellia::{Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SimpleCipherDecryptor, SimpleCipherEncryptor};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Encrypting};
@@ -68,8 +68,8 @@ fn decode(v: &Value, field: &str, tc: u64) -> Vec<u8> {
 /// Runs one case for a given key length. Returns `true` if it was a valid case.
 fn run_case<Enc, Dec, const N: usize>(t: &Value) -> bool
 where
-    Enc: SimpleCipherEncryptor<N, 16, 16>,
-    Dec: SimpleCipherDecryptor<N, 16, 16>,
+    Enc: SymmetricCipherEncryptor<N, 16, 16>,
+    Dec: SymmetricCipherDecryptor<N, 16, 16>,
 {
     let tc = t.get("tcId").and_then(Value::as_u64).expect("tcId");
     let key = key_material::<N>(&decode(t, "key", tc));
