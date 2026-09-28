@@ -11,7 +11,7 @@
 //! block-permutation test vector -- which is the only reason ECB is mentioned in this crate. See
 //! the crate docs on why you must never use ECB to encrypt data.
 //!
-//! `bc-test-data` ships thirteen ACVP AES vector sets, one per mode. This file deliberately
+//! `bc-test-data` ships sixteen ACVP AES vector sets, one per mode. This file deliberately
 //! consumes only `ACVP-AES-ECB`, because that is the one that tests the permutation rather than a
 //! mode. The others belong with whatever implements the mode:
 //!
@@ -20,10 +20,12 @@
 //! | `ACVP-AES-ECB` | this file (the permutation) and `crypto/modes/tests/acvp_ecb_tests.rs` (the `Ecb` mode) |
 //! | `ACVP-AES-CBC` | `crypto/modes/tests/acvp_tests.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
+//! | `ACVP-AES-CCM` | `crypto/modes/tests/acvp_ccm_tests.rs` |
 //! | `ACVP-AES-CFB128` | `crypto/modes/tests/acvp_cfb_tests.rs` |
 //! | `ACVP-AES-CFB8` | `crypto/modes/tests/acvp_cfb8_tests.rs` |
 //! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
 //! | `ACVP-AES-CTR` | `crypto/modes/tests/acvp_ctr_tests.rs` |
+//! | `ACVP-AES-GCM` / `-GMAC` | nothing yet (GCM is unimplemented; it needs GF(2^128) arithmetic) |
 //! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |
 //! | `ACVP-AES-FF1` / `-FF3-1` | nothing yet (format-preserving encryption is unimplemented) |
 //!
