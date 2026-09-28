@@ -1,7 +1,8 @@
 //! The stream modes through the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] API.
 //!
-//! `Cfb`, `Cfb8` and `Ctr` implement the stream traits directly and get the symmetric-cipher traits
-//! from the blanket impls in `bouncycastle-core`, with `FINAL_LEN = 0`. That is what lets a caller
+//! The stream traits extend the symmetric-cipher traits with `FINAL_LEN = 0`: `Cfb` and `Cfb8`
+//! implement both, the separate-output half over `bouncycastle_core::stream_cipher`'s helpers, and
+//! `Ctr` gets both from `StreamCipher` over its keystream. That is what lets a caller
 //! hold any of the five modes through one trait: a padded `Cbc` or `Ecb` with the padded block as
 //! its final output, and a stream mode with nothing.
 //!
@@ -9,18 +10,11 @@
 //!
 //! * that the modes really do satisfy the shared conformance suite for those traits, the same one
 //!   the padding adapters run;
-//! * that the separate-output API agrees byte for byte with the in-place one, since the blanket
-//!   impl is written in terms of it;
+//! * that the separate-output API agrees byte for byte with the in-place one, since it is written
+//!   in terms of it;
 //! * that it leaves the caller's input alone, which is the one thing the in-place API cannot offer
 //!   and therefore the reason to have both;
 //! * and that the length predictions are exact, not upper bounds.
-//!
-//! # Both traits in scope at once
-//!
-//! This file imports the stream traits *and* the symmetric ones, so `do_encrypt_init` is ambiguous
-//! here and every call has to name the trait it means. That is the one ergonomic cost of a mode
-//! implementing both, so it is worth having a file that demonstrates it is workable; the two
-//! resolve to the same function.
 
 mod common;
 
@@ -59,7 +53,7 @@ fn the_stream_modes_conform_to_the_symmetric_cipher_suite() {
 }
 
 /// The separate-output API must produce exactly what the in-place API produces, for the same key
-/// and init data. The blanket impl is written in terms of `do_encrypt`, so this is the check that
+/// and init data. The separate-output API is written in terms of `do_encrypt`, so this is the check that
 /// the bridge adds nothing and loses nothing.
 #[test]
 fn the_two_apis_agree_byte_for_byte() {
@@ -76,12 +70,11 @@ fn the_two_apis_agree_byte_for_byte() {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 7 + 1) as u8).collect();
 
             // The in-place API, which the mode implements directly.
-            let (mut enc, init) =
-                <E as StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>>::do_encrypt_init(key).unwrap();
+            let (mut enc, init) = E::do_encrypt_init(key).unwrap();
             let mut in_place = plaintext.clone();
             enc.do_encrypt(&mut in_place).unwrap();
 
-            // The separate-output API, under the same init data, reached through the blanket impl.
+            // The separate-output API, under the same init data.
             let mut dec_as_sym =
                 <D as SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>>::do_decrypt_init(
                     key, &init,
@@ -176,12 +169,11 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
     let mut big_enough = vec![0u8; plaintext.len()];
     enc.do_encrypt_out(&plaintext, &mut big_enough).unwrap();
 
-    let (mut fresh, _) =
-        <ToyCfb<Encrypting> as StreamCipherEncryptor<TOY_LEN, TOY_LEN>>::do_encrypt_init_rng(
-            &key,
-            &mut bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(init),
-        )
-        .unwrap();
+    let (mut fresh, _) = ToyCfb::<Encrypting>::do_encrypt_init_rng(
+        &key,
+        &mut bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(init),
+    )
+    .unwrap();
     let mut reference = plaintext.clone();
     fresh.do_encrypt(&mut reference).unwrap();
     assert_eq!(big_enough, reference, "the refused call must not have advanced the keystream");
@@ -190,7 +182,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
 /// The decrypt side refuses a short output buffer too, with the length it needed.
 ///
 /// The mirror of the encryptor test above. Worth having separately rather than assuming symmetry:
-/// the two are separate blanket impls with their own buffer check, and mutation testing showed the
+/// the two directions are separate impls with their own buffer check, and mutation testing showed the
 /// decryptor's comparison was unexercised until this existed.
 #[test]
 fn a_short_output_buffer_is_refused_when_decrypting_too() {
@@ -200,9 +192,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
     let plaintext: Vec<u8> = (0..32u8).collect();
 
     // Encrypt normally, then try to decrypt into a buffer one byte too small.
-    let (mut enc, init) =
-        <ToyCfb<Encrypting> as StreamCipherEncryptor<TOY_LEN, TOY_LEN>>::do_encrypt_init(&key)
-            .unwrap();
+    let (mut enc, init) = ToyCfb::<Encrypting>::do_encrypt_init(&key).unwrap();
     let mut ciphertext = plaintext.clone();
     enc.do_encrypt(&mut ciphertext).unwrap();
 

@@ -26,7 +26,7 @@
 //! CCM (NIST SP 800-38C) is the only mode in `bouncycastle-modes` with a non-trivial stack
 //! profile, and it has it for a specific, avoidable reason.
 //!
-//! `Ccm` itself is boring: 256 B for AES-128, independent of message length, nonce length and tag
+//! `Ccm` itself is boring: 264 B for AES-128, independent of message length, nonce length and tag
 //! length, and per-byte work that touches a constant amount of stack. `print_struct_sizes` records
 //! those, and they are the numbers to use.
 //!
@@ -34,9 +34,9 @@
 //! `AEADCipherEncryptor` / `AEADCipherDecryptor`, whose `do_encrypt_init` is handed a key and no
 //! length; CCM cannot form `B0` -- and so cannot authenticate anything -- until it knows the total
 //! payload length (SP 800-38C Appendix A.2.1), so their **streaming** methods buffer the whole
-//! message. That is `2 * FINAL_LEN` in the value (the crate docs' "4304 B at `FINAL_LEN = 2048`",
-//! which `print_struct_sizes` confirms), and on top of it `do_final` returns a third
-//! `[u8; FINAL_LEN]` by value. `bench_streaming_encrypt` / `bench_streaming_encrypt_detached` /
+//! message. That is `AAD_LEN + FINAL_LEN` in the value (the crate docs' "2336 B" at
+//! `AAD_LEN = 64`, `DATA_LEN = 2048`, which `print_struct_sizes` confirms), and on top of it
+//! `do_final` returns another `[u8; FINAL_LEN]` by value. `bench_streaming_encrypt` / `bench_streaming_encrypt_detached` /
 //! `bench_streaming_decrypt` drive that path -- `do_*_init`, `do_update_out`, then a final -- and
 //! are what measure it, since it is the one memory claim in that crate large enough to matter.
 //!
@@ -48,29 +48,36 @@
 //! # What it measures
 //!
 //! Peak stack from `ms_print`, `--heap=no --stacks=yes`, release, on x86-64 with the pinned
-//! nightly, at `FINAL_LEN = 16384`; every bench processes the same `FINAL_LEN - TAG_LEN` bytes.
+//! nightly, at `FINAL_LEN = 16384` and `AAD_LEN = 64`; every bench processes the same `DATA_LEN`
+//! bytes.
 //! `bench_do_nothing`'s 7.7 KB is the process's own start-up and is the floor below which nothing
 //! is visible (see `FINAL_LEN` for why the harness is sized to clear it):
 //!
 //! ```text
 //! bench_do_nothing                       7 680 B
-//! bench_direct_encrypt_detached         34 864 B   two 16 KiB arrays (message, ciphertext) + frames
+//! bench_direct_encrypt_detached         34 800 B   two 16 KiB arrays (message, ciphertext) + frames
 //! bench_direct_streaming                18 512 B   one 16 KiB array, encrypted in place
 //! bench_oneshot_encrypt_out_detached    36 184 B   = direct + 1.3 KB: the DRBG the nonce is drawn from
-//! bench_streaming_encrypt              134 968 B   ~ 7 * FINAL_LEN above the message array
-//! bench_streaming_encrypt_detached     135 000 B   the same
-//! bench_streaming_decrypt              149 976 B   ~ 7 * FINAL_LEN above the message and sealed arrays
+//! bench_streaming_encrypt               68 632 B   ~ 2.7 * FINAL_LEN above the message array
+//! bench_streaming_encrypt_detached      52 504 B   one returned array fewer
+//! bench_streaming_decrypt               67 864 B   ~ 1.7 * FINAL_LEN above the message and sealed arrays
 //! ```
 //!
 //! Two things to take from that. The one-shot really does bypass the buffers: it is within the
-//! cost of a DRBG of the direct path, at any `FINAL_LEN`. And the streaming path costs about
-//! **`7 * FINAL_LEN`**, not the `3 * FINAL_LEN` a count of the arrays -- two in the value, one
-//! returned -- would suggest: every method that finishes the flow takes the `2 * FINAL_LEN` value
-//! by value, and each such move that the optimizer does not elide is another `2 * FINAL_LEN` on
-//! the stack. That the detached final, which has one array fewer to return, measures the same is
-//! consistent with the moves rather than the arrays being what dominates. It is a property of
-//! passing a large value by value through the trait's consuming finals, not of CCM, and a caller
-//! who cares should use the inherent `Ccm` API, which is the `bench_direct_streaming` line.
+//! cost of a DRBG of the direct path, at any `FINAL_LEN`. And the streaming path costs about the
+//! **`3 * FINAL_LEN`** a count of the arrays -- two in the value, one returned -- suggests. It used
+//! to cost about `7 * FINAL_LEN` (134 968 B / 149 976 B here): the constructors built the value
+//! and copied it out through their `Result`, and the finals handed it to one another by value, and
+//! each such move the optimizer did not elide was another copy of the value. The constructors are now
+//! `inline(always)` and the finals share helpers that take the buffer's fields by reference; see
+//! `CcmBuffer::new` and `CcmEncryptor::seal` in `bouncycastle-modes`. None of that helps a debug
+//! build, which elides no moves. A caller who cares should use the inherent `Ccm` API, which is
+//! the `bench_direct_streaming` line.
+//!
+//! Sizing the AAD buffer separately (`AAD_LEN`, here 64 bytes, rather than a second
+//! payload-sized array) took one `FINAL_LEN` off the decryptor, from 84 360 B. It did not move
+//! the encryptor's peak, which is set by the arrays live in its final -- the ciphertext it builds
+//! and the one it returns -- rather than by the size of the value.
 //!
 //! The comparisons to draw, all on the *same* message:
 //!
@@ -99,14 +106,19 @@ const TAG_LEN: usize = 16;
 /// massif reports a peak of about 7.7 KB for `bench_do_nothing` -- the process's own start-up --
 /// and anything that peaks below that is invisible, so at 4 KiB the direct and one-shot paths all
 /// read as "7.7 KB" and nothing can be compared. At 16 KiB every path clears that floor by a
-/// wide margin and the multiples of `FINAL_LEN` are legible. The streaming capacity is
-/// `FINAL_LEN - TAG_LEN`, so the message every bench sends is that.
+/// wide margin and the multiples of `FINAL_LEN` are legible. The payload capacity `DATA_LEN` is
+/// `FINAL_LEN - TAG_LEN`, so the message every bench sends is that. The AAD capacity is a
+/// protocol-header-sized 64 bytes; no bench sends AAD.
 const FINAL_LEN: usize = 16384;
-const MESSAGE_LEN: usize = FINAL_LEN - TAG_LEN;
+const DATA_LEN: usize = FINAL_LEN - TAG_LEN;
+const AAD_LEN: usize = 64;
+const MESSAGE_LEN: usize = DATA_LEN;
 
 type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, NONCE_LEN, TAG_LEN>;
-type Aes128CcmEncryptor = CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, FINAL_LEN>;
-type Aes128CcmDecryptor = CcmDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+type Aes128CcmEncryptor =
+    CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;
+type Aes128CcmDecryptor =
+    CcmDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[0x42u8; N], KeyType::SymmetricCipherKey).unwrap()
@@ -138,7 +150,7 @@ fn bench_do_nothing() {
 fn print_struct_sizes() {
     use core::mem::size_of;
 
-    eprintln!("--- Ccm: permutation + 3 blocks + 4 counters, independent of nonce/tag length ---");
+    eprintln!("--- Ccm: permutation + 3 blocks + 5 counters, independent of nonce/tag length ---");
     eprintln!("Ccm<AES128Internal, .., 12, 16>  {:>7} B", size_of::<Aes128Ccm<Encrypting>>());
     eprintln!(
         "Ccm<AES128Internal, .., 7, 4>    {:>7} B",
@@ -159,12 +171,12 @@ fn print_struct_sizes() {
     eprintln!("Decrypting is the same size:");
     eprintln!("Ccm<AES128Internal, Decrypting>  {:>7} B", size_of::<Aes128Ccm<Decrypting>>());
 
-    eprintln!("--- the buffering trait adapters: 2 * FINAL_LEN each ---");
+    eprintln!("--- the buffering trait adapters: AAD_LEN + FINAL_LEN each ---");
     eprintln!("CcmEncryptor<.., {FINAL_LEN}>   {:>7} B", size_of::<Aes128CcmEncryptor>());
     eprintln!("CcmDecryptor<.., {FINAL_LEN}>   {:>7} B", size_of::<Aes128CcmDecryptor>());
     eprintln!(
-        "CcmEncryptor<.., 256>     {:>7} B",
-        size_of::<CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 256>>()
+        "CcmEncryptor<.., 64, 240, 256> {:>7} B",
+        size_of::<CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240, 256>>()
     );
 
     print!("{}", size_of::<Aes128Ccm<Encrypting>>());
@@ -188,11 +200,9 @@ fn bench_direct_encrypt_detached() {
 }
 
 /// The same message through the buffering encryptor's **streaming** methods, which is the only
-/// path that touches its buffers: `do_encrypt_init` builds the `2 * FINAL_LEN` value,
-/// `do_update_out` fills it and writes nothing, and `do_final` returns a third `[u8; FINAL_LEN]`
-/// by value. Measures about `7 * FINAL_LEN` above the message array -- about `6 * FINAL_LEN` above
-/// `bench_direct_encrypt_detached`, which also holds a ciphertext array -- see the module docs for
-/// why that is more than the three arrays.
+/// path that touches its buffers: `do_encrypt_init` builds the `AAD_LEN + FINAL_LEN` value,
+/// `do_update_out` fills it and writes nothing, and `do_final` returns a `[u8; FINAL_LEN]` by
+/// value. See the module docs for the measurement.
 fn bench_streaming_encrypt() {
     eprintln!(
         "CcmEncryptor do_encrypt_init/do_update_out/do_final, {MESSAGE_LEN} B in 1 KiB chunks"
@@ -230,8 +240,8 @@ fn bench_streaming_encrypt_detached() {
 }
 
 /// The decrypting side of the same comparison, with the tag inline: the decryptor buffers the
-/// whole `ciphertext || tag` and `do_final` returns the `[u8; FINAL_LEN]` plaintext by value, so
-/// the expectation is the same `7 * FINAL_LEN` or so, above the message and sealed arrays.
+/// whole `ciphertext || tag` and `do_final` returns the `[u8; FINAL_LEN]` plaintext by value. See
+/// the module docs for the measurement.
 ///
 /// The sealed message is produced with the direct one-shot so that only the streaming decrypt
 /// is under measurement; massif reports the peak across the whole process, and the direct path

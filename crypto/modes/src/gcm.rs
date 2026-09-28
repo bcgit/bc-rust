@@ -136,6 +136,7 @@
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
 //!   is no separate `Gmac` type.
 
+use crate::ctr::CtrKeyStream;
 use crate::ghash::Ghash;
 use crate::{Ctr, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -233,7 +234,7 @@ where
         perm.encrypt_block(&mut ek_j0);
 
         // Step 3's inc32(J0): J0's rightmost 32 bits are 1, so inc32(J0) has counter field 2.
-        let ctr = Ctr::start_at(perm, nonce, 2);
+        let ctr = Ctr::from_keystream(CtrKeyStream::start_at(perm, nonce, 2));
 
         Self {
             ctr,

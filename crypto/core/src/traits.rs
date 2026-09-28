@@ -1106,6 +1106,57 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
 }
 
+/// A keyed keystream generator: the raw primitive under a stream cipher, as
+/// [`ElectronicCodeBook`] is the raw primitive under a block cipher mode.
+///
+/// It is constructed from a key and init data and XORs successive keystream blocks into whatever
+/// it is handed. It has no direction and no init-data policy: generating the nonce, buffering a
+/// partly-used block between calls, and refusing a call that would run past the end of the
+/// keystream all belong to `bouncycastle_core::stream_cipher::StreamCipher`, which turns any
+/// `KeyStream` into a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
+///
+/// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
+/// keystream block is the encryption of the last ciphertext block.
+///
+/// # 🚨 Security 🚨
+/// Like [`ElectronicCodeBook`], this is a raw building block, not a cipher to encrypt data with.
+/// [`KeyStream::new`] takes the init data from the caller, so nothing stops a caller reusing a
+/// nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
+/// and nothing stops it running past [`KeyStream::remaining_blocks`]. The stream cipher traits,
+/// through `bouncycastle_core::stream_cipher::StreamCipher`, generate the init data and enforce the
+/// limit; use them.
+///
+/// Implementors hold the key in a zeroize-on-drop wrapper, as for [`ElectronicCodeBook`]. Any
+/// keystream they produce into scratch space of their own is live key material until it has been
+/// XORed in, and gets the same treatment.
+pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
+    Algorithm + Sized
+{
+    /// Expands the key and positions the keystream at its first block for `init_data`.
+    ///
+    /// # Errors
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
+    /// [`SymmetricCipherError::KeyMaterialError`].
+    fn new(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Result<Self, SymmetricCipherError>;
+
+    /// How many more keystream blocks this value can produce before its keystream would repeat.
+    /// A keystream with no practical limit returns `u64::MAX`.
+    fn remaining_blocks(&self) -> u64;
+
+    /// XORs the next `blocks.len()` keystream blocks into `blocks`, in place, and advances past
+    /// them. A sequence of calls is equivalent to one call over the concatenation; how to batch
+    /// the blocks is the implementor's decision, as for [`BlockCipherEncryptor::do_encrypt_blocks`].
+    ///
+    /// Infallible because the caller has already checked `blocks.len()` against
+    /// [`Self::remaining_blocks`]. Asking for more is a programmer error, and the implementor may
+    /// panic or repeat keystream.
+    fn apply_blocks(&mut self, blocks: &mut [[u8; BLOCK_LEN]]);
+}
+
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
 /// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that
 /// can be used to verify the integrity of data.
@@ -1500,18 +1551,10 @@ pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG
 }
 
 /// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose
-/// notes on in-place operation, arbitrary lengths, the `Result` and the free
-/// [`SymmetricCipherDecryptor`] impl all apply here too.
+/// notes on in-place operation, arbitrary lengths and the `Result` all apply here too.
 pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
-    Algorithm + Sized
+    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>
 {
-    /// Begins a streaming decryption flow from the init data returned by
-    /// [`StreamCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError>;
-
     /// Streaming: decrypts `data`, of any length, in place. A sequence of calls is equivalent to
     /// one call over the concatenation, whatever the chunking, exactly as for
     /// [`StreamCipherEncryptor::do_encrypt`]. Returns the number of bytes written, which is always
@@ -1521,7 +1564,7 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 
     /// One-shot: decrypts `data` in place from the given init data. Returns the number of bytes
     /// written; see [`Self::do_decrypt`].
-    fn decrypt(
+    fn decrypt_in_place(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
         data: &mut [u8],
@@ -1530,20 +1573,26 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     }
 }
 
-/// The encryption half of a stream cipher's streaming API.
+/// The encryption half of a stream cipher's streaming API: the in-place view of a
+/// [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`.
 /// A stream cipher applies its keystream byte by byte, so the data methods take a
 /// `&mut [u8]` of any length, and there is no finalization step.
 ///
 /// Encryption and decryption are separate traits so that policy can permit decryption of an
 /// existing data while forbidding new encryptions.
 ///
-/// # You also get the arbitrary-length API for free
+/// # An extension of the arbitrary-length API
 ///
-/// Every implementor is automatically a [`SymmetricCipherEncryptor`] with `FINAL_LEN = 0`, by a
-/// blanket impl written in terms of [`do_encrypt`](Self::do_encrypt). So an implementor writes the
-/// three methods below and a caller may still use `encrypt_out`, `do_update_out` and the rest --
-/// the separate-output view that the padding adapters present -- and hold a stream mode through the
-/// same trait as a padded block mode.
+/// [`SymmetricCipherEncryptor`] is a supertrait, so a stream cipher is held through the same trait
+/// as a padded block mode or an AEAD, and its constructors are that trait's. `FINAL_LEN = 0` says
+/// what makes it a stream cipher there: nothing is buffered and nothing comes out at the end. This
+/// trait adds only the in-place data methods, which the separate-output view cannot offer.
+///
+/// An implementor that is a pure keystream -- the keystream does not depend on the data, as in CTR
+/// -- should implement [`KeyStream`] and use `bouncycastle_core::stream_cipher::StreamCipher`,
+/// which provides both traits. A mode whose keystream depends on the data, such as CFB, implements
+/// both itself, with the helpers in `bouncycastle_core::stream_cipher` for the separate-output
+/// half.
 ///
 /// Init data (a nonce or IV) is generated securely by the implementation in the constructor and
 /// returned for transmission alongside the ciphertext; there is no API for the user to supply it,
@@ -1556,7 +1605,8 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// Every data method here transforms its buffer in place: the plaintext goes in, the ciphertext
 /// comes out in the same bytes. A stream cipher never changes the length of its data, so a
 /// separate output buffer would only ever be a copy, and a copy of plaintext is one more thing to
-/// scrub. Callers that need to keep the plaintext copy it first.
+/// scrub. Callers that need to keep the plaintext copy it first, or use the supertrait's
+/// `encrypt_out`.
 ///
 /// # Any length, as a slice
 ///
@@ -1573,40 +1623,18 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// keystream must refuse to run past the point where its counter would wrap and the keystream
 /// repeat, and a streaming API cannot check that any earlier than the call that would cross it.
 pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
-    Algorithm + Sized
+    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
 {
-    /// Begins a streaming encryption flow, returning the generated init data (e.g. nonce).
-    /// Sources randomness from the library's default OS-backed RNG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
-    /// As [`StreamCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
-    ///
-    /// # Panics
-    /// An implementation that generates no init data -- `INIT_DATA_LEN == 0`, as in ECB -- must
-    /// panic here rather than ignore `rng` and succeed. There is no randomness for it to consume,
-    /// so a caller reaching for this constructor has mistaken the cipher for a randomized one, and
-    /// quietly returning a deterministic encryptor would leave that mistake undetected. This is a
-    /// programmer error, not bad input, so it is a panic rather than a
-    /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
-    /// data from `rng` and must not panic.
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
-
     /// Streaming: encrypts `data`, of any length, in place. A sequence of calls is equivalent to
     /// one call over the concatenation, whatever the chunking. Returns the number of bytes
     /// written, which is always `data.len()` since a stream cipher never buffers or changes the
     /// length of its data, but the count is still returned for consistency with the rest of the
     /// library's output-buffer APIs.
-    ///
-    /// This is the only method an implementor writes besides the two `_init` constructors.
     fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError>;
 
     /// One-shot: encrypts `data` in place under a fresh init, and returns the number of bytes
     /// written (see [`Self::do_encrypt`]) alongside the generated init data.
-    fn encrypt(
+    fn encrypt_in_place(
         key: &KeyMaterial<KEY_LEN>,
         data: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
@@ -1614,13 +1642,14 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
         let written = enc.do_encrypt(data)?;
         Ok((written, init_data))
     }
-    /// As [`StreamCipherEncryptor::encrypt`], but sources randomness from the provided RNG.
+    /// As [`StreamCipherEncryptor::encrypt_in_place`], but sources randomness from the provided
+    /// RNG.
     ///
     /// # Panics
-    /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
+    /// Provided over [`SymmetricCipherEncryptor::do_encrypt_init_rng`], so it panics in exactly
     /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
     /// to consume. See that method for why.
-    fn encrypt_rng(
+    fn encrypt_in_place_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
         data: &mut [u8],
