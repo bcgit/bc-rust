@@ -2,13 +2,6 @@
 //!
 //! # The specification
 //!
-//! Sec 6.1 defines the mode in one equation each way, quoted verbatim:
-//!
-//! ```text
-//! ECB Encryption:  Cj = CIPH_K(Pj)      for j = 1 ... n.
-//! ECB Decryption:  Pj = CIPH^-1_K(Cj)   for j = 1 ... n.
-//! ```
-//!
 //! "In ECB encryption, the forward cipher function is applied directly and independently to each
 //! block of the plaintext. The resulting sequence of output blocks is the ciphertext. In ECB
 //! decryption, the inverse cipher function is applied directly and independently to each block of
@@ -16,8 +9,10 @@
 //!
 //! # A mode with no state
 //!
-//! There is no IV and no chaining: the mode *is* the keyed permutation applied block by block,
-//! which is why the permutation trait itself is named [`ElectronicCodeBook`]. What this type adds is
+//! This mode is a fixed permutation determined by the key acting on a single block.
+//! There is no IV and no chaining.
+//! 
+//! What this type adds is
 //! the [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] shape shared with `Cbc` -- the direction
 //! in the type, the streaming and one-shot methods with their compile-time length checks, and the
 //! batching -- so ECB can stand wherever the other block modes can, including under the padding
@@ -41,10 +36,12 @@
 //! # Both directions are parallel
 //!
 //! Sec 6.1: "In ECB encryption and ECB decryption, multiple forward cipher functions and inverse
-//! cipher functions can be computed in parallel." Unlike CBC and CFB, whose encryption is serial,
-//! both directions here batch through the permutation's four-block and pair methods
+//! cipher functions can be computed in parallel".
+//!
+//! To take advantage of this parallelism, this mode exposes 
 //! ([`ElectronicCodeBook::encrypt_4blocks`] / [`ElectronicCodeBook::encrypt_2blocks`] and their
-//! inverses), then finish the remaining block singly.
+//! inverses), which may represent a speed-up over iterating one block at a time, depending on the
+//! implementation of the underlying cipher.
 
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;

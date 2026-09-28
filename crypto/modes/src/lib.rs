@@ -1,8 +1,13 @@
 //! Block cipher modes of operation (NIST SP 800-38A, SP 800-38C and SP 800-38D).
 //!
+//! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
+//! trait.
+//!
 //! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES128Internal` and friends,
 //! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
-//! one block. This crate provides:
+//! one block.
+//!
+//! This crate provides:
 //!
 //! | Mode | Type | Spec | Notes |
 //! |---|---|---|---|
@@ -17,25 +22,18 @@
 //! They divide three ways.
 //!
 //! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
-//! blocks in, whole blocks out, and arbitrary-length data needs the padding layer. **CFB, CFB8 and
-//! CTR are stream ciphers** ([`StreamCipherEncryptor`] / [`StreamCipherDecryptor`]): any length in,
-//! the same length out, no padding, no finalization -- see
+//! blocks in, whole blocks out, and arbitrary-length data needs the padding layer.
+//!
+//! **CFB, CFB8 and CTR are stream ciphers** ([`StreamCipherEncryptor`] / [`StreamCipherDecryptor`]):
+//! any length in, the same length out, no padding, no finalization -- see
 //! [Block alignment, and which modes need it](#block-alignment-and-which-modes-need-it).
 //!
-//! **Those five reach the same arbitrary-length API**, so code can be written against one trait and
-//! handed any of them. A block mode gets there by being wrapped in `bouncycastle-padding`'s
-//! adapters, which are [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with the padded
-//! block as their final output; a stream mode implements those traits directly, with
-//! `FINAL_LEN = 0` because it has no final output at all. The `bouncycastle-aes` aliases show the
-//! difference in one line each: `AES_CBC_128<Encrypting, PKCS7>` names a padding scheme,
-//! `AES_CTR_128<Encrypting>` has nothing to name.
+//! **CCM and GCM are AEADs** they authenticate the ciphertext to detect ciphertext tampering, and
+//! can also take additional (non-encrypted) data (AAD) that is also protected by the ciphertext authentication
+//! tag. Both implement [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, and through them
+//! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with no option to provide AAD, and the tag inline.
 //!
-//! **CCM and GCM are the odd ones out, and deliberately so.** Both are AEADs: they take additional
-//! authenticated data, and they produce a tag as well as a ciphertext, so they do not fit either
-//! of the traits above -- there is nowhere in them to put the AAD or the tag. Both implement
-//! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, and through them
-//! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with no AAD and the tag inline.
-//!
+//! # Notes on CCM Mode
 //! CCM reaches the AEAD traits through [`CcmEncryptor`] / [`CcmDecryptor`]; its own inherent API is
 //! the one to reach for. Two other things set it apart:
 //!
@@ -46,10 +44,9 @@
 //!   unpredictable (SP 800-38C Sec 5.3), which is the opposite of the IV requirement the other
 //!   modes have, so a caller with a counter can do better than this crate's DRBG.
 //!
-//! See [`Ccm`] for both.
-//!
-//! **GCM is the other authenticated mode**, built from CTR and a universal hash rather than a
-//! CBC-MAC. [`Gcm`] implements the AEAD traits itself, with `FINAL_LEN = TAG_LEN`: the traits are
+//! # Notes on GCM Mode
+//! GCM is built from CTR and a universal hash. CBC-MAC.
+//! [`Gcm`] implements the AEAD traits itself, with `FINAL_LEN = TAG_LEN`: the traits are
 //! its whole API, the inline `ciphertext || tag` view through the symmetric-cipher methods and the
 //! spec's detached `(C, T)` pair through the `*_detached` methods. It differs from CCM in the other
 //! direction on both counts above -- its 12-byte nonce is generated from the library's default RNG
@@ -69,8 +66,15 @@
 //! non-interoperable modes** whose ciphertexts differ from the first byte. "CFB" unqualified is
 //! ambiguous between them; see [`Cfb8`] for the cost difference, which is a factor of 16 on AES.
 //!
-//! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
-//! trait. Define a one-line alias for the combination you use -- or use the ready-made
+//!
+//! # Usage guidance
+//!
+//! These usage examples are for implementing a concrete cipher on top of a mode, and will use AES-128 as an example.
+//! These usage docs are intended for library developers, not end-users.
+//!
+//! ## Defining type aliases
+//!
+//! Define a one-line alias for the combination you use -- or use the ready-made
 //! `AES_CBC_128` / `AES_CCM_128` / `AES_CFB_128` / `AES_CFB8_128` / `AES_CTR_128` / `AES_ECB_128` /
 //! `AES_GCM_128` and friends from `bouncycastle-aes`. Those aliases are not all the same shape: the
 //! two block modes take a padding scheme as well as a direction, since neither is usable on data of
@@ -81,38 +85,28 @@
 //! use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 //! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Ecb, Gcm};
 //!
+//! // CBC, CFB, and CBF8 take a permutation, a direction, key length, and a block length.
 //! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
-//! type Aes192Cbc<Dir> = Cbc<AES192Internal, Dir, 24, 16>;
-//! type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, 16>;
-//!
 //! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
-//! type Aes192Cfb<Dir> = Cfb<AES192Internal, Dir, 24, 16>;
-//! type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, 16>;
-//!
 //! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
 //! type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, 16, 12>;
 //!
-//! type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
-//!
-//! // CCM takes the direction like the rest, plus the nonce length and the tag length -- both
+//! // CCM takes the permutation, a direction, key length, and a block length like the rest,
+//! // plus the nonce length and the tag length -- both CCM-specific choices rather than AES params.
 //! // real cryptographic choices rather than AES constants. The nonce length caps the payload
 //! // (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag length is the forgery bound;
 //! // 12 and 16 are the usual pair.
 //! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
-//! type Aes256Ccm<Dir> = Ccm<AES256Internal, Dir, 32, 16, 12, 16>;
-//! // A 13-byte nonce leaves q = 2, so a payload of at most 64 KiB - 1; 802.11 CCMP's pair.
-//! type Aes128CcmShortTag<Dir> = Ccm<AES128Internal, Dir, 16, 16, 13, 8>;
 //!
-//! // GCM takes the tag length but no nonce length: the nonce is always 12 bytes (SP 800-38D Sec
+//! // GCM mode is specified in NIST SP 800-38D, which fixes the nonce to always be 12 bytes (SP 800-38D Sec
 //! // 5.2.1.1's recommended 96 bits), and the block is always 16, so neither is a parameter.
 //! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
-//! type Aes256Gcm<Dir> = Gcm<AES256Internal, Dir, 32, 16>;
 //! ```
 //!
-//! # Usage Examples
+//! ## Usage
 //!
 //! The direction is part of the type: [`Cbc<P, Encrypting, ..>`](Cbc) implements
 //! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<P, Decrypting, ..>`](Cbc) implements
