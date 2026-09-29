@@ -28,13 +28,16 @@
 //! # Driving the IV
 //!
 //! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through [`StreamCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
+//! through [`SymmetricCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
 //! the vector's IV, and the test asserts the returned init data really is that IV before comparing
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{
+    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
@@ -263,7 +266,7 @@ fn the_one_shot_api_matches_the_vectors() {
     let pt = flat(&PLAINTEXTS);
 
     let mut data = flat(&CIPHERTEXTS_128);
-    Cfb::<AES128Internal, Decrypting, 16, 16>::decrypt(
+    Cfb::<AES128Internal, Decrypting, 16, 16>::decrypt_in_place(
         &key_material::<16>(KEY_128),
         &iv,
         &mut data,
@@ -272,7 +275,7 @@ fn the_one_shot_api_matches_the_vectors() {
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_192);
-    Cfb::<AES192Internal, Decrypting, 24, 16>::decrypt(
+    Cfb::<AES192Internal, Decrypting, 24, 16>::decrypt_in_place(
         &key_material::<24>(KEY_192),
         &iv,
         &mut data,
@@ -281,7 +284,7 @@ fn the_one_shot_api_matches_the_vectors() {
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_256);
-    Cfb::<AES256Internal, Decrypting, 32, 16>::decrypt(
+    Cfb::<AES256Internal, Decrypting, 32, 16>::decrypt_in_place(
         &key_material::<32>(KEY_256),
         &iv,
         &mut data,

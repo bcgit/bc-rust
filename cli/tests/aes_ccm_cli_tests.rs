@@ -11,7 +11,8 @@
 //!
 //! * the **nonce is a required flag** and is *not* written to the output, unlike every other mode's
 //!   generated IV;
-//! * `--aad` is authenticated but not encrypted, and must match on both sides;
+//! * `--aad` is authenticated but not encrypted, and must match on both sides; `--aad-file` is the
+//!   same AAD as raw bytes, streamed rather than loaded, and pinned against Appendix C.4;
 //! * `--tag-len` changes the output length, and must match on both sides;
 //! * `decrypt` **fails with a non-zero exit and writes nothing** when the input is inauthentic;
 //! * the nonce length and tag length are validated against SP 800-38C Appendix A.1, and the nonce
@@ -588,4 +589,117 @@ fn the_subcommands_are_documented_in_help() {
         !per_cmd.contains("usual choice and the default"),
         "the help must not claim the required nonce has a default: {per_cmd}"
     );
+}
+
+/// Writes `bytes` to a fresh file in the temp directory and returns its path.
+fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after Unix epoch")
+        .as_nanos();
+    let path =
+        std::env::temp_dir().join(format!("bc_rust_ccm_{name}_{}_{}", std::process::id(), unique));
+    std::fs::write(&path, bytes).expect("temp file");
+    path
+}
+
+/// `--aad-file` is streamed through the MAC in chunks, declared by the file's size. Appendix C.4 is
+/// the example to pin that with: its AAD is 65536 bytes -- many chunks, and past the `2^16 - 2^8`
+/// boundary, so A.2.2's six-octet length encoding is the one declared up front.
+#[test]
+fn aad_file_matches_sp800_38c_appendix_c4() {
+    let mut aad = Vec::with_capacity(65536);
+    for _ in 0..256 {
+        aad.extend(0u8..=255u8);
+    }
+    let path = temp_file("c4_aad", &aad);
+    let path = path.to_str().expect("temporary path is UTF-8");
+    let args = |action| {
+        vec![
+            "aes128-ccm",
+            action,
+            "--key",
+            "404142434445464748494a4b4c4d4e4f",
+            "--nonce",
+            "101112131415161718191a1b1c",
+            "--aad-file",
+            path,
+            "--tag-len",
+            "14",
+        ]
+    };
+    let plaintext = unhex("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f");
+
+    let sealed = run_ok(&args("encrypt"), &plaintext);
+    assert_eq!(
+        hex(&sealed),
+        "69915dad1e84c6376a68c2967e4dab615ae0fd1faec44cc484828529463ccf72\
+         b4ac6bec93e8598e7f0dadbcea5b",
+        "Appendix C.4's C string"
+    );
+    assert_eq!(run_ok(&args("decrypt"), &sealed), plaintext, "Appendix C.4's P");
+}
+
+/// The file is raw bytes, never hex-decoded: a file holding `ca fe ba be` is the same AAD as
+/// `--aad cafebabe`, while one holding the eight ASCII characters "cafebabe" is a different AAD.
+/// And the file wins if both flags are given, as for `aes*-gcm`.
+#[test]
+fn aad_file_is_raw_bytes_and_takes_precedence() {
+    let binary = temp_file("aad_binary", &[0xca, 0xfe, 0xba, 0xbe]);
+    let text = temp_file("aad_text", b"cafebabe");
+    let binary = binary.to_str().expect("temporary path is UTF-8");
+    let text = text.to_str().expect("temporary path is UTF-8");
+    let base = ["aes128-ccm", "encrypt", "--key", KEY_128, "--nonce", NONCE];
+    let plaintext = b"authenticated header, encrypted body";
+
+    let with_hex = run_ok(&[&base[..], &["--aad", "cafebabe"]].concat(), plaintext);
+    let with_file = run_ok(&[&base[..], &["--aad-file", binary]].concat(), plaintext);
+    assert_eq!(with_file, with_hex, "raw bytes in a file are the same AAD as the hex flag");
+
+    let with_text = run_ok(&[&base[..], &["--aad-file", text]].concat(), plaintext);
+    assert_ne!(with_text, with_hex, "the file is not hex-decoded");
+
+    let both = run_ok(&[&base[..], &["--aad", "00", "--aad-file", binary]].concat(), plaintext);
+    assert_eq!(both, with_file, "--aad-file takes precedence over --aad");
+
+    let decrypted = run_ok(
+        &["aes128-ccm", "decrypt", "--key", KEY_128, "--nonce", NONCE, "--aad-file", binary],
+        &with_file,
+    );
+    assert_eq!(decrypted, plaintext);
+}
+
+/// A file with no size to declare -- here `/dev/null`, a character device -- is read whole rather
+/// than streamed, and an empty one is the same as no AAD at all.
+#[cfg(unix)]
+#[test]
+fn a_non_regular_aad_file_is_read_whole() {
+    let base = ["aes128-ccm", "encrypt", "--key", KEY_128, "--nonce", NONCE];
+    let plaintext = b"no associated data";
+    let without = run_ok(&base, plaintext);
+    let with_dev_null = run_ok(&[&base[..], &["--aad-file", "/dev/null"]].concat(), plaintext);
+    assert_eq!(with_dev_null, without);
+}
+
+/// A missing `--aad-file` is reported as a read error naming the file, before any work is done.
+#[test]
+fn a_missing_aad_file_is_reported() {
+    let missing = std::env::temp_dir()
+        .join(format!("bc_rust_ccm_missing_aad_{}", std::process::id()))
+        .join("aad.bin");
+    let stderr = run_err(
+        &[
+            "aes128-ccm",
+            "encrypt",
+            "--key",
+            KEY_128,
+            "--nonce",
+            NONCE,
+            "--aad-file",
+            missing.to_str().expect("temporary path is UTF-8"),
+        ],
+        b"data",
+    );
+    assert!(stderr.contains("couldn't read file"), "got: {stderr}");
+    assert!(stderr.contains("aad.bin"), "the error should name the file: {stderr}");
 }

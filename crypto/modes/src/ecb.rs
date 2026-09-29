@@ -22,11 +22,11 @@
 //!     .expect("a 16-byte symmetric cipher key");
 //! let mut data = [0x5Au8; 32]; // two equal blocks
 //!
-//! let (bytes_written, no_iv): (usize, [u8; 0]) = Aes128Ecb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (bytes_written, no_iv): (usize, [u8; 0]) = Aes128Ecb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //! assert_eq!(no_iv.len(), 0, "EBC mode returns the IV as an empty array");
 //! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
 //!
-//! Aes128Ecb::<Decrypting>::decrypt(&key, &[], &mut data).expect("decryption");
+//! Aes128Ecb::<Decrypting>::decrypt_in_place(&key, &[], &mut data).expect("decryption");
 //! assert_eq!(data, [0x5Au8; 32]);
 //! ```
 //!

@@ -532,11 +532,11 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Encry
     }
 
     /// Ascon-AEAD128 never buffers: every byte given is a byte returned.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
 
-    fn do_update_out(
+    fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -610,16 +610,16 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Decry
     }
 
     /// Everything but the last `TAG_LEN` bytes seen so far is released.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         (self.held_len + input_len).saturating_sub(TAG_LEN)
     }
 
-    fn do_update_out(
+    fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        let release = self.update_out_len(ciphertext.len());
+        let release = self.do_decrypt_out_len(ciphertext.len());
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
@@ -665,7 +665,7 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Decry
 impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128Decryptor {
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if `aad` is non-empty and
-    /// [`SymmetricCipherDecryptor::do_update_out`] has already been called.
+    /// [`SymmetricCipherDecryptor::do_decrypt_out`] has already been called.
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.cipher.do_update_aad(aad)
     }

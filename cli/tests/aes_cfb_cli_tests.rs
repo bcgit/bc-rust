@@ -397,7 +397,7 @@ fn an_unaligned_message_matches_the_library() {
             KeyMaterial::<16>::from_bytes_as_type(&unhex(KEY_128), KeyType::SymmetricCipherKey)
                 .expect("a valid AES-128 key");
         let mut recovered = ciphertext.to_vec();
-        Aes128Cfb::<Decrypting>::decrypt(
+        Aes128Cfb::<Decrypting>::decrypt_in_place(
             &key,
             iv.try_into().expect("a 16-byte IV"),
             &mut recovered,
