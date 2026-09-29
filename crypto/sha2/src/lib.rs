@@ -66,6 +66,30 @@
 //! See [`SHA512t`] for documentation around defining a custom truncation length of SHA512 other
 //! than the [`SHA512_224`] and [`SHA512_256`] defined in FIPS 180-4.
 //!
+//! # Cloning mid-stream
+//!
+//! Sometimes it is necessary to clone the state of the hash function after absorbing some input, for
+//! example, if you have absorbed a large file and need to hash it with two different trailer suffixes.
+//!
+//! The [`SHA256Internal`] and [`SHA512Internal`] structs impl [`Clone`] for this purpose.
+//!
+//! ```rust
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha2 as sha2;
+//!
+//! let mut sha2 = sha2::SHA256::new();
+//! sha2.do_update(b"Some input");
+//! // Clone it so that we can finish this instance, and then continue feeding in more input.
+//! let mut sha2_2 = sha2.clone();
+//!
+//! // Finish the first instance
+//! let output: Vec<u8> = sha2.do_final();
+//!
+//! // Feed more into the second instance then squeeze it
+//! sha2_2.do_update(b"Some more input");
+//! let output2 = sha2_2.do_final();
+//! ```
+//!
 //! # Suspending and resuming execution
 //!
 //! When hashing a large message, it can be advantageous to be able to suspend the operation
