@@ -84,14 +84,14 @@
 //! let (mut enc, nonce) = Aes256Gcm::<Encrypting>::do_encrypt_init(&key).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
-//! enc.do_update_out(message, &mut ct).unwrap();
+//! enc.do_encrypt_out(message, &mut ct).unwrap();
 //! let (tag_block, tag_len) = enc.do_final().unwrap();
 //! ct.extend_from_slice(&tag_block[..tag_len]);
 //!
 //! let mut dec = Aes256Gcm::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
-//! let written = dec.do_update_out(&ct, &mut pt).unwrap();
+//! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
 //! let (_last, last_len) = dec.do_final().unwrap();
 //! pt.truncate(written + last_len);
 //! assert_eq!(pt, message);
@@ -116,7 +116,7 @@
 //!   necessary, limit the number of unsuccessful verification attempts for each key."
 //! * **32- and 64-bit tags are not offered** (Appendix C); see the module docs above.
 //! * **Streaming decryption releases plaintext before the tag is checked; the one-shots do not.**
-//!   [`SymmetricCipherDecryptor::do_update_out`] hands back plaintext as it goes, which is
+//!   [`SymmetricCipherDecryptor::do_decrypt_out`] hands back plaintext as it goes, which is
 //!   unauthenticated until `do_final` / `do_final_detached` succeeds -- do not act on it before
 //!   then. The one-shots (`decrypt_out`, `decrypt_out_detached`, `decrypt_out_with_aad`) verify the
 //!   tag first and release nothing on failure, zeroizing the output buffer (Sec 7.2 permits
@@ -136,6 +136,7 @@
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
 //!   is no separate `Gmac` type.
 
+use crate::ctr::CtrKeyStream;
 use crate::ghash::Ghash;
 use crate::{Ctr, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -183,7 +184,7 @@ where
     /// `len(C)` in bytes so far; converted to bits at [`Gcm::tag_block`].
     data_len: u64,
     phase: Phase,
-    /// The last up to `TAG_LEN` bytes of ciphertext seen by [`SymmetricCipherDecryptor::do_update_out`]
+    /// The last up to `TAG_LEN` bytes of ciphertext seen by [`SymmetricCipherDecryptor::do_decrypt_out`]
     /// but not yet released, because they might be the tag. Meaningful only on the `Decrypting`
     /// side; kept on both directions rather than splitting the struct by `Dir` -- seeded random
     /// bytes are indistinguishable from a design that carries them deliberately, so this trades
@@ -233,7 +234,7 @@ where
         perm.encrypt_block(&mut ek_j0);
 
         // Step 3's inc32(J0): J0's rightmost 32 bits are 1, so inc32(J0) has counter field 2.
-        let ctr = Ctr::start_at(perm, nonce, 2);
+        let ctr = Ctr::from_keystream(CtrKeyStream::start_at(perm, nonce, 2));
 
         Self {
             ctr,
@@ -374,11 +375,11 @@ where
     }
 
     /// The identity: GCM's encryptor holds nothing back.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
 
-    fn do_update_out(
+    fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -502,19 +503,19 @@ where
     }
 
     /// `tail_len + input_len`, minus up to `TAG_LEN` bytes held back because they might be the tag.
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         (self.tail_len + input_len).saturating_sub(TAG_LEN)
     }
 
     /// Releases every byte of `tail ++ ciphertext` except the last (up to) `TAG_LEN`, which become
     /// the new tail. Decrypts (via `decrypt_in_place`) exactly the bytes released this call, so
     /// GHASH absorbs each ciphertext byte exactly once across the whole stream.
-    fn do_update_out(
+    fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        let release = self.update_out_len(ciphertext.len());
+        let release = self.do_decrypt_out_len(ciphertext.len());
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
