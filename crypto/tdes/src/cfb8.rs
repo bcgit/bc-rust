@@ -33,16 +33,16 @@ use bouncycastle_modes::{Cfb8, Decrypting};
 /// // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
 /// let message = *b"hello";
 /// let mut data = message;
-/// let (_, iv) = TDES_CFB8::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = TDES_CFB8::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
-/// TDES_CFB8::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// TDES_CFB8::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // CFB8 and CFB64 are not interchangeable: same key, same IV, different ciphertext.
 /// let mut as_cfb8 = message;
-/// let (_, iv) = TDES_CFB8::<Encrypting>::encrypt(&key, &mut as_cfb8).unwrap();
+/// let (_, iv) = TDES_CFB8::<Encrypting>::encrypt_in_place(&key, &mut as_cfb8).unwrap();
 /// let mut as_cfb64 = as_cfb8;
-/// TDES_CFB::<Decrypting>::decrypt(&key, &iv, &mut as_cfb64).unwrap();
+/// TDES_CFB::<Decrypting>::decrypt_in_place(&key, &iv, &mut as_cfb64).unwrap();
 /// assert_ne!(as_cfb64, message);
 /// ```
 #[allow(non_camel_case_types)]
@@ -66,7 +66,7 @@ pub type TDES_CFB8<Dir> = Cfb8<TDES, Dir, KEY_LEN, BLOCK_LEN>;
 /// let iv = [0x8b, 0x97, 0x57, 0x9e, 0xa5, 0xac, 0x30, 0x0f];
 /// let mut data = [0x05];
 ///
-/// TDES2_CFB8::decrypt(&key, &iv, &mut data).expect("decryption");
+/// TDES2_CFB8::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
 /// assert_eq!(data, [0x80]);
 /// ```
 #[allow(non_camel_case_types)]
