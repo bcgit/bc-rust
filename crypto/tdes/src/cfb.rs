@@ -24,7 +24,7 @@ use bouncycastle_modes::{Cfb, Decrypting};
 /// ```
 /// use bouncycastle_tdes::TDES_CFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// // Three distinct component keys; see `TDES` for what a key bundle must satisfy.
@@ -34,9 +34,9 @@ use bouncycastle_modes::{Cfb, Decrypting};
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, iv) = TDES_CFB::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = TDES_CFB::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
-/// TDES_CFB::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// TDES_CFB::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
@@ -72,7 +72,7 @@ pub type TDES_CFB<Dir> = Cfb<TDES, Dir, KEY_LEN, BLOCK_LEN>;
 /// let iv = [0x6e, 0x37, 0xd1, 0x97, 0x37, 0x6d, 0xb5, 0x95];
 /// let mut data = [0x63, 0xca, 0xd5, 0x22, 0x60, 0xe0, 0xa1, 0xcd];
 ///
-/// TDES2_CFB::decrypt(&key, &iv, &mut data).expect("decryption");
+/// TDES2_CFB::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
 /// assert_eq!(data, [0xdc, 0xd3, 0xcf, 0x97, 0x46, 0xd6, 0xe4, 0x2b]);
 /// ```
 #[allow(non_camel_case_types)]
