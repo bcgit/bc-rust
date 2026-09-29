@@ -105,7 +105,8 @@ fn library_ctr_decrypt(key_hex: &str, nonce: &[u8], data: &mut [u8]) {
     let key = KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key");
     let nonce: [u8; CTR_NONCE_LEN] = nonce.try_into().expect("a 12-byte nonce");
-    Ctr::<SM4, Decrypting, 16, 16, CTR_NONCE_LEN>::decrypt(&key, &nonce, data).expect("decryption");
+    Ctr::<SM4, Decrypting, 16, 16, CTR_NONCE_LEN>::decrypt_in_place(&key, &nonce, data)
+        .expect("decryption");
 }
 
 /// What the command emits must be exactly what `Ctr` over `SM4` produces.

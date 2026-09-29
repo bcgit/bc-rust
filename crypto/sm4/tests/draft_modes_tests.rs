@@ -128,7 +128,7 @@ fn check_cbc(section: &str, key: &str, expected: &str) {
 
     // Decrypt with the IV as init data: one shot, and streaming.
     let mut data = ct;
-    Sm4Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+    Sm4Cbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
     assert_eq!(data, pt, "{section} decrypt, one shot");
 
     let mut dec = Sm4Cbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();

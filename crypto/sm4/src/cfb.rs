@@ -30,7 +30,7 @@ use bouncycastle_modes::Cfb;
 /// ```
 /// use bouncycastle_sm4::SM4_CFB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -38,9 +38,9 @@ use bouncycastle_modes::Cfb;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, iv) = SM4_CFB::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = SM4_CFB::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
-/// SM4_CFB::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// SM4_CFB::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:

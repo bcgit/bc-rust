@@ -98,7 +98,7 @@ fn library_cfb8_decrypt(key_hex: &str, iv: &[u8], data: &mut [u8]) {
     let key = KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key");
     let iv: [u8; 16] = iv.try_into().expect("a 16-byte IV");
-    Cfb8::<SM4, Decrypting, 16, 16>::decrypt(&key, &iv, data).expect("decryption");
+    Cfb8::<SM4, Decrypting, 16, 16>::decrypt_in_place(&key, &iv, data).expect("decryption");
 }
 
 /// What the command emits must be exactly what `Cfb8` over `SM4` produces: take the IV the CLI
