@@ -85,55 +85,7 @@
 //!
 //! ## Encrypting and decrypting
 //!
-//! See each sub-module for usage docs on that mode.
-//!
-//!
-//! TODO -- move to GCM mod
-//! GCM gives the same guarantee through the AEAD traits, with the nonce generated and returned
-//! like the other modes' IVs; see [`Gcm`] for the detached and streaming forms:
-//!
-//! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
-//!
-//! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! let header = b"authenticated, not encrypted";
-//! let message = b"any length: GCM needs no padding";
-//!
-//! let mut ciphertext = [0u8; 32];
-//! let (nonce, _, tag) =
-//!     Aes128Gcm::<Encrypting>::encrypt_out_detached(&key, header, message, &mut ciphertext)
-//!         .expect("encryption");
-//!
-//! let mut opened = [0u8; 32];
-//! Aes128Gcm::<Decrypting>::decrypt_out_detached(&key, &nonce, header, &ciphertext, &tag, &mut opened)
-//!     .expect("decryption");
-//! assert_eq!(&opened, message);
-//!
-//! let mut tampered = ciphertext;
-//! tampered[0] ^= 1;
-//! assert!(Aes128Gcm::<Decrypting>::decrypt_out_detached(&key, &nonce, header, &tampered, &tag, &mut opened).is_err());
-//! ```
-//!
-//! Using the wrong direction does not compile:
-//!
-//! ```compile_fail
-//! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::BlockCipherDecryptor;
-//! use bouncycastle_modes::{Cbc, Encrypting};
-//!
-//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//!
-//! // `Encrypting` does not implement `BlockCipherDecryptor`.
-//! let _ = Aes128Cbc::<Encrypting>::do_decrypt_init(&key, &[0u8; 16]);
-//! ```
+//! See each sub-module for usage docs.
 //!
 //! # Choosing between the modes
 //!
