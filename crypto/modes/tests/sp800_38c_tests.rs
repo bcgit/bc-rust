@@ -26,7 +26,9 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting};
+use bouncycastle_modes::{
+    CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting,
+};
 
 /// Appendix C's key, the same in all four examples: `40414243 44454647 48494a4b 4c4d4e4f`.
 const APPENDIX_C_KEY: &str = "404142434445464748494a4b4c4d4e4f";
@@ -908,6 +910,14 @@ fn sizes_match_the_documented_memory_table() {
         4096 - 64,
         "the value grows by exactly the AAD capacity"
     );
+}
+
+/// The streaming adapters' buffer cap is the 512 KiB [`CCM_MAX_BUFFER_LEN`]'s docs promise. The
+/// doctests on [`CcmEncryptor`] check only that the cap compiles and one byte more does not, which
+/// holds for any value, so the value itself is pinned here.
+#[test]
+fn the_buffer_cap_is_512_kib() {
+    assert_eq!(CCM_MAX_BUFFER_LEN, 512 * 1024);
 }
 
 // ---- moved from crypto/modes/src/ccm.rs's in-file unit tests -----------------------------

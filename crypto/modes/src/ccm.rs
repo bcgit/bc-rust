@@ -1980,6 +1980,21 @@ mod tests {
         );
     }
 
+    /// A fresh keystream has every counter value but `Ctr0` left: step 7's `S1 || S2 || ...` runs
+    /// from `j = 1` to the largest `q`-octet counter, `2^8q - 1`, and `S0` is the tag mask. Pinned
+    /// absolutely because the limit can never bind through the public API -- A.1 caps the payload
+    /// at `2^8q - 1` bytes, far fewer than that many blocks -- so nothing else would notice an
+    /// off-by-one here.
+    #[test]
+    fn a_fresh_keystream_has_every_counter_but_ctr0_left() {
+        // n = 13, so q = 2: counters 1 ..= 65535.
+        let ks = CcmKeyStream::<Identity, 16, 16, 13>::from_perm(Identity, &[0u8; 13]);
+        assert_eq!(ks.remaining_blocks(), 65535);
+        // n = 7, so q = 8: counters 1 ..= 2^64 - 1, which is `u64::MAX` of them.
+        let ks = CcmKeyStream::<Identity, 16, 16, 7>::from_perm(Identity, &[0u8; 7]);
+        assert_eq!(ks.remaining_blocks(), u64::MAX);
+    }
+
     /// CCM's keystream against the shared [`KeyStream`] conformance suite. A unit test rather than
     /// an integration test because `CcmKeyStream` is crate-private. Over AES rather than the
     /// identity, which ignores the key and so could not pass the key-policy checks.
