@@ -207,7 +207,7 @@ fn check<const KEY_LEN: usize, const INIT_DATA_LEN: usize, Enc, Dec>(
     assert_eq!(data, ct, "{name} encrypt, one block at a time");
 
     let mut data = ct;
-    let read = Dec::decrypt(&key, &init, &mut data).expect("decryption");
+    let read = Dec::decrypt_in_place(&key, &init, &mut data).expect("decryption");
     assert_eq!(read, LEN, "{name}: bytes read");
     assert_eq!(data, pt, "{name} decrypt, one shot");
 
