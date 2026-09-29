@@ -21,24 +21,24 @@ fn failed_update_can_be_retried_without_ending_aad() {
     let mut enc = Enc::new_with_nonce(&key, &nonce).unwrap();
     let mut short = [0xa5; 64];
     assert_eq!(
-        enc.do_update_out(&msg, &mut short),
+        enc.do_encrypt_out(&msg, &mut short),
         Err(SymmetricCipherError::OutputBufferTooSmall(65))
     );
     assert_eq!(short, [0xa5; 64]);
     enc.do_update_aad(b"aad").unwrap();
     let mut ct = [0u8; 65];
-    enc.do_update_out(&msg, &mut ct).unwrap();
+    enc.do_encrypt_out(&msg, &mut ct).unwrap();
     let (tag, _) = enc.do_final().unwrap();
     let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
     let mut short = [0xa5; 48];
     assert_eq!(
-        dec.do_update_out(&ct, &mut short),
+        dec.do_decrypt_out(&ct, &mut short),
         Err(SymmetricCipherError::OutputBufferTooSmall(49))
     );
     assert_eq!(short, [0xa5; 48]);
     dec.do_update_aad(b"aad").unwrap();
     let mut pt = [0u8; 65];
-    let n = dec.do_update_out(&ct, &mut pt).unwrap();
+    let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();
     let (last, m) = dec.do_final_detached(&tag).unwrap();
     pt[n..n + m].copy_from_slice(&last[..m]);
     assert_eq!(pt, msg);
