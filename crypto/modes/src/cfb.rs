@@ -1,111 +1,36 @@
-//! The Cipher Feedback mode of operation (NIST SP 800-38A Sec 6.3), full-block segment, as a stream
+//! The Cipher Feedback mode of operation (NIST SP 800-38A §6.3), full-block segment, as a stream
 //! cipher.
 //!
-//! # The specification
+//! CFB and CFB8 are the same construction at two segment sizes, resulting in different,
+//! non-interoperable modes. See [`cfb8`]
 //!
-//! Sec 6.3 defines CFB against a segment size `s` with `1 <= s <= b`, where `b` is the block size.
-//! Quoting the equations verbatim:
+//! # A stream cipher, implemented over a block cipher
 //!
-//! ```text
-//! CFB Encryption:  I1 = IV;
-//!                  Ij = LSB_{b-s}(I_{j-1}) | C#_{j-1}   for j = 2 ... n;
-//!                  Oj = CIPH_K(Ij)                      for j = 1, 2 ... n;
-//!                  C#_j = P#_j XOR MSB_s(Oj)            for j = 1, 2 ... n.
+//! CFB is a keystream mode: the cipher never touches the data, it produces a keystream, and the data
+//! is XORed with it byte for byte. While this mode operates over a block permutation primitive,
+//! the chunking is invisible in the caller because the state carries the unused part of a block
+//! from one call to the next; see
 //!
-//! CFB Decryption:  I1 = IV;
-//!                  Ij = LSB_{b-s}(I_{j-1}) | C#_{j-1}   for j = 2 ... n;
-//!                  Oj = CIPH_K(Ij)                      for j = 1, 2 ... n;
-//!                  P#_j = C#_j XOR MSB_s(Oj)            for j = 1, 2 ... n.
-//! ```
+//! Since this does not require the input data to be block-aligned (ie to be a length that is a
+//! multiple of the block size of the underlying permutation), this implementation treats the final
+//! bytes of the message as a short final block and only extracts as much key stream material from
+//! the final block as required to encrypt it. This avoids needing padding, and avoids any ciphertext
+//! expansion.
 //!
-//! # This type is the `s = b` specialisation
-//!
-//! [`Cfb`] implements **only** `s = b`, the variant Sec 6.3 says is "sometimes incorporated into
-//! the name of the mode", i.e. CFB128 for a 128-bit block. Substituting `s = b` collapses the
-//! equations exactly:
-//!
-//! * `LSB_{b-s}(I_{j-1})` becomes `LSB_0(I_{j-1})`, the empty bit string, so the concatenation
-//!   leaves `Ij = C_{j-1}`. Sec 6.3's alternative description agrees: the previous input block
-//!   "circularly shift`[s]` s positions to the left, and then the ciphertext segment replaces the s
-//!   least significant bits of the result" -- shifting a whole block by its own width and replacing
-//!   every bit of it is just assignment.
-//! * `MSB_s(Oj)` becomes `MSB_b(Oj)`, which is `Oj`. No part of the output block is discarded, so
-//!   there are no wasted cipher calls: one forward cipher per block, the same as CBC.
-//!
-//! leaving
-//!
-//! ```text
-//! I1 = IV;  Ij = C_{j-1} (j >= 2);  Oj = CIPH_K(Ij);  Cj = Pj XOR Oj  /  Pj = Cj XOR Oj
-//! ```
-//!
-//! The other segment sizes are **different, non-interoperable modes**, not variants of this one:
-//! with `s < b` the shift register keeps `b - s` bits of the previous input block, which `s = b`
-//! never does, so the ciphertexts diverge immediately. `s = 8` is [`Cfb8`](crate::Cfb8), in its own
-//! type for exactly that reason; `s = 1` is not provided. SP 800-38A Appendix F.3 gives vectors for
-//! all three.
-//!
-//! # A stream cipher, not a block cipher
-//!
-//! CFB is a keystream mode: the cipher never touches the data, only `Ij`, and the data is XORed
-//! with the output block byte for byte. So the data need not arrive in whole blocks, and [`Cfb`]
-//! implements [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] -- any length, in place,
-//! chunked however the caller likes -- rather than the block-aligned `BlockCipherEncryptor` /
-//! `BlockCipherDecryptor` that `Cbc` implements. The chunking is invisible in the output because
-//! the state carries the unused part of `Oj` from one call to the next; see
-//! [One buffer, three roles](#one-buffer-three-roles).
-//!
-//! ## The final partial segment
-//!
-//! Sec 5.2 requires "the total number of bits in the plaintext" to be "a multiple of a parameter,
-//! denoted s", so a message whose length is not a multiple of the block does not have an
-//! `s = b` segmentation at all, and Appendix A puts padding it "outside the scope of this
-//! recommendation". This implementation instead accepts any length and treats the last `r < b`
-//! bytes as a short final segment:
-//!
-//! ```text
-//! C#_n = P#_n XOR MSB_{8r}(On)
-//! ```
-//!
-//! That is, it takes the `s = 8r` step of the Sec 6.3 equations for the last segment only and
-//! discards the rest of `On`, exactly as Sec 6.3 discards `b - s` bits of every output block when
-//! `s < b`. Since no input block is formed after the last segment, the `LSB_{b-s} | C#` feedback
-//! rule, which is where `s < b` and `s = b` differ, is never exercised by the short segment, so
-//! the result is well defined and unambiguous. It is also the behaviour of the streaming CFB128
-//! implementations in common use (OpenSSL's `EVP_aes_*_cfb128`, for one), so ciphertexts
-//! interoperate at every length. A whole number of blocks is still the only length Sec 5.2
-//! defines, and the only one the Appendix F.3 and ACVP vectors cover.
-//!
-//! # One buffer, three roles
-//!
-//! The whole state beyond the permutation is one block, `buf`, and a byte count, `used`. Within
-//! segment `j`, `buf[..used]` holds the ciphertext bytes produced (or consumed) so far and
-//! `buf[used..]` holds the bytes of `Oj` not yet used. Both are needed and they fit in one block
-//! because each ciphertext byte is written over the keystream byte that produced it: `Cj[i] =
-//! Pj[i] XOR Oj[i]`, and `Oj[i]` is never needed again, while `Cj[i]` is exactly what the next
-//! input block wants in position `i` (`I_{j+1} = Cj`). When `used == BLOCK_LEN` the buffer *is*
-//! `I_{j+1}`, and the next byte encrypts it in place into `O_{j+1}`. So the same 16 bytes are the
-//! input block, then the output block, then the next input block, and no copy is ever made.
-//!
-//! Between calls the buffer therefore holds `Ij` or `Cj` -- both public -- and, mid-segment, the
-//! unused tail of `Oj`. Those keystream bytes have not been XORed with anything, so they reveal
-//! nothing about the message, and they are `CIPH_K` of a public block, which a secure permutation
-//! makes worthless without the key. They are not key material and the buffer is not wrapped in a
-//! `Secret`; the key schedule itself lives in the permutation, which is responsible for zeroizing
-//! it.
+//! Note that NIST SP 800-38A §5.2 "Representation of the Plaintext and the Ciphertext" only presents
+//! definitions for block-aligned ciphertexts, and these are the only one the Appendix F.3 and ACVP
+//! test vectors cover.
 //!
 //! # Decryption uses the *forward* cipher function
 //!
-//! This is the thing about CFB that surprises a reader used to CBC: both directions apply
-//! `CIPH_K`. Sec 6.3 is explicit -- "In CFB decryption, the IV is the first input block, and each
-//! successive input block is formed as in CFB encryption [...] The *forward cipher* function is
-//! applied to each input block to produce the output blocks."
+//! As a stream cipher producing an XOR key stream, the forward (encryption) and reverse (decryption)
+//! are the same: both directions apply `CIPH_K`.
 //!
-//! So [`Cfb<P, Decrypting, ..>`](Cfb) never calls [`ElectronicCodeBook::decrypt_block`],
-//! [`ElectronicCodeBook::decrypt_2blocks`] or [`ElectronicCodeBook::decrypt_4blocks`]. A
-//! permutation could implement only the forward direction and still work here; `cfb_tests.rs` pins
-//! that with a toy whose inverse panics. The mode XORs a keystream in both directions, and the two
-//! directions differ only in which of the two values -- the byte that came in, or the byte that
-//! went out -- is the ciphertext to be fed back.
+//! So [`Cfb<P, Decrypting, ..>`](Cfb) is implemented over a permutation that impls [`ElectronicCodeBook`],
+//! but never calls [`ElectronicCodeBook::decrypt_block`]. A permutation that implements only the
+//! forward direction would still work here. The two directions differ only in which of the two
+//! values -- the byte that came in, or the byte that went out -- is the ciphertext to be fed back into
+//! the next block.
 //!
 //! # Parallel decryption
 //!
@@ -115,13 +40,10 @@
 //! decryption, the required forward cipher operations can be performed in parallel if the input
 //! blocks are first constructed (in series) from the IV and the ciphertext."
 //!
-//! Constructing them "in series" is trivial here: with `s = b` the input blocks *are* the IV
-//! followed by the ciphertext blocks, already in hand. Decryption therefore walks the
-//! block-aligned part of the data in fours through [`ElectronicCodeBook::encrypt_4blocks`] and
-//! pairs through [`ElectronicCodeBook::encrypt_2blocks`], which a bit-sliced engine computes for
-//! barely more than the cost of one block. Encryption cannot, and does not. Only the bytes that
-//! complete an open segment, and the bytes that open the final short one, go singly.
-//!
+//! This implementation follows: encryption handles blocks singly via ['ElectronicCodeBook::encrypt_block`],
+//! while decryption can batch-process two or four blocks at a time via
+//! [`ElectronicCodeBook::encrypt_2blocks`] or [`ElectronicCodeBook::encrypt_4blocks`], which may
+//! yield a performance gain, depending on the implementation of the underlying permutation.
 //!
 //! # Usage Examples
 //!
@@ -148,20 +70,23 @@
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (_, iv) = Aes128Cfb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (bytes_written, iv) = Aes128Cfb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+//! assert_eq!(bytes_written, plaintext.len());
 //!
 //! // `data` now contains the ciphertext
 //!
-//! Aes128Cfb::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+//! Aes128Cfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
-//! Streaming works at any byte boundary, and the chunking is not visible in the output:
+//! Streaming works with chunks of any size:
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_core::traits::{
+//!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
+//! };
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
 //!
 //! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
@@ -174,8 +99,11 @@
 //!
 //! // Just to prove that this can handle arbitrary sizes, we'll feed in
 //! //  7 bytes, then 33: neither is a whole block.
-//! encryptor.do_encrypt(&mut data[..7]).expect("first chunk");
-//! encryptor.do_encrypt(&mut data[7..]).expect("the rest");
+//! let bytes_written = encryptor.do_encrypt(&mut data[..7]).expect("first chunk");
+//! assert_eq!(bytes_written, 7);
+//!
+//! let bytes_written = encryptor.do_encrypt(&mut data[7..]).expect("the rest");
+//! assert_eq!(bytes_written, 33);
 //!
 //! // Decrypting in a different chunking must also agree.
 //! let mut decryptor = Aes128Cfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
@@ -183,17 +111,69 @@
 //! decryptor.do_decrypt(&mut data[19..]).expect("the rest");
 //! assert_eq!(data, [0x5Au8; 40]);
 //! ```
+//!
+//! # Memory Usage
+//
+//! The state consists of the underlying permutation struct, one block, `buf`, and a byte count, `used`.
+//!
+//! # 🚨 Security Considerations 🚨
+//!
+//! ## IV integrity
+//!
+//! NIST SP 800-38A Appendix D:
+//!
+//! > "for the CBC mode, the decryption of the first ciphertext block is vulnerable to the
+//! (deliberate) introduction of bit errors in specific bit positions of the IV if the integrity of
+//! the IV is not protected".
+//!
+//! Under CBC a flipped IV bit flips exactly that bit of the first decrypted plaintext block.
+//!
+//! Tampered IVs in CFB damage the initial block too, but unpredictably rather than controllably:
+//! the IV is the first thing fed to the cipher, so this results in random errors instead of
+//! predictable ones. See NIST SP 800-38A Appendix D: Error Properties for more info.
+//!
+//! ## Key stream leakage
+//!
+//! Every keystream block is `CIPH_K` of a public input -- the IV, then the previous ciphertext
+//! block (Sec 6.3) -- so leaked keystream reveals nothing a known-plaintext attacker could not
+//! already compute, and recovering the key from it is the block cipher's problem, not the mode's.
+//! That means leaking the key stream is likely catastrophic for the confidentiality of the message
+//! being protected, but does not compromise the symmetric key.
+//!
+//! That said, CFB mode is not an RNG, hash function, XOF, or MAC, and primitives intended for those
+//! purposes should be used.
+//!
+//! ## Key stream reuse
+//!
+//! Reusing the same key stream is equivalent to encrypting two messages with the same key and IV.
+//! Two messages encrypted under one key with the same IV share their first keystream block, and
+//! because each later input block is the previous ciphertext block (Sec 6.3), they keep sharing
+//! keystream until the first block at which their plaintexts differ.
+//! Even if the adversary cannot recover the plaintext, simply knowing that two messages are identical
+//! on their first N blocks often constitutes a catastrophic loss of security for many applications.
+//! For example, this is enough to know if two users have downloaded the same file or a different file,
+//! or potentially how much a file was modified between versions.
+//!
+//! This reinforces the general advice to always generate cryptographically random IVs unique for
+//! each encryption operation.
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::stream_cipher::{stream_do_final, stream_update_out};
 use bouncycastle_core::traits::{
     Algorithm, ElectronicCodeBook, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use crate::cfb8;
+// End imports needed for docs
 
 /// CFB mode over any [`ElectronicCodeBook`], as a stream cipher, with the direction encoded in the
 /// type.
@@ -216,6 +196,18 @@ where
     /// `buf[..used]` is the ciphertext of the current segment so far, i.e. the head of `I_{j+1}`;
     /// `buf[used..]` is the unused tail of `Oj`. When `used == BLOCK_LEN` the whole buffer is the
     /// next input block (initially `I1 = IV`) and no keystream is pending.
+    //
+    // # One buffer, three roles
+    //
+    // Within segment `j`, `buf[..used]` holds the ciphertext bytes produced (or consumed) so far and
+    // `buf[used..]` holds the bytes of `Oj` not yet used. Both are needed and they fit in one block
+    // because each ciphertext byte is written over the keystream byte that produced it.
+    // When `used == BLOCK_LEN` the buffer holds `I_{j+1}`, and the next byte encrypts it in place
+    // into `O_{j+1}`. So the same 16 bytes are the input block, then the output block, then the
+    // next input block, and no copy is ever made.
+    //
+    // Since `buf` holds either plaintext or ciphertext, but never any keymaterial, it is not
+    // necessary to tag it as `Secret<>`.
     buf: [u8; BLOCK_LEN],
     /// Bytes of the current segment already processed, `0..=BLOCK_LEN`.
     used: usize,
@@ -385,8 +377,8 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
@@ -398,7 +390,7 @@ where
         Self::do_encrypt_init_rng(key, &mut rng)
     }
 
-    /// As [`StreamCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
+    /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -409,6 +401,36 @@ where
         Ok((Self::start(perm, iv), iv))
     }
 
+    /// Every input byte produces exactly one output byte.
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// See [`stream_update_out`].
+    fn do_encrypt_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt(data))
+    }
+
+    /// See [`stream_do_final`].
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    /// A stream cipher never changes the length of its data.
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        plaintext_len
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
+    for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     /// Encrypts `data`, of any length, in place.
     ///
     /// Strictly serial: `Oj+1 = CIPH_K(Cj)` and `Cj` is the *output* of the previous cipher call, so
@@ -429,13 +451,13 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins a decryption flow from the IV returned by
-    /// [`StreamCipherEncryptor::do_encrypt_init`].
+    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; BLOCK_LEN],
@@ -445,6 +467,36 @@ where
         Ok(Self::start(perm, *init_data))
     }
 
+    /// Nothing is held back, so every input byte can be released immediately.
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// See [`stream_update_out`].
+    fn do_decrypt_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt(data))
+    }
+
+    /// See [`stream_do_final`].
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+        ciphertext_len
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
+    for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     /// Decrypts `data`, of any length, in place.
     ///
     /// Walks the block-aligned middle in fours through the permutation's *forward* four-block

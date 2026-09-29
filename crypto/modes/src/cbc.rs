@@ -37,10 +37,10 @@
 //!
 //! // One shot, in place: encrypts under a freshly generated IV, which is returned.
 //! let mut data = plaintext;
-//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (_, iv) = Aes128Cbc::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
-//! Aes128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+//! Aes128Cbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
@@ -71,6 +71,22 @@
 //! assert_eq!(first, [0xAAu8; 16]);
 //! assert_eq!(rest, [0xBBu8; 32]);
 //! ```
+//!
+//! # 🚨 Security Considerations 🚨
+//! ## IV integrity
+//!
+//! NIST SP 800-38A Appendix D:
+//!
+//! > "for the CBC mode, the decryption of the first ciphertext block is vulnerable to the
+//! (deliberate) introduction of bit errors in specific bit positions of the IV if the integrity of
+//! the IV is not protected".
+//!
+//! Under CBC a flipped IV bit flips exactly that bit of the first decrypted plaintext block.
+//!
+//! So, while the IV need not be secret, best-practice is to authenticate it along with the ciphertext,
+//! or use an authenticated (AEAD) mode such as GCM.
+//!
+//!
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};

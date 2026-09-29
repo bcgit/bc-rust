@@ -175,16 +175,13 @@ pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 
 /// AES-128 CCM as an [`AEADCipherEncryptor`], for code written against the generic AEAD trait.
 ///
-/// `FINAL_LEN` is the trait's: the size of the inline `ciphertext || tag` the final call returns,
-/// so the largest message and the largest AAD the streaming `do_*` methods accept is
-/// `FINAL_LEN - TAG_LEN`. It exists because `do_encrypt_init` is handed no length and CCM needs
-/// one; see [`CcmEncryptor`]. The one-shot methods bypass that buffer and accept data up to CCM's
-/// nonce-dependent payload limit.
-///
-/// Note that the AAD shares that one bound although it is never part of the output: pick
-/// `FINAL_LEN >= max(largest payload, largest AAD) + TAG_LEN`. A protocol whose authenticated
-/// header can outgrow its payload pays for the header in every `[u8; FINAL_LEN]` the trait puts on
-/// the stack, and is better served by [`AES_CCM_128`], which takes the AAD by reference.
+/// `AAD_LEN` and `DATA_LEN` are the largest AAD and the largest message the streaming `do_*`
+/// methods accept. They exist because `do_encrypt_init` is handed no length and CCM needs one;
+/// see [`CcmEncryptor`]. `FINAL_LEN` is the trait's: the size of the inline `ciphertext || tag` the
+/// final call returns, which must be exactly `DATA_LEN + TAG_LEN` -- anything else is a compile
+/// error -- and is a separate parameter only because computing it needs the unstable
+/// `generic_const_exprs` feature. The one-shot methods bypass the buffers and accept data up to
+/// CCM's nonce-dependent payload limit.
 ///
 /// The nonce is generated here, unlike [`AES_CCM_128`]'s caller-supplied nonce. Consequently this
 /// adapter pair requires `NONCE_LEN >= 12` -- the decryptor too, so that a parameter set which
@@ -196,10 +193,10 @@ pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 ///
-/// // 2 KiB of message plus the 16-byte tag: comfortably above an 802.11 frame, the packet size
-/// // CCM was designed for.
-/// type Enc = AES_CCM_128_Encryptor<12, 16, { 2048 + 16 }>;
-/// type Dec = AES_CCM_128_Decryptor<12, 16, { 2048 + 16 }>;
+/// // Up to 64 bytes of AAD and 2 KiB of message -- comfortably above an 802.11 frame, the packet
+/// // size CCM was designed for -- and FINAL_LEN = 2 KiB plus the 16-byte tag.
+/// type Enc = AES_CCM_128_Encryptor<12, 16, 64, 2048, { 2048 + 16 }>;
+/// type Dec = AES_CCM_128_Decryptor<12, 16, 64, 2048, { 2048 + 16 }>;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
@@ -211,45 +208,57 @@ pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 pub type AES_CCM_128_Encryptor<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
     const FINAL_LEN: usize,
-> = CcmEncryptor<AES128Internal, 16, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+> = CcmEncryptor<AES128Internal, 16, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;
 
 /// AES-128 CCM as an [`AEADCipherDecryptor`]. See [`AES_CCM_128_Encryptor`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_128_Decryptor<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
     const FINAL_LEN: usize,
-> = CcmDecryptor<AES128Internal, 16, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+> = CcmDecryptor<AES128Internal, 16, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;
 
 /// AES-192 CCM as an [`AEADCipherEncryptor`]. See [`AES_CCM_128_Encryptor`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_192_Encryptor<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
     const FINAL_LEN: usize,
-> = CcmEncryptor<AES192Internal, 24, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+> = CcmEncryptor<AES192Internal, 24, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;
 
 /// AES-192 CCM as an [`AEADCipherDecryptor`]. See [`AES_CCM_128_Encryptor`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_192_Decryptor<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
     const FINAL_LEN: usize,
-> = CcmDecryptor<AES192Internal, 24, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+> = CcmDecryptor<AES192Internal, 24, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;
 
 /// AES-256 CCM as an [`AEADCipherEncryptor`]. See [`AES_CCM_128_Encryptor`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_256_Encryptor<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
     const FINAL_LEN: usize,
-> = CcmEncryptor<AES256Internal, 32, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+> = CcmEncryptor<AES256Internal, 32, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;
 
 /// AES-256 CCM as an [`AEADCipherDecryptor`]. See [`AES_CCM_128_Encryptor`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_256_Decryptor<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
     const FINAL_LEN: usize,
-> = CcmDecryptor<AES256Internal, 32, BLOCK_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+> = CcmDecryptor<AES256Internal, 32, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN, FINAL_LEN>;

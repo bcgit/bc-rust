@@ -43,7 +43,8 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherEncryptor, Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook,
-    StreamCipherDecryptor, StreamCipherEncryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, Decrypting, Ecb, Encrypting};
@@ -70,12 +71,21 @@ const CCM_TAG_LEN: usize = 16;
 type Aes128CcmEnc = Ccm<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
 type Aes128CcmDec = Ccm<AES128Internal, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
 
-/// The trait adapter needs a compile-time maximum for streaming. Its one-shots bypass that buffer,
-/// but using the same 4 KiB value and message keeps this comparison representative of the public
-/// alias a packet protocol would choose.
+/// The trait adapter needs compile-time maxima for streaming. Its one-shots bypass those buffers,
+/// but using the same 4 KiB message keeps this comparison representative of the public alias a
+/// packet protocol would choose.
 const CCM_BUFFER_LEN: usize = 4096;
-type Aes128CcmEncryptor =
-    CcmEncryptor<AES128Internal, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN, CCM_BUFFER_LEN>;
+const CCM_AAD_LEN: usize = 64;
+type Aes128CcmEncryptor = CcmEncryptor<
+    AES128Internal,
+    16,
+    BLOCK_LEN,
+    CCM_NONCE_LEN,
+    CCM_TAG_LEN,
+    CCM_AAD_LEN,
+    CCM_BUFFER_LEN,
+    { CCM_BUFFER_LEN + CCM_TAG_LEN },
+>;
 type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, 12>;
 type Aes256Ctr<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, 12>;
 type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;

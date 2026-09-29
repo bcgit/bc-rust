@@ -1,101 +1,72 @@
 //! The Cipher Feedback mode of operation (NIST SP 800-38A Sec 6.3), 8-bit segment.
 //!
-//! # The specification
+//! CFB and CBF8 are the same construction at two segment sizes, resulting in different,
+//! non-interoperable modes. See [`cfb`] for the primary docs on this mode.
 //!
-//! Sec 6.3 defines CFB against a segment size `s` with `1 <= s <= b`, where `b` is the block size.
-//! Quoting the equations verbatim:
+//! The difference is the segment size `s` of Sec 6.3. `Cfb` uses `s = b`: each cipher call yields a
+//! whole block of keystream, and the next input block is simply the previous ciphertext block.
+//! `Cfb8` uses `s = 8` bits: each call to the underlying block permutation yields one keystream byte,
+//! the other `b - 8` are discarded, and the input block is a shift register. NIST SP 800-38A
+//! Sec 6.3:
 //!
-//! ```text
-//! CFB Encryption:  I1 = IV;
-//!                  Ij = LSB_{b-s}(I_{j-1}) | C#_{j-1}   for j = 2 ... n;
-//!                  Oj = CIPH_K(Ij)                      for j = 1, 2 ... n;
-//!                  C#_j = P#_j XOR MSB_s(Oj)            for j = 1, 2 ... n.
+//! > "the bits of the first input block circularly shift s positions to the left, and then the
+//! ciphertext segment replaces the s least significant bits of the result".
 //!
-//! CFB Decryption:  I1 = IV;
-//!                  Ij = LSB_{b-s}(I_{j-1}) | C#_{j-1}   for j = 2 ... n;
-//!                  Oj = CIPH_K(Ij)                      for j = 1, 2 ... n;
-//!                  P#_j = C#_j XOR MSB_s(Oj)            for j = 1, 2 ... n.
-//! ```
-//!
-//! # This type is the `s = 8` specialisation
-//!
-//! [`Cfb8`] implements **only** `s = 8`, "the 8-bit CFB mode" of Sec 6.3, universally called CFB8.
-//! A segment is one byte, so with `s = 8` the equations become, for each byte of the message:
-//!
-//! ```text
-//! I1 = IV;  Ij = LSB_{b-8}(I_{j-1}) | C_{j-1};  Oj = CIPH_K(Ij);  Cj = Pj XOR MSB_8(Oj)
-//! ```
-//!
-//! * `LSB_{b-8}(I_{j-1}) | C_{j-1}` keeps all but the leading byte of the previous input block and
-//!   appends the ciphertext byte. Sec 6.3's alternative description is the shift register this
-//!   implements literally: "the bits of the first input block circularly shift s positions to the
-//!   left, and then the ciphertext segment replaces the s least significant bits of the result".
-//!   [`Cfb8::shift_in`] is `rotate_left(1)` followed by writing the ciphertext byte into the last
-//!   position -- those two sentences, in that order.
-//! * `MSB_8(Oj)` is the **first byte** of the output block. The other `b - 8` bytes are discarded,
-//!   as Sec 6.3 says of the general case: "The remaining b-s bits of the first output block are
-//!   discarded."
+//! The smaller segment is not a security gain, but it makes the mode self-synchronising
+//! at byte granularity: after a dropped or inserted byte the shift register refills from ciphertext
+//! and decryption recovers `b/s` bytes later on its own, where `Cfb` and every other mode need the
+//! alignment "restored externally".
 //!
 //! # One cipher call per byte
 //!
-//! Discarding `b - 8` of every `b` output bytes is what CFB8 costs: a full forward cipher for each
-//! byte of the message, so on a 16-byte block it does **16 times** the cipher work of
-//! [`Cfb`](crate::Cfb) for the same data. That is inherent to the mode, not to this implementation.
-//! Use it when a byte-granular, self-synchronising stream is genuinely required or an existing
-//! format demands it; otherwise prefer `Cfb`, which discards nothing.
+//! Using only one byte from each invocation of the underlying block cipher dramatically reduces
+//! performance, so on a typical 16-byte block cipher it does **16 times** the cipher work of
+//! [`cfb`] for the same data. That is inherent to the mode, not to this implementation.
 //!
-//! CFB8 is a **different, non-interoperable mode** from CFB128, not a variant of it: the two differ
-//! from the very first byte of ciphertext, because CFB8 forms its second input block by shifting
-//! whereas `s = b` replaces the block outright. `cfb8_tests.rs` pins that they disagree.
+//! # 🚨 Security Considerations 🚨
 //!
-//! # A stream cipher
+//! CFB and CFB8 largely share their security considerations, with only a few differences.
+//! Therefore, everything in the Security Considerations of [`crate::cfb`] applies here as well.
 //!
-//! Every byte is a whole segment, so a CFB8 message has no alignment requirement at all: Sec 5.2
-//! asks only that "the total number of bits in the plaintext" be "a multiple of a parameter,
-//! denoted s", and with `s = 8` every byte string qualifies. [`Cfb8`] therefore implements
-//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] and needs no padding layer, no
-//! finalization step and -- unlike [`Cfb`](crate::Cfb), whose segment is a whole block -- no
-//! partial-segment state: a call can end after any byte because every byte ends a segment.
+//! ## Increased attack precision
 //!
-//! # Decryption uses the *forward* cipher function
+//! In CFB, the security implications happen at a block granularity, whereas in CFB8 they happen at
+//! a byte granularity.
+//! This means, for example, key and IV reuse now tells a passive attacker at which exact byte
+//! two messages begin to differ.
 //!
-//! As in CFB128, both directions apply `CIPH_K`. Sec 6.3: "In CFB decryption, the IV is the first
-//! input block, and each successive input block is formed as in CFB encryption [...] The *forward
-//! cipher* function is applied to each input block to produce the output blocks." So
-//! [`Cfb8<P, Decrypting, ..>`](Cfb8) never calls [`ElectronicCodeBook::decrypt_block`] or its batch
-//! forms; `cfb8_tests.rs` pins that with a toy whose inverse panics.
+//! ## Self-synchronization cuts both ways
 //!
-//! # Parallel decryption
-//!
-//! Sec 6.3: "In CFB encryption, like CBC encryption, the input block to each forward cipher
-//! function (except the first) depends on the result of the previous forward cipher function;
-//! therefore, multiple forward cipher operations cannot be performed in parallel. In CFB
-//! decryption, the required forward cipher operations can be performed in parallel if the input
-//! blocks are first constructed (in series) from the IV and the ciphertext."
-//!
-//! Decryption knows every ciphertext byte before it starts, so it can build the shift register's
-//! successive states in series -- byte shuffling, no cipher calls -- and then run the forward
-//! ciphers together. This implementation does exactly that, in fours through
-//! [`ElectronicCodeBook::encrypt_4blocks`] and then pairs through
-//! [`ElectronicCodeBook::encrypt_2blocks`], which is where a bit-sliced engine earns back a large
-//! part of what the mode costs. Encryption cannot: `Ij` needs `C_{j-1}`, which is the output of the
-//! previous cipher call.
+//! The self-synchronization property, while providing great robustness, also allows attackers to
+//! drop or insert content, including content taken from other messages under the same key. This
+//! results in `b/s` bytes of garbage (16 with AES) and then a fully recovered plaintext stream
+//! thereafter, possibly now decrypting a different document than the one before the cut.
+//! This means that, for example, a malicious cut right before a long random number, such as an account
+//! number or ID number, could still yield a syntactically-correct message and therefore be completely
+//! undetectable.
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::stream_cipher::{stream_do_final, stream_update_out};
 use bouncycastle_core::traits::{
     Algorithm, ElectronicCodeBook, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
 
+// Imports needed for docs
+#[allow(unused_imports)]
+use crate::cfb;
+// End imports needed for docs
+
 /// CFB8 mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
 /// The segment size is one byte (`s = 8`); see the module docs, and note that this is **not**
-/// interoperable with [`Cfb`](crate::Cfb), which is `s = b`.
+/// interoperable with [`cfb`], which is `s = b`.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`]. [`StreamCipherEncryptor`] is implemented only for the
 /// former and [`StreamCipherDecryptor`] only for the latter, so a `Cfb8<_, Encrypting, _, _>` has
@@ -194,8 +165,8 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
@@ -207,7 +178,7 @@ where
         Self::do_encrypt_init_rng(key, &mut rng)
     }
 
-    /// As [`StreamCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
+    /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -218,6 +189,36 @@ where
         Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
     }
 
+    /// Every input byte produces exactly one output byte.
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// See [`stream_update_out`].
+    fn do_encrypt_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt(data))
+    }
+
+    /// See [`stream_do_final`].
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    /// A stream cipher never changes the length of its data.
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        plaintext_len
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
+    for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     /// Encrypts `data`, of any length, in place: `Cj = Pj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// then `Cj` shifts into the register.
     ///
@@ -233,13 +234,13 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins a decryption flow from the IV returned by
-    /// [`StreamCipherEncryptor::do_encrypt_init`].
+    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; BLOCK_LEN],
@@ -249,6 +250,36 @@ where
         Ok(Self { perm, chain: *init_data, _dir: PhantomData })
     }
 
+    /// Nothing is held back, so every input byte can be released immediately.
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// See [`stream_update_out`].
+    fn do_decrypt_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt(data))
+    }
+
+    /// See [`stream_do_final`].
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+        ciphertext_len
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
+    for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     /// Decrypts `data`, of any length, in place: `Pj = Cj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// with the *ciphertext* byte -- the one that came in, not the plaintext going out -- shifted
     /// into the register.

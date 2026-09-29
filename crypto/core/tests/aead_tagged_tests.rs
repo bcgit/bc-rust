@@ -79,10 +79,10 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ToyEnc {
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         Self::do_encrypt_init(key)
     }
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
-    fn do_update_out(
+    fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -132,15 +132,15 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ToyDec {
     ) -> Result<Self, SymmetricCipherError> {
         Ok(Self { toy: Toy::new(key)?, held: [0u8; TAG_LEN], held_len: 0 })
     }
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         (self.held_len + input_len).saturating_sub(TAG_LEN)
     }
-    fn do_update_out(
+    fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        let release = self.update_out_len(ciphertext.len());
+        let release = self.do_decrypt_out_len(ciphertext.len());
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
@@ -242,7 +242,7 @@ fn tagged_round_trip_at_every_length_and_chunking() {
             let mut stream_ct = vec![0u8; msg.len() + TAG_LEN];
             let mut written = 0;
             for piece in msg.chunks(chunk) {
-                written += enc.do_update_out(piece, &mut stream_ct[written..]).unwrap();
+                written += enc.do_encrypt_out(piece, &mut stream_ct[written..]).unwrap();
             }
             let mut last = [0u8; TAG_LEN];
             let last_len = enc.do_final_out(&mut last).unwrap();
@@ -260,7 +260,7 @@ fn tagged_round_trip_at_every_length_and_chunking() {
             let mut out = vec![0u8; stream_ct.len()];
             let mut written = 0;
             for piece in stream_ct.chunks(chunk) {
-                written += dec.do_update_out(piece, &mut out[written..]).unwrap();
+                written += dec.do_decrypt_out(piece, &mut out[written..]).unwrap();
             }
             assert_eq!(written, len, "len {len}, chunk {chunk}: the tag must be held back");
             let (last, data_len) = dec.do_final().unwrap();
@@ -275,7 +275,7 @@ fn tagged_round_trip_at_every_length_and_chunking() {
             let mut out = vec![0u8; len];
             let mut written = 0;
             for piece in stream_ct[..len].chunks(chunk) {
-                written += dec.do_update_out(piece, &mut out[written..]).unwrap();
+                written += dec.do_decrypt_out(piece, &mut out[written..]).unwrap();
             }
             let mut last = [0u8; TAG_LEN];
             let last_len = dec.do_final_out_detached(&d_tag, &mut last).unwrap();
@@ -306,7 +306,7 @@ fn tampering_and_short_input_are_rejected() {
 
     let mut dec = ToyDec::do_decrypt_init(&km, &nonce).unwrap();
     dec.do_update_aad(AAD).unwrap();
-    dec.do_update_out(&tampered, &mut pt).unwrap();
+    dec.do_decrypt_out(&tampered, &mut pt).unwrap();
     assert!(matches!(dec.do_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
 
     // A wrong detached tag fails, and `decrypt_out_detached` zeroizes what it wrote.
@@ -327,7 +327,7 @@ fn tampering_and_short_input_are_rejected() {
             Err(SymmetricCipherError::DecryptionFailed)
         ));
         let mut dec = ToyDec::do_decrypt_init(&km, &nonce).unwrap();
-        assert_eq!(dec.do_update_out(&ct[..short_len], &mut pt).unwrap(), 0);
+        assert_eq!(dec.do_decrypt_out(&ct[..short_len], &mut pt).unwrap(), 0);
         assert!(matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)));
     }
 }
