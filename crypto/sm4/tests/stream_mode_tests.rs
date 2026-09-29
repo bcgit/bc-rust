@@ -26,7 +26,10 @@
 //! All vector values are transcribed from the downloaded text of the draft.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{
+    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Encrypting};
@@ -129,7 +132,7 @@ fn check_cfb(section: &str, key_hex: &str, expected: &str) {
 
     // Decrypt with the IV as init data: one shot, and streaming at an unaligned boundary.
     let mut data = ct.clone();
-    SM4_CFB::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+    SM4_CFB::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
     assert_eq!(data, pt, "{section} decrypt, one shot");
 
     let mut dec = SM4_CFB::<Decrypting>::do_decrypt_init(&key, &iv).expect("decryption init");
@@ -236,7 +239,7 @@ fn the_ctr_alias_agrees_with_the_reference() {
         assert_eq!(data, expected, "len {len}: SM4_CTR should match the reference");
 
         // ...and decryption undoes it under the same nonce.
-        SM4_CTR::<Decrypting>::decrypt(&key, &nonce, &mut data).expect("decryption");
+        SM4_CTR::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: round trip");
     }
 }
@@ -301,7 +304,7 @@ fn the_cfb8_alias_agrees_with_the_equations() {
         reference_cfb8(&key, iv, &mut back, false);
         assert_eq!(back, plaintext, "len {len}: the reference decrypts its own output");
 
-        SM4_CFB8::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+        SM4_CFB8::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: SM4_CFB8 decrypt should match");
     }
 }

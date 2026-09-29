@@ -37,7 +37,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// ```
 /// use bouncycastle_sm4::SM4_CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -45,10 +45,10 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, nonce) = SM4_CTR::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, nonce) = SM4_CTR::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_eq!(nonce.len(), 12);
 /// assert_ne!(data, message);
-/// SM4_CTR::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
+/// SM4_CTR::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
