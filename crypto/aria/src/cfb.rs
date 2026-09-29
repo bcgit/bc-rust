@@ -22,7 +22,7 @@ use bouncycastle_modes::Cfb;
 /// ```
 /// use bouncycastle_aria::ARIA_CFB_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -30,9 +30,9 @@ use bouncycastle_modes::Cfb;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, iv) = ARIA_CFB_128::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = ARIA_CFB_128::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
-/// ARIA_CFB_128::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// ARIA_CFB_128::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
@@ -60,8 +60,8 @@ pub type ARIA_CFB_128<Dir> = Cfb<ARIA_128, Dir, 16, BLOCK_LEN>;
 ///
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let (_, iv) = ARIA_CFB_192::<Encrypting>::encrypt(&key, &mut data).unwrap();
-/// ARIA_CFB_192::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// let (_, iv) = ARIA_CFB_192::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
+/// ARIA_CFB_192::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
@@ -77,8 +77,8 @@ pub type ARIA_CFB_192<Dir> = Cfb<ARIA_192, Dir, 24, BLOCK_LEN>;
 ///
 /// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let (_, iv) = ARIA_CFB_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
-/// ARIA_CFB_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// let (_, iv) = ARIA_CFB_256::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
+/// ARIA_CFB_256::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]

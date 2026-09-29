@@ -12,7 +12,9 @@ use bouncycastle_aria::{
     CTR_NONCE_LEN,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Cfb, Cfb8, Ctr, Decrypting, Encrypting};
 
@@ -98,12 +100,14 @@ fn every_alias_round_trips_at_any_length() {
             let plaintext = filler(len, len as u32);
             let mut data = plaintext.clone();
 
-            let (written, init) = Enc::encrypt(&key::<KEY_LEN>(), &mut data).expect("encryption");
+            let (written, init) =
+                Enc::encrypt_in_place(&key::<KEY_LEN>(), &mut data).expect("encryption");
             assert_eq!(written, len, "{name}, len {len}: bytes written");
             assert_eq!(data.len(), len, "{name}, len {len}: no padding is added");
             assert_eq!(init.len(), INIT_DATA_LEN, "{name}: init data length");
 
-            let read = Dec::decrypt(&key::<KEY_LEN>(), &init, &mut data).expect("decryption");
+            let read =
+                Dec::decrypt_in_place(&key::<KEY_LEN>(), &init, &mut data).expect("decryption");
             assert_eq!(read, len, "{name}, len {len}: bytes read");
             assert_eq!(data, plaintext, "{name}, len {len}: round trip");
         }
@@ -131,7 +135,7 @@ fn chunking_does_not_change_the_ciphertext() {
     {
         let plaintext = filler(100, 99);
         let mut whole = plaintext.clone();
-        let (_, init) = Enc::encrypt(&key::<KEY_LEN>(), &mut whole).expect("encryption");
+        let (_, init) = Enc::encrypt_in_place(&key::<KEY_LEN>(), &mut whole).expect("encryption");
 
         for chunk in [1usize, 3, 7, 16, 33] {
             let mut dec = Dec::do_decrypt_init(&key::<KEY_LEN>(), &init).expect("decryption init");
@@ -161,9 +165,10 @@ fn each_encryption_gets_fresh_init_data() {
         let mut seen = std::collections::BTreeSet::new();
         for _ in 0..16 {
             let mut data = plaintext;
-            let (_, init) = Enc::encrypt(&key::<KEY_LEN>(), &mut data).expect("encryption");
+            let (_, init) =
+                Enc::encrypt_in_place(&key::<KEY_LEN>(), &mut data).expect("encryption");
             assert!(seen.insert(init.to_vec()), "{name}: init data repeated across encryptions");
-            Dec::decrypt(&key::<KEY_LEN>(), &init, &mut data).expect("decryption");
+            Dec::decrypt_in_place(&key::<KEY_LEN>(), &init, &mut data).expect("decryption");
             assert_eq!(data, plaintext, "{name}: round trip");
         }
     }
@@ -209,18 +214,19 @@ fn ctr_is_not_cfb() {
     let plaintext = filler(32, 999);
 
     let mut as_ctr = plaintext.clone();
-    let (_, nonce) = ARIA_CTR_128::<Encrypting>::encrypt(&key::<16>(), &mut as_ctr).unwrap();
+    let (_, nonce) =
+        ARIA_CTR_128::<Encrypting>::encrypt_in_place(&key::<16>(), &mut as_ctr).unwrap();
     assert_eq!(nonce.len(), CTR_NONCE_LEN);
 
     let mut as_cfb = plaintext.clone();
-    let (_, iv) = ARIA_CFB_128::<Encrypting>::encrypt(&key::<16>(), &mut as_cfb).unwrap();
+    let (_, iv) = ARIA_CFB_128::<Encrypting>::encrypt_in_place(&key::<16>(), &mut as_cfb).unwrap();
     assert_eq!(iv.len(), BLOCK_LEN);
 
     // A CFB decryptor handed a CTR ciphertext cannot recover the plaintext.
     let mut misread = as_ctr.clone();
     let mut iv_from_nonce = [0u8; BLOCK_LEN];
     iv_from_nonce[..CTR_NONCE_LEN].copy_from_slice(&nonce);
-    ARIA_CFB_128::<Decrypting>::decrypt(&key::<16>(), &iv_from_nonce, &mut misread)
+    ARIA_CFB_128::<Decrypting>::decrypt_in_place(&key::<16>(), &iv_from_nonce, &mut misread)
         .expect("decryption runs");
     assert_ne!(misread, plaintext, "CFB must not decrypt a CTR ciphertext");
 }
