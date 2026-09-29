@@ -28,7 +28,7 @@ use bouncycastle_modes::Cfb8;
 /// ```
 /// use bouncycastle_camellia::{Camellia_CFB8_128, Camellia_CFB_128};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -36,9 +36,9 @@ use bouncycastle_modes::Cfb8;
 /// // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
 /// let message = *b"hello";
 /// let mut data = message;
-/// let (_, iv) = Camellia_CFB8_128::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = Camellia_CFB8_128::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
-/// Camellia_CFB8_128::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// Camellia_CFB8_128::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
@@ -55,9 +55,9 @@ use bouncycastle_modes::Cfb8;
 ///
 /// // CFB8 and CFB128 are not interchangeable: same key, same IV, different ciphertext.
 /// let mut as_cfb8 = message;
-/// let (_, iv) = Camellia_CFB8_128::<Encrypting>::encrypt(&key, &mut as_cfb8).unwrap();
+/// let (_, iv) = Camellia_CFB8_128::<Encrypting>::encrypt_in_place(&key, &mut as_cfb8).unwrap();
 /// let mut as_cfb128 = as_cfb8;
-/// Camellia_CFB_128::<Decrypting>::decrypt(&key, &iv, &mut as_cfb128).unwrap();
+/// Camellia_CFB_128::<Decrypting>::decrypt_in_place(&key, &iv, &mut as_cfb128).unwrap();
 /// assert_ne!(as_cfb128, message);
 /// ```
 #[allow(non_camel_case_types)]
@@ -73,8 +73,8 @@ pub type Camellia_CFB8_128<Dir> = Cfb8<Camellia_128, Dir, 16, BLOCK_LEN>;
 ///
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let (_, iv) = Camellia_CFB8_192::<Encrypting>::encrypt(&key, &mut data).unwrap();
-/// Camellia_CFB8_192::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// let (_, iv) = Camellia_CFB8_192::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
+/// Camellia_CFB8_192::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
@@ -90,8 +90,8 @@ pub type Camellia_CFB8_192<Dir> = Cfb8<Camellia_192, Dir, 24, BLOCK_LEN>;
 ///
 /// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let (_, iv) = Camellia_CFB8_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
-/// Camellia_CFB8_256::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// let (_, iv) = Camellia_CFB8_256::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
+/// Camellia_CFB8_256::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]

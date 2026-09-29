@@ -102,7 +102,7 @@ where
     let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key");
     let iv: [u8; 16] = iv.try_into().expect("a 16-byte IV");
-    Cfb8::<P, Decrypting, KEY_LEN, 16>::decrypt(&key, &iv, data).expect("decryption");
+    Cfb8::<P, Decrypting, KEY_LEN, 16>::decrypt_in_place(&key, &iv, data).expect("decryption");
 }
 
 /// What each command emits must be exactly what `Cfb8` over the matching permutation produces:
