@@ -38,7 +38,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// ```
 /// use bouncycastle_camellia::Camellia_CTR_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -46,10 +46,10 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, nonce) = Camellia_CTR_128::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, nonce) = Camellia_CTR_128::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_eq!(nonce.len(), 12);
 /// assert_ne!(data, message);
-/// Camellia_CTR_128::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
+/// Camellia_CTR_128::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
@@ -77,8 +77,8 @@ pub type Camellia_CTR_128<Dir> = Ctr<Camellia_128, Dir, 16, BLOCK_LEN, CTR_NONCE
 ///
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let (_, nonce) = Camellia_CTR_192::<Encrypting>::encrypt(&key, &mut data).unwrap();
-/// Camellia_CTR_192::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
+/// let (_, nonce) = Camellia_CTR_192::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
+/// Camellia_CTR_192::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
@@ -94,8 +94,8 @@ pub type Camellia_CTR_192<Dir> = Ctr<Camellia_192, Dir, 24, BLOCK_LEN, CTR_NONCE
 ///
 /// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 /// let mut data = [0u8; 30];
-/// let (_, nonce) = Camellia_CTR_256::<Encrypting>::encrypt(&key, &mut data).unwrap();
-/// Camellia_CTR_256::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
+/// let (_, nonce) = Camellia_CTR_256::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
+/// Camellia_CTR_256::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]

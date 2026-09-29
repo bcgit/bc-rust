@@ -118,7 +118,7 @@ fn check_chain<const KEY_LEN: usize, P, const N: usize>(
 
     // Decrypt with the IV as init data: one shot, and streaming.
     let mut data = *ct;
-    Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt(key, &iv, &mut data).unwrap();
+    Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_in_place(key, &iv, &mut data).unwrap();
     assert_eq!(data, *pt, "{name}: decrypt, one shot");
 
     let mut dec = Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(key, &iv).unwrap();
@@ -147,7 +147,7 @@ fn camellia_128_cbc_chain() {
     assert_eq!(got_iv, iv);
     enc.do_encrypt(&mut data).unwrap();
     assert_eq!(data, bytes::<16>(CT_128_4), "CAMELLIA-128-CBC entry 4");
-    Camellia128Cbc::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+    Camellia128Cbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
     assert_eq!(data, bytes::<16>(PT[3]));
 }
 
@@ -162,7 +162,7 @@ fn camellia_192_cbc_chain() {
     );
     // And through the alias, one shot.
     let mut data = concat::<64>(&CT_192);
-    Camellia192Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Camellia192Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, concat::<64>(&PT));
 }
 
@@ -176,6 +176,6 @@ fn camellia_256_cbc_chain() {
         &concat::<64>(&CT_256),
     );
     let mut data = concat::<64>(&CT_256);
-    Camellia256Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Camellia256Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, concat::<64>(&PT));
 }

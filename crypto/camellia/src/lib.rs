@@ -125,11 +125,11 @@
 //!
 //! // The nonce is generated for you and returned; there is no API for supplying one.
 //! let (written, nonce) =
-//!     Camellia_CTR_256::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//!     Camellia_CTR_256::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //! assert_eq!(written, 50);
 //! assert_ne!(data, plaintext);
 //!
-//! Camellia_CTR_256::<Decrypting>::decrypt(&key, &nonce, &mut data).expect("decryption");
+//! Camellia_CTR_256::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!

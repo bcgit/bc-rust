@@ -113,7 +113,7 @@ where
     assert_eq!(data, ct, "{name} encrypt, one block at a time");
 
     let mut data = ct;
-    Dec::decrypt(&key, &iv, &mut data).expect("decryption");
+    Dec::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
     assert_eq!(data, pt, "{name} decrypt, one shot");
 
     // Seven bytes at a time: a stream cipher must not care where the call boundaries fall.
@@ -324,7 +324,7 @@ where
         enc.do_encrypt(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: should match the reference");
 
-        Dec::decrypt(&key, &nonce, &mut data).expect("decryption");
+        Dec::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "{name}, len {len}: round trip");
     }
 }
@@ -408,7 +408,7 @@ where
         reference_cfb8::<P, KEY_LEN>(&key, iv, &mut back, false);
         assert_eq!(back, plaintext, "{name}, len {len}: the reference decrypts its own output");
 
-        Dec::decrypt(&key, &iv, &mut data).expect("decryption");
+        Dec::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "{name}, len {len}: decrypt should match");
     }
 }
