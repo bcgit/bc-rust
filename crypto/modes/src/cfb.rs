@@ -148,11 +148,11 @@
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (_, iv) = Aes128Cfb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (_, iv) = Aes128Cfb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //!
 //! // `data` now contains the ciphertext
 //!
-//! Aes128Cfb::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+//! Aes128Cfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
@@ -161,7 +161,7 @@
 //! ```
 //! use bouncycastle_aes::aes_internal::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
 //!
 //! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
@@ -189,8 +189,10 @@ use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::stream_cipher::{stream_do_final, stream_update_out};
 use bouncycastle_core::traits::{
     Algorithm, ElectronicCodeBook, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
@@ -385,8 +387,8 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
@@ -398,7 +400,7 @@ where
         Self::do_encrypt_init_rng(key, &mut rng)
     }
 
-    /// As [`StreamCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
+    /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
     fn do_encrypt_init_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -409,6 +411,36 @@ where
         Ok((Self::start(perm, iv), iv))
     }
 
+    /// Every input byte produces exactly one output byte.
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// See [`stream_update_out`].
+    fn do_encrypt_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt(data))
+    }
+
+    /// See [`stream_do_final`].
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    /// A stream cipher never changes the length of its data.
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        plaintext_len
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
+    for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     /// Encrypts `data`, of any length, in place.
     ///
     /// Strictly serial: `Oj+1 = CIPH_K(Cj)` and `Cj` is the *output* of the previous cipher call, so
@@ -429,13 +461,13 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     /// Begins a decryption flow from the IV returned by
-    /// [`StreamCipherEncryptor::do_encrypt_init`].
+    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; BLOCK_LEN],
@@ -445,6 +477,36 @@ where
         Ok(Self::start(perm, *init_data))
     }
 
+    /// Nothing is held back, so every input byte can be released immediately.
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    /// See [`stream_update_out`].
+    fn do_decrypt_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt(data))
+    }
+
+    /// See [`stream_do_final`].
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+        ciphertext_len
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
+    for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
     /// Decrypts `data`, of any length, in place.
     ///
     /// Walks the block-aligned middle in fours through the permutation's *forward* four-block

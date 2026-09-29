@@ -26,13 +26,16 @@
 //! # Driving the IV
 //!
 //! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through [`StreamCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
+//! through [`SymmetricCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
 //! the vector's IV, and the test asserts the returned init data really is that IV before comparing
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{
+    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cfb8, Decrypting, Encrypting};
@@ -177,7 +180,7 @@ where
 
     // ...and the one-shot, where the IV is an input.
     let mut data = ciphertext.clone();
-    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt(&key, &iv, &mut data).unwrap();
+    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_in_place(&key, &iv, &mut data).unwrap();
     assert_eq!(data, plaintext, "{section}: one-shot");
 }
 

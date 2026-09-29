@@ -65,14 +65,14 @@
 //! let (mut enc, nonce) = AsconAead128Encryptor::do_encrypt_init(&key).unwrap();
 //! enc.do_update_aad(b"associated data").unwrap();
 //! let mut ciphertext = [0u8; 16];
-//! enc.do_update_out(plaintext, &mut ciphertext).unwrap();
+//! enc.do_encrypt_out(plaintext, &mut ciphertext).unwrap();
 //! let mut final_buf = [0u8; 16];
 //! let (_, tag) = enc.do_final_out_detached(&mut final_buf).unwrap();
 //!
 //! let mut dec = AsconAead128Decryptor::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(b"associated data").unwrap();
 //! let mut recovered = [0u8; 16];
-//! let n = dec.do_update_out(&ciphertext, &mut recovered).unwrap(); // 0: all 16 held back
+//! let n = dec.do_decrypt_out(&ciphertext, &mut recovered).unwrap(); // 0: all 16 held back
 //! let m = dec.do_final_out_detached(&tag, &mut final_buf).unwrap(); // now authenticated
 //! recovered[n..n + m].copy_from_slice(&final_buf[..m]);
 //! assert_eq!(&recovered, plaintext);

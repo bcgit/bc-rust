@@ -19,8 +19,10 @@
 //! blocks are XORed with the plaintext. The last block may be partial, and Sec 6.5 says what to do
 //! with it -- "the most significant u bits of the last output block are used for the exclusive-OR
 //! operation; the remaining b-u bits of the last output block are discarded" -- so unlike CBC there
-//! is no alignment requirement anywhere in the mode. [`Ctr`] therefore implements
-//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`].
+//! is no alignment requirement anywhere in the mode, and the keystream `O1, O2, ...` does not depend
+//! on the data at all. So the mode is a [`KeyStream`], [`CtrKeyStream`], and [`Ctr`] is that
+//! keystream wrapped in [`StreamCipher`], which implements [`StreamCipherEncryptor`] /
+//! [`StreamCipherDecryptor`] over it.
 //!
 //! **Encryption and decryption are the same operation.** Both compute `Oj = CIPH_K(Tj)` and XOR;
 //! only the name of the input changes. The two directions are still separate types here, for the
@@ -81,10 +83,10 @@
 //! counter would repeat, which for a keystream mode means reusing keystream: the two-time-pad
 //! failure, within a single message.
 //!
-//! So [`Ctr`] **refuses** rather than wraps. A call that would need more keystream than the counter
-//! can still supply returns [`SymmetricCipherError::StateError`] and consumes nothing -- the check
-//! is made up front, against the whole call, so a message is never half-encrypted before the mode
-//! notices. This is the failure the `Result` on the data methods exists for; the other modes in
+//! So [`Ctr`] **refuses** rather than wraps. [`CtrKeyStream`] reports how many counter values are
+//! left, and a call that would need more keystream than that returns
+//! [`SymmetricCipherError::StateError`] and consumes nothing -- [`StreamCipher`] makes the check up
+//! front, against the whole call, so a message is never half-encrypted before the mode notices. This is the failure the `Result` on the data methods exists for; the other modes in
 //! this crate never return `Err` from them.
 //!
 //! # Everything is parallel
@@ -93,40 +95,40 @@
 //! performed in parallel". Counter blocks depend on nothing but the nonce and the index, so unlike
 //! CBC and CFB there is no serial direction at all: **both** directions walk the block-aligned part
 //! of the data in fours through [`ElectronicCodeBook::encrypt_4blocks`], then in pairs through
-//! [`ElectronicCodeBook::encrypt_2blocks`]. Only the bytes that finish a partially-used keystream
-//! block, and the short tail at the end, go one block at a time.
+//! [`ElectronicCodeBook::encrypt_2blocks`]. Only a leftover single block, and the keystream block
+//! for a short tail at the end, go one block at a time.
 //!
 //! Like the rest of CFB and CTR, only the **forward** cipher function is ever used, in both
 //! directions, so a permutation that implements only `encrypt_block` works here.
 //!
 //! # Keystream that outlives a call
 //!
-//! A call can end part-way through a keystream block, and the remainder of that block is kept for
-//! the next call so the caller's chunking is invisible in the output. Those bytes are unused
-//! keystream: XORed with nothing, they reveal nothing about the message, but they *are* live
-//! keystream for the next bytes of it, so the buffer is held in a `Secret` and zeroized on drop.
-//! So is every transient keystream block the batch and single-block paths produce, since each is
-//! the same kind of value until it has been XORed in.
+//! A call can end part-way through a keystream block. [`StreamCipher`] keeps the remainder for the
+//! next call, in a `Secret`, so the caller's chunking is invisible in the output. Every transient
+//! keystream block [`CtrKeyStream`]'s batch paths produce is held in a `Secret` too, since each is
+//! live keystream until it has been XORed in.
 //! That is the difference from `Cfb`, whose retained bytes are `CIPH_K` of a public block and are
 //! deliberately not wrapped.
 
-use crate::iv::random_iv;
-use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    Algorithm, ElectronicCodeBook, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
-};
+use bouncycastle_core::stream_cipher::StreamCipher;
+use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, KeyStream};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
-use core::marker::PhantomData;
 
-/// CTR mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
+// Imports needed for docs
+#[allow(unused_imports)]
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+// end of imports needed for docs
+
+/// CTR mode over any [`ElectronicCodeBook`], with the direction encoded in the type: the
+/// [`CtrKeyStream`] wrapped in a [`StreamCipher`].
 ///
 /// The counter block is the init data (the nonce) followed by a counter filling the rest of the
 /// block, so `INIT_DATA_LEN` chooses the counter length; see the module docs. `Dir` is
-/// [`Encrypting`] or [`Decrypting`].
+/// [`Encrypting`](crate::Encrypting) or [`Decrypting`](crate::Decrypting).
 ///
 /// # The counter width is checked at compile time
 ///
@@ -139,7 +141,7 @@ use core::marker::PhantomData;
 /// ```compile_fail
 /// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::StreamCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
@@ -153,7 +155,7 @@ use core::marker::PhantomData;
 /// ```compile_fail
 /// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::StreamCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
@@ -166,21 +168,36 @@ use core::marker::PhantomData;
 /// ```
 /// use bouncycastle_aes::aes_internal::AES128Internal;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::StreamCipherEncryptor;
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
 /// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
 /// ```
+pub type Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
+    StreamCipher<
+        CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>,
+        Dir,
+        HashDRBG_SHA512,
+        KEY_LEN,
+        INIT_DATA_LEN,
+        BLOCK_LEN,
+    >;
+
+/// The CTR keystream `Oj = CIPH_K(Tj)` over any [`ElectronicCodeBook`], with `Tj = N | [j]m`;
+/// see the module docs. Use it through [`Ctr`].
+///
+/// # 🚨 Security 🚨
+/// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller and does not
+/// refuse to run past the counter. See [`KeyStream`]'s security notes; it is deliberately not
+/// re-exported from the crate root.
 ///
 /// # State
 ///
-/// The permutation, the nonce, the next counter value, the current keystream block and how much of
-/// it has been used. The nonce and the counter are both public, so they are plain fields; the
-/// keystream block is live key material for the bytes not yet consumed, so it is a [`Secret`] and
-/// is zeroized on drop.
-pub struct Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
+/// The permutation, the nonce and the next counter value. The nonce and the counter are both
+/// public, so they are plain fields; no keystream is kept between calls.
+pub struct CtrKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
@@ -194,16 +211,10 @@ where
     /// its state back out of those bytes could not tell "just started" from "completely used up".
     /// This counts to `BLOCK_LIMIT` and stops there.
     next_counter: u64,
-    /// `Oj` for the block currently being consumed. Meaningful only while `used < BLOCK_LEN`.
-    keystream: Secret<[u8; BLOCK_LEN]>,
-    /// Bytes of `keystream` already consumed, `0..=BLOCK_LEN`. `BLOCK_LEN` means none is pending
-    /// and the next byte needs a fresh cipher call.
-    used: usize,
-    _dir: PhantomData<Dir>,
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    Ctr<P, Dir, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
+    CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
@@ -235,18 +246,10 @@ where
         };
     }
 
-    /// `T1 = N | [0]m`: the nonce, then a zero counter. No keystream is pending.
+    /// `T1 = N | [0]m`: the nonce, then a zero counter.
     #[inline]
     fn start(perm: P, nonce: [u8; INIT_DATA_LEN]) -> Self {
-        Self::check_shape();
-        Self {
-            perm,
-            nonce,
-            next_counter: 0,
-            keystream: Secret::new(),
-            used: BLOCK_LEN,
-            _dir: PhantomData,
-        }
+        Self::start_at(perm, nonce, 0)
     }
 
     /// As [`start`](Self::start), but the counter of the *next* block is `counter` instead of 0.
@@ -261,165 +264,90 @@ where
             counter < Self::BLOCK_LIMIT,
             "start_at must not be handed an already-exhausted counter"
         );
-        Self {
-            perm,
-            nonce,
-            next_counter: counter,
-            keystream: Secret::new(),
-            used: BLOCK_LEN,
-            _dir: PhantomData,
-        }
+        Self { perm, nonce, next_counter: counter }
     }
 
-    /// `Tj = N | [j]m`: the nonce followed by the counter, big-endian, in the trailing `CTR_LEN`
-    /// bytes.
+    /// `Tj = N | [j]m`: the nonce followed by the counter `j`, big-endian, in the trailing
+    /// `CTR_LEN` bytes.
     ///
     /// Taking the low `CTR_LEN` bytes of the big-endian `u64` is the `mod 2^m` of Appendix B.1's
     /// standard incrementing function, though the truncation never actually discards anything:
-    /// [`Self::check_capacity`] refuses the call before `next_counter` could reach `2^m`.
+    /// [`StreamCipher`] refuses the call before the counter could reach `2^m`.
     #[inline]
-    fn counter_block(&self) -> [u8; BLOCK_LEN] {
+    fn counter_block(nonce: &[u8; INIT_DATA_LEN], j: u64) -> [u8; BLOCK_LEN] {
         let mut t = [0u8; BLOCK_LEN];
-        t[..INIT_DATA_LEN].copy_from_slice(&self.nonce);
-        let be = self.next_counter.to_be_bytes();
+        t[..INIT_DATA_LEN].copy_from_slice(nonce);
+        let be = j.to_be_bytes();
         t[INIT_DATA_LEN..].copy_from_slice(&be[be.len() - Self::CTR_LEN..]);
         t
     }
+}
 
-    /// How many more bytes of keystream this instance can still produce.
-    ///
-    /// The pending tail of the current block, plus a whole block for every counter value left.
-    #[inline]
-    fn remaining_capacity(&self) -> u64 {
-        let pending = (BLOCK_LEN - self.used) as u64;
-        let blocks_left = Self::BLOCK_LIMIT - self.next_counter;
-        pending + blocks_left * BLOCK_LEN as u64
+/// XORs `Oj = CIPH_K(Tj)` into `blocks` for the next `blocks.len()` counter values, starting at
+/// `*next` and advancing it past them, where `Tj = counter_block(j)`.
+///
+/// Shared by [`CtrKeyStream`] and CCM's keystream (SP 800-38C Sec 6.1 steps 5-7), which differ
+/// only in how a counter block is formatted. Walks the blocks in fours through
+/// [`ElectronicCodeBook::encrypt_4blocks`], then pairs, then a single block: the counter blocks
+/// depend only on `j`, not on the data or on each other's cipher output, so the forward ciphers in
+/// a batch are independent. This is the parallelism SP 800-38A Sec 6.5 describes, and it applies
+/// to both directions.
+///
+/// The keystream scratch is one [`Secret`] per width and per call rather than per batch, so every
+/// block of `Oj` is zeroized when this returns.
+pub(crate) fn apply_counter_blocks<P, const KEY_LEN: usize, const BLOCK_LEN: usize>(
+    perm: &P,
+    next: &mut u64,
+    counter_block: impl Fn(u64) -> [u8; BLOCK_LEN],
+    blocks: &mut [[u8; BLOCK_LEN]],
+) where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    let (fours, rest) = blocks.as_chunks_mut::<4>();
+    let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
+    for four in fours.iter_mut() {
+        apply_batch(perm, next, &counter_block, four, &mut ks4, P::encrypt_4blocks);
     }
-
-    /// Refuses a call that would run past the last counter block, before anything is consumed.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::StateError`] if `len` exceeds what the counter can still cover.
-    #[inline]
-    fn check_capacity(&self, len: usize) -> Result<(), SymmetricCipherError> {
-        if len as u64 > self.remaining_capacity() {
-            return Err(SymmetricCipherError::StateError(
-                "CTR counter exhausted: this message would need more blocks than the counter has \
-                 distinct values, and continuing would repeat keystream",
-            ));
-        }
-        Ok(())
+    let (pairs, single) = rest.as_chunks_mut::<2>();
+    let mut ks2: Secret<[[u8; BLOCK_LEN]; 2]> = Secret::new();
+    for pair in pairs.iter_mut() {
+        apply_batch(perm, next, &counter_block, pair, &mut ks2, P::encrypt_2blocks);
     }
-
-    /// `Oj = CIPH_K(Tj)` into the keystream buffer, then `T` moves on. Only called when the current
-    /// block is used up and capacity has already been checked.
-    #[inline]
-    fn refill(&mut self) {
-        // Enciphered in place inside the `Secret`, so no copy of the keystream block is ever left
-        // on the stack unzeroized; the counter block it starts from is public.
-        *self.keystream = self.counter_block();
-        self.perm.encrypt_block(&mut self.keystream);
-        self.next_counter += 1;
-        self.used = 0;
-    }
-
-    /// XORs `data` (shorter than a block, or the tail of a partly-used block) with the keystream,
-    /// refilling as it goes. Used for the bytes that finish an open block and for the final tail.
-    #[inline]
-    fn apply_bytes(&mut self, data: &mut [u8]) {
-        for byte in data.iter_mut() {
-            if self.used == BLOCK_LEN {
-                self.refill();
-            }
-            *byte ^= self.keystream[self.used];
-            self.used += 1;
-        }
-    }
-
-    /// XORs `N` whole blocks with `N` counter blocks encrypted in one batched call.
-    ///
-    /// The counter blocks are built first -- they depend only on the nonce and the index, not on
-    /// the data or on each other's cipher output -- so the `N` forward ciphers are independent.
-    /// This is the parallelism Sec 6.5 describes, and it applies to both directions.
-    ///
-    /// `keystream` is the caller's scratch for the `N` blocks of `Oj`: [`Self::apply`] holds it in
-    /// a [`Secret`] for the whole call, so the batched keystream gets the same drop-time scrub as
-    /// the single-block buffer in `self` without a fresh allocation and scrub per batch.
-    #[inline]
-    fn apply_batch<const N: usize>(
-        &mut self,
-        blocks: &mut [[u8; BLOCK_LEN]; N],
-        keystream: &mut [[u8; BLOCK_LEN]; N],
-        batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
-    ) {
-        for slot in keystream.iter_mut() {
-            *slot = self.counter_block();
-            self.next_counter += 1;
-        }
-        batch(&self.perm, keystream);
-        for (block, o) in blocks.iter_mut().zip(keystream.iter()) {
-            for (b, o) in block.iter_mut().zip(o.iter()) {
-                *b ^= *o;
-            }
-        }
-        // The batch consumed whole blocks, so nothing is left pending.
-        self.used = BLOCK_LEN;
-    }
-
-    /// XORs one whole block at a block boundary.
-    ///
-    /// Goes through the `Secret` keystream buffer rather than a plain local for the same reason
-    /// [`Self::refill`] does: a whole block of `Oj` must not be left on the stack unzeroized.
-    #[inline]
-    fn apply_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
-        self.refill();
-        for (b, o) in block.iter_mut().zip(self.keystream.iter()) {
-            *b ^= *o;
-        }
-        self.used = BLOCK_LEN;
-    }
-
-    /// The whole data path, shared by both directions: CTR encryption and decryption are the same
-    /// operation (Sec 6.5), so there is one implementation and the direction is only a type.
-    ///
-    /// Splits into the bytes that finish an already-open keystream block, the whole blocks that
-    /// follow, and the short tail. The middle goes through the batch paths; only the two ends go
-    /// byte by byte.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::StateError`] if the counter cannot cover the call; nothing is
-    /// consumed in that case.
-    fn apply(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        self.check_capacity(data.len())?;
-
-        let head_len = core::cmp::min(BLOCK_LEN - self.used, data.len());
-        let (head, rest) = data.split_at_mut(head_len);
-        self.apply_bytes(head);
-
-        // Scratch for the batched keystream, one per width and per call rather than per batch:
-        // held in a `Secret` so it is zeroized when this call returns, like the block in `self`.
-        let (blocks, tail) = rest.as_chunks_mut::<BLOCK_LEN>();
-        let (fours, rest_blocks) = blocks.as_chunks_mut::<4>();
-        let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
-        for four in fours.iter_mut() {
-            self.apply_batch(four, &mut ks4, P::encrypt_4blocks);
-        }
-        let (pairs, single) = rest_blocks.as_chunks_mut::<2>();
-        let mut ks2: Secret<[[u8; BLOCK_LEN]; 2]> = Secret::new();
-        for pair in pairs.iter_mut() {
-            self.apply_batch(pair, &mut ks2, P::encrypt_2blocks);
-        }
-        for block in single.iter_mut() {
-            self.apply_one(block);
-        }
-
-        self.apply_bytes(tail);
-        Ok(())
+    let mut ks1: Secret<[[u8; BLOCK_LEN]; 1]> = Secret::new();
+    for block in single.iter_mut() {
+        apply_batch(perm, next, &counter_block, core::array::from_mut(block), &mut ks1, |p, b| {
+            p.encrypt_block(&mut b[0])
+        });
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
-    for Ctr<P, Dir, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+/// One batch of [`apply_counter_blocks`]: builds `N` counter blocks into `keystream`, encrypts
+/// them with one `batch` call, and XORs the result into `blocks`.
+#[inline]
+fn apply_batch<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>(
+    perm: &P,
+    next: &mut u64,
+    counter_block: &impl Fn(u64) -> [u8; BLOCK_LEN],
+    blocks: &mut [[u8; BLOCK_LEN]; N],
+    keystream: &mut [[u8; BLOCK_LEN]; N],
+    batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
+) where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    for slot in keystream.iter_mut() {
+        *slot = counter_block(*next);
+        *next += 1;
+    }
+    batch(perm, keystream);
+    for (block, o) in blocks.iter_mut().zip(keystream.iter()) {
+        for (b, o) in block.iter_mut().zip(o.iter()) {
+            *b ^= *o;
+        }
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
+    for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
@@ -431,51 +359,13 @@ where
 }
 
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>
-    for Ctr<P, Encrypting, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+    KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
-    /// Begins an encryption flow, generating the nonce from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::do_encrypt_init_rng(key, &mut rng)
-    }
-
-    /// As [`StreamCipherEncryptor::do_encrypt_init`], but takes the nonce from the provided RNG.
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        Self::check_shape();
-        let perm = P::new(key)?;
-        let nonce = random_iv::<INIT_DATA_LEN>(rng)?;
-        Ok((Self::start(perm, nonce), nonce))
-    }
-
-    /// Encrypts `data`, of any length, in place: `Cj = Pj XOR CIPH_K(Tj)`.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::StateError`] if the counter cannot cover the call. Nothing is
-    /// consumed in that case; see the module docs.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
-        let len = data.len();
-        self.apply(data)?;
-        Ok(len)
-    }
-}
-
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>
-    for Ctr<P, Decrypting, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
-where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
-{
-    /// Begins a decryption flow from the nonce returned by
-    /// [`StreamCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
+    /// Expands the key; the keystream starts at `T1 = N | [0]m`.
+    fn new(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
@@ -484,15 +374,21 @@ where
         Ok(Self::start(perm, *init_data))
     }
 
-    /// Decrypts `data`, of any length, in place: `Pj = Cj XOR CIPH_K(Tj)`, the same operation as
-    /// encryption (Sec 6.5).
-    ///
-    /// # Errors
-    /// As [`StreamCipherEncryptor::do_encrypt`].
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
-        let len = data.len();
-        self.apply(data)?;
-        Ok(len)
+    /// A whole block for every counter value left.
+    fn remaining_blocks(&self) -> u64 {
+        Self::BLOCK_LIMIT - self.next_counter
+    }
+
+    /// `Cj = Pj XOR CIPH_K(Tj)` (or `Pj = Cj XOR CIPH_K(Tj)`, the same operation) for the next
+    /// `blocks.len()` counter blocks; see `apply_counter_blocks`.
+    fn apply_blocks(&mut self, blocks: &mut [[u8; BLOCK_LEN]]) {
+        let nonce = &self.nonce;
+        apply_counter_blocks(
+            &self.perm,
+            &mut self.next_counter,
+            |j| Self::counter_block(nonce, j),
+            blocks,
+        );
     }
 }
 
@@ -504,10 +400,12 @@ mod tests {
     //! integration test.
 
     use super::*;
+    use crate::Encrypting;
     use bouncycastle_aes::aes_internal::AES128Internal;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-    use bouncycastle_core::traits::ElectronicCodeBook;
+    use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherEncryptor};
 
+    type ToyKeyStream = CtrKeyStream<AES128Internal, 16, 16, 12>;
     type ToyCtr = Ctr<AES128Internal, Encrypting, 16, 16, 12>;
 
     fn key() -> KeyMaterial<16> {
@@ -522,16 +420,23 @@ mod tests {
     fn start_at_matches_start_after_discarding_blocks() {
         let nonce = [0x11u8; 12];
 
-        let mut from_start = ToyCtr::start(AES128Internal::new(&key()).unwrap(), nonce);
+        let mut from_start = ToyCtr::from_keystream(ToyKeyStream::start(
+            AES128Internal::new(&key()).unwrap(),
+            nonce,
+        ));
         let mut discarded = [0u8; 32];
-        from_start.apply(&mut discarded).unwrap();
+        from_start.do_encrypt(&mut discarded).unwrap();
 
-        let mut from_start_at = ToyCtr::start_at(AES128Internal::new(&key()).unwrap(), nonce, 2);
+        let mut from_start_at = ToyCtr::from_keystream(ToyKeyStream::start_at(
+            AES128Internal::new(&key()).unwrap(),
+            nonce,
+            2,
+        ));
 
         let mut a = [0x42u8; 48];
         let mut b = a;
-        from_start.apply(&mut a).unwrap();
-        from_start_at.apply(&mut b).unwrap();
+        from_start.do_encrypt(&mut a).unwrap();
+        from_start_at.do_encrypt(&mut b).unwrap();
         assert_eq!(a, b, "start_at(.., 2) must agree with start() past its first two blocks");
     }
 
@@ -540,7 +445,7 @@ mod tests {
     /// 128-bit blocks) that GCM relies on `Ctr`'s existing "counter exhausted" error to enforce.
     #[test]
     fn start_at_capacity_is_block_limit_minus_the_starting_counter() {
-        let ctr = ToyCtr::start_at(AES128Internal::new(&key()).unwrap(), [0u8; 12], 2);
-        assert_eq!(ctr.remaining_capacity(), (ToyCtr::BLOCK_LIMIT - 2) * 16);
+        let ks = ToyKeyStream::start_at(AES128Internal::new(&key()).unwrap(), [0u8; 12], 2);
+        assert_eq!(ks.remaining_blocks(), ToyKeyStream::BLOCK_LIMIT - 2);
     }
 }
