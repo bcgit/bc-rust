@@ -37,6 +37,23 @@ pub const KEY_LEN_2KEY: usize = 16;
 /// let _ = Cbc::<TDES2Key, Encrypting, 16, 8>::do_encrypt_init(&key);
 /// ```
 ///
+/// CTR's encrypting constructor is the generic `StreamCipher` adapter in `bouncycastle-core`, which
+/// checks the keystream's `KeyStream::ENCRYPTION_APPROVED`; CTR's keystream takes this type's value,
+/// so the refusal holds there too:
+///
+/// ```compile_fail
+/// use bouncycastle_tdes::TDES2Key;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
+/// use bouncycastle_modes::{Ctr, Encrypting};
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+///
+/// // Two-key TDEA may not apply protection through CTR either: this does not compile.
+/// let _ = Ctr::<TDES2Key, Encrypting, 16, 8, 6>::do_encrypt_init(&key);
+/// ```
+///
 /// The `Decrypting` direction of every mode works, and this crate provides the aliases
 /// [`TDES2_CBC`](crate::TDES2_CBC), [`TDES2_CFB`](crate::TDES2_CFB), [`TDES2_CFB8`](crate::TDES2_CFB8),
 /// [`TDES2_CTR`](crate::TDES2_CTR) and [`TDES2_ECB`](crate::TDES2_ECB) for it. The raw

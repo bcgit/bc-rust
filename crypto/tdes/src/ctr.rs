@@ -45,7 +45,7 @@ pub const CTR_NONCE_LEN: usize = 6;
 /// ```
 /// use bouncycastle_tdes::TDES_CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// // Three distinct component keys; see `TDES` for what a key bundle must satisfy.
@@ -55,10 +55,10 @@ pub const CTR_NONCE_LEN: usize = 6;
 /// // 47 bytes: a stream cipher does not need a whole number of blocks.
 /// let message = [0u8; 47];
 /// let mut data = message;
-/// let (_, nonce) = TDES_CTR::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, nonce) = TDES_CTR::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_eq!(nonce.len(), 6);
 /// assert_ne!(data, message);
-/// TDES_CTR::<Decrypting>::decrypt(&key, &nonce, &mut data).unwrap();
+/// TDES_CTR::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
@@ -99,7 +99,7 @@ pub type TDES_CTR<Dir> = Ctr<TDES, Dir, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>;
 /// let plaintext = *b"8 bytes!";
 /// let mut data: [u8; 8] = core::array::from_fn(|i| plaintext[i] ^ keystream[i]);
 ///
-/// TDES2_CTR::decrypt(&key, &nonce, &mut data).expect("decryption");
+/// TDES2_CTR::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
 /// assert_eq!(data, plaintext);
 /// ```
 #[allow(non_camel_case_types)]
