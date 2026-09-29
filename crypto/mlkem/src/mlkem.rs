@@ -562,13 +562,15 @@ impl<
     /// Input: decryption key dkPKE  ∈ 𝔹384𝑘.
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: message 𝑚 ∈ 𝔹32 .
-    fn pke_decrypt(dk: &SK, ct: [u8; CT_LEN]) -> [u8; 32] {
+    /// The ciphertext is borrowed rather than taken by value: at ML-KEM-1024 it is 1568 bytes, and
+    /// an owned parameter would put a second copy of it on the stack alongside the caller's.
+    fn pke_decrypt(dk: &SK, ct: &[u8; CT_LEN]) -> [u8; 32] {
         // 1: 𝑐1 ← 𝑐[0 ∶ 32𝑑𝑢𝑘]
         // 2: 𝑐2 ← 𝑐[32𝑑𝑢𝑘 ∶ 32(𝑑𝑢𝑘 + 𝑑𝑣)]
         // 3: 𝐮′ ← Decompress_𝑑𝑢(ByteDecode_𝑑𝑢(𝑐1))
         // 4: 𝑣′ ← Decompress_𝑑𝑣(ByteDecode_𝑑𝑣(𝑐2))
         let v1 = {
-            let mut u_prime = unpack_ciphertext_u::<P, CT_LEN>(&ct);
+            let mut u_prime = unpack_ciphertext_u::<P, CT_LEN>(ct);
 
             // 5: 𝐬_hat ← ByteDecode12(dkPKE)
             //   Unnecessary here because dk is already decoded
@@ -582,7 +584,7 @@ impl<
         };
 
         let w = {
-            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(&ct);
+            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(ct);
 
             v_prime.sub(&v1);
             v_prime.poly_reduce();
@@ -599,7 +601,12 @@ impl<
     /// Input: decapsulation key dk ∈ 𝔹768𝑘+96 .
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
-    fn decaps_internal(dk: &SK, A_hat: Option<&P::MatrixA>, c: [u8; CT_LEN]) -> [u8; MLKEM_SS_LEN] {
+    /// The ciphertext is borrowed rather than taken by value; see the note on [`Self::pke_decrypt`].
+    fn decaps_internal(
+        dk: &SK,
+        A_hat: Option<&P::MatrixA>,
+        c: &[u8; CT_LEN],
+    ) -> [u8; MLKEM_SS_LEN] {
         // Structured to mirror the FIPS as closely as possible, with unnamed scopes
         // used to limit the number of live stack variables at any given time.
 
@@ -610,7 +617,7 @@ impl<
         // Nothing to do since dk is already decoded.
 
         // 5: 𝑚′ ← K-PKE.Decrypt(dkPKE, 𝑐)
-        let m_prime = Self::pke_decrypt(&dk, c);
+        let m_prime = Self::pke_decrypt(dk, c);
 
         // Compute the trial shared secret key
         // 6: (𝐾′, 𝑟′) ← G(𝑚′‖ℎ)̄
@@ -637,7 +644,7 @@ impl<
         K_bar = {
             let mut j = J::new();
             j.do_update(dk.z().as_ref());
-            j.do_update(&c);
+            j.do_update(c);
             let mut buf = [0u8; MLKEM_SS_LEN];
             let mut j = j.into_squeezer();
             let bytes_written = j.do_output_out(&mut buf);
@@ -660,7 +667,7 @@ impl<
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
         let mut K_out = [0u8; MLKEM_SS_LEN];
-        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes(&c, &c_prime));
+        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes(c, &c_prime));
 
         K_out
     }
@@ -780,7 +787,11 @@ impl<
         // Again, this is handled by the MLKEMPrivateKey trait.
 
         /* the actual decaps operation */
-        let K = Self::decaps_internal(&sk.dk, Some(&sk.A_hat), ct.try_into().unwrap());
+        // The length was checked above, so the conversion to a fixed-size reference cannot fail.
+        // Converting to `&[u8; CT_LEN]` rather than `[u8; CT_LEN]` borrows the caller's
+        // ciphertext instead of copying it onto this stack frame.
+        let ct: &[u8; CT_LEN] = ct.try_into().unwrap();
+        let K = Self::decaps_internal(&sk.dk, Some(&sk.A_hat), ct);
 
         let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&K, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut key, |key| {

@@ -111,10 +111,17 @@
 //! |----------------------|-----------------|-------------------|-----------------|-------------------|
 //! | ML-KEM-512_expanded  | 800            | 3104              | 1632            | 4226 |
 //! | ML-KEM-768_expanded  | 1184           | 6176              | 2400            | 7810 |
-//! | ML-KEM-1024_expanded | 1568           | 10272              | 3168            | 12418 |
+//! | ML-KEM-1024_expanded | 1568           | 10272             | 3168            | 12418 |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
-//! Values in parentheses are the usual sizes in the un-optimized implementation in the \[bouncycastle_mldsa] crate.
+//!
+//! The (rough) performance gains for the pre-expanded key mode are (keygen not included because it does not change):
+//!
+//! | Key Object           | encaps()  | decaps() |
+//! |----------------------|----------|-----------|
+//! | ML-KEM-512_expanded  | x1.3     | x1.2      |
+//! | ML-KEM-768_expanded  | x1.5     | x1.4      |
+//! | ML-KEM-1024_expanded | x1.6     | x1.5      |
 //!
 //! # 🚨 Security 🚨
 //!

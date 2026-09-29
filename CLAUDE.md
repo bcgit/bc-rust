@@ -142,6 +142,13 @@ Repo mechanics behind those rules, which the documents don't spell out:
   covers) -- there, read the whole input once and process it in place, rather than adding a second
   buffer the size of the input on top of it; see `aes_ccm_cmd.rs`.
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
+- **Comments describe the code that is there, not the road that led to it.** Do not add a comment
+  explaining a transient design decision — an approach that was tried and abandoned, what an earlier
+  version did, why one formulation was chosen over another that is no longer present — or describing
+  a design the code does not use. Such comments are noise: they age badly, and a reader has to work
+  out that they describe nothing in front of them. A comment that explains why the present code is
+  the way it is, and that a naive edit would break it (a spec step, an invariant, a constraint), is
+  wanted; a comment narrating how it got that way is not.
 
 ## Scope of changes
 

@@ -713,7 +713,8 @@ impl<
         let t_hat = {
             // scope for s1_hat
             // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&rho, &mut A_hat);
 
             // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
             //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
@@ -758,6 +759,25 @@ impl<
 
         // 11: return (𝑝𝑘, 𝑠𝑘)
         Ok((pk, sk))
+    }
+
+    /// [`Self::sign_internal`] for a caller that has no pre-expanded 𝐀_hat: expands it here and
+    /// signs.
+    ///
+    /// `#[inline(never)]` matters: the matrix is up to 56 kB, and if this were inlined into the
+    /// `match` that chooses between a pre-expanded and a freshly expanded 𝐀_hat, the slot would be
+    /// allocated in that caller's frame on both paths, charging expanded-key callers for a matrix
+    /// they never use.
+    #[inline(never)]
+    fn sign_internal_expanding_a_hat(
+        sk: &SK,
+        mu: &[u8; 64],
+        rnd: [u8; 32],
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        let mut A_hat = P::MatrixA::new();
+        sk.expand_A_hat_into(&mut A_hat);
+        Self::sign_internal(sk, &A_hat, mu, rnd, output)
     }
 
     /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
@@ -888,7 +908,11 @@ impl<
             cs2.inv_ntt();
 
             // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-            let mut r0 = w.sub_vector(&cs2).low_bits::<P>();
+            // 𝐰 is not read again below -- 𝐰1 was taken from it above -- so the subtraction and the
+            // LowBits both run in its buffer.
+            let mut r0 = w;
+            r0.sub_vector(&cs2);
+            r0.low_bits::<P>();
 
             // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
             //  ▷ validity checks
@@ -951,6 +975,19 @@ impl<
         Ok(bytes_written)
     }
 
+    /// [`Self::verify_internal`] for a caller that has no pre-expanded 𝐀_hat: expands it here and
+    /// verifies. See [`Self::sign_internal_expanding_a_hat`] for why this is `#[inline(never)]`.
+    #[inline(never)]
+    fn verify_internal_expanding_a_hat(
+        pk: &PK,
+        mu: &[u8; 64],
+        sig: &[u8; SIG_LEN],
+    ) -> Result<(), SignatureError> {
+        let mut A_hat = P::MatrixA::new();
+        pk.expand_A_hat_into(&mut A_hat);
+        Self::verify_internal(pk, &A_hat, mu, sig)
+    }
+
     /// Algorithm 8 ML-DSA.Verify_internal(𝑝𝑘, 𝑀′, 𝜎)
     /// Internal function to verify a signature 𝜎 for a formatted message 𝑀′ .
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑) and message 𝑀′ ∈ {0, 1}∗ .
@@ -967,7 +1004,10 @@ impl<
         // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
         //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
         // 3: if 𝐡 = ⊥ then return false
-        let (c_tilde, z, h) = sig_decode::<P, SIG_LEN>(&sig)
+        let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
+        let mut z = P::VecL::new();
+        let mut h = P::VecK::new();
+        sig_decode::<P, SIG_LEN>(sig, &mut c_tilde, &mut z, &mut h)
             .map_err(|_| SignatureError::SignatureVerificationFailed)?;
 
         // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
@@ -1014,7 +1054,8 @@ impl<
                 t1_shift_hat.ntt();
                 t1_shift_hat.scalar_vector_ntt(&c_hat)
             };
-            let mut wp_approx = Az.sub_vector(&ct1);
+            let mut wp_approx = Az;
+            wp_approx.sub_vector(&ct1);
             // Bound-keeping step before NTT⁻¹, not in FIPS 204: see `Polynomial::reduce32`. Here it
             // is security-critical: 𝐳 and 𝐭1 are attacker-controlled, and without it a crafted
             // signature overflows the butterflies (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
@@ -1193,7 +1234,7 @@ impl<
 
         match A_hat {
             Some(A_hat) => Self::sign_internal(sk, A_hat, mu, rnd, output),
-            None => Self::sign_internal(sk, &sk.A_hat(), mu, rnd, output),
+            None => Self::sign_internal_expanding_a_hat(sk, mu, rnd, output),
         }
     }
     fn sign_mu_deterministic_from_seed(
@@ -1299,7 +1340,8 @@ impl<
         // as 20 or even 80 times. So moving expandA() inside the loop would be a pretty drastic speed-for-memory tradeoff
         // whose generality falls out of the scope of this implementation.
         // It is left as an optimization that can be made by users that require further reduction of memory usage
-        let A_hat = expandA::<P>(&rho);
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&rho, &mut A_hat);
 
         // Alg 7; 8: 𝜅 ← 0
         //  ▷ initialize counter 𝜅
@@ -1416,7 +1458,10 @@ impl<
                 cs2.inv_ntt();
 
                 // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-                let r0 = w.sub_vector(&cs2).low_bits::<P>();
+                // 𝐰 is not read again below; see the note at the matching step in sign_internal.
+                let mut r0 = w;
+                r0.sub_vector(&cs2);
+                r0.low_bits::<P>();
 
                 // while s2_hat is in scope, derive t0
                 let mut t = t_hat;
@@ -1528,7 +1573,9 @@ impl<
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
-        Self::verify_mu(&pk.pk, Some(&pk.A_hat()), &mu, sig)
+        // Borrow the matrix the expanded key already holds rather than calling `pk.A_hat()`,
+        // which returns a clone. The optimizer elides that clone today, but nothing guarantees it.
+        Self::verify_mu(&pk.pk, Some(&pk.A_hat), &mu, sig)
     }
 
     fn verify_mu(
@@ -1539,7 +1586,7 @@ impl<
     ) -> Result<(), SignatureError> {
         match A_hat {
             Some(A_hat) => Self::verify_internal(pk, A_hat, mu, sig),
-            None => Self::verify_internal(pk, &pk.A_hat(), mu, sig),
+            None => Self::verify_internal_expanding_a_hat(pk, mu, sig),
         }
     }
 }
@@ -1903,7 +1950,7 @@ impl<
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
-        Self::verify_mu(pk, Some(&pk.A_hat()), &mu, sig)
+        Self::verify_mu(pk, None, &mu, sig)
     }
 
     fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
@@ -1931,7 +1978,7 @@ impl<
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
         })?;
-        Self::verify_mu(pk, Some(&pk.A_hat()), &mu, sig)
+        Self::verify_mu(pk, None, &mu, sig)
     }
 }
 

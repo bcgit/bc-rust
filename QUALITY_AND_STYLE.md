@@ -16,6 +16,13 @@ All algorithms with a state that is exercised across multiple API calls -- typic
 `do_final()` pattern -- should implement SerializableState so that the user can pause the execution of this algorithm to
 a cache and resume later.
 
+The library in general is meant to serve both embedded systems as well as workstations and servers. In a no std, no
+alloc build all variables are stack variables which warrants particular attention to memory hygiene. A Claude Fable
+skill is available in `.claude/skills/memory-hygiene-in-rust` to assist with this. Note that "memory hygiene" (good
+coding practices that reduce stack usage at no performance cost) can apply to all crates and is different from "low
+memory" (such as the mldsa-lowmemory crate), which uses a different algorithm that trades significant performance loss
+for significant reduction in memory footprint.
+
 # Quality
 
 ## Tests
