@@ -150,7 +150,7 @@ where
         .expect("streaming init");
         let mut streamed = plaintext.to_vec();
         for piece in streamed.chunks_mut(chunk) {
-            ccm.do_encrypt_update(piece).expect("update");
+            ccm.do_encrypt(piece).expect("update");
         }
         let tag = ccm.do_encrypt_final().expect("final");
         assert_eq!(&streamed[..], &inline[..plaintext.len()], "streamed in {chunk}-byte chunks");

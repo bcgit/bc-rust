@@ -216,7 +216,7 @@ fn the_one_shot_api_matches_the_vectors() {
     let pt = flat(&PLAINTEXTS);
 
     let mut data = flat(&CIPHERTEXTS_128);
-    Cbc::<AES128Internal, Decrypting, 16, 16>::decrypt(
+    Cbc::<AES128Internal, Decrypting, 16, 16>::decrypt_in_place(
         &key_material::<16>(KEY_128),
         &iv,
         &mut data,
@@ -225,7 +225,7 @@ fn the_one_shot_api_matches_the_vectors() {
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_192);
-    Cbc::<AES192Internal, Decrypting, 24, 16>::decrypt(
+    Cbc::<AES192Internal, Decrypting, 24, 16>::decrypt_in_place(
         &key_material::<24>(KEY_192),
         &iv,
         &mut data,
@@ -234,7 +234,7 @@ fn the_one_shot_api_matches_the_vectors() {
     assert_eq!(data, pt);
 
     let mut data = flat(&CIPHERTEXTS_256);
-    Cbc::<AES256Internal, Decrypting, 32, 16>::decrypt(
+    Cbc::<AES256Internal, Decrypting, 32, 16>::decrypt_in_place(
         &key_material::<32>(KEY_256),
         &iv,
         &mut data,

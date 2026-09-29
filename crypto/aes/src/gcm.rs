@@ -79,7 +79,7 @@ use bouncycastle_modes::Gcm;
 /// let (mut enc, nonce) = AES_GCM_128::<Encrypting>::do_encrypt_init(&key).unwrap();
 /// enc.do_update_aad(b"header").unwrap();
 /// let mut ct = [0u8; 5];
-/// enc.do_update_out(b"hello", &mut ct).unwrap();
+/// enc.do_encrypt_out(b"hello", &mut ct).unwrap();
 /// let (tag, tag_len) = enc.do_final().unwrap();
 ///
 /// let mut dec = AES_GCM_128::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
@@ -87,7 +87,7 @@ use bouncycastle_modes::Gcm;
 /// let mut full_ct = ct.to_vec();
 /// full_ct.extend_from_slice(&tag[..tag_len]);
 /// let mut pt = vec![0u8; full_ct.len()];
-/// let n = dec.do_update_out(&full_ct, &mut pt).unwrap();
+/// let n = dec.do_decrypt_out(&full_ct, &mut pt).unwrap();
 /// let (_last, last_len) = dec.do_final().unwrap();
 /// assert_eq!(&pt[..n + last_len], b"hello");
 /// ```

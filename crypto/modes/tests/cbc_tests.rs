@@ -335,9 +335,9 @@ fn identical_plaintext_gives_different_ciphertext() {
     let plaintext = [0x77u8; 2 * TOY_LEN];
 
     let mut first = plaintext;
-    ToyCbc::<Encrypting>::encrypt(&key, &mut first).unwrap();
+    ToyCbc::<Encrypting>::encrypt_in_place(&key, &mut first).unwrap();
     let mut second = plaintext;
-    ToyCbc::<Encrypting>::encrypt(&key, &mut second).unwrap();
+    ToyCbc::<Encrypting>::encrypt_in_place(&key, &mut second).unwrap();
     assert_ne!(first, second);
 
     // ...and, within one message, two identical plaintext blocks must not give identical
@@ -404,10 +404,11 @@ fn one_shots_agree_with_the_streaming_api() {
         (iv, enc_blocks(&mut enc, &blocks3))
     };
     let mut buf = flat3;
-    let (_, iv_b) = ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
+    let (_, iv_b) =
+        ToyCbc::<Encrypting>::encrypt_in_place_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
     assert_eq!(iv_a, iv_b);
     assert_eq!(buf, *ct_blocks.as_flattened(), "3 blocks: one-shot must equal streaming");
-    ToyCbc::<Decrypting>::decrypt(&key, &iv, &mut buf).unwrap();
+    ToyCbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut buf).unwrap();
     assert_eq!(buf, flat3);
 
     // 4 blocks = 64 bytes: pairs only, no tail.
@@ -420,15 +421,15 @@ fn one_shots_agree_with_the_streaming_api() {
         enc_blocks(&mut enc, &blocks4)
     };
     let mut buf = flat4;
-    ToyCbc::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
+    ToyCbc::<Encrypting>::encrypt_in_place_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
     assert_eq!(buf, *ct_blocks.as_flattened(), "4 blocks: one-shot must equal streaming");
-    ToyCbc::<Decrypting>::decrypt(&key, &iv, &mut buf).unwrap();
+    ToyCbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut buf).unwrap();
     assert_eq!(buf, flat4);
 
     // The OS-RNG variant round-trips too.
     let mut buf = flat3;
-    let (_, iv_fresh) = ToyCbc::<Encrypting>::encrypt(&key, &mut buf).unwrap();
+    let (_, iv_fresh) = ToyCbc::<Encrypting>::encrypt_in_place(&key, &mut buf).unwrap();
     assert_ne!(buf, flat3);
-    ToyCbc::<Decrypting>::decrypt(&key, &iv_fresh, &mut buf).unwrap();
+    ToyCbc::<Decrypting>::decrypt_in_place(&key, &iv_fresh, &mut buf).unwrap();
     assert_eq!(buf, flat3);
 }
