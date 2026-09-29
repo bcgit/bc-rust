@@ -7,10 +7,10 @@
 //! key lengths, 96- and 128-bit tags.
 
 // See `acvp_gcm_tests.rs` for why this is its own module path rather than `mod common;`.
-#[path = "common/acvp_gcm.rs"]
-mod acvp_gcm;
+#[path = "common/acvp_gcm_helpers.rs"]
+mod acvp_gcm_helpers;
 
-use acvp_gcm::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case, test_data_dir};
+use acvp_gcm_helpers::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case, test_data_dir};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;

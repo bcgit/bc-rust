@@ -38,7 +38,7 @@
 
 use bouncycastle_aes::aes_internal::AES128Internal;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::StreamCipherEncryptor;
+use bouncycastle_core::traits::{StreamCipherEncryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Ctr, Encrypting};

@@ -535,7 +535,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
                 .unwrap();
         direct_enc.do_update_aad(aad).unwrap();
         let mut direct_ct = vec![0u8; pt.len()];
-        direct_enc.do_update_out(&pt, &mut direct_ct).unwrap();
+        direct_enc.do_encrypt_out(&pt, &mut direct_ct).unwrap();
         let mut unused = [0u8; 16];
         let (flushed, direct_tag) = direct_enc.do_final_out_detached(&mut unused).unwrap();
         assert_eq!(flushed, 0, "Ascon-AEAD128 holds nothing back to flush");
@@ -548,7 +548,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
                 .unwrap();
         tagged_enc.do_update_aad(aad).unwrap();
         let mut tagged_out = vec![0u8; AsconAead128Encryptor::encrypt_out_len(pt.len())];
-        let written = tagged_enc.do_update_out(&pt, &mut tagged_out).unwrap();
+        let written = tagged_enc.do_encrypt_out(&pt, &mut tagged_out).unwrap();
         let mut last = [0u8; 16];
         let last_len = tagged_enc.do_final_out(&mut last).unwrap();
         tagged_out[written..written + last_len].copy_from_slice(&last[..last_len]);
@@ -579,7 +579,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         let mut direct_dec = AsconAead128Decryptor::do_decrypt_init(&km, &direct_nonce).unwrap();
         direct_dec.do_update_aad(aad).unwrap();
         let mut direct_pt = vec![0u8; direct_ct.len()];
-        let got = direct_dec.do_update_out(&direct_ct, &mut direct_pt).unwrap();
+        let got = direct_dec.do_decrypt_out(&direct_ct, &mut direct_pt).unwrap();
         assert_eq!(got, pt_len.saturating_sub(16), "pt_len {pt_len}: the last 16 bytes are held");
         let mut last = [0u8; 16];
         let last_len = direct_dec.do_final_out_detached(&direct_tag, &mut last).unwrap();
@@ -590,7 +590,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         let mut tagged_dec = AsconAead128Decryptor::do_decrypt_init(&km, &tagged_nonce).unwrap();
         tagged_dec.do_update_aad(aad).unwrap();
         let mut tagged_pt = vec![0u8; tagged_out.len()];
-        let got = tagged_dec.do_update_out(&tagged_out, &mut tagged_pt).unwrap();
+        let got = tagged_dec.do_decrypt_out(&tagged_out, &mut tagged_pt).unwrap();
         assert_eq!(got, pt_len, "pt_len {pt_len}: all but the tag is released");
         let (_, data_len) = tagged_dec.do_final().unwrap();
         assert_eq!(data_len, 0, "pt_len {pt_len}: nothing but the tag was held back");
