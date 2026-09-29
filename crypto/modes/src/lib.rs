@@ -307,12 +307,12 @@
 //! // CCM. Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and
 //! // the tag is built at finalization, so neither adds a field. `Dir` is zero-sized.
 //! size_of::<Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>>()
-//!     == align8(size_of::<P>() + 3 * BLOCK_LEN + 3 * size_of::<usize>() + 8)
+//!     == align8(size_of::<P>() + 3 * BLOCK_LEN + 4 * size_of::<usize>() + 8)
 //!
-//! // The buffering AEAD-trait adapter values used by the streaming API: two FINAL_LEN arrays.
-//! // Their one-shots bypass these values and use Ccm directly.
-//! size_of::<CcmEncryptor<P, .., FINAL_LEN>>()
-//!     == align8(size_of::<P>() + 2 * FINAL_LEN + NONCE_LEN + 2 * size_of::<usize>() + 1)
+//! // The buffering AEAD-trait adapter values used by the streaming API: an AAD_LEN array and a
+//! // FINAL_LEN = DATA_LEN + TAG_LEN one. Their one-shots bypass these values and use Ccm directly.
+//! size_of::<CcmEncryptor<P, .., AAD_LEN, DATA_LEN, FINAL_LEN>>()
+//!     == align8(size_of::<P>() + AAD_LEN + FINAL_LEN + NONCE_LEN + 2 * size_of::<usize>() + 1)
 //! ```
 //!
 //! | Combination | Permutation | Chain | Count | Total |
@@ -329,22 +329,23 @@
 //! | AES-128 ECB | 176 B | 0 B | -- | 176 B |
 //! | AES-192 ECB | 208 B | 0 B | -- | 208 B |
 //! | AES-256 ECB | 240 B | 0 B | -- | 240 B |
-//! | AES-128 CCM | 176 B | 16 B MAC + 16 B counter template + 16 B keystream | 32 B | 256 B |
-//! | AES-192 CCM | 208 B | 48 B, as above | 32 B | 288 B |
-//! | AES-256 CCM | 240 B | 48 B, as above | 32 B | 320 B |
+//! | AES-128 CCM | 176 B | 16 B MAC + 16 B counter template + 16 B keystream | 40 B | 264 B |
+//! | AES-192 CCM | 208 B | 48 B, as above | 40 B | 296 B |
+//! | AES-256 CCM | 240 B | 48 B, as above | 40 B | 328 B |
 //!
 //! CCM is the largest of the streaming values, because it is the only mode running two mechanisms
 //! at once: the CBC-MAC needs its chaining value, and the CTR half needs both a keystream block and
 //! the counter template that generates it. It is **independent of `NONCE_LEN` and `TAG_LEN`** --
-//! `Ccm<AES128Internal, Encrypting, .., 7, 4>` and `Ccm<AES128Internal, Encrypting, .., 13, 16>` are both 256 B --
+//! `Ccm<AES128Internal, Encrypting, .., 7, 4>` and `Ccm<AES128Internal, Encrypting, .., 13, 16>` are both 264 B --
 //! because the nonce is stored inside the counter template rather than separately, and the tag is
 //! assembled at finalization rather than held.
 //!
 //! **Streaming [`CcmEncryptor`] and [`CcmDecryptor`] values are a different order of magnitude**,
 //! and that is the one memory figure in this crate worth thinking about before choosing an API.
-//! They buffer the whole message, so at `FINAL_LEN = 2048` an AES-128 adapter is **4304 B**.
-//! Their one-shots override the trait defaults and use [`Ccm`] directly, costing 256 B for AES-128
-//! (the table above) regardless of `FINAL_LEN`; the like-for-like benchmark compares that path
+//! They buffer the whole message, so with 64 bytes of AAD and 2 KiB of payload
+//! (`AAD_LEN = 64`, `DATA_LEN = 2048`) an AES-128 adapter is **2336 B**.
+//! Their one-shots override the trait defaults and use [`Ccm`] directly, costing 264 B for AES-128
+//! (the table above) regardless of the buffer sizes; the like-for-like benchmark compares that path
 //! with [`Ccm::encrypt_out_detached`]. See [`Ccm`] for why only the open-ended streaming methods must
 //! buffer.
 //!
@@ -581,7 +582,7 @@ mod ghash;
 mod iv;
 
 pub use cbc::Cbc;
-pub use ccm::{Ccm, CcmDecryptor, CcmEncryptor};
+pub use ccm::{CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
@@ -597,16 +598,7 @@ use bouncycastle_core::traits::{
 };
 // end of imports needed for docs
 
-/// Direction marker for a mode that encrypts. See [`Cbc`], [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`],
-/// [`Ecb`] and [`Gcm`].
-///
-/// Zero-sized: encoding the direction in the type costs no memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Encrypting;
-
-/// Direction marker for a mode that decrypts. See [`Cbc`], [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`],
-/// [`Ecb`] and [`Gcm`].
-///
-/// Zero-sized: encoding the direction in the type costs no memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Decrypting;
+/// The direction markers, defined in `bouncycastle-core` so that a stream cipher built there with
+/// [`bouncycastle_core::stream_cipher::StreamCipher`] and a mode built here share them. See [`Cbc`],
+/// [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`], [`Ecb`] and [`Gcm`].
+pub use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};

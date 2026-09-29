@@ -181,7 +181,7 @@ fn aead128_encrypt_stream(
         let mut out = [0u8; 1024];
         // infallible: `out` is as long as `buf`, so it cannot be shorter than the `n` bytes read
         // into it, which is the only length `OutputBufferTooSmall` could complain about.
-        let written = cipher.do_update_out(&buf[..n], &mut out).unwrap();
+        let written = cipher.do_encrypt_out(&buf[..n], &mut out).unwrap();
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
     // infallible: Ascon-AEAD128 holds nothing back, so the inline final is only the 16-byte tag.
@@ -267,7 +267,7 @@ fn aead128_decrypt_stream(
         }
         // infallible: the decryptor releases at most what it has held back (16 bytes) plus what
         // it is given, less the 16 it keeps, so never more than the `n <= CHUNK` bytes read.
-        let written = cipher.do_update_out(&buf[..n], &mut out).unwrap();
+        let written = cipher.do_decrypt_out(&buf[..n], &mut out).unwrap();
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
 
