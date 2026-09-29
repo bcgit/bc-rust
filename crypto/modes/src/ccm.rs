@@ -1035,8 +1035,8 @@ where
     // `AAD_LEN + FINAL_LEN` bytes, and without it the value is built here and then copied out through
     // each constructor's return -- `bench_ccm_mem_usage` measured the streaming encryptor at twice
     // the stack. Inlined, it is built in the caller's slot. Not in debug builds, which elide no
-    // copies either way, and where inlining keeps every callee's temporaries live at once: the
-    // `CCM_MAX_BUFFER_LEN` round trip in `ccm_tests.rs` needed twice the stack with it.
+    // copies either way, and where inlining keeps every callee's temporaries live at once: a
+    // `CCM_MAX_BUFFER_LEN` streaming round trip needed twice the stack with it.
     #[cfg_attr(not(debug_assertions), inline(always))]
     fn new(perm: P, nonce: [u8; NONCE_LEN]) -> Self {
         Self::check_adapter_shape();

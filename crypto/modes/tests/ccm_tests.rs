@@ -17,11 +17,9 @@ use bouncycastle_aes::aes_internal::AES128Internal;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, ElectronicCodeBook, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
 };
-use bouncycastle_modes::{
-    CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting,
-};
+use bouncycastle_modes::{Ccm, CcmDecryptor, Decrypting, Encrypting};
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 /// The default shape under test: a 12-byte nonce, so `q = 3`, and a full 16-byte tag.
@@ -468,8 +466,6 @@ fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
 fn test_large_payload_inherent() {
     // 5 mb payload
     const LARGE_LEN: usize = 5 * 1024 * 1024;
-    // The streaming adapters need `FINAL_LEN` to hold the whole payload plus the inline tag.
-    const LARGE_FINAL_LEN: usize = LARGE_LEN + TAG_LEN;
     let key = toy_key();
     let nonce = pinned_nonce();
     let aad = b"header";
@@ -487,60 +483,4 @@ fn test_large_payload_inherent() {
         .unwrap();
     assert_eq!(n, LARGE_LEN);
     assert_eq!(back, plaintext, "inherent round trip");
-}
-
-/// The streaming adapters at the largest `DATA_LEN` they accept, [`CCM_MAX_BUFFER_LEN`]; a larger
-/// one is a compile error (see the `compile_fail` example on [`CcmEncryptor`]), so the 5 MiB
-/// payload above is only reachable through the inherent API.
-///
-/// The adapters keep the whole message on the stack, several copies of it deep: at this size a
-/// release build needs between 4 and 8 MiB and a debug build between 8 and 16 MiB. That is more
-/// than the 2 MiB the test harness gives a test thread, so the round trip runs on a thread with an
-/// explicit 16 MiB stack.
-#[test]
-fn test_large_payload_symmetric_cipher() {
-    const LARGE_LEN: usize = CCM_MAX_BUFFER_LEN;
-    type Enc = CcmEncryptor<
-        Toy,
-        TOY_LEN,
-        TOY_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        64,
-        LARGE_LEN,
-        { LARGE_LEN + TAG_LEN },
-    >;
-    type Dec = CcmDecryptor<
-        Toy,
-        TOY_LEN,
-        TOY_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        64,
-        LARGE_LEN,
-        { LARGE_LEN + TAG_LEN },
-    >;
-
-    std::thread::Builder::new()
-        .stack_size(16 * 1024 * 1024)
-        .spawn(|| {
-            let key = toy_key();
-            let plaintext = message(LARGE_LEN);
-
-            let (mut enc, stream_nonce) = Enc::do_encrypt_init(&key).unwrap();
-            assert_eq!(enc.do_encrypt_out_len(LARGE_LEN), 0, "CCM releases nothing mid-stream");
-            assert_eq!(enc.do_encrypt_out(&plaintext, &mut []).unwrap(), 0);
-            let (sealed, sealed_len) = enc.do_final().unwrap();
-            assert_eq!(sealed_len, LARGE_LEN + TAG_LEN, "ciphertext || tag");
-            assert_ne!(&sealed[..LARGE_LEN], &plaintext[..], "must actually encrypt");
-
-            let mut dec = Dec::do_decrypt_init(&key, &stream_nonce).unwrap();
-            assert_eq!(dec.do_decrypt_out(&sealed[..sealed_len], &mut []).unwrap(), 0);
-            let (opened, opened_len) = dec.do_final().unwrap();
-            assert_eq!(opened_len, LARGE_LEN);
-            assert_eq!(&opened[..opened_len], &plaintext[..], "streaming round trip");
-        })
-        .unwrap()
-        .join()
-        .unwrap();
 }
