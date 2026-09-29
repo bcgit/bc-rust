@@ -131,7 +131,7 @@ fn check_cbc<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
     assert_eq!(data, ct, "{name}: encrypt, one block at a time");
 
     let mut data = ct;
-    Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt(key, &iv, &mut data).unwrap();
+    Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_in_place(key, &iv, &mut data).unwrap();
     assert_eq!(data, pt, "{name}: decrypt, one shot");
 
     let mut dec = Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(key, &iv).unwrap();
@@ -162,7 +162,7 @@ fn aria_128_cbc() {
     let key = key::<16>(KEY_128);
     check_cbc::<16, ARIA_128>("ARIA-128-CBC", &key, CBC_128);
     let mut data: [u8; 160] = bytes(CBC_128);
-    Aria128Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Aria128Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, bytes::<160>(PLAINTEXT));
 }
 
@@ -171,7 +171,7 @@ fn aria_192_cbc() {
     let key = key::<24>(KEY_192);
     check_cbc::<24, ARIA_192>("ARIA-192-CBC", &key, CBC_192);
     let mut data: [u8; 160] = bytes(CBC_192);
-    Aria192Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Aria192Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, bytes::<160>(PLAINTEXT));
 }
 
@@ -180,6 +180,6 @@ fn aria_256_cbc() {
     let key = key::<32>(KEY_256);
     check_cbc::<32, ARIA_256>("ARIA-256-CBC", &key, CBC_256);
     let mut data: [u8; 160] = bytes(CBC_256);
-    Aria256Cbc::<Decrypting>::decrypt(&key, &bytes::<16>(IV), &mut data).unwrap();
+    Aria256Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
     assert_eq!(data, bytes::<160>(PLAINTEXT));
 }
