@@ -29,7 +29,7 @@ use bouncycastle_modes::Cfb8;
 /// ```
 /// use bouncycastle_sm4::{SM4_CFB, SM4_CFB8};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+/// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -37,9 +37,9 @@ use bouncycastle_modes::Cfb8;
 /// // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
 /// let message = *b"hello";
 /// let mut data = message;
-/// let (_, iv) = SM4_CFB8::<Encrypting>::encrypt(&key, &mut data).unwrap();
+/// let (_, iv) = SM4_CFB8::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
 /// assert_ne!(data, message);
-/// SM4_CFB8::<Decrypting>::decrypt(&key, &iv, &mut data).unwrap();
+/// SM4_CFB8::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
 /// assert_eq!(data, message);
 ///
 /// // Streaming, at any byte boundary:
@@ -56,9 +56,9 @@ use bouncycastle_modes::Cfb8;
 ///
 /// // SM4-CFB-8 and SM4-CFB-128 are not interchangeable: same key, same IV, different ciphertext.
 /// let mut as_cfb8 = message;
-/// let (_, iv) = SM4_CFB8::<Encrypting>::encrypt(&key, &mut as_cfb8).unwrap();
+/// let (_, iv) = SM4_CFB8::<Encrypting>::encrypt_in_place(&key, &mut as_cfb8).unwrap();
 /// let mut as_cfb128 = as_cfb8;
-/// SM4_CFB::<Decrypting>::decrypt(&key, &iv, &mut as_cfb128).unwrap();
+/// SM4_CFB::<Decrypting>::decrypt_in_place(&key, &iv, &mut as_cfb128).unwrap();
 /// assert_ne!(as_cfb128, message);
 /// ```
 #[allow(non_camel_case_types)]

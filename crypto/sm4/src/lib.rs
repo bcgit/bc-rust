@@ -118,11 +118,11 @@
 //! let mut data = plaintext;
 //!
 //! // The nonce is generated for you and returned; there is no API for supplying one.
-//! let (written, nonce) = SM4_CTR::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+//! let (written, nonce) = SM4_CTR::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //! assert_eq!(written, 50);
 //! assert_ne!(data, plaintext);
 //!
-//! SM4_CTR::<Decrypting>::decrypt(&key, &nonce, &mut data).expect("decryption");
+//! SM4_CTR::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
