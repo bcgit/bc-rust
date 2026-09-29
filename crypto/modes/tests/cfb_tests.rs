@@ -17,6 +17,7 @@ use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Inter
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
@@ -543,17 +544,18 @@ fn one_shots_agree_with_the_streaming_api() {
 
         let mut buf = plaintext.clone();
         let (_, iv_b) =
-            ToyCfb::<Encrypting>::encrypt_rng(&key, &mut pinned_rng(iv), &mut buf).unwrap();
+            ToyCfb::<Encrypting>::encrypt_in_place_rng(&key, &mut pinned_rng(iv), &mut buf)
+                .unwrap();
         assert_eq!(iv_b, iv);
         assert_eq!(buf, streamed, "len {len}: one-shot must equal streaming");
-        ToyCfb::<Decrypting>::decrypt(&key, &iv, &mut buf).unwrap();
+        ToyCfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut buf).unwrap();
         assert_eq!(buf, plaintext);
 
         // The OS-RNG variant round-trips too.
         let mut buf = plaintext.clone();
-        let (_, iv_fresh) = ToyCfb::<Encrypting>::encrypt(&key, &mut buf).unwrap();
+        let (_, iv_fresh) = ToyCfb::<Encrypting>::encrypt_in_place(&key, &mut buf).unwrap();
         assert_ne!(buf, plaintext);
-        ToyCfb::<Decrypting>::decrypt(&key, &iv_fresh, &mut buf).unwrap();
+        ToyCfb::<Decrypting>::decrypt_in_place(&key, &iv_fresh, &mut buf).unwrap();
         assert_eq!(buf, plaintext);
     }
 }
@@ -706,9 +708,9 @@ fn identical_plaintext_gives_different_ciphertext() {
     let plaintext = [0x77u8; 2 * TOY_LEN];
 
     let mut first = plaintext;
-    ToyCfb::<Encrypting>::encrypt(&key, &mut first).unwrap();
+    ToyCfb::<Encrypting>::encrypt_in_place(&key, &mut first).unwrap();
     let mut second = plaintext;
-    ToyCfb::<Encrypting>::encrypt(&key, &mut second).unwrap();
+    ToyCfb::<Encrypting>::encrypt_in_place(&key, &mut second).unwrap();
     assert_ne!(first, second);
 
     // ...and, within one message, two identical plaintext blocks must not give identical ciphertext
@@ -741,7 +743,7 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let (n, iv) = ToyCfb::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+        let (n, iv) = ToyCfb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
         assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         // Only meaningful once the message is long enough that agreeing with the keystream by
@@ -752,7 +754,7 @@ fn every_length_round_trips_without_padding() {
         if len >= 8 {
             assert_ne!(data, plaintext, "len {len}: the data must actually be encrypted");
         }
-        ToyCfb::<Decrypting>::decrypt(&key, &iv, &mut data).expect("decryption");
+        ToyCfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: round trip");
     }
 }

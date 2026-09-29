@@ -193,10 +193,10 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     dec.do_update_aad(aad).expect("aad");
     let mut inline_ct = ct.to_vec();
     inline_ct.extend_from_slice(tag);
-    let expect_written = dec.update_out_len(inline_ct.len());
+    let expect_written = dec.do_decrypt_out_len(inline_ct.len());
     let mut inline_pt = vec![0u8; expect_written];
     let written = dec
-        .do_update_out(&inline_ct, &mut inline_pt)
+        .do_decrypt_out(&inline_ct, &mut inline_pt)
         .expect("do_update_out on a correctly sized buffer must not fail");
     assert_eq!(written, expect_written, "update_out_len must be exact");
     let inline_result = dec.do_final();

@@ -1,6 +1,7 @@
 Cargo.lock
 **/target
 mutants.out*/
+custom_mutants_output/
 
 
 .idea/
@@ -12,9 +13,9 @@ mutants.out*/
 *~
 
 # Claude Code: ignore personal/local state, but share team tooling
-# (skills, slash commands, subagents, and project settings.json).
+# (skills, slash commands and subagents). settings.json stays local, so personal permission
+# allowlists cannot ride along in a PR.
 .claude/*
-!.claude/settings.json
 !.claude/skills/
 !.claude/commands/
 !.claude/agents/

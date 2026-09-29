@@ -26,9 +26,14 @@ mod common;
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{
+    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
+use bouncycastle_modes::ctr::CtrKeyStream;
 use bouncycastle_modes::{Ctr, Decrypting, Encrypting};
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
@@ -101,6 +106,16 @@ const CHUNKINGS: [usize; 12] = [1, 3, 5, 7, 15, 16, 17, 31, 32, 33, 64, 100];
 fn ctr_conforms_to_the_stream_cipher_framework() {
     TestFrameworkStreamCipher::new()
         .test::<TOY_LEN, NONCE_LEN, ToyCtr<Encrypting>, ToyCtr<Decrypting>>();
+}
+
+/// The keystream under the mode, on its own: over the toy, and over AES so that the four-block and
+/// pair batch paths of a real permutation are exercised too.
+#[test]
+fn ctr_keystream_conforms_to_the_key_stream_framework() {
+    let framework = TestFrameworkKeyStream::new();
+    framework.test::<TOY_LEN, NONCE_LEN, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, NONCE_LEN>>();
+    framework.test::<16, 12, 16, CtrKeyStream<AES128Internal, 16, 16, 12>>();
+    framework.test::<16, 15, 16, CtrKeyStream<AES128Internal, 16, 16, 15>>();
 }
 
 // ---- the spec equations -------------------------------------------------------------------
@@ -333,7 +348,7 @@ fn the_counter_limit_is_enforced() {
     let mut data = vec![0u8; TINY_CAPACITY + 1];
     match encryptor().do_encrypt(&mut data) {
         Err(SymmetricCipherError::StateError(msg)) => {
-            assert!(msg.contains("counter"), "the error should name the counter: {msg}");
+            assert!(msg.contains("keystream"), "the error should name the keystream: {msg}");
         }
         other => panic!("expected a StateError past the counter limit, got {other:?}"),
     }
@@ -639,9 +654,9 @@ fn identical_plaintext_gives_different_ciphertext() {
     let plaintext = [0x77u8; 2 * TOY_LEN];
 
     let mut first = plaintext;
-    ToyCtr::<Encrypting>::encrypt(&key, &mut first).unwrap();
+    ToyCtr::<Encrypting>::encrypt_in_place(&key, &mut first).unwrap();
     let mut second = plaintext;
-    ToyCtr::<Encrypting>::encrypt(&key, &mut second).unwrap();
+    ToyCtr::<Encrypting>::encrypt_in_place(&key, &mut second).unwrap();
     assert_ne!(first, second);
 
     // ...and two identical plaintext blocks within one message differ, because the counter moves.
@@ -668,13 +683,14 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let (n, nonce) = ToyCtr::<Encrypting>::encrypt(&key, &mut data).expect("encryption");
+        let (n, nonce) =
+            ToyCtr::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
         assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         if len >= 8 {
             assert_ne!(data, plaintext, "len {len}: the data must actually be encrypted");
         }
-        ToyCtr::<Decrypting>::decrypt(&key, &nonce, &mut data).expect("decryption");
+        ToyCtr::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: round trip");
     }
 }
@@ -701,7 +717,8 @@ fn every_permitted_nonce_length_works() {
         e.do_encrypt(&mut ct).unwrap();
         assert_ne!(ct, plaintext, "nonce length {N}: must actually encrypt");
 
-        Ctr::<Toy, Decrypting, TOY_LEN, TOY_LEN, N>::decrypt(&key, &nonce, &mut ct).unwrap();
+        Ctr::<Toy, Decrypting, TOY_LEN, TOY_LEN, N>::decrypt_in_place(&key, &nonce, &mut ct)
+            .unwrap();
         assert_eq!(ct, plaintext, "nonce length {N}: round trip");
     }
 

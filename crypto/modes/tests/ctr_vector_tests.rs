@@ -27,7 +27,10 @@
 
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{
+    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Ctr, Decrypting, Encrypting};
@@ -135,7 +138,7 @@ where
 
     // ...and the one-shot.
     let mut data = expected.clone();
-    Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::decrypt(&key, &nonce, &mut data)
+    Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::decrypt_in_place(&key, &nonce, &mut data)
         .expect("one-shot decryption");
     assert_eq!(data, plaintext, "{name}: one-shot");
 }

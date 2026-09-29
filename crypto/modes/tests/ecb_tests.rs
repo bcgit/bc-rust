@@ -180,10 +180,11 @@ fn ecb_is_deterministic_and_leaks_equal_blocks() {
     // (The RNG-taking one-shot is not an alternative here -- it panics; see below.)
     let flat: [u8; 4 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
     let mut once = flat;
-    let (n_a, init_a): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt(&key, &mut once).unwrap();
+    let (n_a, init_a): (usize, [u8; 0]) =
+        ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut once).unwrap();
     assert_eq!(n_a, once.len(), "encrypt must report the number of bytes written");
     let mut twice = flat;
-    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt(&key, &mut twice).unwrap();
+    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut twice).unwrap();
     assert_eq!(n_b, twice.len(), "encrypt must report the number of bytes written");
     assert_eq!(init_a, init_b);
     assert_eq!(once, twice, "no init data and no randomness, so the one-shot is repeatable");
@@ -212,7 +213,11 @@ fn the_rng_constructor_panics() {
 fn the_rng_one_shot_panics() {
     let key = toy_key();
     let mut block = [0x42u8; TOY_LEN];
-    let _ = ToyEcb::<Encrypting>::encrypt_rng(&key, &mut FixedSeedRNG::<0>::new([]), &mut block);
+    let _ = ToyEcb::<Encrypting>::encrypt_in_place_rng(
+        &key,
+        &mut FixedSeedRNG::<0>::new([]),
+        &mut block,
+    );
 }
 
 // ---- batching: pairs and fours, in both directions ----------------------------------------
@@ -316,9 +321,9 @@ fn flat_streaming_and_one_shots_agree_with_the_block_hook() {
     assert_eq!(*block_ct.as_flattened(), enc_flat(&mut encryptor(), &flat_plaintext));
 
     let mut buf = flat_plaintext;
-    let (_, init) = ToyEcb::<Encrypting>::encrypt(&key, &mut buf).unwrap();
+    let (_, init) = ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut buf).unwrap();
     assert_eq!(buf, *block_ct.as_flattened(), "one-shot must equal streaming");
-    ToyEcb::<Decrypting>::decrypt(&key, &init, &mut buf).unwrap();
+    ToyEcb::<Decrypting>::decrypt_in_place(&key, &init, &mut buf).unwrap();
     assert_eq!(buf, flat_plaintext);
 
     assert_eq!(dec_blocks(&mut decryptor(), &block_ct), plaintext);
@@ -360,14 +365,14 @@ fn with_aes_a_ciphertext_bit_error_randomises_its_block() {
     let plaintext = [[0x00u8; 16], [0x11u8; 16], [0x22u8; 16]];
     let mut ct = plaintext;
     let flat: &mut [u8; 48] = ct.as_flattened_mut().try_into().unwrap();
-    Aes128Ecb::<Encrypting>::encrypt(&key, flat).unwrap();
+    Aes128Ecb::<Encrypting>::encrypt_in_place(&key, flat).unwrap();
 
     for byte in 0..16 {
         for bit in 0..8 {
             let mut corrupt = ct;
             corrupt[1][byte] ^= 1 << bit;
             let flat: &mut [u8; 48] = corrupt.as_flattened_mut().try_into().unwrap();
-            Aes128Ecb::<Decrypting>::decrypt(&key, &[], flat).unwrap();
+            Aes128Ecb::<Decrypting>::decrypt_in_place(&key, &[], flat).unwrap();
             assert_eq!(corrupt[0], plaintext[0], "C2 byte {byte} bit {bit}: P1 unaffected");
             assert_eq!(corrupt[2], plaintext[2], "C2 byte {byte} bit {bit}: P3 unaffected");
             let differing: u32 =

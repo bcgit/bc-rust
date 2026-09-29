@@ -1010,7 +1010,8 @@ enum Subcommands {
     /// processing or stream processing", because Appendix A.2.1 puts the payload length inside the
     /// first block the MAC covers. It does buy one thing: on `decrypt` NO plaintext is written
     /// until the tag has verified, so unlike `ascon-aead128` a non-zero exit leaves nothing to
-    /// discard. For large inputs use `ascon-aead128`, which streams.
+    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is the exception:
+    /// `--aad-file` is streamed, because a file's size can be declared before it is read.
     ///
     /// Input may be any length: CCM pads internally and the payload is not block-aligned.
     ///
@@ -1040,6 +1041,12 @@ enum Subcommands {
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
         #[arg(long)]
         aad: Option<String>,
+
+        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
+        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
+        /// will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
 
         /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
         #[arg(long, default_value_t = 16)]
@@ -1079,6 +1086,12 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
+        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
+        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
+        /// will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
         /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
         #[arg(long, default_value_t = 16)]
         tag_len: usize,
@@ -1116,6 +1129,12 @@ enum Subcommands {
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
         #[arg(long)]
         aad: Option<String>,
+
+        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
+        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
+        /// will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
 
         /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
         #[arg(long, default_value_t = 16)]
@@ -2163,11 +2182,12 @@ fn run() {
             nonce,
             nonce_file,
             aad,
+            aad_file,
             tag_len,
             x,
         }) => {
             aes_ccm_cmd::aes128_ccm_cmd(
-                action, key, key_file, nonce, nonce_file, aad, *tag_len, *x,
+                action, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
             );
         }
         Some(Subcommands::AES192_CCM {
@@ -2177,11 +2197,12 @@ fn run() {
             nonce,
             nonce_file,
             aad,
+            aad_file,
             tag_len,
             x,
         }) => {
             aes_ccm_cmd::aes192_ccm_cmd(
-                action, key, key_file, nonce, nonce_file, aad, *tag_len, *x,
+                action, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
             );
         }
         Some(Subcommands::AES256_CCM {
@@ -2191,11 +2212,12 @@ fn run() {
             nonce,
             nonce_file,
             aad,
+            aad_file,
             tag_len,
             x,
         }) => {
             aes_ccm_cmd::aes256_ccm_cmd(
-                action, key, key_file, nonce, nonce_file, aad, *tag_len, *x,
+                action, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
             );
         }
         Some(Subcommands::AES128_GCM { action, key, key_file, aad, aad_file, x }) => {

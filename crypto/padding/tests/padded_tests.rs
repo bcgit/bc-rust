@@ -143,9 +143,9 @@ fn streaming_matches_one_shot_for_every_chunking() {
         let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
         let mut ct = Vec::new();
         for piece in pt.chunks(chunk) {
-            let expect = enc.update_out_len(piece.len());
+            let expect = enc.do_encrypt_out_len(piece.len());
             let mut buf = vec![0u8; expect];
-            let n = enc.do_update_out(piece, &mut buf).unwrap();
+            let n = enc.do_encrypt_out(piece, &mut buf).unwrap();
             assert_eq!(n, expect, "update_out_len must be exact");
             ct.extend_from_slice(&buf[..n]);
         }
@@ -163,9 +163,9 @@ fn streaming_matches_one_shot_for_every_chunking() {
         let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
         let mut rec = Vec::new();
         for piece in ct.chunks(chunk) {
-            let expect = dec.update_out_len(piece.len());
+            let expect = dec.do_decrypt_out_len(piece.len());
             let mut buf = vec![0u8; expect];
-            let n = dec.do_update_out(piece, &mut buf).unwrap();
+            let n = dec.do_decrypt_out(piece, &mut buf).unwrap();
             assert_eq!(n, expect, "update_out_len must be exact (decrypt)");
             rec.extend_from_slice(&buf[..n]);
         }
@@ -187,13 +187,13 @@ fn decryptor_lags_by_exactly_one_block() {
     let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     let mut out = [0u8; 3 * B];
     // first block: nothing can be released yet
-    assert_eq!(dec.update_out_len(B), 0);
-    assert_eq!(dec.do_update_out(&ct[..B], &mut out).unwrap(), 0);
+    assert_eq!(dec.do_decrypt_out_len(B), 0);
+    assert_eq!(dec.do_decrypt_out(&ct[..B], &mut out).unwrap(), 0);
     // second block: releases the first
-    assert_eq!(dec.update_out_len(B), B);
-    assert_eq!(dec.do_update_out(&ct[B..2 * B], &mut out).unwrap(), B);
+    assert_eq!(dec.do_decrypt_out_len(B), B);
+    assert_eq!(dec.do_decrypt_out(&ct[B..2 * B], &mut out).unwrap(), B);
     // third block: releases the second
-    assert_eq!(dec.do_update_out(&ct[2 * B..], &mut out[B..]).unwrap(), B);
+    assert_eq!(dec.do_decrypt_out(&ct[2 * B..], &mut out[B..]).unwrap(), B);
     let (last, n) = dec.do_final().unwrap();
     assert_eq!(n, 0, "block-aligned plaintext => final block is all padding");
     assert_eq!(&out[..2 * B], &msg(2 * B)[..]);
@@ -205,7 +205,7 @@ fn final_out_variants() {
     let key = key();
     let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
     let mut ct = [0u8; 2 * B];
-    let n = enc.do_update_out(&msg(B + 2), &mut ct).unwrap();
+    let n = enc.do_encrypt_out(&msg(B + 2), &mut ct).unwrap();
     assert_eq!(n, B);
     let mut last = [0u8; B];
     assert_eq!(enc.do_final_out(&mut last).unwrap(), B);
@@ -213,7 +213,7 @@ fn final_out_variants() {
 
     let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     let mut out = [0u8; B];
-    assert_eq!(dec.do_update_out(&ct, &mut out).unwrap(), B);
+    assert_eq!(dec.do_decrypt_out(&ct, &mut out).unwrap(), B);
     let mut last_pt = [0u8; B];
     let data_len = dec.do_final_out(&mut last_pt).unwrap();
     assert_eq!(data_len, 2);
@@ -256,7 +256,7 @@ fn malformed_ciphertext_lengths_are_rejected() {
     ));
     // streaming: partial trailing block at final
     let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
-    dec.do_update_out(&[0u8; B + 3], &mut out).unwrap();
+    dec.do_decrypt_out(&[0u8; B + 3], &mut out).unwrap();
     assert!(matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)));
     // streaming: nothing fed at all
     let dec = Dec::do_decrypt_init(&key, &iv).unwrap();
@@ -276,7 +276,7 @@ fn output_buffer_too_small_reports_required_length() {
 
     let (mut enc, iv) = Enc::do_encrypt_init(&key).unwrap();
     let mut tiny = [0u8; B - 1];
-    match enc.do_update_out(&pt, &mut tiny) {
+    match enc.do_encrypt_out(&pt, &mut tiny) {
         Err(SymmetricCipherError::OutputBufferTooSmall(need)) => assert_eq!(need, 2 * B),
         other => panic!("{other:?}"),
     }
@@ -346,8 +346,8 @@ fn no_padding_adds_nothing_to_aligned_data() {
 
         // Streaming: do_final reports zero output bytes.
         let (mut enc, _) = EncNP::do_encrypt_init(&key).unwrap();
-        let mut buf = vec![0u8; enc.update_out_len(len)];
-        assert_eq!(enc.do_update_out(&pt, &mut buf).unwrap(), len);
+        let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
+        assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), len);
         let (_, last_len) = enc.do_final().unwrap();
         assert_eq!(last_len, 0, "{blocks} blocks: no final block");
     }
@@ -372,7 +372,7 @@ fn no_padding_refuses_unaligned_data() {
         let (mut enc, _) = EncNP::do_encrypt_init(&key).unwrap();
         let whole = len / B * B;
         let mut buf = vec![0u8; whole];
-        assert_eq!(enc.do_update_out(&pt, &mut buf).unwrap(), whole, "whole blocks still stream");
+        assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), whole, "whole blocks still stream");
         assert!(
             matches!(
                 enc.do_final(),
