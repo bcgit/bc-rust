@@ -111,7 +111,7 @@ where
     let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key");
     let nonce: [u8; CTR_NONCE_LEN] = nonce.try_into().expect("a 12-byte nonce");
-    Ctr::<P, Decrypting, KEY_LEN, 16, CTR_NONCE_LEN>::decrypt(&key, &nonce, data)
+    Ctr::<P, Decrypting, KEY_LEN, 16, CTR_NONCE_LEN>::decrypt_in_place(&key, &nonce, data)
         .expect("decryption");
 }
 
