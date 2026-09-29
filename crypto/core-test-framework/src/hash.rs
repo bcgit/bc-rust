@@ -32,7 +32,7 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
             let output_vec = H::default().hash(input);
@@ -62,7 +62,7 @@ impl TestFrameworkHash {
         );
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
             /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
@@ -122,7 +122,7 @@ impl TestFrameworkHash {
         }
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         if self.enable_partial_byte_tests {
             /*** Testing: ***/
             /*** fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)-> Result<Vec<u8>, HashError>; ***/

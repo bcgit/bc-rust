@@ -269,7 +269,7 @@ impl TestFrameworkSignature {
         }
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             // sign_ph
             let (pk, sk) = keygen().unwrap();

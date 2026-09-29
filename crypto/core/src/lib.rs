@@ -1,13 +1,13 @@
 //! This crate defines the core traits and types used by the rest of the bc-rust.test library.
 
-#![cfg_attr(not(feature = "alloc"), no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-// The `Vec`/`Box`-returning convenience APIs live behind the (default-on) `alloc` feature.
+// The `Vec`/`Box`-returning convenience APIs live behind the (default-on) `std` feature.
 // When it is enabled we pull in the `alloc` crate; `no_std` users who disable it get the
 // allocation-free `*_out(&mut [u8])` and `*_array::<N>()` APIs only.
-#[cfg(feature = "alloc")]
+#[cfg(feature = "std")]
 extern crate alloc;
 
 pub mod errors;

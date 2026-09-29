@@ -4,13 +4,13 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = ["alloc"]
-alloc = [
-    "bouncycastle-core/alloc",
-    "bouncycastle-core-test-framework/alloc",
-    "bouncycastle-hkdf/alloc",
-    "bouncycastle-hmac/alloc",
-    "bouncycastle-rng/alloc",
+default = ["std"]
+std = [
+    "bouncycastle-core/std",
+    "bouncycastle-core-test-framework/std",
+    "bouncycastle-hkdf/std",
+    "bouncycastle-hmac/std",
+    "bouncycastle-rng/std",
 ]
 
 [dependencies]

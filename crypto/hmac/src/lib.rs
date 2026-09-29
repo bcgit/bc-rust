@@ -316,7 +316,7 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
         self.hasher.output_len()
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     fn mac(self, data: &[u8]) -> Vec<u8> {
         let mut out = vec![0_u8; self.hasher.output_len()];
         let bytes_written = self.mac_out(data, &mut out).expect("HMAC::mac(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
@@ -339,7 +339,7 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
         self.hasher.do_update(data)
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     fn do_final(self) -> Vec<u8> {
         let mut out = vec![0_u8; self.hasher.output_len()];
         self.do_final_internal_out(&mut out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");

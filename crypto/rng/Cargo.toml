@@ -4,11 +4,11 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = ["alloc"]
-alloc = [
-    "bouncycastle-core/alloc",
-    "bouncycastle-core-test-framework/alloc",
-    "bouncycastle-sha2/alloc",
+default = ["std"]
+std = [
+    "bouncycastle-core/std",
+    "bouncycastle-core-test-framework/std",
+    "bouncycastle-sha2/std",
 ]
 
 [dependencies]

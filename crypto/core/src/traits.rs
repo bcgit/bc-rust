@@ -5,9 +5,9 @@ use crate::key_material::KeyMaterialTrait;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
 
-#[cfg(feature = "alloc")]
+#[cfg(feature = "std")]
 use alloc::boxed::Box;
-#[cfg(feature = "alloc")]
+#[cfg(feature = "std")]
 use alloc::vec::Vec;
 
 // Imports needed for docs
@@ -21,7 +21,7 @@ use crate::key_material::KeyType;
 pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>:
     SymmetricCipher<KEY_LEN, NONCE_LEN> + Sized
 {
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// A one-shot API to encrypt some plaintext with the given key.
     /// A distinguishing feature of AEAD ciphers is the ability to provide additional authenticated data (AAD)
     /// that is not encrypted but is protected by the authentication tag; ie it can be sent along with the ciphertext
@@ -51,7 +51,7 @@ pub trait AEADCipher<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN
     /// This allows you to finish either style of streaming API flow with AEAD specific do_final()
     /// that computes and returns the authentication tag.
     fn do_aead_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError>;
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
     fn aead_decrypt(
@@ -182,7 +182,7 @@ pub trait Hash: Algorithm + Default {
     /// The size of the output in bytes.
     fn output_len(&self) -> usize;
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// A static one-shot API that hashes the provided data.
     /// `data` can be of any length, including zero bytes.
     fn hash(self, data: &[u8]) -> Vec<u8>;
@@ -212,7 +212,7 @@ pub trait Hash: Algorithm + Default {
     /// do_update() is intended to be used as part of a streaming interface, and so may by called multiple times.
     fn do_update(&mut self, data: &[u8]);
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// Finish absorbing input and produce the hashes output.
     /// Consumes self, so this must be the final call to this object.
     fn do_final(self) -> Vec<u8>;
@@ -245,7 +245,7 @@ pub trait Hash: Algorithm + Default {
         output
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// The same as [`Hash::do_final`], but allows for supplying a partial byte as the last input.
     /// The `num_bits` message bits are taken from the least significant bits of
     /// `partial_byte`, in order (bit 0 of `partial_byte` is the first message bit). This is the
@@ -330,7 +330,7 @@ pub trait KDF: Default {
     ///
     /// Output length: this function will create a KeyMaterial populated with the default output length
     /// of the underlying hash primitive.
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     fn derive_key(
         self,
         key: &impl KeyMaterialTrait,
@@ -371,7 +371,7 @@ pub trait KDF: Default {
     ///
     /// Output length: this function will create a KeyMaterial populated with the default output length
     /// of the underlying hash primitive.
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     fn derive_key_from_multiple(
         self,
         keys: &[&impl KeyMaterialTrait],
@@ -538,7 +538,7 @@ pub trait MAC: Sized {
     /// The size of the output in bytes.
     fn output_len(&self) -> usize;
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// One-shot API that computes a MAC for the provided data.
     /// `data` can be of any length, including zero bytes.
     ///
@@ -592,7 +592,7 @@ pub trait MAC: Sized {
     /// do_update() is intended to be used as part of a streaming interface, and so may by called multiple times.
     fn do_update(&mut self, data: &[u8]);
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// Finish absorbing input and produce the MAC value.
     fn do_final(self) -> Vec<u8>;
 
@@ -725,7 +725,7 @@ pub trait RNG {
     /// Returns the next random 32-bit integer.
     fn next_int(&mut self) -> Result<u32, RNGError>;
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// Returns the number of requested bytes.
     fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError>;
 
@@ -1083,7 +1083,7 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// as AEADs or stream ciphers may need to stick extra data either at the beginning or end of the ciphertext.
 /// See the documentation of the underlying implementation for more details.
 pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Algorithm {
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// A one-shot API to encrypt some plaintext with the given key.
     /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
     /// Returns a tuple containing the initialization data and the ciphertext.
@@ -1103,7 +1103,7 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Alg
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError>;
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// A one-shot API to decrypt some ciphertext with the given key.
     /// This function returns the ciphertext as a `Vec<u8>`, and therefore is only available when compiling with std.
     /// This is not available if building for no_std.
@@ -1154,7 +1154,7 @@ pub trait SymmetricCipher<const KEY_LEN: usize, const INIT_DATA_LEN: usize>: Alg
 ///
 /// If Absorb-after-Squeeze becomes necessary to support in the future, then these design choices can be revisited.
 pub trait XOF: Default {
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// A static one-shot API that digests the input data and produces `result_len` bytes of output.
     fn hash_xof(self, data: &[u8], result_len: usize) -> Vec<u8>;
 
@@ -1192,7 +1192,7 @@ pub trait XOF: Default {
         num_bits: usize,
     ) -> Result<(), HashError>;
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// Can be called multiple times.
     fn squeeze(&mut self, num_bytes: usize) -> Vec<u8>;
 

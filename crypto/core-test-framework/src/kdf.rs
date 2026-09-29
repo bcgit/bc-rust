@@ -1,13 +1,13 @@
 //! Generic behaviour tests for anything that implements [`KDF`].
 
-// Imports needed for alloc
+// Imports needed for std
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{KDF, SecurityStrength};
-// emd imports needed for alloc
+// emd imports needed for std
 
 /// Instance of the test framework.
 pub struct TestFrameworkKDF {
@@ -26,7 +26,7 @@ impl TestFrameworkKDF {
         additional_input: &[u8],
         expected_output: &impl KeyMaterialTrait,
     ) {
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** Test derive_key() ***/
             let kdf = H::default();
@@ -48,7 +48,7 @@ impl TestFrameworkKDF {
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** Test that additional_input changes the output ***/
             let out_key1 = H::default().derive_key(key, &[0u8; 0]).unwrap();
@@ -70,7 +70,7 @@ impl TestFrameworkKDF {
         // so we can't test extendable output generically for all KDFs.
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** Test entropy mapping ***/
 
@@ -116,7 +116,7 @@ impl TestFrameworkKDF {
         additional_input: &[u8],
         expected_output: &mut impl KeyMaterialTrait,
     ) {
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** test derive_key_from_multiple() ***/
             let kdf = H::default();
@@ -143,7 +143,7 @@ impl TestFrameworkKDF {
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** Test that additional_input changes the output ***/
             let out_key1 = H::default().derive_key_from_multiple(keys, &[0u8; 0]).unwrap();
@@ -164,7 +164,7 @@ impl TestFrameworkKDF {
         assert_eq!(output.ref_to_bytes(), &expected_output.ref_to_bytes()[..10]);
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             /*** Test entropy mapping ***/
 

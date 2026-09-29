@@ -1,11 +1,11 @@
 //! Generic behaviour tests for anything that implements [`XOF`].
 
-// Imports needed for alloc
+// Imports needed for std
 #[allow(unused_imports)]
 use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::XOF;
-// end imports needed for alloc
+// end imports needed for std
 
 /// Instance of the test framework.
 pub struct TestFrameworkXOF {
@@ -21,7 +21,7 @@ impl TestFrameworkXOF {
     }
 
     // todo: may require no_std equivalent
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// Test the absorb-after-squeeze members of trait XOF against the given input-output pair.
     /// This is not exhaustive; it covers the rules laid out in the "State and Absorb-after-Squeeze"
     /// section of the [`XOF`] docs: an XOF is an absorb phase followed by a squeeze phase, once

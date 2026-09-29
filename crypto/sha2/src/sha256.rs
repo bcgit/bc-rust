@@ -188,7 +188,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     fn hash(self, data: &[u8]) -> Vec<u8> {
         let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
         self.hash_out(data, &mut output);
@@ -235,7 +235,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
         self.x_buf_off = remaining;
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     fn do_final(self) -> Vec<u8> {
         let mut output = vec![0u8; PARAMS::OUTPUT_LEN];
         self.do_final_out(&mut output);
@@ -276,7 +276,7 @@ impl<PARAMS: SHA2Params> Hash for SHA256Internal<PARAMS> {
         n
     }
 
-    #[cfg(feature = "alloc")]
+    #[cfg(feature = "std")]
     /// TODO: This is defined in FIPS 180-4 s. 5.1.2
     /// TODO: <https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html>
     /// TODO: It can be implemented if required

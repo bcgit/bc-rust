@@ -27,7 +27,7 @@ impl TestFrameworkMAC {
         input: &[u8],
         expected_output: &[u8],
     ) {
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             // Test ::mac()
             let out = M::new_allow_weak_key(key).unwrap().mac(input);
@@ -57,7 +57,7 @@ impl TestFrameworkMAC {
         assert!(M::new_allow_weak_key(key).unwrap().verify(input, expected_output));
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             // Test .new(), .do_update(), .do_mac_final()
             // At the same time, test .output_len()
@@ -156,7 +156,7 @@ impl TestFrameworkMAC {
         .unwrap();
 
         // todo: may require no_std equivalent
-        #[cfg(feature = "alloc")]
+        #[cfg(feature = "std")]
         {
             // init
             assert!(
