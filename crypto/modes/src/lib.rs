@@ -18,8 +18,10 @@
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
 //! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
+//! | KW | [`kw`] | SP 800-38F Sec 6.2 | Key Wrap (RFC 3394). **Authenticated**, deterministic, no IV; whole 8-byte semiblocks only |
+//! | KWP | [`kwp`] | SP 800-38F Sec 6.3 | Key Wrap with Padding (RFC 5649). As KW, for data of any length |
 //!
-//! They divide three ways.
+//! They divide three ways, plus the key-wrap pair.
 //!
 //! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
 //! blocks in, whole blocks out, and arbitrary-length data needs the padding layer.
@@ -34,6 +36,10 @@
 //! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, and through them
 //! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with no option to provide AAD, and
 //! the tag inline.
+//!
+//! **KW and KWP are key-wrap algorithms** ([`KeyWrapper`] / [`KeyUnwrapper`]): one-shot,
+//! deterministic and authenticated, with no IV and no streaming API, for wrapping a key (or a
+//! small, non-repeating secret) under a key encryption key. They are not a mode for data.
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
@@ -60,7 +66,7 @@
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
+//! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm, Kw, Kwp};
 //!
 //! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
 //! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
@@ -81,6 +87,12 @@
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
 //! // parameter.
 //! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
+//!
+//! // KW and KWP have no direction marker: wrapping and unwrapping are separate traits
+//! // (`KeyWrapper` / `KeyUnwrapper`) of associated functions, so one type serves both, and the
+//! // only parameters are the permutation and its key length.
+//! type Aes128Kw = Kw<AES128Internal, 16>;
+//! type Aes128Kwp = Kwp<AES128Internal, 16>;
 //! ```
 //!
 //! ## Encrypting and decrypting
@@ -145,6 +157,8 @@ pub mod ecb;
 pub mod gcm;
 mod ghash;
 mod iv;
+pub mod kw;
+pub mod kwp;
 
 pub use cbc::Cbc;
 pub use ccm::{CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor};
@@ -153,13 +167,15 @@ pub use cfb8::Cfb8;
 pub use ctr::Ctr;
 pub use ecb::Ecb;
 pub use gcm::{GCM_NONCE_LEN, Gcm};
+pub use kw::Kw;
+pub use kwp::Kwp;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    ElectronicCodeBook, KeyUnwrapper, KeyWrapper, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
 
