@@ -1,6 +1,12 @@
 //! Factory crate for creating instances of different types.
 //! Factory objects behave like other crypto providers in that they take an algorithm by string name and return an instance of the corresponding type.
 //! Generally, there is one factory for each trait in [`bouncycastle_core::traits`].
+//! See the trait-level documentation for the primitive family behind each factory:
+//! [`hash_factory::HashFactory`] implements [`bouncycastle_core::traits::Hash`],
+//! [`kdf_factory::KDFFactory`] implements [`bouncycastle_core::traits::KDF`],
+//! [`mac_factory::MACFactory`] implements [`bouncycastle_core::traits::MAC`],
+//! [`rng_factory::RNGFactory`] implements [`bouncycastle_core::traits::RNG`], and
+//! [`xof_factory::XOFFactory`] implements [`bouncycastle_core::traits::XOF`].
 //!
 //! All factories are based on the rust enum factory pattern where, for example, the [`hash_factory::HashFactory`]
 //! can hold any Hash type in the library, and [`hash_factory::HashFactory`] itself impls [`bouncycastle_core::traits::Hash`]

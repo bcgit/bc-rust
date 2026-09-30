@@ -2,6 +2,7 @@
 //!
 //! As with all Factory objects, this implements constructions from strings and defaults, and
 //! returns a [`HashFactory`] object which itself implements the [`Hash`] trait as a pass-through to the underlying algorithm.
+//! See [`Hash`] for the full hash API and security-property overview.
 //!
 //! Example usage:
 //! ```
