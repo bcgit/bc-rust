@@ -1,9 +1,9 @@
 //! Generic behaviour tests for anything that implements [`Hash`].
 
-// Imports needed for alloc
+// Imports needed for std
 #[allow(unused_imports)]
 use bouncycastle_core::errors::HashError;
-// end of imports needed for alloc
+// end of imports needed for std
 
 use bouncycastle_core::traits::{Hash, HashAlgParams};
 
@@ -61,7 +61,6 @@ impl TestFrameworkHash {
             "do_final_array tail not zero-padded"
         );
 
-        // todo: may require no_std equivalent
         #[cfg(feature = "std")]
         {
             /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
@@ -72,6 +71,7 @@ impl TestFrameworkHash {
             let output_buf = message_digest.do_final();
             assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
+            // Test truncation of the output buffer
             for length in 1..output_buf.len() {
                 let mut truncated = vec![0_u8; length];
 
@@ -120,6 +120,16 @@ impl TestFrameworkHash {
                 "Incorrect output for input (update_byte) / truncated: {length}"
             );
         }
+
+        /*** Test breaking the message into multiple do_update's ***/
+        let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
+
+        let mut message_digest = H::default();
+        for chunk in input.chunks(16) {
+            message_digest.do_update(chunk);
+        }
+        message_digest.do_final_out(&mut output_buf);
+        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
 
         // todo: may require no_std equivalent
         #[cfg(feature = "std")]
