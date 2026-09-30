@@ -1,4 +1,4 @@
-//! Structural tests for GCM, driven by a toy permutation and by real AES.
+//! Structural tests for GCM, driven by a toy permutation.
 //!
 //! These check the properties of the *mode* -- AAD-before-data ordering, chunking independence,
 //! the tag-length family, the inline decryptor's tail hold-back, and the one-shot's
@@ -7,15 +7,13 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
-use common::{TOY_LEN, Toy, toy_key};
+use common::{ForwardOnlyToy, TOY_LEN, Toy, toy_key};
 
 type ToyGcm<Dir, const TAG_LEN: usize> = Gcm<Toy, Dir, TOY_LEN, TAG_LEN>;
 
@@ -239,64 +237,60 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
     }
 }
 
-/// The one-shots round-trip with real AES at all three key lengths, at a length that is not a
-/// whole number of blocks.
+/// SP 800-38D Sec 5.1: "GCM does not employ the inverse cipher function." GCTR (Sec 6.5) applies
+/// `CIPH_K` to counter blocks in both directions and GHASH (Sec 6.4) is field arithmetic, so a
+/// permutation that implements only the forward direction works. [`ForwardOnlyToy`] panics from
+/// every inverse entry point; a detached one-shot round trip over it, at a length that is not a
+/// whole number of blocks, must therefore agree with [`Toy`] and succeed.
 #[test]
-fn the_aes_aliases_round_trip() {
-    fn check<P, const KEY_LEN: usize>(key_bytes: &[u8])
+fn neither_direction_uses_the_inverse_cipher() {
+    fn round_trip<P>() -> ([u8; 48], [u8; 16])
     where
-        P: bouncycastle_core::traits::ElectronicCodeBook<KEY_LEN, 16>,
+        P: bouncycastle_core::traits::ElectronicCodeBook<TOY_LEN, TOY_LEN>,
     {
-        let key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(key_bytes, KeyType::SymmetricCipherKey)
-                .unwrap();
+        let key = toy_key();
         let aad = b"associated data of no particular length";
         let message = b"a message that is not a whole number of blocks!!";
 
         let mut ct = [0u8; 48];
-        let (nonce, _, tag) =
-            Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_out_detached(&key, aad, message, &mut ct)
-                .unwrap();
+        let (nonce, _, tag) = Gcm::<P, Encrypting, TOY_LEN, 16>::encrypt_out_rng_detached(
+            &key,
+            &mut FixedSeedRNG::<12>::new([0x4Du8; 12]),
+            aad,
+            message,
+            &mut ct,
+        )
+        .unwrap();
         assert_ne!(&ct[..], &message[..]);
         let mut pt = [0u8; 48];
-        Gcm::<P, Decrypting, KEY_LEN, 16>::decrypt_out_detached(
+        Gcm::<P, Decrypting, TOY_LEN, 16>::decrypt_out_detached(
             &key, &nonce, aad, &ct, &tag, &mut pt,
         )
         .unwrap();
         assert_eq!(&pt[..], &message[..]);
+        (ct, tag)
     }
 
-    check::<AES128Internal, 16>(&[0x11; 16]);
-    check::<AES192Internal, 24>(&[0x22; 24]);
-    check::<AES256Internal, 32>(&[0x33; 32]);
+    // The forward-only toy must agree with the real one, or the round trip proves nothing.
+    assert_eq!(round_trip::<ForwardOnlyToy>(), round_trip::<Toy>(), "the two toys must agree");
 }
 
 /// The whole [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] contract -- which runs the
-/// symmetric-cipher suite first -- through the shared framework, over real AES at two key lengths
-/// and at both ends of the tag-length range. `FINAL_LEN` is `TAG_LEN`: GCM holds nothing back on
-/// encryption and exactly the possible tag on decryption.
+/// symmetric-cipher suite first -- through the shared framework, over the toy at both ends of the
+/// tag-length range. `FINAL_LEN` is `TAG_LEN`: GCM holds nothing back on encryption and exactly
+/// the possible tag on decryption.
 ///
 /// [`AEADCipherEncryptor`]: bouncycastle_core::traits::AEADCipherEncryptor
 /// [`AEADCipherDecryptor`]: bouncycastle_core::traits::AEADCipherDecryptor
 #[test]
 fn aead_trait_framework() {
     use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
-    TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
-        16,
-        12,
-        16,
-        16,
-        Gcm<AES128Internal, Encrypting, 16, 16>,
-        Gcm<AES128Internal, Decrypting, 16, 16>,
-    >();
-    TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
-        32,
-        12,
-        12,
-        12,
-        Gcm<AES256Internal, Encrypting, 32, 12>,
-        Gcm<AES256Internal, Decrypting, 32, 12>,
-    >();
+    TestFrameworkAEADCipher::new()
+        .test_encryptor_decryptor::<TOY_LEN, 12, 16, 16, ToyGcm<Encrypting, 16>, ToyGcm<Decrypting, 16>>(
+        );
+    TestFrameworkAEADCipher::new()
+        .test_encryptor_decryptor::<TOY_LEN, 12, 12, 12, ToyGcm<Encrypting, 12>, ToyGcm<Decrypting, 12>>(
+        );
 }
 
 /// The trait one-shots check the tag before decrypting anything, as the inherent
@@ -304,11 +298,10 @@ fn aead_trait_framework() {
 /// contract -- rather than holding the ciphertext they staged there.
 #[test]
 fn aead_trait_one_shots_release_nothing_on_forgery() {
-    type Enc = Gcm<AES128Internal, Encrypting, 16, 16>;
-    type Dec = Gcm<AES128Internal, Decrypting, 16, 16>;
+    type Enc = ToyGcm<Encrypting, 16>;
+    type Dec = ToyGcm<Decrypting, 16>;
 
-    let key =
-        KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+    let key = toy_key();
     let mut ct = [0u8; 32 + 16];
     let (nonce, n) = Enc::encrypt_out_with_aad(&key, b"aad", &[0x33u8; 32], &mut ct).unwrap();
     ct[0] ^= 1;

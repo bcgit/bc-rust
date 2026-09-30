@@ -13,7 +13,6 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor,
@@ -372,19 +371,17 @@ fn call_chunking_does_not_change_the_result() {
     assert_eq!(ct, reference, "empty calls must not disturb the state");
 }
 
-/// The same equivalence with **real AES**, at all three key lengths.
+/// The same equivalence, generic over the permutation, at a length that runs the decryptor's
+/// four-block batch several times over and ends every chunking on a short final segment.
 ///
-/// `call_chunking_does_not_change_the_result` proves the property over the toy permutation, where
-/// the mode's own bookkeeping is the only thing that can be wrong. This repeats it with the cipher
-/// the mode is actually used with, so a chunking bug that only shows up for a 16-byte block under
-/// a real key schedule -- rather than for the toy -- cannot hide. The AES coverage elsewhere
-/// (`sp800_38a_cfb_tests.rs`, `acvp_cfb_tests.rs`) chunks against *published* ciphertext; this is
-/// the direct single-call-versus-chunked comparison.
-///
-/// The message is 171 bytes: not a whole number of blocks, so every chunking ends on a short final
-/// segment, and long enough to run the decryptor's four-block batch several times over.
+/// `call_chunking_does_not_change_the_result` proves the property over [`Toy`] at 55 bytes. This
+/// repeats it at 171 bytes, which is not a whole number of blocks, and runs it over
+/// [`ForwardOnlyToy`] as well, so the chunked decryptions that reach the batch paths are shown to
+/// do so without the inverse cipher. The AES coverage (`sp800_38a_cfb_tests.rs`,
+/// `acvp_cfb_tests.rs`) chunks against *published* ciphertext; this is the direct
+/// single-call-versus-chunked comparison, kept free of an AES dependency.
 #[test]
-fn aes_chunking_matches_a_single_call() {
+fn chunking_matches_a_single_call_over_several_batches() {
     fn check<P, const KEY_LEN: usize>(name: &str)
     where
         P: ElectronicCodeBook<KEY_LEN, 16>,
@@ -393,7 +390,7 @@ fn aes_chunking_matches_a_single_call() {
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
         let key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-                .expect("a valid AES key");
+                .expect("a valid key");
         let iv: [u8; 16] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
@@ -441,9 +438,8 @@ fn aes_chunking_matches_a_single_call() {
         }
     }
 
-    check::<AES128Internal, 16>("AES-128");
-    check::<AES192Internal, 24>("AES-192");
-    check::<AES256Internal, 32>("AES-256");
+    check::<Toy, TOY_LEN>("Toy");
+    check::<ForwardOnlyToy, TOY_LEN>("ForwardOnlyToy");
 }
 
 /// The pair path in `do_decrypt` must actually be taken, and only where a pair of whole blocks sits
@@ -621,62 +617,54 @@ fn a_ciphertext_bit_error_flips_exactly_that_bit_of_its_own_block() {
     }
 }
 
-/// The parts of Appendix D that need a real cipher's diffusion, checked with AES-128.
+/// Appendix D for a corrupted IV under CFB with `s = b`: the damage is confined to `P1` -- "a bit
+/// error in the ith most significant bit position affects the decryptions of the first i/s
+/// (rounding up) ciphertext segments", which is one segment for every `i` -- and, unlike CBC, the
+/// IV goes through the cipher before it reaches the plaintext, so the error is not flipped in
+/// place. Table D.2 calls the result "RBE", random bit errors: that spread is the block cipher's
+/// diffusion, not the mode's, and [`Toy`] (which permutes each byte independently) cannot show it
+/// and this does not claim it.
 ///
-/// Table D.2 for CFB says the *other* affected block gets "RBE" -- random bit errors, "bit errors
-/// occur independently in any bit position with an expected probability of 1/2". That is a property
-/// of the block cipher, not of the mode, so the toy (whose rounds are byte-local) cannot show it.
-///
-/// The point worth pinning is that CFB and CBC differ here, and in which direction: under CBC a
-/// corrupted IV flips *exactly* the corresponding bit of `P1` (Appendix D, and
-/// `an_iv_bit_error_flips_exactly_that_bit_of_the_first_block` in `cbc_tests.rs`), whereas under CFB
-/// the IV goes through the cipher first, so `P1` is randomised instead. Confusing the two would be a
-/// real bug and this is what catches it.
+/// What the toy makes exact instead: the flipped IV bit comes out of `P1` in the same byte but
+/// moved by the toy's `rotate_left(1)`, every other byte of `P1` is untouched, and `P2` onwards is
+/// exactly right. Under CBC the same corruption flips *exactly* the corresponding bit of `P1`
+/// (Appendix D, and `an_iv_bit_error_flips_exactly_that_bit_of_the_first_block` in
+/// `cbc_tests.rs`); confusing the two would be a real bug, and the rotated bit is what catches it.
 #[test]
-fn an_iv_bit_error_randomises_only_the_first_block() {
-    type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
-    const LEN: usize = 16;
-
-    let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-        .expect("a valid AES-128 key");
-    let iv: [u8; LEN] = core::array::from_fn(|i| 0x0F ^ (i as u8));
+fn an_iv_bit_error_damages_only_the_first_block_through_the_cipher() {
+    const LEN: usize = TOY_LEN;
+    let iv = pinned_iv();
     let plaintext = [[0x00u8; LEN], [0x11u8; LEN], [0x22u8; LEN]];
 
-    let (mut e, got_iv) =
-        Aes128Cfb::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<LEN>::new(iv))
-            .unwrap();
-    assert_eq!(got_iv, iv);
     let mut ct = plaintext;
-    e.do_encrypt(ct.as_flattened_mut()).unwrap();
+    pinned_encryptor(iv).do_encrypt(ct.as_flattened_mut()).unwrap();
 
     let mut first_blocks = std::collections::BTreeSet::new();
 
     for byte in 0..LEN {
         for bit in 0..8 {
+            let flip = 1u8 << bit;
             let mut corrupt_iv = iv;
-            corrupt_iv[byte] ^= 1 << bit;
+            corrupt_iv[byte] ^= flip;
 
-            let mut d = Aes128Cfb::<Decrypting>::do_decrypt_init(&key, &corrupt_iv).unwrap();
             let mut got = ct;
-            d.do_decrypt(got.as_flattened_mut()).unwrap();
+            pinned_decryptor(corrupt_iv).do_decrypt(got.as_flattened_mut()).unwrap();
 
-            // Only P1 is affected: with s = b, Appendix D's "first i/s (rounding up) ciphertext
-            // segments" is one segment for every bit position i.
+            // Only P1 is affected: `I2 = C1`, which the corruption did not touch.
             assert_eq!(got[1], plaintext[1], "IV byte {byte} bit {bit}: P2 must be unaffected");
             assert_eq!(got[2], plaintext[2], "IV byte {byte} bit {bit}: P3 must be unaffected");
 
-            // ...and it is randomised, not flipped in place. The CBC behaviour would be a
-            // single-bit difference in exactly the position that was corrupted.
-            let differing_bits: u32 =
-                got[0].iter().zip(plaintext[0].iter()).map(|(a, b)| (a ^ b).count_ones()).sum();
-            assert!(
-                differing_bits > 1,
-                "IV byte {byte} bit {bit}: P1 should be randomised, not flipped in place \
-                 ({differing_bits} bit(s) differ)"
+            // ...and within P1 the error went through the cipher: the toy's per-byte function
+            // rotates the flipped bit one place, so it lands in the same byte at a different
+            // position, which is exactly what CBC's in-place flip would not do.
+            let mut expected = plaintext[0];
+            expected[byte] ^= flip.rotate_left(1);
+            assert_eq!(
+                got[0], expected,
+                "IV byte {byte} bit {bit}: P1 should carry the flip through the toy's rotation"
             );
-
             let mut cbc_style = plaintext[0];
-            cbc_style[byte] ^= 1 << bit;
+            cbc_style[byte] ^= flip;
             assert_ne!(got[0], cbc_style, "CFB must not behave like CBC for a corrupted IV");
 
             assert!(first_blocks.insert(got[0]), "distinct IVs should give distinct P1");
@@ -761,32 +749,22 @@ fn every_length_round_trips_without_padding() {
 
 // ---- memory ------------------------------------------------------------------------------
 
-/// Pins the "Memory Usage" table in the crate docs, and the claim that CFB costs one `usize` more
-/// than CBC: the block that is `Ij`, `Oj` and `I_{j+1}` in turn, plus the count of how much of it
-/// has been used.
+/// Pins the "Memory Usage" statement in the module docs -- the state is the permutation, one
+/// block and a byte count -- and the claim that CFB costs one `usize` more than CBC: the block that
+/// is `Ij`, `Oj` and `I_{j+1}` in turn, plus the count of how much of it has been used.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<Cfb<AES128Internal, Encrypting, 16, 16>>(), 176 + 16 + 8);
-    assert_eq!(size_of::<Cfb<AES192Internal, Encrypting, 24, 16>>(), 208 + 16 + 8);
-    assert_eq!(size_of::<Cfb<AES256Internal, Encrypting, 32, 16>>(), 240 + 16 + 8);
+    // The general rule the docs state.
+    assert_eq!(size_of::<ToyCfb<Encrypting>>(), size_of::<Toy>() + TOY_LEN + size_of::<usize>());
 
     // The direction marker is free, and does not change the layout.
-    assert_eq!(
-        size_of::<Cfb<AES128Internal, Encrypting, 16, 16>>(),
-        size_of::<Cfb<AES128Internal, Decrypting, 16, 16>>()
-    );
-
-    // ...and the general rule the docs state.
-    assert_eq!(
-        size_of::<Cfb<AES256Internal, Encrypting, 32, 16>>(),
-        size_of::<AES256Internal>() + 16 + size_of::<usize>()
-    );
+    assert_eq!(size_of::<ToyCfb<Encrypting>>(), size_of::<ToyCfb<Decrypting>>());
 
     // The docs say CFB is one `usize` bigger than CBC.
     assert_eq!(
-        size_of::<Cfb<AES128Internal, Encrypting, 16, 16>>(),
-        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>() + size_of::<usize>()
+        size_of::<ToyCfb<Encrypting>>(),
+        size_of::<Cbc<Toy, Encrypting, TOY_LEN, TOY_LEN>>() + size_of::<usize>()
     );
 }

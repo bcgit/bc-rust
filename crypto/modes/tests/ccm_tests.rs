@@ -13,9 +13,8 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::AES128Internal;
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
 };
@@ -384,16 +383,6 @@ fn every_permitted_nonce_length_works() {
     round_trip::<Toy, TOY_LEN, 11>(&toy, (1 << 32) - 1);
     round_trip::<Toy, TOY_LEN, 12>(&toy, (1 << 24) - 1);
     round_trip::<Toy, TOY_LEN, 13>(&toy, (1 << 16) - 1);
-
-    let aes =
-        KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
-    round_trip::<AES128Internal, 16, 7>(&aes, u64::MAX);
-    round_trip::<AES128Internal, 16, 8>(&aes, (1 << 56) - 1);
-    round_trip::<AES128Internal, 16, 9>(&aes, (1 << 48) - 1);
-    round_trip::<AES128Internal, 16, 10>(&aes, (1 << 40) - 1);
-    round_trip::<AES128Internal, 16, 11>(&aes, (1 << 32) - 1);
-    round_trip::<AES128Internal, 16, 12>(&aes, (1 << 24) - 1);
-    round_trip::<AES128Internal, 16, 13>(&aes, (1 << 16) - 1);
 }
 
 /// Which entry points release unauthenticated plaintext on a forgery, pinned side by side.

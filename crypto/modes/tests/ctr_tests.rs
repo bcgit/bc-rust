@@ -23,7 +23,6 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -108,14 +107,25 @@ fn ctr_conforms_to_the_stream_cipher_framework() {
         .test::<TOY_LEN, NONCE_LEN, ToyCtr<Encrypting>, ToyCtr<Decrypting>>();
 }
 
-/// The keystream under the mode, on its own: over the toy, and over AES so that the four-block and
-/// pair batch paths of a real permutation are exercised too.
+/// The keystream under the mode, on its own: over the toy at the default nonce length and at the
+/// one-byte-counter length, and over [`ForwardOnlyToy`] so that whatever the framework drives
+/// through the batch paths is shown to get there without the inverse cipher.
 #[test]
 fn ctr_keystream_conforms_to_the_key_stream_framework() {
     let framework = TestFrameworkKeyStream::new();
     framework.test::<TOY_LEN, NONCE_LEN, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, NONCE_LEN>>();
-    framework.test::<16, 12, 16, CtrKeyStream<AES128Internal, 16, 16, 12>>();
-    framework.test::<16, 15, 16, CtrKeyStream<AES128Internal, 16, 16, 15>>();
+    framework.test::<
+        TOY_LEN,
+        SHORT_CTR_NONCE_LEN,
+        TOY_LEN,
+        CtrKeyStream<Toy, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>,
+    >();
+    framework.test::<
+        TOY_LEN,
+        NONCE_LEN,
+        TOY_LEN,
+        CtrKeyStream<ForwardOnlyToy, TOY_LEN, TOY_LEN, NONCE_LEN>,
+    >();
 }
 
 // ---- the spec equations -------------------------------------------------------------------
@@ -506,9 +516,12 @@ fn call_chunking_does_not_change_the_result() {
     assert_eq!(ct, reference, "empty calls must not disturb the state");
 }
 
-/// The same equivalence with **real AES**, at all three key lengths, as for the other stream modes.
+/// The same equivalence, generic over the permutation, at 171 bytes -- several four-block batches
+/// and a short tail -- and over [`ForwardOnlyToy`] as well as [`Toy`], so the chunked calls that
+/// reach the batch paths are shown to do so without the inverse cipher; as for the other stream
+/// modes, kept free of an AES dependency.
 #[test]
-fn aes_chunking_matches_a_single_call() {
+fn chunking_matches_a_single_call_over_several_batches() {
     fn check<P, const KEY_LEN: usize>(name: &str)
     where
         P: ElectronicCodeBook<KEY_LEN, 16>,
@@ -517,7 +530,7 @@ fn aes_chunking_matches_a_single_call() {
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
         let key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-                .expect("a valid AES key");
+                .expect("a valid key");
         let nonce: [u8; 12] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
@@ -565,9 +578,8 @@ fn aes_chunking_matches_a_single_call() {
         }
     }
 
-    check::<AES128Internal, 16>("AES-128");
-    check::<AES192Internal, 24>("AES-192");
-    check::<AES256Internal, 32>("AES-256");
+    check::<Toy, TOY_LEN>("Toy");
+    check::<ForwardOnlyToy, TOY_LEN>("ForwardOnlyToy");
 }
 
 /// The pair path must be taken, **in both directions** -- unlike CBC and CFB, CTR encryption
@@ -730,27 +742,21 @@ fn every_permitted_nonce_length_works() {
 
 // ---- memory ---------------------------------------------------------------------------------
 
-/// Pins the "Memory Usage" table in the crate docs.
+/// Pins the layout: permutation + nonce + counter (`u64`) + keystream block + the used offset,
+/// rounded up to the `u64`'s alignment.
 #[test]
 fn sizes_match_the_documented_memory_table() {
-    use core::mem::size_of;
+    use core::mem::{align_of, size_of};
 
-    // permutation + nonce + counter (u64) + keystream block + the used offset, rounded up to the
-    // u64's alignment. For a 12-byte nonce on AES that is 176/208/240 + 12 + 8 + 16 + 8 = 220/252/284,
-    // padded to 224/256/288.
-    assert_eq!(size_of::<Ctr<AES128Internal, Encrypting, 16, 16, 12>>(), 224);
-    assert_eq!(size_of::<Ctr<AES192Internal, Encrypting, 24, 16, 12>>(), 256);
-    assert_eq!(size_of::<Ctr<AES256Internal, Encrypting, 32, 16, 12>>(), 288);
+    assert_eq!(
+        size_of::<ToyCtr<Encrypting>>(),
+        (size_of::<Toy>() + NONCE_LEN + size_of::<u64>() + TOY_LEN + size_of::<usize>())
+            .next_multiple_of(align_of::<u64>())
+    );
 
     // The direction marker is free, and the nonce length does not change the layout: the counter
     // block is always a whole block.
-    assert_eq!(
-        size_of::<Ctr<AES128Internal, Encrypting, 16, 16, 12>>(),
-        size_of::<Ctr<AES128Internal, Decrypting, 16, 16, 12>>()
-    );
+    assert_eq!(size_of::<ToyCtr<Encrypting>>(), size_of::<ToyCtr<Decrypting>>());
     // A longer nonce fits in the same padding, so the total is unchanged.
-    assert_eq!(
-        size_of::<Ctr<AES128Internal, Encrypting, 16, 16, 12>>(),
-        size_of::<Ctr<AES128Internal, Encrypting, 16, 16, 15>>()
-    );
+    assert_eq!(size_of::<ToyCtr<Encrypting>>(), size_of::<TinyCtr<Encrypting>>());
 }

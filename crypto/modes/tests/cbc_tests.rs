@@ -6,7 +6,6 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
@@ -357,32 +356,6 @@ fn a_key_of_the_wrong_type_is_rejected() {
     let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
     assert!(ToyCbc::<Encrypting>::do_encrypt_init(&seed).is_err());
     assert!(ToyCbc::<Decrypting>::do_decrypt_init(&seed, &[0u8; TOY_LEN]).is_err());
-}
-
-// ---- memory ------------------------------------------------------------------------------
-
-/// Pins the "Memory Usage" table in the crate docs.
-#[test]
-fn sizes_match_the_documented_memory_table() {
-    use core::mem::size_of;
-
-    assert_eq!(size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>(), 176 + 16);
-    assert_eq!(size_of::<Cbc<AES192Internal, Encrypting, 24, 16>>(), 208 + 16);
-    assert_eq!(size_of::<Cbc<AES256Internal, Encrypting, 32, 16>>(), 240 + 16);
-
-    // The direction marker is free, and does not change the layout.
-    assert_eq!(
-        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>(),
-        size_of::<Cbc<AES128Internal, Decrypting, 16, 16>>()
-    );
-    assert_eq!(size_of::<Encrypting>(), 0);
-    assert_eq!(size_of::<Decrypting>(), 0);
-
-    // ...and the general rule the docs state.
-    assert_eq!(
-        size_of::<Cbc<AES256Internal, Encrypting, 32, 16>>(),
-        size_of::<AES256Internal>() + 16
-    );
 }
 
 /// The one-shots (`encrypt` / `decrypt` on a `[u8; LEN]`, in place) must produce exactly what the
