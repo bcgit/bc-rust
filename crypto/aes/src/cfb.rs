@@ -1,5 +1,9 @@
 //! Type aliases for AES in CFB mode (NIST SP 800-38A Sec 6.3).
 //!
+//!
+//! TODO -- stolen from the top-level lib.rs docs. Need to make them fit here.
+//! the CFB modes and CTR are stream ciphers and take any length.
+//!
 //! `bouncycastle-modes` is deliberately cipher-agnostic, so `Cfb` takes the permutation, the
 //! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters. These aliases pin the AES values so
 //! callers never spell them out. They add nothing to the engine: the permutation still implements
@@ -9,7 +13,7 @@
 //! different, non-interoperable mode with its own aliases -- [`AES_CFB8_128`](crate::AES_CFB8_128)
 //! and friends -- and `s = 1` is not implemented; see the `bouncycastle_modes::Cfb` docs.
 
-use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_modes::Cfb;
 
 /// AES-128 in CFB128 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or
@@ -49,7 +53,7 @@ use bouncycastle_modes::Cfb;
 /// ```
 ///
 #[allow(non_camel_case_types)]
-pub type AES_CFB_128<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
+pub type AES_CFB_128<Dir> = Cfb<AES128Internal, Dir, 16, AES_BLOCK_LEN>;
 
 /// AES-192 in CFB128 mode. See [`AES_CFB_128`].
 ///
@@ -66,7 +70,7 @@ pub type AES_CFB_128<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CFB_192<Dir> = Cfb<AES192Internal, Dir, 24, BLOCK_LEN>;
+pub type AES_CFB_192<Dir> = Cfb<AES192Internal, Dir, 24, AES_BLOCK_LEN>;
 
 /// AES-256 in CFB128 mode. See [`AES_CFB_128`].
 ///
@@ -83,4 +87,4 @@ pub type AES_CFB_192<Dir> = Cfb<AES192Internal, Dir, 24, BLOCK_LEN>;
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CFB_256<Dir> = Cfb<AES256Internal, Dir, 32, BLOCK_LEN>;
+pub type AES_CFB_256<Dir> = Cfb<AES256Internal, Dir, 32, AES_BLOCK_LEN>;

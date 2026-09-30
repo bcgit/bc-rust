@@ -75,7 +75,7 @@
 use core::ops::{BitAnd, BitOr, BitXor, BitXorAssign, Not, Shl, Shr};
 
 /// One 16-byte AES block, in the order of FIPS 197 Eq (3.6): `block[r + 4c] == s[r,c]`.
-pub type Block = [u8; crate::BLOCK_LEN];
+pub type Block = [u8; crate::AES_BLOCK_LEN];
 
 /// The eight bit-planes holding one, two or four blocks, by the width of `T`. See the module
 /// docs for the layout.

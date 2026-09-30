@@ -1785,6 +1785,10 @@ pub trait SymmetricCipherDecryptor<
     /// releases data later than the corresponding encryptor produced it, but the concatenation of
     /// everything released plus the data part of [`do_final`](Self::do_final) is the plaintext.
     ///
+    /// Only the first `written` bytes of `plaintext` are touched; the rest of the buffer is left
+    /// as the caller had it. In particular a call whose whole input is held back returns 0 and
+    /// writes nothing at all.
+    ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// [`update_out_len`](Self::do_decrypt_out_len), carrying the required length. Nothing is
@@ -1955,6 +1959,10 @@ pub trait SymmetricCipherEncryptor<
     /// into `ciphertext` and buffering the rest. Returns the number of bytes written, which is
     /// exactly [`update_out_len`](Self::do_encrypt_out_len) of `plaintext.len()`. A sequence of calls
     /// is equivalent to one call over the concatenation.
+    ///
+    /// Only the first `written` bytes of `ciphertext` are touched; the rest of the buffer is left
+    /// as the caller had it. In particular a call that has to buffer all of its input -- a piece
+    /// that does not complete a block, say -- returns 0 and writes nothing at all.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than

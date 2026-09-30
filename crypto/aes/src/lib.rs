@@ -23,7 +23,7 @@
 //!
 //! # Design
 //!
-//! ## Why not a lookup table
+//! ## No lookup table
 //!
 //! FIPS 197 Sec 5.1.1 presents the S-box as a table (Table 4), and almost every AES
 //! implementation stores it as one -- 256 bytes, or 2-8 KiB for the "T-table" variants that fold
@@ -170,7 +170,7 @@ mod round;
 mod sbox;
 mod schedule;
 
-pub use aes_internal::BLOCK_LEN;
+pub use aes_internal::AES_BLOCK_LEN;
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use ccm::{
     AES_CCM_128, AES_CCM_128_Decryptor, AES_CCM_128_Encryptor, AES_CCM_192, AES_CCM_192_Decryptor,

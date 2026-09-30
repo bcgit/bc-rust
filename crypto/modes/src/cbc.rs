@@ -85,8 +85,6 @@
 //!
 //! So, while the IV need not be secret, best-practice is to authenticate it along with the ciphertext,
 //! or use an authenticated (AEAD) mode such as GCM.
-//!
-//!
 
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};

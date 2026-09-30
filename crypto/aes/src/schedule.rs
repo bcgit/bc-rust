@@ -194,7 +194,7 @@ pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
     // `r` of word `c`, so it is transposed exactly as a block is, at the one-block width. The
     // eight `u16` planes go back into the same four `u32` slots, two per word.
     for base in (0..w.len()).step_by(4) {
-        let mut block: Block = [0; crate::BLOCK_LEN];
+        let mut block: Block = [0; crate::AES_BLOCK_LEN];
         for c in 0..4 {
             block[4 * c..4 * c + 4].copy_from_slice(&w[base + c].to_le_bytes());
         }

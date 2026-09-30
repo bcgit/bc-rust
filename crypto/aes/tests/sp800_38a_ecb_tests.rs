@@ -15,7 +15,7 @@
 //!
 //! Transcribed from the published SP 800-38A PDF, sections F.1.1 through F.1.6.
 
-use bouncycastle_aes::BLOCK_LEN;
+use bouncycastle_aes::AES_BLOCK_LEN;
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::ElectronicCodeBook;
@@ -59,7 +59,7 @@ const CIPHERTEXTS_256: [&str; 4] = [
     "23304b7a39f9f3ff067d8d8f9e24ecc7",
 ];
 
-fn block(hex_str: &str) -> [u8; BLOCK_LEN] {
+fn block(hex_str: &str) -> [u8; AES_BLOCK_LEN] {
     hex::decode(hex_str).expect("valid hex").try_into().expect("16 bytes")
 }
 

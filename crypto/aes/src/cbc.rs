@@ -1,47 +1,19 @@
-//! Type aliases for AES in CBC mode (NIST SP 800-38A Sec 6.2), with padding.
+//! Type aliases for AES in CBC mode (NIST SP 800-38A §6.2), with padding.
 //!
-//! `bouncycastle-modes` is deliberately cipher-agnostic, so `Cbc` takes the permutation, the
-//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle-padding`'s
-//! adapters take five more. These aliases pin all of them except the two choices a caller actually
-//! makes: the direction and the padding scheme. They add nothing to the engine -- the permutation
-//! still implements none of the data-encryption traits itself (see the crate docs), the mode does.
+//! See [`bouncycastle_modes::cbc`] for details on the abstract CipherBlockChaining construction.
 //!
-//! ```text
-//! AES_CBC_128<Encrypting, PKCS7>   // AES-128, CBC, PKCS#7 padded, encrypting
-//! AES_CBC_256<Decrypting, NoPadding>
-//! ```
+//! The aliases here are padded block ciphers that accept input of any size; `NoPadding` accepts
+//! only whole blocks but goes through the same adapter. The unpadded mode underneath them, which
+//! implements the block-cipher traits directly, is [`Cbc`] and is not re-exported from this crate.
 //!
-//! # Why the padding is part of the alias
 //!
-//! CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and the recommendation puts the
-//! formatting of anything else outside its scope (Appendix A). So CBC on real data is always CBC
-//! *plus a padding scheme*, and the scheme is not an implementation detail: it changes the
-//! ciphertext, and both ends must agree on it. Naming it in the type makes that choice explicit at
-//! every use, and makes a mismatched pair a compile error rather than a decryption that returns
-//! plausible-looking rubbish.
 //!
-//! The two schemes `bouncycastle-padding` provides are [`PKCS7`], which is what almost everyone
-//! means by "padded CBC" (RFC 5652 s. 6.3), and [`NoPadding`], which adds nothing and instead
-//! *rejects* a message that is not a whole number of blocks -- useful for formats already defined
-//! on block boundaries, where silently padding would be wrong.
 //!
-//! # These are the arbitrary-length API
+//! # Usage Examples
 //!
-//! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
-//! block traits: `encrypt_out` / `decrypt_out` and the streaming `do_update_out` / `do_final`, all
-//! taking a `&[u8]` of any length. The block-aligned API, with its compile-time length checks and
-//! its in-place data methods, is `bouncycastle_modes::Cbc` itself, which these wrap:
+//! ## One-shot API
 //!
-//! ```text
-//! bouncycastle_modes::Cbc<AES128Internal, Encrypting, 16, 16>   // block-aligned, in place
-//! AES_CBC_128<Encrypting, PKCS7>                        // any length, padded
-//! ```
-//!
-//! TODO -- stolen from the top-level lib.rs docs. Need to make them fit here.
-//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
-//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
-//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
-//! [`AES_CBC_128`] for why the scheme is named in the type.
+//! Basic usage can be obtained via the [`SymmetricCipherEncryptor`] and [`SymmetricCipherDecryptor`] API:
 //!
 //! ```
 //! use bouncycastle_aes::AES_CBC_256;
@@ -52,6 +24,8 @@
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
+//!
+//! // An arbitrary plaintext to encrypt
 //! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
 //! let plaintext = [0x5Au8; 50];
 //!
@@ -65,20 +39,74 @@
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!
-//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
+//! ## Streaming API
 //!
-//! There is no one-shot static on the permutation, because `AES128Internal::new(&key)?.encrypt_block(..)`
-//! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
-//! arbitrary-length input and generate their own initialisation data.
+//! For data that arrives in pieces, the following APIs can be used:
+//!
+//! ```
+//! use bouncycastle_aes::{AES_CBC_128, AES_BLOCK_LEN};
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_padding::PKCS7;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//!
+//! // An arbitrary plaintext to encrypt
+//! let plaintext = [0x5Au8; 50];
+//!
+//! // The streaming (chunked) API allows for data to be handed to the cipher as it arrives, in chunks
+//! // of any length, but it will only be processed once a full block has been received.
+//! // Here, we will use 7-byte chunks
+//! let (mut encryptor, iv) =
+//!     AES_CBC_128::<Encrypting, PKCS7>::do_encrypt_init(&key).expect("encrypt init");
+//!
+//! let mut ciphertext = Vec::new();
+//!
+//! for piece in plaintext.chunks(7) {
+//!     // Since AES
+//!     let mut out = [0u8; AES_BLOCK_LEN];
+//!     let bytes_written = encryptor.do_encrypt_out(piece, &mut out).expect("encryption");
+//!
+//!     // If that doesn't complete a block, then nothing is written.
+//!     if bytes_written != 0 {
+//!         ciphertext.extend_from_slice(&out[..bytes_written]);
+//!     }
+//! }
+//! let (last_block, last_len) = encryptor.do_final().expect("padding the final block");
+//! ciphertext.extend_from_slice(&last_block[..last_len]);
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! // Decrypt the ciphertext in 19-byte chunks.
+//! let mut decryptor =
+//!     AES_CBC_128::<Decrypting, PKCS7>::do_decrypt_init(&key, &iv).expect("decrypt init");
+//! let mut recovered = Vec::new();
+//! for piece in ciphertext.chunks(19) {
+//!     let mut out = [0u8; AES_BLOCK_LEN];
+//!     let bytes_written = decryptor.do_decrypt_out(piece, &mut out).expect("decryption");
+//!     if bytes_written != 0 {
+//!         recovered.extend_from_slice(&out[..bytes_written]);
+//!     }
+//! }
+//! let (last_block, last_len) = decryptor.do_final().expect("a valid final block");
+//! recovered.extend_from_slice(&last_block[..last_len]);
+//! assert_eq!(recovered, plaintext);
+//! ```
+//!
+//! # 🚨 Security Considerations 🚨
+//!
+//! All security considerations from [`bouncycastle_modes::cbc`] apply.
 
-use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
 use crate::padded_mode::PaddedMode;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+#[allow(unused_imports)]
+use bouncycastle_modes::cbc;
 #[allow(unused_imports)]
 use bouncycastle_padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
@@ -173,11 +201,11 @@ use bouncycastle_padding::{
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<AES128Internal, Encrypting, 16, BLOCK_LEN>,
-    Cbc<AES128Internal, Decrypting, 16, BLOCK_LEN>,
+    Cbc<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+    Cbc<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
     Pad,
     16,
-    BLOCK_LEN,
+    AES_BLOCK_LEN,
 >>::Mode;
 
 /// AES-192 in CBC mode with a padding scheme. See [`AES_CBC_128`].
@@ -200,11 +228,11 @@ pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<AES192Internal, Encrypting, 24, BLOCK_LEN>,
-    Cbc<AES192Internal, Decrypting, 24, BLOCK_LEN>,
+    Cbc<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+    Cbc<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
     Pad,
     24,
-    BLOCK_LEN,
+    AES_BLOCK_LEN,
 >>::Mode;
 
 /// AES-256 in CBC mode with a padding scheme. See [`AES_CBC_128`].
@@ -227,9 +255,9 @@ pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_CBC_256<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<AES256Internal, Encrypting, 32, BLOCK_LEN>,
-    Cbc<AES256Internal, Decrypting, 32, BLOCK_LEN>,
+    Cbc<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+    Cbc<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
     Pad,
     32,
-    BLOCK_LEN,
+    AES_BLOCK_LEN,
 >>::Mode;

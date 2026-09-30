@@ -13,7 +13,7 @@
 //! repeating keystream. A shorter message limit in exchange for more nonce bits is available by
 //! naming `Ctr` directly with a 13, 14 or 15-byte nonce.
 
-use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_modes::Ctr;
 
 /// The nonce length these aliases use, leaving a 4-byte counter.
@@ -55,7 +55,7 @@ pub const CTR_NONCE_LEN: usize = 12;
 /// assert_eq!(rest, [1u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CTR_128<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_128<Dir> = Ctr<AES128Internal, Dir, 16, AES_BLOCK_LEN, CTR_NONCE_LEN>;
 
 /// AES-192 in CTR mode with a 12-byte nonce. See [`AES_CTR_128`].
 ///
@@ -72,7 +72,7 @@ pub type AES_CTR_128<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, CTR_NONCE_LE
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CTR_192<Dir> = Ctr<AES192Internal, Dir, 24, BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_192<Dir> = Ctr<AES192Internal, Dir, 24, AES_BLOCK_LEN, CTR_NONCE_LEN>;
 
 /// AES-256 in CTR mode with a 12-byte nonce. See [`AES_CTR_128`].
 ///
@@ -89,4 +89,4 @@ pub type AES_CTR_192<Dir> = Ctr<AES192Internal, Dir, 24, BLOCK_LEN, CTR_NONCE_LE
 /// assert_eq!(data, [0u8; 30]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type AES_CTR_256<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_256<Dir> = Ctr<AES256Internal, Dir, 32, AES_BLOCK_LEN, CTR_NONCE_LEN>;

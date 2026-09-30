@@ -13,7 +13,7 @@
 //! the timed closure. The permutation is a bijection, so the buffer stays random whichever
 //! direction ran last, and the contents never influence the timing of a constant-time cipher.
 
-use bouncycastle_aes::BLOCK_LEN;
+use bouncycastle_aes::AES_BLOCK_LEN;
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
@@ -24,10 +24,10 @@ use std::hint::black_box;
 
 /// 16 KiB of data, i.e. 1024 AES blocks.
 const NUM_BLOCKS: usize = 1024;
-const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
+const DATA_LEN: usize = NUM_BLOCKS * AES_BLOCK_LEN;
 
-fn random_blocks() -> Vec<[u8; BLOCK_LEN]> {
-    let mut blocks = vec![[0u8; BLOCK_LEN]; NUM_BLOCKS];
+fn random_blocks() -> Vec<[u8; AES_BLOCK_LEN]> {
+    let mut blocks = vec![[0u8; AES_BLOCK_LEN]; NUM_BLOCKS];
     let mut generator = rng::DefaultRNG::default();
     for block in blocks.iter_mut() {
         generator.next_bytes_out(block).unwrap();
@@ -67,7 +67,7 @@ fn bench_key_expansion(c: &mut Criterion) {
 
 /// The six data benches every key length gets: 16 KiB through the one-, two- and four-block
 /// entry points, in each direction.
-fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
+fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>>(
     group: &mut BenchmarkGroup<'_, WallTime>,
     aes: &C,
 ) {
@@ -87,7 +87,7 @@ fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_L
         b.iter(|| {
             for pair in blocks.chunks_exact_mut(2) {
                 // `try_into` cannot fail: `chunks_exact_mut(2)` yields slices of length 2.
-                let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
+                let pair: &mut [[u8; AES_BLOCK_LEN]; 2] = pair.try_into().unwrap();
                 aes.encrypt_2blocks(black_box(pair));
             }
             black_box(&blocks);
@@ -98,7 +98,7 @@ fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_L
         b.iter(|| {
             for four in blocks.chunks_exact_mut(4) {
                 // `try_into` cannot fail: `chunks_exact_mut(4)` yields slices of length 4.
-                let four: &mut [[u8; BLOCK_LEN]; 4] = four.try_into().unwrap();
+                let four: &mut [[u8; AES_BLOCK_LEN]; 4] = four.try_into().unwrap();
                 aes.encrypt_4blocks(black_box(four));
             }
             black_box(&blocks);
@@ -117,7 +117,7 @@ fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_L
     group.bench_function("16KiB -- .decrypt_2blocks() x512", |b| {
         b.iter(|| {
             for pair in blocks.chunks_exact_mut(2) {
-                let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
+                let pair: &mut [[u8; AES_BLOCK_LEN]; 2] = pair.try_into().unwrap();
                 aes.decrypt_2blocks(black_box(pair));
             }
             black_box(&blocks);
@@ -127,7 +127,7 @@ fn bench_data_paths<const KEY_LEN: usize, C: ElectronicCodeBook<KEY_LEN, BLOCK_L
     group.bench_function("16KiB -- .decrypt_4blocks() x256", |b| {
         b.iter(|| {
             for four in blocks.chunks_exact_mut(4) {
-                let four: &mut [[u8; BLOCK_LEN]; 4] = four.try_into().unwrap();
+                let four: &mut [[u8; AES_BLOCK_LEN]; 4] = four.try_into().unwrap();
                 aes.decrypt_4blocks(black_box(four));
             }
             black_box(&blocks);
