@@ -228,6 +228,11 @@ mod unsigned_u64_tests {
         assert_eq!((lhs, rhs), (2, 1));
         let (lhs, rhs) = Condition::<u64>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
+        // overlapping bit patterns: `1` and `2` cannot tell XOR from OR in the swap arithmetic
+        let (lhs, rhs) = Condition::<u64>::TRUE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x3C, 0x0F));
+        let (lhs, rhs) = Condition::<u64>::FALSE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x0F, 0x3C));
     }
 
     #[test]
@@ -372,6 +377,11 @@ mod unsigned_u32_tests {
         assert_eq!((lhs, rhs), (2, 1));
         let (lhs, rhs) = Condition::<u32>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
+        // overlapping bit patterns: `1` and `2` cannot tell XOR from OR in the swap arithmetic
+        let (lhs, rhs) = Condition::<u32>::TRUE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x3C, 0x0F));
+        let (lhs, rhs) = Condition::<u32>::FALSE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x0F, 0x3C));
     }
 
     #[test]
@@ -531,6 +541,7 @@ mod signed_i64_tests {
         assert_canonical(Condition::<i64>::is_in_list(4, &[1, 2, 3]), false);
         assert_canonical(Condition::<i64>::is_in_list(-3, &[1, 2, 3, 4, -5, -1]), false);
         assert_canonical(Condition::<i64>::is_in_list(3, &[1, 2, 3, 3, 3, 3]), true);
+        assert_canonical(Condition::<i64>::is_in_list(1, &[]), false);
     }
 
     #[test]
@@ -571,6 +582,11 @@ mod signed_i64_tests {
         assert_eq!((lhs, rhs), (2, 1));
         let (lhs, rhs) = Condition::<i64>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
+        // overlapping bit patterns: `1` and `2` cannot tell XOR from OR in the swap arithmetic
+        let (lhs, rhs) = Condition::<i64>::TRUE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x3C, 0x0F));
+        let (lhs, rhs) = Condition::<i64>::FALSE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x0F, 0x3C));
     }
 
     #[test]
@@ -726,6 +742,7 @@ mod signed_i32_tests {
         assert_canonical(Condition::<i32>::is_in_list(4, &[1, 2, 3]), false);
         assert_canonical(Condition::<i32>::is_in_list(-3, &[1, 2, 3, 4, -5, -1]), false);
         assert_canonical(Condition::<i32>::is_in_list(3, &[1, 2, 3, 3, 3, 3]), true);
+        assert_canonical(Condition::<i32>::is_in_list(1, &[]), false);
     }
 
     #[test]
@@ -766,6 +783,11 @@ mod signed_i32_tests {
         assert_eq!((lhs, rhs), (2, 1));
         let (lhs, rhs) = Condition::<i32>::from_bool_const::<false>().swap(1, 2);
         assert_eq!((lhs, rhs), (1, 2));
+        // overlapping bit patterns: `1` and `2` cannot tell XOR from OR in the swap arithmetic
+        let (lhs, rhs) = Condition::<i32>::TRUE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x3C, 0x0F));
+        let (lhs, rhs) = Condition::<i32>::FALSE.swap(0x0F, 0x3C);
+        assert_eq!((lhs, rhs), (0x0F, 0x3C));
     }
 
     #[test]
@@ -805,6 +827,34 @@ mod signed_comparison_sweep {
 
 #[cfg(test)]
 mod ct_bytes_tests {
+    use bouncycastle_utils::ct::Condition;
+
+    /// `ct_eq_bytes_mask` must be exactly TRUE or FALSE (a `select` on it reproduces the chosen
+    /// pattern bit for bit) and agree with `ct_eq_bytes`.
+    #[test]
+    fn test_ct_eq_bytes_mask() {
+        use bouncycastle_utils::ct::{ct_eq_bytes, ct_eq_bytes_mask};
+
+        const PATTERN: u32 = 0x5555_5555;
+        let a: [u8; 20] = core::array::from_fn(|i| i as u8);
+        let mut b = a;
+        for (other, expected) in [(&a[..], true), (&b[..19], false)] {
+            let m = ct_eq_bytes_mask(&a, other);
+            assert_eq!(m.select(PATTERN, !PATTERN), if expected { PATTERN } else { !PATTERN });
+            assert_eq!(m.to_bool(), expected);
+            assert_eq!(ct_eq_bytes(&a, other), expected);
+        }
+        // a difference in the word path and one in the byte tail (for 2, 4 and 8-byte words)
+        for pos in [5, 19] {
+            b[pos] ^= 0x01;
+            let m = ct_eq_bytes_mask(&a, &b);
+            assert_eq!(m.select(PATTERN, !PATTERN), !PATTERN, "pos {pos}");
+            assert!(!ct_eq_bytes(&a, &b), "pos {pos}");
+            b[pos] ^= 0x01;
+        }
+        assert_eq!(ct_eq_bytes_mask(&[], &[]).select(PATTERN, !PATTERN), PATTERN);
+    }
+
     #[test]
     fn test_ct_eq_bytes() {
         use bouncycastle_utils::ct::ct_eq_bytes;
@@ -831,6 +881,53 @@ mod ct_bytes_tests {
         assert!(!ct_eq_bytes(&a, &b));
     }
 
+    /// The implementation processes the input one machine word at a time (2, 4 or 8 bytes
+    /// depending on the target) and then the remaining tail byte-wise. Exercise every length up
+    /// to several words so that, whatever the word size, a difference in any position, word or
+    /// tail, is detected and equal inputs of every shape compare equal.
+    #[test]
+    fn test_ct_eq_bytes_word_boundaries() {
+        use bouncycastle_utils::ct::ct_eq_bytes;
+
+        for len in 0..=40usize {
+            let a: [u8; 40] = core::array::from_fn(|i| (i as u8).wrapping_mul(37) ^ 0x5C);
+            let a = &a[..len];
+            let mut b = [0u8; 40];
+            b[..len].copy_from_slice(a);
+            assert!(ct_eq_bytes(a, &b[..len]), "len {len}");
+
+            // flip a single bit at each position in turn
+            for pos in 0..len {
+                for bit in [0x01u8, 0x80] {
+                    b[pos] ^= bit;
+                    assert!(!ct_eq_bytes(a, &b[..len]), "len {len} pos {pos} bit {bit:#x}");
+                    b[pos] ^= bit;
+                }
+            }
+        }
+    }
+
+    /// The accumulator must OR the differences together, not XOR them: two positions carrying
+    /// the same difference must not cancel out, whether they fall in the same word, in
+    /// different words, or in the byte tail. 46 bytes leaves a tail of at least two bytes for
+    /// 4- and 8-byte words, so the pairs at the end land in the tail on those targets. The pairs
+    /// four bytes apart within one word sit in the two halves that the final narrowing to 32
+    /// bits folds together, which must OR as well.
+    #[test]
+    fn test_ct_eq_bytes_repeated_difference() {
+        use bouncycastle_utils::ct::ct_eq_bytes;
+
+        let a = [0x42u8; 46];
+        for (p, q) in
+            [(0, 1), (0, 4), (0, 8), (3, 19), (7, 39), (10, 14), (33, 39), (41, 45), (44, 45)]
+        {
+            let mut b = a;
+            b[p] ^= 0x10;
+            b[q] ^= 0x10;
+            assert!(!ct_eq_bytes(&a, &b), "positions {p} {q}");
+        }
+    }
+
     #[test]
     fn test_ct_eq_zero_bytes() {
         use bouncycastle_utils::ct::ct_eq_zero_bytes;
@@ -853,6 +950,40 @@ mod ct_bytes_tests {
         assert!(!ct_eq_zero_bytes(&buf));
     }
 
+    /// Same boundary sweep as for `ct_eq_bytes`: a non-zero byte at any position of any length
+    /// around the machine-word boundaries must be detected.
+    #[test]
+    fn test_ct_eq_zero_bytes_word_boundaries() {
+        use bouncycastle_utils::ct::ct_eq_zero_bytes;
+
+        for len in 0..=40usize {
+            let mut buf = [0u8; 40];
+            assert!(ct_eq_zero_bytes(&buf[..len]), "len {len}");
+            for pos in 0..len {
+                for val in [0x01u8, 0x80] {
+                    buf[pos] = val;
+                    assert!(!ct_eq_zero_bytes(&buf[..len]), "len {len} pos {pos} val {val:#x}");
+                    buf[pos] = 0;
+                }
+            }
+        }
+    }
+
+    /// As for `ct_eq_bytes`: two identical non-zero bytes must not cancel each other out.
+    #[test]
+    fn test_ct_eq_zero_bytes_repeated_nonzero() {
+        use bouncycastle_utils::ct::ct_eq_zero_bytes;
+
+        for (p, q) in
+            [(0, 1), (0, 4), (0, 8), (3, 19), (7, 39), (10, 14), (33, 39), (41, 45), (44, 45)]
+        {
+            let mut buf = [0u8; 46];
+            buf[p] = 0x10;
+            buf[q] = 0x10;
+            assert!(!ct_eq_zero_bytes(&buf), "positions {p} {q}");
+        }
+    }
+
     #[test]
     fn test_conditional_copy_bytes() {
         use bouncycastle_utils::ct::conditional_copy_bytes;
@@ -861,11 +992,36 @@ mod ct_bytes_tests {
         let b = [0x10, 0x11, 0x12, 0x13];
         let mut out = [0u8; 4];
 
-        conditional_copy_bytes(&a, &b, &mut out, true);
+        conditional_copy_bytes(&a, &b, &mut out, Condition::<u32>::TRUE);
         assert_eq!(out, [0x01, 0x02, 0x03, 0x04]);
 
-        conditional_copy_bytes(&a, &b, &mut out, false);
+        conditional_copy_bytes(&a, &b, &mut out, Condition::<u32>::FALSE);
         assert_eq!(out, [0x10, 0x11, 0x12, 0x13]);
+
+        // every byte position must follow the flag independently. `a` and `b` are unrelated
+        // (not complements of each other, so a wrong mask formulation cannot produce the right
+        // answer for one flag value by accident) and between them cover 0x00 and 0xFF bytes.
+        let a: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(0x11));
+        let b: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(0x37).wrapping_add(0xC9));
+        assert!(a.iter().any(|&x| x == 0x00) && a.iter().any(|&x| x == 0xFF));
+        let mut out = [0xEEu8; 32];
+        conditional_copy_bytes(&a, &b, &mut out, Condition::<u32>::TRUE);
+        assert_eq!(out, a);
+        conditional_copy_bytes(&a, &b, &mut out, Condition::<u32>::FALSE);
+        assert_eq!(out, b);
+
+        // a == b: the mask is invisible, but `out` must still be overwritten either way
+        let mut out = [0xEEu8; 32];
+        conditional_copy_bytes(&a, &a, &mut out, Condition::<u32>::TRUE);
+        assert_eq!(out, a);
+        let mut out = [0xEEu8; 32];
+        conditional_copy_bytes(&a, &a, &mut out, Condition::<u32>::FALSE);
+        assert_eq!(out, a);
+
+        // the empty array must be a no-op
+        let mut empty = [0u8; 0];
+        conditional_copy_bytes(&[], &[], &mut empty, Condition::<u32>::TRUE);
+        conditional_copy_bytes(&[], &[], &mut empty, Condition::<u32>::FALSE);
 
         // test wrong-sized array
         // in fact: this won't even compile, so there's nothing to test
