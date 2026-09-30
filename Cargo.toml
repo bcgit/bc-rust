@@ -10,18 +10,18 @@ version = "0.1.3"
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
 bouncycastle-base64 = { path = "./crypto/base64" }
-bouncycastle-core = { path = "crypto/core" }
-bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
+bouncycastle-core = { path = "crypto/core", default-features = false }
+bouncycastle-core-test-framework = { path = "./crypto/core-test-framework", default-features = false }
 bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
-bouncycastle-hkdf = { path = "./crypto/hkdf" }
-bouncycastle-hmac = { path = "./crypto/hmac" }
+bouncycastle-hkdf = { path = "./crypto/hkdf", default-features = false }
+bouncycastle-hmac = { path = "./crypto/hmac", default-features = false }
 bouncycastle-mlkem = { path = "./crypto/mlkem" }
 bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory" }
 bouncycastle-mldsa = { path = "./crypto/mldsa" }
 bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory" }
-bouncycastle-rng = { path = "./crypto/rng" }
-bouncycastle-sha2 = { path = "./crypto/sha2" }
+bouncycastle-rng = { path = "./crypto/rng", default-features = false }
+bouncycastle-sha2 = { path = "./crypto/sha2", default-features = false }
 bouncycastle-sha3 = { path = "./crypto/sha3" }
 bouncycastle-utils = { path = "./crypto/utils" }
 
@@ -42,15 +42,15 @@ edition.workspace = true
 
 [dependencies]
 bouncycastle-base64.workspace = true
-bouncycastle-core.workspace = true
+bouncycastle-core = { workspace = true, default-features = true }
 bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
-bouncycastle-hkdf.workspace = true
-bouncycastle-hmac.workspace = true
+bouncycastle-hkdf = { workspace = true, default-features = true }
+bouncycastle-hmac = { workspace = true, default-features = true }
 bouncycastle-mldsa.workspace = true
 bouncycastle-mldsa-lowmemory.workspace = true
 bouncycastle-mlkem.workspace = true
 bouncycastle-mlkem-lowmemory.workspace = true
-bouncycastle-rng.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-rng = { workspace = true, default-features = true }
+bouncycastle-sha2 = { workspace = true, default-features = true }
 bouncycastle-sha3.workspace = true

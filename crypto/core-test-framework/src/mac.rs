@@ -27,9 +27,12 @@ impl TestFrameworkMAC {
         input: &[u8],
         expected_output: &[u8],
     ) {
-        // Test ::mac()
-        let out = M::new_allow_weak_key(key).unwrap().mac(input);
-        assert_eq!(out, expected_output);
+        #[cfg(feature = "std")]
+        {
+            // Test ::mac()
+            let out = M::new_allow_weak_key(key).unwrap().mac(input);
+            assert_eq!(out, expected_output);
+        }
 
         // Test ::mac_out
         let mut out = vec![0u8; expected_output.len()];
@@ -53,16 +56,54 @@ impl TestFrameworkMAC {
         // Test ::verify()
         assert!(M::new_allow_weak_key(key).unwrap().verify(input, expected_output));
 
-        // Test .new(), .do_update(), .do_mac_final()
+        #[cfg(feature = "std")]
+        {
+            // Test .do_update(), .do_final()
+            // At the same time, test .output_len()
+            let mut mac = M::new_allow_weak_key(key).unwrap();
+            let output_len = mac.output_len();
+            mac.do_update(input);
+            let out = mac.do_final();
+            assert_eq!(out, expected_output);
+
+            // Test .output_len()
+            assert_eq!(output_len, out.len());
+        }
+
+        // Tetst .do_update(), .do_final_out()
         // At the same time, test .output_len()
+        let mut out = vec![0u8; expected_output.len()];
         let mut mac = M::new_allow_weak_key(key).unwrap();
         let output_len = mac.output_len();
         mac.do_update(input);
-        let out = mac.do_final();
+        _ = mac.do_final_out(&mut out);
         assert_eq!(out, expected_output);
 
         // Test .output_len()
         assert_eq!(output_len, out.len());
+
+        // Test ::mac_array() and ::do_final_array() (no_std alternatives).
+        // N = 64 is >= every supported MAC output length (and >= the FIPS minimum), so the tag lands
+        // in the first output_len bytes with a zero-padded tail.
+        let arr: [u8; 64] = M::new_allow_weak_key(key).unwrap().mac_array(input).unwrap();
+        assert_eq!(&arr[..expected_output.len()], expected_output, "mac_array digest mismatch");
+        assert!(
+            arr[expected_output.len()..].iter().all(|&b| b == 0),
+            "mac_array tail not zero-padded"
+        );
+
+        let mut mac = M::new_allow_weak_key(key).unwrap();
+        mac.do_update(input);
+        let arr: [u8; 64] = mac.do_final_array().unwrap();
+        assert_eq!(
+            &arr[..expected_output.len()],
+            expected_output,
+            "do_final_array digest mismatch"
+        );
+        assert!(
+            arr[expected_output.len()..].iter().all(|&b| b == 0),
+            "do_final_array tail not zero-padded"
+        );
 
         // Test .init(), .do_update(), .do_mac_final_out()
         let mut mac = M::new_allow_weak_key(key).unwrap();
@@ -132,7 +173,8 @@ impl TestFrameworkMAC {
         );
         // complains at first
         match M::new(&low_security_key) {
-            Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
+            Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */
+            }
             _ => {
                 panic!(
                     "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"
@@ -142,6 +184,7 @@ impl TestFrameworkMAC {
         // but fine if you do it with .allow_weak_keys()
         let mut hmac = M::new_allow_weak_key(&low_security_key).unwrap();
         hmac.do_update(b"Hi There");
-        hmac.do_final();
+        let mut out = vec![0u8; hmac.output_len()];
+        _ = hmac.do_final_out(&mut out);
     }
 }
