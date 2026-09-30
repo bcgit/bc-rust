@@ -1,6 +1,6 @@
 //! Shared plumbing for the stream-cipher-mode subcommands: `aes{128,192,256}-{cfb,cfb8,ctr}`.
 //!
-//! The stream-cipher counterpart of [`crate::block_mode_cmd`], and deliberately parallel to it:
+//! The stream-cipher counterpart of [`crate::helpers::block_mode_helpers`], and deliberately parallel to it:
 //! same key loading (reused directly from there), same IV convention, same `-x` hex output, same
 //! 1 KiB streaming chunk. Everything here is mode-independent and generic over
 //! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`], so `aes_cfb_cmd`, `aes_cfb8_cmd` and
@@ -29,7 +29,7 @@
 //! stdin is read as binary so the commands compose in a pipeline. `-x` renders the *output* as hex.
 //! For hex input, pipe through `hex-decode` first.
 
-use crate::block_mode_cmd::{BlockModeAction, CHUNK_LEN};
+use crate::helpers::block_mode_helpers::{BlockModeAction, CHUNK_LEN};
 use crate::helpers::write_bytes_or_hex;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};

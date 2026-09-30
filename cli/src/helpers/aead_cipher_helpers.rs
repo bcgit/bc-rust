@@ -1,6 +1,6 @@
 //! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm`.
 //!
-//! Parallel to [`crate::stream_mode_cmd`], but for [`bouncycastle::modes::Gcm`] rather than a
+//! Parallel to [`crate::helpers::stream_mode_helpers`], but for [`bouncycastle::modes::Gcm`] rather than a
 //! [`StreamCipherEncryptor`](bouncycastle::core::traits::StreamCipherEncryptor) mode: GCM carries
 //! additional authenticated data and a tag, neither of which that trait has room for, so this
 //! module drives it through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, which add
@@ -54,7 +54,7 @@ const CHUNK_LEN: usize = 1024;
 
 /// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; see the
 /// module docs for why not hex). Empty if neither is given: AAD is optional, unlike the key.
-pub(crate) fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
+pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
     if let Some(path) = aad_file {
         read_from_file_raw(path)
     } else if let Some(hex_str) = aad {
@@ -69,7 +69,7 @@ pub(crate) fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u
 
 /// Encrypts stdin to stdout under GCM: writes the generated nonce, then the ciphertext as it
 /// streams, then the tag.
-pub(crate) fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
+pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     aad: &[u8],
     output_hex: bool,
@@ -118,7 +118,7 @@ pub(crate) fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 /// Decrypts stdin to stdout under GCM: reads the 12-byte nonce, streams the rest through the
 /// inline decryptor, and checks the tag on `do_final`. See the module docs for why plaintext may
 /// already be written to stdout by the time a tag failure is reported.
-pub(crate) fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
+pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     aad: &[u8],
     output_hex: bool,
