@@ -29,6 +29,7 @@
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
+//! * [AES_KW and AES_KWP](crate::kw)
 //!
 //! # Design
 //!
@@ -184,6 +185,7 @@ pub mod gcm;
 pub mod gmac;
 pub mod hazmat;
 pub mod key;
+pub mod kw;
 mod round;
 mod sbox;
 mod schedule;
@@ -273,3 +275,4 @@ pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
 pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
 pub use key::{AES128Key, AES192Key, AES256Key, AESKey};
+pub use kw::{AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256};
