@@ -5,6 +5,9 @@
 * New algorithms added to crypto/ :
     * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java.
     * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_GCM.
+    * AES Key Wrap -- AES_KW and AES_KWP (NIST SP 800-38F; RFC 3394 / RFC 5649), implemented in crypto/modes over any
+      128-bit block permutation, with the `KeyWrapper` / `KeyUnwrapper` core traits and `aes*-kw` / `aes*-kwp` CLI
+      commands.
     * ASCON -- Ascon-AEAD128, Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 (NIST SP 800-232).
 
 ## Minor features / bug fixes

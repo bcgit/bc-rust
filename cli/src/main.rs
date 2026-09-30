@@ -5,6 +5,7 @@ mod aes_cfb_cmd;
 mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
+mod aes_kw_cmd;
 mod ascon_cmd;
 mod encoders_cmd;
 mod helpers;
@@ -1324,6 +1325,157 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-128 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `wrap` or `unwrap` stdin to stdout.
+    ///
+    /// Wraps a key -- or any data that is a whole number of 8-byte blocks, at least 16 bytes --
+    /// under the given key-encryption key (KEK). The output is 8 bytes longer than the input.
+    /// There is NO IV: wrapping is deterministic, and nothing is prepended on `wrap` or consumed
+    /// on `unwrap`.
+    ///
+    /// `unwrap` is authenticated. A ciphertext that was tampered with, wrapped under a different
+    /// KEK, or produced by aes*-kwp makes the command exit non-zero with nothing written. Input to
+    /// `unwrap` must be a whole number of 8-byte blocks, at least 24 bytes.
+    ///
+    /// This command is not streaming: all of stdin is read before anything is written, because
+    /// the algorithm makes six passes over the whole input. For data that is not a multiple of
+    /// 8 bytes, use aes128-kwp.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_KW {
+        action: aes_kw_cmd::KeyWrapAction,
+
+        /// The 16-byte AES key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key-encryption key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `wrap` or `unwrap` stdin to stdout.
+    ///
+    /// See `aes128-kw` for the input-length rules, the absence of an IV and the non-streaming
+    /// note; only the key length differs.
+    AES192_KW {
+        action: aes_kw_cmd::KeyWrapAction,
+
+        /// The 24-byte AES key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key-encryption key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `wrap` or `unwrap` stdin to stdout.
+    ///
+    /// See `aes128-kw` for the input-length rules, the absence of an IV and the non-streaming
+    /// note; only the key length differs.
+    AES256_KW {
+        action: aes_kw_cmd::KeyWrapAction,
+
+        /// The 32-byte AES key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key-encryption key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `wrap` or `unwrap`
+    /// stdin to stdout.
+    ///
+    /// As aes128-kw, but for data of any length from 1 byte up: the input is padded to a whole
+    /// number of 8-byte blocks and the output is that length plus 8. Its ciphertexts are not
+    /// interchangeable with aes128-kw's. Input to `unwrap` must be a whole number of 8-byte
+    /// blocks, at least 16 bytes.
+    ///
+    /// See `aes128-kw` for the absence of an IV, the authenticated `unwrap` and the non-streaming
+    /// note.
+    AES128_KWP {
+        action: aes_kw_cmd::KeyWrapAction,
+
+        /// The 16-byte AES key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key-encryption key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `wrap` or `unwrap`
+    /// stdin to stdout.
+    ///
+    /// See `aes128-kwp`; only the key length differs.
+    AES192_KWP {
+        action: aes_kw_cmd::KeyWrapAction,
+
+        /// The 24-byte AES key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key-encryption key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `wrap` or `unwrap`
+    /// stdin to stdout.
+    ///
+    /// See `aes128-kwp`; only the key length differs.
+    AES256_KWP {
+        action: aes_kw_cmd::KeyWrapAction,
+
+        /// The 32-byte AES key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key-encryption key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -1785,6 +1937,24 @@ fn run() {
         }
         Some(Subcommands::AES256_ECB { action, key, key_file, x }) => {
             aes_ecb_cmd::aes256_ecb_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES128_KW { action, key, key_file, x }) => {
+            aes_kw_cmd::aes128_kw_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES192_KW { action, key, key_file, x }) => {
+            aes_kw_cmd::aes192_kw_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES256_KW { action, key, key_file, x }) => {
+            aes_kw_cmd::aes256_kw_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES128_KWP { action, key, key_file, x }) => {
+            aes_kw_cmd::aes128_kwp_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES192_KWP { action, key, key_file, x }) => {
+            aes_kw_cmd::aes192_kwp_cmd(action, key, key_file, *x);
+        }
+        Some(Subcommands::AES256_KWP { action, key, key_file, x }) => {
+            aes_kw_cmd::aes256_kwp_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);

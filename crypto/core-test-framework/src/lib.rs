@@ -19,6 +19,7 @@ pub mod hash;
 pub mod kdf;
 pub mod kem;
 pub mod key_stream;
+pub mod key_wrap;
 pub mod mac;
 pub mod signature;
 pub mod suspendable_state;
