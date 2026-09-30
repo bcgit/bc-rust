@@ -178,6 +178,10 @@ pub enum SymmetricCipherError {
     /// The data is not a whole number of blocks, for a block cipher operation that takes only
     /// whole blocks: a misaligned block-cipher ciphertext is malformed. Nothing was processed.
     DataNotBlockAligned,
+    /// The length of the input is outside the range of lengths the algorithm is defined on, for
+    /// example a key-wrap plaintext or ciphertext that is too short. Only returned by APIs that
+    /// take variable-length input; lengths fixed at compile time are validated at compile time.
+    InvalidInputLength(&'static str),
     ///
     KeyMaterialError(KeyMaterialError),
     ///
