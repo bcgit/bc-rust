@@ -3,7 +3,7 @@
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait.
 //!
-//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES128Internal` and friends,
+//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `ToyBlockCipher` and friends,
 //! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
 //! one block.
 //!
@@ -46,8 +46,17 @@
 //!
 //! # Usage Examples
 //!
-//! These usage examples are for implementing a concrete cipher on top of a mode, and use AES-128 as
-//! the example. They are intended for library developers, not end-users.
+//! These usage examples are for implementing a concrete cipher on top of a mode. They are intended
+//! for library developers, not end-users.
+//!
+//! They are written over `bouncycastle_core_test_framework::ToyBlockCipher`, a deliberately
+//! insecure stand-in with AES-128's key and block sizes that the test-framework crate exports for
+//! exactly this purpose, so that this crate's documentation does not depend on any real cipher
+//! crate (which would be a dependency cycle: the cipher crates depend on this one). Substitute
+//! any [`ElectronicCodeBook`] implementor, such as `bouncycastle_aes::aes_internal::AES128Internal`;
+//! the `bouncycastle-aes` crate's aliases carry runnable examples over the real thing.
+//!
+//! [`ElectronicCodeBook`]: bouncycastle_core::traits::ElectronicCodeBook
 //!
 //! ## Defining type aliases
 //!
@@ -59,28 +68,28 @@
 //! direction too, plus its nonce and tag lengths, and GCM takes the direction and its tag length:
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
 //!
 //! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
-//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
-//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
-//! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
+//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
-//! type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, 16, 12>;
+//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 //!
 //! // CCM takes the permutation, a direction, key length, and a block length like the rest,
-//! // plus the nonce length and the tag length -- both CCM-specific choices rather than AES params.
+//! // plus the nonce length and the tag length -- both CCM-specific choices rather than cipher params.
 //! // The nonce length caps the payload (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag
 //! // length is the forgery bound; 12 and 16 are the usual pair.
-//! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
+//! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
 //!
 //! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
 //! // parameter.
-//! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
+//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //! ```
 //!
 //! ## Encrypting and decrypting

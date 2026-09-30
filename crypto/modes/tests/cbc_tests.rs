@@ -2,7 +2,7 @@
 //!
 //! These check the properties of the *mode* -- chaining, call sequencing, the pair/remainder split,
 //! direction typing, SP 800-38A Appendix D error propagation -- independently of any real cipher.
-//! The known-answer tests against SP 800-38A Appendix F.2 are in `sp800_38a_tests.rs`.
+//! The known-answer tests against SP 800-38A Appendix F.2 are in the `aes` crate, `crypto/aes/tests/sp800_38a_cbc_tests.rs`.
 
 mod common;
 

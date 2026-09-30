@@ -25,12 +25,12 @@
 //! ciphertext has been altered.
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 //!
-//! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
+//! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -44,20 +44,20 @@
 //!
 //! // The spec's own layout (SP 800-38C Sec 6.1 step 8): `ciphertext || tag`.
 //! let mut ct_and_tag = vec![0u8; message.len() + 16];
-//! Aes128Ccm::<Encrypting>::encrypt_out(&key, &nonce, header, message, &mut ct_and_tag).expect("encryption");
+//! ToyCcm::<Encrypting>::encrypt_out(&key, &nonce, header, message, &mut ct_and_tag).expect("encryption");
 //!
 //! let mut recovered_plaintext = vec![0u8; message.len()];
-//! let n = Aes128Ccm::<Decrypting>::decrypt_out(&key, &nonce, header, &ct_and_tag, &mut recovered_plaintext).expect("decryption");
+//! let n = ToyCcm::<Decrypting>::decrypt_out(&key, &nonce, header, &ct_and_tag, &mut recovered_plaintext).expect("decryption");
 //! assert_eq!(&recovered_plaintext[..n], message);
 //!
 //! // If we tamper with any byte of the ciphertext, then this fails with a SymmetricCipherError::AEADTagCheckFailed
 //! let mut tampered = ct_and_tag.clone();
 //! tampered[0] ^= 1;
-//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt_out(&key, &nonce, header, &tampered, &mut recovered_plaintext).unwrap_err(),
+//! assert_eq!(ToyCcm::<Decrypting>::decrypt_out(&key, &nonce, header, &tampered, &mut recovered_plaintext).unwrap_err(),
 //!             SymmetricCipherError::AEADTagCheckFailed);
 //!
 //! // Same if we provide the correct ciphertext and tag, but change the authenticated data
-//! assert_eq!(Aes128Ccm::<Decrypting>::decrypt_out(&key, &nonce, b"other header", &ct_and_tag, &mut recovered_plaintext).unwrap_err(),
+//! assert_eq!(ToyCcm::<Decrypting>::decrypt_out(&key, &nonce, b"other header", &ct_and_tag, &mut recovered_plaintext).unwrap_err(),
 //!             SymmetricCipherError::AEADTagCheckFailed);
 //! ```
 //!
@@ -129,27 +129,27 @@ use crate::{Decrypting, Encrypting};
 /// A nonce length A.1 does not permit does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
+/// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
 /// // n = 6 is not in {7, ..., 13}: it would make q = 9, which A.1 does not allow.
-/// let _ = Ccm::<AES128Internal, Encrypting, 16, 16, 6, 16>::new(&key, &[0u8; 6], &[], 0);
+/// let _ = Ccm::<ToyBlockCipher, Encrypting, 16, 16, 6, 16>::new(&key, &[0u8; 6], &[], 0);
 /// ```
 ///
 /// Nor does an odd tag length:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
+/// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_modes::{Ccm, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
 /// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
-/// let _ = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
+/// let _ = Ccm::<ToyBlockCipher, Encrypting, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
 /// ```
 pub struct Ccm<
     P,
@@ -291,11 +291,11 @@ where
     /// AAD must be complete before any payload: A.2.3 puts the payload blocks after the AAD blocks.
     ///
     /// ```
-    /// use bouncycastle_aes::aes_internal::AES128Internal;
+    /// use bouncycastle_core_test_framework::ToyBlockCipher;
     /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
     /// use bouncycastle_modes::{Ccm, Encrypting};
     ///
-    /// type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
+    /// type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
     ///
     /// let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
     ///     .expect("a 16-byte symmetric cipher key");
@@ -305,7 +305,7 @@ where
     ///
     /// let aad_len = header.iter().map(|part| part.len()).sum();
     /// let mut ccm =
-    ///     Aes128Ccm::<Encrypting>::new_with_lengths(&key, &nonce, aad_len, message.len()).unwrap();
+    ///     ToyCcm::<Encrypting>::new_with_lengths(&key, &nonce, aad_len, message.len()).unwrap();
     /// for part in header {
     ///     ccm.do_update_aad(part).unwrap();
     /// }
@@ -314,7 +314,7 @@ where
     ///
     /// // The same as supplying the AAD whole.
     /// let mut whole = *b"attack at dawn";
-    /// let mut ccm = Aes128Ccm::<Encrypting>::new(&key, &nonce, b"version: 1; route: a->b", 14).unwrap();
+    /// let mut ccm = ToyCcm::<Encrypting>::new(&key, &nonce, b"version: 1; route: a->b", 14).unwrap();
     /// ccm.do_encrypt(&mut whole).unwrap();
     /// assert_eq!((message, tag), (whole, ccm.do_encrypt_final().unwrap()));
     /// ```
@@ -1155,42 +1155,42 @@ where
 /// itself is accepted:
 ///
 /// ```no_run
-/// use bouncycastle_aes::aes_internal::AES128Internal;
+/// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::{CCM_MAX_BUFFER_LEN, CcmEncryptor};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// type Largest = CcmEncryptor<
-///     AES128Internal, 16, 16, 12, 16, 64, CCM_MAX_BUFFER_LEN, { CCM_MAX_BUFFER_LEN + 16 }>;
+///     ToyBlockCipher, 16, 16, 12, 16, 64, CCM_MAX_BUFFER_LEN, { CCM_MAX_BUFFER_LEN + 16 }>;
 /// let _ = Largest::do_encrypt_init(&key);
 /// ```
 ///
 /// ...but one byte more does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
+/// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::{CCM_MAX_BUFFER_LEN, CcmEncryptor};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// type TooLarge = CcmEncryptor<
-///     AES128Internal, 16, 16, 12, 16, 64, { CCM_MAX_BUFFER_LEN + 1 }, { CCM_MAX_BUFFER_LEN + 17 }>;
+///     ToyBlockCipher, 16, 16, 12, 16, 64, { CCM_MAX_BUFFER_LEN + 1 }, { CCM_MAX_BUFFER_LEN + 17 }>;
 /// let _ = TooLarge::do_encrypt_init(&key);
 /// ```
 ///
 /// Nor does a `FINAL_LEN` that is not `DATA_LEN + TAG_LEN`:
 ///
 /// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
+/// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::CcmEncryptor;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// // DATA_LEN 256 with a 16-byte tag needs FINAL_LEN 272.
-/// type Inconsistent = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 64, 256, 256>;
+/// type Inconsistent = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 256, 256>;
 /// let _ = Inconsistent::do_encrypt_init(&key);
 /// ```
 pub struct CcmEncryptor<
@@ -1996,15 +1996,16 @@ mod tests {
     }
 
     /// CCM's keystream against the shared [`KeyStream`] conformance suite. A unit test rather than
-    /// an integration test because `CcmKeyStream` is crate-private. Over AES rather than the
-    /// identity, which ignores the key and so could not pass the key-policy checks.
+    /// an integration test because `CcmKeyStream` is crate-private. Over the framework's keyed
+    /// toy rather than the identity, which ignores the key and so could not pass the key-policy
+    /// checks.
     #[test]
     fn ccm_keystream_conforms_to_the_key_stream_framework() {
-        use bouncycastle_aes::aes_internal::AES128Internal;
+        use bouncycastle_core_test_framework::ToyBlockCipher;
         use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
         let framework = TestFrameworkKeyStream::new();
-        framework.test::<16, 7, 16, CcmKeyStream<AES128Internal, 16, 16, 7>>();
-        framework.test::<16, 13, 16, CcmKeyStream<AES128Internal, 16, 16, 13>>();
+        framework.test::<16, 7, 16, CcmKeyStream<ToyBlockCipher, 16, 16, 7>>();
+        framework.test::<16, 13, 16, CcmKeyStream<ToyBlockCipher, 16, 16, 13>>();
     }
 
     /// A.2.2's three AAD length encodings, at and around both boundaries.

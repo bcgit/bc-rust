@@ -10,7 +10,7 @@
 //! `src/schedule.rs`, where the stored schedule can be unpacked and compared directly.
 //!
 //! Known-answer coverage for AES-192 and AES-256, which Appendix B does not reach, is in
-//! `sp800_38a_tests.rs` and `bc-test-data.rs`.
+//! `sp800_38a_ecb_tests.rs` and `acvp_ecb_tests.rs`.
 //!
 //! All values here are transcribed from the published FIPS 197 (Update 1) PDF.
 

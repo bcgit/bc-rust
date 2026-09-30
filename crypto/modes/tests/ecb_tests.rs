@@ -4,8 +4,8 @@
 //! with nothing chained, that both directions batch through the pair and four-block paths, call
 //! sequencing, direction typing, the empty init data, SP 800-38A Appendix D error propagation, and
 //! the codebook property that makes ECB unsuitable for data -- independently of any real cipher. The
-//! known-answer tests against SP 800-38A Appendix F.1 are in `sp800_38a_ecb_tests.rs`, and the ACVP
-//! set is in `acvp_ecb_tests.rs`.
+//! known-answer tests against SP 800-38A Appendix F.1 are in the `aes` crate,
+//! `crypto/aes/tests/sp800_38a_ecb_tests.rs`, and the ACVP set in `acvp_ecb_tests.rs` beside it.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here.

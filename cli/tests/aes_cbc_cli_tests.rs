@@ -194,7 +194,7 @@ fn a_payload_larger_than_the_pipe_buffer_round_trips() {
 ///
 /// This is the direction that can be pinned exactly: `encrypt` picks its own IV, so it cannot be
 /// asked to reproduce a published ciphertext. `encrypt` is covered by the round-trip tests below
-/// and, at the library level, by `crypto/modes/tests/sp800_38a_tests.rs`.
+/// and, at the library level, by `crypto/aes/tests/sp800_38a_cbc_tests.rs`.
 #[test]
 fn decrypt_matches_sp800_38a_f2_vectors() {
     for (cmd, key, ct) in [

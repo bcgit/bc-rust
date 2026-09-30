@@ -3,7 +3,7 @@
 //! These are **not** cryptography. They exist so the structural properties of a mode -- chaining,
 //! sequencing, the pair/remainder split, direction typing -- can be tested without an AES
 //! dependency and without a real cipher's vectors getting in the way. The real known-answer tests
-//! are in `sp800_38a_tests.rs`.
+//! are in the `aes` crate's `tests/sp800_38a_*_tests.rs`.
 //!
 //! # Why not XOR
 //!

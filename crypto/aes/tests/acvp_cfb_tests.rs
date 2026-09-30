@@ -5,8 +5,8 @@
 //! matching the convention used by the ML-KEM, ML-DSA, `aes` and AES-CBC suites --
 //! `cargo test` must stay green for someone who has only cloned this repository.
 //!
-//! This is the CFB128 counterpart to `acvp_tests.rs` (AES-CBC) and to
-//! `crypto/aes/tests/acvp_tests.rs` (AES-ECB, the raw permutation). The `CFB128` file is
+//! This is the CFB128 counterpart to `acvp_cbc_tests.rs` (AES-CBC) and to
+//! `acvp_ecb_tests.rs` (AES-ECB, the raw permutation). The `CFB128` file is
 //! the one that matches [`Cfb`]; `ACVP-AES-CFB8` matches `Cfb8` and is read by
 //! `acvp_cfb8_tests.rs`. `ACVP-AES-CFB1` is the one segment size this crate does not implement,
 //! and is deliberately not read.

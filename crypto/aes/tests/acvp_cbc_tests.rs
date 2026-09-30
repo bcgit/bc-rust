@@ -5,7 +5,7 @@
 //! matching the convention used by the ML-KEM, ML-DSA and `aes` suites -- `cargo test`
 //! must stay green for someone who has only cloned this repository.
 //!
-//! These are the counterpart to `crypto/aes/tests/acvp_tests.rs`, which consumes the
+//! These are the counterpart to `acvp_ecb_tests.rs`, which consumes the
 //! `ACVP-AES-ECB` file to test the raw permutation. CBC is a mode, so its vectors belong here.
 //!
 //! # Joining the request and response files

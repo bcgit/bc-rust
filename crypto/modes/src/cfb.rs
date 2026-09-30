@@ -55,13 +55,13 @@
 //! as long as the plaintext:
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
 //!
-//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
-//! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
+//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -70,32 +70,32 @@
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (bytes_written, iv) = Aes128Cfb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (bytes_written, iv) = ToyCfb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
 //! // `data` now contains the ciphertext
 //!
-//! Aes128Cfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+//! ToyCfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
 //! Streaming works with chunks of any size:
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
 //! };
 //! use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
 //!
-//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
+//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
 //! let mut data = [0x5Au8; 40];
 //!
-//! let (mut encryptor, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&key).expect("init");
+//! let (mut encryptor, iv) = ToyCfb::<Encrypting>::do_encrypt_init(&key).expect("init");
 //!
 //! // Just to prove that this can handle arbitrary sizes, we'll feed in
 //! //  7 bytes, then 33: neither is a whole block.
@@ -106,7 +106,7 @@
 //! assert_eq!(bytes_written, 33);
 //!
 //! // Decrypting in a different chunking must also agree.
-//! let mut decryptor = Aes128Cfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
+//! let mut decryptor = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
 //! decryptor.do_decrypt(&mut data[..19]).expect("first chunk");
 //! decryptor.do_decrypt(&mut data[19..]).expect("the rest");
 //! assert_eq!(data, [0x5Au8; 40]);

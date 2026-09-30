@@ -4,7 +4,7 @@
 //! incrementing function, the counter limit and its error, call sequencing at arbitrary byte
 //! boundaries, the batch paths in both directions, direction typing, and the "forward cipher
 //! function only" rule -- independently of any real cipher. The known-answer tests against the NIST
-//! ACVP `ACVP-AES-CTR` set are in `acvp_ctr_tests.rs`.
+//! ACVP `ACVP-AES-CTR` set are in the `aes` crate, `crypto/aes/tests/acvp_ctr_tests.rs`.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here, so it

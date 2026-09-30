@@ -13,22 +13,22 @@
 //! The codebook property that makes it unsuitable for data is visible in the ciphertext:
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 //!
-//! type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
+//! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
 //! let mut data = [0x5Au8; 32]; // two equal blocks
 //!
-//! let (bytes_written, no_iv): (usize, [u8; 0]) = Aes128Ecb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (bytes_written, no_iv): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
 //! assert_eq!(no_iv.len(), 0, "EBC mode returns the IV as an empty array");
 //! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
 //!
-//! Aes128Ecb::<Decrypting>::decrypt_in_place(&key, &[], &mut data).expect("decryption");
+//! ToyEcb::<Decrypting>::decrypt_in_place(&key, &[], &mut data).expect("decryption");
 //! assert_eq!(data, [0x5Au8; 32]);
 //! ```
 //!

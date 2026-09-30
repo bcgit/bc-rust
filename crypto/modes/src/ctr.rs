@@ -70,14 +70,14 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_aes::aes_internal::AES128Internal;
+/// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
-/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
+/// let _ = Ctr::<ToyBlockCipher, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
+/// let _ = Ctr::<ToyBlockCipher, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
 /// ```
 pub type Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
     StreamCipher<
@@ -305,16 +305,16 @@ mod tests {
 
     use super::*;
     use crate::Encrypting;
-    use bouncycastle_aes::aes_internal::AES128Internal;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherEncryptor};
+    use bouncycastle_core_test_framework::ToyBlockCipher;
 
-    type ToyKeyStream = CtrKeyStream<AES128Internal, 16, 16, 12>;
-    type ToyCtr = Ctr<AES128Internal, Encrypting, 16, 16, 12>;
+    type ToyKeyStream = CtrKeyStream<ToyBlockCipher, 16, 16, 12>;
+    type ToyCtr = Ctr<ToyBlockCipher, Encrypting, 16, 16, 12>;
 
     fn key() -> KeyMaterial<16> {
         KeyMaterial::<16>::from_bytes_as_type(&[0x5Au8; 16], KeyType::SymmetricCipherKey)
-            .expect("a valid AES-128 key")
+            .expect("a valid 16-byte key")
     }
 
     /// `start_at(.., 2)` must produce the same keystream as `start` after its first two blocks
@@ -325,14 +325,14 @@ mod tests {
         let nonce = [0x11u8; 12];
 
         let mut from_start = ToyCtr::from_keystream(ToyKeyStream::start(
-            AES128Internal::new(&key()).unwrap(),
+            ToyBlockCipher::new(&key()).unwrap(),
             nonce,
         ));
         let mut discarded = [0u8; 32];
         from_start.do_encrypt(&mut discarded).unwrap();
 
         let mut from_start_at = ToyCtr::from_keystream(ToyKeyStream::start_at(
-            AES128Internal::new(&key()).unwrap(),
+            ToyBlockCipher::new(&key()).unwrap(),
             nonce,
             2,
         ));
@@ -349,7 +349,7 @@ mod tests {
     /// 128-bit blocks) that GCM relies on `Ctr`'s existing "counter exhausted" error to enforce.
     #[test]
     fn start_at_capacity_is_block_limit_minus_the_starting_counter() {
-        let ks = ToyKeyStream::start_at(AES128Internal::new(&key()).unwrap(), [0u8; 12], 2);
+        let ks = ToyKeyStream::start_at(ToyBlockCipher::new(&key()).unwrap(), [0u8; 12], 2);
         assert_eq!(ks.remaining_blocks(), ToyKeyStream::BLOCK_LIMIT - 2);
     }
 }
