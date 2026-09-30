@@ -72,9 +72,9 @@ pub fn check_valid(
         }
         let mut ciphertext = vec![0xa5; msg.len()];
         let mut offset = 0;
-        enc.do_update_out(&[], &mut []).unwrap();
+        enc.do_encrypt_out(&[], &mut []).unwrap();
         for bytes in msg.chunks(chunk) {
-            offset += enc.do_update_out(bytes, &mut ciphertext[offset..]).unwrap();
+            offset += enc.do_encrypt_out(bytes, &mut ciphertext[offset..]).unwrap();
         }
         let mut last = [0xa5; 16];
         let (n, actual_tag) = enc.do_final_out_detached(&mut last).unwrap();
@@ -93,8 +93,8 @@ pub fn check_valid(
             let mut written = 0;
             let input = if detached { ct } else { &inline };
             for bytes in input.chunks(chunk) {
-                let expected = dec.update_out_len(bytes.len());
-                let n = dec.do_update_out(bytes, &mut recovered[written..]).unwrap();
+                let expected = dec.do_decrypt_out_len(bytes.len());
+                let n = dec.do_decrypt_out(bytes, &mut recovered[written..]).unwrap();
                 assert_eq!(n, expected);
                 written += n;
             }

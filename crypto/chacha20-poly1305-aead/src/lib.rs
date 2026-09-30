@@ -189,11 +189,11 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305E
         Ok((Self::new_with_nonce(key, &nonce)?, nonce))
     }
 
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
 
-    fn do_update_out(
+    fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -254,16 +254,16 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20Poly1305D
         Ok(Self { state: State::new(key, nonce)?, held: [0u8; TAG_LEN], held_len: 0 })
     }
 
-    fn update_out_len(&self, input_len: usize) -> usize {
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len.saturating_sub(TAG_LEN - self.held_len)
     }
 
-    fn do_update_out(
+    fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        let release = self.update_out_len(ciphertext.len());
+        let release = self.do_decrypt_out_len(ciphertext.len());
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }

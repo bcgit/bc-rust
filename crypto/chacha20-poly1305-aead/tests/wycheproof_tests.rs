@@ -67,7 +67,7 @@ fn wycheproof_chacha20_poly1305() {
                 // The detached final-output buffer is also erased on authentication failure.
                 let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
                 dec.do_update_aad(&aad).unwrap();
-                dec.do_update_out(&ct, &mut out).unwrap();
+                dec.do_decrypt_out(&ct, &mut out).unwrap();
                 let mut last = [0xa5; 16];
                 assert_eq!(
                     dec.do_final_out_detached(&tag, &mut last),

@@ -1,7 +1,7 @@
 //! IETF ChaCha20, as specified in [RFC 8439](https://www.rfc-editor.org/rfc/rfc8439).
 //!
 //! [`ChaCha20Encryptor`] and [`ChaCha20Decryptor`] implement the core stream-cipher traits
-//! (and their blanket symmetric-cipher adapters). Generated nonces start the counter at zero.
+//! and their symmetric-cipher supertraits. Generated nonces start the counter at zero.
 //! [`ChaCha20::new`] accepts an explicit nonce and counter for protocols and test vectors.
 //! Never reuse a nonce under the same key, or overlap counter ranges for that key/nonce.
 //! This cipher provides no authentication; use ChaCha20-Poly1305 for authenticated encryption.
@@ -12,8 +12,8 @@
 //! use bouncycastle_core::{key_material::{KeyMaterial, KeyType}, traits::{StreamCipherEncryptor, StreamCipherDecryptor}};
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 //! let mut message = *b"message";
-//! let (_, nonce) = ChaCha20Encryptor::encrypt(&key, &mut message).unwrap();
-//! ChaCha20Decryptor::decrypt(&key, &nonce, &mut message).unwrap();
+//! let (_, nonce) = ChaCha20Encryptor::encrypt_in_place(&key, &mut message).unwrap();
+//! ChaCha20Decryptor::decrypt_in_place(&key, &nonce, &mut message).unwrap();
 //! assert_eq!(&message, b"message");
 //! ```
 
@@ -23,7 +23,11 @@
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::stream_cipher::{stream_do_final, stream_update_out};
+use bouncycastle_core::traits::{
+    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::secret::Secret;
 
@@ -172,7 +176,7 @@ impl Algorithm for ChaCha20Decryptor {
     const MAX_SECURITY_STRENGTH: SecurityStrength = ChaCha20::MAX_SECURITY_STRENGTH;
 }
 
-impl StreamCipherEncryptor<KEY_LEN, NONCE_LEN> for ChaCha20Encryptor {
+impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, 0> for ChaCha20Encryptor {
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
@@ -188,12 +192,34 @@ impl StreamCipherEncryptor<KEY_LEN, NONCE_LEN> for ChaCha20Encryptor {
         Ok((Self(ChaCha20::new(key, &nonce, 0)?), nonce))
     }
 
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    fn do_encrypt_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt(data))
+    }
+
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        plaintext_len
+    }
+}
+
+impl StreamCipherEncryptor<KEY_LEN, NONCE_LEN> for ChaCha20Encryptor {
     fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.0.apply_keystream(data)
     }
 }
 
-impl StreamCipherDecryptor<KEY_LEN, NONCE_LEN> for ChaCha20Decryptor {
+impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, 0> for ChaCha20Decryptor {
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -201,6 +227,28 @@ impl StreamCipherDecryptor<KEY_LEN, NONCE_LEN> for ChaCha20Decryptor {
         Ok(Self(ChaCha20::new(key, nonce, 0)?))
     }
 
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
+        input_len
+    }
+
+    fn do_decrypt_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt(data))
+    }
+
+    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+        stream_do_final()
+    }
+
+    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+        ciphertext_len
+    }
+}
+
+impl StreamCipherDecryptor<KEY_LEN, NONCE_LEN> for ChaCha20Decryptor {
     fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.0.apply_keystream(data)
     }
