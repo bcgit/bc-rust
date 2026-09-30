@@ -1,7 +1,7 @@
 //! Camellia-CTR encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the cipher wiring lives here: the nonce convention, key loading and stdin framing are in
-//! [`crate::stream_mode_cmd`] (and [`crate::block_mode_cmd`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
 //! `aes*-ctr` commands. See those modules for the command-line contract.
 //!
 //! `camellia128-ctr` / `camellia192-ctr` / `camellia256-ctr` are the same command as `aes*-ctr` over
@@ -25,8 +25,8 @@
 //! DRBG and there is no way to supply one. Do not decrypt data you have not authenticated
 //! separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
-use crate::stream_mode_cmd::run_stream_mode;
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::camellia::{CTR_NONCE_LEN, Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;

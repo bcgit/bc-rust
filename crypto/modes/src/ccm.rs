@@ -79,7 +79,7 @@
 //! The AAD can be processed in batches the same way, if its length is declared up-front too; see
 //! [`Ccm::new_with_lengths`].
 //!
-//! # Security considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! **The nonce must never repeat under one key.**
 //! Sec 5.3: "any two distinct data pairs to be
@@ -690,7 +690,7 @@ where
 {
     /// Decrypts `data` in place and authenticates the recovered plaintext.
     ///
-    /// The mirror of [`Self::do_encrypt_update`] with the two steps swapped: Sec 6.2 recovers `P` in
+    /// The mirror of [`Self::do_encrypt`] with the two steps swapped: Sec 6.2 recovers `P` in
     /// step 5 and only then formats `(N, A, P)` in step 7, so the MAC is fed the plaintext here too,
     /// never the ciphertext.
     ///
@@ -1354,7 +1354,7 @@ where
         0
     }
 
-    /// Buffers `plaintext` and writes nothing, per [`Self::do_decrypt_out_len`]. `ciphertext` is
+    /// Buffers `plaintext` and writes nothing, per [`CcmDecryptor::do_decrypt_out_len`]. `ciphertext` is
     /// untouched and may be empty. An empty `plaintext` is a no-op and leaves the AAD phase open.
     ///
     /// # Errors

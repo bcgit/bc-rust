@@ -1,7 +1,7 @@
 //! Camellia-CBC encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the cipher wiring lives here: the IV convention, key loading, stdin framing and
-//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the `aes*-cbc`,
+//! block-alignment enforcement are all in [`crate::helpers::block_mode_helpers`], shared with the `aes*-cbc`,
 //! `aes*-cfb` and `aes*-ecb` commands. See that module for the command-line contract.
 //!
 //! `camellia128-cbc` / `camellia192-cbc` / `camellia256-cbc` are the same command as `aes*-cbc` over
@@ -10,7 +10,9 @@
 //! (NIST SP 800-38A Sec 6.2) provides confidentiality only: neither the ciphertext nor the IV is
 //! authenticated. Do not decrypt data you have not authenticated separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use crate::helpers::block_mode_helpers::{
+    BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+};
 use bouncycastle::camellia::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;

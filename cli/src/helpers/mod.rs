@@ -9,6 +9,10 @@ use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
 
+pub mod aead_cipher_helpers;
+pub mod block_mode_helpers;
+pub mod stream_mode_helpers;
+
 /// Reads a file's bytes exactly as they are, with no hex-or-raw guessing.
 ///
 /// Use this where a misread would silently change the *value* the caller asked for rather than

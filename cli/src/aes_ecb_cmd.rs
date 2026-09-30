@@ -1,7 +1,7 @@
 //! AES-ECB encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: key loading, stdin framing and block-alignment enforcement are
-//! all in [`crate::block_mode_cmd`], shared with the `aes*-cbc` and `aes*-cfb` commands. See that
+//! all in [`crate::helpers::block_mode_helpers`], shared with the `aes*-cbc` and `aes*-cfb` commands. See that
 //! module for the command-line contract. ECB has no IV (`INIT_DATA_LEN = 0`), so unlike those
 //! commands nothing is prepended to the output or consumed from the input: the ciphertext is exactly
 //! as long as the plaintext.
@@ -15,7 +15,9 @@
 //! exist for interoperability with systems that use ECB and for driving test vectors; for data, use
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use crate::helpers::block_mode_helpers::{
+    BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+};
 use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
