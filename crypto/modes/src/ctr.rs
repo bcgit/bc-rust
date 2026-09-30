@@ -1,84 +1,15 @@
-//! The Counter mode of operation (NIST SP 800-38A Sec 6.5).
+//! The Counter mode of operation (NIST SP 800-38A §6.5).
 //!
-//! # The specification
-//!
-//! Sec 6.5 defines CTR against a sequence of counter blocks `T1, T2, ... Tn`. Quoting the
-//! equations verbatim:
-//!
-//! ```text
-//! CTR Encryption:  Oj = CIPH_K(Tj)        for j = 1, 2 ... n;
-//!                  Cj = Pj XOR Oj         for j = 1, 2 ... n-1;
-//!                  C*_n = P*_n XOR MSB_u(On).
-//!
-//! CTR Decryption:  Oj = CIPH_K(Tj)        for j = 1, 2 ... n;
-//!                  Pj = Cj XOR Oj         for j = 1, 2 ... n-1;
-//!                  P*_n = C*_n XOR MSB_u(On).
-//! ```
-//!
-//! The cipher never touches the data: it is applied to the counter blocks alone, and the output
-//! blocks are XORed with the plaintext. The last block may be partial, and Sec 6.5 says what to do
-//! with it -- "the most significant u bits of the last output block are used for the exclusive-OR
-//! operation; the remaining b-u bits of the last output block are discarded" -- so unlike CBC there
-//! is no alignment requirement anywhere in the mode, and the keystream `O1, O2, ...` does not depend
-//! on the data at all. So the mode is a [`KeyStream`], [`CtrKeyStream`], and [`Ctr`] is that
-//! keystream wrapped in [`StreamCipher`], which implements [`StreamCipherEncryptor`] /
-//! [`StreamCipherDecryptor`] over it.
-//!
-//! **Encryption and decryption are the same operation.** Both compute `Oj = CIPH_K(Tj)` and XOR;
-//! only the name of the input changes. The two directions are still separate types here, for the
-//! same policy reason as in the other modes, and they share one implementation.
-//!
-//! # Where the counter comes from: the nonce is the init data
-//!
-//! Sec 6.5 requires that "each block in the sequence is different from every other block", and
-//! that this holds "across all of the messages that are encrypted under the given key". Appendix
-//! B.2 gives the construction this type uses, its second approach:
-//!
-//! > The leading b/2 bits (rounding up, if b is odd) of each counter block would be the message
-//! > nonce, and the standard incrementing function would be applied to the remaining m bits to
-//! > provide an index to the counter blocks for the message. Thus, if N is the message nonce for a
-//! > given message, then the jth counter block is given by `Tj = N | [j]m`.
-//!
-//! So a counter block is a **nonce followed by a counter**, and this type splits the block by the
-//! length of its init data: the init data is the nonce, and whatever is left of the block is the
-//! counter.
-//!
-//! ```text
-//! INIT_DATA_LEN bytes of nonce | CTR_LEN bytes of counter     (CTR_LEN = BLOCK_LEN - INIT_DATA_LEN)
-//! ```
-//!
-//! For AES that means a 12-byte nonce gives a 4-byte counter, a 13-byte nonce a 3-byte counter, and
-//! so on. `CTR_LEN` is capped at **4 bytes** and must be at least 1, both checked at compile time,
-//! so for a 16-byte block `INIT_DATA_LEN` is 12, 13, 14 or 15. A longer counter is not useful here:
-//! it would raise a per-message limit that is already far beyond any single message, at the cost of
-//! nonce bits, which are the scarcer resource.
-//!
-//! ## The counter starts at zero, not at one
-//!
-//! B.2's formula is `Tj = N | [j]m` **for j = 1...n**, so read literally its first counter block is
-//! `N | 1`. This type instead starts at 0, i.e. `Tj = N | [j - 1]m`, and the choice is deliberate.
-//!
-//! It is permitted. The normative requirement is Sec 6.5's -- "each block in the sequence is
-//! different from every other block" -- which both indexings satisfy; B.2 is presented as one of
-//! "Two examples of approaches", and Appendix B closes by saying "This recommendation allows other
-//! methods and approaches for achieving the uniqueness property".
-//!
-//! It is also what the test vectors assume. NIST's ACVP `ACVP-AES-CTR` set gives each case a full
-//! initial counter block, and of its 2138 functional cases **1853 end in four zero bytes** and
-//! **none end in `00000001`**. Those 1853 are exactly a 12-byte nonce with the counter at zero, so
-//! starting at zero makes them directly usable as known-answer tests -- see `acvp_ctr_tests.rs` --
-//! and starting at one would leave this mode with no official vector coverage at all. The same
-//! choice is what makes a message here identical to one from an implementation handed
-//! `nonce || 00000000` as a whole-block IV, which is how CTR is usually driven in practice.
-//!
-//! One consequence: the counter takes `2^m` values rather than B.2's `n < 2^m`, so a message may be
-//! a full `2^m` blocks.
+//! CTR mode (SP 800-38A Sec 6.5) applies the forward cipher to a sequence of counter blocks T1, T2, …, Tn
+//! and XORs the resulting output blocks with the plaintext, so encryption and decryption are the same
+//! operation, every block can be computed in parallel or ahead of time, and the last block may be
+//! partial with no padding. This makes it a stream cipher.
 //!
 //! # The counter is finite, and running out is an error
 //!
 //! A `CTR_LEN`-byte counter has `2^(8 * CTR_LEN)` distinct values, so a message can be at most
 //! that many blocks: 2^32 blocks (64 GiB) for a 4-byte counter, down to 256 blocks (4 KiB) for a
-//! 1-byte one. Appendix B.1 is explicit that this is the bound -- counter blocks "satisfy the
+//! 1-byte one. SP 800-38A Appendix B.1 is explicit that this is the bound -- counter blocks "satisfy the
 //! uniqueness requirement within the given message provided that `n <= 2^m`" -- and past it the
 //! counter would repeat, which for a keystream mode means reusing keystream: the two-time-pad
 //! failure, within a single message.
@@ -86,29 +17,29 @@
 //! So [`Ctr`] **refuses** rather than wraps. [`CtrKeyStream`] reports how many counter values are
 //! left, and a call that would need more keystream than that returns
 //! [`SymmetricCipherError::StateError`] and consumes nothing -- [`StreamCipher`] makes the check up
-//! front, against the whole call, so a message is never half-encrypted before the mode notices. This is the failure the `Result` on the data methods exists for; the other modes in
-//! this crate never return `Err` from them.
+//! front, against the whole call, so a message is never half-encrypted before the mode notices.
 //!
 //! # Everything is parallel
 //!
 //! Sec 6.5: "In both CTR encryption and CTR decryption, the forward cipher functions can be
 //! performed in parallel". Counter blocks depend on nothing but the nonce and the index, so unlike
-//! CBC and CFB there is no serial direction at all: **both** directions walk the block-aligned part
-//! of the data in fours through [`ElectronicCodeBook::encrypt_4blocks`], then in pairs through
-//! [`ElectronicCodeBook::encrypt_2blocks`]. Only a leftover single block, and the keystream block
-//! for a short tail at the end, go one block at a time.
+//! CBC and CFB there is no feed-forward between blocks at all.
+//! As such, both directions walk the block-aligned part of the data in fours through
+//! [`ElectronicCodeBook::encrypt_4blocks`], then in pairs through [`ElectronicCodeBook::encrypt_2blocks`].
+//! Only a leftover single block, and the keystream block for a short tail at the end, go one block at a time.
 //!
 //! Like the rest of CFB and CTR, only the **forward** cipher function is ever used, in both
 //! directions, so a permutation that implements only `encrypt_block` works here.
 //!
-//! # Keystream that outlives a call
+//! # 🚨 Security Considerations 🚨
 //!
-//! A call can end part-way through a keystream block. [`StreamCipher`] keeps the remainder for the
-//! next call, in a `Secret`, so the caller's chunking is invisible in the output. Every transient
-//! keystream block [`CtrKeyStream`]'s batch paths produce is held in a `Secret` too, since each is
-//! live keystream until it has been XORed in.
-//! That is the difference from `Cfb`, whose retained bytes are `CIPH_K` of a public block and are
-//! deliberately not wrapped.
+//! The one security requirement of CTR mode is that every counter block be distinct across all
+//! messages ever encrypted under a key, since:
+//!
+//! > "if any plaintext block that is encrypted using a given counter block is known, then the output
+//! of the forward cipher function can be determined easily from the associated ciphertext block"
+//!
+//! and used to recover any other plaintext encrypted under that same counter. That is why
 
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
@@ -123,7 +54,7 @@ use bouncycastle_utils::secret::Secret;
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs
 
-/// CTR mode over any [`ElectronicCodeBook`], with the direction encoded in the type: the
+/// CTR mode over any [`ElectronicCodeBook`] permutation function, with the direction encoded in the type: the
 /// [`CtrKeyStream`] wrapped in a [`StreamCipher`].
 ///
 /// The counter block is the init data (the nonce) followed by a counter filling the rest of the
@@ -135,33 +66,6 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// The counter must be at least one byte and at most four, so on a 16-byte block the nonce is 12,
 /// 13, 14 or 15 bytes. Both bounds are inline `const` assertions in the constructors, so a nonce
 /// length outside that range is a **compile** error at the call site rather than a runtime `Err`.
-///
-/// A nonce as long as the block would leave no counter at all, and could not count:
-///
-/// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::{Ctr, Encrypting};
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// // A 16-byte nonce on a 16-byte block leaves a zero-byte counter.
-/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 16>::do_encrypt_init(&key);
-/// ```
-///
-/// ...and a nonce shorter than `BLOCK_LEN - 4` would ask for a counter wider than this type
-/// supports:
-///
-/// ```compile_fail
-/// use bouncycastle_aes::aes_internal::AES128Internal;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::{Ctr, Encrypting};
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// // An 11-byte nonce would give a 5-byte counter, past the 4-byte cap.
-/// let _ = Ctr::<AES128Internal, Encrypting, 16, 16, 11>::do_encrypt_init(&key);
-/// ```
 ///
 /// The permitted lengths all work:
 ///
