@@ -81,7 +81,7 @@ use bouncycastle_core::traits::ElectronicCodeBook;
 // End imports needed for docs
 
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
-pub const BLOCK_LEN: usize = 16;
+pub const AES_BLOCK_LEN: usize = 16;
 
 /// The AES keyed permutation, parameterised by key length.
 ///

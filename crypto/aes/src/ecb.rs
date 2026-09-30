@@ -37,7 +37,7 @@
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
 
 use crate::aes_internal::AESInternal;
-use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal, BLOCK_LEN};
+use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
 use crate::bitslice::Block;
 use crate::padded_mode::PaddedMode;
 use crate::schedule::AESParams;
@@ -104,8 +104,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES128Internal, Encrypting, 16, BLOCK_LEN>,
-    Ecb<AES128Internal, Decrypting, 16, BLOCK_LEN>,
+    Ecb<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+    Ecb<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
     Pad,
     16,
     0,
@@ -131,8 +131,8 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES192Internal, Encrypting, 24, BLOCK_LEN>,
-    Ecb<AES192Internal, Decrypting, 24, BLOCK_LEN>,
+    Ecb<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+    Ecb<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
     Pad,
     24,
     0,
@@ -158,14 +158,14 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
 /// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES256Internal, Encrypting, 32, BLOCK_LEN>,
-    Ecb<AES256Internal, Decrypting, 32, BLOCK_LEN>,
+    Ecb<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+    Ecb<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
     Pad,
     32,
     0,
 >>::Mode;
 
-impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {
+impl ElectronicCodeBook<16, AES_BLOCK_LEN> for AES128Internal {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         AES128Internal::new(key)
     }
@@ -189,7 +189,7 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for AES128Internal {
     }
 }
 
-impl ElectronicCodeBook<24, BLOCK_LEN> for AES192Internal {
+impl ElectronicCodeBook<24, AES_BLOCK_LEN> for AES192Internal {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         AES192Internal::new(key)
     }
@@ -213,7 +213,7 @@ impl ElectronicCodeBook<24, BLOCK_LEN> for AES192Internal {
     }
 }
 
-impl ElectronicCodeBook<32, BLOCK_LEN> for AES256Internal {
+impl ElectronicCodeBook<32, AES_BLOCK_LEN> for AES256Internal {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         AES256Internal::new(key)
     }

@@ -46,7 +46,7 @@
 //! implementing it from anything other than that specification would be guesswork. The test
 //! reports how many it skipped so the gap is visible rather than silent.
 
-use bouncycastle_aes::BLOCK_LEN;
+use bouncycastle_aes::AES_BLOCK_LEN;
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
@@ -106,11 +106,11 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 }
 
 /// A single-block transformation, resolved once per test case rather than per block.
-type BlockTransform = Box<dyn Fn(&mut [u8; BLOCK_LEN])>;
+type BlockTransform = Box<dyn Fn(&mut [u8; AES_BLOCK_LEN])>;
 
 /// Encrypts or decrypts `data` block by block, i.e. ECB, dispatching on the key length.
 fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
-    assert_eq!(data.len() % BLOCK_LEN, 0, "ACVP ECB data must be block-aligned");
+    assert_eq!(data.len() % AES_BLOCK_LEN, 0, "ACVP ECB data must be block-aligned");
 
     let transform: BlockTransform = match key.len() {
         16 => {
@@ -144,9 +144,9 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
     };
 
     let mut out = Vec::with_capacity(data.len());
-    for chunk in data.chunks(BLOCK_LEN) {
+    for chunk in data.chunks(AES_BLOCK_LEN) {
         // Cannot fail: the length is asserted block-aligned above.
-        let mut block: [u8; BLOCK_LEN] = chunk.try_into().unwrap();
+        let mut block: [u8; AES_BLOCK_LEN] = chunk.try_into().unwrap();
         transform(&mut block);
         out.extend_from_slice(&block);
     }
@@ -155,9 +155,9 @@ fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
 
 /// The same, using the two-block entry points where a pair is available.
 fn ecb_pairwise(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
-    assert_eq!(data.len() % BLOCK_LEN, 0, "ACVP ECB data must be block-aligned");
-    let mut blocks: Vec<[u8; BLOCK_LEN]> =
-        data.chunks(BLOCK_LEN).map(|c| c.try_into().unwrap()).collect();
+    assert_eq!(data.len() % AES_BLOCK_LEN, 0, "ACVP ECB data must be block-aligned");
+    let mut blocks: Vec<[u8; AES_BLOCK_LEN]> =
+        data.chunks(AES_BLOCK_LEN).map(|c| c.try_into().unwrap()).collect();
 
     match key.len() {
         16 => {
@@ -189,14 +189,14 @@ fn ecb_pairwise(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
 
 /// Walks `blocks` two at a time, leaving a trailing odd block to a duplicated pair.
 fn run_pairwise(
-    blocks: &mut [[u8; BLOCK_LEN]],
+    blocks: &mut [[u8; AES_BLOCK_LEN]],
     encrypt: bool,
-    transform: impl Fn(&mut [[u8; BLOCK_LEN]; 2], bool),
+    transform: impl Fn(&mut [[u8; AES_BLOCK_LEN]; 2], bool),
 ) {
     let mut chunks = blocks.chunks_exact_mut(2);
     for pair in &mut chunks {
         // Cannot fail: `chunks_exact_mut(2)` yields slices of length 2.
-        let pair: &mut [[u8; BLOCK_LEN]; 2] = pair.try_into().unwrap();
+        let pair: &mut [[u8; AES_BLOCK_LEN]; 2] = pair.try_into().unwrap();
         transform(pair, encrypt);
     }
     // An odd trailing block still has to go through the two-block path.
