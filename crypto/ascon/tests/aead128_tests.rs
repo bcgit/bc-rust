@@ -17,7 +17,7 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
+use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
 
 // All embedded vectors use this fixed key/nonce (the NIST LWC KAT convention).
@@ -503,11 +503,6 @@ fn aead128_dir_alias_trait_framework() {
         Ascon_AEAD128<Encrypting>,
         Ascon_AEAD128<Decrypting>,
     >();
-}
-
-#[test]
-fn aead_framework_buffering_toy() {
-    TestFrameworkAEADCipher::new().test_buffering_toy();
 }
 
 /// The two tag layouts must agree byte for byte: `direct_ciphertext || direct_tag`, produced by

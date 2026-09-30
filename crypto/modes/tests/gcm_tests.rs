@@ -284,7 +284,7 @@ fn neither_direction_uses_the_inverse_cipher() {
 /// [`AEADCipherDecryptor`]: bouncycastle_core::traits::AEADCipherDecryptor
 #[test]
 fn aead_trait_framework() {
-    use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
+    use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
     TestFrameworkAEADCipher::new()
         .test_encryptor_decryptor::<TOY_LEN, 12, 16, 16, ToyGcm<Encrypting, 16>, ToyGcm<Decrypting, 16>>(
         );

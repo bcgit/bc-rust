@@ -8,8 +8,8 @@ mod common;
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 

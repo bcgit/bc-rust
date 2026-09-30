@@ -1,17 +1,19 @@
-//! Tests for the AES-GCM aliases.
+//! AES-GCM through the shared conformance suites, plus the alias checks.
 //!
 //! The aliases are only type aliases, so what is worth testing is that they name the *right* type
 //! at both directions, that all three key lengths reach the shared `AEADCipherEncryptor` /
 //! `AEADCipherDecryptor` conformance suite (`TestFrameworkAEADCipher`, which runs the
-//! `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor` suite first), and that a fresh nonce is
-//! generated per encryption. Algorithm correctness itself is pinned by `bouncycastle-modes`'
-//! ACVP and bc-java known-answer suites.
+//! `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor` suite first), that the inline
+//! `ciphertext || tag` layout holds at every byte-boundary edge (`TestFrameworkAEADTaggedLayout`),
+//! and that a fresh nonce is generated per encryption. Algorithm correctness itself is pinned by
+//! the ACVP and bc-java known-answer suites beside this file.
 
 use bouncycastle_aes::aes_internal::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkAEADCipher;
+use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
+use bouncycastle_core_test_framework::aead::TestFrameworkAEADTaggedLayout;
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
@@ -63,6 +65,17 @@ fn all_three_key_lengths_conform_to_the_aead_suite() {
         AES_GCM_256<Encrypting>,
         AES_GCM_256<Decrypting>,
     >();
+}
+
+/// The inline `ciphertext || tag` layout -- where the tag lands, what the decryptor holds back,
+/// and how an input shorter than the tag is refused -- at every length across a few multiples of
+/// the tag and under every chunking, through the shared runner, at both ends of the key-length
+/// range.
+#[test]
+fn the_inline_tag_layout_conforms_at_every_edge() {
+    let framework = TestFrameworkAEADTaggedLayout::new();
+    framework.test::<16, 12, 16, 16, AES_GCM_128<Encrypting>, AES_GCM_128<Decrypting>>();
+    framework.test::<32, 12, 16, 16, AES_GCM_256<Encrypting>, AES_GCM_256<Decrypting>>();
 }
 
 /// The nonce is generated per encryption, so the same plaintext gives different ciphertext, and

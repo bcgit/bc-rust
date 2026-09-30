@@ -18,7 +18,7 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
+use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Decrypting, Ecb, Encrypting};
 use bouncycastle_padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
