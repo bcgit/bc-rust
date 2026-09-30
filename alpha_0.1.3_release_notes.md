@@ -6,6 +6,13 @@
     * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java.
     * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_GCM.
     * ASCON -- Ascon-AEAD128, Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 (NIST SP 800-232).
+* Further memory usage improvements on ML-DSA / ML-KEM. New figures for the largest size are:
+    * ML-DSA-87/Sign 118 kb, ML-DSA-87/Verify 212 kb
+    * ML-DSA-87_lowmemory/Sign 25 kb, ML-DSA-87_lowmemory/Verify 21 kb
+    * ML-KEM-1024/Encaps 44 kb, ML-KEM-1024/Decaps 58 kb
+    * ML-KEM-1024_lowmemory/Encaps 11 kb, ML-KEM-1024/Decaps 21 kb
+    * Performance (throughput) actually saw a slight performance increase as this cleanup was largely about finding and
+      removing unnecessary memcpy's.
 
 ## Minor features / bug fixes
 
