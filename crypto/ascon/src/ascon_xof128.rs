@@ -11,6 +11,7 @@ use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::Secret;
 
+use crate::ASCON_XOF128_NAME;
 use crate::sponge::{RATE, Sponge};
 
 /// Nominal hash-view output length for Ascon-XOF128.
@@ -61,7 +62,7 @@ impl Default for AsconXof128 {
 }
 
 impl Algorithm for AsconXof128 {
-    const ALG_NAME: &'static str = "Ascon-XOF128";
+    const ALG_NAME: &'static str = ASCON_XOF128_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 

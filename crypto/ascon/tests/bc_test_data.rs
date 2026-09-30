@@ -17,7 +17,7 @@ mod bc_test_data {
         KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::XOF;
+    use bouncycastle_core::traits::{Hash, XOF};
     use bouncycastle_hex as hex;
     use std::collections::BTreeMap;
     use std::fs;
@@ -221,8 +221,8 @@ mod bc_test_data {
             let expected = decode_hex(field(case, &["MD"]));
 
             assert_eq!(
-                AsconHash256::digest(&msg).as_slice(),
-                expected.as_slice(),
+                AsconHash256::new().hash(&msg),
+                expected,
                 "Hash256 mismatch (Count {})",
                 field(case, &["Count"])
             );

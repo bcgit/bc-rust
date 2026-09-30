@@ -33,6 +33,50 @@ pub struct Encrypting;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Decrypting;
 
+mod sealed {
+    /// Private supertrait of [`Direction`](super::Direction): only this module can name it, so
+    /// only the two markers below can implement `Direction`.
+    pub trait Sealed {}
+    impl Sealed for super::Encrypting {}
+    impl Sealed for super::Decrypting {}
+}
+
+/// Selects a type by direction: `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
+///
+/// A cipher whose two directions are distinct types cannot offer `Cipher<Dir>` as a plain type
+/// alias, because an alias cannot choose between two types from one of its parameters. It is
+/// written as a projection through this trait instead:
+///
+/// ```text
+/// pub type Ascon_AEAD128<Dir> =
+///     <Dir as Direction>::Select<AsconAead128Encryptor, AsconAead128Decryptor>;
+/// ```
+///
+/// Sealed: implemented for the two markers and for nothing else, so `Encrypting` and `Decrypting`
+/// are the only values a `Dir` parameter can take, and a caller cannot project an alias onto a
+/// type of their own:
+///
+/// ```compile_fail
+/// use bouncycastle_core::stream_cipher::Direction;
+/// struct Sideways;
+/// // error: the supertrait is private to bouncycastle_core
+/// impl Direction for Sideways {
+///     type Select<Enc, Dec> = Enc;
+/// }
+/// ```
+pub trait Direction: sealed::Sealed {
+    /// `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
+    type Select<Enc, Dec>;
+}
+
+impl Direction for Encrypting {
+    type Select<Enc, Dec> = Enc;
+}
+
+impl Direction for Decrypting {
+    type Select<Enc, Dec> = Dec;
+}
+
 /// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
 /// `input` into `output` and applies `in_place` there, so the caller's input is left untouched.
 /// Returns `input.len()`, since a stream cipher neither buffers nor changes the length of its data.

@@ -494,7 +494,7 @@ fn aead128_encryptor_decryptor_trait_framework() {
 #[test]
 fn aead128_dir_alias_trait_framework() {
     use bouncycastle_ascon::Ascon_AEAD128;
-    use bouncycastle_modes::{Decrypting, Encrypting};
+    use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};
     TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
         16,
         16,
