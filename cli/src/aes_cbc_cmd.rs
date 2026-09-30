@@ -1,7 +1,7 @@
 //! AES-CBC encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the IV convention, key loading, stdin framing and
-//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the `aes*-cfb` and
+//! block-alignment enforcement are all in [`crate::helpers::block_mode_helpers`], shared with the `aes*-cfb` and
 //! `aes*-ecb` commands. See that module for the command-line contract.
 //!
 //! CBC (NIST SP 800-38A Sec 6.2) provides confidentiality only. It does not detect tampering, and
@@ -9,7 +9,9 @@
 //! of the *next* block's plaintext (Appendix D). Do not decrypt data you have not authenticated
 //! separately.
 
-use crate::block_mode_cmd::{BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use crate::helpers::block_mode_helpers::{
+    BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+};
 use bouncycastle::aes::BLOCK_LEN;
 use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;

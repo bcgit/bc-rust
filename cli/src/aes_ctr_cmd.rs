@@ -1,7 +1,7 @@
 //! AES-CTR encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the nonce convention, key loading and stdin framing are in
-//! [`crate::stream_mode_cmd`] (and [`crate::block_mode_cmd`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
 //! `aes*-cfb` and `aes*-cfb8` commands. See those modules for the command-line contract.
 //!
 //! # The nonce is 12 bytes and the counter is 4
@@ -33,8 +33,8 @@
 //! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
 //! one.
 
-use crate::block_mode_cmd::{BlockModeAction, load_key};
-use crate::stream_mode_cmd::run_stream_mode;
+use crate::helpers::block_mode_helpers::{BlockModeAction, load_key};
+use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::aes::{BLOCK_LEN, CTR_NONCE_LEN};
 use bouncycastle::core::key_material::KeyMaterial;

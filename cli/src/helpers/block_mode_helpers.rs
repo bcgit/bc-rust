@@ -8,7 +8,7 @@
 //! The block length is a const parameter -- 16 for AES, 8 for TDES -- so the framing below is
 //! written once for both.
 //!
-//! The CFB and CTR commands are stream ciphers and live in [`crate::stream_mode_cmd`] instead;
+//! The CFB and CTR commands are stream ciphers and live in [`crate::helpers::stream_mode_helpers`] instead;
 //! they share
 //! [`load_key`] and [`BlockModeAction`] with this module, so the key handling and the `encrypt` /
 //! `decrypt` spelling stay identical across all of them.
@@ -35,7 +35,7 @@
 //!
 //! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
 //! commands apply no padding, so input that is not a multiple of the block length (16 bytes for AES,
-//! 8 for TDES) is rejected rather than silently padded. (The CFB commands have no such requirement; see [`crate::stream_mode_cmd`].)
+//! 8 for TDES) is rejected rather than silently padded. (The CFB commands have no such requirement; see [`crate::helpers::stream_mode_helpers`].)
 //! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
 //!

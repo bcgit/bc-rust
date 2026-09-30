@@ -1,7 +1,7 @@
 //! TDES-ECB encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: key loading, stdin framing and block-alignment enforcement are
-//! all in [`crate::block_mode_cmd`], shared with the AES commands and `tdes-cbc`. See that module
+//! all in [`crate::helpers::block_mode_helpers`], shared with the AES commands and `tdes-cbc`. See that module
 //! for the command-line contract. ECB has no IV (`INIT_DATA_LEN = 0`), so nothing is prepended to
 //! the output or consumed from the input: the ciphertext is exactly as long as the plaintext. The
 //! block is 8 bytes.
@@ -18,7 +18,9 @@
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs.
 
-use crate::block_mode_cmd::{BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use crate::helpers::block_mode_helpers::{
+    BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+};
 use bouncycastle::modes::{Decrypting, Ecb, Encrypting};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES};
 

@@ -1,7 +1,7 @@
 //! TDES-CTR encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the nonce convention, key loading and stdin framing are in
-//! [`crate::stream_mode_cmd`] (and [`crate::block_mode_cmd`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
 //! AES stream commands and `tdes-cfb` / `tdes-cfb8`. See those modules for the command-line
 //! contract.
 //!
@@ -36,8 +36,8 @@
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs.
 
-use crate::block_mode_cmd::{BlockModeAction, load_key};
-use crate::stream_mode_cmd::run_stream_mode;
+use crate::helpers::block_mode_helpers::{BlockModeAction, load_key};
+use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::modes::{Decrypting, Encrypting};
 use bouncycastle::tdes::{CTR_NONCE_LEN, KEY_LEN, TDES_CTR};
 

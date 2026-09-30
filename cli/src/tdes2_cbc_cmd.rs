@@ -4,9 +4,9 @@
 //! `bouncycastle-tdes` will not compile an encrypting mode over `TDES2Key`, and
 //! [`DecryptOnlyAction`] has no `encrypt`. Everything else is `tdes-cbc decrypt` -- the first 8 bytes
 //! of input are the IV, the rest whole 8-byte blocks -- see [`crate::tdes_cbc_cmd`] and
-//! [`crate::block_mode_cmd`]. The key is the 16-byte `KEY1 || KEY2`.
+//! [`crate::helpers::block_mode_helpers`]. The key is the 16-byte `KEY1 || KEY2`.
 
-use crate::block_mode_cmd::{DecryptOnlyAction, decrypt_stream, load_key};
+use crate::helpers::block_mode_helpers::{DecryptOnlyAction, decrypt_stream, load_key};
 use bouncycastle::modes::{Cbc, Decrypting};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
 

@@ -1,5 +1,7 @@
 //! The Electronic Codebook mode of operation (NIST SP 800-38A Sec 6.1).
 //!
+//! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.**
+//!
 //! "In ECB encryption, the forward cipher function is applied directly and independently to each
 //! block of the plaintext. The resulting sequence of output blocks is the ciphertext. In ECB
 //! decryption, the inverse cipher function is applied directly and independently to each block of
@@ -44,6 +46,28 @@
 //! permutation's four-block and pair methods ([`ElectronicCodeBook::encrypt_4blocks`] /
 //! [`ElectronicCodeBook::encrypt_2blocks`] and their inverses), which may represent a speed-up over
 //! iterating one block at a time, depending on the implementation of the underlying cipher.
+//!
+//! # 🚨 Security Considerations 🚨
+//!
+//! ## ECB is a building-block not a confidentiality mode for data
+//!
+//! SP 800-38A §6.1:
+//!
+//! > "In the ECB mode, under a given key, any given plaintext block always gets
+//! encrypted to the same ciphertext block. If this property is undesirable in a particular
+//! application, the ECB mode should not be used."
+//!
+//! While this _might_ be secure for encrypting plaintext that is cryptographically random,
+//! it is certainly not ok for structured data (such as any file format with known and predictable
+//! headers), or data with repeated blocks since it becomes trivial for an attacker to build lookup
+//! tables of plaintext --> ciphertext pairs under this encryption key. ECB mode also does not prevent
+//! an attacker from reordering, duplicating, or deleting blocks within a multi-block ciphertext or
+//! between multiple messages encrypted under the same key.
+//!
+//! As such, ECB is exposed primarily as a building-block for the other, more secure, modes of
+//! operation, and also for research and educational purposes.
+//!
+//! **ECB Mode should not be used in production!**
 
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;

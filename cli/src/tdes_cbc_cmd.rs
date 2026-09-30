@@ -1,7 +1,7 @@
 //! TDES-CBC encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the IV convention, key loading, stdin framing and
-//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the AES commands
+//! block-alignment enforcement are all in [`crate::helpers::block_mode_helpers`], shared with the AES commands
 //! and `tdes-ecb`. See that module for the command-line contract. The block, and so the IV, is
 //! 8 bytes.
 //!
@@ -14,7 +14,9 @@
 //! the `bouncycastle-tdes` crate docs. One key bundle must not protect more than 2^20 blocks (8 MiB)
 //! in total (SP 800-67 Rev 2 Sec 3.4); the command does not count across invocations.
 
-use crate::block_mode_cmd::{BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use crate::helpers::block_mode_helpers::{
+    BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+};
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES};
 
