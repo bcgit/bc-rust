@@ -2,6 +2,7 @@
 //!
 //! As with all Factory objects, this implements constructions from strings and defaults, and
 //! returns a [`MACFactory`] object which itself implements the [`MAC`] trait as a pass-through to the underlying algorithm.
+//! See [`MAC`] for the full message-authentication API, key handling, streaming workflow, and verification guidance.
 //!
 //! Example usage:
 //! Generating and verifying a MAC value for a given piece of data:
