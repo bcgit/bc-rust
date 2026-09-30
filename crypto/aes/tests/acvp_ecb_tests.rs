@@ -17,15 +17,15 @@
 //!
 //! | Vector set | Consumed by |
 //! |---|---|
-//! | `ACVP-AES-ECB` | this file (the permutation) and `crypto/modes/tests/acvp_ecb_tests.rs` (the `Ecb` mode) |
-//! | `ACVP-AES-CBC` | `crypto/modes/tests/acvp_tests.rs` |
+//! | `ACVP-AES-ECB` | this file (the permutation; the `Ecb` mode's own tests are toy-driven, in `crypto/modes/tests/ecb_tests.rs`) |
+//! | `ACVP-AES-CBC` | `acvp_cbc_tests.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
-//! | `ACVP-AES-CCM` | `crypto/modes/tests/acvp_ccm_tests.rs` |
-//! | `ACVP-AES-CFB128` | `crypto/modes/tests/acvp_cfb_tests.rs` |
-//! | `ACVP-AES-CFB8` | `crypto/modes/tests/acvp_cfb8_tests.rs` |
+//! | `ACVP-AES-CCM` | `acvp_ccm_tests.rs` |
+//! | `ACVP-AES-CFB128` | `acvp_cfb_tests.rs` |
+//! | `ACVP-AES-CFB8` | `acvp_cfb8_tests.rs` |
 //! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
-//! | `ACVP-AES-CTR` | `crypto/modes/tests/acvp_ctr_tests.rs` |
-//! | `ACVP-AES-GCM` / `-GMAC` | nothing yet (GCM is unimplemented; it needs GF(2^128) arithmetic) |
+//! | `ACVP-AES-CTR` | `acvp_ctr_tests.rs` |
+//! | `ACVP-AES-GCM` / `-GMAC` | `acvp_gcm_tests.rs` / `acvp_gmac_tests.rs` |
 //! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |
 //! | `ACVP-AES-FF1` / `-FF3-1` | nothing yet (format-preserving encryption is unimplemented) |
 //!

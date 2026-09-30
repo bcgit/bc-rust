@@ -41,7 +41,7 @@ const KEY_192: &str = "8e73b0f7da0e6452c810f32b809079e562f8ead2522c6b7b";
 const KEY_256: &str = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
 
 /// `openssl enc -aes-128-ctr -K <key> -iv 000102030405060708090a0b00000000`, OpenSSL 3.0.13. The
-/// same vectors as `crypto/modes/tests/ctr_vector_tests.rs`, run here end to end through the pipe.
+/// same vectors as `crypto/aes/tests/ctr_vector_tests.rs`, run here end to end through the pipe.
 const CT_128: &str = concat!(
     "ffd8816338abebca17491bc67fe6751c",
     "093833c279e946d49804c6b03df09f9d",

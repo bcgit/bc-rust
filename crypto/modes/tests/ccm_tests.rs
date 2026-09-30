@@ -4,7 +4,7 @@
 //! used, that the counter half batches while the CBC-MAC stays serial, that call chunking is
 //! invisible in both directions, what `TAG_LEN` and `NONCE_LEN` do and do not change, that the
 //! decryptor holds to the declared length, and which entry points release unauthenticated
-//! plaintext -- independently of the known-answer vectors in `sp800_38c_tests.rs`,
+//! plaintext -- independently of the known-answer vectors in the `aes` crate's `sp800_38c_tests.rs`,
 //! `acvp_ccm_tests.rs` and `wycheproof_ccm_tests.rs`. The Appendix C file also carries the
 //! buffering `CcmEncryptor` / `CcmDecryptor` pair's contract, the shared framework run and the
 //! memory table, so none of those is repeated here.
