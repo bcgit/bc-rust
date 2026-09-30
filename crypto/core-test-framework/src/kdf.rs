@@ -40,14 +40,13 @@ impl TestFrameworkKDF {
         let kdf = H::default();
         let mut output = KeyMaterial512::new();
         let bytes_written = kdf.derive_key_out(key, additional_input, &mut output).unwrap();
-        // account for the fact that XOF style KDFs will will the provided buffer.
+        // account for the fact that XOF style KDFs will fill the provided buffer.
         assert!(bytes_written >= expected_output.key_len());
         assert_eq!(output.key_len(), bytes_written);
         output.set_key_len(expected_output.key_len()).unwrap(); // truncates should be infallible
         assert_eq!(output.key_len(), expected_output.key_len());
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 
-        // todo: may require no_std equivalent
         #[cfg(feature = "std")]
         {
             /*** Test that additional_input changes the output ***/
@@ -55,6 +54,13 @@ impl TestFrameworkKDF {
             let out_key2 = H::default().derive_key(key, b"some additional input").unwrap();
             assert_ne!(out_key1.ref_to_bytes(), out_key2.ref_to_bytes());
         }
+
+        /*** Test that additional_input changes the output ***/
+        let mut output1 = KeyMaterial512::new();
+        let mut output2 = KeyMaterial512::new();
+        _ = H::default().derive_key_out(key, &[0u8; 0], &mut output1).unwrap();
+        _ = H::default().derive_key_out(key, b"some additional input", &mut output2).unwrap();
+        assert_ne!(output1.ref_to_bytes(), output2.ref_to_bytes());
 
         /*** Test truncation -- all KDFs should support this ***/
 
@@ -69,7 +75,6 @@ impl TestFrameworkKDF {
         // Some KDFs (such as HKDF) are XOFs underneath and will support longer outputs, but not all are (such as SHA3),
         // so we can't test extendable output generically for all KDFs.
 
-        // todo: may require no_std equivalent
         #[cfg(feature = "std")]
         {
             /*** Test entropy mapping ***/
@@ -108,6 +113,44 @@ impl TestFrameworkKDF {
             assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
             assert!(out_key.security_strength() > SecurityStrength::None);
         }
+
+        /*** Test entropy mapping ***/
+
+        // Zeroized -> Zeroized
+        let zeroized_key = KeyMaterial256::new();
+        assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_out(&zeroized_key, &[0u8; 10], &mut out_key).unwrap();
+        // since we've done some computation, the result will not actually be zeroized, even if all input key material was zeroized.
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
+        assert_eq!(out_key.security_strength(), SecurityStrength::None);
+
+        // BytesLowEntropy -> BytesLowEntropy
+        let low_entropy_key =
+            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::Unknown).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::Unknown);
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_out(&low_entropy_key, &[0u8; 10], &mut out_key).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
+        assert_eq!(out_key.security_strength(), SecurityStrength::None);
+
+        // BytesFullEntropy -> BytesLowEntropy if not enough to fill the hash block
+        let low_entropy_key =
+            KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::CryptographicRandom);
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_out(&low_entropy_key, &[0u8; 10], &mut out_key).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
+        assert_eq!(out_key.security_strength(), SecurityStrength::None);
+
+        // BytesFullEntropy -> BytesFullEntropy
+        let full_entropy_key =
+            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(full_entropy_key.key_type(), KeyType::CryptographicRandom);
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_out(&full_entropy_key, &[0u8; 10], &mut out_key).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
+        assert!(out_key.security_strength() > SecurityStrength::None);
     }
     ///
     pub fn test_kdf_multiple_key<H: KDF + Default>(
@@ -142,7 +185,6 @@ impl TestFrameworkKDF {
         assert_eq!(output.key_len(), expected_output.key_len());
         assert_eq!(output.ref_to_bytes(), expected_output.ref_to_bytes());
 
-        // todo: may require no_std equivalent
         #[cfg(feature = "std")]
         {
             /*** Test that additional_input changes the output ***/
@@ -151,6 +193,15 @@ impl TestFrameworkKDF {
                 H::default().derive_key_from_multiple(keys, b"some additional input").unwrap();
             assert_ne!(out_key1.ref_to_bytes(), out_key2.ref_to_bytes());
         }
+
+        /*** Test that additional_input changes the output ***/
+        let mut out_key1 = KeyMaterial512::new();
+        let mut out_key2 = KeyMaterial512::new();
+        _ = H::default().derive_key_from_multiple_out(keys, &[0u8; 0], &mut out_key1).unwrap();
+        _ = H::default()
+            .derive_key_from_multiple_out(keys, b"some additional input", &mut out_key2)
+            .unwrap();
+        assert_ne!(out_key1.ref_to_bytes(), out_key2.ref_to_bytes());
 
         /*** Test trunctation -- all KDFs should support this ***/
 
@@ -163,7 +214,6 @@ impl TestFrameworkKDF {
         assert_eq!(output.key_len(), 10);
         assert_eq!(output.ref_to_bytes(), &expected_output.ref_to_bytes()[..10]);
 
-        // todo: may require no_std equivalent
         #[cfg(feature = "std")]
         {
             /*** Test entropy mapping ***/
@@ -207,5 +257,48 @@ impl TestFrameworkKDF {
             assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
             assert!(out_key.security_strength() > SecurityStrength::None);
         }
+
+        /*** Test entropy mapping ***/
+
+        // Zeroized -> Zeroized
+        let zeroized_key = KeyMaterial256::new();
+        assert_eq!(zeroized_key.key_type(), KeyType::Zeroized);
+        assert_eq!(zeroized_key.security_strength(), SecurityStrength::None);
+        let keys = [&zeroized_key, &zeroized_key];
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_from_multiple_out(&keys, &[0u8; 10], &mut out_key).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
+        assert_eq!(out_key.security_strength(), SecurityStrength::None);
+
+        // BytesLowEntropy -> BytesLowEntropy
+        let low_entropy_key =
+            KeyMaterial256::from_bytes_as_type(&[1u8; 16], KeyType::Unknown).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::Unknown);
+        let keys = [&zeroized_key, &low_entropy_key];
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_from_multiple_out(&keys, &[0u8; 10], &mut out_key).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
+        assert_eq!(out_key.security_strength(), SecurityStrength::None);
+
+        // BytesFullEntropy -> BytesLowEntropy if not enough to fill the hash block
+        let low_entropy_key =
+            KeyMaterial256::from_bytes_as_type(&[1u8; 6], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(low_entropy_key.key_type(), KeyType::CryptographicRandom);
+        let keys = [&zeroized_key, &low_entropy_key];
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_from_multiple_out(&keys, &[0u8; 10], &mut out_key).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
+        assert_eq!(out_key.security_strength(), SecurityStrength::None);
+
+        // BytesFullEntropy -> BytesFullEntropy
+        let zeroized64_key = KeyMaterial512::new();
+        let full_entropy_key =
+            KeyMaterial512::from_bytes_as_type(&[1u8; 64], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(full_entropy_key.key_type(), KeyType::CryptographicRandom);
+        let keys = [&zeroized64_key, &full_entropy_key];
+        let mut out_key = KeyMaterial512::new();
+        _ = H::default().derive_key_from_multiple_out(&keys, &[0u8; 10], &mut out_key).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
+        assert!(out_key.security_strength() > SecurityStrength::None);
     }
 }
