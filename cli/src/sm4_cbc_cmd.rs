@@ -1,7 +1,7 @@
 //! SM4-CBC encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the cipher wiring lives here: the IV convention, key loading, stdin framing and
-//! block-alignment enforcement are all in [`crate::block_mode_cmd`], shared with the `aes*-cbc`,
+//! block-alignment enforcement are all in [`crate::helpers::block_mode_helpers`], shared with the `aes*-cbc`,
 //! `aes*-cfb` and `aes*-ecb` commands. See that module for the command-line contract.
 //!
 //! `sm4-cbc` is the same command as `aes128-cbc` over the SM4 permutation (GB/T 32907-2016; 16-byte
@@ -10,7 +10,9 @@
 //! ciphertext bit flips the same bit of the *next* block's plaintext (Appendix D). Do not decrypt data
 //! you have not authenticated separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key};
+use crate::helpers::block_mode_helpers::{
+    BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+};
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle::sm4::SM4;
 

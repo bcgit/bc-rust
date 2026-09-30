@@ -1,4 +1,3 @@
-mod aead_mode_cmd;
 mod aes_cbc_cmd;
 mod aes_ccm_cmd;
 mod aes_cfb8_cmd;
@@ -7,7 +6,6 @@ mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
 mod ascon_cmd;
-mod block_mode_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -22,13 +20,12 @@ mod sm4_cbc_cmd;
 mod sm4_cfb8_cmd;
 mod sm4_cfb_cmd;
 mod sm4_ctr_cmd;
-mod stream_mode_cmd;
 
-use crate::block_mode_cmd::BlockModeAction;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use crate::sha2_cmd::SHA2Variant;
 use clap::{Parser, Subcommand};
+use helpers::block_mode_helpers::BlockModeAction;
 
 #[derive(Parser)]
 #[command(version, about, long_about=None, arg_required_else_help=true)]

@@ -1,7 +1,7 @@
 //! SM4-CFB8 encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the cipher wiring lives here: the IV convention, key loading and stdin framing are in
-//! [`crate::stream_mode_cmd`] (and [`crate::block_mode_cmd`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
 //! `aes*-cfb8` commands. See those modules for the command-line contract.
 //!
 //! `sm4-cfb8` is the same command as `aes128-cfb8` over the SM4 permutation (GB/T 32907-2016;
@@ -16,8 +16,8 @@
 //! CFB8 provides confidentiality only. It does not detect tampering, and neither the ciphertext nor
 //! the IV is authenticated. Do not decrypt data you have not authenticated separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
-use crate::stream_mode_cmd::run_stream_mode;
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::modes::{Cfb8, Decrypting, Encrypting};
 use bouncycastle::sm4::SM4;
 

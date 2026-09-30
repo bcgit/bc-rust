@@ -1,62 +1,75 @@
 //! Galois/Counter Mode (NIST SP 800-38D), the authenticated encryption mode built from CTR
-//! (Sec 6.5's GCTR) and the GHASH universal hash in `ghash.rs` (Sec 6.4).
+//! and the GHASH universal hash.
 //!
-//! # Scope: a 96-bit nonce and a 96-128-bit tag
+//! # Nonce and Tag
 //!
-//! [`Gcm`] has no `NONCE_LEN` parameter: the nonce is always [`GCM_NONCE_LEN`] (12) bytes, generated
-//! by the encryptor from the library's default RNG (Sec 8.2.2's RBG-based construction, with an
-//! empty free field so the whole IV is the random field). Sec 5.2.1.1: "For IVs, it is recommended
-//! that implementations restrict support to the length of 96 bits, to promote interoperability,
-//! efficiency, and simplicity of design." The `len(IV) != 96` branch of Algorithm 4 step 2 (deriving
-//! `J0` from a GHASH of the IV) is not implemented; every IV this type produces or accepts is 96
-//! bits, so that branch is unreachable here.
+//! NIST SP 800-38D fixes the GCM tag to 96 bits (12 bytes), so this module does not provide an
+//! interface for changing it.
+//! It also does not provide an interface for the user to provide a nonce, instead in provides
+//! [`SymmetricCipherEncryptor::do_encrypt_init`] and [`SymmetricCipherEncryptor::do_encrypt_init_rng`] that source
+//! the nonce from the default OS RNG or the provided RNG, respectively.
 //!
+//! NIST SP 800-38D allows for tag lengths between 12 and 16 bytes.
 //! The tag length is a const generic `TAG_LEN`, checked at compile time to lie in `12..=16` bytes
 //! (96, 104, 112, 120 or 128 bits -- Sec 5.2.1.2's five recommended values). The 32- and 64-bit tags
-//! Sec 5.2.1.2 permits "for certain applications" (Appendix C) are not supported: Appendix C
-//! requires the *controlling protocol* to bound packet size and invocation counts (its Tables 1 and
-//! 2), which this library cannot enforce, so it does not offer the option.
+//! Sec 5.2.1.2 permits "for certain applications" (Appendix C) are not supported.
 //!
-//! # The API is the AEAD traits
+//! # Usage Examples
 //!
 //! [`Gcm`] is used through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], with
 //! `FINAL_LEN = TAG_LEN`, and through the [`SymmetricCipherEncryptor`] /
 //! [`SymmetricCipherDecryptor`] traits they extend:
 //!
-//! * The inherited symmetric-cipher methods are GCM with no AAD and the tag *inline*:
-//!   `ciphertext || tag`, streaming or through the `encrypt_out` / `decrypt_out` one-shots.
-//! * The AEAD traits add `do_update_aad`, the detached-tag `*_detached` methods -- the spec's own
-//!   interface, where the tag is a separate value from the ciphertext (Algorithm 4's `(C, T)`,
-//!   Algorithm 5's separate `T` input) -- and the inline one-shots with AAD, `*_with_aad`.
-//!
-//! The decryptor holds back the last `TAG_LEN` bytes it has seen, because until the stream ends it
-//! cannot know whether they are the inline tag or, detached, the end of the ciphertext.
-//!
-//! AAD must be supplied before any plaintext or ciphertext: SP 800-38D Algorithm 4 absorbs `A`
-//! before `C` in one GHASH pass, so AAD after the first `do_update_out` is
-//! [`SymmetricCipherError::StateError`] (empty AAD after data is a no-op, since it changes nothing).
-//!
-//! # Usage Examples
-//!
-//! Detached tag, one-shot:
+//! Used through the SymmetricCipher traits, there is no option to include additional associated data (aad),
+//! and the tag is inlined into the ciphertext as `ciphertext || tag`.
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES128Internal;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_core::errors::SymmetricCipherError;
+//! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
+//!
+//! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let aad = b"header, sent in the clear";
+//! let plaintext: [u8; 16] = *b"attack at dawn!!";
+//!
+//! let (nonce, ciphertext) = Aes128Gcm::<Encrypting>::encrypt(&key, &plaintext).expect("encrypt");
+//!
+//! let mut recovered = Aes128Gcm::<Decrypting>::decrypt(&key, &nonce, &ciphertext).expect("decrypt");
+//! assert_eq!(recovered, plaintext);
+//!
+//! // A tampered ciphertext will be caught by the tag
+//! let mut tampered_ct = ciphertext.clone();
+//! tampered_ct[1] ^= 0xFF;
+//! match Aes128Gcm::<Decrypting>::decrypt(&key, &nonce, &tampered_ct).unwrap_err() {
+//!     SymmetricCipherError::AEADTagCheckFailed => { /* good */ }
+//!     _ => { panic!() }
+//! }
+//! ```
+//!
+//! The AEADCipher traits provide the AEAD-specific functionality, including accepting the aad, and
+//! the `_detached()` methods handle the tag separately, instead of inlined into the ciphertext.
+//!
+//! ```
+//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
 //! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
 //! let aad = b"header, sent in the clear";
 //! let plaintext = *b"attack at dawn!!";
 //!
 //! let mut ciphertext = [0u8; 16];
-//! let (nonce, _, tag) =
+//! let (nonce, _bytes_written, tag) =
 //!     Aes128Gcm::<Encrypting>::encrypt_out_detached(&key, aad, &plaintext, &mut ciphertext).unwrap();
-//! assert_ne!(ciphertext, plaintext);
 //!
 //! let mut recovered = [0u8; 16];
 //! Aes128Gcm::<Decrypting>::decrypt_out_detached(&key, &nonce, aad, &ciphertext, &tag, &mut recovered)
@@ -64,7 +77,9 @@
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!
-//! Inline `ciphertext || tag`, and streaming with AAD:
+//! There is also a streaming mode.
+//! Note that the aad must be supplied before any plaintext or ciphertext; attempting to call
+//! `do_update_aad()` after a `do_encrypt()` will result in a [`SymmetricCipherError::StateError`].
 //!
 //! ```
 //! use bouncycastle_aes::aes_internal::AES256Internal;
@@ -78,7 +93,7 @@
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let aad = b"associated data";
+//! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
 //! let (mut enc, nonce) = Aes256Gcm::<Encrypting>::do_encrypt_init(&key).unwrap();
@@ -97,42 +112,41 @@
 //! assert_eq!(pt, message);
 //! ```
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
-//! * **Nonce uniqueness is everything.** Sec 8: "The probability that the authenticated encryption
-//!   function ever will be invoked with the same IV and the same key on two (or more) distinct sets
-//!   of input data shall be no greater than 2^-32." Appendix A: a repeated nonce lets an adversary
-//!   recover the hash subkey `H` from the two ciphertexts, after which "the authentication
-//!   assurance essentially is lost" and GCM inherits CTR's plaintext-controlling malleability. The
-//!   nonce is always drawn from the library's default RNG (Sec 8.2.2's RBG-based construction,
-//!   empty free field) and never accepted from the caller.
-//! * **Invocation limit.** Sec 8.2.2 / 8.3: with the RBG-based construction, "the total number of
-//!   invocations of the authenticated encryption function shall not exceed 2^32 ... with the given
-//!   key." This is a caller obligation this type cannot enforce across calls; rotate the key well
+//! ## Nonce uniqueness
+//!
+//! As with all symmetric cipher modes, repeated key and nonce for multiple messages is catastrophic
+//! for security, which is why the nonce is always drawn from the library's default RNG or a provided
+//! RNG and never accepted from the caller.
+//!
+//! ## Invocation limit
+//!
+//! NIST SP 800-38D §8.2.2 / 8.3:
+//!
+//! > "the total number of invocations of the authenticated encryption function shall not exceed 2^32
+//! ... with the given key."
+//!
+//! This is a caller obligation this type cannot enforce across calls; rotate the key well
 //!   before 2^32 messages.
-//! * **Forgery probability and failed-verification limits.** Appendix B: a targeted forgery over
+//!
+//! ## Forgery probability and failed-verification limits
+//!
+//! Appendix B: a targeted forgery over
 //!   `n` blocks of AAD and ciphertext succeeds with probability about `n / 2^t`, and each success
 //!   leaks information about `H`; "the system or protocol that implements GCM should monitor and, if
 //!   necessary, limit the number of unsuccessful verification attempts for each key."
-//! * **32- and 64-bit tags are not offered** (Appendix C); see the module docs above.
-//! * **Streaming decryption releases plaintext before the tag is checked; the one-shots do not.**
-//!   [`SymmetricCipherDecryptor::do_decrypt_out`] hands back plaintext as it goes, which is
-//!   unauthenticated until `do_final` / `do_final_detached` succeeds -- do not act on it before
-//!   then. The one-shots (`decrypt_out`, `decrypt_out_detached`, `decrypt_out_with_aad`) verify the
-//!   tag first and release nothing on failure, zeroizing the output buffer (Sec 7.2 permits
-//!   checking the tag before computing the plaintext, and this is why the one-shots are more than
-//!   init/update/final glued together).
-//! * **Intermediates are secret.** Sec 5.3: "the intermediate values in the execution of the GCM
-//!   functions shall be secret." `H`, the running GHASH accumulator, the pending partial block, the
-//!   tag mask `CIPH_K(J0)` and the CTR keystream all live in
-//!   [`Secret`].
-//! * **The `2^39 - 256`-bit plaintext bound (Sec 5.2.1.1) is `Ctr`'s own counter-exhaustion error.**
-//!   GCTR runs from counter 2 (D6), leaving `2^32 - 2` blocks, i.e. exactly `2^39 - 256` bits, before
-//!   `Ctr` refuses with [`SymmetricCipherError::StateError`].
-//! * **Constant time.** GHASH multiplication (`ghash.rs`) and the tag comparison
-//!   (`bouncycastle_utils::ct::ct_eq_bytes`) touch no table indexed by secret data, with the same
-//!   caveats `bouncycastle-aes` states about compiler guarantees and side channels other than
-//!   timing.
+//!
+//! ## Streaming decryption releases plaintext before the tag is checked
+//!
+//! [`SymmetricCipherDecryptor::do_decrypt_out`] hands back plaintext as it goes, which is
+//! unauthenticated until the tag has been checked after the final block.
+//! It is the application's responsibility not to take any action on the decrypted plaintext until
+//! the end of the ciphertext has been reached, and the `do_final` / `do_final_detached` succeeds.
+//!
+//! The one-shots (`decrypt_out`, `decrypt_out_detached`, `decrypt_out_with_aad`) verify the
+//! tag first and release nothing on failure, making them more robust.
+//!
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
 //!   is no separate `Gmac` type.
 

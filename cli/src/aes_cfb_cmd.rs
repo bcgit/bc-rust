@@ -1,7 +1,7 @@
 //! AES-CFB128 encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the IV convention, key loading and stdin framing are in
-//! [`crate::stream_mode_cmd`] (and [`crate::block_mode_cmd`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
 //! `aes*-cfb8` commands. See those modules for the command-line contract.
 //!
 //! # Which CFB
@@ -26,8 +26,8 @@
 //! of the plaintext in the *same* block, so an attacker edits the block they aimed at, at the cost
 //! of randomising the next one. Do not decrypt data you have not authenticated separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
-use crate::stream_mode_cmd::run_stream_mode;
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;
