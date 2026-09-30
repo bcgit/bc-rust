@@ -202,7 +202,7 @@
 //! ```
 //! And that's the basic usage!
 //!
-//! # 🚨 Security 🚨
+//! # 🚨 Security Considerations 🚨
 //!
 //! This crate intends to expose only APIs that are secure to use.
 //! There are, however, a few exceptions worth mentioning.

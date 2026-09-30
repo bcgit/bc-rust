@@ -111,10 +111,9 @@ use bouncycastle_core::key_material;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_core::traits::{
-    Hash, HashAlgParams, KDF, MAC, SecurityStrength, Suspendable, SuspendableKeyed,
-};
+use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, Suspendable, SuspendableKeyed};
 use bouncycastle_hmac::HMAC;
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;

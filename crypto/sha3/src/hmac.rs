@@ -254,7 +254,8 @@
 use crate::SUSPENDED_SHA3_STATE_LEN;
 use crate::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{HashAlgParams, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/

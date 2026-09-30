@@ -6,7 +6,8 @@ mod sha3_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
@@ -621,15 +622,21 @@ pub(crate) mod sha3_test_helpers {
         let total_bytes = (bits + 7) / 8;
         let mut result = vec![0u8; total_bytes];
 
+        // Whole bytes are packed per FIPS 202 Appendix B.1 (Algorithm 11, b2h: message bit 8i + j has
+        // weight 2^j in byte i, i.e. the first bit is the LSB), which is how SHA-3 reads a byte-oriented
+        // message.
         for i in 0..full_bytes {
             let index = i * 8;
             block[index..(index + 8)].reverse();
             result[i] = parse_binary(&block[index..(index + 8)]);
         }
 
+        // The trailing partial byte is packed the way the API takes it: the remaining message bits
+        // in order from the most significant bit down (ASN.1 BIT STRING order, X.690 s. 8.6.2.1),
+        // with the unused low bits zero.
         if total_bytes > full_bytes {
-            block[(full_bytes * 8)..].reverse();
-            result[full_bytes] = parse_binary(&block[(full_bytes * 8)..]);
+            let partial_bits = bits - full_bytes * 8;
+            result[full_bytes] = parse_binary(&block[(full_bytes * 8)..]) << (8 - partial_bits);
         }
 
         result

@@ -2,15 +2,26 @@ use bouncycastle::core::traits::Hash;
 use std::io;
 use std::io::{Read, Write};
 
-use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512};
+use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 
-pub(crate) fn sha2_cmd(bit_len: usize, output_hex: bool) {
-    match bit_len {
-        224 => do_sha2(SHA224::new(), output_hex),
-        256 => do_sha2(SHA256::new(), output_hex),
-        384 => do_sha2(SHA384::new(), output_hex),
-        512 => do_sha2(SHA512::new(), output_hex),
-        _ => panic!("Unsupported algorithm: SHA{}", bit_len),
+#[allow(non_camel_case_types)]
+pub(crate) enum SHA2Variant {
+    SHA224,
+    SHA256,
+    SHA384,
+    SHA512,
+    SHA512_224,
+    SHA512_256,
+}
+
+pub(crate) fn sha2_cmd(variant: SHA2Variant, output_hex: bool) {
+    match variant {
+        SHA2Variant::SHA224 => do_sha2(SHA224::new(), output_hex),
+        SHA2Variant::SHA256 => do_sha2(SHA256::new(), output_hex),
+        SHA2Variant::SHA384 => do_sha2(SHA384::new(), output_hex),
+        SHA2Variant::SHA512 => do_sha2(SHA512::new(), output_hex),
+        SHA2Variant::SHA512_224 => do_sha2(SHA512_224::new(), output_hex),
+        SHA2Variant::SHA512_256 => do_sha2(SHA512_256::new(), output_hex),
     }
 }
 

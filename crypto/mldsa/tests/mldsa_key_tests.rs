@@ -4,7 +4,8 @@ mod mldsa_key_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial256, KeyMaterialTrait, KeyType, do_hazardous_operations,
     };
-    use bouncycastle_core::traits::{SecurityStrength, SignaturePrivateKey, SignaturePublicKey};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{

@@ -16,6 +16,64 @@ impl TestFrameworkHash {
         Self { enable_partial_byte_tests: true }
     }
 
+    /// Checks [`Hash::do_final_out`] and [`Hash::hash_out`] against every buffer length, for a
+    /// hash whose output length is bound into the computation.
+    ///
+    /// [`test_hash`](Self::test_hash) covers this too, but only for a `Default + HashAlgParams`
+    /// implementor. The SP 800-185 functions take constructor arguments and so cannot reach it;
+    /// `TupleHash` and `ParallelHash` both panicked on a short buffer until this existed.
+    ///
+    /// Not for XOFs. A XOF's [`Hash::output_len`] is nominal rather than bound, and its
+    /// `do_final_out` fills whatever buffer it is handed rather than stopping at `output_len`, so
+    /// the over-long case below does not describe one. Use `TestFrameworkXOF` for those.
+    pub fn test_hash_output_buffers<H: Hash>(&self, make: impl Fn() -> H, input: &[u8]) {
+        let expected = {
+            let mut h = make();
+            h.do_update(input);
+            h.do_final()
+        };
+        let n = make().output_len();
+        assert_eq!(expected.len(), n, "do_final() must produce output_len() bytes");
+
+        // Short: the buffer is filled and the digest truncated to it.
+        for length in 1..n {
+            let mut buf = vec![0xAA_u8; length];
+            let mut h = make();
+            h.do_update(input);
+            let written = h.do_final_out(&mut buf);
+            assert_eq!(written, length, "a {length}-byte buffer must take {length} bytes");
+            assert_eq!(buf, expected[..length], "short buffer must truncate the digest");
+
+            // hash_out is the one-shot spelling of the same thing.
+            let mut buf = vec![0xAA_u8; length];
+            let written = make().hash_out(input, &mut buf);
+            assert_eq!(written, length, "hash_out must agree with do_final_out");
+            assert_eq!(buf, expected[..length], "hash_out must truncate the digest");
+        }
+
+        // Exact.
+        let mut buf = vec![0xAA_u8; n];
+        let mut h = make();
+        h.do_update(input);
+        assert_eq!(h.do_final_out(&mut buf), n);
+        assert_eq!(buf, expected, "an exactly-sized buffer must take the whole digest");
+
+        // Long: the digest lands in the first output_len bytes and the rest is zeroized.
+        for extra in [1, n, 2 * n + 1] {
+            let mut buf = vec![0xAA_u8; n + extra];
+            let mut h = make();
+            h.do_update(input);
+            let written = h.do_final_out(&mut buf);
+            assert_eq!(written, n, "a long buffer must still write only output_len bytes");
+            assert_eq!(&buf[..n], &expected[..], "the digest must land at the start");
+            assert!(
+                buf[n..].iter().all(|&b| b == 0),
+                "bytes past output_len must be zeroized, buffer was {} bytes",
+                n + extra
+            );
+        }
+    }
+
     /// Test all the members of trait Hash against the given input-output pair.
     /// This gives good baseline test coverage, but is not exhaustive; for example it does not test
     /// do_final_partial_bits() or do_final_partial_bits_out()
@@ -99,7 +157,7 @@ impl TestFrameworkHash {
             /*** fn do_final_partial_bits_out(self, partial_byte: u8, num_bits: usize, output: &mut [u8]) -> Result<usize, HashError>; ***/
             // A known-answer test for these needs a different expected output from the rest of this
 
-            // Helper: the digest of `input` finished with the low `num_bits` bits of `partial_byte`.
+            // Helper: the digest of `input` finished with the top `num_bits` bits of `partial_byte`.
             let partial_digest = |partial_byte: u8, num_bits: usize| -> Vec<u8> {
                 let mut message_digest = H::default();
                 message_digest.do_update(input);
@@ -119,17 +177,18 @@ impl TestFrameworkHash {
                 );
             }
 
-            // "The num_bits message bits are taken from the least significant bits of
-            //     partial_byte": the unused high bits are not part of the message, and so must not
-            //     change the output.
+            // "the num_bits message bits are the most significant bits of partial_byte ... and the
+            //     low 8 - num_bits bits (the BIT STRING's "unused bits") are ignored": so the unused
+            //     low bits are not part of the message, and must not change the output.
             for num_bits in 0..=7 {
-                // no overflow: 1u8 << 7 == 0x80
-                let mask = (1u8 << num_bits) - 1;
+                // the used bits are the top num_bits; built in u16 so that num_bits == 0 cannot overflow
+                let mask = (0xFF00u16 >> num_bits) as u8;
                 for partial_byte in [0x00u8, 0x5A, 0xA5, 0xFF] {
                     assert_eq!(
                         partial_digest(partial_byte, num_bits),
                         partial_digest(partial_byte & mask, num_bits),
-                        "bits above num_bits = {num_bits} must be ignored / partial_byte: {partial_byte:#04X}"
+                        "the low 8 - num_bits = {} bits must be ignored / partial_byte: {partial_byte:#04X}",
+                        8 - num_bits
                     );
                 }
             }
@@ -184,11 +243,14 @@ impl TestFrameworkHash {
 
             // Each (num_bits, partial_byte) pair is a distinct message, and so must produce a
             //     distinct digest. This is what catches an implementation that silently drops the
-            //     partial bits, or absorbs the wrong number of them.
+            //     partial bits, or absorbs the wrong number of them. The num_bits message bits are
+            //     enumerated in the top bits of the byte (the shift is done in u16 so that
+            //     num_bits == 0, an 8-bit shift, cannot overflow).
             let mut partial_outputs: Vec<Vec<u8>> = Vec::new();
             for num_bits in 0..=7 {
-                for partial_byte in 0..(1u16 << num_bits) {
-                    partial_outputs.push(partial_digest(partial_byte as u8, num_bits));
+                for message_bits in 0..(1u16 << num_bits) {
+                    let partial_byte = (message_bits << (8 - num_bits)) as u8;
+                    partial_outputs.push(partial_digest(partial_byte, num_bits));
                 }
             }
             let num_partial_outputs = partial_outputs.len();
@@ -200,6 +262,40 @@ impl TestFrameworkHash {
                 "each (num_bits, partial_byte) pair is a distinct message and must hash to a distinct output"
             );
         }
+
+        /*** Clone: a hash mid-stream can be forked ***/
+        // A clone continues from the same absorbed prefix, so finishing the two on the same tail
+        // must give the same digest, and finishing them on different tails must not.
+        let (prefix, tail) = input.split_at(input.len() / 2);
+        let mut original = H::default();
+        original.do_update(prefix);
+        let mut forked = original.clone();
+        original.do_update(tail);
+        forked.do_update(tail);
+        assert_eq!(
+            original.do_final(),
+            expected_output,
+            "the original must be unaffected by cloning"
+        );
+        assert_eq!(
+            forked.do_final(),
+            expected_output,
+            "a clone must continue from the same absorbed prefix"
+        );
+
+        let mut original = H::default();
+        original.do_update(prefix);
+        let mut forked = original.clone();
+        original.do_update(tail);
+        forked.do_update(&[0xA5]);
+        forked.do_update(tail);
+        let original_out = original.do_final();
+        assert_eq!(original_out, expected_output);
+        assert_ne!(
+            forked.do_final(),
+            original_out,
+            "a clone must have its own state, not share the original's"
+        );
 
         // check that if you feed it an output slice that's bigger than it needs, that it doesn't touch the extra bytes.
         let mut message_digest = H::default();

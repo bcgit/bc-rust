@@ -43,10 +43,10 @@ Some specifics:
 * Public APIs of a library should be both ergonomic and expressive. When defining a new trait or public function, ask
   yourself whether a programmer who is new to cryptography is likely to use this in a way that will get them into
   trouble.
-* Variables should be well-named, well-structured, and well-commented (a comment-to-code ration of 1:1 is a goal to be
+* Variables should be well-named, well-structured, and well-commented (a comment-to-code ratio of 1:1 is a goal to be
   strived for!). Think about memory footprint and, where possible, use unnamed scopes to allow the compiler to pop
   intermediate value variables off the stack as soon as they are no longer needed.
-* Always run your code through `cargo mutants` and get the issue count as low as your can. As a first pass, this forces
+* Always run your code through `cargo mutants` and get the issue count as low as you can. As a first pass, this forces
   you to write thorough unit tests. As a second pass, this draws your attention to bits of your code that cannot be
   tested from the outside. Often this means that the code can be simplified without affecting functionality (as defined
   by your set of unit tests) -- "simpler code" usually means faster runtime and easier future maintenance.
@@ -71,7 +71,7 @@ For minor updates, you can instead choose to create an issue with short snippets
 
 * For contributions touching multiple files try and split up the pull request, smaller changes are easier to review and
   test, as well as being less likely to run into merge issues.
-* Create a test cases for your change, it may be a simple addition to an existing test. If you do not know how to do
+* Create test cases for your change; it may be a simple addition to an existing test. If you do not know how to do
   this, ask us and we will help you.
 * If you run into any merge issues, check out this [git tutorial](https://github.com/skills/resolve-merge-conflicts) to
   help you resolve merge conflicts and other issues.
