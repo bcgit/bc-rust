@@ -26,7 +26,7 @@
 //! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
 //! | `ACVP-AES-CTR` | `ctr_bc-test-data.rs` |
 //! | `ACVP-AES-GCM` / `-GMAC` | `gcm_bc-test-data.rs` / `gmac_bc-test-data.rs` |
-//! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |
+//! | `ACVP-AES-KW` / `-KWP` | `crypto/modes/tests/acvp_kw_tests.rs` |
 //! | `ACVP-AES-FF1` / `-FF3-1` | nothing yet (format-preserving encryption is unimplemented) |
 //!
 //! So an unused vector set here means an unimplemented mode, not an untested one. Adding a mode
