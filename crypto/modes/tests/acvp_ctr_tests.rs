@@ -37,68 +37,29 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork.
 
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
-use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_hex as hex;
 use bouncycastle_modes::{Ctr, Decrypting, Encrypting};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+
+// See `acvp_gcm_tests.rs` for why this is its own module path rather than `mod common;`.
+#[path = "common/acvp_helpers.rs"]
+mod acvp_helpers;
+use acvp_helpers::{cipher_key, decode, test_data_dir};
 
 const BLOCK_LEN: usize = 16;
 /// The nonce length under test; the remaining 4 bytes of the block are the counter.
 const NONCE_LEN: usize = 12;
 
-/// Candidate locations, covering `cargo test` run from the crate root or from the repo root.
-const TEST_DATA_PATHS: [&str; 2] = [
-    "../../../bc-test-data/crypto/aes_tdes_vectors/AES",
-    "../bc-test-data/crypto/aes_tdes_vectors/AES",
-];
-
+/// Where the vectors live under `bc-test-data/crypto`.
+const SUBDIR: &str = "aes_tdes_vectors/AES";
 const REQUEST_FILE: &str = "ACVP-AES-CTR.4014537.req.json";
 const RESPONSE_FILE: &str = "ACVP-AES-CTR.4014537.rsp.json";
-
-fn test_data_dir() -> Option<PathBuf> {
-    for candidate in TEST_DATA_PATHS {
-        let path = Path::new(candidate);
-        if path.join(REQUEST_FILE).exists() && path.join(RESPONSE_FILE).exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); \
-         ACVP AES-CTR tests will be skipped"
-    );
-    None
-}
-
-/// Builds a `KeyMaterial` from raw ACVP key bytes, including the all-zero keys.
-///
-/// The ACVP set deliberately includes an all-zero key. `KeyMaterial` tags an all-zero buffer as
-/// `KeyType::Zeroized` and will not promote it outside a `do_hazardous_operations` closure, which
-/// is the right default -- so this opts in explicitly rather than the engine weakening its guard.
-fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
-    assert_eq!(bytes.len(), N, "key length should match the parameter set");
-    let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
-        .expect("ACVP key bytes fit the buffer");
-
-    if key.key_type() != KeyType::SymmetricCipherKey {
-        do_hazardous_operations(&mut key, |k| {
-            k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(SecurityStrength::from_bytes(N))
-        })
-        .expect("promoting a NIST all-zero test key");
-    }
-    key
-}
 
 /// How to walk the bytes of one case.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -182,17 +143,9 @@ fn run_case_for_key_len(
     }
 }
 
-fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
-
 #[test]
 fn acvp_aes_ctr_known_answer_tests() {
-    let Some(dir) = test_data_dir() else { return };
+    let Some(dir) = test_data_dir(SUBDIR, &[REQUEST_FILE, RESPONSE_FILE]) else { return };
 
     let req: Value = serde_json::from_str(
         &fs::read_to_string(dir.join(REQUEST_FILE)).expect("readable request file"),

@@ -21,7 +21,7 @@ const RESPONSE_FILE: &str = "ACVP-AES-GMAC.4014543.rsp.json";
 
 #[test]
 fn acvp_aes_gmac_known_answer_tests() {
-    let Some(dir) = test_data_dir(SUBDIR, REQUEST_FILE, RESPONSE_FILE) else { return };
+    let Some(dir) = test_data_dir(SUBDIR, &[REQUEST_FILE, RESPONSE_FILE]) else { return };
 
     let req: Value = serde_json::from_str(
         &fs::read_to_string(dir.join(REQUEST_FILE)).expect("readable request file"),

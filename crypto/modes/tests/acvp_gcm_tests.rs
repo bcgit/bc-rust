@@ -37,7 +37,7 @@ const RESPONSE_FILE: &str = "ACVP-AES-GCM.4014542.rsp.json";
 
 #[test]
 fn acvp_aes_gcm_known_answer_tests() {
-    let Some(dir) = test_data_dir(SUBDIR, REQUEST_FILE, RESPONSE_FILE) else { return };
+    let Some(dir) = test_data_dir(SUBDIR, &[REQUEST_FILE, RESPONSE_FILE]) else { return };
 
     let req: Value = serde_json::from_str(
         &fs::read_to_string(dir.join(REQUEST_FILE)).expect("readable request file"),

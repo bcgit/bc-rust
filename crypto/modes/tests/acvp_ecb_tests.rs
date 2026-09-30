@@ -18,56 +18,23 @@
 //! specification rather than SP 800-38A and are skipped, with the count reported.
 
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
-use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+
+// See `acvp_gcm_tests.rs` for why this is its own module path rather than `mod common;`.
+#[path = "common/acvp_helpers.rs"]
+mod acvp_helpers;
+use acvp_helpers::{cipher_key, test_data_dir};
 
 const BLOCK_LEN: usize = 16;
 
-/// Candidate locations, covering `cargo test` run from the crate root or from the repo root.
-const TEST_DATA_PATHS: [&str; 2] = [
-    "../../../bc-test-data/crypto/aes_tdes_vectors/AES",
-    "../bc-test-data/crypto/aes_tdes_vectors/AES",
-];
-
+/// Where the vectors live under `bc-test-data/crypto`.
+const SUBDIR: &str = "aes_tdes_vectors/AES";
 const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";
-
-fn test_data_dir() -> Option<PathBuf> {
-    for candidate in TEST_DATA_PATHS {
-        let path = Path::new(candidate);
-        if path.join(RESPONSE_FILE).exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); \
-         ACVP AES-ECB mode tests will be skipped"
-    );
-    None
-}
-
-/// Builds a `KeyMaterial` from raw ACVP key bytes, including the all-zero keys the set contains.
-fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
-    assert_eq!(bytes.len(), N, "key length should match the parameter set");
-    let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
-        .expect("ACVP key bytes fit the buffer");
-    if key.key_type() != KeyType::SymmetricCipherKey {
-        do_hazardous_operations(&mut key, |k| {
-            k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(SecurityStrength::from_bytes(N))
-        })
-        .expect("promoting a NIST all-zero test key");
-    }
-    key
-}
 
 /// How to walk the blocks of one case.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -145,7 +112,7 @@ fn to_blocks(bytes: &[u8]) -> Vec<[u8; BLOCK_LEN]> {
 
 #[test]
 fn acvp_aes_ecb_through_the_mode_api() {
-    let Some(dir) = test_data_dir() else { return };
+    let Some(dir) = test_data_dir(SUBDIR, &[RESPONSE_FILE]) else { return };
 
     let parsed: Value = serde_json::from_str(
         &fs::read_to_string(dir.join(RESPONSE_FILE)).expect("readable response file"),

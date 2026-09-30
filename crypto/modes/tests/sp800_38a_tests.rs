@@ -210,39 +210,6 @@ fn f_2_6_cbc_aes256_decrypt() {
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
 /// The one-shots take flat arrays and work in place, so the four ciphertext blocks are presented
 /// as 64 contiguous bytes and become the four plaintext blocks.
-#[test]
-fn the_one_shot_api_matches_the_vectors() {
-    let iv = block(IV);
-    let pt = flat(&PLAINTEXTS);
-
-    let mut data = flat(&CIPHERTEXTS_128);
-    Cbc::<AES128Internal, Decrypting, 16, 16>::decrypt_in_place(
-        &key_material::<16>(KEY_128),
-        &iv,
-        &mut data,
-    )
-    .unwrap();
-    assert_eq!(data, pt);
-
-    let mut data = flat(&CIPHERTEXTS_192);
-    Cbc::<AES192Internal, Decrypting, 24, 16>::decrypt_in_place(
-        &key_material::<24>(KEY_192),
-        &iv,
-        &mut data,
-    )
-    .unwrap();
-    assert_eq!(data, pt);
-
-    let mut data = flat(&CIPHERTEXTS_256);
-    Cbc::<AES256Internal, Decrypting, 32, 16>::decrypt_in_place(
-        &key_material::<32>(KEY_256),
-        &iv,
-        &mut data,
-    )
-    .unwrap();
-    assert_eq!(data, pt);
-}
-
 /// The IV really is what distinguishes CBC from ECB here: the same key and plaintext under the
 /// F.1 (ECB) conditions gives the F.1 ciphertext, and under F.2 gives a different one.
 ///

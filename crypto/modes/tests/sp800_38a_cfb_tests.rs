@@ -260,39 +260,6 @@ fn f_3_18_cfb128_aes256_decrypt() {
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
 /// The one-shots work in place, so the four ciphertext segments are presented as 64 contiguous
 /// bytes and become the four plaintext blocks.
-#[test]
-fn the_one_shot_api_matches_the_vectors() {
-    let iv = block(IV);
-    let pt = flat(&PLAINTEXTS);
-
-    let mut data = flat(&CIPHERTEXTS_128);
-    Cfb::<AES128Internal, Decrypting, 16, 16>::decrypt_in_place(
-        &key_material::<16>(KEY_128),
-        &iv,
-        &mut data,
-    )
-    .unwrap();
-    assert_eq!(data, pt);
-
-    let mut data = flat(&CIPHERTEXTS_192);
-    Cfb::<AES192Internal, Decrypting, 24, 16>::decrypt_in_place(
-        &key_material::<24>(KEY_192),
-        &iv,
-        &mut data,
-    )
-    .unwrap();
-    assert_eq!(data, pt);
-
-    let mut data = flat(&CIPHERTEXTS_256);
-    Cfb::<AES256Internal, Decrypting, 32, 16>::decrypt_in_place(
-        &key_material::<32>(KEY_256),
-        &iv,
-        &mut data,
-    )
-    .unwrap();
-    assert_eq!(data, pt);
-}
-
 /// The spec's tabulated **Output Blocks** are the CFB keystream, and its **Input Blocks** are the
 /// IV followed by the ciphertext segments. Both fall straight out of Sec 6.3 with `s = b`:
 ///

@@ -11,66 +11,19 @@
 
 use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
-use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
-use serde_json::Value;
-use std::path::{Path, PathBuf};
 
 /// The nonce length these vectors use; every group in the ACVP AES-GCM/GMAC sets has `ivLen = 96`.
+#[path = "acvp_helpers.rs"]
+mod acvp_helpers;
+pub use acvp_helpers::{cipher_key, decode, test_data_dir};
+
 pub const GCM_NONCE_LEN: usize = 12;
-
-/// Finds the directory holding `req_file` and `rsp_file` under either of the two candidate roots
-/// this crate's other ACVP suites use, or `None` (with a printed warning) if neither has both.
-pub fn test_data_dir(subdir: &str, req_file: &str, rsp_file: &str) -> Option<PathBuf> {
-    let candidates = [
-        format!("../../../bc-test-data/crypto/{subdir}"),
-        format!("../bc-test-data/crypto/{subdir}"),
-    ];
-    for candidate in &candidates {
-        let path = Path::new(candidate);
-        if path.join(req_file).exists() && path.join(rsp_file).exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {candidates:?}); \
-         this suite will be skipped"
-    );
-    None
-}
-
-/// Builds a `KeyMaterial` from raw ACVP key bytes, including the all-zero keys the set includes
-/// deliberately: `KeyMaterial` tags an all-zero buffer as `KeyType::Zeroized` and will not promote
-/// it outside a `do_hazardous_operations` closure, so this opts in explicitly.
-pub fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
-    assert_eq!(bytes.len(), N, "key length should match the parameter set");
-    let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
-        .expect("ACVP key bytes fit the buffer");
-    if key.key_type() != KeyType::SymmetricCipherKey {
-        do_hazardous_operations(&mut key, |k| {
-            k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(SecurityStrength::from_bytes(N))
-        })
-        .expect("promoting a NIST all-zero test key");
-    }
-    key
-}
-
-pub fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
 
 /// Runs one ACVP AES-GCM/GMAC encrypt case: encrypts `pt` under `key`/`aad`, driving the nonce
 /// through a `FixedSeedRNG` seeded with the vector's own `iv` and asserting it is reproduced
