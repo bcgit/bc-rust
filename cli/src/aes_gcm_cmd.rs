@@ -12,8 +12,8 @@
 //! flag, for the same reason as the other modes -- and doubly so here, since a repeated GCM nonce
 //! also lets an attacker recover the hash subkey (SP 800-38D Appendix A).
 
-use crate::aead_mode_cmd::{decrypt_gcm, encrypt_gcm, load_aad};
-use crate::block_mode_cmd::{BlockModeAction, load_key};
+use crate::helpers::aead_cipher_helpers::{decrypt_gcm, encrypt_gcm, load_aad};
+use crate::helpers::block_mode_helpers::{BlockModeAction, load_key};
 use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::ElectronicCodeBook;

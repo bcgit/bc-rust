@@ -5,7 +5,7 @@
 //! [`BlockCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it, so the
 //! commands cannot drift apart on the parts that matter for correctness.
 //!
-//! The CFB and CTR commands are stream ciphers and live in [`crate::stream_mode_cmd`] instead;
+//! The CFB and CTR commands are stream ciphers and live in [`crate::helpers::stream_mode_helpers`] instead;
 //! they share
 //! [`load_key`] and [`BlockModeAction`] with this module, so the key handling and the `encrypt` /
 //! `decrypt` spelling stay identical across all of them.
@@ -32,7 +32,7 @@
 //!
 //! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
 //! commands apply no padding, so input that is not a multiple of 16 bytes is rejected rather than
-//! silently padded. (The CFB commands have no such requirement; see [`crate::stream_mode_cmd`].)
+//! silently padded. (The CFB commands have no such requirement; see [`crate::helpers::stream_mode_helpers`].)
 //! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
 //!
