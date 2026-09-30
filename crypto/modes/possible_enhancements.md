@@ -13,3 +13,4 @@ Possible additional modes or features to be added to this crate:
 * **CCM with a formatting function other than Appendix A's.** SP 800-38C Sec 5.4 allows
   alternatives and says "Alternative formatting functions may be developed in the future";
   Appendix A's is the only one that exists in practice and the only one [`Ccm`] implements.
+* Add GMAC and CMAC as top-level [`MAC']'s.

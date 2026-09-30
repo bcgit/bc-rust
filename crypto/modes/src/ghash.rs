@@ -1,8 +1,11 @@
 //! GHASH: the universal hash function GCM builds its authentication on (NIST SP 800-38D Sec 6.3,
 //! 6.4), and the GF(2^128) multiplication it is defined over.
 //!
-//! This is the only genuinely new cryptographic code `gcm.rs` needs; everything else there is
+//! This is the only new cryptographic code `gcm.rs` needs; everything else there is
 //! plumbing around this and [`crate::Ctr`].
+//!
+//! This is placed here and not exposed as a top-level Hash function because it is only used by the
+//! GCM block cipher mode, and not as a standalone hash function.
 //!
 //! # Field element representation
 //!
@@ -16,11 +19,6 @@
 //! the `x[0], x[1]` pair carrying the bottom bit of `x[0]` into the top bit of `x[1]`, and `R`
 //! (`11100001 || 0^120`, Sec 6.3) is the block whose first byte is `0xE1` and the rest zero, i.e.
 //! `[0xE1 << 56, 0]` in this representation.
-//!
-//! Getting this orientation right once, here, is worth the length of this comment: every GCM
-//! implementation bug report in the wild is an orientation bug, and [`mul_reference`] exists so
-//! [`mul`] can be checked against something whose correctness is visible by inspection of the spec
-//! text above rather than by parity with another implementation.
 
 use bouncycastle_utils::secret::Secret;
 
