@@ -5,6 +5,7 @@
 use crate::errors::*;
 use crate::key_material::KeyMaterialTrait;
 use crate::security_strength::SecurityStrength;
+use bouncycastle_utils::secret::Secret;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
 
@@ -1155,6 +1156,173 @@ pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
     /// [`Self::remaining_blocks`]. Asking for more is a programmer error, and the implementor may
     /// panic or repeat keystream.
     fn apply_blocks(&mut self, blocks: &mut [[u8; BLOCK_LEN]]);
+}
+
+/// The unwrapping (authenticated-decryption) half of a key-wrap algorithm, such as KW, KWP or TKW
+/// from NIST SP 800-38F (also specified as RFC 3394 and RFC 5649).
+///
+/// Wrapping is performed by the corresponding [`KeyWrapper`] trait. The two are separate traits so
+/// that a policy can permit unwrapping of existing ciphertexts while forbidding new wrappings, as
+/// with the other `*Encryptor` / `*Decryptor` pairs.
+///
+/// Key wrap is a one-shot operation over the whole input, so there is no streaming API: the
+/// underlying wrapping function (SP 800-38F, Algorithm 2 (W⁻¹)) makes several passes over all
+/// of the data.
+///
+/// # The KEK
+///
+/// The KEK (key encryption key) is a [`KeyMaterial`] and must be of type
+/// [`KeyType::SymmetricCipherKey`], tagged at a security strength of at least
+/// [`Algorithm::MAX_SECURITY_STRENGTH`]; otherwise a [`SymmetricCipherError::KeyMaterialError`] is
+/// returned.
+///
+/// # The recovered plaintext is a `Secret`, not a `KeyMaterial`
+///
+/// Unwrapping says nothing about the type or provenance of the data, so the caller must decide
+/// explicitly what it is, for example by constructing a [`KeyMaterial`] of the appropriate
+/// [`KeyType`] from it. It is returned as a [`Secret`] so that it is still zeroized on drop and
+/// redacted from debug output.
+///
+/// # Every authenticity failure is the same error
+///
+/// A wrong KEK, a modified ciphertext, an integrity-check value mismatch, invalid padding, and (for
+/// [`KeyUnwrapper::unwrap_key`]) a recovered plaintext whose length is not `KEY_LEN` must all be
+/// reported as [`SymmetricCipherError::DecryptionFailed`], so that the error does not tell an
+/// attacker which check failed. SP 800-38F reports all of these as a single FAIL; see, for example,
+/// Algorithm 6 (KWP-AD), steps 4, 7 and 8. On any error, the output buffer is zeroized.
+pub trait KeyUnwrapper<const KEK_LEN: usize>: Algorithm + Sized {
+    /// One-shot: unwraps a ciphertext whose length is fixed at compile time, returning the
+    /// recovered plaintext.
+    ///
+    /// Provided over [`KeyUnwrapper::unwrap_key_out`].
+    fn unwrap_key<const KEY_LEN: usize, const CT_LEN: usize>(
+        kek: &KeyMaterial<KEK_LEN>,
+        ciphertext: &[u8; CT_LEN],
+    ) -> Result<Secret<[u8; KEY_LEN]>, SymmetricCipherError> {
+        let mut key = Secret::<[u8; KEY_LEN]>::new();
+        let bytes_written = Self::unwrap_key_out(kek, ciphertext, &mut key)?;
+        debug_assert_eq!(bytes_written, KEY_LEN);
+        Ok(key)
+    }
+
+    /// One-shot: unwraps a ciphertext whose length is fixed at compile time, writing the recovered
+    /// plaintext directly into `key`. Returns the number of bytes written, which is always
+    /// `KEY_LEN`.
+    ///
+    /// Implementations must reject any `(KEY_LEN, CT_LEN)` pair the algorithm does not define with
+    /// an inline `const` assertion, so that it is a compile error at the call site; see
+    /// [`KeyWrapper::wrap_key_out`].
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::KeyMaterialError`] for an unsuitable KEK, and
+    /// [`SymmetricCipherError::DecryptionFailed`] for any authenticity failure. `key` is zeroized
+    /// on error.
+    fn unwrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
+        kek: &KeyMaterial<KEK_LEN>,
+        ciphertext: &[u8; CT_LEN],
+        key: &mut Secret<[u8; KEY_LEN]>,
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// An upper bound on the plaintext length for a ciphertext of `ciphertext_len` bytes: the
+    /// buffer [`KeyUnwrapper::unwrap_out`] requires. This is `ciphertext_len` minus one semiblock
+    /// (half the block cipher's block length), saturating at zero. It is exact for KW and TKW; for
+    /// KWP the exact length is only known after unwrapping, since up to 7 bytes are padding.
+    ///
+    /// Must not panic for any `ciphertext_len`.
+    fn unwrap_out_max_len(ciphertext_len: usize) -> usize;
+
+    /// One-shot: unwraps a ciphertext whose length is only known at run time into `plaintext`,
+    /// which needs [`KeyUnwrapper::unwrap_out_max_len`] bytes. Returns the number of plaintext
+    /// bytes written.
+    ///
+    /// On success the caller is responsible for zeroizing `plaintext` once done with it; prefer
+    /// [`KeyUnwrapper::unwrap_key`] where the length is known at compile time.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, checked before
+    /// any work is done; [`SymmetricCipherError::InvalidInputLength`] for a ciphertext length the
+    /// algorithm is not defined on; [`SymmetricCipherError::KeyMaterialError`] for an unsuitable
+    /// KEK; and [`SymmetricCipherError::DecryptionFailed`] for any authenticity failure. The whole
+    /// `plaintext` buffer is zeroized on error.
+    fn unwrap_out(
+        kek: &KeyMaterial<KEK_LEN>,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>;
+}
+
+/// The wrapping (authenticated-encryption) half of a key-wrap algorithm, such as KW, KWP or TKW
+/// from NIST SP 800-38F (also specified as RFC 3394 and RFC 5649).
+///
+/// Unwrapping is performed by the corresponding [`KeyUnwrapper`] trait, whose notes on the KEK
+/// apply here too.
+///
+/// # The data being wrapped is plain bytes
+///
+/// It is taken as bytes rather than as a [`KeyMaterial`] because wrapping strips the key type and
+/// security strength anyway, and because key-wrap algorithms (particularly KWP) are also used to
+/// protect data that is not a symmetric key, such as encoded private keys. A [`Secret`] can be
+/// passed in by dereferencing it: `&*secret`.
+///
+/// SP 800-38F, Appendix A.2 says the KEK *should* be at least as strong as any key it protects.
+/// Since the wrapped data carries no security strength, this trait cannot enforce that; it is the
+/// caller's responsibility.
+///
+/// Key wrapping is deterministic: wrapping the same data under the same KEK always produces the
+/// same ciphertext.
+pub trait KeyWrapper<const KEK_LEN: usize>: Algorithm + Sized {
+    /// One-shot: wraps data whose length is fixed at compile time, returning the ciphertext.
+    ///
+    /// Provided over [`KeyWrapper::wrap_key_out`].
+    fn wrap_key<const KEY_LEN: usize, const CT_LEN: usize>(
+        kek: &KeyMaterial<KEK_LEN>,
+        key: &[u8; KEY_LEN],
+    ) -> Result<[u8; CT_LEN], SymmetricCipherError> {
+        let mut ciphertext = [0u8; CT_LEN];
+        let bytes_written = Self::wrap_key_out(kek, key, &mut ciphertext)?;
+        debug_assert_eq!(bytes_written, CT_LEN);
+        Ok(ciphertext)
+    }
+
+    /// One-shot: wraps data whose length is fixed at compile time into `ciphertext`. Returns the
+    /// number of bytes written, which is always `CT_LEN`.
+    ///
+    /// `CT_LEN` is a function of `KEY_LEN` that depends on the algorithm (for example
+    /// `KEY_LEN + 8` for KW), which Rust cannot yet express in the signature. Implementations must
+    /// therefore reject any `(KEY_LEN, CT_LEN)` pair the algorithm does not define -- including
+    /// lengths outside the limits of SP 800-38F, Section 5.3.1 (Table 1) -- with an inline `const`
+    /// assertion, so that it is a compile error at the call site, not a runtime `Err`.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::KeyMaterialError`] for an unsuitable KEK.
+    fn wrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
+        kek: &KeyMaterial<KEK_LEN>,
+        key: &[u8; KEY_LEN],
+        ciphertext: &mut [u8; CT_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// The exact ciphertext length for a plaintext of `plaintext_len` bytes: the buffer
+    /// [`KeyWrapper::wrap_out`] requires. For example `plaintext_len + 8` for KW, and
+    /// `plaintext_len` rounded up to a multiple of 8, plus 8, for KWP.
+    ///
+    /// Must not panic for any `plaintext_len`; for a length the algorithm is not defined on, the
+    /// value is unspecified and [`KeyWrapper::wrap_out`] returns
+    /// [`SymmetricCipherError::InvalidInputLength`].
+    fn wrap_out_len(plaintext_len: usize) -> usize;
+
+    /// One-shot: wraps data whose length is only known at run time into `ciphertext`, which needs
+    /// [`KeyWrapper::wrap_out_len`] bytes. Returns the number of bytes written.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked before
+    /// any work is done; [`SymmetricCipherError::InvalidInputLength`] for a plaintext length the
+    /// algorithm is not defined on; and [`SymmetricCipherError::KeyMaterialError`] for an
+    /// unsuitable KEK.
+    fn wrap_out(
+        kek: &KeyMaterial<KEK_LEN>,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>;
 }
 
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.

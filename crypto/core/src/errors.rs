@@ -175,6 +175,10 @@ pub enum SymmetricCipherError {
     /// no input and left the cipher's state untouched, so retrying with a buffer at least that
     /// long produces exactly what the refused call would have.
     OutputBufferTooSmall(usize),
+    /// The length of the input is outside the range of lengths the algorithm is defined on, for
+    /// example a key-wrap plaintext or ciphertext that is too short. Only returned by APIs that
+    /// take variable-length input; lengths fixed at compile time are validated at compile time.
+    InvalidInputLength(&'static str),
     ///
     KeyMaterialError(KeyMaterialError),
     ///
