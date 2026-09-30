@@ -31,7 +31,58 @@ pub struct Condition<T>(T)
 where
     MaskType<T>: SupportedMaskType;
 
-impl<T> Condition<T> where MaskType<T>: SupportedMaskType {}
+// ---------------------------------------------------------------------------------------------
+// Optimisation barrier
+//
+// Every constant-time construction in this file is masked arithmetic on a value the optimiser
+// could otherwise prove to be one of a small number of constants (a `Condition` mask is all-ones
+// or all-zeros; the accumulator of a comparison loop is zero until the first difference). Given
+// that knowledge the compiler is free to lower `(t & m) | (f & !m)` to a branch or a conditional
+// move on the secret, or to leave a comparison loop early. To stop that, the value is routed
+// through a volatile store and load. The documentation of `core::ptr::read_volatile` /
+// `write_volatile` states that they "are guaranteed to not be elided or reordered by the compiler"
+// and that a volatile read "will actually access memory and not e.g. be lowered to reusing data
+// from a previous read". Once a value has been volatile-written and volatile-read back the
+// optimiser holds no facts about it, so neither rewrite is available.
+//
+// `core::hint::black_box` was used previously and is not sufficient: its documentation says it is
+// "only (and can only be) provided on a 'best-effort' basis" and "does not offer any guarantees
+// for cryptographic or security purposes", whereas the volatile semantics above are defined. This
+// is the only reason this crate contains `unsafe`.
+// ---------------------------------------------------------------------------------------------
+
+/// Returns `value` unchanged, via a volatile store to a stack slot and a volatile load back, so
+/// that the optimiser retains no knowledge of the value afterwards. See the section comment above.
+#[inline(always)]
+fn value_barrier<T: Copy>(value: T) -> T {
+    let mut slot = value;
+    // SAFETY:
+    //  * `&mut slot` is a reference to an initialised, aligned `T` local on this stack frame, so
+    //    it is valid for reads and writes for the duration of both calls, which is the only
+    //    precondition of `write_volatile` and `read_volatile`.
+    //  * The reference is exclusive; nothing else can observe `slot` during the two accesses.
+    //  * `T: Copy`, so the bitwise copy `read_volatile` makes has no drop glue to run twice and
+    //    the value written is a valid `T`, so the value read back is initialised.
+    unsafe {
+        core::ptr::write_volatile(&mut slot, value);
+        core::ptr::read_volatile(&slot)
+    }
+}
+
+impl<T: Copy> Condition<T>
+where
+    MaskType<T>: SupportedMaskType,
+{
+    /// The mask after an optimisation barrier: the optimiser no longer knows it is one of
+    /// `TRUE` / `FALSE`. Applied by every consumer of the mask that does masked arithmetic
+    /// (`select`, `negate`, and the accumulator of `is_in_list`), so that a mask built by any of
+    /// the `is_*` constructors cannot be turned back into a branch on the input it was built
+    /// from. Not `const`: volatile accesses are not allowed in const context.
+    #[inline(always)]
+    fn barrier(self) -> Self {
+        Self(value_barrier(self.0))
+    }
+}
 
 // Each signed width is written out by hand rather than macro-generated: `cargo mutants`
 // cannot see into macro bodies, and these mask identities are the ones most worth
@@ -118,17 +169,14 @@ impl Condition<i64> {
     }
     /// TRUE iff `value` occurs in `list`. The list contents and length are public.
     pub fn is_in_list(value: i64, list: &[i64]) -> Self {
-        // Research question: is this actually constant-time?
-        // A clever compiler might turn this into a short-circuiting loop.
-        // A quick google search shows that rust doesn't have the ability to annotate specific code blocks
-        // as no-optimize; the only option is to insert direct assembly.
-
+        // The accumulator goes through the barrier on every iteration, as in `ct_eq_bytes`:
+        // otherwise the compiler may leave the loop once it is TRUE, since further ORs cannot
+        // change it.
         let mut c = Self::FALSE;
-        for i in 0..list.len() {
-            let diff = value ^ list[i];
-            c |= Self::is_zero(diff);
+        for x in list {
+            c |= Self::is_equal(value, *x);
+            c = c.barrier();
         }
-
         c
     }
 
@@ -158,17 +206,19 @@ impl Condition<i64> {
     ///
     /// Therefore, if the [`Self::TRUE`] constant value of the [`Condition`] implementation is changed to `-1`,
     /// the test also runs normally.
-    pub const fn negate(self, value: i64) -> i64 {
-        (value ^ self.0).wrapping_sub(self.0)
+    pub fn negate(self, value: i64) -> i64 {
+        let mask = self.barrier().0;
+        (value ^ mask).wrapping_sub(mask)
     }
     /// Conditional selection: return `true_value` if the condition is true, otherwise
     /// return `false_value`.
-    pub const fn select(self, true_value: i64, false_value: i64) -> i64 {
-        (true_value & self.0) | (false_value & !self.0)
+    pub fn select(self, true_value: i64, false_value: i64) -> i64 {
+        let mask = self.barrier().0;
+        (true_value & mask) | (false_value & !mask)
     }
     /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
     /// returns (rhs, lhs).
-    pub const fn swap(self, lhs: i64, rhs: i64) -> (i64, i64) {
+    pub fn swap(self, lhs: i64, rhs: i64) -> (i64, i64) {
         (self.select(rhs, lhs), self.select(lhs, rhs))
     }
     /// Convert the mask to a runtime boolean. Only use this at genuine public
@@ -259,17 +309,14 @@ impl Condition<i32> {
     }
     /// TRUE iff `value` occurs in `list`. The list contents and length are public.
     pub fn is_in_list(value: i32, list: &[i32]) -> Self {
-        // Research question: is this actually constant-time?
-        // A clever compiler might turn this into a short-circuiting loop.
-        // A quick google search shows that rust doesn't have the ability to annotate specific code blocks
-        // as no-optimize; the only option is to insert direct assembly.
-
+        // The accumulator goes through the barrier on every iteration, as in `ct_eq_bytes`:
+        // otherwise the compiler may leave the loop once it is TRUE, since further ORs cannot
+        // change it.
         let mut c = Self::FALSE;
-        for i in 0..list.len() {
-            let diff = value ^ list[i];
-            c |= Self::is_zero(diff);
+        for x in list {
+            c |= Self::is_equal(value, *x);
+            c = c.barrier();
         }
-
         c
     }
 
@@ -299,17 +346,19 @@ impl Condition<i32> {
     ///
     /// Therefore, if the [`Self::TRUE`] constant value of the [`Condition`] implementation is changed to `-1`,
     /// the test also runs normally.
-    pub const fn negate(self, value: i32) -> i32 {
-        (value ^ self.0).wrapping_sub(self.0)
+    pub fn negate(self, value: i32) -> i32 {
+        let mask = self.barrier().0;
+        (value ^ mask).wrapping_sub(mask)
     }
     /// Conditional selection: return `true_value` if the condition is true, otherwise
     /// return `false_value`.
-    pub const fn select(self, true_value: i32, false_value: i32) -> i32 {
-        (true_value & self.0) | (false_value & !self.0)
+    pub fn select(self, true_value: i32, false_value: i32) -> i32 {
+        let mask = self.barrier().0;
+        (true_value & mask) | (false_value & !mask)
     }
     /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
     /// returns (rhs, lhs).
-    pub const fn swap(self, lhs: i32, rhs: i32) -> (i32, i32) {
+    pub fn swap(self, lhs: i32, rhs: i32) -> (i32, i32) {
         (self.select(rhs, lhs), self.select(lhs, rhs))
     }
     /// Convert the mask to a runtime boolean. Only use this at genuine public
@@ -388,8 +437,9 @@ impl Condition<u64> {
     }
     /// Conditional selection: return `true_value` if the condition is true, otherwise
     /// return `false_value`.
-    pub const fn select(self, true_value: u64, false_value: u64) -> u64 {
-        (true_value & self.0) | (false_value & !self.0)
+    pub fn select(self, true_value: u64, false_value: u64) -> u64 {
+        let mask = self.barrier().0;
+        (true_value & mask) | (false_value & !mask)
     }
     /// Conditionally move the source value to the destination if the condition is
     /// true, otherwise nothing is moved.
@@ -398,7 +448,7 @@ impl Condition<u64> {
     }
     /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
     /// returns (rhs, lhs).
-    pub const fn swap(self, lhs: u64, rhs: u64) -> (u64, u64) {
+    pub fn swap(self, lhs: u64, rhs: u64) -> (u64, u64) {
         (self.select(rhs, lhs), self.select(lhs, rhs))
     }
     /// Convert the mask to a runtime boolean. Only use this at genuine public
@@ -466,8 +516,9 @@ impl Condition<u32> {
     }
     /// Conditional selection: return `true_value` if the condition is true, otherwise
     /// return `false_value`.
-    pub const fn select(self, true_value: u32, false_value: u32) -> u32 {
-        (true_value & self.0) | (false_value & !self.0)
+    pub fn select(self, true_value: u32, false_value: u32) -> u32 {
+        let mask = self.barrier().0;
+        (true_value & mask) | (false_value & !mask)
     }
     /// Conditionally move the source value to the destination if the condition is
     /// true, otherwise nothing is moved.
@@ -476,7 +527,7 @@ impl Condition<u32> {
     }
     /// Conditional swap: returns (lhs, rhs) if the condition is true, otherwise
     /// returns (rhs, lhs).
-    pub const fn swap(self, lhs: u32, rhs: u32) -> (u32, u32) {
+    pub fn swap(self, lhs: u32, rhs: u32) -> (u32, u32) {
         (self.select(rhs, lhs), self.select(lhs, rhs))
     }
     /// Convert the mask to a runtime boolean. Only use this at genuine public
@@ -563,13 +614,8 @@ where
 // ---------------------------------------------------------------------------------------------
 // Byte-slice comparison helpers
 //
-// The core idea here is that the data-dependent state is routed through
-// volatile memory accesses on every iteration. The documentation of
-// `core::ptr::read_volatile` / `write_volatile` states that they "are guaranteed to not be elided
-// or reordered by the compiler" and that a volatile read "will actually access memory and not
-// e.g. be lowered to reusing data from a previous read". So once the accumulator has been
-// volatile-written and volatile-read back, the optimiser holds no facts about its value, and in
-// particular cannot introduce either of the two early exits that would otherwise be legal:
+// The accumulator is routed through `value_barrier` on every iteration. That forecloses both of
+// the early exits that would otherwise be legal:
 //
 //   * leaving the loop once the accumulator is non-zero, because the final `== 0` is already
 //     decided (only legal if the compiler can see that the zero test is the sole consumer), and
@@ -577,46 +623,25 @@ where
 //     (legal regardless of the consumer, which is why the barrier must be *inside* the loop).
 // ---------------------------------------------------------------------------------------------
 
-/// As a performance optimization, we compare one machine-word at a time, which we assume to be the same
-/// as the size of a `usize`.
+/// The slices are compared one machine word at a time, with a byte-wise tail. The word is a
+/// `usize`, so it is 2, 4 or 8 bytes according to the target.
 type AccWord = usize;
 const ACC_BYTES: usize = size_of::<AccWord>();
-
-/// The cor operation that implements the optimization barrier by performing a
-/// `*acc |= diff`, performed as a volatile store followed by a volatile load, so that the
-/// compiler retains no knowledge of the accumulator's value afterwards. See the module comment
-/// above for why this is the barrier used in this file.
-#[inline(always)]
-fn volatile_or_assign(acc: &mut AccWord, diff: AccWord) {
-    // SOUNDNESS:
-    //   * We first write_volatile to the accumulator so that the compiler does not own the written value.
-    //   * We then read_volatile back into `*acc` so that the compiler does not own the value of `*acc`
-    //     on exit, meaning that any read on `*acc` after this exits cannot be elided either.
-    // SAFETY:
-    //  * `acc` is a `&mut AccWord`, so it is non-null, aligned for `AccWord`, and points at an
-    //    initialised `AccWord` inside a live Rust allocation (the caller's stack frame). It is
-    //    therefore valid for both reads and writes for the whole call, which is exactly the
-    //    precondition of `write_volatile` and `read_volatile`.
-    //  * The `&mut` is exclusive, so no other reference can observe or race with these accesses.
-    //  * `AccWord` is `Copy` with no drop glue, so overwriting it and bitwise-copying it back
-    //    out neither leaks nor double-drops anything.
-    //  * Every bit pattern is a valid `AccWord`, so the value read back is always initialised.
-    unsafe {
-        core::ptr::write_volatile(acc, *acc | diff);
-        *acc = core::ptr::read_volatile(acc);
-    }
-}
 
 /// Constant-time equality of two byte slices.
 ///
 /// The runtime depends on the *lengths* of the inputs, which are treated as public, but not on
 /// their contents or on the position of any difference. Slices of different lengths compare
 /// unequal immediately.
+///
+/// Rust does not guarantee constant-time execution of any code on every target and optimisation
+/// level. This is the standard shape, with the data-dependent state kept behind the volatile
+/// barrier described in the "Optimisation barrier" section comment of this file, which is the
+/// strongest mechanism the language defines.
 pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    // Optimization: evaluate it one machine-word at a time.
     // Both slices now have the same length, so the two chunkings line up exactly and the
     // `zip`s below never drop an element.
     let (words_a, tail_a) = a.as_chunks::<ACC_BYTES>();
@@ -624,10 +649,10 @@ pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
 
     let mut acc: AccWord = 0;
     for (x, y) in words_a.iter().zip(words_b) {
-        volatile_or_assign(&mut acc, AccWord::from_ne_bytes(*x) ^ AccWord::from_ne_bytes(*y));
+        acc = value_barrier(acc | (AccWord::from_ne_bytes(*x) ^ AccWord::from_ne_bytes(*y)));
     }
     for (x, y) in tail_a.iter().zip(tail_b) {
-        volatile_or_assign(&mut acc, AccWord::from(x ^ y));
+        acc = value_barrier(acc | AccWord::from(x ^ y));
     }
     acc == 0
 }
@@ -635,17 +660,17 @@ pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
 /// Constant-time check that every byte of `a` is zero.
 ///
 /// The runtime depends on the length of `a`, which is treated as public, but not on its contents
-/// or on the position of the first non-zero byte. Same construction as [`ct_eq_bytes`] with the
-/// XOR against the second operand omitted.
+/// or on the position of the first non-zero byte. Same construction, and same caveat, as
+/// [`ct_eq_bytes`] with the XOR against the second operand omitted.
 pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
     let (words, tail) = a.as_chunks::<ACC_BYTES>();
 
     let mut acc: AccWord = 0;
     for x in words {
-        volatile_or_assign(&mut acc, AccWord::from_ne_bytes(*x));
+        acc = value_barrier(acc | AccWord::from_ne_bytes(*x));
     }
     for x in tail {
-        volatile_or_assign(&mut acc, AccWord::from(*x));
+        acc = value_barrier(acc | AccWord::from(*x));
     }
     acc == 0
 }
@@ -653,35 +678,17 @@ pub fn ct_eq_zero_bytes(a: &[u8]) -> bool {
 /// Copies either the contents of `a` or `b` into `out` according to `take_a`, in a constant-time
 /// manner without branching on `take_a`.
 ///
-/// `take_a` is expanded to an all-ones / all-zeros byte mask and the copy is `(a & mask) |
-/// (b & !mask)` for every byte. The mask is passed through a volatile store/load once before the
-/// loop, so the optimiser does not know it is one of only two values and cannot turn the masked
-/// arithmetic back into a branch or a conditional move keyed on `take_a`. This is the same
-/// placement as BoringSSL's `value_barrier_w(mask)` in `constant_time_select`; the mask does not
-/// change inside the loop, so there is nothing to hide per iteration.
+/// Each byte is a [`Condition::select`] on the mask built from `take_a`, so the barrier that
+/// keeps the optimiser from turning the masked arithmetic back into a branch or a conditional
+/// move is the one every `Condition` consumer uses.
 pub fn conditional_copy_bytes<const LEN: usize>(
     a: &[u8; LEN],
     b: &[u8; LEN],
     out: &mut [u8; LEN],
     take_a: bool,
 ) {
-    // We want the behaviour of `if take_a { 0xFF } else { 0x00 }` without a branch. `true as u8`
-    // is exactly `1`, and `1u8.wrapping_neg()` is `0xFF`, while `0u8.wrapping_neg()` is `0`.
-    let mut mask: u8 = (take_a as u8).wrapping_neg();
-    debug_assert_eq!(mask, if take_a { 0xFF } else { 0x00 });
-
-    // SAFETY:
-    //  * `&mut mask` is a reference to an initialised, aligned `u8` local on this stack frame, so
-    //    it is valid for reads and writes for the duration of both calls.
-    //  * The reference is exclusive; nothing else can observe `mask` during the two accesses.
-    //  * `u8` is `Copy` with no drop glue and every bit pattern is a valid `u8`, so the value
-    //    read back is initialised and nothing is leaked or double-dropped.
-    unsafe {
-        core::ptr::write_volatile(&mut mask, mask);
-        mask = core::ptr::read_volatile(&mask);
-    }
-
+    let mask = Condition::<u32>::from_bool(take_a);
     for i in 0..LEN {
-        out[i] = (a[i] & mask) | (b[i] & !mask);
+        out[i] = mask.select(a[i] as u32, b[i] as u32) as u8;
     }
 }

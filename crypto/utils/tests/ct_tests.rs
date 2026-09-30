@@ -857,6 +857,23 @@ mod ct_bytes_tests {
         }
     }
 
+    /// The accumulator must OR the differences together, not XOR them: two positions carrying
+    /// the same difference must not cancel out, whether they fall in the same word, in
+    /// different words, or in the byte tail. 46 bytes leaves a tail of at least two bytes for
+    /// 4- and 8-byte words, so the pairs at the end land in the tail on those targets.
+    #[test]
+    fn test_ct_eq_bytes_repeated_difference() {
+        use bouncycastle_utils::ct::ct_eq_bytes;
+
+        let a = [0x42u8; 46];
+        for (p, q) in [(0, 1), (0, 8), (3, 19), (7, 39), (33, 39), (41, 45), (44, 45)] {
+            let mut b = a;
+            b[p] ^= 0x10;
+            b[q] ^= 0x10;
+            assert!(!ct_eq_bytes(&a, &b), "positions {p} {q}");
+        }
+    }
+
     #[test]
     fn test_ct_eq_zero_bytes() {
         use bouncycastle_utils::ct::ct_eq_zero_bytes;
@@ -898,6 +915,19 @@ mod ct_bytes_tests {
         }
     }
 
+    /// As for `ct_eq_bytes`: two identical non-zero bytes must not cancel each other out.
+    #[test]
+    fn test_ct_eq_zero_bytes_repeated_nonzero() {
+        use bouncycastle_utils::ct::ct_eq_zero_bytes;
+
+        for (p, q) in [(0, 1), (0, 8), (3, 19), (7, 39), (33, 39), (41, 45), (44, 45)] {
+            let mut buf = [0u8; 46];
+            buf[p] = 0x10;
+            buf[q] = 0x10;
+            assert!(!ct_eq_zero_bytes(&buf), "positions {p} {q}");
+        }
+    }
+
     #[test]
     fn test_conditional_copy_bytes() {
         use bouncycastle_utils::ct::conditional_copy_bytes;
@@ -912,15 +942,27 @@ mod ct_bytes_tests {
         conditional_copy_bytes(&a, &b, &mut out, false);
         assert_eq!(out, [0x10, 0x11, 0x12, 0x13]);
 
-        // every byte position must follow the flag independently, including 0x00 / 0xFF values
-        // that would expose a broken mask, and the empty array must be a no-op
+        // every byte position must follow the flag independently. `a` and `b` are unrelated
+        // (not complements of each other, so a wrong mask formulation cannot produce the right
+        // answer for one flag value by accident) and between them cover 0x00 and 0xFF bytes.
         let a: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(0x11));
-        let b: [u8; 32] = core::array::from_fn(|i| !(i as u8).wrapping_mul(0x11));
+        let b: [u8; 32] = core::array::from_fn(|i| (i as u8).wrapping_mul(0x37).wrapping_add(0xC9));
+        assert!(a.iter().any(|&x| x == 0x00) && a.iter().any(|&x| x == 0xFF));
         let mut out = [0xEEu8; 32];
         conditional_copy_bytes(&a, &b, &mut out, true);
         assert_eq!(out, a);
         conditional_copy_bytes(&a, &b, &mut out, false);
         assert_eq!(out, b);
+
+        // a == b: the mask is invisible, but `out` must still be overwritten either way
+        let mut out = [0xEEu8; 32];
+        conditional_copy_bytes(&a, &a, &mut out, true);
+        assert_eq!(out, a);
+        let mut out = [0xEEu8; 32];
+        conditional_copy_bytes(&a, &a, &mut out, false);
+        assert_eq!(out, a);
+
+        // the empty array must be a no-op
         let mut empty = [0u8; 0];
         conditional_copy_bytes(&[], &[], &mut empty, true);
         conditional_copy_bytes(&[], &[], &mut empty, false);
