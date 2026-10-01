@@ -16,12 +16,14 @@
 //! both ends. Naming it in the type makes that choice explicit and makes a mismatched pair a
 //! compile error. The block-aligned API -- whole blocks in place, length checked at compile time --
 //! is `bouncycastle_modes::Cbc` itself, which these wrap. See
-//! [`PaddedMode`](bouncycastle_padding::PaddedMode) for how one alias covers both directions.
+//! [`Direction::Select`](bouncycastle_core::stream_cipher::Direction) for how one alias covers both
+//! directions.
 
 use crate::BLOCK_LEN;
 use crate::hazmat::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle_core::stream_cipher::Direction;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::PaddedMode;
+use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -54,14 +56,22 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// assert_eq!(recovered, message);
 /// ```
 #[allow(non_camel_case_types)]
-pub type ARIA_CBC_128<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<ARIA_128, Encrypting, 16, BLOCK_LEN>,
-    Cbc<ARIA_128, Decrypting, 16, BLOCK_LEN>,
-    Pad,
-    16,
-    BLOCK_LEN,
-    BLOCK_LEN,
->>::Mode;
+pub type ARIA_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<ARIA_128, Encrypting, 16, BLOCK_LEN>,
+        Pad,
+        16,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<ARIA_128, Decrypting, 16, BLOCK_LEN>,
+        Pad,
+        16,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+>;
 
 /// ARIA-192 in CBC mode with a padding scheme.
 ///
@@ -87,14 +97,22 @@ pub type ARIA_CBC_128<Dir, Pad> = <Dir as PaddedMode<
 /// assert_eq!(recovered, message);
 /// ```
 #[allow(non_camel_case_types)]
-pub type ARIA_CBC_192<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<ARIA_192, Encrypting, 24, BLOCK_LEN>,
-    Cbc<ARIA_192, Decrypting, 24, BLOCK_LEN>,
-    Pad,
-    24,
-    BLOCK_LEN,
-    BLOCK_LEN,
->>::Mode;
+pub type ARIA_CBC_192<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<ARIA_192, Encrypting, 24, BLOCK_LEN>,
+        Pad,
+        24,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<ARIA_192, Decrypting, 24, BLOCK_LEN>,
+        Pad,
+        24,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+>;
 
 /// ARIA-256 in CBC mode with a padding scheme.
 ///
@@ -120,11 +138,19 @@ pub type ARIA_CBC_192<Dir, Pad> = <Dir as PaddedMode<
 /// assert_eq!(recovered, message);
 /// ```
 #[allow(non_camel_case_types)]
-pub type ARIA_CBC_256<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<ARIA_256, Encrypting, 32, BLOCK_LEN>,
-    Cbc<ARIA_256, Decrypting, 32, BLOCK_LEN>,
-    Pad,
-    32,
-    BLOCK_LEN,
-    BLOCK_LEN,
->>::Mode;
+pub type ARIA_CBC_256<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<ARIA_256, Encrypting, 32, BLOCK_LEN>,
+        Pad,
+        32,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<ARIA_256, Decrypting, 32, BLOCK_LEN>,
+        Pad,
+        32,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+>;
