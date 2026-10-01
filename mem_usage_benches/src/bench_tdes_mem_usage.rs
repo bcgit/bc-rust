@@ -37,7 +37,8 @@
 
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES, TDES2Key};
+use bouncycastle::tdes::hazmat::{TDES, TDES2Key};
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {

@@ -4,6 +4,7 @@
 
 use crate::des::{Subkeys, inverse_ip, ip, rounds};
 use crate::schedule::{PARITY_MASK, expand, is_weak};
+use crate::{BLOCK_LEN, KEY_LEN};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -11,13 +12,6 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::ct::ct_eq_zero_bytes;
 use bouncycastle_utils::secret::Secret;
-
-/// The DEA block length in bytes: 64 bits (SP 800-67r2 Sec 2).
-pub const BLOCK_LEN: usize = 8;
-
-/// The length of a three-key TDEA key bundle in bytes: three 64-bit DEA keys,
-/// `Key1 || Key2 || Key3` (SP 800-67r2 Sec 3.1).
-pub const KEY_LEN: usize = 24;
 
 pub(crate) type Block = [u8; BLOCK_LEN];
 

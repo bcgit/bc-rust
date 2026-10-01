@@ -28,7 +28,8 @@
 //! whose counter can still reach a useful message size, and it is what this alias chooses. Name
 //! `Ctr` directly for a different split.
 
-use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
+use crate::hazmat::{TDES, TDES2Key};
+use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 use bouncycastle_modes::{Ctr, Decrypting};
 
 /// The nonce length the [`TDES_CTR`] alias uses, leaving a 2-byte counter. See the module docs.
@@ -85,7 +86,8 @@ pub type TDES_CTR<Dir> = Ctr<TDES, Dir, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>;
 /// instead: the first keystream block is the forward cipher function of `nonce || 0x0000`.
 ///
 /// ```
-/// use bouncycastle_tdes::{TDES2_CTR, TDES2Key};
+/// use bouncycastle_tdes::hazmat::TDES2Key;
+/// use bouncycastle_tdes::TDES2_CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::hazmat::ElectronicCodeBook;
 /// use bouncycastle_core::traits::StreamCipherDecryptor;

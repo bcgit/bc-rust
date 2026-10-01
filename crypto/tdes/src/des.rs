@@ -173,7 +173,7 @@ fn f(r: u32, lo: u32, hi: u32) -> u32 {
 ///
 /// `IP` and `IP^-1` are the caller's business: TDEA (Sec 3.1) chains three of these, and the
 /// `IP^-1` that ends one DEA transformation cancels the `IP` that begins the next, so
-/// [`crate::tdes::TDES`] applies each permutation once around all forty-eight rounds. Every
+/// [`crate::hazmat::tdes::TDES`] applies each permutation once around all forty-eight rounds. Every
 /// intermediate value is identical to the spec's; only two redundant permutations are skipped.
 #[inline(always)]
 pub(crate) fn rounds(l: u32, r: u32, sk: &Subkeys, inverse: bool) -> (u32, u32) {

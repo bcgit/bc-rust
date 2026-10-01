@@ -14,7 +14,8 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
-use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
+use bouncycastle_tdes::hazmat::{TDES, TDES2Key};
+use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 
 /// Sec 3.3.2, "Keys that are considered weak are (in hexadecimal format)".
 const WEAK: [u64; 4] =

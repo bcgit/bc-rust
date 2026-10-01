@@ -10,7 +10,8 @@
 //! the work of [`TDES_CFB`](crate::TDES_CFB). It is the `s = 8` case of the TCFB mode of SP 800-38A
 //! Appendix E. See the `bouncycastle_modes::Cfb8` docs for when that is the right trade.
 
-use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
+use crate::hazmat::{TDES, TDES2Key};
+use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 use bouncycastle_modes::{Cfb8, Decrypting};
 
 /// TDES in CFB8 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

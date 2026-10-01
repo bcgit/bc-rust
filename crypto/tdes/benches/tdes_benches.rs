@@ -10,7 +10,8 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
-use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, TDES};
+use bouncycastle_tdes::hazmat::TDES;
+use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 

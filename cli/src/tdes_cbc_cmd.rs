@@ -18,7 +18,8 @@ use crate::helpers::block_mode_helpers::{
     CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES};
+use bouncycastle::tdes::hazmat::TDES;
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 
 /// Names the mode in error messages.
 const MODE: &str = "CBC";

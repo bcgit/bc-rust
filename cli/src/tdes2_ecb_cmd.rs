@@ -9,7 +9,8 @@
 use crate::helpers::block_mode_helpers::{DecryptOnlyAction, decrypt_stream, load_key};
 use bouncycastle::modes::Decrypting;
 use bouncycastle::modes::hazmat::Ecb;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
+use bouncycastle::tdes::hazmat::TDES2Key;
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY};
 
 pub(crate) fn tdes2_ecb_cmd(
     action: &DecryptOnlyAction,

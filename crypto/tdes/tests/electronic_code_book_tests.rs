@@ -13,7 +13,8 @@
 //! strength the framework tries must be accepted; the framework checks that too.
 
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
-use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
+use bouncycastle_tdes::hazmat::{TDES, TDES2Key};
+use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 
 #[test]
 fn tdes_conforms_to_electronic_code_book() {

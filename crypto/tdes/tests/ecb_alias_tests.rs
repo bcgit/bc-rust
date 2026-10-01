@@ -13,7 +13,8 @@ use bouncycastle_modes::{Decrypting, Encrypting};
 use bouncycastle_padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
-use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, TDES, TDES_ECB};
+use bouncycastle_tdes::hazmat::{TDES, TDES_ECB};
+use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN};
 
 fn key() -> KeyMaterial<KEY_LEN> {
     let bytes: [u8; KEY_LEN] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

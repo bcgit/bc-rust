@@ -23,7 +23,8 @@ use crate::helpers::block_mode_helpers::{
 };
 use bouncycastle::modes::hazmat::Ecb;
 use bouncycastle::modes::{Decrypting, Encrypting};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES};
+use bouncycastle::tdes::hazmat::TDES;
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";

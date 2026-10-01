@@ -39,8 +39,9 @@
 //! See [`PaddedMode`], which is the projection that lets `Dir` select between the encryptor and the
 //! decryptor adapter. `Dir` must be [`Encrypting`] or [`Decrypting`].
 
+use crate::hazmat::{TDES, TDES2Key};
 use crate::padded_mode::PaddedMode;
-use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
+use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 use bouncycastle_modes::hazmat::Ecb;
 use bouncycastle_modes::{Decrypting, Encrypting};
 use bouncycastle_padding::PaddedBlockCipherDecryptor;
@@ -62,7 +63,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// does not make it safe.
 ///
 /// ```
-/// use bouncycastle_tdes::TDES_ECB;
+/// use bouncycastle_tdes::hazmat::TDES_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_modes::{Decrypting, Encrypting};
@@ -89,7 +90,7 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// plaintext blocks still give two identical ciphertext blocks.
 ///
 /// ```
-/// use bouncycastle_tdes::TDES_ECB;
+/// use bouncycastle_tdes::hazmat::TDES_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::Encrypting;
@@ -120,7 +121,7 @@ pub type TDES_ECB<Dir, Pad> = <Dir as PaddedMode<
 /// docs applies unchanged.
 ///
 /// ```
-/// use bouncycastle_tdes::TDES2_ECB;
+/// use bouncycastle_tdes::hazmat::TDES2_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherDecryptor;
 /// use bouncycastle_padding::NoPadding;

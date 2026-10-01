@@ -1,20 +1,18 @@
 //! Two-key TDEA (SP 800-67r2 Sec 3.1, "2TDEA"), for decryption of legacy data only.
 
+use crate::BLOCK_LEN;
+use crate::KEY_LEN_2KEY;
 use crate::des::Subkeys;
-use crate::schedule::expand;
-use crate::tdes::{
-    BLOCK_LEN, Block, REPEATED_KEY, any_weak, forward, inverse, same_key, validate_wrapper,
+use crate::hazmat::tdes::{
+    Block, REPEATED_KEY, any_weak, forward, inverse, same_key, validate_wrapper,
 };
+use crate::schedule::expand;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
-
-/// The length of a two-key TDEA key bundle in bytes: `Key1 || Key2`, with `Key3 = Key1`
-/// (SP 800-67r2 Sec 3.1).
-pub const KEY_LEN_2KEY: usize = 16;
 
 /// The two-key TDEA keyed permutation (SP 800-67r2 Sec 3.1, "2TDEA"): `Key3 = Key1`, so the bundle
 /// is the 16 bytes `Key1 || Key2`.
@@ -26,7 +24,7 @@ pub const KEY_LEN_2KEY: usize = 16;
 /// `bouncycastle-modes` refuses to be built over it **at compile time**:
 ///
 /// ```compile_fail
-/// use bouncycastle_tdes::TDES2Key;
+/// use bouncycastle_tdes::hazmat::TDES2Key;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::BlockCipherEncryptor;
 /// use bouncycastle_modes::{Cbc, Encrypting};
@@ -43,7 +41,7 @@ pub const KEY_LEN_2KEY: usize = 16;
 /// so the refusal holds there too:
 ///
 /// ```compile_fail
-/// use bouncycastle_tdes::TDES2Key;
+/// use bouncycastle_tdes::hazmat::TDES2Key;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_modes::{Ctr, Encrypting};

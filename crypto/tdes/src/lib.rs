@@ -3,15 +3,16 @@
 //! This crate provides the raw three-key TDEA keyed permutation, [`TDES`], and a decryption-only
 //! two-key one, [`TDES2Key`], implemented as a Boolean circuit over bit-planes rather than by
 //! lookups in S-box tables. That makes them constant-time; see [Design](#design). They are
-//! *permutations*, not ciphers you can encrypt data with, and TDEA is a **legacy algorithm**: see
-//! [Security Considerations](#security-considerations) before using it for anything new.
+//! *permutations*, not ciphers you can encrypt data with, which is why they live under [`hazmat`],
+//! and TDEA is a **legacy algorithm**: see [Security Considerations](#security-considerations)
+//! before using it for anything new.
 //!
 //! # Usage Examples
 //!
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_tdes::TDES;
+//! use bouncycastle_tdes::hazmat::TDES;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //!
@@ -211,6 +212,8 @@
 //! specifications which require ECB -- and test-vector harnesses -- can use it through the same
 //! interface as the other modes. Like the CBC alias it carries a padding scheme, which is what lets
 //! it accept data of any length. Neither the mode API nor the padding makes ECB confidential.
+//! That is why the permutations and the ECB aliases live under [`hazmat`];
+//! [`bouncycastle_core::hazmat`] lists the supported uses.
 //!
 //! ## Constant-time properties
 //!
@@ -260,17 +263,28 @@ mod cfb;
 mod cfb8;
 mod ctr;
 mod des;
-mod ecb;
+pub mod hazmat;
 mod padded_mode;
 mod sbox;
 mod schedule;
-mod tdes;
-mod tdes2;
+
+/// The DEA block length in bytes: 64 bits (SP 800-67r2 Sec 2).
+pub const BLOCK_LEN: usize = 8;
+
+/// The length of a three-key TDEA key bundle in bytes: three 64-bit DEA keys,
+/// `Key1 || Key2 || Key3` (SP 800-67r2 Sec 3.1).
+pub const KEY_LEN: usize = 24;
+
+/// The length of a two-key TDEA key bundle in bytes: `Key1 || Key2`, with `Key3 = Key1`
+/// (SP 800-67r2 Sec 3.1).
+pub const KEY_LEN_2KEY: usize = 16;
 
 pub use cbc::{TDES_CBC, TDES2_CBC};
 pub use cfb::{TDES_CFB, TDES2_CFB};
 pub use cfb8::{TDES_CFB8, TDES2_CFB8};
 pub use ctr::{CTR_NONCE_LEN, TDES_CTR, TDES2_CTR};
-pub use ecb::{TDES_ECB, TDES2_ECB};
-pub use tdes::{BLOCK_LEN, KEY_LEN, TDES};
-pub use tdes2::{KEY_LEN_2KEY, TDES2Key};
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use hazmat::{TDES, TDES_ECB, TDES2_ECB, TDES2Key};
+// end of imports needed for docs
