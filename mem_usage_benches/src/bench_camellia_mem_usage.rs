@@ -34,9 +34,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::camellia::{Camellia_128, Camellia_192, Camellia_256, LANES};
+use bouncycastle::camellia::LANES;
+use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-use bouncycastle::core::traits::ElectronicCodeBook;
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {

@@ -6,9 +6,10 @@
 
 mod common;
 
-use bouncycastle_camellia::{BLOCK_LEN, Camellia, Camellia_128, Camellia_192, Camellia_256, LANES};
+use bouncycastle_camellia::hazmat::{Camellia, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::{BLOCK_LEN, LANES};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::ElectronicCodeBook;
 use common::bytes;
 
 /// The plaintext shared by all three examples.

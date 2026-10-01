@@ -22,7 +22,8 @@
 //! the SP 800-38A Sec 6.5 equations over the permutation, and holds these aliases to that
 //! reference on the counter blocks they do produce.
 
-use crate::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
+use crate::BLOCK_LEN;
+use crate::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_modes::Ctr;
 
 /// The nonce length these aliases use, leaving a 4-byte counter.

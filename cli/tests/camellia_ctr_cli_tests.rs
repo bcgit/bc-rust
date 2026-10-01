@@ -118,7 +118,7 @@ where
 /// What each command emits must be exactly what `Ctr` over the matching permutation produces.
 #[test]
 fn the_commands_are_ctr_over_camellia() {
-    use bouncycastle::camellia::{Camellia_128, Camellia_192, Camellia_256};
+    use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);

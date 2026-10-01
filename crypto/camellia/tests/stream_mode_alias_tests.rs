@@ -6,10 +6,11 @@
 //! The known-answer coverage is in `stream_mode_tests.rs`, and the modes themselves are tested in
 //! their own right in `bouncycastle-modes`; this checks the wiring between them.
 
+use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_camellia::{
-    BLOCK_LEN, CTR_NONCE_LEN, Camellia_128, Camellia_192, Camellia_256, Camellia_CFB_128,
-    Camellia_CFB_192, Camellia_CFB_256, Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256,
-    Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256,
+    BLOCK_LEN, CTR_NONCE_LEN, Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256,
+    Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192,
+    Camellia_CTR_256,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{

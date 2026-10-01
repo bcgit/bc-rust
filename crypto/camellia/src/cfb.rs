@@ -10,7 +10,8 @@
 //! [`Camellia_CFB8_128`](crate::Camellia_CFB8_128) and friends -- and `s = 1` is not implemented;
 //! see the `bouncycastle_modes::Cfb` docs.
 
-use crate::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
+use crate::BLOCK_LEN;
+use crate::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_modes::Cfb;
 
 /// Camellia-128 in CFB128 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

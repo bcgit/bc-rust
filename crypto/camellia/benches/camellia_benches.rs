@@ -8,9 +8,11 @@
 //! and Camellia-256 share the 24-round schedule, so only the 256-bit variant is benchmarked
 //! alongside the 18-round Camellia-128.
 
-use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_256, LANES};
+use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_256};
+use bouncycastle_camellia::{BLOCK_LEN, LANES};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
+use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
