@@ -169,7 +169,6 @@ pub mod cfb8;
 pub mod ctr;
 pub mod gcm;
 pub mod hazmat;
-mod padded_mode;
 mod round;
 mod sbox;
 mod schedule;
