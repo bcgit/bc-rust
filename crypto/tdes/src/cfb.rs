@@ -11,7 +11,8 @@
 //! non-interoperable mode with its own alias, [`TDES_CFB8`](crate::TDES_CFB8); `s = 1` is not
 //! implemented. See the `bouncycastle_modes::Cfb` docs.
 
-use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
+use crate::hazmat::{TDES, TDES2Key};
+use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 use bouncycastle_modes::{Cfb, Decrypting};
 
 /// TDES in CFB64 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

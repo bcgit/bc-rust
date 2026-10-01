@@ -47,8 +47,9 @@
 //! [`Encrypting`](bouncycastle_modes::Encrypting) or
 //! [`Decrypting`](bouncycastle_modes::Decrypting), which was already true.
 
+use crate::hazmat::{TDES, TDES2Key};
 use crate::padded_mode::PaddedMode;
-use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
+use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_padding::PaddedBlockCipherDecryptor;
 
