@@ -19,5 +19,5 @@ pub(crate) fn rng_cmd(len: Option<u32>, output_hex: bool) {
         write_bytes_or_hex(&buf, output_hex);
         bytes_left_to_write -= buf.len();
     }
-    println!();
+    crate::helpers::write_stdout(b"\n");
 }

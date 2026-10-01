@@ -21,7 +21,7 @@ use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use crate::sha2_cmd::SHA2Variant;
 use clap::{Parser, Subcommand};
-use helpers::block_mode_helpers::BlockModeAction;
+use helpers::block_mode_helpers::CipherDirection;
 
 #[derive(Parser)]
 #[command(version, about, long_about=None, arg_required_else_help=true)]
@@ -33,11 +33,11 @@ struct Cli {
 #[allow(non_camel_case_types)]
 #[derive(Subcommand)]
 enum Subcommands {
-    /// Encode binary data from stdin to base64.
+    /// Encode binary data from stdin to hex.
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexEncode,
 
-    /// Decode base64 data from stdin to binary.
+    /// Decode hex data from stdin to binary.
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexDecode,
 
@@ -657,7 +657,8 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CBC {
-        action: BlockModeAction,
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -679,7 +680,7 @@ enum Subcommands {
     /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
     /// key length differs.
     AES192_CBC {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -701,7 +702,7 @@ enum Subcommands {
     /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
     /// key length differs.
     AES256_CBC {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -738,7 +739,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CFB {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -760,7 +761,7 @@ enum Subcommands {
     /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
     /// differs.
     AES192_CFB {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -782,7 +783,7 @@ enum Subcommands {
     /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
     /// differs.
     AES256_CFB {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -821,7 +822,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CFB8 {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -843,7 +844,7 @@ enum Subcommands {
     /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
     /// differs.
     AES192_CFB8 {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -865,7 +866,7 @@ enum Subcommands {
     /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
     /// differs.
     AES256_CFB8 {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -905,7 +906,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CTR {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -927,7 +928,7 @@ enum Subcommands {
     /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
     /// length differs.
     AES192_CTR {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -949,7 +950,7 @@ enum Subcommands {
     /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
     /// length differs.
     AES256_CTR {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1007,7 +1008,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_CCM {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1051,7 +1052,7 @@ enum Subcommands {
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
     /// warnings; only the key length differs.
     AES192_CCM {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1095,7 +1096,7 @@ enum Subcommands {
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
     /// warnings; only the key length differs.
     AES256_CCM {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1158,7 +1159,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_GCM {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1189,7 +1190,7 @@ enum Subcommands {
     /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
     /// length differs.
     AES192_GCM {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1220,7 +1221,7 @@ enum Subcommands {
     /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
     /// length differs.
     AES256_GCM {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1263,7 +1264,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_ECB {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 16-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1285,7 +1286,7 @@ enum Subcommands {
     /// See `aes128-ecb` for the warning, the absence of an IV and the block-alignment requirement;
     /// only the key length differs.
     AES192_ECB {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 24-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1307,7 +1308,7 @@ enum Subcommands {
     /// See `aes128-ecb` for the warning, the absence of an IV and the block-alignment requirement;
     /// only the key length differs.
     AES256_ECB {
-        action: BlockModeAction,
+        action: CipherDirection,
 
         /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1538,12 +1539,6 @@ enum Subcommands {
     },
 }
 
-// The CLI body runs on a spawned thread with an explicit 8 MiB stack rather than directly on the
-// process's main thread, whose size this program does not control: on Linux it is `ulimit -s`
-// (8 MiB by default), and it can be a good deal smaller elsewhere or under a tightened limit. With
-// a 1 MiB main stack a debug build overflows during argument parsing -- in every subcommand, before
-// any algorithm runs -- so this is a property of the command tree, not of one algorithm's state.
-// 8 MiB is the usual Linux default; do not lower it without re-checking that case.
 fn main() {
     std::thread::Builder::new()
         .name("bc-rust-main".to_string())
@@ -1687,8 +1682,8 @@ fn run() {
             *len, *x,
         ),
         Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
-        Some(Subcommands::AES128_CBC { action, key, key_file, x }) => {
-            aes_cbc_cmd::aes128_cbc_cmd(action, key, key_file, *x);
+        Some(Subcommands::AES128_CBC { direction, key, key_file, x }) => {
+            aes_cbc_cmd::aes128_cbc_cmd(direction, key, key_file, *x);
         }
         Some(Subcommands::AES192_CBC { action, key, key_file, x }) => {
             aes_cbc_cmd::aes192_cbc_cmd(action, key, key_file, *x);

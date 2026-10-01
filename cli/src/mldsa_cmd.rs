@@ -105,7 +105,7 @@ pub(crate) fn mldsa44_cmd(
 
             match MLDSA44::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -196,7 +196,7 @@ pub(crate) fn mldsa44_cmd(
             let sig = verifier.verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -264,7 +264,7 @@ pub(crate) fn mldsa65_cmd(
 
             match MLDSA65::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -355,7 +355,7 @@ pub(crate) fn mldsa65_cmd(
             let sig = verifier.verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -422,7 +422,7 @@ pub(crate) fn mldsa87_cmd(
 
             match MLDSA87::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -513,7 +513,7 @@ pub(crate) fn mldsa87_cmd(
             let sig = verifier.verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -581,7 +581,7 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
 
             match MLDSA44::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -672,7 +672,7 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             let sig = verifier.verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -740,7 +740,7 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
 
             match MLDSA65::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -831,7 +831,7 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             let sig = verifier.verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -898,7 +898,7 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
 
             match MLDSA87::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -989,7 +989,7 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             let sig = verifier.verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);

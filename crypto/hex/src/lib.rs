@@ -119,7 +119,10 @@ pub fn decode_out<T: AsRef<[u8]>>(input: T, out: &mut [u8]) -> Result<usize, Hex
                 continue;
             }
             b'\\' => {
-                if inref[i + 1] == b'x' {
+                // A backslash is only ever skippable as the `\x` prefix of an escaped byte. One
+                // that ends the input, or is followed by anything else, falls through to the
+                // digit lookup below and is reported as an invalid character at its own index.
+                if i + 1 < inref.len() && inref[i + 1] == b'x' {
                     i += 2;
                     continue;
                 }

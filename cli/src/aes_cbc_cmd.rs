@@ -10,7 +10,7 @@
 //! separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
 use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::KeyMaterial;
@@ -21,7 +21,7 @@ use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 const MODE: &str = "CBC";
 
 pub(crate) fn aes128_cbc_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -30,7 +30,7 @@ pub(crate) fn aes128_cbc_cmd(
 }
 
 pub(crate) fn aes192_cbc_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -39,7 +39,7 @@ pub(crate) fn aes192_cbc_cmd(
 }
 
 pub(crate) fn aes256_cbc_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -49,19 +49,19 @@ pub(crate) fn aes256_cbc_cmd(
 
 /// Dispatches to the shared streaming loops with `Cbc` filled in as the mode.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     match action {
-        BlockModeAction::Encrypt => {
+        CipherDirection::Encrypt => {
             encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
                 key, output_hex, MODE,
             )
         }
-        BlockModeAction::Decrypt => {
+        CipherDirection::Decrypt => {
             decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
                 key, output_hex, MODE,
             )
