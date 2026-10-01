@@ -12,8 +12,8 @@
 mod common;
 
 use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN, LANES};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::ElectronicCodeBook;
 
 fn engine<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(key: &[u8; KEY_LEN]) -> P {
     <P as ElectronicCodeBook<KEY_LEN, 16>>::new(

@@ -4,7 +4,7 @@
 //! [`StreamCipher`] turns any [`KeyStream`] into a [`StreamCipherEncryptor`] /
 //! [`StreamCipherDecryptor`] pair, and with it the [`SymmetricCipherEncryptor`] /
 //! [`SymmetricCipherDecryptor`] supertraits, as a block cipher mode turns an
-//! [`ElectronicCodeBook`](crate::traits::ElectronicCodeBook) into a block cipher. A keystream
+//! [`ElectronicCodeBook`](crate::hazmat::ElectronicCodeBook) into a block cipher. A keystream
 //! implementor writes the keystream; the nonce, the partly-used block held between calls and the
 //! refusal to run past the end of the keystream are written once, here.
 //!
@@ -12,11 +12,12 @@
 //! functions here are the parts of that implementation that are the same for every stream cipher.
 
 use crate::errors::SymmetricCipherError;
+use crate::hazmat::KeyStream;
 use crate::key_material::KeyMaterial;
 use crate::security_strength::SecurityStrength;
 use crate::traits::{
-    Algorithm, KeyStream, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -32,6 +33,50 @@ pub struct Encrypting;
 /// Zero-sized: encoding the direction in the type costs no memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Decrypting;
+
+mod sealed {
+    /// Private supertrait of [`Direction`](super::Direction): only this module can name it, so
+    /// only the two markers below can implement `Direction`.
+    pub trait Sealed {}
+    impl Sealed for super::Encrypting {}
+    impl Sealed for super::Decrypting {}
+}
+
+/// Selects a type by direction: `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
+///
+/// A cipher whose two directions are distinct types cannot offer `Cipher<Dir>` as a plain type
+/// alias, because an alias cannot choose between two types from one of its parameters. It is
+/// written as a projection through this trait instead:
+///
+/// ```text
+/// pub type Ascon_AEAD128<Dir> =
+///     <Dir as Direction>::Select<AsconAead128Encryptor, AsconAead128Decryptor>;
+/// ```
+///
+/// Sealed: implemented for the two markers and for nothing else, so `Encrypting` and `Decrypting`
+/// are the only values a `Dir` parameter can take, and a caller cannot project an alias onto a
+/// type of their own:
+///
+/// ```compile_fail
+/// use bouncycastle_core::stream_cipher::Direction;
+/// struct Sideways;
+/// // error: the supertrait is private to bouncycastle_core
+/// impl Direction for Sideways {
+///     type Select<Enc, Dec> = Enc;
+/// }
+/// ```
+pub trait Direction: sealed::Sealed {
+    /// `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
+    type Select<Enc, Dec>;
+}
+
+impl Direction for Encrypting {
+    type Select<Enc, Dec> = Enc;
+}
+
+impl Direction for Decrypting {
+    type Select<Enc, Dec> = Dec;
+}
 
 /// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
 /// `input` into `output` and applies `in_place` there, so the caller's input is left untouched.

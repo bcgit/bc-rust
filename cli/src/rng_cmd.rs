@@ -19,5 +19,9 @@ pub(crate) fn rng_cmd(len: Option<u32>, output_hex: bool) {
         write_bytes_or_hex(&buf, output_hex);
         bytes_left_to_write -= buf.len();
     }
-    println!();
+    // Only a hex line gets a terminator: raw output is exactly `len` bytes, so that
+    // `rng --len 16 > key.bin` is a 16-byte key and not a 17-byte one.
+    if output_hex {
+        crate::helpers::write_stdout(b"\n");
+    }
 }

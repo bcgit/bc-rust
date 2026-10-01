@@ -2,7 +2,7 @@
 mod sha3_tests {
     use super::sha3_test_helpers::*;
     use bouncycastle_core::errors::HashError;
-    use bouncycastle_core::key_material;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
@@ -384,7 +384,7 @@ mod sha3_tests {
         let mut output_seed = SHA3_256::new()
             .derive_key(&input_seed, b"some addtional input to the KDF")
             .expect("Error happened");
-        key_material::do_hazardous_operations(&mut *output_seed, |output_seed| {
+        do_hazardous_operations(&mut *output_seed, |output_seed| {
             output_seed.set_key_type(KeyType::MACKey)
         })
         .unwrap();

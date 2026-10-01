@@ -9,8 +9,8 @@
 mod common;
 
 use bouncycastle_aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, ARIAParams, BLOCK_LEN, LANES};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::ElectronicCodeBook;
 use common::bytes;
 
 /// The plaintext shared by all three examples.

@@ -4,23 +4,23 @@
 //! with nothing chained, that both directions batch through the pair and four-block paths, call
 //! sequencing, direction typing, the empty init data, SP 800-38A Appendix D error propagation, and
 //! the codebook property that makes ECB unsuitable for data -- independently of any real cipher. The
-//! known-answer tests against SP 800-38A Appendix F.1 are in `sp800_38a_ecb_tests.rs`, and the ACVP
-//! set is in `acvp_ecb_tests.rs`.
+//! known-answer tests against SP 800-38A Appendix F.1 are in the `aes` crate,
+//! `crypto/aes/tests/sp800_38a_ecb_tests.rs`, and the ACVP set in `acvp_ecb_tests.rs` beside it.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here.
 
 mod common;
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
-use bouncycastle_modes::{Cbc, Decrypting, Ecb, Encrypting};
+use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
+use bouncycastle_modes::hazmat::Ecb;
+use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
@@ -335,8 +335,11 @@ fn flat_streaming_and_one_shots_agree_with_the_block_hook() {
 
 /// Table D.2 for ECB: a bit error in `Cj` gives "RBE in the decryption of Cj" and nothing else --
 /// Appendix D: "For the ECB, OFB, and CTR modes, bit errors within a ciphertext block do not affect
-/// the decryption of any other blocks." The toy is byte-local, so it can show only the "no other
-/// block" half exactly; the randomisation is checked with real AES below.
+/// the decryption of any other blocks." The "RBE" spread is the block cipher's diffusion, which
+/// the byte-local toy cannot show and this does not claim. What it pins exactly instead: the
+/// corrupted block is the *only* one affected, and within it the flipped bit went through the
+/// inverse cipher -- it comes out in the same byte moved by the toy's `rotate_right(1)`, the
+/// signature of `CIPH^-1_K` acting on it rather than of an in-place XOR.
 #[test]
 fn a_ciphertext_bit_error_affects_only_its_own_block() {
     let plaintext = [[0x00u8; TOY_LEN], [0x11u8; TOY_LEN], [0x22u8; TOY_LEN], [0x33u8; TOY_LEN]];
@@ -344,43 +347,19 @@ fn a_ciphertext_bit_error_affects_only_its_own_block() {
 
     for byte in 0..TOY_LEN {
         for bit in 0..8 {
+            let flip = 1u8 << bit;
             let mut corrupt = ct;
-            corrupt[1][byte] ^= 1 << bit;
+            corrupt[1][byte] ^= flip;
             let got = dec_blocks(&mut decryptor(), &corrupt);
             assert_eq!(got[0], plaintext[0]);
-            assert_ne!(got[1], plaintext[1], "C2 byte {byte} bit {bit}: P2 must change");
+            let mut expected = plaintext[1];
+            expected[byte] ^= flip.rotate_right(1);
+            assert_eq!(
+                got[1], expected,
+                "C2 byte {byte} bit {bit}: P2 carries the flip through the toy's inverse"
+            );
             assert_eq!(got[2], plaintext[2], "P3 is unaffected: nothing chains");
             assert_eq!(got[3], plaintext[3]);
-        }
-    }
-}
-
-/// The randomisation half of Table D.2, with AES-128: every one of the 128 bit positions of `C2`
-/// must randomise `P2` (more than one bit differs) and leave `P1` and `P3` untouched.
-#[test]
-fn with_aes_a_ciphertext_bit_error_randomises_its_block() {
-    type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, 16>;
-    let key =
-        KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-    let plaintext = [[0x00u8; 16], [0x11u8; 16], [0x22u8; 16]];
-    let mut ct = plaintext;
-    let flat: &mut [u8; 48] = ct.as_flattened_mut().try_into().unwrap();
-    Aes128Ecb::<Encrypting>::encrypt_in_place(&key, flat).unwrap();
-
-    for byte in 0..16 {
-        for bit in 0..8 {
-            let mut corrupt = ct;
-            corrupt[1][byte] ^= 1 << bit;
-            let flat: &mut [u8; 48] = corrupt.as_flattened_mut().try_into().unwrap();
-            Aes128Ecb::<Decrypting>::decrypt_in_place(&key, &[], flat).unwrap();
-            assert_eq!(corrupt[0], plaintext[0], "C2 byte {byte} bit {bit}: P1 unaffected");
-            assert_eq!(corrupt[2], plaintext[2], "C2 byte {byte} bit {bit}: P3 unaffected");
-            let differing: u32 =
-                corrupt[1].iter().zip(plaintext[1].iter()).map(|(a, b)| (a ^ b).count_ones()).sum();
-            assert!(
-                differing > 1,
-                "C2 byte {byte} bit {bit}: P2 should be randomised ({differing} bit(s) differ)"
-            );
         }
     }
 }
@@ -420,21 +399,16 @@ fn the_padding_layer_round_trips_every_length() {
 
 // ---- memory ------------------------------------------------------------------------------
 
-/// Pins the "Memory Usage" table in the crate docs: an ECB value is exactly the permutation.
+/// Pins the module docs' claim that an ECB value is exactly the permutation:
+/// `size_of::<Ecb<P, ..>>() == size_of::<P>()`.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
-    assert_eq!(size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>(), 176);
-    assert_eq!(size_of::<Ecb<AES192Internal, Encrypting, 24, 16>>(), 208);
-    assert_eq!(size_of::<Ecb<AES256Internal, Encrypting, 32, 16>>(), 240);
-    assert_eq!(
-        size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>(),
-        size_of::<Ecb<AES128Internal, Decrypting, 16, 16>>()
-    );
-    assert_eq!(size_of::<Ecb<AES256Internal, Encrypting, 32, 16>>(), size_of::<AES256Internal>());
+    assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<Toy>());
+    assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<ToyEcb<Decrypting>>());
     // One block smaller than CBC, which stores a chaining value.
     assert_eq!(
-        size_of::<Ecb<AES128Internal, Encrypting, 16, 16>>() + 16,
-        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>()
+        size_of::<ToyEcb<Encrypting>>() + TOY_LEN,
+        size_of::<Cbc<Toy, Encrypting, TOY_LEN, TOY_LEN>>()
     );
 }

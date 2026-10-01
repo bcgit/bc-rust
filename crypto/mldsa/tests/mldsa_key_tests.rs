@@ -1,9 +1,8 @@
 #[cfg(test)]
 mod mldsa_key_tests {
     use bouncycastle_core::errors::SignatureError;
-    use bouncycastle_core::key_material::{
-        KeyMaterial256, KeyMaterialTrait, KeyType, do_hazardous_operations,
-    };
+    use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
     use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;

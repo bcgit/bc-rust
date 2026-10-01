@@ -107,7 +107,7 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError, SuspendableError};
-use bouncycastle_core::key_material;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
@@ -395,7 +395,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         let mut t_len: usize = 0;
         let mut i = 1u8;
 
-        key_material::do_hazardous_operations(okm, |okm| {
+        do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
             while i < N {
                 let mut hmac = HMAC::<H>::new(&prk_as_mac_key)
@@ -425,7 +425,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         t_len = hmac.do_final_out(&mut T[..remaining])?;
         debug_assert_eq!(t_len, remaining); // this will be true for every iteration after T(0) / T(1)
 
-        key_material::do_hazardous_operations(okm, |okm| {
+        do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
             out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
             Ok(())
@@ -434,7 +434,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 
         // Set the KeyType of the output
         // Since some computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.
-        key_material::do_hazardous_operations(okm, |okm| {
+        do_hazardous_operations(okm, |okm| {
             if prk.key_type() == KeyType::Zeroized {
                 okm.set_key_type(KeyType::Unknown)?;
             } else {
@@ -573,7 +573,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         let output_key_type = self.entropy.get_output_key_type(); // need to do this above self.hmac.do_final_out, which will consume self.
 
         let mut bytes_written = 0;
-        key_material::do_hazardous_operations(prk, |okm| {
+        do_hazardous_operations(prk, |okm| {
             bytes_written = self
                 .hmac
                 .unwrap()
@@ -692,7 +692,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         let bytes_written =
             Self::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
 
-        key_material::do_hazardous_operations(output_key, |output_key| {
+        do_hazardous_operations(output_key, |output_key| {
             output_key.set_key_type(entropy.get_output_key_type())?;
             output_key.set_security_strength(
                 min(

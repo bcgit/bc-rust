@@ -18,7 +18,7 @@
 //! use bouncycastle_core::traits::XOF;
 //!
 //! // One-shot:
-//! let digest = AsconHash256::digest(b"hello world");
+//! let digest = AsconHash256::new().hash(b"hello world");
 //! assert_eq!(digest.len(), 32);
 //!
 //! // Streaming:
@@ -27,7 +27,7 @@
 //! h.do_update(b"world");
 //! let mut out = [0u8; 32];
 //! h.do_final_out(&mut out);
-//! assert_eq!(out, digest);
+//! assert_eq!(&out[..], &digest[..]);
 //! ```
 //!
 //! Authenticated encryption (one-shot):

@@ -13,8 +13,8 @@
 mod common;
 
 use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::ElectronicCodeBook;
 use common::{SB1, SB2, bytes, sb3, sb4};
 
 /// `TEST_VECTORS_RFC5794`: `(name, key, plaintext, ciphertext)`.

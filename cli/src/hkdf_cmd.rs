@@ -1,10 +1,8 @@
-use std::io::Write;
+use std::fs;
 use std::process::exit;
-use std::{fs, io};
 
-use bouncycastle::core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::hex;
 use bouncycastle::hkdf;
 use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
@@ -89,11 +87,5 @@ pub(crate) fn hkdf_cmd(
         }
     }
 
-    if output_hex {
-        for b in out_key.ref_to_bytes().iter() {
-            print!("{b:02x}");
-        }
-    } else {
-        io::stdout().write(&out_key.ref_to_bytes()).unwrap();
-    }
+    crate::helpers::write_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
 }

@@ -16,7 +16,7 @@
 //! `16b..16b + 16` of every plane -- its own 16-bit **lane** -- so a wider state is literally
 //! several one-block states side by side, and every transformation written for one width serves
 //! all three. The extra blocks come for free: the S-box circuit costs the same 113 gates on a
-//! `u64` as on a `u16`, which is why [`crate::aes_internal`] gives four blocks for the price of one.
+//! `u64` as on a `u16`, which is why [`crate::hazmat::AESInternal`] gives four blocks for the price of one.
 //!
 //! # The layout
 //!
@@ -75,7 +75,7 @@
 use core::ops::{BitAnd, BitOr, BitXor, BitXorAssign, Not, Shl, Shr};
 
 /// One 16-byte AES block, in the order of FIPS 197 Eq (3.6): `block[r + 4c] == s[r,c]`.
-pub type Block = [u8; crate::BLOCK_LEN];
+pub type Block = [u8; crate::AES_BLOCK_LEN];
 
 /// The eight bit-planes holding one, two or four blocks, by the width of `T`. See the module
 /// docs for the layout.

@@ -4,7 +4,7 @@ use crate::keccak::{
     serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
-use bouncycastle_core::key_material;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
@@ -139,7 +139,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         let mut key_type = self.kdf_key_type;
         let output_security_strength = self.kdf_security_strength;
         let mut bytes_written: usize = 0;
-        key_material::do_hazardous_operations(output_key, |output_key| {
+        do_hazardous_operations(output_key, |output_key| {
             bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
             output_key.set_key_len(bytes_written)?;
             Ok(())
@@ -153,7 +153,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         if key_type == KeyType::Zeroized {
             key_type = KeyType::Unknown;
         }
-        key_material::do_hazardous_operations(&mut *output_key, |output_key| {
+        do_hazardous_operations(&mut *output_key, |output_key| {
             output_key.set_key_type(key_type)?;
             output_key.set_security_strength(*min(
                 &output_security_strength,

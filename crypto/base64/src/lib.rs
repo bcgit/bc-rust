@@ -285,11 +285,16 @@ impl Base64Decoder {
                 }
             }
             if self.buf[self.vals_in_buf] == 0x81 {
-                // Error: we found padding.
+                // Padding. In `do_update` that is a contract violation: restore the state from
+                // the start of the call and report it, discarding whatever this call had already
+                // decoded, so that the caller can hand the *same* input to `do_final` and get all
+                // of it back. Returning `Ok` with the partial output here would hand the caller
+                // bytes the restored state is about to produce again. In `do_final` the padding
+                // simply ends the data, and the partial block is finished by the caller.
                 if rollback_if_padding {
-                    // Roll back and return Base64Error::NonFinalBlockContainsPadding.
-                    self.buf = starting_state.clone();
+                    self.buf = starting_state;
                     self.vals_in_buf = starting_vals_in_block;
+                    return Err(Base64Error::PaddingEncounteredDuringDoUpdate);
                 }
                 return Ok(out);
             }

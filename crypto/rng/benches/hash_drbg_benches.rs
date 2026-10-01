@@ -2,19 +2,20 @@ use bouncycastle_core::key_material::{KeyMaterial0, KeyMaterial256, KeyMaterial5
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_core_test_framework::DUMMY_SEED;
+use bouncycastle_rng::hazmat::NewUninitialized;
 use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512, Sp80090ADrbg};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 fn bench_hash_drbg_sha256(c: &mut Criterion) {
-    let mut rng = HashDRBG_SHA256::new_unititialized();
+    let mut rng = HashDRBG_SHA256::new_uninitialized();
     let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
     rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit).unwrap();
     do_bench(c, &mut rng, "rng::hash_drbg80090a::HashDRBG_SHA256");
 }
 
 fn bench_hash_drbg_sha512(c: &mut Criterion) {
-    let mut rng = HashDRBG_SHA512::new_unititialized();
+    let mut rng = HashDRBG_SHA512::new_uninitialized();
     let seed = KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::Seed).unwrap();
     rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_256bit).unwrap();
     do_bench(c, &mut rng, "rng::hash_drbg80090a::HashDRBG_SHA512");

@@ -51,22 +51,22 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::errors::SymmetricCipherError;
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::hex;
 use bouncycastle::modes::{Ccm, Decrypting, Encrypting};
 
 use crate::helpers;
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 
 /// Bytes of `--aad-file` read per call, matching the other commands' streaming chunk.
 const CHUNK_LEN: usize = 1024;
 
 /// AES-128 CCM. See the module docs and the subcommand help.
 pub(crate) fn aes128_ccm_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     nonce: &Option<String>,
@@ -90,7 +90,7 @@ pub(crate) fn aes128_ccm_cmd(
 
 /// AES-192 CCM. See [`aes128_ccm_cmd`].
 pub(crate) fn aes192_ccm_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     nonce: &Option<String>,
@@ -114,7 +114,7 @@ pub(crate) fn aes192_ccm_cmd(
 
 /// AES-256 CCM. See [`aes128_ccm_cmd`].
 pub(crate) fn aes256_ccm_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     nonce: &Option<String>,
@@ -297,7 +297,7 @@ fn read_all_stdin() -> Vec<u8> {
 /// matched into one of the permitted instantiations. The two nested matches are the price of that,
 /// and they are exhaustive over A.1's sets: 7 nonce lengths x 7 tag lengths.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     nonce: &Option<String>,
     nonce_file: &Option<String>,
@@ -321,7 +321,7 @@ fn run<P, const KEY_LEN: usize>(
     let nonce_bytes = load_nonce(nonce, nonce_file);
     let mut aad = load_aad(aad, aad_file);
     let input = read_all_stdin();
-    let encrypt = matches!(action, BlockModeAction::Encrypt);
+    let encrypt = matches!(action, CipherDirection::Encrypt);
 
     macro_rules! with_tag_len {
         ($n:literal) => {
@@ -438,7 +438,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 helpers::write_bytes_or_hex(&input, output_hex);
                 helpers::write_bytes_or_hex(&tag, output_hex);
                 if output_hex {
-                    println!();
+                    crate::helpers::write_stdout(b"\n");
                 }
             }
             Err(SymmetricCipherError::GenericError(msg)) => {
@@ -475,7 +475,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                     Ok(()) => {
                         helpers::write_bytes_or_hex(data, output_hex);
                         if output_hex {
-                            println!();
+                            crate::helpers::write_stdout(b"\n");
                         }
                     }
                     Err(SymmetricCipherError::AEADTagCheckFailed) => {
