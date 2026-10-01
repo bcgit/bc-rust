@@ -18,9 +18,13 @@
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs.
 
-use crate::block_mode_cmd::{BlockModeAction, decrypt_stream, encrypt_stream, load_key};
-use bouncycastle::modes::{Decrypting, Ecb, Encrypting};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES};
+use crate::helpers::block_mode_helpers::{
+    CipherDirection, decrypt_stream, encrypt_stream, load_key,
+};
+use bouncycastle::modes::hazmat::Ecb;
+use bouncycastle::modes::{Decrypting, Encrypting};
+use bouncycastle::tdes::hazmat::TDES;
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";

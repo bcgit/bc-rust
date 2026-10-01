@@ -41,8 +41,9 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_tdes::hazmat::{TDES, TDES2Key};
 use bouncycastle_tdes::{
-    BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES_CFB, TDES_CFB8, TDES2_CFB, TDES2_CFB8, TDES2Key,
+    BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES_CFB, TDES_CFB8, TDES2_CFB, TDES2_CFB8,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
