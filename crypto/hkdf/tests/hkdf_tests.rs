@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod hkdf_tests {
     use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError, SuspendableError};
-    use bouncycastle_core::key_material;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
         KeyMaterialTrait, KeyType,
@@ -524,14 +524,14 @@ mod hkdf_tests {
         /*** First with the one-shot APIs ::extract() and ::expand_out(). ***/
 
         let mut ikm_key = KeyMaterial::<100>::new();
-        key_material::do_hazardous_operations(&mut ikm_key, |ikm_key| {
+        do_hazardous_operations(&mut ikm_key, |ikm_key| {
             // just for testing, ignore the error about zeroized keys
             ikm_key.set_bytes_as_type(&hex::decode(ikm).unwrap(), KeyType::CryptographicRandom)
         })
         .unwrap();
 
         let mut salt_key = KeyMaterial::<100>::new();
-        key_material::do_hazardous_operations(&mut salt_key, |salt_key| {
+        do_hazardous_operations(&mut salt_key, |salt_key| {
             // just for testing, ignore the error about zeroized keys
             salt_key.set_bytes_as_type(&hex::decode(salt).unwrap(), KeyType::MACKey)
         })
@@ -544,10 +544,8 @@ mod hkdf_tests {
         // Some of the RFC5896 test vectors have input keys that are too short to meet the entropy seeding rules.
         // So, just for testing, we'll bump this up to full entropy, regardless of what entropy HKDF::extract()
         // thinks it should be based on the inputs.
-        key_material::do_hazardous_operations(&mut prk_key, |prk_key| {
-            prk_key.set_key_type(KeyType::MACKey)
-        })
-        .unwrap();
+        do_hazardous_operations(&mut prk_key, |prk_key| prk_key.set_key_type(KeyType::MACKey))
+            .unwrap();
 
         let mut okm_key = KeyMaterial::<100>::new();
         _ = HKDF_SHA256::expand_out(&prk_key, &info, L, &mut okm_key).unwrap();
@@ -679,7 +677,7 @@ mod hkdf_tests {
 
         // SP800-56Cr2 tcId 1
         let mut salt = KeyMaterial::<128>::new(); // have to do it this way for it to accept a zeroized key
-        key_material::do_hazardous_operations(&mut salt, |salt| {
+        do_hazardous_operations(&mut salt, |salt| {
             salt.set_bytes_as_type(&hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), KeyType::MACKey)
         }).unwrap();
 

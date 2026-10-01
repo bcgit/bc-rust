@@ -91,7 +91,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,

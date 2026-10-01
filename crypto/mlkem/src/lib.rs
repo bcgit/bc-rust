@@ -118,14 +118,13 @@
 //!
 //! # 🚨 Security 🚨
 //!
-//! All functionality exposed by this crate is considered secure to use.
-//! In other words, this crate does not contain any "hazmat" except for the obvious points about
-//! handling your private keys properly: if you post your private key to github, or you generate
-//! production keys from a weak seed, that use is unsupported
-//! It is worth mentioning, however, that if using a [`MLKEM::keygen_from_seed`], then it is your
-//! responsibility to ensure that the seed is cryptographically random and unpredictable.
-//! And also that [`MLKEM::encaps_internal`] requires you to provide the randomness, so the ciphertext
-//! will only be as strong as the randomness that you provide.
+//! Everything at the crate root is considered secure to use. The one
+//! [hazmat](bouncycastle_core::hazmat) item is [`hazmat::EncapsWithRandomness`], which takes the
+//! encapsulation randomness from the caller, so the ciphertext is only as strong as the randomness
+//! provided. Beyond that, the obvious points about handling your private keys properly apply: if
+//! you post your private key to github, or you generate production keys from a weak seed, that use
+//! is unsupported. If using [`MLKEM::keygen_from_seed`], it is your responsibility to ensure that
+//! the seed is cryptographically random and unpredictable.
 //!
 //! A note about cryptographic side-channel attacks: considerable effort has been expended to attempt
 //! to make this implementation constant-time, which generally means that the core mathematical algorithm
@@ -154,6 +153,7 @@
 use bouncycastle_core::key_material::KeyMaterialTrait;
 
 mod aux_functions;
+pub mod hazmat;
 mod matrix;
 pub mod mlkem;
 mod mlkem_keys;

@@ -6,9 +6,10 @@ use crate::tdes::{
     BLOCK_LEN, Block, REPEATED_KEY, any_weak, forward, inverse, same_key, validate_wrapper,
 };
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
+use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
 
 /// The length of a two-key TDEA key bundle in bytes: `Key1 || Key2`, with `Key3 = Key1`

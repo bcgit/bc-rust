@@ -15,7 +15,7 @@
 //! in total (SP 800-67 Rev 2 Sec 3.4); the command does not count across invocations.
 
 use crate::helpers::block_mode_helpers::{
-    BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES};
@@ -24,19 +24,19 @@ use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES};
 const MODE: &str = "CBC";
 
 pub(crate) fn tdes_cbc_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key::<KEY_LEN>(key, key_file, "TDES");
     match action {
-        BlockModeAction::Encrypt => {
+        CipherDirection::Encrypt => {
             encrypt_stream::<Cbc<TDES, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN, BLOCK_LEN>(
                 &key, output_hex, MODE,
             )
         }
-        BlockModeAction::Decrypt => {
+        CipherDirection::Decrypt => {
             decrypt_stream::<Cbc<TDES, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN, BLOCK_LEN>(
                 &key, output_hex, MODE,
             )

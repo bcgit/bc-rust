@@ -8,7 +8,8 @@
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle_modes::hazmat::Ecb;
+use bouncycastle_modes::{Decrypting, Encrypting};
 use bouncycastle_padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };

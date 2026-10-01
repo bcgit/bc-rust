@@ -724,91 +724,6 @@ pub trait BlockCipherEncryptor<
     }
 }
 
-/// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
-///
-/// # 🚨 Security 🚨
-/// ECB is not secure for encrypting data; instead, it is a raw building block upon which
-/// secure modes such as CBC and GCM can be built.
-///
-/// Implementors are expected to hold that key schedule in a zeroize-on-drop wrapper
-/// (`bouncycastle_utils::secret::Secret`), so it is scrubbed when the value is dropped.
-///
-/// # Why the block methods are infallible
-///
-/// Every length here is fixed by a type, and a constructed value is always ready to use, so there
-/// is nothing a caller can get wrong once [`ElectronicCodeBook::new`] has returned. Only `new` can
-/// fail, and only because of the key.
-pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
-    Algorithm + Sized
-{
-    /// Expands the key.
-    ///
-    /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
-    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
-    /// [`SymmetricCipherError::KeyMaterialError`].
-    fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError>;
-
-    /// Whether this permutation may be used to *apply* cryptographic protection, i.e. as the
-    /// cipher of an encrypting mode.
-    ///
-    /// `true` for every current cipher. `false` marks a permutation kept only to process data that
-    /// was protected in the past -- two-key TDEA, which NIST SP 800-131A Rev 2 Table 1 lists as
-    /// "Disallowed" for encryption and "Legacy use" for decryption. A mode of operation checks this
-    /// in an inline `const` when its `Encrypting` direction is constructed, so encrypting with such
-    /// a permutation is a compile error at the call site, while its `Decrypting` direction is
-    /// unaffected. The block methods themselves are not gated: a decrypting CFB or CTR needs the
-    /// forward cipher function, and a raw permutation is not something to encrypt data with in any
-    /// case (see the trait docs).
-    const ENCRYPTION_APPROVED: bool = true;
-
-    /// The forward cipher function, in place.
-    fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]);
-
-    /// The inverse cipher function, in place.
-    fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]);
-
-    /// The forward cipher function on two *independent* blocks, in place.
-    ///
-    /// Required, with no default, so that every implementor decides for itself how to run a pair.
-    /// A bit-sliced engine whose natural unit is a pair (see `bouncycastle-aes`) runs both blocks
-    /// in one pass for barely more than the cost of one; an engine with no unit wider than a block
-    /// makes two [`ElectronicCodeBook::encrypt_block`] calls. A default of two single-block calls
-    /// would be right only for the second kind, and silently wrong -- twice the work, with nothing
-    /// failing -- for a wider engine that forgot to override it.
-    ///
-    /// Must be indistinguishable from two [`ElectronicCodeBook::encrypt_block`] calls, including
-    /// the order of the two results. `TestFrameworkElectronicCodeBook` pins that.
-    ///
-    /// Modes whose structure is parallel -- CBC decryption, CFB decryption, CTR -- should prefer
-    /// this. CBC and CFB *encryption* cannot use it: each input block depends on the previous
-    /// output.
-    fn encrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]);
-
-    /// The inverse cipher function on two *independent* blocks, in place.
-    /// See [`ElectronicCodeBook::encrypt_2blocks`].
-    fn decrypt_2blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 2]);
-
-    /// The forward cipher function on four *independent* blocks, in place.
-    ///
-    /// Required for the same reason as [`ElectronicCodeBook::encrypt_2blocks`]. An engine whose
-    /// natural unit is a pair runs the four as two pair calls; a bit-sliced engine whose S-box
-    /// circuit substitutes four blocks per pass runs them as one full pass rather than two
-    /// half-empty pair calls. Four is the unit because it is the widest any engine in this library
-    /// fills: AES fills a pair, and the `u16`- and `u32`-plane engines (SM4, Camellia, ARIA) fill
-    /// four.
-    /// Must be indistinguishable from four [`ElectronicCodeBook::encrypt_block`] calls, including
-    /// the order of the four results. `TestFrameworkElectronicCodeBook` pins that.
-    ///
-    /// Modes with parallel structure chunk their data into fours first, then pairs, then single
-    /// blocks; see CBC decryption in `bouncycastle-modes`.
-    fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
-
-    /// The inverse cipher function on four *independent* blocks, in place.
-    /// See [`ElectronicCodeBook::encrypt_4blocks`].
-    fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
-}
-
 /// A hash function is a cryptographic primitive that takes an input of any length and produces a fixed-size output.
 /// Formally: `H: {0,1}^* -> {0,1}^n`.
 /// A cryptographic hash function will typically satisfy several security properties, including:
@@ -1117,63 +1032,6 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
     fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
     /// Read it in from bytes in its standard encoding.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
-}
-
-/// A keyed keystream generator: the raw primitive under a stream cipher, as
-/// [`ElectronicCodeBook`] is the raw primitive under a block cipher mode.
-///
-/// It is constructed from a key and init data and XORs successive keystream blocks into whatever
-/// it is handed. It has no direction and no init-data policy: generating the nonce, buffering a
-/// partly-used block between calls, and refusing a call that would run past the end of the
-/// keystream all belong to `bouncycastle_core::stream_cipher::StreamCipher`, which turns any
-/// `KeyStream` into a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
-///
-/// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
-/// keystream block is the encryption of the last ciphertext block.
-///
-/// # 🚨 Security 🚨
-/// Like [`ElectronicCodeBook`], this is a raw building block, not a cipher to encrypt data with.
-/// [`KeyStream::new`] takes the init data from the caller, so nothing stops a caller reusing a
-/// nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
-/// and nothing stops it running past [`KeyStream::remaining_blocks`]. The stream cipher traits,
-/// through `bouncycastle_core::stream_cipher::StreamCipher`, generate the init data and enforce the
-/// limit; use them.
-///
-/// Implementors hold the key in a zeroize-on-drop wrapper, as for [`ElectronicCodeBook`]. Any
-/// keystream they produce into scratch space of their own is live key material until it has been
-/// XORed in, and gets the same treatment.
-pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
-    Algorithm + Sized
-{
-    /// Expands the key and positions the keystream at its first block for `init_data`.
-    ///
-    /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
-    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
-    /// [`SymmetricCipherError::KeyMaterialError`].
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError>;
-
-    /// Whether this keystream may be used to encrypt, as [`ElectronicCodeBook::ENCRYPTION_APPROVED`]
-    /// is for a permutation: `false` makes building the `Encrypting` direction of a
-    /// `bouncycastle_core::stream_cipher::StreamCipher` over it a compile error, while decryption
-    /// is unaffected. A keystream built on a permutation takes that permutation's value.
-    const ENCRYPTION_APPROVED: bool = true;
-
-    /// How many more keystream blocks this value can produce before its keystream would repeat.
-    /// A keystream with no practical limit returns `u64::MAX`.
-    fn remaining_blocks(&self) -> u64;
-
-    /// XORs the next `blocks.len()` keystream blocks into `blocks`, in place, and advances past
-    /// them. A sequence of calls is equivalent to one call over the concatenation; how to batch
-    /// the blocks is the implementor's decision, as for [`BlockCipherEncryptor::do_encrypt_blocks`].
-    ///
-    /// Infallible because the caller has already checked `blocks.len()` against
-    /// [`Self::remaining_blocks`]. Asking for more is a programmer error, and the implementor may
-    /// panic or repeat keystream.
-    fn apply_blocks(&mut self, blocks: &mut [[u8; BLOCK_LEN]]);
 }
 
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
@@ -1608,7 +1466,8 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// trait adds only the in-place data methods, which the separate-output view cannot offer.
 ///
 /// An implementor that is a pure keystream -- the keystream does not depend on the data, as in CTR
-/// -- should implement [`KeyStream`] and use `bouncycastle_core::stream_cipher::StreamCipher`,
+/// -- should implement [`KeyStream`](crate::hazmat::KeyStream) and use
+/// [`StreamCipher`](crate::stream_cipher::StreamCipher),
 /// which provides both traits. A mode whose keystream depends on the data, such as CFB, implements
 /// both itself, with the helpers in `bouncycastle_core::stream_cipher` for the separate-output
 /// half.
@@ -1804,6 +1663,10 @@ pub trait SymmetricCipherDecryptor<
     /// releases data later than the corresponding encryptor produced it, but the concatenation of
     /// everything released plus the data part of [`do_final`](Self::do_final) is the plaintext.
     ///
+    /// Only the first `written` bytes of `plaintext` are touched; the rest of the buffer is left
+    /// as the caller had it. In particular a call whose whole input is held back returns 0 and
+    /// writes nothing at all.
+    ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// [`update_out_len`](Self::do_decrypt_out_len), carrying the required length. Nothing is
@@ -1974,6 +1837,10 @@ pub trait SymmetricCipherEncryptor<
     /// into `ciphertext` and buffering the rest. Returns the number of bytes written, which is
     /// exactly [`update_out_len`](Self::do_encrypt_out_len) of `plaintext.len()`. A sequence of calls
     /// is equivalent to one call over the concatenation.
+    ///
+    /// Only the first `written` bytes of `ciphertext` are touched; the rest of the buffer is left
+    /// as the caller had it. In particular a call that has to buffer all of its input -- a piece
+    /// that does not complete a block, say -- returns 0 and writes nothing at all.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than

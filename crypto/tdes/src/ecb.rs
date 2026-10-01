@@ -41,7 +41,8 @@
 
 use crate::padded_mode::PaddedMode;
 use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES, TDES2Key};
-use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle_modes::hazmat::Ecb;
+use bouncycastle_modes::{Decrypting, Encrypting};
 use bouncycastle_padding::PaddedBlockCipherDecryptor;
 
 // Imports needed for docs

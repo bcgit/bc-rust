@@ -13,7 +13,7 @@
 //! ```
 //! use bouncycastle_tdes::TDES;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //!
 //! // NIST CAVP TECBMMT3.rsp, [ENCRYPT] COUNT = 0: KEY1 || KEY2 || KEY3.
 //! let key = KeyMaterial::<24>::from_bytes_as_type(

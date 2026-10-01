@@ -89,3 +89,36 @@ mod ctbase64_test {
         assert_eq!(LOREM_IPSUM, out);
     }
 }
+
+/// `do_update` must refuse a chunk containing padding as its docs say: the state is restored to
+/// what it was at entry and nothing is returned, so passing the same chunk to `do_final` yields
+/// every byte exactly once. It used to return `Ok` with the bytes decoded before the padding while
+/// rolling the block state back, so a block held from the previous call was emitted twice and the
+/// padded block itself was lost.
+#[test]
+fn do_update_refuses_padding_and_leaves_the_state_restorable() {
+    use bouncycastle_base64::{Base64Decoder, Base64Error};
+
+    // The padded block completes a quartet begun in the previous call.
+    let mut decoder = Base64Decoder::new(true);
+    assert_eq!(decoder.do_update("QUJ").unwrap(), b"");
+    assert!(matches!(
+        decoder.do_update("DRA=="),
+        Err(Base64Error::PaddingEncounteredDuringDoUpdate)
+    ));
+    assert_eq!(decoder.do_final("DRA==").unwrap(), b"ABCD");
+
+    // The padded block arrives whole, with complete blocks before it in the same chunk.
+    let mut decoder = Base64Decoder::new(true);
+    assert!(matches!(
+        decoder.do_update("QUJDRA=="),
+        Err(Base64Error::PaddingEncounteredDuringDoUpdate)
+    ));
+    assert_eq!(decoder.do_final("QUJDRA==").unwrap(), b"ABCD");
+
+    // Padding alone, after everything else went through `do_update`.
+    let mut decoder = Base64Decoder::new(true);
+    assert_eq!(decoder.do_update("QUJDRA").unwrap(), b"ABC");
+    assert!(matches!(decoder.do_update("=="), Err(Base64Error::PaddingEncounteredDuringDoUpdate)));
+    assert_eq!(decoder.do_final("==").unwrap(), b"D");
+}

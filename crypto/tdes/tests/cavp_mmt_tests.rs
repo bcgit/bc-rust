@@ -33,10 +33,10 @@
 //! The Monte Carlo Test files (`tdesmct_intermediate.zip`) are **not** used: their chained update
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor,
-    StreamCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;

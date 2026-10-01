@@ -8,8 +8,9 @@
 //!
 //! # Usage Examples
 //!
-//! The raw AES permutation (as exposed by the [`AESInternal`](aes_internal::AESInternal) struct) is not secure to use by itself.
-//! For why, see [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
+//! The raw AES permutation, [`AESInternal`](hazmat::AESInternal), lives under [`hazmat`] because it
+//! is not secure to use by itself; see
+//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
 //!
 //! For ready-to-use primitives, see the documentation for one of the provided modes of operation:
 //!
@@ -18,12 +19,14 @@
 //! * [AES_CFB](crate::cfb)
 //! * [AES_CFB8](crate::cfb8)
 //! * [AES_CTR](crate::ctr)
-//! * [AES_ECB](crate::ecb)
 //! * [AES_GCM](crate::gcm)
+//!
+//! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
+//! it is not a confidentiality mode for data.
 //!
 //! # Design
 //!
-//! ## Why not a lookup table
+//! ## No lookup table
 //!
 //! FIPS 197 Sec 5.1.1 presents the S-box as a table (Table 4), and almost every AES
 //! implementation stores it as one -- 256 bytes, or 2-8 KiB for the "T-table" variants that fold
@@ -72,7 +75,7 @@
 //! Decryption follows FIPS 197 Algorithm 3, the straight inverse cipher, rather than the
 //! equivalent inverse cipher of Sec 5.3.5. Algorithm 3 puts INVMIXCOLUMNS() after ADDROUNDKEY(),
 //! so it uses the *unmodified* key schedule; the equivalent inverse cipher would need a second
-//! schedule with each round key transformed. One [`AES128Internal`](aes_internal::AES128Internal) value therefore encrypts and decrypts
+//! schedule with each round key transformed. One [`AES128Internal`](hazmat::AES128Internal) value therefore encrypts and decrypts
 //! from one stored schedule.
 //!
 //! # Memory Usage
@@ -83,9 +86,9 @@
 //!
 //! | Type | Key | `Nr` | Schedule (persistent) | Tables |
 //! |---|---|---|---|---|
-//! | [`AES128Internal`](aes_internal::AES128Internal) | 16 B | 10 | 176 B | 0 B |
-//! | [`AES192Internal`](aes_internal::AES192Internal) | 24 B | 12 | 208 B | 0 B |
-//! | [`AES256Internal`](aes_internal::AES256Internal) | 32 B | 14 | 240 B | 0 B |
+//! | [`AES128Internal`](hazmat::AES128Internal) | 16 B | 10 | 176 B | 0 B |
+//! | [`AES192Internal`](hazmat::AES192Internal) | 24 B | 12 | 208 B | 0 B |
+//! | [`AES256Internal`](hazmat::AES256Internal) | 32 B | 14 | 240 B | 0 B |
 //!
 //! Per-call stack usage is independent of key length and set by the plane width: 16, 32 or 64
 //! bytes of bit-sliced state for one, two or four blocks, the same again for the round key widened
@@ -103,12 +106,14 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`AES128Internal`](aes_internal::AES128Internal) and friends transform exactly 16 bytes.
-//! Using them directly on data is equivalent to the [Electronic Code Book (ECB)](crate::ecb) mode,
+//! [`AES128Internal`](hazmat::AES128Internal) and friends transform exactly 16 bytes.
+//! Using them directly on data is equivalent to the [Electronic Code Book (ECB)](hazmat::AES_ECB_128) mode,
 //! which does not provide proper confidentiality in most contexts since the same plaintext block
 //! will produce the same ciphertext block every time, so structure in the plaintext survives encryption.
 //! **Do not do it.** Use a ready-to-use mode of operation, and
-//! prefer an authenticated one (AEAD) so that ciphertext tampering is detected.
+//! prefer an authenticated one (AEAD) so that ciphertext tampering is detected. That is why the
+//! permutation and the ECB aliases live under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the
+//! supported uses.
 //!
 //! ## Constant-time properties
 //!
@@ -156,21 +161,22 @@
 // be added outside this crate; that is what triggers this lint.
 #![allow(private_bounds)]
 
-pub mod aes_internal;
 mod bitslice;
 pub mod cbc;
 pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
-pub mod ecb;
 pub mod gcm;
+pub mod hazmat;
 mod padded_mode;
 mod round;
 mod sbox;
 mod schedule;
 
-pub use aes_internal::BLOCK_LEN;
+/// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
+pub const AES_BLOCK_LEN: usize = 16;
+
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use ccm::{
     AES_CCM_128, AES_CCM_128_Decryptor, AES_CCM_128_Encryptor, AES_CCM_192, AES_CCM_192_Decryptor,
@@ -180,5 +186,4 @@ pub use ccm::{
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
-pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};

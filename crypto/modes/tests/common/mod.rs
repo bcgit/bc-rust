@@ -3,7 +3,7 @@
 //! These are **not** cryptography. They exist so the structural properties of a mode -- chaining,
 //! sequencing, the pair/remainder split, direction typing -- can be tested without an AES
 //! dependency and without a real cipher's vectors getting in the way. The real known-answer tests
-//! are in `sp800_38a_tests.rs`.
+//! are in the `aes` crate's `tests/sp800_38a_*_tests.rs`.
 //!
 //! # Why not XOR
 //!
@@ -19,9 +19,10 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
+use bouncycastle_core::traits::Algorithm;
 
 /// Block and key length of the toy ciphers, chosen to match AES so the tests exercise the same
 /// shapes the real thing will.

@@ -87,7 +87,8 @@ pub type TDES_CTR<Dir> = Ctr<TDES, Dir, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>;
 /// ```
 /// use bouncycastle_tdes::{TDES2_CTR, TDES2Key};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor};
+/// use bouncycastle_core::hazmat::ElectronicCodeBook;
+/// use bouncycastle_core::traits::StreamCipherDecryptor;
 ///
 /// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();

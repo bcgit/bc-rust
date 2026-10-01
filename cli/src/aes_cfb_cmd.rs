@@ -26,16 +26,16 @@
 //! of the plaintext in the *same* block, so an attacker edits the block they aimed at, at the cost
 //! of randomising the next one. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BlockModeAction, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::BLOCK_LEN;
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::AES_BLOCK_LEN;
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cfb, Decrypting, Encrypting};
 
 pub(crate) fn aes128_cfb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -44,7 +44,7 @@ pub(crate) fn aes128_cfb_cmd(
 }
 
 pub(crate) fn aes192_cfb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -53,7 +53,7 @@ pub(crate) fn aes192_cfb_cmd(
 }
 
 pub(crate) fn aes256_cfb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -63,16 +63,16 @@ pub(crate) fn aes256_cfb_cmd(
 
 /// Dispatches to the shared streaming loops with `Cfb` filled in as the mode.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     run_stream_mode::<
-        Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>,
+        Cfb<P, Encrypting, KEY_LEN, AES_BLOCK_LEN>,
+        Cfb<P, Decrypting, KEY_LEN, AES_BLOCK_LEN>,
         KEY_LEN,
-        BLOCK_LEN,
+        AES_BLOCK_LEN,
     >(action, key, output_hex)
 }

@@ -6,8 +6,9 @@
 //! four-block path costs the same as four single-block calls, i.e. that nothing is lost by a mode
 //! preferring it.
 
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, RNG};
+use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, TDES};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};

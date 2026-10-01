@@ -33,16 +33,16 @@
 //! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
 //! one.
 
-use crate::helpers::block_mode_helpers::{BlockModeAction, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::aes::{BLOCK_LEN, CTR_NONCE_LEN};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{AES_BLOCK_LEN, CTR_NONCE_LEN};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Ctr, Decrypting, Encrypting};
 
 pub(crate) fn aes128_ctr_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -51,7 +51,7 @@ pub(crate) fn aes128_ctr_cmd(
 }
 
 pub(crate) fn aes192_ctr_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -60,7 +60,7 @@ pub(crate) fn aes192_ctr_cmd(
 }
 
 pub(crate) fn aes256_ctr_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -70,15 +70,15 @@ pub(crate) fn aes256_ctr_cmd(
 
 /// Dispatches to the shared streaming loops with `Ctr` filled in as the mode.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     run_stream_mode::<
-        Ctr<P, Encrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
-        Ctr<P, Decrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
+        Ctr<P, Encrypting, KEY_LEN, AES_BLOCK_LEN, CTR_NONCE_LEN>,
+        Ctr<P, Decrypting, KEY_LEN, AES_BLOCK_LEN, CTR_NONCE_LEN>,
         KEY_LEN,
         CTR_NONCE_LEN,
     >(action, key, output_hex)

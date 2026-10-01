@@ -18,8 +18,7 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::AES128Internal;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
@@ -230,54 +229,45 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
     assert!(oversized[n..].iter().all(|&b| b == 0xAA), "the rest is left alone");
 }
 
-/// The one-shots work with real AES, at a length that is not a whole number of blocks, for all
-/// three stream modes -- the shape a caller most often wants from this API.
+/// The allocating one-shots -- the `Vec`-returning `encrypt` / `decrypt`, which no other test here
+/// reaches -- round-trip at a length that is not a whole number of blocks, for all three stream
+/// modes: the shape a caller most often wants from this API.
 #[test]
-fn the_one_shots_round_trip_with_real_aes() {
-    let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-        .expect("a valid AES-128 key");
+fn the_allocating_one_shots_round_trip() {
+    let key = toy_key();
     let message = b"a message of no particular length at all";
 
     // CFB128
-    let (iv, ct) =
-        <Cfb<AES128Internal, Encrypting, 16, 16> as SymmetricCipherEncryptor<16, 16, 0>>::encrypt(
-            &key, message,
-        )
-        .unwrap();
+    let (iv, ct) = <ToyCfb<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, TOY_LEN, 0>>::encrypt(
+        &key, message,
+    )
+    .unwrap();
     assert_eq!(ct.len(), message.len(), "a stream cipher does not change the length");
-    let back =
-        <Cfb<AES128Internal, Decrypting, 16, 16> as SymmetricCipherDecryptor<16, 16, 0>>::decrypt(
-            &key, &iv, &ct,
-        )
-        .unwrap();
+    let back = <ToyCfb<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::decrypt(
+        &key, &iv, &ct,
+    )
+    .unwrap();
     assert_eq!(back, message);
 
     // CFB8
-    let (iv, ct) =
-        <Cfb8<AES128Internal, Encrypting, 16, 16> as SymmetricCipherEncryptor<16, 16, 0>>::encrypt(
-            &key, message,
-        )
-        .unwrap();
-    let back =
-        <Cfb8<AES128Internal, Decrypting, 16, 16> as SymmetricCipherDecryptor<16, 16, 0>>::decrypt(
-            &key, &iv, &ct,
-        )
-        .unwrap();
+    let (iv, ct) = <ToyCfb8<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, TOY_LEN, 0>>::encrypt(
+        &key, message,
+    )
+    .unwrap();
+    let back = <ToyCfb8<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::decrypt(
+        &key, &iv, &ct,
+    )
+    .unwrap();
     assert_eq!(back, message);
 
     // CTR
-    let (nonce, ct) = <Ctr<AES128Internal, Encrypting, 16, 16, 12> as SymmetricCipherEncryptor<
-        16,
-        12,
-        0,
-    >>::encrypt(&key, message)
-    .unwrap();
+    let (nonce, ct) =
+        <ToyCtr<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, 12, 0>>::encrypt(&key, message)
+            .unwrap();
     assert_eq!(nonce.len(), 12, "CTR's init data is its 12-byte nonce");
-    let back = <Ctr<AES128Internal, Decrypting, 16, 16, 12> as SymmetricCipherDecryptor<
-        16,
-        12,
-        0,
-    >>::decrypt(&key, &nonce, &ct)
+    let back = <ToyCtr<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, 12, 0>>::decrypt(
+        &key, &nonce, &ct,
+    )
     .unwrap();
     assert_eq!(back, message);
 }

@@ -3,9 +3,8 @@
 mod mldsa_tests {
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
     use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
-    use bouncycastle_core::key_material::{
-        KeyMaterial256, KeyMaterialTrait, KeyType, do_hazardous_operations,
-    };
+    use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
         Hash, RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer, Suspendable,

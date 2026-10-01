@@ -8,6 +8,7 @@ use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, Suspendable};
 use bouncycastle_utils::secret::Secret;
 
+use crate::ASCON_HASH256_NAME;
 use crate::sponge::{RATE, Sponge};
 
 const DIGEST_BYTES: usize = 32;
@@ -30,15 +31,6 @@ impl AsconHash256 {
         }
     }
 
-    /// One-shot hash of `data`, returning the 32-byte digest.
-    pub fn digest(data: &[u8]) -> [u8; DIGEST_BYTES] {
-        let mut hasher = Self::new();
-        hasher.sponge.absorb(data);
-        let mut out = [0u8; DIGEST_BYTES];
-        hasher.squeeze_into(&mut out);
-        out
-    }
-
     // Pad, absorb the final block, and squeeze the four 64-bit digest blocks (SP 800-232
     // Algorithm 5). The 32-byte digest is exactly RATE * 4 bytes, so a single generic
     // `Sponge::squeeze()` call over the whole output produces all four blocks with no leftover.
@@ -55,7 +47,7 @@ impl Default for AsconHash256 {
 }
 
 impl Algorithm for AsconHash256 {
-    const ALG_NAME: &'static str = "Ascon-Hash256";
+    const ALG_NAME: &'static str = ASCON_HASH256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 

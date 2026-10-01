@@ -5,9 +5,10 @@
 use crate::des::{Subkeys, inverse_ip, ip, rounds};
 use crate::schedule::{PARITY_MASK, expand, is_weak};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
+use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::ct::ct_eq_zero_bytes;
 use bouncycastle_utils::secret::Secret;
 

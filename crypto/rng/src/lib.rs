@@ -25,7 +25,8 @@
 //!
 //! This crate contains the [`Sp80090ADrbg`] trait, which is intentionally defined here and not in [`bouncycastle_core::traits`]
 //! since misuse of [`Sp80090ADrbg::instantiate`] can completely undermine the security of your entire
-//! cryptographic application.
+//! cryptographic application. A DRBG with no seed at all comes only from
+//! [`hazmat::NewUninitialized`].
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
@@ -43,6 +44,7 @@ use bouncycastle_core::key_material::KeyType;
 // end doc-only imports
 
 pub mod hash_drbg80090a;
+pub mod hazmat;
 
 /*** String constants ***/
 ///
