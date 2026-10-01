@@ -12,7 +12,7 @@
 
 use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key};
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle::sm4::SM4;
+use bouncycastle::sm4::hazmat::SM4;
 
 /// Names the mode in error messages.
 const MODE: &str = "CBC";
