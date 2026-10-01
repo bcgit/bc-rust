@@ -12,8 +12,8 @@
 //! two views so that each S-box circuit can be run once on a whole class word from each block.
 
 use crate::LANES;
-use crate::aria::Block;
 use crate::bitslice::{Planes, ortho};
+use crate::hazmat::aria::Block;
 use crate::sbox::{sb1, sb2, sb3, sb4};
 
 /// One block as four big-endian 32-bit words. See the module docs.
