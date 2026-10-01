@@ -177,6 +177,14 @@ reviewer what is test code vs functional code.
 
 # Docs
 
+## Proportion
+
+Docs are a reading cost, so default to short. Each fact has one home: the crate docs are an overview plus links, and
+the detail lives on the type or module it describes. Rationale is a sentence or two next to the code; history and
+derivations go in the commit message. Give a few examples, not one per variant; keep memory tables to the figures,
+without a per-row essay; keep CLI docs out of library crates; and never repeat a spec quote across files. Before adding
+material, check whether the crate already states it.
+
 ## Usage Examples
 
 The crate docs needs a section "Usage Examples" with sample code for all the major usage patterns of the primitives in
@@ -192,3 +200,7 @@ the crate.
 Most crates should have a "Security Considerations" section that documents any footguns where the user of this crate
 could undermine their own security; for example where providing a seed or a nonce that is not truly random would
 completely undermine the algorithm.
+
+## Release Notes
+
+For release note entries, keep succinct, one line per significant change at most.

@@ -11,8 +11,8 @@ previous session's reading of them.
 
 - **[QUALITY_AND_STYLE.md](QUALITY_AND_STYLE.md) — read before writing or changing code, and before reviewing a
   diff.** The authority on architecture, crate and API shape, naming conventions, fallibility, macros, what tests and
-  benchmarks a crate owes, and which sections crate docs must have. Its own opening line invites an AI to review a PR
-  against it, so treat it as exactly that checklist.
+  benchmarks a crate owes, which sections crate docs must have, and how much they should say. Its own opening line
+  invites an AI to review a PR against it, so treat it as exactly that checklist.
 - **[CONTRIBUTING.md](CONTRIBUTING.md) — read before writing a commit message, opening a PR, or advising on how a
   change gets merged.** The authority on coding philosophy, PR hygiene and self-review, the quality bar a submission
   must clear to be accepted, how merges actually happen in this project, and the AI policy. That policy places
