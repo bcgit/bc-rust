@@ -22,7 +22,7 @@
 //! * [AES_GCM](crate::gcm)
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
-//! it is not a confidentiality mode for data.
+//! it is a building block for other modes, not itself a confidentiality mode for data.
 //!
 //! # Design
 //!
@@ -178,9 +178,8 @@ pub const AES_BLOCK_LEN: usize = 16;
 
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use ccm::{
-    AES_CCM_128, AES_CCM_128_Decryptor, AES_CCM_128_Encryptor, AES_CCM_192, AES_CCM_192_Decryptor,
-    AES_CCM_192_Encryptor, AES_CCM_256, AES_CCM_256_Decryptor, AES_CCM_256_Encryptor,
-    CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_CCM_128, AES_CCM_128_Buffered, AES_CCM_192, AES_CCM_192_Buffered, AES_CCM_256,
+    AES_CCM_256_Buffered, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
