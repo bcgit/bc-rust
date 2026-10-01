@@ -246,7 +246,7 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
 fn neither_direction_uses_the_inverse_cipher() {
     fn round_trip<P>() -> ([u8; 48], [u8; 16])
     where
-        P: bouncycastle_core::traits::ElectronicCodeBook<TOY_LEN, TOY_LEN>,
+        P: bouncycastle_core::hazmat::ElectronicCodeBook<TOY_LEN, TOY_LEN>,
     {
         let key = toy_key();
         let aad = b"associated data of no particular length";

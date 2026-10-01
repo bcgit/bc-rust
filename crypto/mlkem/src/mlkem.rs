@@ -93,19 +93,11 @@
 //!
 //! ## Deterministic encapsulation
 //!
-//! This section pertains to [`MLKEM::encaps_internal`] which allows to pass in the encapsulation randomness
-//! and thus obtain a deterministic encapsulation.
-//!
-//! The only good reasons for doing this are:
-//!    A) testing, if reproducible results are needed; or
-//!    B) if the user wants to use their own source of randomness, such as a hardware RNG, instead of the library's
-//!    default RNG.
-//! As a reminder, any deterministic KEM (or any encryption mechanism) fails to satisfy any security
-//! notion involving indistinguishability (e.g. IND-CPA, IND-CCA2, etc.).
-//! Any custom randomness construction will have serious consequences.
-//! Failing to use this properly, as indicated, will result in catastrophic vulnerabilities.
+//! [`EncapsWithRandomness`](crate::hazmat::EncapsWithRandomness) takes the encapsulation
+//! randomness from the caller; its docs say when that is acceptable and why it is under `hazmat`.
 //!
 //! ```rust
+//! use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //! use bouncycastle_core::traits::KEMDecapsulator;
 //! use bouncycastle_core::errors::KEMError;
@@ -117,7 +109,7 @@
 //! let m: [u8; 32] = [0; 32];
 //!
 //! // Create the shared secret and ciphertext using the public key and the random message `m`
-//! let (ss, ct) = MLKEM768::encaps_internal(&pk, None, m);
+//! let (ss, ct) = MLKEM768::encaps_with_randomness(&pk, None, m);
 //!
 //! // Recover the shared secret using the private key//!
 //! let ss1 = match MLKEM768::decaps(&sk, &ct) {
@@ -146,9 +138,8 @@ use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::errors::RNGError;
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOF, XOFSqueezer,
@@ -508,23 +499,10 @@ impl<
     /// Alternatively, a [`MLKEMPublicKeyExpanded`] with [`MLKEM::encaps_for_expanded_key`] can be used.
     /// If `None` is specified, the function will compute A_hat internally and everything will work fine.
     ///
-    /// Unlike the more public function exposed by [`KEMEncapsulator::encaps`], this returns the shared secret as raw bytes
-    /// instead of wrapped in an appropriately-set [`KeyMaterialTrait`].
-    /// Proper handling is up to the user's own judgement.
-    ///
-    /// Note: this is an internal function that allows the caller to specify the encapsulation
-    /// randomness (which is the message `m` to be encrypted by the underlying PKE scheme).
-    /// This function should not be used directly unless there is a good reason to do so.
-    /// [`KEMEncapsulator::encaps`] should be used in 99.9% of cases.
-    /// The reason this is exposed publicly is:
-    ///     A) for unit testing that requires access to the deterministically reproducible function, and
-    ///     B) for operational environments that wish to provide randomness from their own source instead
-    ///        of the built-in RNG in bc-rust.
-    /// As a reminder, any deterministic KEM (or any encryption mechanism) fails to satisfy any security
-    /// notion involving indistinguishability (e.g. IND-CPA, IND-CCA2, etc.).
-    /// Failing to use this properly will result in catastrophic vulnerabilities.
-    /// Please don't do it.
-    pub fn encaps_internal(
+    /// Reachable from outside the crate only through
+    /// [`EncapsWithRandomness`](crate::hazmat::EncapsWithRandomness), which carries the security
+    /// notes on supplying `m`.
+    pub(crate) fn encaps_internal(
         ek: &PK,
         A_hat: Option<&P::MatrixA>,
         m: [u8; 32],

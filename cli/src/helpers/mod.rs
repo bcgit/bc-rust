@@ -1,6 +1,5 @@
-use bouncycastle::core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle::hex;

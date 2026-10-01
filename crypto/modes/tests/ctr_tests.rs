@@ -24,15 +24,16 @@
 mod common;
 
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
-use bouncycastle_modes::ctr::CtrKeyStream;
+use bouncycastle_modes::hazmat::CtrKeyStream;
 use bouncycastle_modes::{Ctr, Decrypting, Encrypting};
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 

@@ -154,7 +154,7 @@ fn sub_word(word: u32) -> u32 {
 
 /// KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2), returning the bit-sliced schedule.
 ///
-/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::aes_internal`] checks that before calling, so this
+/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::hazmat::AESInternal`] checks that before calling, so this
 /// cannot fail and takes no `Result`.
 ///
 /// Algorithm 2 is followed literally -- lines 2-6 copy the key into `w[0..Nk]`, lines 7-16 derive

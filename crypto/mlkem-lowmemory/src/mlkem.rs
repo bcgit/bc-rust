@@ -14,9 +14,8 @@ use crate::mlkem_keys::{MLKEMPublicKeyInternalTrait, MLKEMPublicKeyTrait};
 use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams};
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::{KEMError, RNGError};
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOF, XOFSqueezer,
@@ -286,23 +285,10 @@ impl<
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
     /// Output: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     ///
-    /// Unlike the more public function exposed by [`KEMEncapsulator::encaps`], this returns the shared secret as raw bytes
-    /// instead of wrapped in an appropriately-set [`KeyMaterialTrait`].
-    /// Proper handling is up to the user's own judgement.
-    ///
-    /// Note: this is an internal function that allows the caller to specify the encapsulation
-    /// randomness (which is the message `m` to be encrypted by the underlying PKE scheme).
-    /// This function should not be used directly unless there is a good reason to do so.
-    /// [`KEMEncapsulator::encaps`] should be used in 99.9% of cases.
-    /// The reason this is exposed publicly is:
-    ///     A) for unit testing that requires access to the deterministically reproducible function, and
-    ///     B) for operational environments that wish to provide randomness from their own source instead
-    ///        of the built-in RNG in bc-rust.
-    /// As a reminder, any deterministic KEM (or any encryption mechanism) fails to satisfy any security
-    /// notion involving indistinguishability (e.g. IND-CPA, IND-CCA2, etc.).
-    /// Failing to use this properly will result in catastrophic vulnerabilities.
-    /// Please don't do it.
-    pub fn encaps_internal(ek: &PK, m: [u8; 32]) -> ([u8; 32], [u8; CT_LEN]) {
+    /// Reachable from outside the crate only through
+    /// [`EncapsWithRandomness`](crate::hazmat::EncapsWithRandomness), which carries the security
+    /// notes on supplying `m`.
+    pub(crate) fn encaps_internal(ek: &PK, m: [u8; 32]) -> ([u8; 32], [u8; CT_LEN]) {
         // 1: (𝐾, 𝑟) ← G(𝑚‖H(ek))
         //  ▷ derive shared secret key 𝐾 and randomness 𝑟
         let K: [u8; MLKEM_SS_LEN];

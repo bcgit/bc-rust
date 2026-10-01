@@ -1,9 +1,8 @@
 use std::fs;
 use std::process::exit;
 
-use bouncycastle::core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::hex;
 use bouncycastle::hkdf;
 use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};

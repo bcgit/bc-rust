@@ -12,9 +12,9 @@
 use crate::helpers::block_mode_helpers::{
     BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 
 /// Names the mode in error messages.

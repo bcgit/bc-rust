@@ -1,12 +1,15 @@
-//! CIPHER() and INVCIPHER() (FIPS 197 Sec 5.1 and Sec 5.3)
+//! The raw AES permutation: CIPHER() and INVCIPHER() (FIPS 197 Sec 5.1 and Sec 5.3).
+//!
+//! Under [`hazmat`](crate::hazmat) because [`AESInternal`] transforms exactly one block: it is
+//! the primitive under the modes in this crate, not a cipher for data.
 //!
 //! # Usage
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_aes::hazmat::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -46,9 +49,9 @@
 //! docs have the table and the benches record the numbers:
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES256Internal;
+//! use bouncycastle_aes::hazmat::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -77,16 +80,10 @@ use bouncycastle_utils::secret::Secret;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::ElectronicCodeBook;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 // End imports needed for docs
 
-/// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
-pub const AES_BLOCK_LEN: usize = 16;
-
 /// The AES keyed permutation, parameterised by key length.
-///
-/// This needs to be pub for the type aliases to work, but this is only a building-block for
-/// higher-level primitives and is not intended to be used directly.
 ///
 /// Use the aliases [`AES128Internal`], [`AES192Internal`] and [`AES256Internal`] rather than naming this directly.
 /// `P` is sealed to the three parameter sets of FIPS 197 Sec 6.1, so no fourth instantiation
@@ -101,18 +98,12 @@ pub struct AESInternal<P: AESParams> {
 }
 
 /// AES-128: 16-byte key, 10 rounds (FIPS 197 Sec 6.1).
-/// This needs to be pub for the type aliases to work, but this is only a building-block for
-/// higher-level primitives and is not intended to be used directly.
 #[allow(non_camel_case_types)]
 pub type AES128Internal = AESInternal<AES128Params>;
 /// AES-192: 24-byte key, 12 rounds (FIPS 197 Sec 6.1).
-/// This needs to be pub for the type aliases to work, but this is only a building-block for
-/// higher-level primitives and is not intended to be used directly.
 #[allow(non_camel_case_types)]
 pub type AES192Internal = AESInternal<AES192Params>;
 /// AES-256: 32-byte key, 14 rounds (FIPS 197 Sec 6.1).
-/// This needs to be pub for the type aliases to work, but this is only a building-block for
-/// higher-level primitives and is not intended to be used directly.
 #[allow(non_camel_case_types)]
 pub type AES256Internal = AESInternal<AES256Params>;
 

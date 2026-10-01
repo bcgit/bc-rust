@@ -16,7 +16,7 @@
 //! | CFB | [`cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
-//! | ECB | [`ecb`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
+//! | ECB | [`hazmat`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
 //!
 //! They divide three ways.
@@ -37,8 +37,8 @@
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
-//! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block -- see
-//! [ECB is not a confidentiality mode for data](#ecb-is-not-a-confidentiality-mode-for-data) and
+//! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
+//! why it lives under [`hazmat`] -- see [`hazmat::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
@@ -53,10 +53,10 @@
 //! insecure stand-in with AES-128's key and block sizes that the test-framework crate exports for
 //! exactly this purpose, so that this crate's documentation does not depend on any real cipher
 //! crate (which would be a dependency cycle: the cipher crates depend on this one). Substitute
-//! any [`ElectronicCodeBook`] implementor, such as `bouncycastle_aes::aes_internal::AES128Internal`;
+//! any [`ElectronicCodeBook`] implementor, such as `bouncycastle_aes::hazmat::AES128Internal`;
 //! the `bouncycastle-aes` crate's aliases carry runnable examples over the real thing.
 //!
-//! [`ElectronicCodeBook`]: bouncycastle_core::traits::ElectronicCodeBook
+//! [`ElectronicCodeBook`]: bouncycastle_core::hazmat::ElectronicCodeBook
 //!
 //! ## Defining type aliases
 //!
@@ -150,9 +150,9 @@ pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
-pub mod ecb;
 pub mod gcm;
 mod ghash;
+pub mod hazmat;
 mod iv;
 
 pub use cbc::Cbc;
@@ -160,19 +160,20 @@ pub use ccm::{CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
-pub use ecb::Ecb;
 pub use gcm::{GCM_NONCE_LEN, Gcm};
 
 // Imports needed for docs
 #[allow(unused_imports)]
+use bouncycastle_core::hazmat::ElectronicCodeBook;
+#[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
 
 /// The direction markers, defined in `bouncycastle-core` so that a stream cipher built there with
 /// [`bouncycastle_core::stream_cipher::StreamCipher`] and a mode built here share them. See [`Cbc`],
-/// [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`], [`Ecb`] and [`Gcm`].
+/// [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`], [`Ecb`](hazmat::Ecb) and [`Gcm`].
 pub use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};

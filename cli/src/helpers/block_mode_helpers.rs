@@ -48,9 +48,8 @@
 use crate::helpers::{
     flush_stdout, read_from_file, strip_trailing_newline, write_bytes_or_hex, write_stdout,
 };
-use bouncycastle::core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle::hex;

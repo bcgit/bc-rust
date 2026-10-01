@@ -3,7 +3,7 @@
 //! real implementor: both directions are inverses, the permutation is injective, the batch
 //! methods agree with the single-block ones, and the key policy is enforced.
 //!
-//! [`ElectronicCodeBook`]: bouncycastle_core::traits::ElectronicCodeBook
+//! [`ElectronicCodeBook`]: bouncycastle_core::hazmat::ElectronicCodeBook
 
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 use bouncycastle_core_test_framework::{TOY_BLOCK_LEN, ToyBlockCipher};

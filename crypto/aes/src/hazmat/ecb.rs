@@ -1,8 +1,9 @@
 //! Type aliases for AES in ECB mode (NIST SP 800-38A Sec 6.1), with padding.
 //!
-//! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.**
-//! 
-//! See [`bouncycastle_modes::ecb`] for details on the ElectronicCodebook construction.
+//! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.** That is why these are
+//! under [`hazmat`](crate::hazmat); see [`bouncycastle_core::hazmat`] for the supported uses.
+//!
+//! See [`bouncycastle_modes::hazmat::Ecb`] for details on the ElectronicCodebook construction.
 //!
 //! The aliases here are padded block ciphers that accept input of any size; `NoPadding` accepts
 //! only whole blocks but goes through the same adapter. The unpadded mode underneath them, which
@@ -21,7 +22,7 @@
 //! Basic usage can be obtained via the [`SymmetricCipherEncryptor`] and [`SymmetricCipherDecryptor`] API:
 //!
 //! ```
-//! use bouncycastle_aes::AES_ECB_256;
+//! use bouncycastle_aes::hazmat::AES_ECB_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
@@ -52,7 +53,8 @@
 //! For data that arrives in pieces, the following APIs can be used:
 //!
 //! ```
-//! use bouncycastle_aes::{AES_ECB_128, AES_BLOCK_LEN};
+//! use bouncycastle_aes::AES_BLOCK_LEN;
+//! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};
@@ -109,7 +111,7 @@
 //! error rather than something silently padded:
 //!
 //! ```
-//! use bouncycastle_aes::AES_ECB_128;
+//! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
 //! use bouncycastle_modes::Encrypting;
@@ -134,7 +136,7 @@
 //! interchanged. A value built with one will not satisfy a binding annotated with the other.
 //!
 //! ```compile_fail
-//! use bouncycastle_aes::AES_ECB_128;
+//! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
 //! use bouncycastle_modes::Encrypting;
@@ -149,13 +151,13 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::ecb`] apply. Above all, **ECB is not a
+//! All security considerations from [`bouncycastle_modes::hazmat::Ecb`] apply. Above all, **ECB is not a
 //! confidentiality mode for data**: under a given key every plaintext block maps to the same
 //! ciphertext block, so the structure of the plaintext shows through, and padding does not change
 //! that in the least. It makes ECB accept any length; it does not make it safe.
 //!
 //! ```
-//! use bouncycastle_aes::AES_ECB_128;
+//! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
 //! use bouncycastle_modes::Encrypting;
@@ -170,15 +172,16 @@
 //! assert_eq!(ciphertext[..16], ciphertext[16..]);
 //! ```
 
-use crate::aes_internal::AESInternal;
-use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
+use crate::AES_BLOCK_LEN;
 use crate::bitslice::Block;
+use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use crate::padded_mode::PaddedMode;
 use crate::schedule::AESParams;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::ElectronicCodeBook;
-use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle_modes::hazmat::Ecb;
+use bouncycastle_modes::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]

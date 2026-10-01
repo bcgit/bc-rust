@@ -13,9 +13,8 @@ mod bc_test_data {
     use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
     use bouncycastle_ascon::ascon_hash256::AsconHash256;
     use bouncycastle_ascon::ascon_xof128::AsconXof128;
-    use bouncycastle_core::key_material::{
-        KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-    };
+    use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{Hash, XOF};
     use bouncycastle_hex as hex;

@@ -8,7 +8,7 @@
 //! and that a fresh nonce is generated per encryption. Algorithm correctness itself is pinned by
 //! the ACVP and bc-java known-answer suites beside this file.
 
-use bouncycastle_aes::aes_internal::AES128Internal;
+use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};

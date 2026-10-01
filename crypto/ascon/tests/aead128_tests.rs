@@ -13,9 +13,8 @@ use bouncycastle_ascon::ascon_aead128::{
     AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
 };
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;

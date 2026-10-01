@@ -28,3 +28,6 @@
     * Changed the order of bits when absorbing a final partial byte to match ASN.1 DER BIT_STRING bit ordering.
 * The constant-time helpers in bouncycastle-utils now use a more robust optimization barrier based on unsafe
   `read_volatile` / `write_volatile` instead of `core::hint::black_box`, which is documented as best-effort only.
+* Added the `hazmat` module convention for primitives whose safe use is the caller's job; `bouncycastle_core::hazmat` defines it.
+* Moved `ElectronicCodeBook`, `KeyStream`, `do_hazardous_operations`, the `AES*Internal` types, `Ecb` and `AES_ECB_*`, and `CtrKeyStream` under their crates' `hazmat` modules. No behaviour change.
+* ML-KEM `encaps_internal` is now `hazmat::EncapsWithRandomness::encaps_with_randomness`, and `HashDRBG80090A::new_unititialized` is `hazmat::NewUninitialized::new_uninitialized` (typo fixed); both are extension traits, so the call needs the `hazmat` import.

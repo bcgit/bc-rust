@@ -12,14 +12,15 @@
 
 mod common;
 
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
-use bouncycastle_modes::{Cbc, Decrypting, Ecb, Encrypting};
+use bouncycastle_modes::hazmat::Ecb;
+use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 

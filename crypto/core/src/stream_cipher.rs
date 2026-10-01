@@ -4,7 +4,7 @@
 //! [`StreamCipher`] turns any [`KeyStream`] into a [`StreamCipherEncryptor`] /
 //! [`StreamCipherDecryptor`] pair, and with it the [`SymmetricCipherEncryptor`] /
 //! [`SymmetricCipherDecryptor`] supertraits, as a block cipher mode turns an
-//! [`ElectronicCodeBook`](crate::traits::ElectronicCodeBook) into a block cipher. A keystream
+//! [`ElectronicCodeBook`](crate::hazmat::ElectronicCodeBook) into a block cipher. A keystream
 //! implementor writes the keystream; the nonce, the partly-used block held between calls and the
 //! refusal to run past the end of the keystream are written once, here.
 //!
@@ -12,11 +12,12 @@
 //! functions here are the parts of that implementation that are the same for every stream cipher.
 
 use crate::errors::SymmetricCipherError;
+use crate::hazmat::KeyStream;
 use crate::key_material::KeyMaterial;
 use crate::security_strength::SecurityStrength;
 use crate::traits::{
-    Algorithm, KeyStream, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;

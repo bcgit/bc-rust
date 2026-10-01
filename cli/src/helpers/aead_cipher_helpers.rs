@@ -36,10 +36,10 @@
 //! other GCM implementation given the same file.
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle::hex;
 use bouncycastle::modes::{Decrypting, Encrypting, Gcm};

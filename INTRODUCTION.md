@@ -118,6 +118,12 @@ so that in the end `SHA3_256::new().hash(&data)` just does what you expect. The 
 paradigm is, however, still somewhat aspirational and not a total _fait accompli_, and as the library matures, we will
 continue to find ways to refine our type system to turn ever more runtime error conditions into compile-time conditions.
 
+There is one deliberate exception. A mode of operation has to be built on a raw block permutation, and a stream cipher
+on a raw keystream, and those primitives are correct, tested, and insecure if used on data directly. Sealed parameters
+like `SHA3Params` keep the caller inside the safe set; these hand the caller the raw operation. They live under a
+`hazmat` module in their crate (`bouncycastle_core::hazmat` defines the term), so that the path says what the docs
+say, and `grep -rn hazmat` finds every such use in a code base. Everything outside `hazmat` keeps the contract above.
+
 ### KeyMaterial wrapper
 
 In a cryptographic application, sometimes an array of bytes is just data, like config data read from a binary file, and

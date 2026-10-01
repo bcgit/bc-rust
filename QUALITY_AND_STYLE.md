@@ -35,6 +35,8 @@ testing must also be contained within the `mod tests {}` block.
 
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
 behaviours and error conditions that are common to all implementations of that trait.
+`bouncycastle-core-test-framework` is test infrastructure only: it goes under `[dev-dependencies]` and is never a
+runtime dependency, since it ships a deterministic `FixedSeedRNG` and a deliberately insecure `ToyBlockCipher`.
 
 All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
 
@@ -98,6 +100,12 @@ subsequent calls can be made to this object (as opposed to the usual pattern of 
 very little) object state to track and return errors about.
 
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
+
+A primitive whose safe use depends on the caller composing it correctly -- a raw block permutation, a raw keystream
+-- lives under a `hazmat` module in its crate, never at the crate root or next to the safe API;
+`bouncycastle_core::hazmat` defines the term and the supported uses. A crate with such items declares `pub mod hazmat;`
+in its `lib.rs` and never `pub use`s anything out of it, since a re-export at the root would bypass the notice. The
+crate's Security Considerations section names what it puts there.
 
 Any function that writes into a caller-provided output buffer must report how many bytes it wrote, as a `usize` in
 its `Ok` value (on its own, or alongside anything else the function needs to return, such as a generated IV). This

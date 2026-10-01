@@ -17,7 +17,7 @@
 //! decryption-verification process of CCM is straightforward to construct"), so the decryption
 //! direction is checked by round-tripping each vector's own `C` back to its `P`.
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -55,7 +55,7 @@ fn check_vector<
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
-    P: bouncycastle_core::traits::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
 >(
     name: &str,
     key_hex: &str,

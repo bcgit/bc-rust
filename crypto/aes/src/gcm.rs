@@ -139,7 +139,7 @@
 //!
 //! All security considerations from [`bouncycastle_modes::gcm`] apply.
 
-use crate::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_modes::Gcm;
 
 // Imports needed for docs

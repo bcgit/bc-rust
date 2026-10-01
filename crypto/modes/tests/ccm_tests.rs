@@ -14,10 +14,9 @@
 mod common;
 
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{
-    AEADCipherDecryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
-};
+use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
 use bouncycastle_modes::{Ccm, CcmDecryptor, Decrypting, Encrypting};
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 

@@ -177,7 +177,8 @@
 //! All security considerations from [`bouncycastle_modes::ccm`] apply. Above all, the nonce that
 //! [`AES_CCM_128`] and friends take must never repeat under one key.
 
-use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
+use crate::AES_BLOCK_LEN;
+use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_modes::{Ccm, CcmDecryptor, CcmEncryptor};
 
 // Imports needed for docs

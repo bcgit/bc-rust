@@ -13,10 +13,11 @@
 
 mod common;
 
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    BlockCipherEncryptor, ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;

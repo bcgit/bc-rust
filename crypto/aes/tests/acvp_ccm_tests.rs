@@ -45,10 +45,10 @@
 //! The 6 Monte Carlo groups that the CTR and CBC sets have do not exist here: every group in this
 //! set is `testType: "AFT"`, so nothing is skipped for that reason.
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 use serde_json::Value;
 use std::collections::BTreeMap;

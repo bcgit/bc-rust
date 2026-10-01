@@ -16,9 +16,9 @@
 //! Transcribed from the published SP 800-38A PDF, sections F.1.1 through F.1.6.
 
 use bouncycastle_aes::AES_BLOCK_LEN;
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_hex as hex;
 
 /// The four plaintext blocks shared by every F.1 subsection.

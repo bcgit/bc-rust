@@ -1,6 +1,7 @@
 //! The Electronic Codebook mode of operation (NIST SP 800-38A Sec 6.1).
 //!
-//! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.**
+//! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.** That is why it is under
+//! [`hazmat`](crate::hazmat); see [`bouncycastle_core::hazmat`] for the supported uses.
 //!
 //! "In ECB encryption, the forward cipher function is applied directly and independently to each
 //! block of the plaintext. The resulting sequence of output blocks is the ciphertext. In ECB
@@ -16,7 +17,8 @@
 //! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+//! use bouncycastle_modes::hazmat::Ecb;
+//! use bouncycastle_modes::{Decrypting, Encrypting};
 //!
 //! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -71,11 +73,10 @@
 
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, RNG,
-};
+use bouncycastle_core::traits::{Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG};
 use core::marker::PhantomData;
 
 /// ECB mode over any permutation that impls [`ElectronicCodeBook`], with the direction encoded in the type.

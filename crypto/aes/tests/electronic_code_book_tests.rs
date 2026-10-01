@@ -8,7 +8,7 @@
 //! paths, so the default implementations are not what runs.
 
 use bouncycastle_aes::AES_BLOCK_LEN;
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]

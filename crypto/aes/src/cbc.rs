@@ -144,7 +144,8 @@
 //!
 //! All security considerations from [`bouncycastle_modes::cbc`] apply.
 
-use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
+use crate::AES_BLOCK_LEN;
+use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use crate::padded_mode::PaddedMode;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 

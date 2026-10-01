@@ -9,7 +9,7 @@
 //! transcribed below, verified against the bc-java source read this session, with all-zero fields
 //! built programmatically rather than typed out (a zero key or plaintext cannot be mistyped).
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -180,7 +180,7 @@ fn cases() -> Vec<Case> {
 
 fn run<P, const KEY_LEN: usize>(case: &Case)
 where
-    P: bouncycastle_core::traits::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
 {
     let key_bytes = hex::decode(&case.key).expect("valid hex key");
     // `KeyMaterial` tags an all-zero buffer as `KeyType::Zeroized` regardless of the type
@@ -190,7 +190,7 @@ where
         KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
             .expect("key bytes fit the buffer");
     if key.key_type() != KeyType::SymmetricCipherKey {
-        bouncycastle_core::key_material::do_hazardous_operations(&mut key, |k| {
+        bouncycastle_core::hazmat::do_hazardous_operations(&mut key, |k| {
             k.set_key_type(KeyType::SymmetricCipherKey)?;
             k.set_security_strength(
                 bouncycastle_core::security_strength::SecurityStrength::from_bytes(KEY_LEN),

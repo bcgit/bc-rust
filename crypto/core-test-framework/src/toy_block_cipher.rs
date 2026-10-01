@@ -26,9 +26,10 @@
 //! ever a dev-dependency.
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
+use bouncycastle_core::traits::Algorithm;
 
 /// Key and block length of [`ToyBlockCipher`]: the same as AES-128, so the toy exercises the same
 /// shapes a real cipher would.

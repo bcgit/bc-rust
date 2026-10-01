@@ -88,7 +88,8 @@
 //!
 //! All security considerations from [`bouncycastle_modes::cfb`] apply.
 
-use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
+use crate::AES_BLOCK_LEN;
+use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_modes::Cfb;
 
 // Imports needed for docs

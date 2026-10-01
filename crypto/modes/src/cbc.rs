@@ -89,11 +89,10 @@
 use crate::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook, RNG,
-};
+use bouncycastle_core::traits::{Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG};
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
 

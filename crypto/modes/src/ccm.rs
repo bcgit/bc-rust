@@ -97,13 +97,13 @@
 use crate::ctr::apply_counter_blocks;
 use crate::iv::random_iv;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::stream_cipher::StreamCipher;
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, ElectronicCodeBook, KeyStream, RNG,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
