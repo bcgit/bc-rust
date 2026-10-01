@@ -15,7 +15,8 @@
 //! that it does not carry `CFB{1,8}-CAMELLIAxxx` -- so `tests/stream_mode_tests.rs` pins these
 //! aliases against the Sec 6.3 equations at `s = 8`, evaluated directly over the permutation.
 
-use crate::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
+use crate::BLOCK_LEN;
+use crate::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_modes::Cfb8;
 
 /// Camellia-128 in CFB8 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

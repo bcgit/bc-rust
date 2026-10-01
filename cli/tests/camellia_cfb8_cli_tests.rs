@@ -109,7 +109,7 @@ where
 /// take the IV the CLI generated, hand the body to the library, and the plaintext must come back.
 #[test]
 fn the_commands_are_cfb8_over_camellia() {
-    use bouncycastle::camellia::{Camellia_128, Camellia_192, Camellia_256};
+    use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);
