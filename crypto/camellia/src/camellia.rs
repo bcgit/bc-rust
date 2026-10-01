@@ -5,9 +5,10 @@ use crate::schedule::{
     Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams, expand, k, ke, kw,
 };
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
+use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
 
 /// The Camellia block length in bytes: 16 (RFC 3713 Sec 1.1, "128-bit block size").

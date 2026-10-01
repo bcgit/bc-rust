@@ -154,7 +154,7 @@ fn sub_word(word: u32) -> u32 {
 
 /// KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2), returning the bit-sliced schedule.
 ///
-/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::aes_internal`] checks that before calling, so this
+/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::hazmat::AESInternal`] checks that before calling, so this
 /// cannot fail and takes no `Result`.
 ///
 /// Algorithm 2 is followed literally -- lines 2-6 copy the key into `w[0..Nk]`, lines 7-16 derive
@@ -194,7 +194,7 @@ pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
     // `r` of word `c`, so it is transposed exactly as a block is, at the one-block width. The
     // eight `u16` planes go back into the same four `u32` slots, two per word.
     for base in (0..w.len()).step_by(4) {
-        let mut block: Block = [0; crate::BLOCK_LEN];
+        let mut block: Block = [0; crate::AES_BLOCK_LEN];
         for c in 0..4 {
             block[4 * c..4 * c + 4].copy_from_slice(&w[base + c].to_le_bytes());
         }

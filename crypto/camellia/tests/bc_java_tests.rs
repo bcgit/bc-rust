@@ -11,8 +11,8 @@
 mod common;
 
 use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::ElectronicCodeBook;
 use common::bytes;
 
 /// `CamelliaTest.tests`: `(index, key, input, output)`.
@@ -89,7 +89,7 @@ fn block_cipher_vector_test<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN,
     let mut km =
         KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
             .expect("a key");
-    bouncycastle_core::key_material::do_hazardous_operations(&mut km, |k| {
+    bouncycastle_core::hazmat::do_hazardous_operations(&mut km, |k| {
         k.set_key_type(KeyType::SymmetricCipherKey)?;
         k.set_security_strength(bouncycastle_core::security_strength::SecurityStrength::from_bytes(
             KEY_LEN,

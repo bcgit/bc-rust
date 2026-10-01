@@ -6,9 +6,8 @@
 
 #[cfg(test)]
 mod bc_test_data {
-    use bouncycastle_core::key_material::{
-        KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
-    };
+    use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::KEMPublicKey;
     use bouncycastle_hex as hex;
@@ -289,7 +288,7 @@ mod bc_test_data {
     //                         "encapsulation" => {
     //                             let pk = MLKEM512PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
     //                             let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
-    //                             let (ss, ct) = MLKEM512::encaps_internal(&pk, m);
+    //                             let (ss, ct) = MLKEM512::encaps_with_randomness(&pk, m);
     //
     //                             let expected_ss = hex::decode(&self.k).unwrap();
     //                             let expected_ct = hex::decode(&self.c).unwrap();
@@ -313,7 +312,7 @@ mod bc_test_data {
     //                         "encapsulation" => {
     //                             let pk = MLKEM768PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
     //                             let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
-    //                             let (ss, ct) = MLKEM768::encaps_internal(&pk, m);
+    //                             let (ss, ct) = MLKEM768::encaps_with_randomness(&pk, m);
     //
     //                             let expected_ss = hex::decode(&self.k).unwrap();
     //                             let expected_ct = hex::decode(&self.c).unwrap();
@@ -337,7 +336,7 @@ mod bc_test_data {
     //                         "encapsulation" => {
     //                             let pk = MLKEM1024PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
     //                             let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
-    //                             let (ss, ct) = MLKEM1024::encaps_internal(&pk, m);
+    //                             let (ss, ct) = MLKEM1024::encaps_with_randomness(&pk, m);
     //
     //                             let expected_ss = hex::decode(&self.k).unwrap();
     //                             let expected_ct = hex::decode(&self.c).unwrap();

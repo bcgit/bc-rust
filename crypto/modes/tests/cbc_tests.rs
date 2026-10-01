@@ -2,15 +2,14 @@
 //!
 //! These check the properties of the *mode* -- chaining, call sequencing, the pair/remainder split,
 //! direction typing, SP 800-38A Appendix D error propagation -- independently of any real cipher.
-//! The known-answer tests against SP 800-38A Appendix F.2 are in `sp800_38a_tests.rs`.
+//! The known-answer tests against SP 800-38A Appendix F.2 are in the `aes` crate, `crypto/aes/tests/sp800_38a_cbc_tests.rs`.
 
 mod common;
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
-use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkBlockCipher;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
@@ -357,32 +356,6 @@ fn a_key_of_the_wrong_type_is_rejected() {
     let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
     assert!(ToyCbc::<Encrypting>::do_encrypt_init(&seed).is_err());
     assert!(ToyCbc::<Decrypting>::do_decrypt_init(&seed, &[0u8; TOY_LEN]).is_err());
-}
-
-// ---- memory ------------------------------------------------------------------------------
-
-/// Pins the "Memory Usage" table in the crate docs.
-#[test]
-fn sizes_match_the_documented_memory_table() {
-    use core::mem::size_of;
-
-    assert_eq!(size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>(), 176 + 16);
-    assert_eq!(size_of::<Cbc<AES192Internal, Encrypting, 24, 16>>(), 208 + 16);
-    assert_eq!(size_of::<Cbc<AES256Internal, Encrypting, 32, 16>>(), 240 + 16);
-
-    // The direction marker is free, and does not change the layout.
-    assert_eq!(
-        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>(),
-        size_of::<Cbc<AES128Internal, Decrypting, 16, 16>>()
-    );
-    assert_eq!(size_of::<Encrypting>(), 0);
-    assert_eq!(size_of::<Decrypting>(), 0);
-
-    // ...and the general rule the docs state.
-    assert_eq!(
-        size_of::<Cbc<AES256Internal, Encrypting, 32, 16>>(),
-        size_of::<AES256Internal>() + 16
-    );
 }
 
 /// The one-shots (`encrypt` / `decrypt` on a `[u8; LEN]`, in place) must produce exactly what the

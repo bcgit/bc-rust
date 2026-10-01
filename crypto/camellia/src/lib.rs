@@ -18,7 +18,7 @@
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia_128;
-//! use bouncycastle_core::traits::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // RFC 3713 Appendix A, "128-bit key".
@@ -49,13 +49,13 @@
 //!
 //! The bit-sliced S-box layer substitutes 32 bytes per pass, and a round substitutes eight bytes
 //! per block, so four independent blocks cost the same as one. Where a caller has four,
-//! [`Camellia::encrypt_4blocks`] is four times the throughput of four [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_block)
-//! calls, and it is also the four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::traits::ElectronicCodeBook::encrypt_4blocks)
+//! [`Camellia::encrypt_4blocks`] is four times the throughput of four [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_block)
+//! calls, and it is also the four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_4blocks)
 //! offers to modes:
 //!
 //! ```
 //! use bouncycastle_camellia::{Camellia_256, LANES};
-//! use bouncycastle_core::traits::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -88,7 +88,7 @@
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia_CBC_256;
-//! use bouncycastle_core::traits::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting};

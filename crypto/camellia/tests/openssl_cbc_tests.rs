@@ -18,8 +18,9 @@
 mod common;
 
 use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, ElectronicCodeBook};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::bytes;

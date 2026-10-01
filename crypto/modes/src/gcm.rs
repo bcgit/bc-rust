@@ -24,28 +24,28 @@
 //! and the tag is inlined into the ciphertext as `ciphertext || tag`.
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
-//! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
+//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
 //! let aad = b"header, sent in the clear";
 //! let plaintext: [u8; 16] = *b"attack at dawn!!";
 //!
-//! let (nonce, ciphertext) = Aes128Gcm::<Encrypting>::encrypt(&key, &plaintext).expect("encrypt");
+//! let (nonce, ciphertext) = ToyGcm::<Encrypting>::encrypt(&key, &plaintext).expect("encrypt");
 //!
-//! let mut recovered = Aes128Gcm::<Decrypting>::decrypt(&key, &nonce, &ciphertext).expect("decrypt");
+//! let mut recovered = ToyGcm::<Decrypting>::decrypt(&key, &nonce, &ciphertext).expect("decrypt");
 //! assert_eq!(recovered, plaintext);
 //!
 //! // A tampered ciphertext will be caught by the tag
 //! let mut tampered_ct = ciphertext.clone();
 //! tampered_ct[1] ^= 0xFF;
-//! match Aes128Gcm::<Decrypting>::decrypt(&key, &nonce, &tampered_ct).unwrap_err() {
+//! match ToyGcm::<Decrypting>::decrypt(&key, &nonce, &tampered_ct).unwrap_err() {
 //!     SymmetricCipherError::AEADTagCheckFailed => { /* good */ }
 //!     _ => { panic!() }
 //! }
@@ -55,12 +55,12 @@
 //! the `_detached()` methods handle the tag separately, instead of inlined into the ciphertext.
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
-//! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
+//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -69,10 +69,10 @@
 //!
 //! let mut ciphertext = [0u8; 16];
 //! let (nonce, _bytes_written, tag) =
-//!     Aes128Gcm::<Encrypting>::encrypt_out_detached(&key, aad, &plaintext, &mut ciphertext).unwrap();
+//!     ToyGcm::<Encrypting>::encrypt_out_detached(&key, aad, &plaintext, &mut ciphertext).unwrap();
 //!
 //! let mut recovered = [0u8; 16];
-//! Aes128Gcm::<Decrypting>::decrypt_out_detached(&key, &nonce, aad, &ciphertext, &tag, &mut recovered)
+//! ToyGcm::<Decrypting>::decrypt_out_detached(&key, &nonce, aad, &ciphertext, &tag, &mut recovered)
 //!     .unwrap();
 //! assert_eq!(recovered, plaintext);
 //! ```
@@ -82,28 +82,28 @@
 //! `do_update_aad()` after a `do_encrypt()` will result in a [`SymmetricCipherError::StateError`].
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES256Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
 //! use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 //!
-//! type Aes256Gcm<Dir> = Gcm<AES256Internal, Dir, 32, 16>;
+//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x07; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) = Aes256Gcm::<Encrypting>::do_encrypt_init(&key).unwrap();
+//! let (mut enc, nonce) = ToyGcm::<Encrypting>::do_encrypt_init(&key).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
 //! let (tag_block, tag_len) = enc.do_final().unwrap();
 //! ct.extend_from_slice(&tag_block[..tag_len]);
 //!
-//! let mut dec = Aes256Gcm::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
+//! let mut dec = ToyGcm::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
@@ -150,16 +150,16 @@
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
 //!   is no separate `Gmac` type.
 
-use crate::ctr::CtrKeyStream;
 use crate::ghash::Ghash;
+use crate::hazmat::CtrKeyStream;
 use crate::{Ctr, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, ElectronicCodeBook, RNG,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;

@@ -19,3 +19,7 @@ serde_json = "1.0" # for parsing the bc-test-data ACVP vector files
 [[bench]]
 name = "aes_benches"
 harness = false
+
+[[bench]]
+name = "aes_modes_benches"
+harness = false

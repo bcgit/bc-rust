@@ -33,8 +33,9 @@ use bouncycastle_camellia::{
     Camellia_CFB_192, Camellia_CFB_256, Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256,
     Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256,
 };
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Decrypting, Encrypting};
 use common::bytes;

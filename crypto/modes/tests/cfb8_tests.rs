@@ -4,8 +4,8 @@
 //! sequencing at arbitrary byte boundaries, the batch split on the decrypt side, direction typing,
 //! SP 800-38A Appendix D error propagation, and the "forward cipher function only" rule of
 //! Sec 6.3 -- independently of any real cipher. The known-answer tests against SP 800-38A
-//! Appendix F.3.7-F.3.12 are in `sp800_38a_cfb8_tests.rs`, and the ACVP CFB8 set is in
-//! `acvp_cfb8_tests.rs`.
+//! Appendix F.3.7-F.3.12 are in the `aes` crate, `crypto/aes/tests/sp800_38a_cfb8_tests.rs`, and
+//! the ACVP CFB8 set in `acvp_cfb8_tests.rs` beside it.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here, so it
@@ -13,15 +13,15 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
-    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
-use bouncycastle_modes::{Cbc, Cfb, Cfb8, Decrypting, Encrypting};
+use bouncycastle_modes::{Cfb, Cfb8, Decrypting, Encrypting};
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyCfb8<Dir> = Cfb8<Toy, Dir, TOY_LEN, TOY_LEN>;
@@ -345,18 +345,17 @@ fn call_chunking_does_not_change_the_result() {
     assert_eq!(ct, reference, "empty calls must not disturb the state");
 }
 
-/// The same equivalence with **real AES**, at all three key lengths.
+/// The same equivalence, generic over the permutation, at a length that leaves the decrypt-side
+/// batch loop with a different remainder under every chunking.
 ///
-/// `call_chunking_does_not_change_the_result` proves the property over the toy permutation. This
-/// repeats it with the cipher the mode is actually used with, so a chunking bug that only appears
-/// under a real key schedule cannot hide. The AES coverage elsewhere
-/// (`sp800_38a_cfb8_tests.rs`, `acvp_cfb8_tests.rs`) chunks against *published* ciphertext; this is
-/// the direct single-call-versus-chunked comparison.
-///
-/// The message is 171 bytes, which is 42 four-byte batches and a 3-byte tail, so the chunkings
-/// leave the batch loop with a different remainder each time.
+/// `call_chunking_does_not_change_the_result` proves the property over [`Toy`] at 55 bytes. This
+/// repeats it at 171 bytes, which is 42 four-byte batches and a 3-byte tail, and runs it over
+/// [`ForwardOnlyToy`] as well, so the chunked decryptions that reach the batch paths are shown to
+/// do so without the inverse cipher. The AES coverage (the `aes` crate's `sp800_38a_cfb8_tests.rs`
+/// and `acvp_cfb8_tests.rs`) chunks against *published* ciphertext; this is the direct
+/// single-call-versus-chunked comparison, kept free of an AES dependency.
 #[test]
-fn aes_chunking_matches_a_single_call() {
+fn chunking_matches_a_single_call_at_every_batch_remainder() {
     fn check<P, const KEY_LEN: usize>(name: &str)
     where
         P: ElectronicCodeBook<KEY_LEN, 16>,
@@ -365,7 +364,7 @@ fn aes_chunking_matches_a_single_call() {
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
         let key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-                .expect("a valid AES key");
+                .expect("a valid key");
         let iv: [u8; 16] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
@@ -414,9 +413,8 @@ fn aes_chunking_matches_a_single_call() {
         }
     }
 
-    check::<AES128Internal, 16>("AES-128");
-    check::<AES192Internal, 24>("AES-192");
-    check::<AES256Internal, 32>("AES-256");
+    check::<Toy, TOY_LEN>("Toy");
+    check::<ForwardOnlyToy, TOY_LEN>("ForwardOnlyToy");
 }
 
 /// The pair path in `do_decrypt` must actually be taken.
@@ -521,57 +519,57 @@ fn one_shots_agree_with_the_streaming_api() {
 
 /// Appendix D, Table D.2 for CFB: a bit error in `Cj` gives "SBE in the decryption of `Cj`" plus
 /// "RBE in the decryption of `Cj+1`,...,`Cj+b/s`". With `s = 8` on a 16-byte block, `b/s` is **16**:
-/// the flipped bit lands in exactly the byte the attacker aimed at, the next 16 bytes are
-/// randomised, and byte 17 onwards is **exactly correct** -- the corrupted byte has been shifted
-/// out of the register and decryption has resynchronised.
+/// the corrupted byte enters the shift register at its tail, moves one place per segment and
+/// leaves after 16, so byte `j + 16` is the last one it can touch and byte `j + 17` onwards is
+/// **exactly correct** again. That self-synchronisation is the property CFB8 is chosen for.
 ///
-/// That self-synchronisation is the property CFB8 is chosen for, and the exact-equality assertion
-/// on the tail is what pins it. Checked with AES-128, because "randomised" is a property of the
-/// block cipher's diffusion rather than of the mode, and the byte-local toy cannot show it.
+/// `Toy` permutes each byte of the register independently, so a segment's keystream byte depends
+/// on the register's *leading* byte alone. The damage is therefore not spread across the window --
+/// "RBE" is the block cipher's diffusion, not the mode's -- but lands entirely on byte `j + 16`,
+/// where the corrupted byte has reached the front, and lands there as exactly `rotate_left(1)` of
+/// the flipped bit, the toy's per-byte function. That makes the window's far edge exact arithmetic
+/// rather than a statistical claim: `j + 16` is damaged and `j + 17` is not, so the width is `b/s`
+/// and not one less. `a_ciphertext_bit_error_flips_exactly_that_bit_of_its_own_byte` pins the
+/// near edge and the bound at several `j`; this one pins the far edge.
 #[test]
 fn a_ciphertext_bit_error_damages_exactly_sixteen_following_bytes() {
-    type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
-    const LEN: usize = 48;
+    let iv = pinned_iv();
+    let plaintext = message(3 * TOY_LEN);
+    let ct = enc(&mut pinned_encryptor(iv), &plaintext);
 
-    let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-        .expect("a valid AES-128 key");
-    let iv: [u8; 16] = core::array::from_fn(|i| 0x0F ^ (i as u8));
-    let plaintext: Vec<u8> = (0..LEN).map(|i| (i * 11 + 3) as u8).collect();
-
-    let mut ct = plaintext.clone();
-    let (mut e, got_iv) =
-        Aes128Cfb8::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv))
-            .unwrap();
-    assert_eq!(got_iv, iv);
-    e.do_encrypt(&mut ct).unwrap();
-
-    // Byte 8, so there is a clean prefix, a full 16-byte damage window and a clean tail.
+    // Byte 8, so there is a clean prefix, the full 16-byte window and a clean tail.
     const J: usize = 8;
     for bit in 0..8 {
+        let flip = 1u8 << bit;
         let mut corrupt = ct.clone();
-        corrupt[J] ^= 1 << bit;
-
-        let mut d = Aes128Cfb8::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
-        let mut got = corrupt;
-        d.do_decrypt(&mut got).unwrap();
+        corrupt[J] ^= flip;
+        let got = dec(&mut pinned_decryptor(iv), &corrupt);
 
         assert_eq!(&got[..J], &plaintext[..J], "bit {bit}: earlier bytes are unaffected");
         assert_eq!(
             got[J],
-            plaintext[J] ^ (1 << bit),
+            plaintext[J] ^ flip,
             "bit {bit}: SBE -- exactly the flipped bit, in the targeted byte"
         );
-        // The 16 bytes after it are randomised. Asserting each one differs would be a 1-in-256
-        // coin flip per byte, so the window is compared as a whole.
-        assert_ne!(
-            &got[J + 1..J + 1 + 16],
-            &plaintext[J + 1..J + 1 + 16],
-            "bit {bit}: the next b/s = 16 bytes should be randomised"
+        // Bytes j + 1 ..= j + 15: the corrupted byte is in the register but not yet at its front,
+        // which is all the toy's keystream byte reads, so these come out untouched. A real cipher
+        // randomises them; the toy cannot show that, and this does not claim it.
+        assert_eq!(
+            &got[J + 1..J + TOY_LEN],
+            &plaintext[J + 1..J + TOY_LEN],
+            "bit {bit}: the byte-local toy damages nothing until the corrupted byte leads the register"
+        );
+        // Byte j + 16: the corrupted byte is now the register's leading byte, so the keystream
+        // byte is off by exactly the toy's rotation of the flip.
+        assert_eq!(
+            got[J + TOY_LEN],
+            plaintext[J + TOY_LEN] ^ flip.rotate_left(1),
+            "bit {bit}: byte j + b/s is the last one damaged, by exactly rotate_left(1) of the flip"
         );
         // ...and then it resynchronises, exactly.
         assert_eq!(
-            &got[J + 1 + 16..],
-            &plaintext[J + 1 + 16..],
+            &got[J + TOY_LEN + 1..],
+            &plaintext[J + TOY_LEN + 1..],
             "bit {bit}: byte j + 17 onwards must be exactly right again"
         );
     }
@@ -679,40 +677,4 @@ fn every_length_round_trips_without_padding() {
         ToyCfb8::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: round trip");
     }
-}
-
-// ---- memory ------------------------------------------------------------------------------
-
-/// Pins the "Memory Usage" table in the crate docs, and the claim that CFB8 costs exactly what CBC
-/// costs -- one block of shift register and nothing else, since its segment is a single byte and
-/// so there is never a partial segment to remember.
-#[test]
-fn sizes_match_the_documented_memory_table() {
-    use core::mem::size_of;
-
-    assert_eq!(size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>(), 176 + 16);
-    assert_eq!(size_of::<Cfb8<AES192Internal, Encrypting, 24, 16>>(), 208 + 16);
-    assert_eq!(size_of::<Cfb8<AES256Internal, Encrypting, 32, 16>>(), 240 + 16);
-
-    // The direction marker is free, and does not change the layout.
-    assert_eq!(
-        size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>(),
-        size_of::<Cfb8<AES128Internal, Decrypting, 16, 16>>()
-    );
-
-    // ...and the general rule the docs state.
-    assert_eq!(
-        size_of::<Cfb8<AES256Internal, Encrypting, 32, 16>>(),
-        size_of::<AES256Internal>() + 16
-    );
-
-    // The docs say CFB8 is the same size as CBC, and one `usize` smaller than CFB.
-    assert_eq!(
-        size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>(),
-        size_of::<Cbc<AES128Internal, Encrypting, 16, 16>>()
-    );
-    assert_eq!(
-        size_of::<Cfb8<AES128Internal, Encrypting, 16, 16>>() + size_of::<usize>(),
-        size_of::<Cfb<AES128Internal, Encrypting, 16, 16>>()
-    );
 }

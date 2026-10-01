@@ -92,7 +92,7 @@ fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
 /// The library's answer for the same key, IV and ciphertext, so the CLI can be held to it.
 fn library_cfb8_decrypt<const KEY_LEN: usize, P>(key_hex: &str, iv: &[u8], data: &mut [u8])
 where
-    P: bouncycastle::core::traits::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle::core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
 {
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::core::traits::StreamCipherDecryptor;

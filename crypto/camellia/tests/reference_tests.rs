@@ -11,8 +11,8 @@
 mod common;
 
 use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256, LANES};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::ElectronicCodeBook;
 
 fn engine<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(key: &[u8; KEY_LEN]) -> P {
     <P as ElectronicCodeBook<KEY_LEN, 16>>::new(
