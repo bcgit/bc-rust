@@ -7,10 +7,11 @@
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
-use bouncycastle_cipher::modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_cipher::modes::Cbc;
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 
