@@ -146,8 +146,9 @@
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_core::stream_cipher::Direction;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::PaddedMode;
+use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -155,40 +156,62 @@ use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncrypt
 #[allow(unused_imports)]
 use bouncycastle_modes::cbc;
 #[allow(unused_imports)]
-use bouncycastle_padding::{
-    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
-};
+use bouncycastle_padding::{NoPadding, PKCS7};
 // end of imports needed for docs
 
 /// AES-128 in CBC mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_CBC_128<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
-    Cbc<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
-    Pad,
-    16,
-    AES_BLOCK_LEN,
-    AES_BLOCK_LEN,
->>::Mode;
+pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+        Pad,
+        16,
+        AES_BLOCK_LEN,
+        AES_BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
+        Pad,
+        16,
+        AES_BLOCK_LEN,
+        AES_BLOCK_LEN,
+    >,
+>;
 
 /// AES-192 in CBC mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_CBC_192<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
-    Cbc<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
-    Pad,
-    24,
-    AES_BLOCK_LEN,
-    AES_BLOCK_LEN,
->>::Mode;
+pub type AES_CBC_192<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+        Pad,
+        24,
+        AES_BLOCK_LEN,
+        AES_BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
+        Pad,
+        24,
+        AES_BLOCK_LEN,
+        AES_BLOCK_LEN,
+    >,
+>;
 
 /// AES-256 in CBC mode with a padding scheme. See [`AES_CBC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CBC_256<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
-    Cbc<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
-    Pad,
-    32,
-    AES_BLOCK_LEN,
-    AES_BLOCK_LEN,
->>::Mode;
+pub type AES_CBC_256<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+        Pad,
+        32,
+        AES_BLOCK_LEN,
+        AES_BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
+        Pad,
+        32,
+        AES_BLOCK_LEN,
+        AES_BLOCK_LEN,
+    >,
+>;
