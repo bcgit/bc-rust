@@ -6,8 +6,7 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
-bouncycastle-modes.workspace = true
-bouncycastle-padding.workspace = true
+bouncycastle-cipher.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

@@ -10,11 +10,11 @@
 //! built programmatically rather than typed out (a zero key or plaintext cannot be mistyped).
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 fn zeros(byte_len: usize) -> String {
     "00".repeat(byte_len)

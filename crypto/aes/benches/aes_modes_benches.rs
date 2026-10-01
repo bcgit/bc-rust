@@ -38,6 +38,8 @@
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
+use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -48,8 +50,6 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::hazmat::Ecb;
-use bouncycastle_modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, Decrypting, Encrypting};
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 

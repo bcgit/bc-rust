@@ -1,6 +1,6 @@
 //! Type aliases for AES in CCM mode (NIST SP 800-38C).
 //!
-//! See [`bouncycastle_modes::ccm`] for details on the Counter with CBC-MAC construction.
+//! See [`bouncycastle_cipher::modes::ccm`] for details on the Counter with CBC-MAC construction.
 //!
 //! The aliases here are authenticated ciphers: encryption produces a tag as well as a ciphertext,
 //! and decryption either returns the plaintext or fails the tag check. `Dir` is [`Encrypting`] or
@@ -58,7 +58,7 @@
 //! use bouncycastle_aes::AES_CCM_128_Buffered;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Up to 64 bytes of AAD and 2 KiB of message -- comfortably above an 802.11 frame, the packet
 //! // size CCM was designed for -- and FINAL_LEN = 2 KiB plus the 16-byte tag.
@@ -83,7 +83,7 @@
 //! ```
 //! use bouncycastle_aes::{AES_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_256<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
@@ -122,7 +122,7 @@
 //! ```
 //! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_128<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
@@ -152,7 +152,7 @@
 //! ```
 //! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_128<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
@@ -186,19 +186,19 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::ccm`] apply. Above all, the nonce that
+//! All security considerations from [`bouncycastle_cipher::modes::ccm`] apply. Above all, the nonce that
 //! [`AES_CCM_128`] and friends take must never repeat under one key.
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor};
 use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_modes::{Ccm, CcmDecryptor, CcmEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 #[allow(unused_imports)]
-use bouncycastle_modes::{Decrypting, Encrypting};
+use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 // end of imports needed for docs
 
 /// The nonce length to use unless there is a reason not to: 12 bytes, which is what the NIST ACVP

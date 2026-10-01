@@ -10,11 +10,11 @@
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADTaggedLayout;
-use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

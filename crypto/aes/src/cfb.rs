@@ -1,6 +1,6 @@
 //! Type aliases for AES in CFB mode (NIST SP 800-38A Sec 6.3).
 //!
-//! See [`bouncycastle_modes::cfb`] for details on the CipherFeedback construction.
+//! See [`bouncycastle_cipher::modes::cfb`] for details on the CipherFeedback construction.
 //!
 //! The aliases here are stream ciphers: the data is a `&mut [u8]` of any length, encrypted or
 //! decrypted in place, and the ciphertext is exactly as long as the plaintext. The IV is generated
@@ -21,7 +21,7 @@
 //! use bouncycastle_aes::AES_CFB_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB_256<Encrypting>;
@@ -56,7 +56,7 @@
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
 //!     SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB_128<Encrypting>;
@@ -86,17 +86,17 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::cfb`] apply.
+//! All security considerations from [`bouncycastle_cipher::modes::cfb`] apply.
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_modes::Cfb;
+use bouncycastle_cipher::modes::Cfb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 #[allow(unused_imports)]
-use bouncycastle_modes::{Decrypting, Encrypting};
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs
 
 /// AES-128 in CFB128 mode.

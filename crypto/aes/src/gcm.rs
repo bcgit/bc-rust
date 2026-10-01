@@ -1,6 +1,6 @@
 //! Type aliases for AES in GCM (NIST SP 800-38D).
 //!
-//! See [`bouncycastle_modes::gcm`] for details on the abstract Galois/Counter Mode construction.
+//! See [`bouncycastle_cipher::modes::gcm`] for details on the abstract Galois/Counter Mode construction.
 //!
 //! The aliases here are authenticated ciphers: encryption produces a tag as well as a ciphertext,
 //! and decryption either returns the plaintext or fails the tag check. Both directions implement
@@ -27,7 +27,7 @@
 //! use bouncycastle_aes::AES_GCM_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_GCM_256<Encrypting>;
@@ -63,7 +63,7 @@
 //! use bouncycastle_aes::AES_GCM_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_GCM_128<Encrypting>;
@@ -93,7 +93,7 @@
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_GCM_128<Encrypting>;
@@ -137,18 +137,18 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::gcm`] apply.
+//! All security considerations from [`bouncycastle_cipher::modes::gcm`] apply.
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_modes::Gcm;
+use bouncycastle_cipher::modes::Gcm;
 
 // Imports needed for docs
+#[allow(unused_imports)]
+use bouncycastle_cipher::modes::{Decrypting, Encrypting, GCM_NONCE_LEN};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-#[allow(unused_imports)]
-use bouncycastle_modes::{Decrypting, Encrypting, GCM_NONCE_LEN};
 // end of imports needed for docs
 
 /// AES-128 in GCM with a 128-bit tag.

@@ -312,10 +312,10 @@ pub trait AEADCipherDecryptor<
 /// it describes, so neither AAD nor payload can be authenticated until the caller has finished handing
 /// over the total of each. A construction with that property has exactly two options, and changing the
 /// shape of this trait for one implementor's benefit is neither of them: buffer the whole message
-/// internally and pay the memory cost (see `bouncycastle_modes::CcmEncryptor` / `CcmDecryptor`), or,
+/// internally and pay the memory cost (see `bouncycastle_cipher::modes::CcmEncryptor` / `CcmDecryptor`), or,
 /// preferably when the caller can supply the lengths up front -- which a packet-oriented protocol
 /// generally can -- provide a separate, purpose-built non-buffering API instead (see
-/// `bouncycastle_modes::Ccm::new`). Do not add a length parameter here to spare one implementor a
+/// `bouncycastle_cipher::modes::Ccm::new`). Do not add a length parameter here to spare one implementor a
 /// buffer; every other implementor would carry a parameter it never uses.
 ///
 /// # Why the data methods still return `Result`
@@ -1765,7 +1765,7 @@ pub trait SymmetricCipherDecryptor<
 ///
 /// This is the layer a caller with *data* uses, as opposed to the block-aligned
 /// [`BlockCipherEncryptor`] a mode implements. Its shape is that of the padding adapters in
-/// `bouncycastle-padding`, which are its first implementors: an authenticated cipher or a stream
+/// `bouncycastle_cipher::padding`, which are its first implementors: an authenticated cipher or a stream
 /// cipher fits the same shape, with the tag or nothing in place of the final padded block.
 ///
 /// `FINAL_LEN` is the fixed length of what [`do_final`](Self::do_final) produces after the last

@@ -23,7 +23,7 @@
 //!
 //! # Why CCM gets a harness when the other modes do not
 //!
-//! CCM (NIST SP 800-38C) is the only mode in `bouncycastle-modes` with a non-trivial stack
+//! CCM (NIST SP 800-38C) is the only mode in `bouncycastle_cipher::modes` with a non-trivial stack
 //! profile, and it has it for a specific, avoidable reason.
 //!
 //! `Ccm` itself is boring: 264 B for AES-128, independent of message length, nonce length and tag
@@ -70,7 +70,7 @@
 //! and copied it out through their `Result`, and the finals handed it to one another by value, and
 //! each such move the optimizer did not elide was another copy of the value. The constructors are now
 //! `inline(always)` and the finals share helpers that take the buffer's fields by reference; see
-//! `CcmBuffer::new` and `CcmEncryptor::seal` in `bouncycastle-modes`. None of that helps a debug
+//! `CcmBuffer::new` and `CcmEncryptor::seal` in `bouncycastle_cipher::modes`. None of that helps a debug
 //! build, which elides no moves. A caller who cares should use the inherent `Ccm` API, which is
 //! the `bench_direct_streaming` line.
 //!
@@ -92,11 +92,11 @@
 #![allow(unused_imports)]
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle::modes::{Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting};
 
 /// The parameters the ACVP vectors and most protocols use: 12-byte nonce, 16-byte tag.
 const NONCE_LEN: usize = 12;

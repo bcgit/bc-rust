@@ -10,7 +10,7 @@
 //!
 //! # The IV travels in the ciphertext
 //!
-//! Exactly as for the block modes: there is no `--iv` flag, because `bouncycastle-modes` has no API
+//! Exactly as for the block modes: there is no `--iv` flag, because `bouncycastle_cipher::modes` has no API
 //! for a caller-supplied IV -- NIST SP 800-38A Sec 5.3 requires the CFB IV to be *unpredictable*
 //! rather than merely unique. `encrypt` generates one from the OS-backed DRBG and writes it as the
 //! **first block of the output**; `decrypt` reads it back from the **first block of the input**, so

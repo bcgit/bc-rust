@@ -37,13 +37,13 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::{Ctr, Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Ctr, Decrypting, Encrypting};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;

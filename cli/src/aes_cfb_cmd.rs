@@ -16,7 +16,7 @@
 //! CFB is a stream cipher, so unlike `aes*-cbc` and `aes*-ecb` these commands accept input of any
 //! length and pad nothing; the ciphertext is exactly as long as the plaintext. For a message that
 //! is not a whole number of blocks the last partial block is a short final segment, which is what
-//! every streaming CFB128 implementation does; see the `bouncycastle_modes::Cfb` docs.
+//! every streaming CFB128 implementation does; see the `bouncycastle_cipher::modes::Cfb` docs.
 //!
 //! # Warning
 //!
@@ -29,9 +29,9 @@
 use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::cipher::modes::{Cfb, Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::modes::{Cfb, Decrypting, Encrypting};
 
 pub(crate) fn aes128_cfb_cmd(
     action: &CipherDirection,

@@ -18,6 +18,9 @@
 //! direction is checked by round-tripping each vector's own `C` back to its `P`.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::{
+    CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting,
+};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -26,9 +29,6 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{
-    CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting,
-};
 
 /// Appendix C's key, the same in all four examples: `40414243 44454647 48494a4b 4c4d4e4f`.
 const APPENDIX_C_KEY: &str = "404142434445464748494a4b4c4d4e4f";
@@ -785,7 +785,7 @@ fn the_buffer_cap_is_512_kib() {
     assert_eq!(CCM_MAX_BUFFER_LEN, 512 * 1024);
 }
 
-// ---- moved from crypto/modes/src/ccm.rs's in-file unit tests -----------------------------
+// ---- moved from crypto/cipher/src/modes/ccm.rs's in-file unit tests -----------------------------
 
 /// A.1's `p < 2^8q`. With `n = 13`, `q = 2`, so the limit is 65535 and 65536 must be refused.
 ///

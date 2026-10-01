@@ -102,10 +102,11 @@ very little) object state to track and return errors about.
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
 
 A primitive whose safe use depends on the caller composing it correctly -- a raw block permutation, a raw keystream
--- lives under a `hazmat` module in its crate, never at the crate root or next to the safe API;
-`bouncycastle_core::hazmat` defines the term and the supported uses. A crate with such items declares `pub mod hazmat;`
-in its `lib.rs` and never `pub use`s anything out of it, since a re-export at the root would bypass the notice. The
-crate's Security Considerations section names what it puts there.
+-- lives under a `hazmat` module in its crate or sub-module, never at the crate root or next to the safe API;
+`bouncycastle_core::hazmat` defines the term and the supported uses. A crate or sub-module with such items declares
+`pub mod hazmat;`
+in its `lib.rs` and neither the crate nor the sub-module ever `pub use`s anything out of it, since a re-export would
+bypass the notice.
 
 Any function that writes into a caller-provided output buffer must report how many bytes it wrote, as a `usize` in
 its `Ok` value (on its own, or alongside anything else the function needs to return, such as a generated IV). This

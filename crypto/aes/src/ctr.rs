@@ -1,6 +1,6 @@
 //! Type aliases for AES in CTR mode (NIST SP 800-38A Sec 6.5).
 //!
-//! See [`bouncycastle_modes::ctr`] for details on the Counter construction.
+//! See [`bouncycastle_cipher::modes::ctr`] for details on the Counter construction.
 //!
 //! The aliases here are stream ciphers: the data is a `&mut [u8]` of any length, encrypted or
 //! decrypted in place since ciphertext is exactly as long as the plaintext. The nonce is generated
@@ -26,7 +26,7 @@
 //! use bouncycastle_aes::AES_CTR_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CTR_256<Encrypting>;
@@ -61,7 +61,7 @@
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
 //!     SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CTR_128<Encrypting>;
@@ -91,17 +91,17 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::ctr`] apply.
+//! All security considerations from [`bouncycastle_cipher::modes::ctr`] apply.
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_modes::Ctr;
+use bouncycastle_cipher::modes::Ctr;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 #[allow(unused_imports)]
-use bouncycastle_modes::{Decrypting, Encrypting};
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs
 
 /// The nonce length these aliases use, leaving a 4-byte counter.

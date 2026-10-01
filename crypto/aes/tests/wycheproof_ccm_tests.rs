@@ -34,13 +34,13 @@
 //! at the end so a change in the vector file's shape is visible.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::{Ccm, Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};

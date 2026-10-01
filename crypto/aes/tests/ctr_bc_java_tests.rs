@@ -37,11 +37,11 @@
 //! what is pinned here is specifically the part neither of them reaches: the narrow counters.
 
 use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_cipher::modes::{Ctr, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{StreamCipherEncryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Ctr, Encrypting};
 
 /// The AES-128 key used for every vector in this file: SP 800-38A Appendix F's first key.
 const KEY: &str = "2b7e151628aed2a6abf7158809cf4f3c";

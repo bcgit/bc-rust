@@ -10,13 +10,13 @@
 #![allow(dead_code)]
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 /// The nonce length these vectors use; every group in the ACVP AES-GCM/GMAC sets has `ivLen = 96`.
 #[path = "acvp_helpers.rs"]

@@ -33,6 +33,7 @@
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::{Cfb, Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -41,7 +42,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Cfb, Decrypting, Encrypting};
 
 const BLOCK_LEN: usize = 16;
 
