@@ -1,5 +1,5 @@
+use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_core::traits::BlockCipherPadding;
-use bouncycastle_padding::PKCS7;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 

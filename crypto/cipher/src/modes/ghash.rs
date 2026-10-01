@@ -2,7 +2,7 @@
 //! 6.4), and the GF(2^128) multiplication it is defined over.
 //!
 //! This is the only new cryptographic code `gcm.rs` needs; everything else there is
-//! plumbing around this and [`crate::Ctr`].
+//! plumbing around this and [`crate::modes::Ctr`].
 //!
 //! This is placed here and not exposed as a top-level Hash function because it is only used by the
 //! GCM block cipher mode, and not as a standalone hash function.

@@ -2,19 +2,19 @@
 //!
 //! As with the CBC aliases, these are only type aliases, so what is worth testing is that both
 //! parameters select: the direction picks the encryptor or the decryptor, and the padding scheme
-//! reaches the behaviour. ECB's own properties are tested in `bouncycastle-modes`; what is specific
+//! reaches the behaviour. ECB's own properties are tested in `bouncycastle_cipher::modes`; what is specific
 //! here is that its `INIT_DATA_LEN` is 0, so the projection must carry a different value than CBC's
 //! and the aliases must still resolve correctly.
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle_modes::hazmat::Ecb;
-use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::{
+use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

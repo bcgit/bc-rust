@@ -17,7 +17,7 @@
 //!
 //! | Vector set | Consumed by |
 //! |---|---|
-//! | `ACVP-AES-ECB` | this file (the permutation; the `Ecb` mode's own tests are toy-driven, in `crypto/modes/tests/ecb_tests.rs`) |
+//! | `ACVP-AES-ECB` | this file (the permutation; the `Ecb` mode's own tests are toy-driven, in `crypto/cipher/tests/modes/ecb_tests.rs`) |
 //! | `ACVP-AES-CBC` | `acvp_cbc_tests.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
 //! | `ACVP-AES-CCM` | `acvp_ccm_tests.rs` |
