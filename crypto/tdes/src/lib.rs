@@ -264,7 +264,6 @@ mod cfb8;
 mod ctr;
 mod des;
 pub mod hazmat;
-mod padded_mode;
 mod sbox;
 mod schedule;
 

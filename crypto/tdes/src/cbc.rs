@@ -41,23 +41,23 @@
 //! # How one alias covers both directions
 //!
 //! `PaddedBlockCipherEncryptor` and `PaddedBlockCipherDecryptor` are two distinct types, so a plain type alias cannot
-//! select between them on a `Dir` parameter. [`PaddedMode`] does it instead: it is implemented for
-//! each direction marker and projects to the right adapter, and the alias is written as that
-//! projection. The only visible consequence is that `Dir` must be
+//! select between them on a `Dir` parameter. [`Direction::Select`](bouncycastle_core::stream_cipher::Direction) does it instead: the
+//! sealed projection in core picks the adapter for the direction, and the alias is written as
+//! that projection. The only visible consequence is that `Dir` must be
 //! [`Encrypting`](bouncycastle_modes::Encrypting) or
 //! [`Decrypting`](bouncycastle_modes::Decrypting), which was already true.
 
 use crate::hazmat::{TDES, TDES2Key};
-use crate::padded_mode::PaddedMode;
 use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
+use bouncycastle_core::stream_cipher::Direction;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::PaddedBlockCipherDecryptor;
+use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7, PaddedBlockCipherEncryptor};
+use bouncycastle_padding::{NoPadding, PKCS7};
 // end of imports needed for docs
 
 /// TDES in CBC mode with a padding scheme.
@@ -135,12 +135,22 @@ use bouncycastle_padding::{NoPadding, PKCS7, PaddedBlockCipherEncryptor};
 /// let _mismatched: TDES_CBC<Encrypting, PKCS7> = enc;
 /// ```
 #[allow(non_camel_case_types)]
-pub type TDES_CBC<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<TDES, Encrypting, KEY_LEN, BLOCK_LEN>,
-    Cbc<TDES, Decrypting, KEY_LEN, BLOCK_LEN>,
-    Pad,
-    BLOCK_LEN,
->>::Mode;
+pub type TDES_CBC<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<TDES, Encrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<TDES, Decrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+>;
 
 /// Two-key TDES in CBC mode with a padding scheme, **decryption only**.
 ///
