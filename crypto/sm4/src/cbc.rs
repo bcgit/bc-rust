@@ -17,12 +17,14 @@
 //! both ends. Naming it in the type makes that choice explicit and makes a mismatched pair a
 //! compile error. The block-aligned API -- whole blocks in place, length checked at compile time --
 //! is `bouncycastle_modes::Cbc` itself, which this wraps. See
-//! [`PaddedMode`](bouncycastle_padding::PaddedMode) for how one alias covers both directions.
+//! [`Direction::Select`](bouncycastle_core::stream_cipher::Direction) for how one alias covers both
+//! directions.
 
 use crate::hazmat::SM4;
 use crate::{BLOCK_LEN, KEY_LEN};
+use bouncycastle_core::stream_cipher::Direction;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::PaddedMode;
+use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -76,11 +78,19 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// assert!(SM4_CBC::<Encrypting, NoPadding>::encrypt_out(&key, b"hello", &mut out).is_err());
 /// ```
 #[allow(non_camel_case_types)]
-pub type SM4_CBC<Dir, Pad> = <Dir as PaddedMode<
-    Cbc<SM4, Encrypting, KEY_LEN, BLOCK_LEN>,
-    Cbc<SM4, Decrypting, KEY_LEN, BLOCK_LEN>,
-    Pad,
-    KEY_LEN,
-    BLOCK_LEN,
-    BLOCK_LEN,
->>::Mode;
+pub type SM4_CBC<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Cbc<SM4, Encrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Cbc<SM4, Decrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >,
+>;
