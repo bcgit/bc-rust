@@ -1,7 +1,7 @@
 //! ARIA-CFB8 encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the cipher wiring lives here: the IV convention, key loading and stdin framing are in
-//! [`crate::stream_mode_cmd`] (and [`crate::block_mode_cmd`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
 //! `aes*-cfb8` commands. See those modules for the command-line contract.
 //!
 //! `aria128-cfb8` / `aria192-cfb8` / `aria256-cfb8` are the same command as `aes*-cfb8`
@@ -16,15 +16,15 @@
 //! CFB8 provides confidentiality only. It does not detect tampering, and neither the ciphertext nor
 //! the IV is authenticated. Do not decrypt data you have not authenticated separately.
 
-use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
-use crate::stream_mode_cmd::run_stream_mode;
-use bouncycastle::aria::{ARIA_128, ARIA_192, ARIA_256};
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::stream_mode_helpers::run_stream_mode;
+use bouncycastle::aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::modes::{Cfb8, Decrypting, Encrypting};
 
 pub(crate) fn aria128_cfb8_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -33,7 +33,7 @@ pub(crate) fn aria128_cfb8_cmd(
 }
 
 pub(crate) fn aria192_cfb8_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -42,7 +42,7 @@ pub(crate) fn aria192_cfb8_cmd(
 }
 
 pub(crate) fn aria256_cfb8_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -52,7 +52,7 @@ pub(crate) fn aria256_cfb8_cmd(
 
 /// Dispatches to the shared streaming loops with `Cfb8` filled in as the mode.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
