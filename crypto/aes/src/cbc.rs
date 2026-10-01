@@ -1,6 +1,6 @@
 //! Type aliases for AES in CBC mode (NIST SP 800-38A §6.2), with padding.
 //!
-//! See [`bouncycastle_modes::cbc`] for details on the abstract CipherBlockChaining construction.
+//! See [`bouncycastle_modes::cbc`] for details on the CipherBlockChaining construction.
 //!
 //! The aliases here are padded block ciphers that accept input of any size; `NoPadding` accepts
 //! only whole blocks but goes through the same adapter. The unpadded mode underneath them, which
@@ -96,7 +96,7 @@
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!
-//! ## With no padding scheme 
+//! ## With no padding scheme
 //!
 //! With [`NoPadding`] nothing is added, and a message that is not a whole number of blocks is an
 //! error at `do_final` rather than something silently padded:

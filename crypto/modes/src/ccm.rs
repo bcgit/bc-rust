@@ -10,16 +10,10 @@
 //! Only the forward cipher function is ever used, in both directions, so a
 //! permutation that implements nothing but `encrypt_block` works here.
 //!
-//! ## Returning the ciphertext ends the tag
-//!
-//! Step 8 returns a single string, `ciphertext || tag`. This type offers both layouts: the inherent
-//! [`Ccm::encrypt_out`] / [`Ccm::decrypt_out`] produce and consume the spec's own inline string, and the
-//! detached pair [`Ccm::encrypt_out_detached`] / [`Ccm::decrypt_out_detached`] keeps the tag separate,
-//! which is the shape [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] use.
-//!
 //! # Usage Examples
 //! The nonce is supplied rather than generated, and there is an extra input (the AAD, authenticated but
 //! not encrypted) and an extra output (the tag).
+//!
 //! Decryption either returns the plaintext or fails with [`SymmetricCipherError::AEADTagCheckFailed`]
 //! -- it never returns plausible-looking rubbish the way the unauthenticated modes do when the
 //! ciphertext has been altered.

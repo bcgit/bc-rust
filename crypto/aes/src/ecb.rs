@@ -1,40 +1,174 @@
 //! Type aliases for AES in ECB mode (NIST SP 800-38A Sec 6.1), with padding.
 //!
-//! `bouncycastle-modes` is deliberately cipher-agnostic, so `Ecb` takes the permutation, the
-//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle-padding`'s
-//! adapters take five more. These aliases pin all of them except the two choices a caller actually
-//! makes: the direction and the padding scheme.
+//! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.**
+//! 
+//! See [`bouncycastle_modes::ecb`] for details on the ElectronicCodebook construction.
 //!
-//! ```text
-//! AES_ECB_128<Encrypting, PKCS7>      // AES-128, ECB, PKCS#7 padded, encrypting
-//! AES_ECB_256<Decrypting, NoPadding>
-//! ```
+//! The aliases here are padded block ciphers that accept input of any size; `NoPadding` accepts
+//! only whole blocks but goes through the same adapter. The unpadded mode underneath them, which
+//! implements the block-cipher traits directly, is [`Ecb`] and is not re-exported from this crate.
 //!
-//! **ECB is not a confidentiality mode for data.** Under a given key every plaintext block maps to
-//! the same ciphertext block (Sec 6.1), so the structure of the plaintext shows through, and blocks
-//! can be reordered, repeated or removed undetectably. Padding does not change that in the least:
-//! it makes ECB accept any length, not make it safe. These aliases exist for interoperability with
-//! systems that use ECB and for driving test vectors; for data, use CBC or CFB under
-//! authentication, or better an AEAD. See the crate docs, "A block permutation is not a cipher".
-//!
-//! # Why the padding is part of the alias
-//!
-//! ECB is defined only on whole blocks (SP 800-38A Sec 5.2), so ECB on data of any other length is
-//! always ECB *plus a padding scheme*, and the scheme changes the ciphertext. Naming it in the type
-//! makes the choice explicit and makes a mismatched pair a compile error. [`PKCS7`] is the usual
-//! one (this is Java's `AES/ECB/PKCS5Padding`); [`NoPadding`] adds nothing and instead rejects a
-//! message that is not a whole number of blocks.
-//!
-//! # These are the arbitrary-length API
-//!
-//! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
-//! block traits. The block-aligned API, with compile-time length checks and in-place data methods,
-//! is `bouncycastle_modes::Ecb` itself, which these wrap. ECB has no IV, so `INIT_DATA_LEN` is 0:
-//! encryption returns an empty array and decryption takes one, and the ciphertext is exactly the
-//! padded plaintext with nothing prepended. The RNG-taking constructors inherited from that wrapped
-//! `Ecb` -- `do_encrypt_init_rng` and the `encrypt_out_rng` one-shot provided over it -- panic, as
+//! ECB has no IV, so its `INIT_DATA_LEN` is 0: encryption returns an empty array, decryption takes
+//! one, and the ciphertext is exactly the padded plaintext with nothing prepended. The RNG-taking
+//! constructors, `do_encrypt_init_rng` and `encrypt_out_rng`, panic, as
 //! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
+//!
+//! # Usage Examples
+//!
+//! ## One-shot API
+//!
+//! Basic usage can be obtained via the [`SymmetricCipherEncryptor`] and [`SymmetricCipherDecryptor`] API:
+//!
+//! ```
+//! use bouncycastle_aes::AES_ECB_256;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_padding::PKCS7;
+//!
+//! // Define ourselves convenience types.
+//! type AESEnc = AES_ECB_256<Encrypting, PKCS7>;
+//! type AESDec = AES_ECB_256<Decrypting, PKCS7>;
+//!
+//! let key = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//!
+//! // An arbitrary plaintext to encrypt
+//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
+//! let plaintext = [0x5Au8; 50];
+//!
+//! // ECB has no IV, so the init data that comes back is empty.
+//! let (no_iv, ciphertext) = AESEnc::encrypt(&key, &plaintext).expect("encryption");
+//! assert_eq!(no_iv, [0u8; 0]);
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! let recovered = AESDec::decrypt(&key, &no_iv, &ciphertext).expect("decryption");
+//! assert_eq!(recovered, plaintext);
+//! ```
+//!
+//! ## Streaming API
+//!
+//! For data that arrives in pieces, the following APIs can be used:
+//!
+//! ```
+//! use bouncycastle_aes::{AES_ECB_128, AES_BLOCK_LEN};
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_padding::PKCS7;
+//!
+//! // Define ourselves convenience types.
+//! type AESEnc = AES_ECB_128<Encrypting, PKCS7>;
+//! type AESDec = AES_ECB_128<Decrypting, PKCS7>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//!
+//! // An arbitrary plaintext to encrypt
+//! let plaintext = [0x5Au8; 50];
+//!
+//! // The streaming (chunked) API allows for data to be handed to the cipher as it arrives, in chunks
+//! // of any length, but it will only be processed once a full block has been received.
+//! // Here, we will use 7-byte chunks
+//! let (mut encryptor, no_iv) = AESEnc::do_encrypt_init(&key).expect("encrypt init");
+//!
+//! let mut ciphertext = Vec::new();
+//!
+//! for piece in plaintext.chunks(7) {
+//!     let mut out = [0u8; AES_BLOCK_LEN];
+//!     let bytes_written = encryptor.do_encrypt_out(piece, &mut out).expect("encryption");
+//!
+//!     // If that doesn't complete a block, then nothing is written.
+//!     if bytes_written != 0 {
+//!         ciphertext.extend_from_slice(&out[..bytes_written]);
+//!     }
+//! }
+//! let (last_block, last_len) = encryptor.do_final().expect("padding the final block");
+//! ciphertext.extend_from_slice(&last_block[..last_len]);
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! // Decrypt the ciphertext in 19-byte chunks.
+//! let mut decryptor = AESDec::do_decrypt_init(&key, &no_iv).expect("decrypt init");
+//! let mut recovered = Vec::new();
+//! for piece in ciphertext.chunks(19) {
+//!     let mut out = [0u8; AES_BLOCK_LEN];
+//!     let bytes_written = decryptor.do_decrypt_out(piece, &mut out).expect("decryption");
+//!     if bytes_written != 0 {
+//!         recovered.extend_from_slice(&out[..bytes_written]);
+//!     }
+//! }
+//! let (last_block, last_len) = decryptor.do_final().expect("a valid final block");
+//! recovered.extend_from_slice(&last_block[..last_len]);
+//! assert_eq!(recovered, plaintext);
+//! ```
+//!
+//! ## With no padding scheme
+//!
+//! With [`NoPadding`] nothing is added, and a message that is not a whole number of blocks is an
+//! error rather than something silently padded:
+//!
+//! ```
+//! use bouncycastle_aes::AES_ECB_128;
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::SymmetricCipherEncryptor;
+//! use bouncycastle_modes::Encrypting;
+//! use bouncycastle_padding::NoPadding;
+//!
+//! // Define ourselves a convenience type for the encryption direction with no padding.
+//! type Enc = AES_ECB_128<Encrypting, NoPadding>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//!
+//! // A whole block is fine, and comes out the same length.
+//! let mut out = [0u8; 16];
+//! let (_no_iv, written) = Enc::encrypt_out(&key, &[0u8; 16], &mut out).expect("aligned");
+//! assert_eq!(written, 16);
+//!
+//! // Five bytes is not, and is refused rather than padded.
+//! let mut out = [0u8; 16];
+//! assert!(Enc::encrypt_out(&key, b"hello", &mut out).is_err());
+//! ```
+//!
+//! The padding scheme is part of the type, so the two schemes are different types and cannot be
+//! interchanged. A value built with one will not satisfy a binding annotated with the other.
+//!
+//! ```compile_fail
+//! use bouncycastle_aes::AES_ECB_128;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::SymmetricCipherEncryptor;
+//! use bouncycastle_modes::Encrypting;
+//! use bouncycastle_padding::{NoPadding, PKCS7};
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//!
+//! // Built as NoPadding, annotated as PKCS7: mismatched types.
+//! let (enc, _no_iv) = AES_ECB_128::<Encrypting, NoPadding>::do_encrypt_init(&key).unwrap();
+//! let _mismatched: AES_ECB_128<Encrypting, PKCS7> = enc;
+//! ```
+//!
+//! # 🚨 Security Considerations 🚨
+//!
+//! All security considerations from [`bouncycastle_modes::ecb`] apply. Above all, **ECB is not a
+//! confidentiality mode for data**: under a given key every plaintext block maps to the same
+//! ciphertext block, so the structure of the plaintext shows through, and padding does not change
+//! that in the least. It makes ECB accept any length; it does not make it safe.
+//!
+//! ```
+//! use bouncycastle_aes::AES_ECB_128;
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::SymmetricCipherEncryptor;
+//! use bouncycastle_modes::Encrypting;
+//! use bouncycastle_padding::NoPadding;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//!
+//! // Two identical blocks in...
+//! let (_, ciphertext) =
+//!     AES_ECB_128::<Encrypting, NoPadding>::encrypt(&key, &[0x5Au8; 32]).expect("encryption");
+//! // ...two identical blocks out. Nothing here chains, so nothing hides the repetition.
+//! assert_eq!(ciphertext[..16], ciphertext[16..]);
+//! ```
 
 use crate::aes_internal::AESInternal;
 use crate::aes_internal::{AES_BLOCK_LEN, AES128Internal, AES192Internal, AES256Internal};
@@ -54,54 +188,6 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 // end of imports needed for docs
 
 /// AES-128 in ECB mode with a padding scheme.
-///
-/// `Dir` is [`Encrypting`] or [`Decrypting`] and `Pad` is [`PKCS7`] or [`NoPadding`]; the wrong
-/// direction is a compile error, not a runtime check. There is no IV: encryption returns an empty
-/// array and decryption takes one.
-///
-/// **Not confidential for data** -- see the module docs. Padding makes ECB accept any length; it
-/// does not make it safe.
-///
-/// ```
-/// use bouncycastle_aes::AES_ECB_128;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
-///
-/// type Enc = AES_ECB_128<Encrypting, PKCS7>;
-/// type Dec = AES_ECB_128<Decrypting, PKCS7>;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .expect("a 16-byte symmetric cipher key");
-///
-/// // 5 bytes: PKCS#7 pads it to one block. The init data is empty, ECB having no IV.
-/// let (no_iv, ciphertext) = Enc::encrypt(&key, b"hello").expect("encryption");
-/// assert_eq!(no_iv, [0u8; 0]);
-/// assert_eq!(ciphertext.len(), 16);
-///
-/// let recovered = Dec::decrypt(&key, &no_iv, &ciphertext).expect("decryption");
-/// assert_eq!(recovered, b"hello");
-/// ```
-///
-/// The codebook property survives padding, which is the whole objection to ECB: two identical
-/// plaintext blocks still give two identical ciphertext blocks.
-///
-/// ```
-/// use bouncycastle_aes::AES_ECB_128;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::Encrypting;
-/// use bouncycastle_padding::NoPadding;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-///
-/// // Two identical blocks in...
-/// let (_, ciphertext) =
-///     AES_ECB_128::<Encrypting, NoPadding>::encrypt(&key, &[0x5Au8; 32]).expect("encryption");
-/// // ...two identical blocks out. No mode here chains, so nothing hides the repetition.
-/// assert_eq!(ciphertext[..16], ciphertext[16..]);
-/// ```
 #[allow(non_camel_case_types)]
 pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
     Ecb<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
@@ -111,24 +197,7 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
     0,
 >>::Mode;
 
-/// AES-192 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
-///
-/// ```
-/// use bouncycastle_aes::AES_ECB_192;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
-///
-/// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey).unwrap();
-/// let message = b"a message of no particular length";
-///
-/// let (no_iv, ciphertext) =
-///     AES_ECB_192::<Encrypting, PKCS7>::encrypt(&key, message).expect("encryption");
-/// let recovered =
-///     AES_ECB_192::<Decrypting, PKCS7>::decrypt(&key, &no_iv, &ciphertext).expect("decryption");
-/// assert_eq!(recovered, message);
-/// ```
+/// AES-192 in ECB mode with a padding scheme.
 #[allow(non_camel_case_types)]
 pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
     Ecb<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
@@ -138,24 +207,7 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
     0,
 >>::Mode;
 
-/// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`], and its warning.
-///
-/// ```
-/// use bouncycastle_aes::AES_ECB_256;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
-///
-/// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
-/// let message = b"a message of no particular length";
-///
-/// let (no_iv, ciphertext) =
-///     AES_ECB_256::<Encrypting, PKCS7>::encrypt(&key, message).expect("encryption");
-/// let recovered =
-///     AES_ECB_256::<Decrypting, PKCS7>::decrypt(&key, &no_iv, &ciphertext).expect("decryption");
-/// assert_eq!(recovered, message);
-/// ```
+/// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`].
 #[allow(non_camel_case_types)]
 pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
     Ecb<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
