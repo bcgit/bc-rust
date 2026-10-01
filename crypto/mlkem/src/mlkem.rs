@@ -155,7 +155,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
-use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes};
+use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes_mask};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 /*** Constants ***/
@@ -660,7 +660,7 @@ impl<
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
         let mut K_out = [0u8; MLKEM_SS_LEN];
-        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes(&c, &c_prime));
+        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_mask(&c, &c_prime));
 
         K_out
     }

@@ -44,7 +44,9 @@ Revisit this section at the first non-alpha release.
 - Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
   nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
   `rustfmt` job installs nightly.
-- 2024 edition (set workspace-wide in the root `Cargo.toml`), which needs Rust 1.85 or later.
+- 2024 edition (set workspace-wide in the root `Cargo.toml`).
+- Minimum Rust is 1.88: `rust-version` in the root `Cargo.toml`, inherited by `bouncycastle-utils` (the crate that
+  needs it, for `slice::as_chunks`) and so enforced for every crate that depends on it.
 
 ## Common commands
 

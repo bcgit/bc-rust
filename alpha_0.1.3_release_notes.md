@@ -28,3 +28,10 @@
       existing test used
       `0xFF`, which masked the second error.
     * Changed the order of bits when absorbing a final partial byte to match ASN.1 DER BIT_STRING bit ordering.
+* The constant-time helpers in bouncycastle-utils (`ct_eq_bytes`, `ct_eq_zero_bytes`, `conditional_copy_bytes`, the
+  `Condition` mask type's `select`/`negate`/`swap`, and the signed widths' `is_in_list`) now use an optimization
+  barrier based on unsafe `read_volatile` / `write_volatile` instead of `core::hint::black_box`, which is documented
+  as best-effort only. `Condition::select`, `swap` and `negate` are no longer `const fn` as a consequence. A new
+  `ct_eq_bytes_mask` returns the comparison as a `Condition<u32>` and `conditional_copy_bytes` now takes that mask
+  rather than a `bool`, so ML-KEM's implicit-rejection select never passes the secret through a `bool`. The
+  workspace declares `rust-version = "1.88"` (for `slice::as_chunks`).

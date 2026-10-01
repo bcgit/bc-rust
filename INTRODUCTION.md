@@ -60,7 +60,7 @@ A few other design principles that we employ are described below.
 
 ### No unsafe code!
 
-Yes, in many cases you can improve performance by skirting the strict type and memory safety system of Rust, including by directly embedding assembly code. But to us, this undermines the primary reason that you're developing in Rust in the first place. We're not saying that we'll _never_ include unsafe code in the future, but we have no plans to do so in the short-term, and we would only do so with great care and only after employing rigorous processes such as formal correctness verification.
+Yes, in many cases you can improve performance by skirting the strict type and memory safety system of Rust, including by directly embedding assembly code. But to us, this undermines the primary reason that you're developing in Rust in the first place. Every crate carries `#![forbid(unsafe_code)]`, with one exception: `bouncycastle-utils` holds the two places where safe Rust cannot ask the compiler for what a cryptography library needs -- the volatile write that zeroizes a secret on drop, and the volatile store and load that stop the optimiser turning constant-time masked arithmetic back into a branch. Each is a few lines with its safety argument alongside, and both live in that one crate so that everything built on it stays in safe Rust. Performance is not a reason we would add a third.
 
 
 ### If it compiles, then it's safe
