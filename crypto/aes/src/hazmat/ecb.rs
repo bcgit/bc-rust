@@ -179,9 +179,10 @@ use crate::schedule::AESParams;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::stream_cipher::Direction;
 use bouncycastle_modes::hazmat::Ecb;
 use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::PaddedMode;
+use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -192,36 +193,60 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 
 /// AES-128 in ECB mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_ECB_128<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
-    Ecb<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
-    Pad,
-    16,
-    0,
-    AES_BLOCK_LEN,
->>::Mode;
+pub type AES_ECB_128<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Ecb<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+        Pad,
+        16,
+        0,
+        AES_BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Ecb<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
+        Pad,
+        16,
+        0,
+        AES_BLOCK_LEN,
+    >,
+>;
 
 /// AES-192 in ECB mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_ECB_192<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
-    Ecb<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
-    Pad,
-    24,
-    0,
-    AES_BLOCK_LEN,
->>::Mode;
+pub type AES_ECB_192<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Ecb<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+        Pad,
+        24,
+        0,
+        AES_BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Ecb<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
+        Pad,
+        24,
+        0,
+        AES_BLOCK_LEN,
+    >,
+>;
 
 /// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`].
 #[allow(non_camel_case_types)]
-pub type AES_ECB_256<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
-    Ecb<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
-    Pad,
-    32,
-    0,
-    AES_BLOCK_LEN,
->>::Mode;
+pub type AES_ECB_256<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Ecb<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+        Pad,
+        32,
+        0,
+        AES_BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Ecb<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
+        Pad,
+        32,
+        0,
+        AES_BLOCK_LEN,
+    >,
+>;
 
 impl ElectronicCodeBook<16, AES_BLOCK_LEN> for AES128Internal {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
