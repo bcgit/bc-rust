@@ -6,11 +6,12 @@
 //! here is that its `INIT_DATA_LEN` is 0, so the projection must carry a different value than CBC's
 //! and the aliases must still resolve correctly.
 
-use bouncycastle_aes::aes_internal::AES128Internal;
-use bouncycastle_aes::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
+use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle_modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle_modes::hazmat::Ecb;
+use bouncycastle_modes::{Decrypting, Encrypting};
 use bouncycastle_padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };

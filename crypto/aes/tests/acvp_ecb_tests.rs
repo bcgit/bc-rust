@@ -47,12 +47,11 @@
 //! reports how many it skipped so the gap is visible rather than silent.
 
 use bouncycastle_aes::AES_BLOCK_LEN;
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::ElectronicCodeBook;
 use bouncycastle_hex as hex;
 use serde_json::Value;
 use std::fs;
