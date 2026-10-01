@@ -9,15 +9,15 @@
 //! carries no table at all; the planes are 16 bits wide so that the working set stays small, which
 //! is what "lowmemory" means here. See [Design](#design).
 //!
-//! It is a *permutation*, not a cipher you can encrypt data with. See
-//! [Security Considerations](#security-considerations).
+//! It is a *permutation*, not a cipher you can encrypt data with, which is why it lives under
+//! [`hazmat`]. See [Security Considerations](#security-considerations).
 //!
 //! # Usage Examples
 //!
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_sm4::SM4;
+//! use bouncycastle_sm4::hazmat::SM4;
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
@@ -50,7 +50,8 @@
 //! is also the four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_4blocks) offers to modes:
 //!
 //! ```
-//! use bouncycastle_sm4::{SM4, LANES};
+//! use bouncycastle_sm4::hazmat::SM4;
+//! use bouncycastle_sm4::LANES;
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
@@ -211,6 +212,8 @@
 //! the plaintext survives encryption (the specification's own Sec 12 says SM4-ECB "SHOULD NOT be
 //! used in most cases"). **Do not do it.** Use a mode of operation, and prefer an authenticated
 //! one so that ciphertext tampering is detected.
+//! That is why [`SM4`] lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported
+//! uses.
 //!
 //! ## Constant-time properties
 //!
@@ -271,12 +274,25 @@ mod cbc;
 mod cfb;
 mod cfb8;
 mod ctr;
+pub mod hazmat;
 mod sbox;
 mod schedule;
-mod sm4;
+
+/// The SM4 block length in bytes: 16 (Sec 4, "block size of 128 bits").
+pub const BLOCK_LEN: usize = 16;
+
+/// The SM4 key length in bytes: 16 (Sec 4, "key length of 128 bits"). There is only one.
+pub const KEY_LEN: usize = 16;
+
+/// The number of blocks the bit-sliced S-box substitutes at once. See [`SM4::encrypt_4blocks`].
+pub const LANES: usize = 4;
 
 pub use cbc::SM4_CBC;
 pub use cfb::SM4_CFB;
 pub use cfb8::SM4_CFB8;
 pub use ctr::{CTR_NONCE_LEN, SM4_CTR};
-pub use sm4::{BLOCK_LEN, KEY_LEN, LANES, SM4};
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use hazmat::SM4;
+// end of imports needed for docs

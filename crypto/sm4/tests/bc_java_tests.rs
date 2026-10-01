@@ -22,7 +22,8 @@
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_hex as hex;
-use bouncycastle_sm4::{BLOCK_LEN, SM4};
+use bouncycastle_sm4::BLOCK_LEN;
+use bouncycastle_sm4::hazmat::SM4;
 
 /// `SM4Test.tests[0]` and the provider `cipherTests`: `KeyParameter(Hex.decode(..))`.
 const KEY: &str = "0123456789abcdeffedcba9876543210";

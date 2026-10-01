@@ -19,7 +19,8 @@
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_sm4::{BLOCK_LEN, SM4};
+use bouncycastle_sm4::BLOCK_LEN;
+use bouncycastle_sm4::hazmat::SM4;
 
 /// Examples 1-3 key (and plaintext): `0123456789ABCDEFFEDCBA9876543210`.
 const KEY_1: [u8; 16] = [

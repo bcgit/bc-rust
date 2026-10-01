@@ -10,7 +10,8 @@ mod common;
 
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_sm4::{BLOCK_LEN, LANES, SM4};
+use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::{BLOCK_LEN, LANES};
 
 fn engine(key: &[u8; 16]) -> SM4 {
     SM4::new(

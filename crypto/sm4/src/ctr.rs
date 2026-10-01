@@ -21,7 +21,8 @@
 //! this split cannot express, so those vectors drive a reference CTR over the permutation in
 //! `tests/stream_mode_tests.rs` and this alias is checked against that reference.
 
-use crate::{BLOCK_LEN, KEY_LEN, SM4};
+use crate::hazmat::SM4;
+use crate::{BLOCK_LEN, KEY_LEN};
 use bouncycastle_modes::Ctr;
 
 /// The nonce length this alias uses, leaving a 4-byte counter.

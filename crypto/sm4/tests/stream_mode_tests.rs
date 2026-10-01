@@ -34,7 +34,8 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4, SM4_CFB, SM4_CFB8, SM4_CTR};
+use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4_CFB, SM4_CFB8, SM4_CTR};
 
 /// A.2.x Example 1 key.
 const KEY_1: &str = "0123456789abcdeffedcba9876543210";

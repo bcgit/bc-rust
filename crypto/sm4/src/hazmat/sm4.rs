@@ -3,6 +3,7 @@
 
 use crate::sbox::tau;
 use crate::schedule::{RoundKeys, expand};
+use crate::{BLOCK_LEN, KEY_LEN, LANES};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -10,17 +11,8 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
 
-/// The SM4 block length in bytes: 16 (Sec 4, "block size of 128 bits").
-pub const BLOCK_LEN: usize = 16;
-
-/// The SM4 key length in bytes: 16 (Sec 4, "key length of 128 bits"). There is only one.
-pub const KEY_LEN: usize = 16;
-
 /// One SM4 block.
 pub type Block = [u8; BLOCK_LEN];
-
-/// The number of blocks the bit-sliced S-box substitutes at once. See [`SM4::encrypt_4blocks`].
-pub const LANES: usize = 4;
 
 /// The SM4 keyed permutation, constant-time.
 ///

@@ -21,7 +21,8 @@ use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN, SM4};
+use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN};
 
 /// CBC over SM4, block-aligned and in place -- what `SM4_CBC` wraps.
 ///
