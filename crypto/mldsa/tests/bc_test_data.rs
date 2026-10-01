@@ -12,9 +12,8 @@ use bouncycastle_sha3::SHAKE256;
 mod bc_test_data {
     use crate::BustedMuBuilder;
     use bouncycastle_core::errors::SignatureError;
-    use bouncycastle_core::key_material::{
-        KeyMaterial256, KeyMaterialTrait, KeyType, do_hazardous_operations,
-    };
+    use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
         Hash, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier,

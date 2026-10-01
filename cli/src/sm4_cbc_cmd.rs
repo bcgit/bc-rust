@@ -11,7 +11,7 @@
 //! you have not authenticated separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle::sm4::SM4;
@@ -20,19 +20,19 @@ use bouncycastle::sm4::SM4;
 const MODE: &str = "CBC";
 
 pub(crate) fn sm4_cbc_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key::<16>(key, key_file, "SM4");
     match action {
-        BlockModeAction::Encrypt => {
+        CipherDirection::Encrypt => {
             encrypt_stream::<Cbc<SM4, Encrypting, 16, BLOCK_LEN>, 16, BLOCK_LEN>(
                 &key, output_hex, MODE,
             )
         }
-        BlockModeAction::Decrypt => {
+        CipherDirection::Decrypt => {
             decrypt_stream::<Cbc<SM4, Decrypting, 16, BLOCK_LEN>, 16, BLOCK_LEN>(
                 &key, output_hex, MODE,
             )

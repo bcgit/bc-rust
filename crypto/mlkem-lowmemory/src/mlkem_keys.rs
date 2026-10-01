@@ -9,9 +9,8 @@ use crate::mlkem::{MLKEM1024_FULL_SK_LEN, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
 use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams};
 use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
 use bouncycastle_sha3::SHA3_256;

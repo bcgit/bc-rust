@@ -4,7 +4,7 @@
 //! used, that the counter half batches while the CBC-MAC stays serial, that call chunking is
 //! invisible in both directions, what `TAG_LEN` and `NONCE_LEN` do and do not change, that the
 //! decryptor holds to the declared length, and which entry points release unauthenticated
-//! plaintext -- independently of the known-answer vectors in `sp800_38c_tests.rs`,
+//! plaintext -- independently of the known-answer vectors in the `aes` crate's `sp800_38c_tests.rs`,
 //! `acvp_ccm_tests.rs` and `wycheproof_ccm_tests.rs`. The Appendix C file also carries the
 //! buffering `CcmEncryptor` / `CcmDecryptor` pair's contract, the shared framework run and the
 //! memory table, so none of those is repeated here.
@@ -13,12 +13,10 @@
 
 mod common;
 
-use bouncycastle_aes::aes_internal::AES128Internal;
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{
-    AEADCipherDecryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
-};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
 use bouncycastle_modes::{Ccm, CcmDecryptor, Decrypting, Encrypting};
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
@@ -206,16 +204,21 @@ fn the_four_block_path_is_really_used_in_both_directions() {
 
 // ---- call sequencing ----------------------------------------------------------------------
 
-/// Call chunking must be invisible in both directions: every two-call split of a 53-byte message,
-/// so that the second call resumes a keystream block and a CBC-MAC block left open at every
-/// possible offset, gives the one-shot's ciphertext, tag and plaintext. `sp800_38c_tests.rs`
-/// sweeps uniform chunkings of the Appendix C vectors and resumes an open block on encryption
-/// only; this is the exhaustive version, and the decrypting direction's resume.
+/// Call chunking must be invisible in both directions: every two-call split of a 101-byte
+/// message, so that the second call resumes a keystream block and a CBC-MAC block left open at
+/// every possible offset, gives the one-shot's ciphertext, tag and plaintext.
+///
+/// 101 bytes is six blocks and a tail, so a small opening call leaves the second one at least a
+/// four-block batch, a pair batch and a remainder: the batched blocks must line up with the
+/// keystream the small call left partway through, not silently skip over it. None of the Appendix
+/// C vectors is long enough for that -- the largest, C.4, is two blocks -- and every chunking
+/// `sp800_38c_tests.rs` sweeps is uniform, so a call that resumes an open block there is always a
+/// short final remainder, never one big enough to batch.
 #[test]
 fn every_split_agrees_with_the_one_shot_in_both_directions() {
     let nonce = pinned_nonce();
     let aad = b"header";
-    let plaintext = message(3 * TOY_LEN + 5);
+    let plaintext = message(6 * TOY_LEN + 5);
     let (ct, tag) = encrypt::<Toy>(&nonce, aad, &plaintext);
 
     for split in 0..=plaintext.len() {
@@ -237,16 +240,32 @@ fn every_split_agrees_with_the_one_shot_in_both_directions() {
     }
 }
 
-/// The payload length declared to `new` is inside `B0` (A.2.1 Table 2's `Q`), so the decrypting
-/// direction, like the encrypting one `sp800_38c_tests.rs` pins, refuses both more ciphertext
-/// than declared and finalization with less: either would verify a tag against a `B0` no
-/// generator produced. A refused update consumes nothing, so the flow is still usable.
+/// The payload length declared to `new` is inside `B0` (A.2.1 Table 2's `Q`), so neither
+/// direction may be given more data than declared, nor finalized with less: either would produce
+/// or verify a tag against a `B0` no counterpart could reproduce. A refused update consumes
+/// nothing, so the flow is still usable.
 #[test]
-fn the_decryptor_holds_to_the_declared_length_too() {
+fn both_directions_hold_to_the_declared_length() {
     let nonce = pinned_nonce();
     let plaintext = message(8);
     let (ct, tag) = encrypt::<Toy>(&nonce, &[], &plaintext);
 
+    // Encrypting: too much is refused, and finalizing short is refused.
+    let mut enc = ToyCcm::<Encrypting>::new(&toy_key(), &nonce, &[], 8).unwrap();
+    let mut too_much = [0x77u8; 9];
+    assert!(
+        matches!(enc.do_encrypt(&mut too_much), Err(SymmetricCipherError::StateError(_))),
+        "9 bytes against a declared 8"
+    );
+    assert_eq!(too_much, [0x77u8; 9], "a refused update must not touch the data");
+    let mut some = plaintext[..4].to_vec();
+    enc.do_encrypt(&mut some).expect("4 of the 8 declared bytes");
+    assert!(
+        matches!(enc.do_encrypt_final(), Err(SymmetricCipherError::StateError(_))),
+        "finalizing 4 bytes short"
+    );
+
+    // Decrypting: the same two refusals.
     let mut dec = ToyCcm::<Decrypting>::new(&toy_key(), &nonce, &[], 8).unwrap();
     let mut too_much = [0x77u8; 9];
     assert!(
@@ -384,16 +403,6 @@ fn every_permitted_nonce_length_works() {
     round_trip::<Toy, TOY_LEN, 11>(&toy, (1 << 32) - 1);
     round_trip::<Toy, TOY_LEN, 12>(&toy, (1 << 24) - 1);
     round_trip::<Toy, TOY_LEN, 13>(&toy, (1 << 16) - 1);
-
-    let aes =
-        KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
-    round_trip::<AES128Internal, 16, 7>(&aes, u64::MAX);
-    round_trip::<AES128Internal, 16, 8>(&aes, (1 << 56) - 1);
-    round_trip::<AES128Internal, 16, 9>(&aes, (1 << 48) - 1);
-    round_trip::<AES128Internal, 16, 10>(&aes, (1 << 40) - 1);
-    round_trip::<AES128Internal, 16, 11>(&aes, (1 << 32) - 1);
-    round_trip::<AES128Internal, 16, 12>(&aes, (1 << 24) - 1);
-    round_trip::<AES128Internal, 16, 13>(&aes, (1 << 16) - 1);
 }
 
 /// Which entry points release unauthenticated plaintext on a forgery, pinned side by side.

@@ -32,8 +32,8 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-use bouncycastle::core::traits::ElectronicCodeBook;
 use bouncycastle::sm4::{LANES, SM4};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.

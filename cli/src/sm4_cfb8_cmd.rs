@@ -16,13 +16,13 @@
 //! CFB8 provides confidentiality only. It does not detect tampering, and neither the ciphertext nor
 //! the IV is authenticated. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::modes::{Cfb8, Decrypting, Encrypting};
 use bouncycastle::sm4::SM4;
 
 pub(crate) fn sm4_cfb8_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,

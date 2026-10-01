@@ -3,7 +3,7 @@
 //! The crate is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait.
 //!
-//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES128Internal` and friends,
+//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `ToyBlockCipher` and friends,
 //! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
 //! one block.
 //!
@@ -11,12 +11,12 @@
 //!
 //! | Mode | Mod | Spec | Notes |
 //! |---|---|---|---|
-//! | ECB | [`ecb`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | CBC | [`cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
+//! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
 //! | CFB | [`cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
-//! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
+//! | ECB | [`hazmat`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
 //!
 //! They divide three ways.
@@ -37,8 +37,8 @@
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
-//! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block -- see
-//! [ECB is not a confidentiality mode for data](#ecb-is-not-a-confidentiality-mode-for-data) and
+//! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
+//! why it lives under [`hazmat`] -- see [`hazmat::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
@@ -46,8 +46,17 @@
 //!
 //! # Usage Examples
 //!
-//! These usage examples are for implementing a concrete cipher on top of a mode, and use AES-128 as
-//! the example. They are intended for library developers, not end-users.
+//! These usage examples are for implementing a concrete cipher on top of a mode. They are intended
+//! for library developers, not end-users.
+//!
+//! They are written over `bouncycastle_core_test_framework::ToyBlockCipher`, a deliberately
+//! insecure stand-in with AES-128's key and block sizes that the test-framework crate exports for
+//! exactly this purpose, so that this crate's documentation does not depend on any real cipher
+//! crate (which would be a dependency cycle: the cipher crates depend on this one). Substitute
+//! any [`ElectronicCodeBook`] implementor, such as `bouncycastle_aes::hazmat::AES128Internal`;
+//! the `bouncycastle-aes` crate's aliases carry runnable examples over the real thing.
+//!
+//! [`ElectronicCodeBook`]: bouncycastle_core::hazmat::ElectronicCodeBook
 //!
 //! ## Defining type aliases
 //!
@@ -59,28 +68,28 @@
 //! direction too, plus its nonce and tag lengths, and GCM takes the direction and its tag length:
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
 //!
 //! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
-//! type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, 16>;
-//! type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, 16>;
-//! type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, 16>;
+//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
-//! type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, 16, 12>;
+//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 //!
 //! // CCM takes the permutation, a direction, key length, and a block length like the rest,
-//! // plus the nonce length and the tag length -- both CCM-specific choices rather than AES params.
+//! // plus the nonce length and the tag length -- both CCM-specific choices rather than cipher params.
 //! // The nonce length caps the payload (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag
 //! // length is the forgery bound; 12 and 16 are the usual pair.
-//! type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
+//! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
 //!
 //! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
 //! // parameter.
-//! type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
+//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //! ```
 //!
 //! ## Encrypting and decrypting
@@ -141,9 +150,9 @@ pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
-pub mod ecb;
 pub mod gcm;
 mod ghash;
+pub mod hazmat;
 mod iv;
 
 pub use cbc::Cbc;
@@ -151,19 +160,20 @@ pub use ccm::{CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
-pub use ecb::Ecb;
 pub use gcm::{GCM_NONCE_LEN, Gcm};
 
 // Imports needed for docs
 #[allow(unused_imports)]
+use bouncycastle_core::hazmat::ElectronicCodeBook;
+#[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    ElectronicCodeBook, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
 
 /// The direction markers, defined in `bouncycastle-core` so that a stream cipher built there with
 /// [`bouncycastle_core::stream_cipher::StreamCipher`] and a mode built here share them. See [`Cbc`],
-/// [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`], [`Ecb`] and [`Gcm`].
+/// [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`], [`Ecb`](hazmat::Ecb) and [`Gcm`].
 pub use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};

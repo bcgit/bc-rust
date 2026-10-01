@@ -16,18 +16,19 @@
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, BlockModeAction, decrypt_stream, encrypt_stream, load_key,
+    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
-use bouncycastle::modes::{Decrypting, Ecb, Encrypting};
+use bouncycastle::modes::hazmat::Ecb;
+use bouncycastle::modes::{Decrypting, Encrypting};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";
 
 pub(crate) fn aes128_ecb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -36,7 +37,7 @@ pub(crate) fn aes128_ecb_cmd(
 }
 
 pub(crate) fn aes192_ecb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -45,7 +46,7 @@ pub(crate) fn aes192_ecb_cmd(
 }
 
 pub(crate) fn aes256_ecb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -56,19 +57,19 @@ pub(crate) fn aes256_ecb_cmd(
 /// Dispatches to the shared streaming loops with `Ecb` filled in as the mode. `INIT_DATA_LEN` is 0,
 /// so the loops write and read no IV.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     match action {
-        BlockModeAction::Encrypt => {
+        CipherDirection::Encrypt => {
             encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
                 key, output_hex, MODE,
             )
         }
-        BlockModeAction::Decrypt => {
+        CipherDirection::Decrypt => {
             decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
                 key, output_hex, MODE,
             )
