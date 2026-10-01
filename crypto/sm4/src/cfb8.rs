@@ -16,7 +16,8 @@
 //! `s = 128` -- so `tests/stream_mode_tests.rs` pins this alias against the Sec 8.5.2 equations
 //! evaluated directly over the permutation instead.
 
-use crate::{BLOCK_LEN, KEY_LEN, SM4};
+use crate::hazmat::SM4;
+use crate::{BLOCK_LEN, KEY_LEN};
 use bouncycastle_modes::Cfb8;
 
 /// SM4 in CFB8 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

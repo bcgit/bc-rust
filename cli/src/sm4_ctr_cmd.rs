@@ -27,7 +27,8 @@
 use crate::block_mode_cmd::{BLOCK_LEN, BlockModeAction, load_key};
 use crate::stream_mode_cmd::run_stream_mode;
 use bouncycastle::modes::{Ctr, Decrypting, Encrypting};
-use bouncycastle::sm4::{CTR_NONCE_LEN, SM4};
+use bouncycastle::sm4::CTR_NONCE_LEN;
+use bouncycastle::sm4::hazmat::SM4;
 
 pub(crate) fn sm4_ctr_cmd(
     action: &BlockModeAction,

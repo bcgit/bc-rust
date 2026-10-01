@@ -99,7 +99,8 @@ fn library_ctr_decrypt(key_hex: &str, nonce: &[u8], data: &mut [u8]) {
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::core::traits::StreamCipherDecryptor;
     use bouncycastle::modes::{Ctr, Decrypting};
-    use bouncycastle::sm4::{CTR_NONCE_LEN, SM4};
+    use bouncycastle::sm4::CTR_NONCE_LEN;
+    use bouncycastle::sm4::hazmat::SM4;
 
     let key_bytes: [u8; 16] = unhex(key_hex).try_into().expect("a 16-byte key");
     let key = KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)

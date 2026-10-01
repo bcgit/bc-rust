@@ -17,7 +17,8 @@
 //! why that is well defined. On whole blocks -- the only lengths the draft's Appendix A.2.4 vectors
 //! cover -- the two readings coincide.
 
-use crate::{BLOCK_LEN, KEY_LEN, SM4};
+use crate::hazmat::SM4;
+use crate::{BLOCK_LEN, KEY_LEN};
 use bouncycastle_modes::Cfb;
 
 /// SM4 in CFB128 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

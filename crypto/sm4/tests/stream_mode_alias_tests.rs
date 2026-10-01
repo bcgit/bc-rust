@@ -12,7 +12,8 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_modes::{Cfb, Cfb8, Ctr, Decrypting, Encrypting};
-use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4, SM4_CFB, SM4_CFB8, SM4_CTR};
+use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4_CFB, SM4_CFB8, SM4_CTR};
 
 fn key() -> KeyMaterial<KEY_LEN> {
     let bytes: [u8; KEY_LEN] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

@@ -7,7 +7,8 @@
 //! construction.
 
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
-use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN, SM4};
+use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN};
 
 #[test]
 fn sm4_conforms_to_electronic_code_book() {

@@ -11,7 +11,8 @@ use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
-use bouncycastle_sm4::{SM4, SM4_CBC};
+use bouncycastle_sm4::SM4_CBC;
+use bouncycastle_sm4::hazmat::SM4;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
