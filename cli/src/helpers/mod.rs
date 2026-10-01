@@ -43,6 +43,16 @@ pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
 /// themselves, untouched, otherwise. A raw input keeps its trailing newline; only the caller
 /// knows whether that byte is part of the value (see `block_mode_helpers::load_key`).
 pub(crate) fn hex_or_raw(buf: Vec<u8>) -> Vec<u8> {
+    // Decide by the bytes themselves rather than by whether the decoder accepts them: it skips
+    // NUL bytes as well as whitespace, so an all-zero binary key would otherwise "decode" to an
+    // empty hex string. Hex text is hex digits, whitespace and `\x` escapes, and nothing else.
+    let looks_like_hex = buf.iter().any(u8::is_ascii_hexdigit)
+        && buf
+            .iter()
+            .all(|b| b.is_ascii_hexdigit() || b.is_ascii_whitespace() || *b == b'\\' || *b == b'x');
+    if !looks_like_hex {
+        return buf;
+    }
     match hex::decode(strip_trailing_newline(&buf)) {
         Ok(decoded) => decoded,
         Err(_) => buf,
