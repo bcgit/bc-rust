@@ -36,15 +36,15 @@
 //!
 //! # How one alias covers both directions
 //!
-//! See [`PaddedMode`], which is the projection that lets `Dir` select between the encryptor and the
+//! See [`Direction::Select`](bouncycastle_core::stream_cipher::Direction), which is the projection that lets `Dir` select between the encryptor and the
 //! decryptor adapter. `Dir` must be [`Encrypting`] or [`Decrypting`].
 
 use crate::hazmat::{TDES, TDES2Key};
-use crate::padded_mode::PaddedMode;
 use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
+use bouncycastle_core::stream_cipher::Direction;
 use bouncycastle_modes::hazmat::Ecb;
 use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::PaddedBlockCipherDecryptor;
+use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -106,12 +106,22 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// assert_eq!(ciphertext[..8], ciphertext[8..]);
 /// ```
 #[allow(non_camel_case_types)]
-pub type TDES_ECB<Dir, Pad> = <Dir as PaddedMode<
-    Ecb<TDES, Encrypting, KEY_LEN, BLOCK_LEN>,
-    Ecb<TDES, Decrypting, KEY_LEN, BLOCK_LEN>,
-    Pad,
-    0,
->>::Mode;
+pub type TDES_ECB<Dir, Pad> = <Dir as Direction>::Select<
+    PaddedBlockCipherEncryptor<
+        Ecb<TDES, Encrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        0,
+        BLOCK_LEN,
+    >,
+    PaddedBlockCipherDecryptor<
+        Ecb<TDES, Decrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        0,
+        BLOCK_LEN,
+    >,
+>;
 
 /// Two-key TDES in ECB mode with a padding scheme, **decryption only**.
 ///
