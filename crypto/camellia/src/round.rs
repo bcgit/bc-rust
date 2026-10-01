@@ -2,7 +2,7 @@
 //! -- and the data randomizing part (Sec 2.3) that runs them, on four blocks at once.
 
 use crate::LANES;
-use crate::camellia::Block;
+use crate::hazmat::camellia::Block;
 use crate::sbox::sboxes;
 
 /// `F(F_IN, KE)` (Sec 2.4.1) on four blocks at once: `f_in[b]` is `F_IN` for block `b`, and

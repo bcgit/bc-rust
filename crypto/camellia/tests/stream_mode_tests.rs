@@ -28,10 +28,11 @@
 
 mod common;
 
+use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_camellia::{
-    BLOCK_LEN, CTR_NONCE_LEN, Camellia_128, Camellia_192, Camellia_256, Camellia_CFB_128,
-    Camellia_CFB_192, Camellia_CFB_256, Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256,
-    Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256,
+    BLOCK_LEN, CTR_NONCE_LEN, Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256,
+    Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192,
+    Camellia_CTR_256,
 };
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};

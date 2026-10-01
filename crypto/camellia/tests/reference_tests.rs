@@ -10,7 +10,8 @@
 
 mod common;
 
-use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256, LANES};
+use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::{BLOCK_LEN, LANES};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 
@@ -114,9 +115,9 @@ fn single_block_agrees_with_the_reference() {
 fn four_lanes_agree_with_the_reference() {
     fn run<const KEY_LEN: usize, P: bouncycastle_camellia::CamelliaParams>(
         mut seed: u32,
-        new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_camellia::Camellia<P>,
+        new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_camellia::hazmat::Camellia<P>,
     ) where
-        bouncycastle_camellia::Camellia<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+        bouncycastle_camellia::hazmat::Camellia<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
     {
         for _ in 0..128 {
             let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);

@@ -12,7 +12,8 @@
 mod common;
 mod ntt_cryptrec_data;
 
-use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::BLOCK_LEN;
+use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

@@ -9,15 +9,15 @@
 //! constant-time and carries no tables at all; the planes are 32 bits wide so that the working set
 //! stays small, which is what "lowmemory" means here. See [Design](#design).
 //!
-//! It is a *permutation*, not a cipher you can encrypt data with. See
-//! [Security Considerations](#security-considerations).
+//! It is a *permutation*, not a cipher you can encrypt data with, which is why it lives under
+//! [`hazmat`]. See [Security Considerations](#security-considerations).
 //!
 //! # Usage Examples
 //!
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_camellia::Camellia_128;
+//! use bouncycastle_camellia::hazmat::Camellia_128;
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
@@ -54,7 +54,8 @@
 //! offers to modes:
 //!
 //! ```
-//! use bouncycastle_camellia::{Camellia_256, LANES};
+//! use bouncycastle_camellia::hazmat::Camellia_256;
+//! use bouncycastle_camellia::LANES;
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
@@ -234,6 +235,8 @@
 //! so structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation,
 //! and prefer an authenticated one so that ciphertext tampering is detected. RFC 3713 Sec 3 itself
 //! assigns object identifiers only to Camellia in CBC mode.
+//! That is why the permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the
+//! supported uses.
 //!
 //! ## Constant-time properties
 //!
@@ -288,18 +291,29 @@
 #![forbid(missing_docs)]
 
 mod bitslice;
-mod camellia;
 mod cbc;
 mod cfb;
 mod cfb8;
 mod ctr;
+pub mod hazmat;
 mod round;
 mod sbox;
 mod schedule;
 
-pub use camellia::{BLOCK_LEN, Camellia, Camellia_128, Camellia_192, Camellia_256, LANES};
+/// The Camellia block length in bytes: 16 (RFC 3713 Sec 1.1, "128-bit block size").
+pub const BLOCK_LEN: usize = 16;
+
+/// The number of blocks the bit-sliced S-box layer substitutes at once. See
+/// [`Camellia::encrypt_4blocks`].
+pub const LANES: usize = 4;
+
 pub use cbc::{Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
 pub use cfb::{Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256};
 pub use cfb8::{Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256};
 pub use ctr::{CTR_NONCE_LEN, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256};
 pub use schedule::CamelliaParams;
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use hazmat::{Camellia, Camellia_128, Camellia_192, Camellia_256};
+// end of imports needed for docs

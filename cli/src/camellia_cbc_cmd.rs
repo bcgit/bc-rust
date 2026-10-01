@@ -13,7 +13,7 @@
 use crate::helpers::block_mode_helpers::{
     BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
-use bouncycastle::camellia::{Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};

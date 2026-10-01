@@ -6,7 +6,8 @@
 //! from single-block calls in every slot, and the key checks behave. All three types override the
 //! pair and four-block methods, so this is what pins those overrides to the trait's contract.
 
-use bouncycastle_camellia::{BLOCK_LEN, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::BLOCK_LEN;
+use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]
