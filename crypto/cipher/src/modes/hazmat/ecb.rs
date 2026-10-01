@@ -18,7 +18,7 @@
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::hazmat::Ecb;
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -71,7 +71,7 @@
 //!
 //! **ECB Mode should not be used in production!**
 
-use crate::modes::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;

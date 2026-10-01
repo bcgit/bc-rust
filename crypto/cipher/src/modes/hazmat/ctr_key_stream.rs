@@ -11,7 +11,7 @@ use bouncycastle_core::traits::Algorithm;
 #[allow(unused_imports)]
 use crate::modes::Ctr;
 #[allow(unused_imports)]
-use bouncycastle_core::stream_cipher::StreamCipher;
+use crate::stream::StreamCipher;
 // end of imports needed for docs
 
 /// The CTR keystream `Oj = CIPH_K(Tj)` over any [`ElectronicCodeBook`], with `Tj = N | [j]m`;
@@ -166,7 +166,7 @@ mod tests {
     //! integration test.
 
     use super::*;
-    use crate::modes::Encrypting;
+    use crate::Encrypting;
     use bouncycastle_core::hazmat::ElectronicCodeBook;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::StreamCipherEncryptor;

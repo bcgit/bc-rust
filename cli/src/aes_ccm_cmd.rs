@@ -52,7 +52,8 @@ use std::io::{self, Read};
 use std::process::exit;
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::{Ccm, Decrypting, Encrypting};
+use bouncycastle::cipher::modes::Ccm;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;

@@ -10,7 +10,8 @@
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
-use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
+use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;

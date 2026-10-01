@@ -58,7 +58,7 @@
 //! use bouncycastle_aes::AES_CCM_128_Buffered;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Up to 64 bytes of AAD and 2 KiB of message -- comfortably above an 802.11 frame, the packet
 //! // size CCM was designed for -- and FINAL_LEN = 2 KiB plus the 16-byte tag.
@@ -83,7 +83,7 @@
 //! ```
 //! use bouncycastle_aes::{AES_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_256<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
@@ -122,7 +122,7 @@
 //! ```
 //! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_128<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
@@ -152,7 +152,7 @@
 //! ```
 //! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_128<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
@@ -191,12 +191,12 @@
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::Direction;
 use bouncycastle_cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor};
-use bouncycastle_core::stream_cipher::Direction;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 // end of imports needed for docs

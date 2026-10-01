@@ -4,79 +4,25 @@
 //! [`StreamCipher`] turns any [`KeyStream`] into a [`StreamCipherEncryptor`] /
 //! [`StreamCipherDecryptor`] pair, and with it the [`SymmetricCipherEncryptor`] /
 //! [`SymmetricCipherDecryptor`] supertraits, as a block cipher mode turns an
-//! [`ElectronicCodeBook`](crate::hazmat::ElectronicCodeBook) into a block cipher. A keystream
+//! [`ElectronicCodeBook`](bouncycastle_core::hazmat::ElectronicCodeBook) into a block cipher. A keystream
 //! implementor writes the keystream; the nonce, the partly-used block held between calls and the
 //! refusal to run past the end of the keystream are written once, here.
 //!
 //! A mode whose keystream depends on the data, such as CFB, implements the traits itself; the free
 //! functions here are the parts of that implementation that are the same for every stream cipher.
 
-use crate::errors::SymmetricCipherError;
-use crate::hazmat::KeyStream;
-use crate::key_material::KeyMaterial;
-use crate::security_strength::SecurityStrength;
-use crate::traits::{
+use crate::{Decrypting, Encrypting};
+use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::KeyStream;
+use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
+use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
-
-/// Direction marker for a cipher value that encrypts.
-///
-/// Zero-sized: encoding the direction in the type costs no memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Encrypting;
-
-/// Direction marker for a cipher value that decrypts.
-///
-/// Zero-sized: encoding the direction in the type costs no memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Decrypting;
-
-mod sealed {
-    /// Private supertrait of [`Direction`](super::Direction): only this module can name it, so
-    /// only the two markers below can implement `Direction`.
-    pub trait Sealed {}
-    impl Sealed for super::Encrypting {}
-    impl Sealed for super::Decrypting {}
-}
-
-/// Selects a type by direction: `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
-///
-/// A cipher whose two directions are distinct types cannot offer `Cipher<Dir>` as a plain type
-/// alias, because an alias cannot choose between two types from one of its parameters. It is
-/// written as a projection through this trait instead:
-///
-/// ```text
-/// pub type Ascon_AEAD128<Dir> =
-///     <Dir as Direction>::Select<AsconAead128Encryptor, AsconAead128Decryptor>;
-/// ```
-///
-/// Sealed: implemented for the two markers and for nothing else, so `Encrypting` and `Decrypting`
-/// are the only values a `Dir` parameter can take, and a caller cannot project an alias onto a
-/// type of their own:
-///
-/// ```compile_fail
-/// use bouncycastle_core::stream_cipher::Direction;
-/// struct Sideways;
-/// // error: the supertrait is private to bouncycastle_core
-/// impl Direction for Sideways {
-///     type Select<Enc, Dec> = Enc;
-/// }
-/// ```
-pub trait Direction: sealed::Sealed {
-    /// `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
-    type Select<Enc, Dec>;
-}
-
-impl Direction for Encrypting {
-    type Select<Enc, Dec> = Enc;
-}
-
-impl Direction for Decrypting {
-    type Select<Enc, Dec> = Dec;
-}
 
 /// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
 /// `input` into `output` and applies `in_place` there, so the caller's input is left untouched.
@@ -112,11 +58,7 @@ pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
 
 /// A stream cipher over any [`KeyStream`], with the direction encoded in the type.
 ///
-/// `Dir` is [`Encrypting`] or [`Decrypting`]. `R` is the RNG
-/// [`do_encrypt_init`](SymmetricCipherEncryptor::do_encrypt_init) draws the init data from, by its
-/// [`Default`] -- which for an [`RNG`] is an OS-seeded instance. It is a parameter only because
-/// this crate cannot name the library's DRBG; the crate that defines a cipher fixes it in a type
-/// alias.
+/// `Dir` is [`Encrypting`] or [`Decrypting`].
 ///
 /// `INIT_DATA_LEN` and `BLOCK_LEN` must both be non-zero, checked at compile time: a keystream
 /// with no init data would repeat for every message under a key.
@@ -137,7 +79,6 @@ pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
 pub struct StreamCipher<
     KS,
     Dir,
-    R,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
@@ -150,12 +91,11 @@ pub struct StreamCipher<
     /// Bytes of `pending` already consumed, `0..=BLOCK_LEN`. `BLOCK_LEN` means none is pending
     /// and the next byte needs a fresh keystream block.
     used: usize,
-    // `fn() -> R` rather than `R`: the value holds no RNG, so `R` must not affect `Send`/`Sync`.
-    _marker: PhantomData<(Dir, fn() -> R)>,
+    _marker: PhantomData<Dir>,
 }
 
-impl<KS, Dir, R, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipher<KS, Dir, R, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -243,8 +183,8 @@ where
     }
 }
 
-impl<KS, Dir, R, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for StreamCipher<KS, Dir, R, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -254,18 +194,17 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = KS::MAX_SECURITY_STRENGTH;
 }
 
-impl<KS, R, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Encrypting, R, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    R: RNG + Default,
 {
-    /// Begins an encryption flow, drawing the init data from a default-constructed `R`.
+    /// Begins an encryption flow, drawing the init data from the library's default OS-backed DRBG.
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let mut rng = R::default();
+        let mut rng = HashDRBG_SHA512::new_from_os();
         Self::do_encrypt_init_rng(key, &mut rng)
     }
 
@@ -307,12 +246,11 @@ where
     }
 }
 
-impl<KS, R, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>
-    for StreamCipher<KS, Encrypting, R, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-    R: RNG + Default,
 {
     /// XORs the next `data.len()` keystream bytes into `data`.
     ///
@@ -324,9 +262,9 @@ where
     }
 }
 
-impl<KS, R, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Decrypting, R, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -365,9 +303,9 @@ where
     }
 }
 
-impl<KS, R, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>
-    for StreamCipher<KS, Decrypting, R, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {

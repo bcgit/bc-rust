@@ -22,7 +22,7 @@
 //! use bouncycastle_aes::AES_CFB8_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB8_256<Encrypting>;
@@ -57,7 +57,7 @@
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
 //!     SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB8_128<Encrypting>;
@@ -94,7 +94,7 @@
 //! use bouncycastle_aes::{AES_CFB8_128, AES_CFB_128};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let plaintext = *b"hello";
@@ -117,7 +117,7 @@ use bouncycastle_cipher::modes::Cfb8;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs

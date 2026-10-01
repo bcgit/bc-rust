@@ -28,7 +28,8 @@
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
+//! use bouncycastle_cipher::modes::Gcm;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -58,7 +59,8 @@
 //! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
+//! use bouncycastle_cipher::modes::Gcm;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -87,7 +89,8 @@
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
+//! use bouncycastle_cipher::modes::Gcm;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -150,9 +153,10 @@
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
 //!   is no separate `Gmac` type.
 
+use crate::modes::Ctr;
 use crate::modes::ghash::Ghash;
 use crate::modes::hazmat::CtrKeyStream;
-use crate::modes::{Ctr, Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;

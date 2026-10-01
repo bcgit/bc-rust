@@ -2,7 +2,7 @@
 //! hold at compile time, so a regression fails the build of this test crate; the `#[test]` is the
 //! runtime half that a test runner can report.
 
-use bouncycastle_core::stream_cipher::{Decrypting, Direction, Encrypting};
+use bouncycastle_cipher::{Decrypting, Direction, Encrypting};
 
 /// Two types that cannot be confused with each other, or with anything else.
 struct Enc([u8; 1]);

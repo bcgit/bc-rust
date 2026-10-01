@@ -1,7 +1,7 @@
 //! The stream modes through the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] API.
 //!
 //! The stream traits extend the symmetric-cipher traits with `FINAL_LEN = 0`: `Cfb` and `Cfb8`
-//! implement both, the separate-output half over `bouncycastle_core::stream_cipher`'s helpers, and
+//! implement both, the separate-output half over `bouncycastle_cipher::stream`'s helpers, and
 //! `Ctr` gets both from `StreamCipher` over its keystream. That is what lets a caller
 //! hold any of the five modes through one trait: a padded `Cbc` or `Ecb` with the padded block as
 //! its final output, and a stream mode with nothing.
@@ -18,7 +18,8 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Cfb, Cfb8, Ctr, Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,

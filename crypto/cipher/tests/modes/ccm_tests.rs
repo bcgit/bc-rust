@@ -13,7 +13,8 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Ccm, CcmDecryptor, Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{Ccm, CcmDecryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;

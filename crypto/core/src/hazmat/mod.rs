@@ -22,7 +22,7 @@
 //!
 //! Each crate that has hazmat items keeps them under its own `hazmat` module, never at the crate
 //! root: this crate holds the traits, and `bouncycastle-aes` and `bouncycastle_cipher::modes` hold their
-//! implementors. The safe adapters that wrap them -- [`StreamCipher`](crate::stream_cipher::StreamCipher)
+//! implementors. The safe adapters that wrap them -- `bouncycastle_cipher::stream::StreamCipher`
 //! over a [`KeyStream`], the modes over an [`ElectronicCodeBook`] -- are not hazmat and stay where
 //! they are.
 

@@ -16,7 +16,8 @@
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};

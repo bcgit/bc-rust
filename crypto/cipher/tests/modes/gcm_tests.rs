@@ -7,7 +7,8 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Decrypting, Encrypting, Gcm};
+use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,

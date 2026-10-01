@@ -92,7 +92,8 @@
 #![allow(unused_imports)]
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting};
+use bouncycastle::cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor};
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,

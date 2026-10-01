@@ -37,7 +37,8 @@
 //! what is pinned here is specifically the part neither of them reaches: the narrow counters.
 
 use bouncycastle_aes::hazmat::AES128Internal;
-use bouncycastle_cipher::modes::{Ctr, Encrypting};
+use bouncycastle_cipher::Encrypting;
+use bouncycastle_cipher::modes::Ctr;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{StreamCipherEncryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;

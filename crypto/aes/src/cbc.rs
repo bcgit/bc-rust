@@ -16,7 +16,7 @@
 //! use bouncycastle_aes::AES_CBC_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
@@ -46,7 +46,7 @@
 //! use bouncycastle_aes::{AES_CBC_128, AES_BLOCK_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
@@ -105,7 +105,7 @@
 //! use bouncycastle_aes::AES_CBC_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_cipher::modes::Encrypting;
+//! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! // Define ourselves a convenience type for the encryption direction with no padding.
@@ -130,7 +130,7 @@
 //! use bouncycastle_aes::AES_CBC_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_cipher::modes::Encrypting;
+//! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
@@ -146,9 +146,10 @@
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::modes::Cbc;
 use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
-use bouncycastle_core::stream_cipher::Direction;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]

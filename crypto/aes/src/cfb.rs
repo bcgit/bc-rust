@@ -21,7 +21,7 @@
 //! use bouncycastle_aes::AES_CFB_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB_256<Encrypting>;
@@ -56,7 +56,7 @@
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
 //!     SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB_128<Encrypting>;
@@ -94,7 +94,7 @@ use bouncycastle_cipher::modes::Cfb;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs

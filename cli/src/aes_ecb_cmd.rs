@@ -20,7 +20,7 @@ use crate::helpers::block_mode_helpers::{
 };
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::hazmat::Ecb;
-use bouncycastle::cipher::modes::{Decrypting, Encrypting};
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 

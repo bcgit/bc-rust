@@ -29,7 +29,8 @@
 use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::{Cfb, Decrypting, Encrypting};
+use bouncycastle::cipher::modes::Cfb;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 

@@ -1467,10 +1467,9 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 ///
 /// An implementor that is a pure keystream -- the keystream does not depend on the data, as in CTR
 /// -- should implement [`KeyStream`](crate::hazmat::KeyStream) and use
-/// [`StreamCipher`](crate::stream_cipher::StreamCipher),
-/// which provides both traits. A mode whose keystream depends on the data, such as CFB, implements
-/// both itself, with the helpers in `bouncycastle_core::stream_cipher` for the separate-output
-/// half.
+/// `bouncycastle_cipher::stream::StreamCipher`, which provides both traits. A mode whose keystream
+/// depends on the data, such as CFB, implements both itself, with the helpers in
+/// `bouncycastle_cipher::stream` for the separate-output half.
 ///
 /// Init data (a nonce or IV) is generated securely by the implementation in the constructor and
 /// returned for transmission alongside the ciphertext; there is no API for the user to supply it,

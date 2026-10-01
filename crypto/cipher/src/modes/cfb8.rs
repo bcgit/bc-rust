@@ -46,12 +46,12 @@
 //! undetectable.
 
 use crate::modes::iv::random_iv;
-use crate::modes::{Decrypting, Encrypting};
+use crate::stream::{stream_do_final, stream_update_out};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::stream_cipher::{stream_do_final, stream_update_out};
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,

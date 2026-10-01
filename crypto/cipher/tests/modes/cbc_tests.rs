@@ -6,7 +6,8 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;

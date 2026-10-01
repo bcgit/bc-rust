@@ -9,10 +9,10 @@
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 use bouncycastle_cipher::modes::hazmat::Ecb;
-use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 

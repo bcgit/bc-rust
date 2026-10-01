@@ -22,7 +22,8 @@
 //! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_cipher::modes::{Ccm, Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::Ccm;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
 //!
@@ -96,11 +97,11 @@
 
 use crate::modes::ctr::apply_counter_blocks;
 use crate::modes::iv::random_iv;
+use crate::stream::StreamCipher;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::stream_cipher::StreamCipher;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -110,7 +111,7 @@ use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
-use crate::modes::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 
 /// CCM (SP 800-38C) over any [`ElectronicCodeBook`] with a 128-bit block.
 ///
@@ -125,7 +126,8 @@ use crate::modes::{Decrypting, Encrypting};
 /// ```compile_fail
 /// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_cipher::modes::{Ccm, Encrypting};
+/// use bouncycastle_cipher::modes::Ccm;
+/// use bouncycastle_cipher::Encrypting;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
@@ -138,7 +140,8 @@ use crate::modes::{Decrypting, Encrypting};
 /// ```compile_fail
 /// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_cipher::modes::{Ccm, Encrypting};
+/// use bouncycastle_cipher::modes::Ccm;
+/// use bouncycastle_cipher::Encrypting;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
@@ -160,7 +163,6 @@ pub struct Ccm<
     ctr: StreamCipher<
         CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>,
         Dir,
-        HashDRBG_SHA512,
         KEY_LEN,
         NONCE_LEN,
         BLOCK_LEN,
@@ -287,7 +289,8 @@ where
     /// ```
     /// use bouncycastle_core_test_framework::ToyBlockCipher;
     /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-    /// use bouncycastle_cipher::modes::{Ccm, Encrypting};
+    /// use bouncycastle_cipher::modes::Ccm;
+    /// use bouncycastle_cipher::Encrypting;
     ///
     /// type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
     ///

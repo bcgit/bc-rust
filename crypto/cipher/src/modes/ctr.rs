@@ -42,9 +42,8 @@
 //! and used to recover any other plaintext encrypted under that same counter. That is why
 
 use crate::modes::hazmat::CtrKeyStream;
+use crate::stream::StreamCipher;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::stream_cipher::StreamCipher;
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
 
 // Imports needed for docs
@@ -59,7 +58,7 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 ///
 /// The counter block is the init data (the nonce) followed by a counter filling the rest of the
 /// block, so `INIT_DATA_LEN` chooses the counter length; see the module docs. `Dir` is
-/// [`Encrypting`](crate::modes::Encrypting) or [`Decrypting`](crate::modes::Decrypting).
+/// [`Encrypting`](crate::Encrypting) or [`Decrypting`](crate::Decrypting).
 ///
 /// # The counter width is checked at compile time
 ///
@@ -73,7 +72,8 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_core_test_framework::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_cipher::modes::{Ctr, Encrypting};
+/// use bouncycastle_cipher::modes::Ctr;
+/// use bouncycastle_cipher::Encrypting;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 /// let _ = Ctr::<ToyBlockCipher, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
@@ -83,7 +83,6 @@ pub type Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DA
     StreamCipher<
         CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>,
         Dir,
-        HashDRBG_SHA512,
         KEY_LEN,
         INIT_DATA_LEN,
         BLOCK_LEN,

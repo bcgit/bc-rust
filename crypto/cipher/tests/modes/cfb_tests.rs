@@ -13,7 +13,8 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Cbc, Cfb, Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{Cbc, Cfb};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{

@@ -27,7 +27,7 @@
 //! use bouncycastle_aes::AES_GCM_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_GCM_256<Encrypting>;
@@ -63,7 +63,7 @@
 //! use bouncycastle_aes::AES_GCM_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_GCM_128<Encrypting>;
@@ -93,7 +93,7 @@
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_GCM_128<Encrypting>;
@@ -144,7 +144,9 @@ use bouncycastle_cipher::modes::Gcm;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::modes::{Decrypting, Encrypting, GCM_NONCE_LEN};
+use bouncycastle_cipher::modes::GCM_NONCE_LEN;
+#[allow(unused_imports)]
+use bouncycastle_cipher::{Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,

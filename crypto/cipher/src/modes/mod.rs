@@ -168,8 +168,3 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
-
-/// The direction markers, defined in `bouncycastle-core` so that a stream cipher built there with
-/// [`bouncycastle_core::stream_cipher::StreamCipher`] and a mode built here share them. See [`Cbc`],
-/// [`Ccm`], [`Cfb`], [`Cfb8`], [`Ctr`], [`Ecb`](hazmat::Ecb) and [`Gcm`].
-pub use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};

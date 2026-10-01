@@ -25,7 +25,8 @@
 //! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Cbc, Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::Cbc;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -51,7 +52,8 @@
 //! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Cbc, Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::Cbc;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -87,7 +89,7 @@
 //! or use an authenticated (AEAD) mode such as GCM.
 
 use crate::modes::iv::random_iv;
-use crate::modes::{Decrypting, Encrypting};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;

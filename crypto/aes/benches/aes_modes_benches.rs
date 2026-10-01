@@ -39,7 +39,8 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_cipher::modes::hazmat::Ecb;
-use bouncycastle_cipher::modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};

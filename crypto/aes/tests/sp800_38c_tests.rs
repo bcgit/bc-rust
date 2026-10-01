@@ -18,9 +18,8 @@
 //! direction is checked by round-tripping each vector's own `C` back to its `P`.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::{
-    CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor, Decrypting, Encrypting,
-};
+use bouncycastle_cipher::modes::{CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{

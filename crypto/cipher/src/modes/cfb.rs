@@ -58,7 +58,8 @@
 //! use bouncycastle_core_test_framework::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Cfb, Cfb8, Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::{Cfb, Cfb8};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
 //! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
@@ -87,7 +88,8 @@
 //! use bouncycastle_core::traits::{
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
 //! };
-//! use bouncycastle_cipher::modes::{Cfb, Decrypting, Encrypting};
+//! use bouncycastle_cipher::modes::Cfb;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
 //!
@@ -158,12 +160,12 @@
 //! each encryption operation.
 
 use crate::modes::iv::random_iv;
-use crate::modes::{Decrypting, Encrypting};
+use crate::stream::{stream_do_final, stream_update_out};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::stream_cipher::{stream_do_final, stream_update_out};
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,

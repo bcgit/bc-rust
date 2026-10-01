@@ -25,7 +25,7 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
@@ -57,7 +57,7 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
@@ -114,7 +114,7 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_cipher::modes::Encrypting;
+//! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! // Define ourselves a convenience type for the encryption direction with no padding.
@@ -139,7 +139,7 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_cipher::modes::Encrypting;
+//! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
@@ -160,7 +160,7 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_cipher::modes::Encrypting;
+//! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
@@ -176,13 +176,13 @@ use crate::AES_BLOCK_LEN;
 use crate::bitslice::Block;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use crate::schedule::AESParams;
+use bouncycastle_cipher::Direction;
 use bouncycastle_cipher::modes::hazmat::Ecb;
-use bouncycastle_cipher::modes::{Decrypting, Encrypting};
 use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::stream_cipher::Direction;
 
 // Imports needed for docs
 #[allow(unused_imports)]
