@@ -18,7 +18,8 @@
 //! is `bouncycastle_modes::Cbc` itself, which these wrap. See
 //! [`PaddedMode`](bouncycastle_padding::PaddedMode) for how one alias covers both directions.
 
-use crate::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN};
+use crate::BLOCK_LEN;
+use crate::hazmat::{ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_padding::PaddedMode;
 

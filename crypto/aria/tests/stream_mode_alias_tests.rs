@@ -6,10 +6,10 @@
 //! The known-answer coverage is in `stream_mode_tests.rs`, and the modes themselves are tested in
 //! their own right in `bouncycastle-modes`; this checks the wiring between them.
 
+use bouncycastle_aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle_aria::{
-    ARIA_128, ARIA_192, ARIA_256, ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256, ARIA_CFB8_128,
-    ARIA_CFB8_192, ARIA_CFB8_256, ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, BLOCK_LEN,
-    CTR_NONCE_LEN,
+    ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256, ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256,
+    ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, BLOCK_LEN, CTR_NONCE_LEN,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{

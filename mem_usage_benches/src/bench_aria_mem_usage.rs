@@ -34,7 +34,8 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aria::{ARIA_128, ARIA_192, ARIA_256, LANES};
+use bouncycastle::aria::LANES;
+use bouncycastle::aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 

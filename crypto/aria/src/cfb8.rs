@@ -10,7 +10,8 @@
 //! the work of [`ARIA_CFB_128`](crate::ARIA_CFB_128). See the `bouncycastle_modes::Cfb8` docs for
 //! when that is the right trade.
 
-use crate::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN};
+use crate::BLOCK_LEN;
+use crate::hazmat::{ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle_modes::Cfb8;
 
 /// ARIA-128 in CFB8 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

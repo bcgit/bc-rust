@@ -9,15 +9,15 @@
 //! wide so that the working set stays small, which is what "lowmemory" means here. See
 //! [Design](#design).
 //!
-//! It is a *permutation*, not a cipher you can encrypt data with. See
-//! [Security Considerations](#security-considerations).
+//! It is a *permutation*, not a cipher you can encrypt data with, which is why it lives under
+//! [`hazmat`]. See [Security Considerations](#security-considerations).
 //!
 //! # Usage Examples
 //!
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
-//! use bouncycastle_aria::ARIA_128;
+//! use bouncycastle_aria::hazmat::ARIA_128;
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
@@ -54,7 +54,8 @@
 //! four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_4blocks) offers to modes:
 //!
 //! ```
-//! use bouncycastle_aria::{ARIA_256, LANES};
+//! use bouncycastle_aria::hazmat::ARIA_256;
+//! use bouncycastle_aria::LANES;
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
@@ -226,6 +227,8 @@
 //! prefer an authenticated one so that ciphertext tampering is detected. RFC 5794 Appendix B
 //! assigns object identifiers to ARIA in ECB, CBC, CFB, OFB, CTR, CMAC, OCB2, GCM, CCM and key-wrap
 //! modes; the ECB one exists for completeness, not as a recommendation.
+//! That is why the permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the
+//! supported uses.
 //!
 //! ## Constant-time properties
 //!
@@ -277,19 +280,30 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-mod aria;
 mod bitslice;
 mod cbc;
 mod cfb;
 mod cfb8;
 mod ctr;
+pub mod hazmat;
 mod round;
 mod sbox;
 mod schedule;
 
-pub use aria::{ARIA, ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN, LANES};
+/// The ARIA block length in bytes: 16 (RFC 5794 Sec 1.1, "encrypts 128-bit blocks").
+pub const BLOCK_LEN: usize = 16;
+
+/// The number of blocks the bit-sliced S-box circuits substitute at once. See
+/// [`ARIA::encrypt_4blocks`].
+pub const LANES: usize = 4;
+
 pub use cbc::{ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
 pub use cfb::{ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256};
 pub use cfb8::{ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256};
 pub use ctr::{ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, CTR_NONCE_LEN};
 pub use schedule::ARIAParams;
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use hazmat::{ARIA, ARIA_128, ARIA_192, ARIA_256};
+// end of imports needed for docs

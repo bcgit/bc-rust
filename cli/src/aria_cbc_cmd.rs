@@ -14,7 +14,7 @@
 use crate::helpers::block_mode_helpers::{
     BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
-use bouncycastle::aria::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle::aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::modes::{Cbc, Decrypting, Encrypting};

@@ -7,7 +7,8 @@
 //! the round keys in the decryption order). ARIA-192 sits between the other two in rounds, so only
 //! the 12-round ARIA-128 and the 16-round ARIA-256 are benchmarked.
 
-use bouncycastle_aria::{ARIA_128, ARIA_256, BLOCK_LEN, LANES};
+use bouncycastle_aria::hazmat::{ARIA_128, ARIA_256};
+use bouncycastle_aria::{BLOCK_LEN, LANES};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;

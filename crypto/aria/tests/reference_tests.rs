@@ -11,7 +11,8 @@
 
 mod common;
 
-use bouncycastle_aria::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN, LANES};
+use bouncycastle_aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle_aria::{BLOCK_LEN, LANES};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 
@@ -102,9 +103,9 @@ fn single_block_agrees_with_the_reference() {
 fn four_lanes_agree_with_the_reference() {
     fn run<const KEY_LEN: usize, P: bouncycastle_aria::ARIAParams>(
         mut seed: u32,
-        new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_aria::ARIA<P>,
+        new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_aria::hazmat::ARIA<P>,
     ) where
-        bouncycastle_aria::ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+        bouncycastle_aria::hazmat::ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
     {
         for _ in 0..128 {
             let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);

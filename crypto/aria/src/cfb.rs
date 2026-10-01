@@ -9,7 +9,8 @@
 //! different, non-interoperable mode with its own aliases -- [`ARIA_CFB8_128`](crate::ARIA_CFB8_128)
 //! and friends -- and `s = 1` is not implemented; see the `bouncycastle_modes::Cfb` docs.
 
-use crate::{ARIA_128, ARIA_192, ARIA_256, BLOCK_LEN};
+use crate::BLOCK_LEN;
+use crate::hazmat::{ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle_modes::Cfb;
 
 /// ARIA-128 in CFB128 mode. `Dir` is [`bouncycastle_modes::Encrypting`] or

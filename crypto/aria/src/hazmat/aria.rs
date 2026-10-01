@@ -2,6 +2,7 @@
 
 use crate::round::{RoundKey, diffuse, rounds};
 use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams, ek, expand};
+use crate::{BLOCK_LEN, LANES};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -9,15 +10,8 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
 
-/// The ARIA block length in bytes: 16 (RFC 5794 Sec 1.1, "encrypts 128-bit blocks").
-pub const BLOCK_LEN: usize = 16;
-
 /// One ARIA block.
 pub type Block = [u8; BLOCK_LEN];
-
-/// The number of blocks the bit-sliced S-box circuits substitute at once. See
-/// [`ARIA::encrypt_4blocks`].
-pub const LANES: usize = 4;
 
 /// The ARIA keyed permutation, parameterised by key length, constant-time.
 ///
