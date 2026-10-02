@@ -10,10 +10,11 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
+use crate::ASCON_CXOF128_NAME;
 use crate::sponge::{RATE, Sponge};
 
 /// Maximum customization-string length in bytes (2048 bits, per SP 800-232 §5.3).
@@ -108,7 +109,7 @@ impl Default for AsconCXof128 {
 }
 
 impl Algorithm for AsconCXof128 {
-    const ALG_NAME: &'static str = "Ascon-CXOF128";
+    const ALG_NAME: &'static str = ASCON_CXOF128_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 

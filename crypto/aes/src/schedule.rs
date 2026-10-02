@@ -39,12 +39,14 @@ const Rcon: [u32; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0
 
 /// Prevents a fourth parameter set from being added outside this crate.
 ///
-/// FIPS 197 Sec 6.1 defines exactly three: AES-128, AES-192 and AES-256. Because [`AESParams`]
+/// FIPS 197 Table 3 lists exactly three Key-Block-Round combinations -- AES-128, AES-192 and
+/// AES-256 -- and Sec 5 adds that "No other configurations of Rijndael conform to this
+/// Standard". Because [`AESParams`]
 /// has this private supertrait, only the three types in this module can implement it, so no
 /// downstream crate can instantiate the cipher with an unapproved key length or round count.
 trait AESParamsInternalTrait {}
 
-/// The per-key-length constants of FIPS 197 Sec 6.1.
+/// The per-key-length constants of FIPS 197 Table 3.
 ///
 /// This is a trait rather than const generic parameters because the schedule length
 /// `4 * (Nr + 1)` cannot be written as an expression over another const parameter on stable
@@ -55,11 +57,11 @@ trait AESParamsInternalTrait {}
 /// supertrait is named `*InternalTrait` after the pattern of `MLKEMPrivateKeyInternalTrait` in
 /// `bouncycastle-mlkem`, which seals its key types the same way.
 pub trait AESParams: AESParamsInternalTrait {
-    /// Key length in bytes: 16, 24 or 32 (FIPS 197 Sec 6.1).
+    /// Key length in bytes: 16, 24 or 32 (FIPS 197 Table 3).
     const KEY_LEN: usize;
-    /// `Nk`, the key length in 32-bit words: 4, 6 or 8 (FIPS 197 Sec 6.1).
+    /// `Nk`, the key length in 32-bit words: 4, 6 or 8 (FIPS 197 Table 3).
     const NK: usize;
-    /// `Nr`, the number of rounds: 10, 12 or 14 (FIPS 197 Sec 6.1).
+    /// `Nr`, the number of rounds: 10, 12 or 14 (FIPS 197 Table 3).
     const NR: usize;
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     const ALG_NAME: &'static str;
@@ -67,13 +69,13 @@ pub trait AESParams: AESParamsInternalTrait {
     type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
 }
 
-/// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Sec 6.1).
+/// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AES128Params;
-/// AES-192 parameters: 24-byte key, `Nk` = 6, `Nr` = 12 (FIPS 197 Sec 6.1).
+/// AES-192 parameters: 24-byte key, `Nk` = 6, `Nr` = 12 (FIPS 197 Table 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AES192Params;
-/// AES-256 parameters: 32-byte key, `Nk` = 8, `Nr` = 14 (FIPS 197 Sec 6.1).
+/// AES-256 parameters: 32-byte key, `Nk` = 8, `Nr` = 14 (FIPS 197 Table 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AES256Params;
 
@@ -154,7 +156,7 @@ fn sub_word(word: u32) -> u32 {
 
 /// KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2), returning the bit-sliced schedule.
 ///
-/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::aes_internal`] checks that before calling, so this
+/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::hazmat::AESInternal`] checks that before calling, so this
 /// cannot fail and takes no `Result`.
 ///
 /// Algorithm 2 is followed literally -- lines 2-6 copy the key into `w[0..Nk]`, lines 7-16 derive
@@ -194,7 +196,7 @@ pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
     // `r` of word `c`, so it is transposed exactly as a block is, at the one-block width. The
     // eight `u16` planes go back into the same four `u32` slots, two per word.
     for base in (0..w.len()).step_by(4) {
-        let mut block: Block = [0; crate::BLOCK_LEN];
+        let mut block: Block = [0; crate::AES_BLOCK_LEN];
         for c in 0..4 {
             block[4 * c..4 * c + 4].copy_from_slice(&w[base + c].to_le_bytes());
         }

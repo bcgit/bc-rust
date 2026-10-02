@@ -8,8 +8,9 @@
 //!
 //! # Usage Examples
 //!
-//! The raw AES permutation (as exposed by the [`AESInternal`](aes_internal::AESInternal) struct) is not secure to use by itself.
-//! For why, see [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
+//! The raw AES permutation, [`AESInternal`](hazmat::AESInternal), lives under [`hazmat`] because it
+//! is not secure to use by itself; see
+//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
 //!
 //! For ready-to-use primitives, see the documentation for one of the provided modes of operation:
 //!
@@ -18,12 +19,14 @@
 //! * [AES_CFB](crate::cfb)
 //! * [AES_CFB8](crate::cfb8)
 //! * [AES_CTR](crate::ctr)
-//! * [AES_ECB](crate::ecb)
 //! * [AES_GCM](crate::gcm)
+//!
+//! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
+//! it is a building block for other modes, not itself a confidentiality mode for data.
 //!
 //! # Design
 //!
-//! ## Why not a lookup table
+//! ## No lookup table
 //!
 //! FIPS 197 Sec 5.1.1 presents the S-box as a table (Table 4), and almost every AES
 //! implementation stores it as one -- 256 bytes, or 2-8 KiB for the "T-table" variants that fold
@@ -60,9 +63,10 @@
 //!
 //! The ratios hold for all three key lengths to within a few percent; in absolute terms AES-128
 //! single-block encryption is about 240 us per 16 KiB and decryption about 330 us. That multiplier
-//! is what the modes of operation batch through wherever their blocks are independent.
-//! This does not benefit modes such as CBC or GCM which, by construction, must process each block sequentially block,
-//! but does accelerate other modes where blocks can be parallelized.
+//! is what the modes of operation batch through wherever their blocks are independent: both
+//! directions of ECB and CTR (and so GCM's CTR half), and the decryption direction of CBC, CFB and
+//! CFB8. CBC and CFB *encryption* cannot, because each forward cipher input depends on the previous
+//! output (SP 800-38A Sec 6.2 and 6.3), so those two paths run one block at a time.
 //!
 //! SHIFTROWS() and MIXCOLUMNS() become masks and rotations in the same representation, and the
 //! key schedule is stored bit-sliced too, so no transposition happens inside the round loop. The
@@ -72,7 +76,7 @@
 //! Decryption follows FIPS 197 Algorithm 3, the straight inverse cipher, rather than the
 //! equivalent inverse cipher of Sec 5.3.5. Algorithm 3 puts INVMIXCOLUMNS() after ADDROUNDKEY(),
 //! so it uses the *unmodified* key schedule; the equivalent inverse cipher would need a second
-//! schedule with each round key transformed. One [`AES128Internal`](aes_internal::AES128Internal) value therefore encrypts and decrypts
+//! schedule with each round key transformed. One [`AES128Internal`](hazmat::AES128Internal) value therefore encrypts and decrypts
 //! from one stored schedule.
 //!
 //! # Memory Usage
@@ -81,34 +85,41 @@
 //! schedule, which is `4 * (Nr + 1)` words -- exactly the size FIPS 197 Sec 5.2 defines, with the
 //! bit-sliced form stored at the one-block width so that bit-slicing costs nothing in space:
 //!
-//! | Type | Key | `Nr` | Schedule (persistent) | Tables |
-//! |---|---|---|---|---|
-//! | [`AES128Internal`](aes_internal::AES128Internal) | 16 B | 10 | 176 B | 0 B |
-//! | [`AES192Internal`](aes_internal::AES192Internal) | 24 B | 12 | 208 B | 0 B |
-//! | [`AES256Internal`](aes_internal::AES256Internal) | 32 B | 14 | 240 B | 0 B |
+//! | | [`AES128Internal`](hazmat::AES128Internal) | [`AES192Internal`](hazmat::AES192Internal) | [`AES256Internal`](hazmat::AES256Internal) |
+//! |---|---|---|---|
+//! | Key | 16 B | 24 B | 32 B |
+//! | Rounds, `Nr` | 10 | 12 | 14 |
+//! | Key schedule, held between calls | 176 B | 208 B | 240 B |
+//! | Lookup tables | 0 B | 0 B | 0 B |
 //!
-//! Per-call stack usage is independent of key length and set by the plane width: 16, 32 or 64
-//! bytes of bit-sliced state for one, two or four blocks, the same again for the round key widened
-//! from its stored one-block form, plus the S-box circuit's spills. Measured as the deepest frame
-//! chain below each entry point in the release build (x86-64, return addresses included):
+//! Per-call stack usage is set by the plane width: 16, 32 or 64 bytes of bit-sliced state for
+//! one, two or four blocks, the same again for the round key widened from its stored one-block
+//! form, plus the S-box circuit's spills. Only key expansion depends on the key length. Measured
+//! as the deepest frame chain below each entry point in the release build (x86-64, return
+//! addresses included):
 //!
-//! | Entry point | Stack (bytes) |
-//! |---|---|
-//! | `new` (key expansion), AES-128 / 192 / 256 | 312 / 344 / 376 |
-//! | `encrypt_block` / `decrypt_block` (`u16` planes) | 208 / 208 |
-//! | `encrypt_2blocks` / `decrypt_2blocks` (`u32` planes) | 240 / 224 |
-//! | `encrypt_4blocks` / `decrypt_4blocks` (`u64` planes) | 320 / 352 |
+//! | Entry point | AES-128 | AES-192 | AES-256 |
+//! |---|---|---|---|
+//! | `new` (key expansion) | 312 B | 344 B | 376 B |
+//! | `encrypt_block` (`u16` planes) | 208 B | 208 B | 208 B |
+//! | `decrypt_block` (`u16` planes) | 208 B | 208 B | 208 B |
+//! | `encrypt_2blocks` (`u32` planes) | 240 B | 240 B | 240 B |
+//! | `decrypt_2blocks` (`u32` planes) | 224 B | 224 B | 224 B |
+//! | `encrypt_4blocks` (`u64` planes) | 320 B | 320 B | 320 B |
+//! | `decrypt_4blocks` (`u64` planes) | 352 B | 352 B | 352 B |
 //!
 //! # Security Considerations
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`AES128Internal`](aes_internal::AES128Internal) and friends transform exactly 16 bytes.
-//! Using them directly on data is equivalent to the [Electronic Code Book (ECB)](crate::ecb) mode,
+//! [`AES128Internal`](hazmat::AES128Internal) and friends transform exactly 16 bytes.
+//! Using them directly on data is equivalent to the [Electronic Code Book (ECB)](hazmat::AES_ECB_128) mode,
 //! which does not provide proper confidentiality in most contexts since the same plaintext block
 //! will produce the same ciphertext block every time, so structure in the plaintext survives encryption.
 //! **Do not do it.** Use a ready-to-use mode of operation, and
-//! prefer an authenticated one (AEAD) so that ciphertext tampering is detected.
+//! prefer an authenticated one (AEAD) so that ciphertext tampering is detected. That is why the
+//! permutation and the ECB aliases live under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the
+//! supported uses.
 //!
 //! ## Constant-time properties
 //!
@@ -156,29 +167,27 @@
 // be added outside this crate; that is what triggers this lint.
 #![allow(private_bounds)]
 
-pub mod aes_internal;
 mod bitslice;
 pub mod cbc;
 pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
-pub mod ecb;
 pub mod gcm;
-mod padded_mode;
+pub mod hazmat;
 mod round;
 mod sbox;
 mod schedule;
 
-pub use aes_internal::BLOCK_LEN;
+/// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
+pub const AES_BLOCK_LEN: usize = 16;
+
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use ccm::{
-    AES_CCM_128, AES_CCM_128_Decryptor, AES_CCM_128_Encryptor, AES_CCM_192, AES_CCM_192_Decryptor,
-    AES_CCM_192_Encryptor, AES_CCM_256, AES_CCM_256_Decryptor, AES_CCM_256_Encryptor,
-    CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192, AES_CCM_192_Packet, AES_CCM_256,
+    AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
-pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};

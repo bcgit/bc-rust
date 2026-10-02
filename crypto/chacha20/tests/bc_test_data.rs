@@ -2,9 +2,8 @@
 //! Set BC_TEST_DATA to override that repository's root. Missing default data is reported and
 //! skipped, following the other crypto integration suites; an explicit override must exist.
 use bouncycastle_chacha20::ChaCha20;
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use serde_json::Value;
 use std::{fs, path::PathBuf};

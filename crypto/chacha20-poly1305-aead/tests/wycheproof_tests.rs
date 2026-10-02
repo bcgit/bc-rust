@@ -46,7 +46,7 @@ fn wycheproof_chacha20_poly1305() {
             } else {
                 let mut out = vec![0xa5; ct.len()];
                 assert_eq!(
-                    Dec::decrypt_out_detached(&key, &nonce, &aad, &ct, &tag, &mut out),
+                    Dec::decrypt_detached_out(&key, &nonce, &aad, &ct, &tag, &mut out),
                     Err(SymmetricCipherError::AEADTagCheckFailed),
                     "tcId {id}"
                 );
@@ -58,7 +58,7 @@ fn wycheproof_chacha20_poly1305() {
                 let mut inline = ct.clone();
                 inline.extend_from_slice(&tag);
                 assert_eq!(
-                    Dec::decrypt_out_with_aad(&key, &nonce, &aad, &inline, &mut out),
+                    Dec::decrypt_with_aad_out(&key, &nonce, &aad, &inline, &mut out),
                     Err(SymmetricCipherError::AEADTagCheckFailed),
                     "tcId {id}"
                 );
@@ -70,7 +70,7 @@ fn wycheproof_chacha20_poly1305() {
                 dec.do_decrypt_out(&ct, &mut out).unwrap();
                 let mut last = [0xa5; 16];
                 assert_eq!(
-                    dec.do_final_out_detached(&tag, &mut last),
+                    dec.do_final_detached_out(&tag, &mut last),
                     Err(SymmetricCipherError::AEADTagCheckFailed)
                 );
                 assert_eq!(last, [0; 16]);

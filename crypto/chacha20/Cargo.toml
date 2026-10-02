@@ -8,6 +8,7 @@ default = ["std"]
 std = ["bouncycastle-core/std"]
 
 [dependencies]
+bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true

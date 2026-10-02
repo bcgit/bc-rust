@@ -17,9 +17,9 @@
 //! use bouncycastle_core::{key_material::{KeyMaterial, KeyType}, traits::{AEADCipherEncryptor, AEADCipherDecryptor}};
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 //! let mut ciphertext = [0u8; 7];
-//! let (nonce, n, tag) = Enc::encrypt_out_detached(&key, b"header", b"message", &mut ciphertext).unwrap();
+//! let (nonce, n, tag) = Enc::encrypt_detached_out(&key, b"header", b"message", &mut ciphertext).unwrap();
 //! let mut plaintext = [0u8; 7];
-//! Dec::decrypt_out_detached(&key, &nonce, b"header", &ciphertext[..n], &tag, &mut plaintext).unwrap();
+//! Dec::decrypt_detached_out(&key, &nonce, b"header", &ciphertext[..n], &tag, &mut plaintext).unwrap();
 //! assert_eq!(&plaintext, b"message");
 //! ```
 
@@ -222,7 +222,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly1
         self.0.update_aad(aad)
     }
 
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         self,
         _ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -301,7 +301,7 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly1
         self.state.update_aad(aad)
     }
 
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         mut self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],

@@ -8,9 +8,8 @@ use bouncycastle::ascon::ascon_cxof128::AsconCXof128;
 use bouncycastle::ascon::ascon_hash256::AsconHash256;
 use bouncycastle::ascon::ascon_xof128::AsconXof128;
 use bouncycastle::core::errors::SymmetricCipherError;
-use bouncycastle::core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -189,7 +188,7 @@ fn aead128_encrypt_stream(
     let tail_len = cipher.do_final_out(&mut tail).unwrap();
     helpers::write_bytes_or_hex(&tail[..tail_len], output_hex);
     if output_hex {
-        println!();
+        crate::helpers::write_stdout(b"\n");
     }
 }
 
@@ -219,7 +218,7 @@ fn aead128_encrypt_stream_with_explicit_nonce(
     let tag = cipher.do_encrypt_final();
     helpers::write_bytes_or_hex(&tag, output_hex);
     if output_hex {
-        println!();
+        crate::helpers::write_stdout(b"\n");
     }
 }
 
@@ -275,7 +274,7 @@ fn aead128_decrypt_stream(
         Ok((last, last_len)) => {
             helpers::write_bytes_or_hex(&last[..last_len], output_hex);
             if output_hex {
-                println!();
+                crate::helpers::write_stdout(b"\n");
             }
         }
         Err(SymmetricCipherError::DecryptionFailed) => {

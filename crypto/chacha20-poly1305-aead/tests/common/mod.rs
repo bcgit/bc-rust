@@ -1,9 +1,8 @@
 use bouncycastle_chacha20_poly1305_aead::{
     ChaCha20Poly1305Decryptor as Dec, ChaCha20Poly1305Encryptor as Enc,
 };
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -55,12 +54,12 @@ pub fn check_valid(
     let mut inline = ct.to_vec();
     inline.extend_from_slice(tag);
     let mut plaintext = vec![0xa5; msg.len() + 8];
-    let n = Dec::decrypt_out_detached(key, nonce, aad, ct, tag, &mut plaintext).unwrap();
+    let n = Dec::decrypt_detached_out(key, nonce, aad, ct, tag, &mut plaintext).unwrap();
     assert_eq!(n, msg.len());
     assert_eq!(&plaintext[..n], msg);
     assert_eq!(&plaintext[n..], &[0xa5; 8]);
     assert_eq!(
-        Dec::decrypt_out_with_aad(key, nonce, aad, &inline, &mut plaintext).unwrap(),
+        Dec::decrypt_with_aad_out(key, nonce, aad, &inline, &mut plaintext).unwrap(),
         msg.len()
     );
     assert_eq!(&plaintext[..msg.len()], msg);
@@ -77,7 +76,7 @@ pub fn check_valid(
             offset += enc.do_encrypt_out(bytes, &mut ciphertext[offset..]).unwrap();
         }
         let mut last = [0xa5; 16];
-        let (n, actual_tag) = enc.do_final_out_detached(&mut last).unwrap();
+        let (n, actual_tag) = enc.do_final_detached_out(&mut last).unwrap();
         assert_eq!(n, 0);
         assert_eq!(last, [0xa5; 16]);
         assert_eq!(offset, msg.len());

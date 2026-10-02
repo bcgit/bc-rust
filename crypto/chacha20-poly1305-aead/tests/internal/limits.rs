@@ -74,7 +74,7 @@ fn detached_final_checks_the_limit_and_clears_its_buffer() {
     dec.do_decrypt_out(&[0; 80], &mut [0; 64]).unwrap();
     let mut out = [0xa5; 16];
     assert!(matches!(
-        dec.do_final_out_detached(&[0; 16], &mut out),
+        dec.do_final_detached_out(&[0; 16], &mut out),
         Err(SymmetricCipherError::StateError(_))
     ));
     assert_eq!(out, [0; 16]);

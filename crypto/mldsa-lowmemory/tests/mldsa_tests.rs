@@ -3,7 +3,7 @@
 mod mldsa_tests {
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
     use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
-    use bouncycastle_core::key_material;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
@@ -277,10 +277,8 @@ mod mldsa_tests {
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
 
         // success case KeyType: BytesFullEntropy
-        key_material::do_hazardous_operations(&mut seed, |seed| {
-            seed.set_key_type(KeyType::CryptographicRandom)
-        })
-        .unwrap();
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::CryptographicRandom))
+            .unwrap();
         _ = MLDSA44::keygen_from_seed(&seed).unwrap();
 
         // Failure case: key type != Seed || BytesFullEntropy
@@ -538,7 +536,7 @@ mod mldsa_tests {
             KeyType::Seed,
         )
         .unwrap();
-        key_material::do_hazardous_operations(&mut low_security_seed, |seed| {
+        do_hazardous_operations(&mut low_security_seed, |seed| {
             seed.set_security_strength(SecurityStrength::_192bit)
         })
         .unwrap();
@@ -552,7 +550,7 @@ mod mldsa_tests {
             KeyType::Seed,
         )
         .unwrap();
-        key_material::do_hazardous_operations(&mut low_security_seed, |seed| {
+        do_hazardous_operations(&mut low_security_seed, |seed| {
             seed.set_security_strength(SecurityStrength::_128bit)
         })
         .unwrap();
