@@ -18,7 +18,7 @@ use crate::stream::StreamCipher;
 /// The CTR keystream `Oj = CIPH_K(Tj)` over any [`ElectronicCodeBook`], with `Tj = N | [j]m`;
 /// see the module docs. Use it through [`Ctr`].
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller and does not
 /// refuse to run past the counter. See [`KeyStream`]'s security notes and
 /// [`bouncycastle_core::hazmat`] for the supported uses.

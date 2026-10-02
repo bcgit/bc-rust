@@ -1413,47 +1413,23 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// Encryption and decryption are separate traits so that policy can permit decryption of an
 /// existing data while forbidding new encryptions.
 ///
-/// # An extension of the arbitrary-length API
-///
-/// [`SymmetricCipherEncryptor`] is a supertrait, so a stream cipher is held through the same trait
-/// as a padded block mode or an AEAD, and its constructors are that trait's. `FINAL_LEN = 0` says
-/// what makes it a stream cipher there: nothing is buffered and nothing comes out at the end. This
-/// trait adds only the in-place data methods, which the separate-output view cannot offer.
-///
-/// An implementor that is a pure keystream -- the keystream does not depend on the data, as in CTR
-/// -- should implement [`KeyStream`](crate::hazmat::KeyStream) and use
-/// `bouncycastle_cipher::stream::StreamCipher`, which provides both traits. A mode whose keystream
-/// depends on the data, such as CFB, implements both itself, with the helpers in
-/// `bouncycastle_cipher::stream` for the separate-output half.
+/// # Init data (a nonce or IV)
 ///
 /// Init data (a nonce or IV) is generated securely by the implementation in the constructor and
-/// returned for transmission alongside the ciphertext; there is no API for the user to supply it,
-/// for the same reason as in [`BlockCipherEncryptor`]. A stream cipher is only as safe as its
-/// nonce is unique, so if you require a caller-chosen nonce, see the documentation for the
-/// underlying implementation.
+/// returned for transmission alongside the ciphertext; there is no API for the user to supply it.
 ///
 /// # Everything is in place
 ///
-/// Every data method here transforms its buffer in place: the plaintext goes in, the ciphertext
-/// comes out in the same bytes. A stream cipher never changes the length of its data, so a
-/// separate output buffer would only ever be a copy, and a copy of plaintext is one more thing to
-/// scrub. Callers that need to keep the plaintext copy it first, or use the supertrait's
-/// `encrypt_out`.
+/// Since a stream cipher, by definition, hos no ciphertext expansion, every data method here
+/// transforms its buffer in place: the plaintext goes in, the ciphertext
+/// comes out in the same buffer.
+/// Callers that need to keep the plaintext copy it first, or use the supertrait's `encrypt_out`.
 ///
-/// # Any length, as a slice
+/// # Any length is valid
 ///
-/// The data is a `&mut [u8]` rather than a `&[u8; LEN]` because every length is valid, including
-/// zero, so there is no invariant for a const parameter to carry and nothing for a compile-time
-/// check to check. How the keystream is produced internally -- in 64-byte blocks, in words, a bit
-/// at a time -- is the cipher's business; it buffers any unused keystream between calls so that
-/// the caller's chunking is never visible in the output.
-///
-/// # Why the data methods still return `Result`
-///
-/// Nothing about the buffer can go wrong, and a constructed value is always ready to use. The
-/// `Result` is for the per-initialization data limit most stream ciphers have: a counter-driven
-/// keystream must refuse to run past the point where its counter would wrap and the keystream
-/// repeat, and a streaming API cannot check that any earlier than the call that would cross it.
+/// The data is a `&mut [u8]` because every length is valid, including zero.
+/// How the keystream is produced internally -- in 64-byte blocks, in words, a bit
+/// at a time -- is the cipher's business and must not leak to the caller.
 pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
     SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
 {
@@ -1462,10 +1438,20 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     /// written, which is always `data.len()` since a stream cipher never buffers or changes the
     /// length of its data, but the count is still returned for consistency with the rest of the
     /// library's output-buffer APIs.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DataLimitExceeded`] if this call would run past the cipher's
+    /// per-initialization data limit. Nothing about the buffer can go wrong, and a constructed
+    /// value is always ready to use; the `Result` is there because a counter-driven keystream must
+    /// refuse to run past the point where its counter would wrap and the keystream repeat, and a
+    /// streaming API cannot check that any earlier than the call that would cross it.
     fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError>;
 
     /// One-shot: encrypts `data` in place under a fresh init, and returns the number of bytes
     /// written (see [`Self::do_encrypt`]) alongside the generated init data.
+    ///
+    /// # Errors
+    /// Whatever [`SymmetricCipherEncryptor::do_encrypt_init`] or [`Self::do_encrypt`] returns.
     fn encrypt_in_place(
         key: &KeyMaterial<KEY_LEN>,
         data: &mut [u8],
@@ -1481,6 +1467,9 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     /// Provided over [`SymmetricCipherEncryptor::do_encrypt_init_rng`], so it panics in exactly
     /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
     /// to consume. See that method for why.
+    ///
+    /// # Errors
+    /// Whatever [`SymmetricCipherEncryptor::do_encrypt_init_rng`] or [`Self::do_encrypt`] returns.
     fn encrypt_in_place_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
@@ -1904,38 +1893,18 @@ pub trait SymmetricCipherEncryptor<
     }
 }
 
-/// The squeezing phase of an [`XOF`]: a value that produces output and can no longer take input.
-///
-/// This is the type [`XOF::into_squeezer`] hands back. Absorbing and squeezing are separate types
-/// rather than separate states of one type, so "no more input once output has begun" is a fact the
-/// compiler enforces rather than a rule the documentation asks callers to follow, and so there is
-/// no "absorbed after squeezing" error to raise or to test for.
+/// The squeezing phase of an [`XOF`]: a value that produces output and can no longer take input,
+/// as a typestate object. This is the type [`XOF::into_squeezer`] hands back.
 ///
 /// Output is one continuous stream: successive calls continue where the last left off, so reading
 /// 16 bytes twice gives the same 32 bytes as reading 32 once.
 ///
 /// [`do_final`](Self::do_final) means something weaker here than on [`Hash`] and [`MAC`]. On those
 /// it is load-bearing -- the only way to get output, and it must consume the value because
-/// finalizing pads the state. A squeeze has nothing to finalize, so it produces exactly the bytes
+/// finalizing pads the state. An XOF squeeze has nothing to finalize, so it produces exactly the bytes
 /// [`do_output`](Self::do_output) would and differs only in taking ownership: it is how a caller
 /// says "this read is my last", and it ends the stream at the point of the call rather than
 /// leaving a `mut` binding alive for the rest of the scope.
-///
-/// # Being the last read can be an input to the function
-///
-/// For SHAKE and cSHAKE the bytes do not depend on how much of the stream is taken, so `do_final`
-/// really is just `do_output` plus ownership, which is what the default does. That is not
-/// universal. The SP 800-185 functions end their absorbed input with `right_encode(L)`, and their
-/// XOF forms (s. 4.3.1, 5.3.1 and 6.3.1) differ from the fixed-length ones only in putting 0 there
-/// -- so an implementation can leave `L` unchosen until it knows how the caller intends to read.
-/// A `do_final` that is also the *first* read says both how many bytes are wanted and that there
-/// will be no more, which is exactly `L`; such an implementation binds it and produces the
-/// fixed-length function (KMAC, TupleHash, ParallelHash) rather than a prefix of the XOF stream.
-///
-/// After a [`do_output`](Self::do_output) there is nothing left to choose -- `right_encode(0)` is
-/// in the sponge and a length bound into a sponge cannot be revised -- so `do_final` then just
-/// ends the stream that read began. Implementors that have no such choice to make should keep the
-/// default.
 pub trait XOFSqueezer {
     /// Produces the next `num_bytes` bytes of the output stream.
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8>;
@@ -1969,27 +1938,39 @@ pub trait XOFSqueezer {
     }
 }
 
-/// Extendable-Output Functions (XOFs): hashes whose output length is chosen by the caller.
-///
-/// `XOF: Hash`, so SHAKE128 and SHAKE256 *are* hashes and can be used wherever one is wanted. As a
-/// hash, a XOF has a nominal output length -- [`Hash::output_len`], which for SHAKE is twice the
-/// security strength, 32 bytes for SHAKE128 and 64 for SHAKE256 -- and [`Hash::do_final`] produces
-/// exactly that many bytes. This trait adds the ability to ask for a different number.
+/// Extendable-Output Functions (XOFs): A hash function with a variable-length output.
+/// This relationship is captured by the type bound `XOF: Hash`. The instantiation that wraps an XOF
+/// in a [`Hash`], specifies a fixed output length -- [`Hash::output_len`], often related to the
+/// internal security parameters of the XOF. Often, other instantiantions are possible and the
+/// provided one(s) are only a default.
 ///
 /// # Absorb, then squeeze
 ///
-/// A sponge takes input, then produces output, and cannot go back. Here that is expressed in the
-/// types: [`into_squeezer`](Self::into_squeezer) consumes the XOF and returns an [`XOFSqueezer`], so
-/// after output has begun there is no value left on which to call [`Hash::do_update`]. Nothing
-/// returns an "absorbed after squeezing" error because nothing can reach that state.
+/// All XOFs operate in two phases: accepting input, and producing output. When speaking specifically
+/// about sponge constructions, these are referred to as "absorbing" and "squeezing", respectively.
 ///
-/// # A XOF is not a hash, cryptographically
+/// The underlying primitives of some XOFs, such as sponge functions, are capable of arbitrarily
+/// interleaving absorbs and squeezes, however this XOF trait enforces absorb, then squeeze via a
+/// typestate transition via the hard boundary [`into_squeezer`](Self::into_squeezer)
+/// which consumes the [`XOF`] and returns an [`XOFSqueezer`].
 ///
-/// It satisfies the trait, but the output length is not an input to the computation, so it cannot
-/// diversify the output. Two XOFs given the same input, one read for 32 bytes and one for 1 KiB,
-/// agree on their first 32 bytes. An attacker who only needs to know that two values came from the
-/// same input -- enough to break an anonymity property -- learns it from the overlap. Where that
-/// matters, salt the input.
+/// # 🚨 Security Considerations 🚨
+/// ## A XOF is not a hash, cryptographically
+///
+/// The reason that an XOF itself is not (usually) considered to be a hash function is related outputs.
+/// Two XOFs given the same input, one read for 32 bytes and one for 1 KiB will be identical on their
+/// first 32 bytes.
+/// In many contexts, this breaks the Preimage properties that hash functions guarantee since it
+/// becomes trivial for an attacker to tell that these two different outputs came from the same input.
+///
+/// These security properties can be restored at the application layer by diversifying the inputs.
+/// For example, by appending the output length to the input message, the following two invocation
+/// will now produce un-correlated outputs even on the same `message`:
+///
+/// ```text
+/// xof(message || 0x32, 32)
+/// xof(message || 0x64, 64)
+/// ```
 pub trait XOF: Hash {
     /// The squeezing state this XOF turns into.
     type Squeezer: XOFSqueezer;

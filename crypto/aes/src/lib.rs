@@ -108,7 +108,7 @@
 //! | `encrypt_4blocks` (`u64` planes) | 320 B | 320 B | 320 B |
 //! | `decrypt_4blocks` (`u64` planes) | 352 B | 352 B | 352 B |
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! ## A block permutation is not a cipher
 //!

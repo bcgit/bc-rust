@@ -67,7 +67,7 @@
 //! compression function additionally uses a 68-word message schedule (272 bytes) on the stack for
 //! the duration of a call.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * SM3 offers 128 bits of collision resistance and 256 bits of preimage resistance.
 //! * SM3 is a Merkle–Damgård construction and is therefore subject to length-extension:

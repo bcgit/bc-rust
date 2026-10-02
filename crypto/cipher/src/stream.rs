@@ -116,7 +116,7 @@ where
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
     ///
-    /// # 🚨 Security 🚨
+    /// # 🚨 Security Considerations 🚨
     /// This bypasses init-data generation: the keystream's nonce is whatever it was constructed
     /// with, and the caller is responsible for it never repeating under the key. The
     /// [`SymmetricCipherEncryptor`] constructors are the safe path.

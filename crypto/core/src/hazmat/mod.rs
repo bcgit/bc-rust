@@ -7,7 +7,9 @@
 //! Part of the design intention is to allow static code analyzers to easily find and flag
 //! such uses with a simple search such as
 //!
-//!     grep -rnE --include='*.rs' 'use .*::hazmat::'
+//! ```text
+//! grep -rnE --include='*.rs' 'use .*::hazmat::'
+//! ```
 
 mod electronic_code_book;
 mod hazardous_operations;

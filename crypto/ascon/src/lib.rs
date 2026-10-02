@@ -133,7 +133,7 @@
 //!
 //! "In-memory size" is `core::mem::size_of` on a 64-bit target.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! - **Nonce uniqueness (SP 800-232 R3):** a (key, nonce) pair must never be reused for two
 //!   different Ascon-AEAD128 encryptions. Nonce reuse breaks confidentiality.

@@ -116,7 +116,7 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //! Values in parentheses are the usual sizes in the un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
-//! # 🚨 Security 🚨
+//! # 🚨 Security Considerations 🚨
 //!
 //! Everything at the crate root is considered secure to use. The one
 //! [hazmat](bouncycastle_core::hazmat) item is [`hazmat::EncapsWithRandomness`], which takes the

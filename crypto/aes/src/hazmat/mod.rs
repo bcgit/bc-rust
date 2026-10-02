@@ -7,7 +7,9 @@
 //! Part of the design intention is to allow static code analyzers to easily find and flag
 //! such uses with a simple search such as
 //!
-//!     grep -rnE --include='*.rs' 'use .*::hazmat::'
+//! ```text
+//! grep -rnE --include='*.rs' 'use .*::hazmat::'
+//! ```
 //!
 //! [`AESInternal`] is the keyed permutation: it transforms exactly one block and is the primitive
 //! under every mode in this crate, not a cipher for data. [`AES_ECB_128`] and friends are that

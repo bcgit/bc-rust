@@ -68,7 +68,7 @@
 //! | `PaddedBlockCipherEncryptor` | one `BLOCK_LEN` buffer (in a `Secret`) + a length           |
 //! | `PaddedBlockCipherDecryptor` | two `BLOCK_LEN` buffers + a length                          |
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! `unpad` is the classic padding-oracle site: if timing or the error depends on *which* byte was
 //! malformed, an attacker who can submit ciphertexts can decrypt them byte by byte. [`PKCS7::unpad`]

@@ -88,7 +88,7 @@
 //! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
 //!
-//! # 🚨 Security 🚨
+//! # 🚨 Security Considerations 🚨
 //!
 //! This crate intends to expose only APIs that are secure to use.
 //! There are, however, a few exceptions that are worth mentioning.
