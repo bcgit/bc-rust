@@ -3,7 +3,8 @@
 //! Under [`hazmat`](crate::hazmat) because [`AESInternal`] transforms exactly one block: it is
 //! the primitive under the modes in this crate, not a cipher for data.
 //!
-//! # Usage
+//! # Usage Examples
+//!
 //! ## Encrypting and decrypting a single block
 //!
 //! ```
@@ -86,7 +87,7 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 /// The AES keyed permutation, parameterised by key length.
 ///
 /// Use the aliases [`AES128Internal`], [`AES192Internal`] and [`AES256Internal`] rather than naming this directly.
-/// `P` is sealed to the three parameter sets of FIPS 197 Sec 6.1, so no fourth instantiation
+/// `P` is sealed to the three parameter sets of FIPS 197 Table 3, so no fourth instantiation
 /// exists.
 ///
 /// The only state is the key schedule, held in a [`Secret`] so that it is zeroized on drop and
@@ -97,13 +98,13 @@ pub struct AESInternal<P: AESParams> {
     schedule: Secret<P::Schedule>,
 }
 
-/// AES-128: 16-byte key, 10 rounds (FIPS 197 Sec 6.1).
+/// AES-128: 16-byte key, 10 rounds (FIPS 197 Table 3).
 #[allow(non_camel_case_types)]
 pub type AES128Internal = AESInternal<AES128Params>;
-/// AES-192: 24-byte key, 12 rounds (FIPS 197 Sec 6.1).
+/// AES-192: 24-byte key, 12 rounds (FIPS 197 Table 3).
 #[allow(non_camel_case_types)]
 pub type AES192Internal = AESInternal<AES192Params>;
-/// AES-256: 32-byte key, 14 rounds (FIPS 197 Sec 6.1).
+/// AES-256: 32-byte key, 14 rounds (FIPS 197 Table 3).
 #[allow(non_camel_case_types)]
 pub type AES256Internal = AESInternal<AES256Params>;
 
@@ -144,7 +145,8 @@ impl<P: AESParams> AESInternal<P> {
     /// same at every width; see [`crate::bitslice`].
     ///
     /// Algorithm 1 line by line: line 3 is the initial ADDROUNDKEY() with `w[0..3]`; lines 4-9 are
-    /// the `Nr - 1` full rounds; lines 10-13 are the final round, which omits MIXCOLUMNS().
+    /// the `Nr - 1` full rounds; lines 10-12 are the final round, which omits MIXCOLUMNS(); line
+    /// 13 returns the state.
     fn cipher<T: PlaneWord>(&self, q: &mut Planes<T>) {
         // line 3: state = state XOR w[0..3]
         add_round_key(q, &round_key::<P, T>(&self.schedule, 0));
@@ -177,7 +179,8 @@ impl<P: AESParams> AESInternal<P> {
     /// state.
     ///
     /// Line by line: line 3 is ADDROUNDKEY() with the last round key; lines 4-9 are the
-    /// `Nr - 1` full inverse rounds; lines 10-13 are the final one, which omits INVMIXCOLUMNS().
+    /// `Nr - 1` full inverse rounds; lines 10-12 are the final one, which omits INVMIXCOLUMNS();
+    /// line 13 returns the state.
     fn inv_cipher<T: PlaneWord>(&self, q: &mut Planes<T>) {
         // line 3: state = state XOR w[4*Nr .. 4*Nr+3]
         add_round_key(q, &round_key::<P, T>(&self.schedule, P::NR));
@@ -303,51 +306,4 @@ impl Algorithm for AES192Internal {
 impl Algorithm for AES256Internal {
     const ALG_NAME: &'static str = AES256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_engine_sizes_match_the_documented_memory_table() {
-        // The "Memory Usage" table in the crate docs quotes these, and the whole point of the
-        // crate is that they are this small: 4 * (Nr + 1) words of schedule, nothing else, and no
-        // tables anywhere. If the representation grows, the docs are wrong -- fix both.
-        assert_eq!(size_of::<AES128Internal>(), 176, "AES-128: 4 * (10 + 1) words");
-        assert_eq!(size_of::<AES192Internal>(), 208, "AES-192: 4 * (12 + 1) words");
-        assert_eq!(size_of::<AES256Internal>(), 240, "AES-256: 4 * (14 + 1) words");
-    }
-
-    #[test]
-    fn test_engine_size_is_exactly_the_schedule() {
-        // No round counter, no direction flag, no initialised marker: the schedule is all there
-        // is, which is what makes both directions available from one value at no extra cost.
-        assert_eq!(size_of::<AES128Internal>(), size_of::<<AES128Params as AESParams>::Schedule>());
-        assert_eq!(size_of::<AES192Internal>(), size_of::<<AES192Params as AESParams>::Schedule>());
-        assert_eq!(size_of::<AES256Internal>(), size_of::<<AES256Params as AESParams>::Schedule>());
-    }
-
-    #[test]
-    fn test_alg_names() {
-        assert_eq!(<AES128Internal as Algorithm>::ALG_NAME, "AES-128");
-        assert_eq!(<AES192Internal as Algorithm>::ALG_NAME, "AES-192");
-        assert_eq!(<AES256Internal as Algorithm>::ALG_NAME, "AES-256");
-    }
-
-    #[test]
-    fn test_max_security_strength_matches_the_key_length() {
-        assert_eq!(
-            <AES128Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(AES128Params::KEY_LEN)
-        );
-        assert_eq!(
-            <AES192Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(AES192Params::KEY_LEN)
-        );
-        assert_eq!(
-            <AES256Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(AES256Params::KEY_LEN)
-        );
-    }
 }

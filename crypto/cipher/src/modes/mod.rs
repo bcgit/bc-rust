@@ -108,7 +108,7 @@
 //! not generalize well to encrypting arbitrary messages. As such, CCM's streaming modes and memory
 //! footprint perform worse than GCM's.
 //!
-//! ECB is not a candidate for data at all (below). Between the five unauthenticated modes:
+//! ECB is not a candidate for data at all (below). Between the unauthenticated modes:
 //!
 //! The block cipher modes: [`cbc`], [`ctr`], [`cfb`] and [`cfb8`], while they do provide reasonable
 //! confidentiality, do not provide ciphertext authentication, meaning that they do not protect against

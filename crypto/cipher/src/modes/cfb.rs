@@ -115,7 +115,7 @@
 //! ```
 //!
 //! # Memory Usage
-//
+//!
 //! The state consists of the underlying permutation struct, one block, `buf`, and a byte count, `used`.
 //!
 //! # 🚨 Security Considerations 🚨

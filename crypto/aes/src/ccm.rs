@@ -41,7 +41,7 @@
 //! AES_CCM_128<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>
 //! ```
 //!
-//! Though same alternative choices do exist, for example:
+//! Though some alternative choices do exist, for example:
 //! ```text
 //! // IEEE 802.11 CCMP's 13 byte nonce and 8 byte tag
 //! AES_CCM_128<Encrypting, 13, 8>

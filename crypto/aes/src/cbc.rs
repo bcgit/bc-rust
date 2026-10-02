@@ -68,7 +68,6 @@
 //! let mut ciphertext = Vec::new();
 //!
 //! for piece in plaintext.chunks(7) {
-//!     // Since AES
 //!     let mut out = [0u8; AES_BLOCK_LEN];
 //!     let bytes_written = encryptor.do_encrypt_out(piece, &mut out).expect("encryption");
 //!

@@ -63,9 +63,10 @@
 //!
 //! The ratios hold for all three key lengths to within a few percent; in absolute terms AES-128
 //! single-block encryption is about 240 us per 16 KiB and decryption about 330 us. That multiplier
-//! is what the modes of operation batch through wherever their blocks are independent.
-//! This does not benefit modes such as CBC or GCM which, by construction, must process each block sequentially block,
-//! but does accelerate other modes where blocks can be parallelized.
+//! is what the modes of operation batch through wherever their blocks are independent: both
+//! directions of ECB and CTR (and so GCM's CTR half), and the decryption direction of CBC, CFB and
+//! CFB8. CBC and CFB *encryption* cannot, because each forward cipher input depends on the previous
+//! output (SP 800-38A Sec 6.2 and 6.3), so those two paths run one block at a time.
 //!
 //! SHIFTROWS() and MIXCOLUMNS() become masks and rotations in the same representation, and the
 //! key schedule is stored bit-sliced too, so no transposition happens inside the round loop. The
