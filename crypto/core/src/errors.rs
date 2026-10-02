@@ -126,15 +126,10 @@ pub enum RNGError {
     KeyMaterialError(KeyMaterialError),
 }
 
-///
-#[derive(Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum SuspendableError {
-    /// The serialized state was produced by a library version incompatible with this one.
-    IncompatibleVersion,
-    /// The serialized state is malformed or corrupt.
-    InvalidData,
-}
+/// Errors from [`Suspendable`](crate::traits::Suspendable) and
+/// [`SuspendableKeyed`](crate::traits::SuspendableKeyed). Defined in `bouncycastle-utils` next to
+/// the version-header helpers that raise it, and re-exported here with the other error types.
+pub use bouncycastle_utils::suspendable_state::SuspendableError;
 
 ///
 #[derive(Debug, PartialEq, Eq)]

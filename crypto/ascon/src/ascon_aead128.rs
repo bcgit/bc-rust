@@ -27,7 +27,6 @@ use bouncycastle_cipher::Direction;
 use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -35,6 +34,7 @@ use bouncycastle_core::traits::{
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 use crate::ASCON_AEAD128_NAME;
 use crate::permutation::{AsconState, load_u64_le, p8, p12, store_u64_le};
