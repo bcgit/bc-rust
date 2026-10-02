@@ -70,10 +70,10 @@
 //!
 //! let mut ciphertext = [0u8; 16];
 //! let (nonce, _bytes_written, tag) =
-//!     ToyGcm::<Encrypting>::encrypt_out_detached(&key, aad, &plaintext, &mut ciphertext).unwrap();
+//!     ToyGcm::<Encrypting>::encrypt_detached_out(&key, aad, &plaintext, &mut ciphertext).unwrap();
 //!
 //! let mut recovered = [0u8; 16];
-//! ToyGcm::<Decrypting>::decrypt_out_detached(&key, &nonce, aad, &ciphertext, &tag, &mut recovered)
+//! ToyGcm::<Decrypting>::decrypt_detached_out(&key, &nonce, aad, &ciphertext, &tag, &mut recovered)
 //!     .unwrap();
 //! assert_eq!(recovered, plaintext);
 //! ```
@@ -154,7 +154,7 @@
 //! It is the application's responsibility not to take any action on the decrypted plaintext until
 //! the end of the ciphertext has been reached, and the `do_final` / `do_final_detached` succeeds.
 //!
-//! The one-shots (`decrypt_out`, `decrypt_out_detached`, `decrypt_out_with_aad`) verify the
+//! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) verify the
 //! tag first and release nothing on failure, making them more robust.
 //!
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
@@ -468,7 +468,7 @@ where
     }
 
     /// Algorithm 4 steps 4-6; `ciphertext` is left untouched, since nothing is held back.
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         self,
         _ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -512,8 +512,8 @@ where
         }
     }
 
-    /// Shared by the trait one-shots (`decrypt_out`, `decrypt_out_detached`,
-    /// `decrypt_out_with_aad`): absorbs `aad` and
+    /// Shared by the trait one-shots (`decrypt_out`, `decrypt_detached_out`,
+    /// `decrypt_with_aad_out`): absorbs `aad` and
     /// `data` (still ciphertext) into GHASH and checks the tag *before* touching `data`, so no
     /// unauthenticated plaintext is ever written to the caller's buffer. The preamble of Sec 7
     /// explicitly permits this: "in Algorithm 5, the verification of the tag may precede the
@@ -632,7 +632,7 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        <Self as AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_out_with_aad(
+        <Self as AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_with_aad_out(
             key,
             init_data,
             &[],
@@ -658,7 +658,7 @@ where
     /// The detached layout: the up to `TAG_LEN` bytes held back as a possible tag are ciphertext
     /// after all, so they are decrypted into `plaintext` before the tag is checked against `tag`
     /// (Algorithm 5 steps 5-8). On failure `plaintext` is zeroized before the error is returned.
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         mut self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],
@@ -675,7 +675,7 @@ where
 
     /// Verifies `tag` before decrypting, so no unauthenticated plaintext reaches `plaintext`; on
     /// failure what was written there is zeroized.
-    fn decrypt_out_detached(
+    fn decrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; GCM_NONCE_LEN],
         aad: &[u8],
@@ -701,7 +701,7 @@ where
 
     /// The inline layout with AAD: splits the trailing `TAG_LEN` bytes off as the tag and verifies
     /// it before decrypting, as the detached one-shot does, zeroizing `plaintext` on failure.
-    fn decrypt_out_with_aad(
+    fn decrypt_with_aad_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; GCM_NONCE_LEN],
         aad: &[u8],

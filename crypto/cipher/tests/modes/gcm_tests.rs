@@ -26,7 +26,7 @@ fn toy_encrypt<const TAG_LEN: usize>(
     seed: [u8; 12],
 ) -> ([u8; 12], Vec<u8>, [u8; TAG_LEN]) {
     let mut ct = vec![0u8; message.len()];
-    let (nonce, _, tag) = ToyGcm::<Encrypting, TAG_LEN>::encrypt_out_rng_detached(
+    let (nonce, _, tag) = ToyGcm::<Encrypting, TAG_LEN>::encrypt_detached_out_rng(
         &toy_key(),
         &mut FixedSeedRNG::<12>::new(seed),
         aad,
@@ -122,7 +122,7 @@ fn tag_length_variants_round_trip_and_nest() {
                 $n
             );
             let mut pt = [0u8; 23];
-            ToyGcm::<Decrypting, $n>::decrypt_out_detached(&key, &nonce, aad, &ct, &tag, &mut pt)
+            ToyGcm::<Decrypting, $n>::decrypt_detached_out(&key, &nonce, aad, &ct, &tag, &mut pt)
                 .unwrap();
             assert_eq!(pt, message);
         }};
@@ -141,10 +141,10 @@ fn an_aad_only_message_is_gmac() {
     let key = toy_key();
     let aad = b"the whole message is AAD";
     let (nonce, _, tag) = toy_encrypt::<16>(aad, &[], [0x7Cu8; 12]);
-    ToyGcm::<Decrypting, 16>::decrypt_out_detached(&key, &nonce, aad, &[], &tag, &mut []).unwrap();
+    ToyGcm::<Decrypting, 16>::decrypt_detached_out(&key, &nonce, aad, &[], &tag, &mut []).unwrap();
 
     // Wrong AAD must fail verification.
-    match ToyGcm::<Decrypting, 16>::decrypt_out_detached(&key, &nonce, b"wrong", &[], &tag, &mut [])
+    match ToyGcm::<Decrypting, 16>::decrypt_detached_out(&key, &nonce, b"wrong", &[], &tag, &mut [])
     {
         Err(SymmetricCipherError::AEADTagCheckFailed) => {}
         other => panic!("expected AEADTagCheckFailed, got {other:?}"),
@@ -216,7 +216,7 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
 
     // One-shot: verify-then-decrypt, so a forged tag leaves nothing but zeros behind.
     let mut one_shot_buf = [0xEEu8; 19];
-    match ToyGcm::<Decrypting, 16>::decrypt_out_detached(
+    match ToyGcm::<Decrypting, 16>::decrypt_detached_out(
         &key, &nonce, b"aad", &ct, &tag, &mut one_shot_buf,
     ) {
         Err(SymmetricCipherError::AEADTagCheckFailed) => {}
@@ -254,7 +254,7 @@ fn neither_direction_uses_the_inverse_cipher() {
         let message = b"a message that is not a whole number of blocks!!";
 
         let mut ct = [0u8; 48];
-        let (nonce, _, tag) = Gcm::<P, Encrypting, TOY_LEN, 16>::encrypt_out_rng_detached(
+        let (nonce, _, tag) = Gcm::<P, Encrypting, TOY_LEN, 16>::encrypt_detached_out_rng(
             &key,
             &mut FixedSeedRNG::<12>::new([0x4Du8; 12]),
             aad,
@@ -264,7 +264,7 @@ fn neither_direction_uses_the_inverse_cipher() {
         .unwrap();
         assert_ne!(&ct[..], &message[..]);
         let mut pt = [0u8; 48];
-        Gcm::<P, Decrypting, TOY_LEN, 16>::decrypt_out_detached(
+        Gcm::<P, Decrypting, TOY_LEN, 16>::decrypt_detached_out(
             &key, &nonce, aad, &ct, &tag, &mut pt,
         )
         .unwrap();
@@ -304,20 +304,20 @@ fn aead_trait_one_shots_release_nothing_on_forgery() {
 
     let key = toy_key();
     let mut ct = [0u8; 32 + 16];
-    let (nonce, n) = Enc::encrypt_out_with_aad(&key, b"aad", &[0x33u8; 32], &mut ct).unwrap();
+    let (nonce, n) = Enc::encrypt_with_aad_out(&key, b"aad", &[0x33u8; 32], &mut ct).unwrap();
     ct[0] ^= 1;
 
     let mut out = [0xEEu8; 32];
     assert!(matches!(
-        Dec::decrypt_out_with_aad(&key, &nonce, b"aad", &ct[..n], &mut out),
+        Dec::decrypt_with_aad_out(&key, &nonce, b"aad", &ct[..n], &mut out),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
-    assert_eq!(out, [0u8; 32], "decrypt_out_with_aad must zeroize on a failed tag check");
+    assert_eq!(out, [0u8; 32], "decrypt_with_aad_out must zeroize on a failed tag check");
 
     let tag: [u8; 16] = ct[32..48].try_into().unwrap();
     let mut out = [0xEEu8; 32];
     assert!(matches!(
-        <Dec as AEADCipherDecryptor<16, 12, 16, 16>>::decrypt_out_detached(
+        <Dec as AEADCipherDecryptor<16, 12, 16, 16>>::decrypt_detached_out(
             &key,
             &nonce,
             b"aad",
@@ -327,5 +327,5 @@ fn aead_trait_one_shots_release_nothing_on_forgery() {
         ),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
-    assert_eq!(out, [0u8; 32], "decrypt_out_detached must zeroize on a failed tag check");
+    assert_eq!(out, [0u8; 32], "decrypt_detached_out must zeroize on a failed tag check");
 }

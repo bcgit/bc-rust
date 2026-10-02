@@ -6,7 +6,7 @@
 //! decryptor holds to the declared length, and which entry points release unauthenticated
 //! plaintext -- independently of the known-answer vectors in the `aes` crate's `sp800_38c_tests.rs`,
 //! `acvp_ccm_tests.rs` and `wycheproof_ccm_tests.rs`. The Appendix C file also carries the
-//! buffering `CcmEncryptor` / `CcmDecryptor` pair's contract, the shared framework run and the
+//! fixed-frame `CcmEncryptor` / `CcmDecryptor` pair's contract, the shared framework run and the
 //! memory table, so none of those is repeated here.
 //!
 //! Spec references are to NIST SP 800-38C (May 2004, errata update 07-20-2007).
@@ -409,14 +409,15 @@ fn every_permitted_nonce_length_works() {
 /// Which entry points release unauthenticated plaintext on a forgery, pinned side by side.
 ///
 /// Sec 6.2: "When the error message INVALID is returned, the payload P and the MAC T shall not
-/// be revealed." The one-shots and the buffering `CcmDecryptor` honour that -- the caller's
-/// buffer comes back zeroized -- because they have the whole ciphertext before they start. The
-/// inherent streaming `do_decrypt_update` cannot: Sec 6.2 recovers `P` (step 5) before it can
-/// verify it (step 10), so by the time `do_decrypt_final` rejects the tag the plaintext is
-/// already in the caller's buffer, as that method's docs warn. Pinning the difference makes it
-/// a documented property rather than an accident.
+/// be revealed." The one-shots honour that -- the caller's buffer comes back zeroized -- because
+/// they have the whole ciphertext before they start. Neither streaming path can: Sec 6.2
+/// recovers `P` (step 5) before it can verify it (step 10), and both the inherent
+/// `do_decrypt_update` and the fixed-frame `CcmDecryptor` release `P` as it is recovered rather
+/// than hold the frame back, so by the time the final rejects the tag the plaintext is already
+/// in the caller's buffer, as their docs warn. Pinning the difference makes it a documented
+/// property rather than an accident.
 #[test]
-fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
+fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
     let nonce = pinned_nonce();
     let plaintext = *b"do not trust me yet";
     let (ct, mut tag) = encrypt::<Toy>(&nonce, b"aad", &plaintext);
@@ -446,27 +447,32 @@ fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
     assert!(matches!(dec.do_decrypt_final(&tag), Err(SymmetricCipherError::AEADTagCheckFailed)));
     assert_eq!(&streamed[..], &plaintext[..], "...and a rejected tag cannot take it back");
 
-    // The buffering decryptor holds everything until the final call, so it can and does behave
-    // like the one-shot: `do_final` returns no buffer at all on failure, and
-    // `do_final_out_detached` zeroizes the one it was given.
-    type Dec = CcmDecryptor<Toy, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, 48, 48, 64>;
-    let mut nothing = [0u8; 0];
+    // The fixed-frame decryptor is the same stream behind the trait: the payload is released by
+    // the update that brings it, the finals release nothing, and a rejected tag cannot take it
+    // back. The detached final leaves its (unused) buffer alone rather than zeroizing it, since
+    // there is nothing of the plaintext in it to zeroize.
+    type Dec = CcmDecryptor<Toy, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, 48, 19>;
 
     let mut dec = Dec::do_decrypt_init(&toy_key(), &nonce).unwrap();
     dec.do_update_aad(b"aad").unwrap();
-    assert_eq!(dec.do_decrypt_out(&ct, &mut nothing).unwrap(), 0, "nothing is released mid-stream");
-    let mut detached = [0xEEu8; 64];
+    let mut streamed = [0u8; 19];
+    assert_eq!(dec.do_decrypt_out(&ct, &mut streamed).unwrap(), 19, "released mid-stream");
+    assert_eq!(&streamed[..], &plaintext[..], "the stream already produced plaintext");
+    let mut detached = [0xEEu8; 16];
     assert!(matches!(
-        dec.do_final_out_detached(&tag, &mut detached),
+        dec.do_final_detached_out(&tag, &mut detached),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
-    assert_eq!(detached[..19], [0u8; 19], "do_final_out_detached must zeroize on a forged tag");
+    assert_eq!(&streamed[..], &plaintext[..], "...and a rejected tag cannot take it back");
+    assert_eq!(detached, [0xEEu8; 16], "the detached final writes nothing");
 
     let mut inline = ct.clone();
     inline.extend_from_slice(&tag);
     let mut dec = Dec::do_decrypt_init(&toy_key(), &nonce).unwrap();
     dec.do_update_aad(b"aad").unwrap();
-    assert_eq!(dec.do_decrypt_out(&inline, &mut nothing).unwrap(), 0);
+    let mut streamed = [0u8; 19];
+    assert_eq!(dec.do_decrypt_out(&inline, &mut streamed).unwrap(), 19);
+    assert_eq!(&streamed[..], &plaintext[..]);
     assert!(matches!(dec.do_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
 }
 

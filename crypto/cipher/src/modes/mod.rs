@@ -103,10 +103,9 @@
 //! specific, exploitable ways. While it is possible to bolt a MAC on afterwards,
 //! this design has some subtleties that most people get wrong.
 //!
-//! [`ccm`] is also authenticated, however its design predates GCM.
-//! CCM is designed to be a packet cipher where the size of data is fixed at compile-time, which does
-//! not generalize well to encrypting arbitrary messages. As such, CCM's streaming modes and memory
-//! footprint perform worse than GCM's.
+//! [`ccm`] is also authenticated, however its design predates GCM. CCM must know the payload
+//! length before it starts, so it suits a packet protocol whose frame is fixed or declared up
+//! front and cannot stream a message of unknown length the way GCM can.
 //!
 //! ECB is not a candidate for data at all (below). Between the unauthenticated modes:
 //!
@@ -152,7 +151,7 @@ pub mod hazmat;
 mod iv;
 
 pub use cbc::Cbc;
-pub use ccm::{CCM_MAX_BUFFER_LEN, Ccm, CcmDecryptor, CcmEncryptor};
+pub use ccm::{Ccm, CcmDecryptor, CcmEncryptor};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;

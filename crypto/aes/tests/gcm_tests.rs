@@ -88,11 +88,11 @@ fn each_encryption_gets_a_fresh_nonce() {
     for _ in 0..16 {
         let mut ct = [0u8; 46];
         let (nonce, _, tag) =
-            AES_GCM_128::<Encrypting>::encrypt_out_detached(&key::<16>(), b"aad", &data, &mut ct)
+            AES_GCM_128::<Encrypting>::encrypt_detached_out(&key::<16>(), b"aad", &data, &mut ct)
                 .unwrap();
         assert!(seen.insert(nonce), "nonce repeated across encryptions");
         let mut pt = [0u8; 46];
-        AES_GCM_128::<Decrypting>::decrypt_out_detached(
+        AES_GCM_128::<Decrypting>::decrypt_detached_out(
             &key::<16>(),
             &nonce,
             b"aad",
