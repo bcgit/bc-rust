@@ -5,7 +5,7 @@
 //! runs and produces output, and the output is insecure. Nothing here is a cipher for data. The
 //! supported uses are:
 //!
-//! 1. implementing a mode or construction that is generic over the trait, as `bouncycastle-modes`
+//! 1. implementing a mode or construction that is generic over the trait, as `bouncycastle_cipher::modes`
 //!    does;
 //! 2. known-answer tests and vector harnesses;
 //! 3. a specification that mandates the raw operation: SP 800-38F key wrap, CMAC subkey
@@ -21,8 +21,8 @@
 //! contents. It is here so that an audit for `hazmat` finds it too.
 //!
 //! Each crate that has hazmat items keeps them under its own `hazmat` module, never at the crate
-//! root: this crate holds the traits, and `bouncycastle-aes` and `bouncycastle-modes` hold their
-//! implementors. The safe adapters that wrap them -- [`StreamCipher`](crate::stream_cipher::StreamCipher)
+//! root: this crate holds the traits, and `bouncycastle-aes` and `bouncycastle_cipher::modes` hold their
+//! implementors. The safe adapters that wrap them -- `bouncycastle_cipher::stream::StreamCipher`
 //! over a [`KeyStream`], the modes over an [`ElectronicCodeBook`] -- are not hazmat and stay where
 //! they are.
 

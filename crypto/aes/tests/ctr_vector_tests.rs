@@ -26,6 +26,8 @@
 //! which is why the IV above ends in `00000000`. See the [`Ctr`] module docs.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::Ctr;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -34,7 +36,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Ctr, Decrypting, Encrypting};
 
 const BLOCK_LEN: usize = 16;
 const NONCE_LEN: usize = 12;

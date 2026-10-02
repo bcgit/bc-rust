@@ -23,11 +23,10 @@
 
 use core::fmt::{self, Debug, Display, Formatter};
 
+use bouncycastle_cipher::Direction;
 use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -35,13 +34,14 @@ use bouncycastle_core::traits::{
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 use crate::ASCON_AEAD128_NAME;
 use crate::permutation::{AsconState, load_u64_le, p8, p12, store_u64_le};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
-use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 
 /// Length in bytes of the Ascon-AEAD128 key.
 pub const KEY_LEN: usize = 16;
@@ -511,7 +511,7 @@ impl Algorithm for AsconAead128 {
 ///
 /// `FINAL_LEN` is `TAG_LEN`: Ascon-AEAD128 holds nothing back, so the inline
 /// [`SymmetricCipherEncryptor::do_final`] writes only the tag, and the detached
-/// [`AEADCipherEncryptor::do_final_out_detached`] writes nothing.
+/// [`AEADCipherEncryptor::do_final_detached_out`] writes nothing.
 pub struct AsconAead128Encryptor(AsconAead128);
 
 impl Algorithm for AsconAead128Encryptor {
@@ -572,7 +572,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128E
     }
 
     /// Nothing is ever held back to flush, so `ciphertext` is left untouched.
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         self,
         _ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -587,7 +587,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128E
 /// Unlike the inherent API this does hold data back: the last `TAG_LEN` bytes of ciphertext it has
 /// seen, since until the stream ends it cannot know whether they are the inline tag
 /// ([`SymmetricCipherDecryptor::do_final`]) or ciphertext with the tag carried separately
-/// ([`AEADCipherDecryptor::do_final_out_detached`]). They are ciphertext, not plaintext, so they need
+/// ([`AEADCipherDecryptor::do_final_detached_out`]). They are ciphertext, not plaintext, so they need
 /// no [`Secret`] wrapper.
 pub struct AsconAead128Decryptor {
     cipher: AsconAead128,
@@ -678,7 +678,7 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128D
     /// The held-back bytes are ciphertext: decrypts them into `plaintext`, then checks `tag`. On a
     /// failed check `plaintext` is zeroized, so the error leaves nothing unauthenticated behind in
     /// it (what earlier `do_update_out` calls released is the caller's to scrub).
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         mut self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],
@@ -709,7 +709,7 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128D
 /// ```
 /// use bouncycastle_ascon::Ascon_AEAD128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_cipher::{Decrypting, Encrypting};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 ///
 /// type Enc = Ascon_AEAD128<Encrypting>;

@@ -37,11 +37,13 @@
 //! what is pinned here is specifically the part neither of them reaches: the narrow counters.
 
 use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_cipher::Encrypting;
+use bouncycastle_cipher::modes::Ctr;
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{StreamCipherEncryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Ctr, Encrypting};
 
 /// The AES-128 key used for every vector in this file: SP 800-38A Appendix F's first key.
 const KEY: &str = "2b7e151628aed2a6abf7158809cf4f3c";
@@ -141,7 +143,8 @@ fn three_byte_counter_matches_bc_java() {
 /// The counter limit falls in the same place as BC Java's.
 ///
 /// BC Java throws `IllegalStateException("Counter in CTR/SIC mode out of range.")` on the byte after
-/// the counter's last value; this type returns `SymmetricCipherError::StateError` on the same byte.
+/// the counter's last value; this type returns `SymmetricCipherError::DataLimitExceeded` on the same
+/// byte.
 /// Checked here at the same 15-byte nonce as above, where the boundary is 256 blocks -- 4096 bytes
 /// exactly -- and confirmed against BC Java at the 14-byte nonce too, where it is 1 MiB.
 #[test]
@@ -161,7 +164,7 @@ fn the_counter_limit_falls_where_bc_java_throws() {
     // ...and throws on the next byte.
     let mut one = [0u8; 1];
     assert!(
-        enc.do_encrypt(&mut one).is_err(),
+        matches!(enc.do_encrypt(&mut one), Err(SymmetricCipherError::DataLimitExceeded)),
         "byte 4097 must be refused, where BC Java throws IllegalStateException"
     );
 }

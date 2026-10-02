@@ -21,8 +21,8 @@
 use crate::helpers::block_mode_helpers::{
     CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
-use bouncycastle::modes::hazmat::Ecb;
-use bouncycastle::modes::{Decrypting, Encrypting};
+use bouncycastle::cipher::modes::hazmat::Ecb;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::tdes::hazmat::TDES;
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 

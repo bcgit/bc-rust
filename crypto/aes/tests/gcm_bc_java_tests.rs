@@ -10,11 +10,12 @@
 //! built programmatically rather than typed out (a zero key or plaintext cannot be mistyped).
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 fn zeros(byte_len: usize) -> String {
     "00".repeat(byte_len)
@@ -207,7 +208,7 @@ where
     let expected_tag = hex::decode(case.tag).expect("valid hex tag");
 
     let mut data = vec![0u8; pt.len()];
-    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_out_rng_detached(
+    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_out_rng(
         &key,
         &mut FixedSeedRNG::<12>::new(iv),
         &aad,
@@ -222,7 +223,7 @@ where
 
     let tag_arr: [u8; 16] = expected_tag.try_into().expect("16-byte tag");
     let mut recovered = vec![0u8; data.len()];
-    Gcm::<P, Decrypting, KEY_LEN, 16>::decrypt_out_detached(
+    Gcm::<P, Decrypting, KEY_LEN, 16>::decrypt_detached_out(
         &key, &iv, &aad, &data, &tag_arr, &mut recovered,
     )
     .unwrap_or_else(|e| panic!("{}: decrypt should have verified, got {e:?}", case.name));

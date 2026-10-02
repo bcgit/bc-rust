@@ -2,17 +2,17 @@
 //!
 //! As with the CBC alias, this is only a type alias, so what is worth testing is that both
 //! parameters select: the direction picks the encryptor or the decryptor, and the padding scheme
-//! reaches the behaviour. ECB's own properties are tested in `bouncycastle-modes`; what is specific
+//! reaches the behaviour. ECB's own properties are tested in `bouncycastle_cipher::modes`; what is specific
 //! here is the 8-byte block, and that `INIT_DATA_LEN` is 0 so the projection carries a different
 //! value than CBC's.
 
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle_modes::hazmat::Ecb;
-use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::{
+use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
+use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_tdes::hazmat::{TDES, TDES_ECB};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN};
 

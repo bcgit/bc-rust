@@ -19,7 +19,7 @@
 //! ECB vectors are block-permutation vectors and go through the engine directly, one block at a
 //! time, as well as through the four-block path where the message is long enough.
 //!
-//! The CBC and CFB vectors carry an IV, and `bouncycastle-modes` has no API for a caller-supplied
+//! The CBC and CFB vectors carry an IV, and `bouncycastle_cipher::modes` has no API for a caller-supplied
 //! IV. Three-key encryption therefore uses `do_encrypt_init_rng` with a `FixedSeedRNG` that emits
 //! the vector's IV, and the returned init data is asserted equal to it before any ciphertext is
 //! compared; decryption takes the IV directly. The `TDES_*` aliases are used, so the aliases'
@@ -33,6 +33,8 @@
 //! The Monte Carlo Test files (`tdesmct_intermediate.zip`) are **not** used: their chained update
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -40,7 +42,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_tdes::hazmat::{TDES, TDES2Key};
 use bouncycastle_tdes::{
     BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES_CFB, TDES_CFB8, TDES2_CFB, TDES2_CFB8,

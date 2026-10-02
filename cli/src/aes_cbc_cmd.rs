@@ -14,9 +14,10 @@ use crate::helpers::block_mode_helpers::{
 };
 use bouncycastle::aes::AES_BLOCK_LEN;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::cipher::modes::Cbc;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
 
 /// Names the mode in error messages.
 const MODE: &str = "CBC";

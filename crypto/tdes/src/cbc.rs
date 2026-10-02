@@ -1,8 +1,8 @@
 //! Type alias for TDES in CBC mode (NIST SP 800-38A Sec 6.2; "TCBC" in SP 800-38A Appendix E),
 //! with padding.
 //!
-//! `bouncycastle-modes` is deliberately cipher-agnostic, so `Cbc` takes the permutation, the
-//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle-padding`'s
+//! `bouncycastle_cipher::modes` is deliberately cipher-agnostic, so `Cbc` takes the permutation, the
+//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle_cipher::padding`'s
 //! adapters take five more. This alias pins all of them except the two choices a caller actually
 //! makes: the direction and the padding scheme. It adds nothing to the engine -- the permutation
 //! still implements none of the data-encryption traits itself (see the crate docs), the mode does.
@@ -21,7 +21,7 @@
 //! every use, and makes a mismatched pair a compile error rather than a decryption that returns
 //! plausible-looking rubbish.
 //!
-//! The two schemes `bouncycastle-padding` provides are [`PKCS7`], which is what almost everyone
+//! The two schemes `bouncycastle_cipher::padding` provides are [`PKCS7`], which is what almost everyone
 //! means by "padded CBC" (RFC 5652 s. 6.3; Java's `DESede/CBC/PKCS5Padding`), and [`NoPadding`],
 //! which adds nothing and instead *rejects* a message that is not a whole number of blocks --
 //! useful for formats already defined on block boundaries, where silently padding would be wrong.
@@ -31,33 +31,34 @@
 //! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
 //! block traits: `encrypt_out` / `decrypt_out` and the streaming `do_update_out` / `do_final`, all
 //! taking a `&[u8]` of any length. The block-aligned API, with its compile-time length checks and
-//! its in-place data methods, is `bouncycastle_modes::Cbc` itself, which this wraps:
+//! its in-place data methods, is `bouncycastle_cipher::modes::Cbc` itself, which this wraps:
 //!
 //! ```text
-//! bouncycastle_modes::Cbc<TDES, Encrypting, 24, 8>   // block-aligned, in place
+//! bouncycastle_cipher::modes::Cbc<TDES, Encrypting, 24, 8>   // block-aligned, in place
 //! TDES_CBC<Encrypting, PKCS7>                        // any length, padded
 //! ```
 //!
 //! # How one alias covers both directions
 //!
 //! `PaddedBlockCipherEncryptor` and `PaddedBlockCipherDecryptor` are two distinct types, so a plain type alias cannot
-//! select between them on a `Dir` parameter. [`Direction::Select`](bouncycastle_core::stream_cipher::Direction) does it instead: the
+//! select between them on a `Dir` parameter. [`Direction::Select`](bouncycastle_cipher::Direction) does it instead: the
 //! sealed projection in core picks the adapter for the direction, and the alias is written as
 //! that projection. The only visible consequence is that `Dir` must be
-//! [`Encrypting`](bouncycastle_modes::Encrypting) or
-//! [`Decrypting`](bouncycastle_modes::Decrypting), which was already true.
+//! [`Encrypting`](bouncycastle_cipher::Encrypting) or
+//! [`Decrypting`](bouncycastle_cipher::Decrypting), which was already true.
 
 use crate::hazmat::{TDES, TDES2Key};
 use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
-use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 // end of imports needed for docs
 
 /// TDES in CBC mode with a padding scheme.
@@ -70,8 +71,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
+/// use bouncycastle_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_cipher::padding::PKCS7;
 ///
 /// type Enc = TDES_CBC<Encrypting, PKCS7>;
 /// type Dec = TDES_CBC<Decrypting, PKCS7>;
@@ -99,8 +100,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::Encrypting;
-/// use bouncycastle_padding::NoPadding;
+/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::padding::NoPadding;
 ///
 /// type Enc = TDES_CBC<Encrypting, NoPadding>;
 ///
@@ -124,8 +125,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_tdes::TDES_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::Encrypting;
-/// use bouncycastle_padding::{NoPadding, PKCS7};
+/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 ///
 /// let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
@@ -163,7 +164,7 @@ pub type TDES_CBC<Dir, Pad> = <Dir as Direction>::Select<
 /// use bouncycastle_tdes::TDES2_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherDecryptor;
-/// use bouncycastle_padding::NoPadding;
+/// use bouncycastle_cipher::padding::NoPadding;
 ///
 /// // NIST CAVP TCBCMMT2.rsp, [DECRYPT] COUNT = 0: KEY1 || KEY2 (KEY3 = KEY1).
 /// let key = KeyMaterial::<16>::from_bytes_as_type(

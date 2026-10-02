@@ -37,7 +37,7 @@
 //!
 //! ## Modes of operation
 //!
-//! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
+//! To encrypt more than one block, use a mode of operation from `bouncycastle_cipher::modes`. This crate
 //! provides aliases that fill in the const parameters, leaving only the choices a caller actually
 //! makes: [`TDES_CBC`] for CBC (SP 800-38A Sec 6.2), which takes the direction **and a padding
 //! scheme**, and [`TDES_CFB`] for CFB64 (Sec 6.3), which takes only the direction. [`TDES_CFB8`]
@@ -53,15 +53,15 @@
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
 //! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
-//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
+//! with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the comparison, and
 //! [`TDES_CBC`] for why the scheme is named in the type.
 //!
 //! ```
 //! use bouncycastle_tdes::TDES_CBC;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
-//! use bouncycastle_padding::PKCS7;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Three distinct component keys; see `TDES::new` for what a key bundle must satisfy.
 //! let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -81,7 +81,7 @@
 //! ```
 //!
 //! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_modes::Cbc` directly; that is what these aliases wrap.
+//! name `bouncycastle_cipher::modes::Cbc` directly; that is what these aliases wrap.
 //!
 //! There is no one-shot static on the permutation, because `TDES::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
@@ -107,7 +107,7 @@
 //! use bouncycastle_tdes::TDES2_CBC;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherDecryptor;
-//! use bouncycastle_padding::NoPadding;
+//! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! // NIST CAVP TCBCMMT2.rsp, [DECRYPT] COUNT = 0.
 //! let key = KeyMaterial::<16>::from_bytes_as_type(

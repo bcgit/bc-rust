@@ -21,13 +21,14 @@ use bouncycastle_utils::secret::Secret;
 /// in SP 800-131A", and SP 800-131A Rev 2 Table 1 has it as "Disallowed" for encryption and
 /// "Legacy use" for decryption. This type therefore sets
 /// [`ElectronicCodeBook::ENCRYPTION_APPROVED`] to `false`, and every `Encrypting` mode in
-/// `bouncycastle-modes` refuses to be built over it **at compile time**:
+/// `bouncycastle_cipher::modes` refuses to be built over it **at compile time**:
 ///
 /// ```compile_fail
 /// use bouncycastle_tdes::hazmat::TDES2Key;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::BlockCipherEncryptor;
-/// use bouncycastle_modes::{Cbc, Encrypting};
+/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::modes::Cbc;
 ///
 /// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
@@ -44,7 +45,8 @@ use bouncycastle_utils::secret::Secret;
 /// use bouncycastle_tdes::hazmat::TDES2Key;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::{Ctr, Encrypting};
+/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::modes::Ctr;
 ///
 /// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();

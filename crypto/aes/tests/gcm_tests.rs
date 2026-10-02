@@ -10,11 +10,12 @@
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADTaggedLayout;
-use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -87,11 +88,11 @@ fn each_encryption_gets_a_fresh_nonce() {
     for _ in 0..16 {
         let mut ct = [0u8; 46];
         let (nonce, _, tag) =
-            AES_GCM_128::<Encrypting>::encrypt_out_detached(&key::<16>(), b"aad", &data, &mut ct)
+            AES_GCM_128::<Encrypting>::encrypt_detached_out(&key::<16>(), b"aad", &data, &mut ct)
                 .unwrap();
         assert!(seen.insert(nonce), "nonce repeated across encryptions");
         let mut pt = [0u8; 46];
-        AES_GCM_128::<Decrypting>::decrypt_out_detached(
+        AES_GCM_128::<Decrypting>::decrypt_detached_out(
             &key::<16>(),
             &nonce,
             b"aad",

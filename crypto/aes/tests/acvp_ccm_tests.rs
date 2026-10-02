@@ -46,10 +46,11 @@
 //! set is `testType: "AFT"`, so nothing is skipped for that reason.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::Ccm;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_modes::{Ccm, Decrypting, Encrypting};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;

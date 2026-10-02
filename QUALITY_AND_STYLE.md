@@ -102,10 +102,11 @@ very little) object state to track and return errors about.
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
 
 A primitive whose safe use depends on the caller composing it correctly -- a raw block permutation, a raw keystream
--- lives under a `hazmat` module in its crate, never at the crate root or next to the safe API;
-`bouncycastle_core::hazmat` defines the term and the supported uses. A crate with such items declares `pub mod hazmat;`
-in its `lib.rs` and never `pub use`s anything out of it, since a re-export at the root would bypass the notice. The
-crate's Security Considerations section names what it puts there.
+-- lives under a `hazmat` module in its crate or sub-module, never at the crate root or next to the safe API;
+`bouncycastle_core::hazmat` defines the term and the supported uses. A crate or sub-module with such items declares
+`pub mod hazmat;`
+in its `lib.rs` and neither the crate nor the sub-module ever `pub use`s anything out of it, since a re-export would
+bypass the notice.
 
 Any function that writes into a caller-provided output buffer must report how many bytes it wrote, as a `usize` in
 its `Ok` value (on its own, or alongside anything else the function needs to return, such as a generated IV). This
@@ -192,6 +193,15 @@ the detail lives on the type or module it describes. Rationale is a sentence or 
 derivations go in the commit message. Give a few examples, not one per variant; keep memory tables to the figures,
 without a per-row essay; keep CLI docs out of library crates; and never repeat a spec quote across files. Before adding
 material, check whether the crate already states it.
+
+## No internal implementation detail in public API docs
+
+The doc comment on a `pub` item is read by a calling application, so it says what the caller can observe and must
+do: the contract, the buffers and lengths involved, the errors and when they occur. How the implementor meets that
+contract -- which bytes it holds back and why, which private helper runs, how another implementor does it, the design
+rationale for a trait's shape -- belongs in a `//` comment next to the code, on the private item, or in the commit
+message. A trait's docs in particular describe the trait, not any one implementor. When reviewing, read each public
+doc comment as a user with no access to the source and strike anything that only makes sense with it.
 
 ## Usage Examples
 

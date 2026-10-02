@@ -3,7 +3,7 @@
 //! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.** That is why these are
 //! under [`hazmat`](crate::hazmat); see [`bouncycastle_core::hazmat`] for the supported uses.
 //!
-//! See [`bouncycastle_modes::hazmat::Ecb`] for details on the ElectronicCodebook construction.
+//! See [`bouncycastle_cipher::modes::hazmat::Ecb`] for details on the ElectronicCodebook construction.
 //!
 //! The aliases here are padded block ciphers that accept input of any size; `NoPadding` accepts
 //! only whole blocks but goes through the same adapter. The unpadded mode underneath them, which
@@ -25,8 +25,8 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
-//! use bouncycastle_padding::PKCS7;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_ECB_256<Encrypting, PKCS7>;
@@ -57,8 +57,8 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
-//! use bouncycastle_padding::PKCS7;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_ECB_128<Encrypting, PKCS7>;
@@ -114,8 +114,8 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_modes::Encrypting;
-//! use bouncycastle_padding::NoPadding;
+//! use bouncycastle_cipher::Encrypting;
+//! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! // Define ourselves a convenience type for the encryption direction with no padding.
 //! type Enc = AES_ECB_128<Encrypting, NoPadding>;
@@ -139,8 +139,8 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_modes::Encrypting;
-//! use bouncycastle_padding::{NoPadding, PKCS7};
+//! use bouncycastle_cipher::Encrypting;
+//! use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
@@ -151,7 +151,7 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::hazmat::Ecb`] apply. Above all, **ECB is not a
+//! All security considerations from [`bouncycastle_cipher::modes::hazmat::Ecb`] apply. Above all, **ECB is not a
 //! confidentiality mode for data**: under a given key every plaintext block maps to the same
 //! ciphertext block, so the structure of the plaintext shows through, and padding does not change
 //! that in the least. It makes ECB accept any length; it does not make it safe.
@@ -160,8 +160,8 @@
 //! use bouncycastle_aes::hazmat::AES_ECB_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_modes::Encrypting;
-//! use bouncycastle_padding::NoPadding;
+//! use bouncycastle_cipher::Encrypting;
+//! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
@@ -176,19 +176,19 @@ use crate::AES_BLOCK_LEN;
 use crate::bitslice::Block;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use crate::schedule::AESParams;
+use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_modes::hazmat::Ecb;
-use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 // end of imports needed for docs
 
 /// AES-128 in ECB mode with a padding scheme.

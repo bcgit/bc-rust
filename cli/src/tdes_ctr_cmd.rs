@@ -38,7 +38,7 @@
 
 use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::modes::{Decrypting, Encrypting};
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::tdes::{CTR_NONCE_LEN, KEY_LEN, TDES_CTR};
 
 pub(crate) fn tdes_ctr_cmd(

@@ -10,6 +10,4 @@ pub mod errors;
 pub mod hazmat;
 pub mod key_material;
 pub mod security_strength;
-pub mod stream_cipher;
-pub mod suspendable_state;
 pub mod traits;

@@ -1,8 +1,8 @@
 //! Type alias for TDES in ECB mode (NIST SP 800-38A Sec 6.1; "TECB" in SP 800-38A Appendix E),
 //! with padding.
 //!
-//! `bouncycastle-modes` is deliberately cipher-agnostic, so `Ecb` takes the permutation, the
-//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle-padding`'s
+//! `bouncycastle_cipher::modes` is deliberately cipher-agnostic, so `Ecb` takes the permutation, the
+//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle_cipher::padding`'s
 //! adapters take five more. This alias pins all of them except the two choices a caller actually
 //! makes: the direction and the padding scheme.
 //!
@@ -30,27 +30,27 @@
 //!
 //! A padded alias implements [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`], not the
 //! block traits. The block-aligned API, with compile-time length checks and in-place data methods,
-//! is `bouncycastle_modes::Ecb` itself, which this wraps. ECB has no IV, so `INIT_DATA_LEN` is 0:
+//! is `bouncycastle_cipher::modes::Ecb` itself, which this wraps. ECB has no IV, so `INIT_DATA_LEN` is 0:
 //! encryption returns an empty array and decryption takes one, and the ciphertext is exactly the
 //! padded plaintext with nothing prepended.
 //!
 //! # How one alias covers both directions
 //!
-//! See [`Direction::Select`](bouncycastle_core::stream_cipher::Direction), which is the projection that lets `Dir` select between the encryptor and the
+//! See [`Direction::Select`](bouncycastle_cipher::Direction), which is the projection that lets `Dir` select between the encryptor and the
 //! decryptor adapter. `Dir` must be [`Encrypting`] or [`Decrypting`].
 
 use crate::hazmat::{TDES, TDES2Key};
 use crate::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
-use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_modes::hazmat::Ecb;
-use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 // end of imports needed for docs
 
 /// TDES in ECB mode with a padding scheme.
@@ -66,8 +66,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_tdes::hazmat::TDES_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
+/// use bouncycastle_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_cipher::padding::PKCS7;
 ///
 /// type Enc = TDES_ECB<Encrypting, PKCS7>;
 /// type Dec = TDES_ECB<Decrypting, PKCS7>;
@@ -93,8 +93,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_tdes::hazmat::TDES_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::Encrypting;
-/// use bouncycastle_padding::NoPadding;
+/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::padding::NoPadding;
 ///
 /// let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
@@ -134,7 +134,7 @@ pub type TDES_ECB<Dir, Pad> = <Dir as Direction>::Select<
 /// use bouncycastle_tdes::hazmat::TDES2_ECB;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherDecryptor;
-/// use bouncycastle_padding::NoPadding;
+/// use bouncycastle_cipher::padding::NoPadding;
 ///
 /// // NIST CAVP TECBMMT2.rsp, [DECRYPT] COUNT = 0: KEY1 || KEY2 (KEY3 = KEY1).
 /// let key = KeyMaterial::<16>::from_bytes_as_type(

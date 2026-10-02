@@ -7,8 +7,8 @@
 //! and [`crate::helpers::block_mode_helpers`] for the framing. The key is the 16-byte `KEY1 || KEY2`.
 
 use crate::helpers::block_mode_helpers::{DecryptOnlyAction, decrypt_stream, load_key};
-use bouncycastle::modes::Decrypting;
-use bouncycastle::modes::hazmat::Ecb;
+use bouncycastle::cipher::Decrypting;
+use bouncycastle::cipher::modes::hazmat::Ecb;
 use bouncycastle::tdes::hazmat::TDES2Key;
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY};
 

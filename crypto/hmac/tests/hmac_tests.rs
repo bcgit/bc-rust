@@ -776,9 +776,9 @@ mod hmac_tests {
     #[test]
     fn suspendable_keyed_state() {
         use bouncycastle_core::errors::SuspendableError;
-        use bouncycastle_core::suspendable_state::LIB_VERSION;
         use bouncycastle_core::traits::SuspendableKeyed;
         use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
+        use bouncycastle_utils::suspendable_state::LIB_VERSION;
 
         let key = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap();
         let msg = b"Colorless green ideas sleep furiously";
