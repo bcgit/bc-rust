@@ -1,12 +1,26 @@
 //! Fixed-base comb scalar multiplication: `[k]G` for P-256's base point `G`, with `k` secret.
 //!
 //! This is the standard fixed-point comb multiplication algorithm, width 6 (the standard choice
-//! for fields over 250 bits), simplified: a generic-curve implementation typically starts its
-//! accumulator at a nonzero "offset" point and subtracts it at the end, specifically to avoid ever
-//! handing a generic point-add the identity element, since a generic `add`/`double` usually isn't
-//! constant-time in that case. [`crate::p256_point::P256JacobianPoint::add`] already handles the
-//! identity branch-free (see its module docs), so that dance isn't needed here: the accumulator
-//! starts at [`P256JacobianPoint::INFINITY`] and the algorithm is the plain comb.
+//! for fields over 250 bits), without the "offset" that a generic-curve implementation carries.
+//!
+//! # No offset
+//!
+//! The comb *does* reach the identity: the accumulator is [`P256JacobianPoint::INFINITY`] going
+//! into round 0, and comb digit 0 selects the identity from the table in any later round. A
+//! generic-curve comb (bc-java's `FixedPointCombMultiplier`, for one) biases every table entry by
+//! `G` so that no entry is the identity and the accumulator is never the identity after round 0,
+//! then cancels the accumulated bias with a final offset add. It needs that because its point-add
+//! is generic over curves and branches on `isInfinity`; the bias keeps that branch off any
+//! secret-dependent path. It does nothing for the same-point and opposite-point cases, which such
+//! an add also branches on -- those are left to be negligibly rare.
+//!
+//! Here the add is complete instead. `P256JacobianPoint::add_affine` computes the generic-add
+//! and doubling candidates unconditionally on every call and masks in all four exceptional cases
+//! (either operand the identity, same point, opposite point), with the table's identity entry
+//! passed as a flag rather than as a `Z = 0` coordinate; see
+//! [`crate::p256_point`]'s module docs. There is no branch left for an offset to keep the identity
+//! away from, so an offset would cost a point addition and a biased table and buy nothing. The
+//! accumulator starts at the identity and the algorithm is the plain comb.
 //!
 //! # The comb
 //!
