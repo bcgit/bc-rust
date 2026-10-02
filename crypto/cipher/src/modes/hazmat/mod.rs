@@ -1,13 +1,13 @@
-//! Raw primitives whose safe use is the caller's responsibility; see [`bouncycastle_core::hazmat`]
-//! for what the path means and the supported uses.
+//! Raw primitives whose safe use is the caller's responsibility.
 //!
-//! [`CtrKeyStream`] is the keystream under [`Ctr`](crate::modes::Ctr). Constructed directly it takes the
-//! nonce from the caller; [`Ctr`](crate::modes::Ctr) generates the nonce and refuses to run past the
-//! counter, and is the cipher to use.
+//! An item lives under a `hazmat` module when it is a correct, tested primitive whose
+//! *composition* is the caller's responsibility, or that otherwise carry non-trivial
+//! Security Considerations which are the caller's responsibility.
 //!
-//! [`Ecb`] is the permutation applied block by block. It implements the block-cipher traits like
-//! [`Cbc`](crate::modes::Cbc) does, so it looks like a cipher, and it is not one: equal plaintext blocks
-//! give equal ciphertext blocks. It is here for interoperability and test vectors.
+//! Part of the design intention is to allow static code analyzers to easily find and flag
+//! such uses with a simple search such as
+//!
+//!     grep -rnE --include='*.rs' 'use .*::hazmat::'
 
 mod ctr_key_stream;
 mod ecb;
