@@ -72,7 +72,7 @@ fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
 {
     let mut ct = vec![0u8; data.len()];
-    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_out_rng_detached(
+    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_out_rng(
         key,
         &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
         aad,
@@ -132,7 +132,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 
     // The detached one-shot: AAD-capable, and never releases plaintext before the tag checks out.
     let mut data = vec![0xEEu8; ct.len()];
-    let one_shot_result = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_out_detached(
+    let one_shot_result = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached_out(
         key, &iv, aad, ct, &tag_arr, &mut data,
     );
 

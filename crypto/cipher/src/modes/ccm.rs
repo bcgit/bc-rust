@@ -806,7 +806,7 @@ where
     /// return INVALID": a malformed input rather than a failed check, reported with the variant
     /// [`SymmetricCipherDecryptor::do_final`] specifies for a malformed ciphertext so that every
     /// inline entry point -- this one, [`CcmDecryptor::do_final`] and
-    /// [`CcmDecryptor::decrypt_out_with_aad`](AEADCipherDecryptor::decrypt_out_with_aad) -- agrees
+    /// [`CcmDecryptor::decrypt_with_aad_out`](AEADCipherDecryptor::decrypt_with_aad_out) -- agrees
     /// on the same input. Otherwise as [`Self::decrypt_out_detached`].
     pub fn decrypt_out(
         key: &KeyMaterial<KEY_LEN>,
@@ -1400,7 +1400,7 @@ where
     /// string, `ciphertext || tag` (step 8), with its length.
     ///
     /// # Errors
-    /// As [`AEADCipherEncryptor::do_final_out_detached`].
+    /// As [`AEADCipherEncryptor::do_final_detached_out`].
     fn do_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
         let mut out = [0u8; FINAL_LEN];
         let len = self.0.data_len;
@@ -1497,7 +1497,7 @@ where
     /// construction path can fail on, and `do_update_out` already guarantees the payload it
     /// buffered is no more than `DATA_LEN`. The `Result` return exists to satisfy the trait's
     /// signature.
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         mut self,
         ciphertext: &mut [u8; FINAL_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -1513,7 +1513,7 @@ where
         Ok((len, tag))
     }
 
-    fn encrypt_out_detached(
+    fn encrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         aad: &[u8],
         plaintext: &[u8],
@@ -1523,7 +1523,7 @@ where
         Self::one_shot(key, &mut rng, aad, plaintext, ciphertext)
     }
 
-    fn encrypt_out_rng_detached(
+    fn encrypt_detached_out_rng(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
         aad: &[u8],
@@ -1533,7 +1533,7 @@ where
         Self::one_shot(key, rng, aad, plaintext, ciphertext)
     }
 
-    fn encrypt_out_with_aad(
+    fn encrypt_with_aad_out(
         key: &KeyMaterial<KEY_LEN>,
         aad: &[u8],
         plaintext: &[u8],
@@ -1543,7 +1543,7 @@ where
         Self::one_shot_inline(key, &mut rng, aad, plaintext, ciphertext)
     }
 
-    fn encrypt_out_rng_with_aad(
+    fn encrypt_rng_with_aad_out(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
         aad: &[u8],
@@ -1765,7 +1765,7 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        Self::decrypt_out_with_aad(key, nonce, &[], ciphertext, plaintext)
+        Self::decrypt_with_aad_out(key, nonce, &[], ciphertext, plaintext)
     }
 }
 
@@ -1796,7 +1796,7 @@ where
     /// [`SymmetricCipherError::GenericError`] if more than `DATA_LEN` bytes were
     /// buffered -- room the decryptor keeps only for an inline tag;
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         mut self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; FINAL_LEN],
@@ -1818,7 +1818,7 @@ where
         )
     }
 
-    fn decrypt_out_detached(
+    fn decrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -1842,7 +1842,7 @@ where
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short;
     /// [`SymmetricCipherError::DecryptionFailed`] if `ciphertext` is shorter than the tag;
     /// otherwise as [`Ccm::decrypt_out_detached`].
-    fn decrypt_out_with_aad(
+    fn decrypt_with_aad_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -1856,7 +1856,7 @@ where
         let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
             return Err(SymmetricCipherError::DecryptionFailed);
         };
-        Self::decrypt_out_detached(key, nonce, aad, data, tag, plaintext)
+        Self::decrypt_detached_out(key, nonce, aad, data, tag, plaintext)
     }
 }
 

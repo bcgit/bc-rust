@@ -511,7 +511,7 @@ impl Algorithm for AsconAead128 {
 ///
 /// `FINAL_LEN` is `TAG_LEN`: Ascon-AEAD128 holds nothing back, so the inline
 /// [`SymmetricCipherEncryptor::do_final`] writes only the tag, and the detached
-/// [`AEADCipherEncryptor::do_final_out_detached`] writes nothing.
+/// [`AEADCipherEncryptor::do_final_detached_out`] writes nothing.
 pub struct AsconAead128Encryptor(AsconAead128);
 
 impl Algorithm for AsconAead128Encryptor {
@@ -572,7 +572,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128E
     }
 
     /// Nothing is ever held back to flush, so `ciphertext` is left untouched.
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         self,
         _ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -587,7 +587,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128E
 /// Unlike the inherent API this does hold data back: the last `TAG_LEN` bytes of ciphertext it has
 /// seen, since until the stream ends it cannot know whether they are the inline tag
 /// ([`SymmetricCipherDecryptor::do_final`]) or ciphertext with the tag carried separately
-/// ([`AEADCipherDecryptor::do_final_out_detached`]). They are ciphertext, not plaintext, so they need
+/// ([`AEADCipherDecryptor::do_final_detached_out`]). They are ciphertext, not plaintext, so they need
 /// no [`Secret`] wrapper.
 pub struct AsconAead128Decryptor {
     cipher: AsconAead128,
@@ -678,7 +678,7 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128D
     /// The held-back bytes are ciphertext: decrypts them into `plaintext`, then checks `tag`. On a
     /// failed check `plaintext` is zeroized, so the error leaves nothing unauthenticated behind in
     /// it (what earlier `do_update_out` calls released is the caller's to scrub).
-    fn do_final_out_detached(
+    fn do_final_detached_out(
         mut self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],

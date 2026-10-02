@@ -333,7 +333,7 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
         assert_eq!(enc.do_encrypt_out(piece, &mut nothing).expect("update"), 0);
     }
     let mut flushed = [0u8; 256];
-    let (len, tag) = enc.do_final_out_detached(&mut flushed).expect("final");
+    let (len, tag) = enc.do_final_detached_out(&mut flushed).expect("final");
     assert_eq!(len, plaintext.len(), "everything is flushed at finalization");
     assert_eq!(&flushed[..len], want_ct, "C.3 ciphertext via the trait");
     assert_eq!(&tag[..], want_tag, "C.3 tag via the trait");
@@ -345,7 +345,7 @@ fn the_buffering_pair_agrees_with_the_direct_api_on_appendix_c3() {
     }
     let mut out = [0u8; 256];
     let n = dec
-        .do_final_out_detached(want_tag.try_into().expect("8 bytes"), &mut out)
+        .do_final_detached_out(want_tag.try_into().expect("8 bytes"), &mut out)
         .expect("tag check");
     assert_eq!(&out[..n], &plaintext[..], "C.3 plaintext via the trait");
 
@@ -553,13 +553,13 @@ fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
     dec.do_decrypt_out(&inline[..inline_len], &mut nothing).expect("buffered");
     let mut out = [0u8; 48];
     assert!(matches!(
-        dec.do_final_out_detached(&[0u8; 16], &mut out),
+        dec.do_final_detached_out(&[0u8; 16], &mut out),
         Err(SymmetricCipherError::GenericError(_))
     ));
 
     // ...and exactly the capacity is fine.
     let mut detached = [0u8; 32];
-    let (_, _, tag) = Enc::encrypt_out_rng_detached(
+    let (_, _, tag) = Enc::encrypt_detached_out_rng(
         &k,
         &mut FixedSeedRNG::<12>::new(nonce),
         &[],
@@ -569,7 +569,7 @@ fn the_buffering_decryptor_holds_the_inline_tag_but_caps_detached_ciphertext() {
     .expect("one-shot");
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
     dec.do_decrypt_out(&detached, &mut nothing).expect("buffered");
-    let n = dec.do_final_out_detached(&tag, &mut out).expect("tag check");
+    let n = dec.do_final_detached_out(&tag, &mut out).expect("tag check");
     assert_eq!(&out[..n], &message[..]);
 }
 
@@ -584,7 +584,7 @@ fn trait_one_shots_are_not_capped_by_final_len() {
     let aad = [0x3Cu8; 128];
     let plaintext = [0xA5u8; 4096];
     let mut ciphertext = [0u8; 4096];
-    let (nonce, written, tag) = Enc::encrypt_out_rng_detached(
+    let (nonce, written, tag) = Enc::encrypt_detached_out_rng(
         &k,
         &mut FixedSeedRNG::<12>::new([0x24u8; 12]),
         &aad,
@@ -596,7 +596,7 @@ fn trait_one_shots_are_not_capped_by_final_len() {
 
     let mut opened = [0u8; 4096];
     let opened_len =
-        Dec::decrypt_out_detached(&k, &nonce, &aad, &ciphertext[..written], &tag, &mut opened)
+        Dec::decrypt_detached_out(&k, &nonce, &aad, &ciphertext[..written], &tag, &mut opened)
             .expect("direct one-shot decryption");
     assert_eq!(&opened[..opened_len], &plaintext);
 }
@@ -608,7 +608,7 @@ fn trait_one_shots_are_not_capped_by_final_len() {
 /// footnote, and must authenticate.
 ///
 /// All three inline entry points -- the inherent one-shot, the buffering decryptor's `do_final`
-/// and its `decrypt_out_with_aad` -- must report the same malformed input with the same variant,
+/// and its `decrypt_with_aad_out` -- must report the same malformed input with the same variant,
 /// [`SymmetricCipherError::DecryptionFailed`], which is what [`SymmetricCipherDecryptor::do_final`]
 /// specifies for a malformed ciphertext; a caller telling "malformed" from "inauthentic" must not
 /// get a different answer depending on which one it used.
@@ -633,10 +633,10 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
         );
         assert!(
             matches!(
-                StreamDec::decrypt_out_with_aad(&k, &nonce, &[], &short, &mut out),
+                StreamDec::decrypt_with_aad_out(&k, &nonce, &[], &short, &mut out),
                 Err(SymmetricCipherError::DecryptionFailed)
             ),
-            "a {len}-byte C cannot carry a 16-byte tag (decrypt_out_with_aad)"
+            "a {len}-byte C cannot carry a 16-byte tag (decrypt_with_aad_out)"
         );
         let mut dec = StreamDec::do_decrypt_init(&k, &nonce).expect("init");
         dec.do_decrypt_out(&short, &mut nothing).expect("buffered");

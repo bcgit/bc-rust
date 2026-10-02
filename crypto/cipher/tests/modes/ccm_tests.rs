@@ -448,7 +448,7 @@ fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
 
     // The buffering decryptor holds everything until the final call, so it can and does behave
     // like the one-shot: `do_final` returns no buffer at all on failure, and
-    // `do_final_out_detached` zeroizes the one it was given.
+    // `do_final_detached_out` zeroizes the one it was given.
     type Dec = CcmDecryptor<Toy, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, 48, 48, 64>;
     let mut nothing = [0u8; 0];
 
@@ -457,10 +457,10 @@ fn one_shots_release_nothing_on_forgery_but_the_inherent_stream_does() {
     assert_eq!(dec.do_decrypt_out(&ct, &mut nothing).unwrap(), 0, "nothing is released mid-stream");
     let mut detached = [0xEEu8; 64];
     assert!(matches!(
-        dec.do_final_out_detached(&tag, &mut detached),
+        dec.do_final_detached_out(&tag, &mut detached),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
-    assert_eq!(detached[..19], [0u8; 19], "do_final_out_detached must zeroize on a forged tag");
+    assert_eq!(detached[..19], [0u8; 19], "do_final_detached_out must zeroize on a forged tag");
 
     let mut inline = ct.clone();
     inline.extend_from_slice(&tag);

@@ -40,7 +40,7 @@
 //! `bench_streaming_decrypt` drive that path -- `do_*_init`, `do_update_out`, then a final -- and
 //! are what measure it, since it is the one memory claim in that crate large enough to matter.
 //!
-//! The adapters' **one-shots are not the streaming path**: `encrypt_out_detached` and its
+//! The adapters' **one-shots are not the streaming path**: `encrypt_detached_out` and its
 //! siblings override the trait defaults and run `Ccm` directly, so the crate docs claim they cost
 //! the same as `Ccm` regardless of `FINAL_LEN`. `bench_oneshot_encrypt_out_detached` checks that
 //! claim, and must *not* be mistaken for a measurement of the buffers -- it never touches them.
@@ -220,12 +220,12 @@ fn bench_streaming_encrypt() {
     print!("{:x?}", &sealed[n - TAG_LEN..n]);
 }
 
-/// The same flow finished with `do_final_out_detached` into the caller's `[u8; FINAL_LEN]`, the
+/// The same flow finished with `do_final_detached_out` into the caller's `[u8; FINAL_LEN]`, the
 /// shape the shared test framework drives: one fewer `FINAL_LEN` array than `do_final`, which
 /// builds that buffer itself and then returns it by value.
 fn bench_streaming_encrypt_detached() {
     eprintln!(
-        "CcmEncryptor do_encrypt_init/do_update_out/do_final_out_detached, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmEncryptor do_encrypt_init/do_update_out/do_final_detached_out, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
     let k = key::<16>();
@@ -236,7 +236,7 @@ fn bench_streaming_encrypt_detached() {
         enc.do_encrypt_out(chunk, &mut []).unwrap();
     }
     let mut ciphertext = [0u8; FINAL_LEN];
-    let (_, tag) = enc.do_final_out_detached(&mut ciphertext).unwrap();
+    let (_, tag) = enc.do_final_detached_out(&mut ciphertext).unwrap();
     print!("{:x?}", &tag);
 }
 
@@ -272,14 +272,14 @@ fn bench_streaming_decrypt() {
 /// `bench_direct_encrypt_detached` -- the DRBG it draws the nonce from -- and nowhere near
 /// `bench_streaming_encrypt`.
 fn bench_oneshot_encrypt_out_detached() {
-    eprintln!("CcmEncryptor::encrypt_out_detached, {MESSAGE_LEN} B");
+    eprintln!("CcmEncryptor::encrypt_detached_out, {MESSAGE_LEN} B");
 
     let k = key::<16>();
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
     let (_, _, tag) =
-        Aes128CcmEncryptor::encrypt_out_detached(&k, &[], plaintext, &mut ciphertext).unwrap();
+        Aes128CcmEncryptor::encrypt_detached_out(&k, &[], plaintext, &mut ciphertext).unwrap();
     print!("{:x?}", &tag);
 }
 

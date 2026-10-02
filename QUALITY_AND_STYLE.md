@@ -194,6 +194,15 @@ derivations go in the commit message. Give a few examples, not one per variant; 
 without a per-row essay; keep CLI docs out of library crates; and never repeat a spec quote across files. Before adding
 material, check whether the crate already states it.
 
+## No internal implementation detail in public API docs
+
+The doc comment on a `pub` item is read by a calling application, so it says what the caller can observe and must
+do: the contract, the buffers and lengths involved, the errors and when they occur. How the implementor meets that
+contract -- which bytes it holds back and why, which private helper runs, how another implementor does it, the design
+rationale for a trait's shape -- belongs in a `//` comment next to the code, on the private item, or in the commit
+message. A trait's docs in particular describe the trait, not any one implementor. When reviewing, read each public
+doc comment as a user with no access to the source and strike anything that only makes sense with it.
+
 ## Usage Examples
 
 The crate docs needs a section "Usage Examples" with sample code for all the major usage patterns of the primitives in
