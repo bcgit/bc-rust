@@ -905,6 +905,63 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
     assert_eq!(dec.do_final().expect("an empty frame still verifies").1, 0);
 }
 
+/// The same agreement on a frame that is not empty, where the inline entry points can disagree
+/// in a way the empty frame hides. `do_decrypt_out` releases the payload as it arrives, up to
+/// `DATA_LEN`, and only then holds bytes back as the tag; so a `C` of fewer than
+/// `DATA_LEN + TAG_LEN` bytes still asks for a `DATA_LEN`-byte buffer when it is longer than the
+/// frame. `decrypt_out_max_len` is therefore `DATA_LEN` for any such `C`, not `C` less a tag: a
+/// one-shot that sizes its buffer by it reaches the final, which reports the short `C` as
+/// malformed, rather than refusing the buffer with `OutputBufferTooSmall` first.
+#[test]
+fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
+    const DATA_LEN: usize = 32;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
+    let k = key::<16>(APPENDIX_C_KEY);
+    let frame = [0x5Au8; DATA_LEN];
+    let mut sealed = vec![0u8; Enc::encrypt_out_len(DATA_LEN)];
+    let (nonce, n) = Enc::encrypt_with_aad_out(&k, b"hdr", &frame, &mut sealed).expect("seal");
+    assert_eq!(n, DATA_LEN + 16);
+
+    // The whole frame plus its tag is the one accepted inline length, and the bound is exact.
+    assert_eq!(Dec::decrypt_out_max_len(DATA_LEN + 16), DATA_LEN);
+    assert_eq!(Dec::decrypt_out_max_len(DATA_LEN + 1), DATA_LEN, "the payload is DATA_LEN");
+    assert_eq!(Dec::decrypt_out_max_len(5), 5, "...or all of a C shorter than the frame");
+
+    for len in 0..DATA_LEN + 16 {
+        let short = &sealed[..len];
+        let mut pt = vec![0u8; Dec::decrypt_out_max_len(len)];
+        assert!(
+            matches!(
+                Dec::decrypt_with_aad_out(&k, &nonce, b"hdr", short, &mut pt),
+                Err(SymmetricCipherError::DecryptionFailed)
+            ),
+            "a {len}-byte C is not a frame and its tag (decrypt_with_aad_out)"
+        );
+        let mut pt = vec![0u8; Dec::decrypt_out_max_len(len)];
+        assert!(
+            matches!(
+                Dec::decrypt_out(&k, &nonce, short, &mut pt),
+                Err(SymmetricCipherError::DecryptionFailed)
+            ),
+            "a {len}-byte C is not a frame and its tag (decrypt_out)"
+        );
+        let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
+        dec.do_update_aad(b"hdr").expect("aad");
+        let mut pt = vec![0u8; dec.do_decrypt_out_len(len)];
+        dec.do_decrypt_out(short, &mut pt).expect("the payload is released, the rest held");
+        assert!(
+            matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)),
+            "a {len}-byte C is not a frame and its tag (do_final)"
+        );
+    }
+
+    // ...and the accepted length, through the same three, so the loop's bound is not off by one.
+    let mut pt = vec![0u8; Dec::decrypt_out_max_len(sealed.len())];
+    assert_eq!(Dec::decrypt_with_aad_out(&k, &nonce, b"hdr", &sealed, &mut pt).expect("open"), 32);
+    assert_eq!(&pt[..], &frame[..]);
+}
+
 /// An output buffer that is too short is refused with the length required, before any work.
 #[test]
 fn undersized_output_buffers_are_refused() {

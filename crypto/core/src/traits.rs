@@ -241,8 +241,9 @@ pub trait AEADCipherDecryptor<
 /// * **SymmetricCipher: `ciphertext || tag`**: The inherited [`SymmetricCipherEncryptor`] methods
 ///     allow a caller to use an AEAD cipher, with the added security of the authentication, without
 ///     concerning themselves with the details of the AEAD interface.
-///     Specifically, there is no way to provide associated data, and the tag inlined into the ciphertext
-///     by `_do_final()` as `ciphertext || tag`.
+///     Specifically, there is no way to provide associated data, and
+///     [`SymmetricCipherEncryptor::do_final`] appends the tag to the ciphertext, so the output is
+///     `ciphertext || tag`.
 ///
 /// * **AEADCipher: `(ciphertext, tag)`**: The methods ending in `_detached` hand the tag back separately,
 ///     for callers whose protocol carries it in a separate field.
@@ -251,7 +252,7 @@ pub trait AEADCipherDecryptor<
 ///
 /// An AEAD can additionally authenticate data it does not encrypt -- called additional authenticated data (AAD),
 /// or sometimes associated data -- typically a header that has to travel in the clear but must still
-/// be protected against. Every AEAD construction absorbs that AAD *before* the plaintext.
+/// be protected against tampering. Every AEAD construction absorbs that AAD *before* the plaintext.
 /// This leads to a stateful API flow:
 ///
 /// * [`do_encrypt_init`](SymmetricCipherEncryptor::do_encrypt_init) constructs the instance.
@@ -271,10 +272,10 @@ pub trait AEADCipherDecryptor<
 ///
 /// # A cipher may buffer
 ///
-/// AEADs built on top of stream ciphers will typically encrypt as they go, whereas those built on
-/// block ciphers must buffer input until a full block has been received. Thus, a call to
-/// [`do_encrypt_out`](SymmetricCipherEncryptor::do_encrypt_out) may produce no output, which can be
-/// indicated in one of two ways:
+/// Some AEADs release each ciphertext byte as soon as they see the plaintext byte; others hold
+/// part of the input back, until a block is complete or until they can tell whether trailing
+/// bytes are the tag. So a call to [`do_encrypt_out`](SymmetricCipherEncryptor::do_encrypt_out)
+/// may produce less output than input, or none, which can be told in one of two ways:
 ///
 /// * The `Ok(usize)` that `do_encrypt_out` returns is `0`.
 /// * Prior to the call, call [`do_encrypt_out_len`](SymmetricCipherEncryptor::do_encrypt_out_len)

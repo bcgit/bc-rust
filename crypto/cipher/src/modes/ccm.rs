@@ -1300,7 +1300,8 @@ where
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// `plaintext`, and [`SymmetricCipherError::StateError`] if `plaintext` would take the total
-    /// past `DATA_LEN`. Nothing is consumed or written in either case.
+    /// past `DATA_LEN`. Nothing is consumed or written in either case, though a non-empty call
+    /// refused for its length has still ended the AAD phase.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
@@ -1499,7 +1500,8 @@ where
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// [`do_decrypt_out_len`](Self::do_decrypt_out_len), and [`SymmetricCipherError::StateError`]
     /// if `ciphertext` would take the total past `DATA_LEN + TAG_LEN`, more than either layout
-    /// can be. Nothing is consumed or written in either case.
+    /// can be. Nothing is consumed or written in either case, though a non-empty call refused
+    /// for its length has still ended the AAD phase.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
@@ -1549,9 +1551,13 @@ where
         Ok(([0u8; TAG_LEN], 0))
     }
 
-    /// Everything but the trailing tag.
+    /// The payload, which is `DATA_LEN` whatever `ciphertext_len` claims. For the one `C` the
+    /// inline layout accepts that is `ciphertext_len - TAG_LEN`, as for any AEAD; for a shorter
+    /// `C` it is still what [`do_decrypt_out`](Self::do_decrypt_out) releases, so a one-shot that
+    /// sizes its buffer by this reaches the final and reports the short `C` as malformed, rather
+    /// than refusing the buffer first.
     fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
-        ciphertext_len.saturating_sub(TAG_LEN)
+        ciphertext_len.min(DATA_LEN)
     }
 }
 
