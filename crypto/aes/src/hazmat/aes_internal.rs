@@ -94,6 +94,7 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 /// redacted from `Debug`. There is no direction flag and no initialisation state: both directions
 /// work from the same schedule (see the `inv_cipher` method), and a constructed value is always
 /// ready to use, so there is no `init()` or `reset()`.
+#[derive(Clone)]
 pub struct AESInternal<P: AESParams> {
     schedule: Secret<P::Schedule>,
 }

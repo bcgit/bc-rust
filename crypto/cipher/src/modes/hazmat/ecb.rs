@@ -49,6 +49,14 @@
 //! [`ElectronicCodeBook::encrypt_2blocks`] and their inverses), which may represent a speed-up over
 //! iterating one block at a time, depending on the implementation of the underlying cipher.
 //!
+//! # Suspending and resuming execution
+//!
+//! [`Ecb`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
+//! array and resumed later with the re-supplied key. The state is empty, since nothing carries over
+//! between blocks, and resuming is re-expanding the key; it exists so the padded adapters over ECB
+//! can be suspended. The array length is `Ecb::SUSPENDED_STATE_LEN`; see [the crate
+//! docs](crate#suspending-and-resuming-execution) for an example.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! ## ECB is a building-block not a confidentiality mode for data
@@ -72,11 +80,16 @@
 //! **ECB Mode should not be used in production!**
 
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG};
+use bouncycastle_core::traits::{
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SuspendableKeyed,
+};
+use bouncycastle_utils::suspendable_state::{
+    LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
+};
 use core::marker::PhantomData;
 
 /// ECB mode over any permutation that impls [`ElectronicCodeBook`], with the direction encoded in the type.
@@ -93,6 +106,7 @@ use core::marker::PhantomData;
 /// Only the permutation, which owns the key schedule and is responsible for keeping it in a
 /// zeroize-on-drop wrapper. Nothing chains from one block to the next, so unlike `Cbc` and `Cfb`
 /// there is no block of chaining value: `size_of::<Ecb<P, ..>>() == size_of::<P>()`.
+#[derive(Clone)]
 pub struct Ecb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -105,6 +119,10 @@ impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Ecb<P, Dir, KEY_LEN, 
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header alone, since ECB
+    /// has no state between blocks. See [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN;
+
     /// Expands the key. Both `_init` constructors are this; there is nothing else to set up.
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { perm: P::new(key)?, _dir: PhantomData })
@@ -216,5 +234,43 @@ where
             self.perm.decrypt_block(block);
         }
         Ok(len)
+    }
+}
+
+/// ECB carries nothing from one block to the next, so its suspended state is empty and resuming
+/// is re-expanding the key. It is implemented so that the padded adapters over it, which do hold
+/// a partial block, can be suspended. See [`bouncycastle_utils::suspendable_state`].
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
+    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    const STATE_LEN: usize = 0;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        debug_assert!(out.is_empty());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        debug_assert!(state.is_empty());
+        Self::new(key).map_err(|_| SuspendableError::InvalidData)
+    }
+}
+
+/// `N` must be [`Ecb::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
+    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
     }
 }

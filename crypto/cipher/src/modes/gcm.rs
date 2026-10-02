@@ -114,6 +114,14 @@
 //! assert_eq!(pt, message);
 //! ```
 //!
+//! # Suspending and resuming execution
+//!
+//! [`Gcm`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
+//! array and resumed later with the re-supplied key. The state is the CTR half, the running GHASH,
+//! the byte counts and whatever a decryptor is holding back as a possible tag; `H` and the tag mask
+//! are re-derived from the key. The array length is `Gcm::SUSPENDED_STATE_LEN`; see [the crate
+//! docs](crate#suspending-and-resuming-execution) for an example.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! ## Nonce uniqueness
@@ -153,20 +161,24 @@
 //!   is no separate `Gmac` type.
 
 use crate::modes::Ctr;
-use crate::modes::ghash::Ghash;
+use crate::modes::ghash::{GHASH_STATE_LEN, Ghash};
 use crate::modes::hazmat::CtrKeyStream;
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
+    suspend_component,
+};
 use core::marker::PhantomData;
 
 /// The nonce (IV) length this type uses: 96 bits, SP 800-38D Sec 5.2.1.1's recommended length.
@@ -177,13 +189,25 @@ pub const GCM_NONCE_LEN: usize = 12;
 /// `A` before `C`); the transition also pads the AAD to a block boundary (the `0^v` of step 5).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    Aad,
-    Data,
+    Aad = 0,
+    Data = 1,
+}
+
+impl Phase {
+    /// The inverse of `as u8`, for a suspended state; anything but the two values is refused.
+    fn from_u8(v: u8) -> Result<Self, SuspendableError> {
+        match v {
+            0 => Ok(Phase::Aad),
+            1 => Ok(Phase::Data),
+            _ => Err(SuspendableError::InvalidData),
+        }
+    }
 }
 
 /// Galois/Counter Mode over any [`ElectronicCodeBook`] permutation, direction typed as
 /// [`Encrypting`] / [`Decrypting`]. See the module docs for the two APIs this type exposes and
 /// [`GCM_NONCE_LEN`] / `TAG_LEN` for what is fixed and what is chosen.
+#[derive(Clone)]
 pub struct Gcm<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, 16>,
@@ -216,6 +240,16 @@ impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Dir, KEY_LEN, TA
 where
     P: ElectronicCodeBook<KEY_LEN, 16>,
 {
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the CTR state,
+    /// the GHASH state, the two byte counts, the phase, the held-back tail and its length. See
+    /// [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize =
+        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+
+    /// The CTR half's share of the suspended state.
+    const CTR_STATE_LEN: usize =
+        <Ctr<P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent>::STATE_LEN;
+
     /// The compile-time shape check: `TAG_LEN` must be one of Sec 5.2.1.2's five recommended tag
     /// lengths in bytes (96, 104, 112, 120, 128 bits -- Appendix C's 32- and 64-bit tags are a
     /// documented non-goal; see the module docs). Called from every constructor.
@@ -686,5 +720,75 @@ where
         Self::verify_then_decrypt(key, nonce, aad, &mut plaintext[..len], tag)
             .inspect_err(|_| plaintext[..len].fill(0))?;
         Ok(len)
+    }
+}
+
+/// The suspended state is the CTR half, the running GHASH, the two byte counts, the phase, and
+/// the up-to-`TAG_LEN` bytes a decryptor holds back. `H` and `CIPH_K(J0)` are not in it: both
+/// derive from the key and the nonce, and `setup` re-derives them on resume. See
+/// [`bouncycastle_utils::suspendable_state`].
+impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> SuspendableComponent
+    for Gcm<P, Dir, KEY_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16>,
+{
+    const STATE_LEN: usize = Self::CTR_STATE_LEN + GHASH_STATE_LEN + 8 + 8 + 1 + TAG_LEN + 8;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (ctr, rest) = out.split_at_mut(Self::CTR_STATE_LEN);
+        self.ctr.write_state(ctr);
+        let (ghash, rest) = rest.split_at_mut(GHASH_STATE_LEN);
+        self.ghash.write_state(ghash);
+        let mut w = CursorMut::new(rest);
+        w.u64(self.aad_len);
+        w.u64(self.data_len);
+        w.u8(self.phase as u8);
+        w.bytes(&*self.tail);
+        w.u64(self.tail_len as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        Self::check_shape();
+        let (ctr, rest) = state.split_at(Self::CTR_STATE_LEN);
+        let (ghash, rest) = rest.split_at(GHASH_STATE_LEN);
+
+        // `setup` re-derives `H` and `CIPH_K(J0)` from the key and the nonce, which is the
+        // leading part of the CTR state. Its fresh CTR and GHASH are then replaced by the
+        // suspended ones; the CTR read expands the key a second time, a one-off cost at resume.
+        let nonce = CtrKeyStream::<P, KEY_LEN, 16, GCM_NONCE_LEN>::nonce_from_state(ctr);
+        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let mut gcm = Self::setup(perm, nonce);
+        gcm.ctr = <Ctr<P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent>::read_state(
+            ctr, key,
+        )?;
+        gcm.ghash.restore_state(ghash)?;
+
+        let mut r = Cursor::new(rest);
+        gcm.aad_len = r.u64();
+        gcm.data_len = r.u64();
+        gcm.phase = Phase::from_u8(r.u8())?;
+        (*gcm.tail).copy_from_slice(r.bytes(TAG_LEN));
+        gcm.tail_len = bounded_usize(r.u64(), TAG_LEN)?;
+        debug_assert!(r.is_done());
+        Ok(gcm)
+    }
+}
+
+/// `N` must be [`Gcm::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize, const N: usize> SuspendableKeyed<N>
+    for Gcm<P, Dir, KEY_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16>,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
     }
 }

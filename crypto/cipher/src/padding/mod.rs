@@ -50,6 +50,14 @@
 //! assert_eq!(<NoPadding as BlockCipherPadding<16>>::unpad(&block), Ok(16));
 //! ```
 //!
+//! # Suspending and resuming execution
+//!
+//! Each adapter implements [`SuspendableKeyed`](bouncycastle_core::traits::SuspendableKeyed), so a
+//! message in progress can be suspended to a byte array and resumed later with the re-supplied key.
+//! The state is the inner cipher's state and the buffered partial block, plus the withheld block on
+//! the decryptor. The array length is `PaddedBlockCipherEncryptor::SUSPENDED_STATE_LEN`; see [the
+//! crate docs](crate#suspending-and-resuming-execution) for an example.
+//!
 //! # Memory Usage
 //!
 //! | Operation                    | Stack (excluding the caller's buffers and the inner cipher) |
@@ -81,6 +89,7 @@ use bouncycastle_utils::ct::Condition;
 /// RFC 5652 §6.3 padding (the CMS successor to PKCS #7): "the input shall be padded at the trailing
 /// end with `k-(lth mod k)` octets all having value `k-(lth mod k)`". Defined only for block lengths
 /// `0 < k < 256`, enforced at compile time.
+#[derive(Debug, Clone, Copy)]
 pub struct PKCS7;
 
 impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for PKCS7 {
@@ -154,6 +163,7 @@ impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for PKCS7 {
 /// specify) while keeping the arbitrary-length API shape.
 ///
 /// It offers nothing that authentication would; see this module's "Security Considerations".
+#[derive(Debug, Clone, Copy)]
 pub struct NoPadding;
 
 impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for NoPadding {

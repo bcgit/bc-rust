@@ -1,11 +1,12 @@
 //! The CTR keystream, [`CtrKeyStream`]: a raw [`KeyStream`], used through [`Ctr`].
 
 use crate::modes::ctr::apply_counter_blocks;
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
+use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, SuspendableComponent};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -26,6 +27,7 @@ use crate::stream::StreamCipher;
 ///
 /// The permutation, the nonce and the next counter value. The nonce and the counter are both
 /// public, so they are plain fields; no keystream is kept between calls.
+#[derive(Clone)]
 pub struct CtrKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -96,6 +98,14 @@ where
         Self { perm, nonce, next_counter: counter }
     }
 
+    /// The nonce `N` of a suspended keystream, read out of the state [`SuspendableComponent`]
+    /// writes without rebuilding the keystream: it is the leading `INIT_DATA_LEN` bytes. For a
+    /// composite that needs the nonce before it can afford the key schedule (GCM derives `H` and
+    /// the tag mask from it).
+    pub(crate) fn nonce_from_state(state: &[u8]) -> [u8; INIT_DATA_LEN] {
+        Cursor::new(state).array::<INIT_DATA_LEN>()
+    }
+
     /// `Tj = N | [j]m`: the nonce followed by the counter `j`, big-endian, in the trailing
     /// `CTR_LEN` bytes.
     ///
@@ -155,6 +165,39 @@ where
             |j| Self::counter_block(nonce, j),
             blocks,
         );
+    }
+}
+
+/// The suspended state is the nonce and the next counter value; the permutation is rebuilt from
+/// the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
+    SuspendableComponent for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    const STATE_LEN: usize = INIT_DATA_LEN + 8;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let mut w = CursorMut::new(out);
+        w.bytes(&self.nonce);
+        w.u64(self.next_counter);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        Self::check_shape();
+        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let mut r = Cursor::new(state);
+        let nonce = r.array::<INIT_DATA_LEN>();
+        // The counter counts to `BLOCK_LIMIT` and stops there (that is the exhausted state, with
+        // `remaining_blocks() == 0`); anything past it is not a state this type produces.
+        let next_counter = r.u64();
+        if next_counter > Self::BLOCK_LIMIT {
+            return Err(SuspendableError::InvalidData);
+        }
+        debug_assert!(r.is_done());
+        Ok(Self { perm, nonce, next_counter })
     }
 }
 

@@ -74,6 +74,13 @@
 //! assert_eq!(rest, [0xBBu8; 32]);
 //! ```
 //!
+//! # Suspending and resuming execution
+//!
+//! [`Cbc`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
+//! array and resumed later with the re-supplied key. The state is the chaining block; the
+//! permutation is rebuilt from the key. The array length is `Cbc::SUSPENDED_STATE_LEN`; see [the
+//! crate docs](crate#suspending-and-resuming-execution) for an example.
+//!
 //! # 🚨 Security Considerations 🚨
 //! ## IV integrity
 //!
@@ -90,12 +97,17 @@
 
 use crate::modes::iv::random_iv;
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG};
+use bouncycastle_core::traits::{
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SuspendableKeyed,
+};
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_utils::suspendable_state::{
+    LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
+};
 use core::marker::PhantomData;
 
 /// CBC mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
@@ -112,6 +124,7 @@ use core::marker::PhantomData;
 /// Two fields: the permutation (which owns the key schedule, and is responsible for keeping it in
 /// a zeroize-on-drop wrapper) and one block of chaining value. The chaining value is an IV or a
 /// ciphertext block, both of which are public, so it is deliberately not wrapped in a `Secret`.
+#[derive(Clone)]
 pub struct Cbc<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -126,6 +139,10 @@ impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<P, Dir, KEY_LEN, 
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header and the chaining
+    /// block. See [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN;
+
     /// `Cj = CIPH_K(Pj XOR Cj-1)` in place, then `Cj` becomes the next chaining value.
     #[inline]
     fn encrypt_one(&mut self, block: &mut [u8; BLOCK_LEN]) {
@@ -289,5 +306,44 @@ where
             self.decrypt_one(block);
         }
         Ok(len)
+    }
+}
+
+/// The suspended state is the chaining block `Cj-1`, in both directions; the permutation is
+/// rebuilt from the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
+    for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    const STATE_LEN: usize = BLOCK_LEN;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        out.copy_from_slice(&self.chain);
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let mut chain = [0u8; BLOCK_LEN];
+        chain.copy_from_slice(state);
+        Ok(Self { perm, chain, _dir: PhantomData })
+    }
+}
+
+/// `N` must be [`Cbc::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
+    for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
     }
 }

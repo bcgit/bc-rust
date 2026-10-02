@@ -10,18 +10,31 @@
 //!
 //! A mode whose keystream depends on the data, such as CFB, implements the traits itself; the free
 //! functions here are the parts of that implementation that are the same for every stream cipher.
+//!
+//! # Suspending and resuming execution
+//!
+//! [`StreamCipher`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a
+//! byte array and resumed later with the re-supplied key. The state is the keystream's own state
+//! and the partly used keystream block, for any keystream that implements [`SuspendableComponent`].
+//! The array length is `StreamCipher::SUSPENDED_STATE_LEN`; see [the crate
+//! docs](crate#suspending-and-resuming-execution) for an example.
+//!
 
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
+    suspend_component,
+};
 use core::marker::PhantomData;
 
 /// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
@@ -76,6 +89,7 @@ pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
 /// returns [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing: the check is made up front,
 /// against the whole call, so a message is never half-processed before the cipher notices. Past
 /// that point the keystream would repeat, which is the two-time-pad failure within one message.
+#[derive(Clone)]
 pub struct StreamCipher<
     KS,
     Dir,
@@ -314,5 +328,75 @@ where
     /// As [`StreamCipherEncryptor::do_encrypt`].
     fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
+    }
+}
+
+impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+{
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the keystream's
+    /// state, the pending keystream block and the `used` count as a `u64`. See
+    /// [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize =
+        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+}
+
+/// The suspended state is the keystream's own state followed by the pending keystream block and
+/// how much of it is used. The pending block is live keystream, which is why the whole state
+/// must be protected and never resumed twice; see [`bouncycastle_utils::suspendable_state`].
+impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SuspendableComponent for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+{
+    const STATE_LEN: usize = KS::STATE_LEN + BLOCK_LEN + 8;
+    type Key = KS::Key;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (ks, rest) = out.split_at_mut(KS::STATE_LEN);
+        self.keystream.write_state(ks);
+        let mut w = CursorMut::new(rest);
+        w.bytes(&*self.pending);
+        w.u64(self.used as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        Self::check_shape();
+        let (ks, rest) = state.split_at(KS::STATE_LEN);
+        let keystream = KS::read_state(ks, key)?;
+        let mut r = Cursor::new(rest);
+        // Read straight into the `Secret`, so no copy of the keystream block sits on the stack.
+        let mut pending: Secret<[u8; BLOCK_LEN]> = Secret::new();
+        (*pending).copy_from_slice(r.bytes(BLOCK_LEN));
+        // `used` is `0..=BLOCK_LEN`, with `BLOCK_LEN` meaning nothing is pending.
+        let used = bounded_usize(r.u64(), BLOCK_LEN)?;
+        debug_assert!(r.is_done());
+        Ok(Self { keystream, pending, used, _marker: PhantomData })
+    }
+}
+
+/// `N` must be [`StreamCipher::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<
+    KS,
+    Dir,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+    const N: usize,
+> SuspendableKeyed<N> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+{
+    type Key = KS::Key;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
     }
 }

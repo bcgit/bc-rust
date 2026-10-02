@@ -20,7 +20,9 @@
 //! (`11100001 || 0^120`, Sec 6.3) is the block whose first byte is `0xE1` and the rest zero, i.e.
 //! `[0xE1 << 56, 0]` in this representation.
 
+use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, bounded_usize};
 
 /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
 type Block = [u64; 2];
@@ -172,6 +174,10 @@ pub(crate) fn mul(x: &Block, y: &Block) -> Block {
 /// intermediate values in the execution of the GCM functions shall be secret"), so both live in a
 /// [`Secret`] and are zeroized on drop; the pending partial block is live plaintext-or-ciphertext
 /// bytes still waiting to be absorbed and is wrapped for the same reason.
+/// Bytes [`Ghash::write_state`] writes: `Y` as two `u64`s, the pending block and its length.
+pub(crate) const GHASH_STATE_LEN: usize = 16 + 16 + 8;
+
+#[derive(Clone)]
 pub(crate) struct Ghash {
     /// The hash subkey `H = CIPH_K(0^128)`.
     h: Secret<Block>,
@@ -262,6 +268,36 @@ impl Ghash {
         Self::absorb(&mut self.y, &self.h, &len_block);
         out[..8].copy_from_slice(&self.y[0].to_be_bytes());
         out[8..].copy_from_slice(&self.y[1].to_be_bytes());
+    }
+}
+
+impl Ghash {
+    /// Writes the running state -- `Y`, the pending partial block and its length -- into `out`,
+    /// exactly [`GHASH_STATE_LEN`] bytes. `H` is not written: it is `CIPH_K(0^128)`, which the
+    /// resuming side re-derives from the re-supplied key, so the state carries one secret fewer.
+    pub(crate) fn write_state(&self, out: &mut [u8]) {
+        let mut w = CursorMut::new(out);
+        w.u64(self.y[0]);
+        w.u64(self.y[1]);
+        w.bytes(&*self.pending);
+        w.u64(self.pending_len as u64);
+        debug_assert!(w.is_done());
+    }
+
+    /// The inverse of [`Self::write_state`], over a `Ghash` freshly built from `H` by
+    /// [`Self::new`]: replaces `Y` and the pending block.
+    ///
+    /// # Errors
+    /// [`SuspendableError::InvalidData`] if the pending length is a whole block or more: `update`
+    /// absorbs whole blocks immediately, so a legitimate state never holds one.
+    pub(crate) fn restore_state(&mut self, state: &[u8]) -> Result<(), SuspendableError> {
+        let mut r = Cursor::new(state);
+        self.y[0] = r.u64();
+        self.y[1] = r.u64();
+        (*self.pending).copy_from_slice(r.bytes(16));
+        self.pending_len = bounded_usize(r.u64(), 15)?;
+        debug_assert!(r.is_done());
+        Ok(())
     }
 }
 

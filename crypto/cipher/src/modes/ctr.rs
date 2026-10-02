@@ -31,6 +31,14 @@
 //! Like the rest of CFB and CTR, only the **forward** cipher function is ever used, in both
 //! directions, so a permutation that implements only `encrypt_block` works here.
 //!
+//! # Suspending and resuming execution
+//!
+//! [`Ctr`] implements [`SuspendableKeyed`](bouncycastle_core::traits::SuspendableKeyed), so a
+//! message in progress can be suspended to a byte array and resumed later with the re-supplied key.
+//! The state is the nonce, the next counter value and the partly used keystream block; the
+//! permutation is rebuilt from the key. The array length is `Ctr::SUSPENDED_STATE_LEN`; see [the
+//! crate docs](crate#suspending-and-resuming-execution) for an example.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! The one security requirement of CTR mode is that every counter block be distinct across all

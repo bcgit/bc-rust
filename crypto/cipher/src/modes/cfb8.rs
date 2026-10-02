@@ -23,6 +23,13 @@
 //! performance, so on a typical 16-byte block cipher it does **16 times** the cipher work of
 //! [`cfb`] for the same data. That is inherent to the mode, not to this implementation.
 //!
+//! # Suspending and resuming execution
+//!
+//! [`Cfb8`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
+//! array and resumed later with the re-supplied key. The state is the shift register; the
+//! permutation is rebuilt from the key. The array length is `Cfb8::SUSPENDED_STATE_LEN`; see [the
+//! crate docs](crate#suspending-and-resuming-execution) for an example.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! CFB and CFB8 largely share their security considerations, with only a few differences.
@@ -48,15 +55,18 @@
 use crate::modes::iv::random_iv;
 use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_utils::suspendable_state::{
+    LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
+};
 use core::marker::PhantomData;
 
 // Imports needed for docs
@@ -86,6 +96,7 @@ use crate::modes::cfb;
 /// Note what is *not* stored: the output block `Oj`. It is recomputed from the register on each
 /// byte and lives only in a local, so no keystream outlives the call that used it. No partial
 /// segment is stored either, because a segment is one byte.
+#[derive(Clone)]
 pub struct Cfb8<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -100,6 +111,10 @@ impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb8<P, Dir, KEY_LEN,
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header and the shift
+    /// register. See [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN;
+
     /// `I_{j+1} = LSB_{b-8}(Ij) | Cj`: shift the register one byte left and put the ciphertext byte
     /// in the least significant position.
     ///
@@ -304,5 +319,44 @@ where
             self.shift_in(c);
         }
         Ok(len)
+    }
+}
+
+/// The suspended state is the shift register `Ij`, in both directions; the permutation is
+/// rebuilt from the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
+    for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    const STATE_LEN: usize = BLOCK_LEN;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        out.copy_from_slice(&self.chain);
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let mut chain = [0u8; BLOCK_LEN];
+        chain.copy_from_slice(state);
+        Ok(Self { perm, chain, _dir: PhantomData })
+    }
+}
+
+/// `N` must be [`Cfb8::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
+    for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
     }
 }

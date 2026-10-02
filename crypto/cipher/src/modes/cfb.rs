@@ -114,6 +114,14 @@
 //! assert_eq!(data, [0x5Au8; 40]);
 //! ```
 //!
+//! # Suspending and resuming execution
+//!
+//! [`Cfb`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
+//! array and resumed later with the re-supplied key. The state is the open segment and how much of
+//! it is used; the permutation is rebuilt from the key. The array length is
+//! `Cfb::SUSPENDED_STATE_LEN`; see [the crate docs](crate#suspending-and-resuming-execution) for an
+//! example.
+//!
 //! # Memory Usage
 //!
 //! The state consists of the underlying permutation struct, one block, `buf`, and a byte count, `used`.
@@ -162,15 +170,19 @@
 use crate::modes::iv::random_iv;
 use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
+    suspend_component,
+};
 use core::marker::PhantomData;
 
 // Imports needed for docs
@@ -191,6 +203,7 @@ use crate::modes::cfb8;
 /// runtime check.
 ///
 /// The initialization data is one block, so `INIT_DATA_LEN == BLOCK_LEN`.
+#[derive(Clone)]
 pub struct Cfb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -221,6 +234,10 @@ impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb<P, Dir, KEY_LEN, 
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the segment
+    /// buffer and the `used` count as a `u64`. See [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN + 8;
+
     /// `I1 = IV`, with no segment open: the first byte in either direction will compute `O1`.
     #[inline]
     fn start(perm: P, iv: [u8; BLOCK_LEN]) -> Self {
@@ -524,5 +541,51 @@ where
         }
         self.decrypt_bytes(tail);
         Ok(len)
+    }
+}
+
+/// The suspended state is `buf` and `used` -- the open segment, which is public ciphertext and
+/// the keystream not yet used against it -- in both directions; the permutation is rebuilt from
+/// the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
+    for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    const STATE_LEN: usize = BLOCK_LEN + 8;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let mut w = CursorMut::new(out);
+        w.bytes(&self.buf);
+        w.u64(self.used as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let mut r = Cursor::new(state);
+        let buf = r.array::<BLOCK_LEN>();
+        // `used` is `0..=BLOCK_LEN`; anything past the buffer would index out of it.
+        let used = bounded_usize(r.u64(), BLOCK_LEN)?;
+        debug_assert!(r.is_done());
+        Ok(Self { perm, buf, used, _dir: PhantomData })
+    }
+}
+
+/// `N` must be [`Cfb::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
+    for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
     }
 }

@@ -74,6 +74,14 @@
 //! The AAD can be processed in batches the same way, if its length is declared up-front too; see
 //! [`Ccm::new_with_lengths`].
 //!
+//! # Suspending and resuming execution
+//!
+//! [`Ccm`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
+//! array and resumed later with the re-supplied key. The state is the CTR half, the CBC-MAC
+//! chaining value and the AAD and payload still owed; the permutation is rebuilt from the key. The
+//! array length is `Ccm::SUSPENDED_STATE_LEN`; see [the crate
+//! docs](crate#suspending-and-resuming-execution) for an example.
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! **The nonce must never repeat under one key.**
@@ -98,17 +106,21 @@
 use crate::modes::ctr::apply_counter_blocks;
 use crate::modes::iv::random_iv;
 use crate::stream::StreamCipher;
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
+    suspend_component,
+};
 use core::marker::PhantomData;
 
 use crate::{Decrypting, Encrypting};
@@ -148,6 +160,7 @@ use crate::{Decrypting, Encrypting};
 /// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
 /// let _ = Ccm::<ToyBlockCipher, Encrypting, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
 /// ```
+#[derive(Clone)]
 pub struct Ccm<
     P,
     Dir,
@@ -203,6 +216,20 @@ where
 {
     /// The spec's `q`: the octet length of the payload-length field `Q`. A.1 requires `n + q = 15`.
     const Q_LEN: usize = CcmKeyStream::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>::Q_LEN;
+
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the CTR state,
+    /// the CBC-MAC chaining block and three counts as `u64`s. See [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize =
+        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+
+    /// The CTR half's share of the suspended state.
+    const CTR_STATE_LEN: usize = <StreamCipher<
+        CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>,
+        Dir,
+        KEY_LEN,
+        NONCE_LEN,
+        BLOCK_LEN,
+    > as SuspendableComponent>::STATE_LEN;
 
     /// The largest payload this parameterization can carry, from A.1's "by definition, p<2^8q".
     ///
@@ -819,6 +846,7 @@ where
 /// Crate-private: CCM's CTR half alone is an unauthenticated cipher, and is only reachable
 /// through [`Ccm`]. It shares its key schedule with the CBC-MAC half, which reaches it through
 /// [`StreamCipher::keystream`].
+#[derive(Clone)]
 struct CcmKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -1829,6 +1857,114 @@ where
             return Err(SymmetricCipherError::DecryptionFailed);
         };
         Self::decrypt_out_detached(key, nonce, aad, data, tag, plaintext)
+    }
+}
+
+/// The suspended state is the CTR half, the CBC-MAC chaining value, how much of its current
+/// block has gone in, and how much AAD and payload are still owed. The chaining value is
+/// key-dependent MAC state, which is why the state must be protected; see [`bouncycastle_utils::suspendable_state`].
+impl<
+    P,
+    Dir,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+> SuspendableComponent for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    const STATE_LEN: usize = Self::CTR_STATE_LEN + BLOCK_LEN + 8 + 8 + 8;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (ctr, rest) = out.split_at_mut(Self::CTR_STATE_LEN);
+        self.ctr.write_state(ctr);
+        let mut w = CursorMut::new(rest);
+        w.bytes(&*self.y);
+        w.u64(self.mac_pos as u64);
+        w.u64(self.aad_owed as u64);
+        w.u64(self.owed as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        Self::check_shape();
+        let (ctr, rest) = state.split_at(Self::CTR_STATE_LEN);
+        let ctr = StreamCipher::read_state(ctr, key)?;
+        let mut r = Cursor::new(rest);
+        let mut y: Secret<[u8; BLOCK_LEN]> = Secret::new();
+        (*y).copy_from_slice(r.bytes(BLOCK_LEN));
+        // A whole block is enciphered as soon as it is full, so `mac_pos` is always below
+        // `BLOCK_LEN`; the owed payload cannot exceed what `B0` could have committed to.
+        let mac_pos = bounded_usize(r.u64(), BLOCK_LEN - 1)?;
+        let aad_owed = bounded_usize(r.u64(), usize::MAX)?;
+        let owed = bounded_usize(r.u64(), usize::MAX)?;
+        if owed as u64 > Self::MAX_PAYLOAD_LEN {
+            return Err(SuspendableError::InvalidData);
+        }
+        debug_assert!(r.is_done());
+        Ok(Self { ctr, y, mac_pos, aad_owed, owed, _dir: PhantomData })
+    }
+}
+
+/// `N` must be [`Ccm::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<
+    P,
+    Dir,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const N: usize,
+> SuspendableKeyed<N> for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
+    }
+}
+
+/// The suspended state is the counter template and the next counter index; the permutation is
+/// rebuilt from the re-supplied key. Crate-private like the type, reachable only through
+/// [`Ccm`]'s state.
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize> SuspendableComponent
+    for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+{
+    const STATE_LEN: usize = BLOCK_LEN + 8;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let mut w = CursorMut::new(out);
+        w.bytes(&self.ctr_template);
+        w.u64(self.next_ctr);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let mut r = Cursor::new(state);
+        let ctr_template = r.array::<BLOCK_LEN>();
+        // A.3: the flags octet is `[q-1]_3` and nothing else, and the counter field is zero in
+        // the template; `next_ctr` starts at 1 (`S0` is the tag mask) and stops at `MAX_COUNTER`.
+        let next_ctr = r.u64();
+        let flags_ok = ctr_template[0] == (Self::Q_LEN - 1) as u8;
+        let counter_field_zero = ctr_template[BLOCK_LEN - Self::Q_LEN..].iter().all(|&b| b == 0);
+        let ctr_ok = next_ctr >= 1 && next_ctr - 1 <= Self::MAX_COUNTER;
+        if !(flags_ok && counter_field_zero && ctr_ok) {
+            return Err(SuspendableError::InvalidData);
+        }
+        debug_assert!(r.is_done());
+        Ok(Self { perm, ctr_template, next_ctr })
     }
 }
 
