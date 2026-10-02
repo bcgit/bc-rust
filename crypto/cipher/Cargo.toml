@@ -1,0 +1,64 @@
+[package]
+name = "bouncycastle-cipher"
+edition.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+criterion.workspace = true
+
+[[test]]
+name = "nopadding_tests"
+path = "tests/padding/nopadding_tests.rs"
+
+[[test]]
+name = "padded_tests"
+path = "tests/padding/padded_tests.rs"
+
+[[test]]
+name = "pkcs7_tests"
+path = "tests/padding/pkcs7_tests.rs"
+
+[[test]]
+name = "cbc_tests"
+path = "tests/modes/cbc_tests.rs"
+
+[[test]]
+name = "ccm_tests"
+path = "tests/modes/ccm_tests.rs"
+
+[[test]]
+name = "cfb8_tests"
+path = "tests/modes/cfb8_tests.rs"
+
+[[test]]
+name = "cfb_tests"
+path = "tests/modes/cfb_tests.rs"
+
+[[test]]
+name = "ctr_tests"
+path = "tests/modes/ctr_tests.rs"
+
+[[test]]
+name = "ecb_tests"
+path = "tests/modes/ecb_tests.rs"
+
+[[test]]
+name = "gcm_tests"
+path = "tests/modes/gcm_tests.rs"
+
+[[test]]
+name = "symmetric_cipher_api_tests"
+path = "tests/modes/symmetric_cipher_api_tests.rs"
+
+[[bench]]
+name = "padding_benches"
+path = "benches/padding/padding_benches.rs"
+harness = false

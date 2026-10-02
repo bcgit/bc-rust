@@ -10,8 +10,6 @@ use crate::hazmat::ElectronicCodeBook;
 #[allow(unused_imports)]
 use crate::key_material::KeyType;
 #[allow(unused_imports)]
-use crate::stream_cipher::StreamCipher;
-#[allow(unused_imports)]
 use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs
 
@@ -21,8 +19,8 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// It is constructed from a key and init data and XORs successive keystream blocks into whatever
 /// it is handed. It has no direction and no init-data policy: generating the nonce, buffering a
 /// partly-used block between calls, and refusing a call that would run past the end of the
-/// keystream all belong to [`StreamCipher`], which turns any `KeyStream` into a
-/// [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
+/// keystream all belong to `bouncycastle_cipher::stream::StreamCipher`, which turns any
+/// `KeyStream` into a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
 ///
 /// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
 /// keystream block is the encryption of the last ciphertext block.
@@ -30,7 +28,7 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// # 🚨 Security 🚨
 /// [`KeyStream::new`] takes the init data from the caller, so nothing stops a caller reusing a
 /// nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
-/// and nothing stops it running past [`KeyStream::remaining_blocks`]. [`StreamCipher`] generates
+/// and nothing stops it running past [`KeyStream::remaining_blocks`]. `StreamCipher` generates
 /// the init data and enforces the limit; use it. See the [module docs](crate::hazmat) for the
 /// supported uses of the raw trait.
 ///

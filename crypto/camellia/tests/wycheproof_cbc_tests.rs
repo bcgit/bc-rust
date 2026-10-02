@@ -11,7 +11,7 @@
 //! the right ciphertext. Wycheproof's value is the other half. Of its 216 cases, **72 are valid and
 //! 144 are invalid**, and 141 of those carry the `BadPadding` flag: ciphertexts whose plaintext
 //! does not end in well-formed PKCS#7 padding, which decryption must **reject**. That is the path
-//! `bouncycastle-padding`'s constant-time `unpad` exists for, and nothing else in the tree drives
+//! `bouncycastle_cipher::padding`'s constant-time `unpad` exists for, and nothing else in the tree drives
 //! it with adversarially chosen input.
 //!
 //! PKCS#5 and PKCS#7 are the same padding for a 16-byte block; the name in the file is Wycheproof's.
@@ -24,12 +24,12 @@
 //! IV, and the returned init data is checked against it before any ciphertext is compared.
 
 use bouncycastle_camellia::{Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
+use bouncycastle_cipher::padding::PKCS7;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Decrypting, Encrypting};
-use bouncycastle_padding::PKCS7;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -2,7 +2,7 @@
 //!
 //! Sections **F.3.7 through F.3.12**: CFB8-AES128, CFB8-AES192 and CFB8-AES256, Encrypt and
 //! Decrypt. These are the `s = 8` subsections, the ones [`Cfb8`] implements. The `s = b`
-//! subsections F.3.13-F.3.18 belong to [`Cfb`](bouncycastle_modes::Cfb) and are in
+//! subsections F.3.13-F.3.18 belong to [`Cfb`](bouncycastle_cipher::modes::Cfb) and are in
 //! `sp800_38a_cfb_tests.rs`; F.3.1-F.3.6 are CFB1, which this crate does not provide.
 //!
 //! All six share the same IV. The plaintext is the **first 18 bytes** of the Appendix F plaintext:
@@ -31,6 +31,8 @@
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::Cfb8;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -39,7 +41,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Cfb8, Decrypting, Encrypting};
 
 const BLOCK_LEN: usize = 16;
 

@@ -8,7 +8,7 @@
 //! RFC 5528's nine Camellia-CTR vectors divide the counter block differently -- a 4-octet nonce, an
 //! 8-octet IV and a counter starting at one -- so they are not ones these commands can produce (see
 //! the `Camellia_CTR_128` docs). Instead the commands are required to agree with
-//! `bouncycastle_modes::Ctr` over the Camellia permutation, which
+//! `bouncycastle_cipher::modes::Ctr` over the Camellia permutation, which
 //! `crypto/camellia/tests/stream_mode_tests.rs` pins against the SP 800-38A Sec 6.5 equations, RFC
 //! 5528's vectors included.
 
@@ -103,9 +103,10 @@ where
     P: bouncycastle::core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
 {
     use bouncycastle::camellia::CTR_NONCE_LEN;
+    use bouncycastle::cipher::Decrypting;
+    use bouncycastle::cipher::modes::Ctr;
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::core::traits::StreamCipherDecryptor;
-    use bouncycastle::modes::{Ctr, Decrypting};
 
     let key_bytes: [u8; KEY_LEN] = unhex(key_hex).try_into().expect("the right key length");
     let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)

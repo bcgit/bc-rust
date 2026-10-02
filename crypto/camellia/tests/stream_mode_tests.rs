@@ -24,7 +24,7 @@
 //!   `s = 8` over the permutation, and the aliases are held to it.
 //!
 //! Everything internal to the modes -- the counter increment, the short final block, the shift
-//! register, the chunking -- is covered by the SP 800-38A and ACVP vectors in `bouncycastle-modes`.
+//! register, the chunking -- is covered by the SP 800-38A and ACVP vectors in `bouncycastle_cipher::modes`.
 
 mod common;
 
@@ -34,11 +34,11 @@ use bouncycastle_camellia::{
     Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192,
     Camellia_CTR_256,
 };
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Decrypting, Encrypting};
 use common::bytes;
 
 const KEY_128: &str = "2B7E151628AED2A6ABF7158809CF4F3C";

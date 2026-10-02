@@ -1,5 +1,5 @@
 //! Camellia-CBC known-answer tests, through the [`Camellia_CBC_128`] / `_192` / `_256` aliases,
-//! i.e. `bouncycastle-modes` over this permutation.
+//! i.e. `bouncycastle_cipher::modes` over this permutation.
 //!
 //! RFC 3713 has no CBC vectors (it only assigns the `id-camellia*-cbc` identifiers, Sec 3), so
 //! these are the `CAMELLIA-*-CBC` entries of OpenSSL's `test/recipes/30-test_evp_data/evpciph_camellia.txt`
@@ -19,11 +19,12 @@ mod common;
 
 use bouncycastle_camellia::BLOCK_LEN;
 use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::bytes;
 
 /// The published CBC vectors are whole blocks, so they are checked against the mode

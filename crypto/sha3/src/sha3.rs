@@ -7,8 +7,8 @@ use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, KDF, Suspendable};
+use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 
 /// Internal struct for SHA3.
