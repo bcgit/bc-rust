@@ -10,13 +10,14 @@
 #![allow(dead_code)]
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Decrypting, Encrypting, Gcm};
 
 /// The nonce length these vectors use; every group in the ACVP AES-GCM/GMAC sets has `ivLen = 96`.
 #[path = "acvp_helpers.rs"]
@@ -71,7 +72,7 @@ fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
 {
     let mut ct = vec![0u8; data.len()];
-    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_out_rng_detached(
+    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_out_rng(
         key,
         &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
         aad,
@@ -131,7 +132,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 
     // The detached one-shot: AAD-capable, and never releases plaintext before the tag checks out.
     let mut data = vec![0xEEu8; ct.len()];
-    let one_shot_result = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_out_detached(
+    let one_shot_result = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached_out(
         key, &iv, aad, ct, &tag_arr, &mut data,
     );
 

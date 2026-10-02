@@ -20,18 +20,21 @@ pub struct TestFrameworkSymmetricCipher {
     /// multiples of it round-trip, and every other length must be *rejected* by `do_final` /
     /// `encrypt_out` with a `PaddingError`, which the test then asserts instead.
     pub required_alignment: usize,
-    /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the longest message the
-    /// pair's streaming methods accept. `usize::MAX` (the default) means there is no limit. A
-    /// cipher that has to buffer the whole message before it can process any of it -- CCM, whose
-    /// `B0` block encodes the payload length -- sets its buffer's capacity here, and the test caps
-    /// every message it tries at that length.
-    pub max_message_len: usize,
+    /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the one message length
+    /// the pair's streaming methods accept, if they accept only one. `None` (the default) means
+    /// any length. A cipher whose payload length is fixed by its type -- CCM, whose `B0` block
+    /// encodes the payload length, through its `DATA_LEN` parameter -- sets it here: the
+    /// streaming checks then run at exactly that length, the one-shots -- the trait's own,
+    /// provided over the streaming methods -- are checked to refuse every other length, and the
+    /// test also checks that one byte more is refused at the update and one byte fewer at the
+    /// final, on both sides.
+    pub fixed_message_len: Option<usize>,
 }
 
 impl TestFrameworkSymmetricCipher {
     ///
     pub fn new() -> Self {
-        Self { required_alignment: 1, max_message_len: usize::MAX }
+        Self { required_alignment: 1, fixed_message_len: None }
     }
 
     /// Exercises the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] contract for a
@@ -69,7 +72,10 @@ impl TestFrameworkSymmetricCipher {
         .unwrap();
         // Enough plaintext lengths to cross several final-chunk boundaries (a block, for padding).
         let align = self.required_alignment.max(1);
-        let max_len = (3 * FINAL_LEN.max(1) + 5).next_multiple_of(align).min(self.max_message_len);
+        let max_len = (3 * FINAL_LEN.max(1) + 5).next_multiple_of(align);
+        if let Some(fixed) = self.fixed_message_len {
+            assert!(fixed <= DUMMY_SEED.len(), "fixed_message_len must fit the seed buffer");
+        }
 
         // one-shot round trip, every (accepted) length; every other length must be refused
         for len in 0..=max_len {
@@ -86,6 +92,17 @@ impl TestFrameworkSymmetricCipher {
                 assert!(
                     matches!(enc.do_final(), Err(SymmetricCipherError::PaddingError(_))),
                     "len {len}: streaming do_final must refuse an unaligned message"
+                );
+                continue;
+            }
+            // a fixed-length pair's one-shots refuse every other length
+            if let Some(fixed) = self.fixed_message_len
+                && fixed != len
+            {
+                let mut ct = vec![0u8; E::encrypt_out_len(len)];
+                assert!(
+                    E::encrypt_out(&key, msg, &mut ct).is_err(),
+                    "fixed length: a {len}-byte one-shot must be refused"
                 );
                 continue;
             }
@@ -108,10 +125,10 @@ impl TestFrameworkSymmetricCipher {
         }
 
         // streaming in every chunking agrees with the one-shot
-        let len = max_len;
+        let len = self.fixed_message_len.unwrap_or(max_len);
         let msg = &DUMMY_SEED[..len];
         let chunkings: [usize; 8] =
-            [1, 2, 3, 7, FINAL_LEN.max(1), FINAL_LEN + 1, 2 * FINAL_LEN + 3, len];
+            [1, 2, 3, 7, FINAL_LEN.max(1), FINAL_LEN + 1, 2 * FINAL_LEN + 3, len.max(1)];
         for chunk in chunkings {
             // encrypt in chunks, checking update_out_len is exact each time
             let (mut enc, init_data) = E::do_encrypt_init(&key).unwrap();
@@ -163,6 +180,59 @@ impl TestFrameworkSymmetricCipher {
                 rec.extend_from_slice(&block[..data_len]);
                 assert_eq!(rec, msg, "streamed round trip (chunk {chunk}, do_final_out {use_out})");
             }
+        }
+
+        // a fixed message length is enforced on both sides: one byte more is refused at the
+        // update, consuming nothing, and one byte fewer is refused at the final. Which variant
+        // each refusal carries is the implementor's to pin; here only that it refuses.
+        if let Some(fixed) = self.fixed_message_len {
+            let (mut enc, init_data) = E::do_encrypt_init(&key).unwrap();
+            let mut ct = vec![0u8; enc.do_encrypt_out_len(fixed)];
+            let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
+            ct.truncate(n);
+            let mut more = vec![0u8; enc.do_encrypt_out_len(1) + 1];
+            assert!(
+                enc.do_encrypt_out(&DUMMY_SEED[..1], &mut more).is_err(),
+                "fixed length: one byte more must be refused at the update"
+            );
+            // ...and the refusal consumed nothing: the final still completes the message.
+            let (last, last_len) = enc.do_final().unwrap();
+            ct.extend_from_slice(&last[..last_len]);
+            let mut pt = vec![0u8; D::decrypt_out_max_len(ct.len())];
+            let m = D::decrypt_out(&key, &init_data, &ct, &mut pt).unwrap();
+            assert_eq!(&pt[..m], msg, "fixed length: a refused update must not disturb the state");
+
+            if fixed > 0 {
+                let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+                let mut buf = vec![0u8; enc.do_encrypt_out_len(fixed - 1)];
+                enc.do_encrypt_out(&msg[..fixed - 1], &mut buf).unwrap();
+                assert!(
+                    enc.do_final().is_err(),
+                    "fixed length: one byte fewer must be refused at the final (encrypt)"
+                );
+                let mut dec = D::do_decrypt_init(&key, &init_data).unwrap();
+                let mut buf = vec![0u8; dec.do_decrypt_out_len(fixed - 1)];
+                dec.do_decrypt_out(&ct[..fixed - 1], &mut buf).unwrap();
+                assert!(
+                    dec.do_final().is_err(),
+                    "fixed length: one byte fewer must be refused at the final (decrypt)"
+                );
+            }
+            let mut dec = D::do_decrypt_init(&key, &init_data).unwrap();
+            let mut rec = vec![0u8; dec.do_decrypt_out_len(ct.len())];
+            let n = dec.do_decrypt_out(&ct, &mut rec).unwrap();
+            rec.truncate(n);
+            let mut more = vec![0u8; dec.do_decrypt_out_len(1) + 1];
+            assert!(
+                dec.do_decrypt_out(&DUMMY_SEED[..1], &mut more).is_err(),
+                "fixed length: one byte more must be refused at the update (decrypt)"
+            );
+            let (last, data_len) = dec.do_final().unwrap();
+            rec.extend_from_slice(&last[..data_len]);
+            assert_eq!(
+                rec, msg,
+                "fixed length: a refused update must not disturb the state (decrypt)"
+            );
         }
 
         // The RNG-taking constructor is only exercised for a cipher that has init data to

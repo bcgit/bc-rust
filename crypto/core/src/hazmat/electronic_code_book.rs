@@ -14,7 +14,7 @@ use crate::key_material::KeyType;
 /// # 🚨 Security 🚨
 /// A permutation applied to data block by block is ECB: equal plaintext blocks give equal
 /// ciphertext blocks, so the structure of the plaintext survives. This is the primitive under
-/// CBC, CTR, GCM and the rest of `bouncycastle-modes`, not a cipher for data; see the
+/// CBC, CTR, GCM and the rest of `bouncycastle_cipher::modes`, not a cipher for data; see the
 /// [module docs](crate::hazmat) for the supported uses.
 ///
 /// Implementors are expected to hold the key schedule in a zeroize-on-drop wrapper
@@ -75,7 +75,7 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     /// the order of the four results. `TestFrameworkElectronicCodeBook` pins that.
     ///
     /// Modes with parallel structure chunk their data into fours first, then pairs, then single
-    /// blocks; see CBC decryption in `bouncycastle-modes`.
+    /// blocks; see CBC decryption in `bouncycastle_cipher::modes`.
     fn encrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
 
     /// The inverse cipher function on four *independent* blocks, in place.

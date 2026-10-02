@@ -126,15 +126,10 @@ pub enum RNGError {
     KeyMaterialError(KeyMaterialError),
 }
 
-///
-#[derive(Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum SuspendableError {
-    /// The serialized state was produced by a library version incompatible with this one.
-    IncompatibleVersion,
-    /// The serialized state is malformed or corrupt.
-    InvalidData,
-}
+/// Errors from [`Suspendable`](crate::traits::Suspendable) and
+/// [`SuspendableKeyed`](crate::traits::SuspendableKeyed). Defined in `bouncycastle-utils` next to
+/// the version-header helpers that raise it, and re-exported here with the other error types.
+pub use bouncycastle_utils::suspendable_state::SuspendableError;
 
 ///
 #[derive(Debug, PartialEq, Eq)]
@@ -175,6 +170,11 @@ pub enum SymmetricCipherError {
     /// no input and left the cipher's state untouched, so retrying with a buffer at least that
     /// long produces exactly what the refused call would have.
     OutputBufferTooSmall(usize),
+    /// The cipher has no keystream or counter space left under its current init data: this call
+    /// would need more than remains, and continuing would repeat keystream. The call consumed no
+    /// input and left the cipher's state untouched, so the bytes that still fit can be processed
+    /// in a shorter call; the rest needs a fresh encryption under new init data.
+    DataLimitExceeded,
     ///
     KeyMaterialError(KeyMaterialError),
     ///

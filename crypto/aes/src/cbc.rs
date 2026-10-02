@@ -1,6 +1,6 @@
 //! Type aliases for AES in CBC mode (NIST SP 800-38A §6.2), with padding.
 //!
-//! See [`bouncycastle_modes::cbc`] for details on the CipherBlockChaining construction.
+//! See [`bouncycastle_cipher::modes::cbc`] for details on the CipherBlockChaining construction.
 //!
 //! The aliases here are padded block ciphers that accept input of any size; `NoPadding` accepts
 //! only whole blocks but goes through the same adapter. The unpadded mode underneath them, which
@@ -16,8 +16,8 @@
 //! use bouncycastle_aes::AES_CBC_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
-//! use bouncycastle_padding::PKCS7;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CBC_256<Encrypting, PKCS7>;
@@ -46,8 +46,8 @@
 //! use bouncycastle_aes::{AES_CBC_128, AES_BLOCK_LEN};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
-//! use bouncycastle_padding::PKCS7;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CBC_128<Encrypting, PKCS7>;
@@ -68,7 +68,6 @@
 //! let mut ciphertext = Vec::new();
 //!
 //! for piece in plaintext.chunks(7) {
-//!     // Since AES
 //!     let mut out = [0u8; AES_BLOCK_LEN];
 //!     let bytes_written = encryptor.do_encrypt_out(piece, &mut out).expect("encryption");
 //!
@@ -105,8 +104,8 @@
 //! use bouncycastle_aes::AES_CBC_128;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_modes::Encrypting;
-//! use bouncycastle_padding::NoPadding;
+//! use bouncycastle_cipher::Encrypting;
+//! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! // Define ourselves a convenience type for the encryption direction with no padding.
 //! type Enc = AES_CBC_128<Encrypting, NoPadding>;
@@ -130,8 +129,8 @@
 //! use bouncycastle_aes::AES_CBC_128;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::SymmetricCipherEncryptor;
-//! use bouncycastle_modes::Encrypting;
-//! use bouncycastle_padding::{NoPadding, PKCS7};
+//! use bouncycastle_cipher::Encrypting;
+//! use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
@@ -142,21 +141,22 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::cbc`] apply.
+//! All security considerations from [`bouncycastle_cipher::modes::cbc`] apply.
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
+use bouncycastle_cipher::modes::cbc;
+#[allow(unused_imports)]
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+#[allow(unused_imports)]
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-#[allow(unused_imports)]
-use bouncycastle_modes::cbc;
-#[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7};
 // end of imports needed for docs
 
 /// AES-128 in CBC mode with a padding scheme.

@@ -4,9 +4,9 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, Suspendable};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 use crate::ASCON_HASH256_NAME;
 use crate::sponge::{RATE, Sponge};

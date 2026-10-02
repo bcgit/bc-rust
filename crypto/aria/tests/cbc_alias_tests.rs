@@ -7,12 +7,13 @@
 
 use bouncycastle_aria::hazmat::ARIA_128;
 use bouncycastle_aria::{ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
+use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

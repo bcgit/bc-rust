@@ -12,7 +12,7 @@
 //!
 //! # The IV travels in the ciphertext
 //!
-//! There is no `--iv` flag, and that is deliberate: `bouncycastle-modes` has no API for a
+//! There is no `--iv` flag, and that is deliberate: `bouncycastle_cipher::modes` has no API for a
 //! caller-supplied IV, because NIST SP 800-38A Sec 5.3 requires the CBC and CFB IV to be
 //! *unpredictable* rather than merely unique. `encrypt` therefore generates one from the OS-backed
 //! DRBG and writes it as the **first block of the output**; `decrypt` reads it back from the
@@ -33,7 +33,7 @@
 //! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
 //! commands apply no padding, so input that is not a multiple of 16 bytes is rejected rather than
 //! silently padded. (The CFB commands have no such requirement; see [`crate::helpers::stream_mode_helpers`].)
-//! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
+//! Padding is the caller's business; the library offers `bouncycastle_cipher::padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
 //!
 //! # Binary in, binary out
