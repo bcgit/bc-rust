@@ -80,7 +80,7 @@ const CCM_TAG_LEN: usize = 16;
 type Aes128CcmEnc = Ccm<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
 type Aes128CcmDec = Ccm<AES128Internal, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
 
-/// The trait adapter needs compile-time maxima for streaming. Its one-shots bypass those buffers,
+/// The trait adapter takes its frame size at compile time. Its one-shots are not bound by it,
 /// but using the same 4 KiB message keeps this comparison representative of the public alias a
 /// packet protocol would choose.
 const CCM_BUFFER_LEN: usize = 4096;
@@ -93,7 +93,6 @@ type Aes128CcmEncryptor = CcmEncryptor<
     CCM_TAG_LEN,
     CCM_AAD_LEN,
     CCM_BUFFER_LEN,
-    { CCM_BUFFER_LEN + CCM_TAG_LEN },
 >;
 /// GCM with the full 16-byte tag, as the `AES_GCM_*` aliases fix it.
 const GCM_TAG_LEN: usize = 16;
@@ -931,7 +930,8 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 
 /// The [`AEADCipherEncryptor`] one-shot against the inherent one-shot on the same message.
 ///
-/// The trait override ends in the same `Ccm` implementation. A cheap deterministic RNG, created
+/// The trait's provided one-shot runs the streaming adapter over one 4 KiB frame and ends in the
+/// same `Ccm` implementation. A cheap deterministic RNG, created
 /// once outside the timed loop, isolates its nonce draw from OS entropy and DRBG construction.
 fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let key = key::<16>();
@@ -943,12 +943,12 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let mut group = c.benchmark_group("modes::ccm::one_shot");
     group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
 
-    group.bench_function("AEADCipherEncryptor::encrypt_out_rng_detached 4KiB", |b| {
+    group.bench_function("AEADCipherEncryptor::encrypt_detached_out_rng 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEncryptor::encrypt_out_rng_detached(
+                    Aes128CcmEncryptor::encrypt_detached_out_rng(
                         black_box(&key),
                         &mut rng,
                         &no_aad,
@@ -1002,7 +1002,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+                    Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
                         black_box(&key),
                         &mut rng,
                         &no_aad,
@@ -1019,7 +1019,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
     // Encrypt once outside the loop so decryption measures a ciphertext that authenticates: a
     // failing tag check would short-circuit the comparison and measure the wrong thing.
     let mut ciphertext = [0u8; DATA_LEN];
-    let (nonce, _, tag) = Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+    let (nonce, _, tag) = Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
         &key, &mut rng, &no_aad, &data, &mut ciphertext,
     )
     .unwrap();
@@ -1032,7 +1032,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Decrypting>::decrypt_out_detached(
+                    Aes128Gcm::<Decrypting>::decrypt_detached_out(
                         black_box(&key),
                         &nonce,
                         &no_aad,
@@ -1054,7 +1054,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+                    Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
                         black_box(&key),
                         &mut rng,
                         black_box(&data),
@@ -1074,7 +1074,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+                Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
                     black_box(&key),
                     &mut rng,
                     black_box(&data),
@@ -1124,7 +1124,7 @@ fn bench_gcm_aes256(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes256Gcm::<Encrypting>::encrypt_out_rng_detached(
+                    Aes256Gcm::<Encrypting>::encrypt_detached_out_rng(
                         black_box(&key),
                         &mut rng,
                         &no_aad,

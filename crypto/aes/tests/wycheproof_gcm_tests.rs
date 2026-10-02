@@ -19,8 +19,8 @@
 //! # Ciphertext and tag are separate fields
 //!
 //! Wycheproof's AEAD schema (`aead_test_schema_v1`) carries `ct` and `tag` as distinct fields, so
-//! these cases go through the detached pair, [`AEADCipherEncryptor::encrypt_out_rng_detached`] /
-//! [`AEADCipherDecryptor::decrypt_out_detached`]. [`Gcm`] generates its own nonce, so the vector's
+//! these cases go through the detached pair, [`AEADCipherEncryptor::encrypt_detached_out_rng`] /
+//! [`AEADCipherDecryptor::decrypt_detached_out`]. [`Gcm`] generates its own nonce, so the vector's
 //! `iv` is supplied through a `FixedSeedRNG` and the returned nonce is asserted to be exactly that
 //! IV, the same technique as `acvp_gcm_tests.rs`.
 //!
@@ -122,7 +122,7 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     if valid {
         let mut ct = vec![0u8; msg.len()];
         let (got_iv, written, got_tag) =
-            Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_out_rng_detached(
+            Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_out_rng(
                 &key,
                 &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
                 aad,
@@ -137,7 +137,7 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     }
 
     let mut plaintext = vec![0u8; expected_ct.len()];
-    match Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_out_detached(
+    match Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached_out(
         &key, &iv, aad, expected_ct, &tag, &mut plaintext,
     ) {
         Ok(n) => {
