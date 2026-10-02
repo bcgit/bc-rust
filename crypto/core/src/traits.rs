@@ -18,7 +18,7 @@ use crate::key_material::KeyType;
 /// What the allocating one-shot [`AEADCipherEncryptor::encrypt_detached`] hands back:
 /// `(nonce, ciphertext, tag)`
 #[cfg(feature = "std")]
-pub type AEADEncrypted<const NONCE_LEN: usize, const TAG_LEN: usize> =
+pub type AEADEncryptedTuple<const NONCE_LEN: usize, const TAG_LEN: usize> =
     ([u8; NONCE_LEN], Vec<u8>, [u8; TAG_LEN]);
 
 /// The decryption half of an AEAD cipher's streaming API; see [`AEADCipherEncryptor`], whose notes
@@ -377,7 +377,7 @@ pub trait AEADCipherEncryptor<
         key: &KeyMaterial<KEY_LEN>,
         aad: &[u8],
         plaintext: &[u8],
-    ) -> Result<AEADEncrypted<NONCE_LEN, TAG_LEN>, SymmetricCipherError> {
+    ) -> Result<AEADEncryptedTuple<NONCE_LEN, TAG_LEN>, SymmetricCipherError> {
         let mut ciphertext = vec![0u8; Self::encrypt_detached_out_len(plaintext.len())];
         let (nonce, written, tag) =
             Self::encrypt_detached_out(key, aad, plaintext, &mut ciphertext)?;
