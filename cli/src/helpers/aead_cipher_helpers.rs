@@ -1,6 +1,6 @@
 //! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm`.
 //!
-//! Parallel to [`crate::helpers::stream_mode_helpers`], but for [`bouncycastle::modes::Gcm`] rather than a
+//! Parallel to [`crate::helpers::stream_mode_helpers`], but for [`bouncycastle::cipher::modes::Gcm`] rather than a
 //! [`StreamCipherEncryptor`](bouncycastle::core::traits::StreamCipherEncryptor) mode: GCM carries
 //! additional authenticated data and a tag, neither of which that trait has room for, so this
 //! module drives it through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, which add
@@ -35,14 +35,15 @@
 //! decoder skips) would be authenticated as its decoding, and the tag would not verify against any
 //! other GCM implementation given the same file.
 
-use crate::helpers::{read_from_file_raw, write_bytes_or_hex};
+use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
+use bouncycastle::cipher::modes::Gcm;
+use bouncycastle::cipher::{Decrypting, Encrypting};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, ElectronicCodeBook, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle::hex;
-use bouncycastle::modes::{Decrypting, Encrypting, Gcm};
 use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
@@ -175,10 +176,7 @@ pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 /// Flushes stdout, and adds the trailing newline the hex-output commands all emit.
 fn finish(output_hex: bool) {
     if output_hex {
-        println!();
+        write_stdout(b"\n");
     }
-    io::stdout().flush().unwrap_or_else(|e| {
-        eprintln!("Error: failed to flush stdout: {e}");
-        exit(-1);
-    });
+    flush_stdout();
 }

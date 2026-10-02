@@ -35,6 +35,8 @@ testing must also be contained within the `mod tests {}` block.
 
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
 behaviours and error conditions that are common to all implementations of that trait.
+`bouncycastle-core-test-framework` is test infrastructure only: it goes under `[dev-dependencies]` and is never a
+runtime dependency, since it ships a deterministic `FixedSeedRNG` and a deliberately insecure `ToyBlockCipher`.
 
 All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
 
@@ -98,6 +100,13 @@ subsequent calls can be made to this object (as opposed to the usual pattern of 
 very little) object state to track and return errors about.
 
 Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
+
+A primitive whose safe use depends on the caller composing it correctly -- a raw block permutation, a raw keystream
+-- lives under a `hazmat` module in its crate or sub-module, never at the crate root or next to the safe API;
+`bouncycastle_core::hazmat` defines the term and the supported uses. A crate or sub-module with such items declares
+`pub mod hazmat;`
+in its `lib.rs` and neither the crate nor the sub-module ever `pub use`s anything out of it, since a re-export would
+bypass the notice.
 
 Any function that writes into a caller-provided output buffer must report how many bytes it wrote, as a `usize` in
 its `Ok` value (on its own, or alongside anything else the function needs to return, such as a generated IV). This
@@ -177,6 +186,14 @@ reviewer what is test code vs functional code.
 
 # Docs
 
+## Proportion
+
+Docs are a reading cost, so default to short. Each fact has one home: the crate docs are an overview plus links, and
+the detail lives on the type or module it describes. Rationale is a sentence or two next to the code; history and
+derivations go in the commit message. Give a few examples, not one per variant; keep memory tables to the figures,
+without a per-row essay; keep CLI docs out of library crates; and never repeat a spec quote across files. Before adding
+material, check whether the crate already states it.
+
 ## Usage Examples
 
 The crate docs needs a section "Usage Examples" with sample code for all the major usage patterns of the primitives in
@@ -192,3 +209,7 @@ the crate.
 Most crates should have a "Security Considerations" section that documents any footguns where the user of this crate
 could undermine their own security; for example where providing a seed or a nonce that is not truly random would
 completely undermine the algorithm.
+
+## Release Notes
+
+For release note entries, keep succinct, one line per significant change at most.

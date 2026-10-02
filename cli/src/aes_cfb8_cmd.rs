@@ -25,15 +25,16 @@
 //! plaintext byte, corrupts the following 16 bytes, and then decryption resynchronises. Do not
 //! decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::cipher::modes::Cfb8;
+use bouncycastle::cipher::{Decrypting, Encrypting};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
-use bouncycastle::modes::{Cfb8, Decrypting, Encrypting};
 
 pub(crate) fn aes128_cfb8_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -42,7 +43,7 @@ pub(crate) fn aes128_cfb8_cmd(
 }
 
 pub(crate) fn aes192_cfb8_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -51,7 +52,7 @@ pub(crate) fn aes192_cfb8_cmd(
 }
 
 pub(crate) fn aes256_cfb8_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -61,7 +62,7 @@ pub(crate) fn aes256_cfb8_cmd(
 
 /// Dispatches to the shared streaming loops with `Cfb8` filled in as the mode.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where

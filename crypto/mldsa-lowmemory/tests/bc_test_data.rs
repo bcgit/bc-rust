@@ -16,6 +16,7 @@ mod bc_test_data {
     #[allow(dead_code)]
     use crate::BustedMuBuilder;
     use bouncycastle_core::errors::SignatureError;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
@@ -169,7 +170,7 @@ mod bc_test_data {
             )
             .unwrap();
             // for the purposes of the test cases, accept an all-zero seed
-            key_material::do_hazardous_operations(&mut seed, |seed| {
+            do_hazardous_operations(&mut seed, |seed| {
                 seed.set_key_type(KeyType::Seed).unwrap();
                 seed.set_security_strength(SecurityStrength::_256bit)
             });
@@ -720,7 +721,7 @@ mod bc_test_data {
                     )
                     .unwrap();
                     // for the purposes of the test cases, accept an all-zero seed
-                    key_material::do_hazardous_operations(&mut seed, |seed| {
+                    do_hazardous_operations(&mut seed, |seed| {
                         seed.set_key_type(KeyType::Seed).unwrap();
                         seed.set_security_strength(SecurityStrength::_256bit)
                     });
@@ -796,7 +797,7 @@ mod bc_test_data {
                     )
                     .unwrap();
                     // for the purposes of the test cases, accept an all-zero seed
-                    key_material::do_hazardous_operations(&mut seed, |seed| {
+                    do_hazardous_operations(&mut seed, |seed| {
                         seed.set_key_type(KeyType::Seed).unwrap();
                         seed.set_security_strength(SecurityStrength::_256bit)
                     });
@@ -866,7 +867,7 @@ mod bc_test_data {
                     )
                     .unwrap();
                     // for the purposes of the test cases, accept an all-zero seed
-                    key_material::do_hazardous_operations(&mut seed, |seed| {
+                    do_hazardous_operations(&mut seed, |seed| {
                         seed.set_key_type(KeyType::Seed).unwrap();
                         seed.set_security_strength(SecurityStrength::_256bit)
                     });

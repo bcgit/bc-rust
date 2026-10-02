@@ -7,12 +7,12 @@
 //!
 //! The CFB and CTR commands are stream ciphers and live in [`crate::helpers::stream_mode_helpers`] instead;
 //! they share
-//! [`load_key`] and [`BlockModeAction`] with this module, so the key handling and the `encrypt` /
+//! [`load_key`] and [`CipherDirection`] with this module, so the key handling and the `encrypt` /
 //! `decrypt` spelling stay identical across all of them.
 //!
 //! # The IV travels in the ciphertext
 //!
-//! There is no `--iv` flag, and that is deliberate: `bouncycastle-modes` has no API for a
+//! There is no `--iv` flag, and that is deliberate: `bouncycastle_cipher::modes` has no API for a
 //! caller-supplied IV, because NIST SP 800-38A Sec 5.3 requires the CBC and CFB IV to be
 //! *unpredictable* rather than merely unique. `encrypt` therefore generates one from the OS-backed
 //! DRBG and writes it as the **first block of the output**; `decrypt` reads it back from the
@@ -33,7 +33,7 @@
 //! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
 //! commands apply no padding, so input that is not a multiple of 16 bytes is rejected rather than
 //! silently padded. (The CFB commands have no such requirement; see [`crate::helpers::stream_mode_helpers`].)
-//! Padding is the caller's business; the library offers `bouncycastle-padding` for it, but wiring a
+//! Padding is the caller's business; the library offers `bouncycastle_cipher::padding` for it, but wiring a
 //! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
 //!
 //! # Binary in, binary out
@@ -45,17 +45,18 @@
 //! cat cipher.hex | bc-rust hex-decode | bc-rust aes256-cbc decrypt --key-file k.bin
 //! ```
 
-use crate::helpers::write_bytes_or_hex;
-use bouncycastle::core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
+use crate::helpers::{
+    flush_stdout, read_from_file, strip_trailing_newline, write_bytes_or_hex, write_stdout,
 };
+use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle::hex;
 use clap::ValueEnum;
+use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
-use std::{fs, io};
 
 /// The AES block length in bytes.
 pub(crate) const BLOCK_LEN: usize = 16;
@@ -67,13 +68,11 @@ pub(crate) const BLOCK_LEN: usize = 16;
 /// block at a time; it is bounded, so its cost does not scale with the input.
 pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 
-/// Which direction to run. Shared by every mode subcommand, including CCM's, whose framing (a
-/// caller-supplied `--nonce` that is never written to the output, plus AAD and a tag) is
-/// different enough from the rest that it is not summarized here -- see the specific subcommand's
+/// Which direction to run. Shared by cipher subcommands, -- see the specific subcommand's
 /// own `--help` (`bc-rust aes128-ccm --help` and friends) for what `encrypt`/`decrypt` actually do
 /// for the mode you are running.
 #[derive(ValueEnum, Clone, Debug)]
-pub(crate) enum BlockModeAction {
+pub(crate) enum CipherDirection {
     /// Encrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
     Encrypt,
     /// Decrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
@@ -90,15 +89,14 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     alg: &str,
 ) -> KeyMaterial<KEY_LEN> {
     let key_bytes: Vec<u8> = if let Some(key_file) = key_file {
-        // A file may hold raw bytes or hex; try hex first, as the other commands do.
-        let raw = fs::read(key_file).unwrap_or_else(|e| {
-            eprintln!("Error: couldn't read key file '{key_file}': {e}");
-            exit(-1);
-        });
-        match hex::decode(&raw) {
-            Ok(decoded) => decoded,
-            Err(_) => raw,
-        }
+        // A file may hold raw bytes or hex; `read_from_file` tries hex first, as the other
+        // commands do.
+        let bytes = read_from_file(key_file);
+        // `read_from_file` already ignores a trailing newline on a hex file. A *raw* key file may
+        // end in one too, which lengthens the key by a byte; strip it only when that leaves
+        // exactly the key, so a binary key whose last byte really is `0x0a` is not shortened.
+        let trimmed = strip_trailing_newline(&bytes);
+        if trimmed.len() == KEY_LEN { trimmed.to_vec() } else { bytes }
     } else if let Some(key) = key {
         hex::decode(key).unwrap_or_else(|_| {
             eprintln!("Error: `--key` must be hex. Use `--key-file` for raw bytes.");
@@ -249,10 +247,12 @@ fn stream_aligned(mode: &str, mut process: impl FnMut(&mut [u8])) {
     }
 
     if !filled.is_multiple_of(BLOCK_LEN) {
+        // Everything before the misaligned tail has already been written, and in hex mode is
+        // still sitting in stdout's line buffer with no newline to release it. Flush first so the
+        // ciphertext and the error come out in order rather than the error landing inside it.
+        let _ = io::stdout().flush();
         eprintln!(
-            "Error: input is not a whole number of {BLOCK_LEN}-byte blocks ({} trailing byte(s)). \
-             {mode} is defined only on whole blocks (SP 800-38A Sec 5.2), and these commands apply \
-             no padding, so the input must be padded by the caller.",
+            "\nError: input to {mode} must be a whole number of {BLOCK_LEN}-byte blocks (data contained {} trailing byte(s)).",
             filled % BLOCK_LEN
         );
         exit(-1);
@@ -265,10 +265,7 @@ fn stream_aligned(mode: &str, mut process: impl FnMut(&mut [u8])) {
 /// Flushes stdout, and adds the trailing newline the hex-output commands all emit.
 fn finish(output_hex: bool) {
     if output_hex {
-        println!();
+        write_stdout(b"\n");
     }
-    io::stdout().flush().unwrap_or_else(|e| {
-        eprintln!("Error: failed to flush stdout: {e}");
-        exit(-1);
-    });
+    flush_stdout();
 }
