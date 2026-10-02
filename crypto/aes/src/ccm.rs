@@ -6,16 +6,19 @@
 //! and decryption either returns the plaintext or fails the tag check. `Dir` is [`Encrypting`] or
 //! [`Decrypting`]; the wrong direction is a compile error, not a runtime check.
 //!
-//! There are two families, because CCM must know the payload length before it starts (Sec 3):
+//! There are two families, because CCM must know the payload length before it starts (Sec 3),
+//! and the two learn that length from different places:
 //!
-//! * [`AES_CCM_128`] and friends do not buffer. The nonce is **supplied**, which CCM permits
-//!   because it requires the nonce to be unique but not random (Sec 5.3), so a caller with a
-//!   counter can do better than a draw from a DRBG; and the streaming API takes the total lengths
-//!   up front.
-//! * [`AES_CCM_128_Buffered`] and friends implement [`AEADCipherEncryptor`] /
-//!   [`AEADCipherDecryptor`], like every other mode in this crate. To fit the streaming traits
-//!   they buffer the AAD and payload, up to the `AAD_LEN` and `DATA_LEN` capacities they take as
-//!   parameters, and their one-shots generate the nonce.
+//! * [`AES_CCM_128`] and friends are told the AAD and payload lengths per message: the one-shots
+//!   read them off the slices they are given, and the streaming API takes both totals up front in
+//!   `new` or `new_with_lengths`. The nonce is **supplied**, which CCM permits because it requires
+//!   the nonce to be unique but not random (Sec 5.3), so a caller with a counter can do better
+//!   than a draw from a DRBG.
+//! * [`AES_CCM_128_Packet`] and friends fix the payload length in the type, as the const parameter
+//!   `DATA_LEN`, and so implement [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] like every
+//!   other mode in this crate: they stream, holding back nothing but up to `AAD_LEN` bytes of
+//!   AAD, and their one-shots generate the nonce. Every entry point accepts exactly `DATA_LEN`
+//!   bytes of payload, the fixed frame of a packet protocol, and refuses any other amount.
 //!
 //! # The nonce and tag length are parametrizable
 //!
@@ -49,29 +52,49 @@
 //!
 //! # Usage Examples
 //!
-//! ## Generic AEAD API
+//! ## Generic AEAD API for a fixed packet size
 //!
-//! For code written against [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], the buffering
-//! pair generates the nonce and returns it:
+//! For code written against [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], the fixed-frame
+//! pair generates the nonce and returns it. Every entry point, one-shots included, takes exactly
+//! `DATA_LEN` bytes of payload:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CCM_128_Buffered;
+//! use bouncycastle_aes::AES_CCM_128_Packet;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
-//! // Up to 64 bytes of AAD and 2 KiB of message -- comfortably above an 802.11 frame, the packet
-//! // size CCM was designed for -- and FINAL_LEN = 2 KiB plus the 16-byte tag.
-//! type AESEnc = AES_CCM_128_Buffered<Encrypting, 12, 16, 64, 2048, { 2048 + 16 }>;
-//! type AESDec = AES_CCM_128_Buffered<Decrypting, 12, 16, 64, 2048, { 2048 + 16 }>;
+//! // Up to 64 bytes of AAD, and frames of exactly 2 KiB -- comfortably above an 802.11 frame,
+//! // the packet size CCM was designed for.
+//! type AESEnc = AES_CCM_128_Packet<Encrypting, 12, 16, 64, 2048>;
+//! type AESDec = AES_CCM_128_Packet<Decrypting, 12, 16, 64, 2048>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
 //!
-//! let (nonce, ciphertext, tag) = AESEnc::encrypt_detached(&key, b"header", b"message").expect("encryption");
+//! let frame = [0x5Au8; 2048];
 //!
+//! // The one-shots: one frame.
+//! let (nonce, ciphertext, tag) = AESEnc::encrypt_detached(&key, b"header", &frame).expect("encryption");
 //! let plaintext = AESDec::decrypt_detached(&key, &nonce, b"header", &ciphertext, &tag).expect("decryption");
-//! assert_eq!(plaintext, b"message");
+//! assert_eq!(&plaintext[..], &frame[..]);
+//! // ...and nothing but a frame.
+//! assert!(AESEnc::encrypt_detached(&key, b"header", b"message").is_err());
+//!
+//! // The streaming methods: the same frame, released as it is processed.
+//! let (mut enc, nonce) = AESEnc::do_encrypt_init(&key).expect("init");
+//! enc.do_update_aad(b"header").expect("aad");
+//! let mut sealed = vec![0u8; 2048];
+//! let n = enc.do_encrypt_out(&frame, &mut sealed).expect("the whole frame comes out");
+//! assert_eq!(n, 2048);
+//! let (_, _, tag) = enc.do_final_detached().expect("the tag");
+//!
+//! let mut dec = AESDec::do_decrypt_init(&key, &nonce).expect("init");
+//! dec.do_update_aad(b"header").expect("aad");
+//! let mut opened = vec![0u8; 2048];
+//! dec.do_decrypt_out(&sealed, &mut opened).expect("released, but not yet authenticated");
+//! dec.do_final_detached(&tag).expect("...until the tag verifies");
+//! assert_eq!(opened, frame);
 //! ```
 //!
 //! ## One-shot API
@@ -184,6 +207,30 @@
 //! assert_eq!(recovered, plaintext);
 //! ```
 //!
+//! # Memory Usage
+//!
+//! The value held between calls:
+//!
+//! | Type | AES-128 | AES-192 | AES-256 |
+//! |---|---|---|---|
+//! | [`AES_CCM_128`] and friends, either direction | 264 B | 296 B | 328 B |
+//! | [`AES_CCM_128_Packet`] and friends, encrypting, `AAD_LEN = 64` | 344 B | 376 B | 408 B |
+//! | [`AES_CCM_128_Packet`] and friends, decrypting, `AAD_LEN = 64` | 368 B | 400 B | 432 B |
+//!
+//! The difference between the key sizes is the key schedule; the `_Packet` pair adds the
+//! `AAD_LEN`-byte AAD buffer and, on the decrypting side, the held-back tag. Peak stack over a
+//! 16 KiB frame with AES-128, measured with massif on x86-64 in release mode by
+//! `mem_usage_benches/src/bench_ccm_mem_usage.rs`, including the caller's own 16 KiB arrays:
+//!
+//! | Path | Peak stack |
+//! |---|---|
+//! | process start-up alone | 7 696 B |
+//! | `AES_CCM_128` one-shot, two arrays (message, ciphertext) | 35 944 B |
+//! | `AES_CCM_128` streaming, one array encrypted in place | 19 112 B |
+//! | `AES_CCM_128_Packet` streaming encrypt, two arrays | 37 400 B |
+//! | `AES_CCM_128_Packet` streaming decrypt, two arrays | 36 168 B |
+//! | `AES_CCM_128_Packet` one-shot, two arrays | 37 576 B |
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! All security considerations from [`bouncycastle_cipher::modes::ccm`] apply. Above all, the nonce that
@@ -210,9 +257,11 @@ pub const CCM_NONCE_LEN: usize = 12;
 /// permits. See the module docs on Sec B.2.
 pub const CCM_TAG_LEN: usize = 16;
 
-/// AES-128 in CCM mode with a `NONCE_LEN`-byte nonce and a `TAG_LEN`-byte tag, without the
-/// buffering of [`AES_CCM_128_Buffered`]: the one-shots take a supplied nonce, and the streaming
-/// API takes the total lengths up front.
+/// AES-128 in CCM mode with a `NONCE_LEN`-byte nonce and a `TAG_LEN`-byte tag. The AAD and
+/// payload lengths are supplied per message: the one-shots read them off the slices they are
+/// given, along with a caller-supplied nonce, and the streaming API takes both totals up front in
+/// `new` or `new_with_lengths`. For a payload length fixed by the type, and the generic AEAD
+/// traits, see [`AES_CCM_128_Packet`].
 ///
 /// `NONCE_LEN` must be 7..=13 and `TAG_LEN` one of 4, 6, 8, 10, 12, 14, 16 (A.1); anything else is
 /// a compile error. Use [`CCM_NONCE_LEN`] and [`CCM_TAG_LEN`] if you have no reason to choose.
@@ -230,102 +279,47 @@ pub type AES_CCM_192<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
     Ccm<AES256Internal, Dir, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>;
 
-/// AES-128 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`.
+/// AES-128 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`, for
+/// frames of exactly `DATA_LEN` payload bytes.
 ///
-/// This is the buffering pair, for code written against the generic AEAD traits; it holds up to
-/// `AAD_LEN` bytes of AAD and `DATA_LEN` bytes of payload, and `FINAL_LEN` must be
-/// `DATA_LEN + TAG_LEN`. `NONCE_LEN` and `TAG_LEN` are as for [`AES_CCM_128`].
+/// This is the fixed-frame pair, for code written against the generic AEAD traits: every entry
+/// point accepts exactly `DATA_LEN` bytes of payload and up to `AAD_LEN` of AAD, and the
+/// one-shots generate the nonce. `NONCE_LEN` must be at least 12 here, and `TAG_LEN` is as for
+/// [`AES_CCM_128`]. See [`CcmEncryptor`] for the rules.
 #[allow(non_camel_case_types)]
-pub type AES_CCM_128_Buffered<
+pub type AES_CCM_128_Packet<
     Dir,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-    const FINAL_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<
-        AES128Internal,
-        16,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-        FINAL_LEN,
-    >,
-    CcmDecryptor<
-        AES128Internal,
-        16,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-        FINAL_LEN,
-    >,
+    CcmEncryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmDecryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;
 
-/// AES-192 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128_Buffered`].
+/// AES-192 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128_Packet`].
 #[allow(non_camel_case_types)]
-pub type AES_CCM_192_Buffered<
+pub type AES_CCM_192_Packet<
     Dir,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-    const FINAL_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<
-        AES192Internal,
-        24,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-        FINAL_LEN,
-    >,
-    CcmDecryptor<
-        AES192Internal,
-        24,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-        FINAL_LEN,
-    >,
+    CcmEncryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmDecryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;
 
-/// AES-256 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128_Buffered`].
+/// AES-256 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128_Packet`].
 #[allow(non_camel_case_types)]
-pub type AES_CCM_256_Buffered<
+pub type AES_CCM_256_Packet<
     Dir,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-    const FINAL_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<
-        AES256Internal,
-        32,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-        FINAL_LEN,
-    >,
-    CcmDecryptor<
-        AES256Internal,
-        32,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-        FINAL_LEN,
-    >,
+    CcmEncryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmDecryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;

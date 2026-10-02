@@ -25,11 +25,11 @@ pub type AEADEncrypted<const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// on the AAD phase, the two tag layouts, buffering, and the `Result` all apply here too.
 ///
 /// This extends [`SymmetricCipherDecryptor`], whose methods are the AEAD with no associated data
-/// and the tag inline -- the last `TAG_LEN` bytes of the ciphertext. That is why a decryptor has
-/// to hold back the last `TAG_LEN` bytes it has seen at all times: the tag is only identifiable
-/// once the stream ends, and [`SymmetricCipherDecryptor::do_decrypt_out`] cannot know which final
-/// method will be called. With the tag detached those held-back bytes turn out to be ciphertext,
-/// and [`do_final_detached_out`](Self::do_final_detached_out) decrypts them; with it inline,
+/// and the tag inline -- the last `TAG_LEN` bytes of the ciphertext. A decryptor may therefore
+/// hold back up to the last `TAG_LEN` bytes it has seen, since until the stream ends they may be
+/// the tag; [`SymmetricCipherDecryptor::do_decrypt_out_len`] says exactly how many bytes each
+/// call releases. With the tag detached those held-back bytes turn out to be ciphertext, and
+/// [`do_final_detached_out`](Self::do_final_detached_out) decrypts them; with it inline,
 /// [`SymmetricCipherDecryptor::do_final`] checks them as the tag. So `FINAL_LEN` is at least
 /// `TAG_LEN`, plus whatever else the cipher holds back of its own accord.
 ///
@@ -295,7 +295,7 @@ pub trait AEADCipherEncryptor<
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if called with a non-empty `aad` after
     /// [`SymmetricCipherEncryptor::do_encrypt_out`] -- see the trait docs for why the AAD comes
-    /// first. An implementor whose buffering has a fixed capacity may also return
+    /// first. An implementor whose AAD buffer has a fixed capacity may also return
     /// [`SymmetricCipherError::GenericError`] if `aad` would exceed it; that is a property of the
     /// implementor, not of this trait, so it is not listed as a general contract here.
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
@@ -1622,11 +1622,13 @@ pub trait SymmetricCipherDecryptor<
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
-    /// [`update_out_len`](Self::do_decrypt_out_len), carrying the required length. Nothing is
-    /// consumed in that case. An implementor with a fixed buffering capacity, such as an AEAD
-    /// that has to see the whole message before it can process any of it (see
-    /// [`AEADCipherEncryptor`]), may also return [`SymmetricCipherError::GenericError`] if the
-    /// input would exceed it.
+    /// [`update_out_len`](Self::do_decrypt_out_len), carrying the required length, and
+    /// [`SymmetricCipherError::DataLimitExceeded`] if `ciphertext` would take the total past the
+    /// amount the cipher may process under one key and init data -- a limit a streaming API can
+    /// check no earlier than the call that would cross it. Nothing is consumed in either case. An
+    /// implementor whose message length is fixed by its type may also return
+    /// [`SymmetricCipherError::StateError`] if the input would exceed it; that is a property of
+    /// the implementor, not of this trait, so it is not listed as a general contract here.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
@@ -1639,8 +1641,9 @@ pub trait SymmetricCipherDecryptor<
     /// used.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::DecryptionFailed`] if the ciphertext was malformed (empty, or not a
-    /// whole number of blocks); [`SymmetricCipherError::PaddingError`] or
+    /// [`SymmetricCipherError::DecryptionFailed`] if the ciphertext was malformed (empty, not a
+    /// whole number of blocks, or not the length an implementor's type fixes);
+    /// [`SymmetricCipherError::PaddingError`] or
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the check fails. In every error case the
     /// caller learns only that decryption failed, not where.
     fn do_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
@@ -1797,11 +1800,13 @@ pub trait SymmetricCipherEncryptor<
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
-    /// [`update_out_len`](Self::do_encrypt_out_len), carrying the required length. Nothing is
-    /// consumed in that case. An implementor with a fixed buffering capacity, such as an AEAD
-    /// that has to see the whole message before it can process any of it (see
-    /// [`AEADCipherEncryptor`]), may also return [`SymmetricCipherError::GenericError`] if the
-    /// input would exceed it.
+    /// [`update_out_len`](Self::do_encrypt_out_len), carrying the required length, and
+    /// [`SymmetricCipherError::DataLimitExceeded`] if `plaintext` would take the total past the
+    /// amount the cipher may process under one key and init data -- a limit a streaming API can
+    /// check no earlier than the call that would cross it. Nothing is consumed in either case. An
+    /// implementor whose message length is fixed by its type may also return
+    /// [`SymmetricCipherError::StateError`] if the input would exceed it; that is a property of
+    /// the implementor, not of this trait, so it is not listed as a general contract here.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
@@ -1816,7 +1821,9 @@ pub trait SymmetricCipherEncryptor<
     ///
     /// # Errors
     /// [`SymmetricCipherError::PaddingError`] if the buffered data cannot be finished -- with a
-    /// scheme that adds no padding, a message that is not a whole number of blocks.
+    /// scheme that adds no padding, a message that is not a whole number of blocks -- and
+    /// [`SymmetricCipherError::StateError`] from an implementor whose message length is fixed by
+    /// its type (see [`AEADCipherEncryptor`]) that was given less than it.
     fn do_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
 
     /// As [`do_final`](Self::do_final), writing the final buffer into `ciphertext`. Returns the
