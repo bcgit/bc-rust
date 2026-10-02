@@ -37,6 +37,7 @@ pub const TOY_BLOCK_LEN: usize = 16;
 
 /// A per-byte, key-validating, insecure permutation with a 16-byte key and block. See the module
 /// docs for what it is and is not good for.
+#[derive(Clone)]
 pub struct ToyBlockCipher {
     key: [u8; TOY_BLOCK_LEN],
 }
