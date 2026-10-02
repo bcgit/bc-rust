@@ -5,6 +5,18 @@
 //! * [`padding`] — block padding schemes, and the adapters that apply them to a block cipher mode.
 //! * [`stream`] — a stream cipher over any keystream, and the helpers shared by stream ciphers that
 //!   cannot be built that way.
+//!
+//! # Usage Examples
+//!
+//! See the [`modes`], [`padding`] and [`stream`] module docs.
+//!
+//! # Memory Usage
+//!
+//! See the "Memory Usage" section of each module.
+//!
+//! # Security Considerations
+//!
+//! See the "Security Considerations" section of each module.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]

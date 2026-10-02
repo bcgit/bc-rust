@@ -73,7 +73,7 @@ pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
 /// # The keystream is finite, and running out is an error
 ///
 /// A call that would need more keystream than [`KeyStream::remaining_blocks`] can still supply
-/// returns [`SymmetricCipherError::StateError`] and consumes nothing: the check is made up front,
+/// returns [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing: the check is made up front,
 /// against the whole call, so a message is never half-processed before the cipher notices. Past
 /// that point the keystream would repeat, which is the two-time-pad failure within one message.
 pub struct StreamCipher<
@@ -144,18 +144,17 @@ where
     /// and kept for the next call.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::StateError`] if the keystream cannot cover the call; nothing is
-    /// consumed in that case.
+    /// [`SymmetricCipherError::DataLimitExceeded`] if the keystream cannot cover the call; nothing
+    /// is consumed in that case.
     fn apply(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let pending_len = BLOCK_LEN - self.used;
         // Saturating: a keystream with no practical limit reports `u64::MAX` blocks.
         let capacity = (pending_len as u64)
             .saturating_add(self.keystream.remaining_blocks().saturating_mul(BLOCK_LEN as u64));
         if data.len() as u64 > capacity {
-            return Err(SymmetricCipherError::StateError(
-                "keystream exhausted: this call would need more keystream than remains for this \
-                 init data, and continuing would repeat keystream",
-            ));
+            // Keystream exhausted: this call would need more keystream than remains for this init
+            // data, and continuing would repeat keystream.
+            return Err(SymmetricCipherError::DataLimitExceeded);
         }
 
         let head_len = core::cmp::min(pending_len, data.len());
@@ -255,8 +254,8 @@ where
     /// XORs the next `data.len()` keystream bytes into `data`.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::StateError`] if the keystream cannot cover the call. Nothing is
-    /// consumed in that case; see [`StreamCipher`].
+    /// [`SymmetricCipherError::DataLimitExceeded`] if the keystream cannot cover the call. Nothing
+    /// is consumed in that case; see [`StreamCipher`].
     fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
     }

@@ -9,7 +9,7 @@
 //! CFB is a keystream mode: the cipher never touches the data, it produces a keystream, and the data
 //! is XORed with it byte for byte. While this mode operates over a block permutation primitive,
 //! the chunking is invisible in the caller because the state carries the unused part of a block
-//! from one call to the next; see
+//! from one call to the next.
 //!
 //! Since this does not require the input data to be block-aligned (ie to be a length that is a
 //! multiple of the block size of the underlying permutation), this implementation treats the final
@@ -40,7 +40,7 @@
 //! decryption, the required forward cipher operations can be performed in parallel if the input
 //! blocks are first constructed (in series) from the IV and the ciphertext."
 //!
-//! This implementation follows: encryption handles blocks singly via ['ElectronicCodeBook::encrypt_block`],
+//! This implementation follows: encryption handles blocks singly via [`ElectronicCodeBook::encrypt_block`],
 //! while decryption can batch-process two or four blocks at a time via
 //! [`ElectronicCodeBook::encrypt_2blocks`] or [`ElectronicCodeBook::encrypt_4blocks`], which may
 //! yield a performance gain, depending on the implementation of the underlying permutation.
@@ -125,8 +125,8 @@
 //! NIST SP 800-38A Appendix D:
 //!
 //! > "for the CBC mode, the decryption of the first ciphertext block is vulnerable to the
-//! (deliberate) introduction of bit errors in specific bit positions of the IV if the integrity of
-//! the IV is not protected".
+//! > (deliberate) introduction of bit errors in specific bit positions of the IV if the integrity of
+//! > the IV is not protected".
 //!
 //! Under CBC a flipped IV bit flips exactly that bit of the first decrypted plaintext block.
 //!

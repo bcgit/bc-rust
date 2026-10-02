@@ -359,10 +359,8 @@ fn the_counter_limit_is_enforced() {
     // One byte more is refused.
     let mut data = vec![0u8; TINY_CAPACITY + 1];
     match encryptor().do_encrypt(&mut data) {
-        Err(SymmetricCipherError::StateError(msg)) => {
-            assert!(msg.contains("keystream"), "the error should name the keystream: {msg}");
-        }
-        other => panic!("expected a StateError past the counter limit, got {other:?}"),
+        Err(SymmetricCipherError::DataLimitExceeded) => {}
+        other => panic!("expected DataLimitExceeded past the counter limit, got {other:?}"),
     }
     assert_eq!(data, vec![0u8; TINY_CAPACITY + 1], "a refused call must not touch the data");
 

@@ -80,8 +80,8 @@
 //! NIST SP 800-38A Appendix D:
 //!
 //! > "for the CBC mode, the decryption of the first ciphertext block is vulnerable to the
-//! (deliberate) introduction of bit errors in specific bit positions of the IV if the integrity of
-//! the IV is not protected".
+//! > (deliberate) introduction of bit errors in specific bit positions of the IV if the integrity of
+//! > the IV is not protected".
 //!
 //! Under CBC a flipped IV bit flips exactly that bit of the first decrypted plaintext block.
 //!

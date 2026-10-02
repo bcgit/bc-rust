@@ -1129,8 +1129,7 @@ where
 /// uniqueness.
 ///
 /// The decryptor is given its nonce rather than drawing one, but refuses the same lengths, so a
-/// parameter set that compiles for one side compiles for the other:
-///
+/// parameter set that compiles for one side compiles for the other
 ///
 /// See [`AEADCipherEncryptor`]'s "A length-dependent construction still has to buffer" section for
 /// why this trait was not reshaped to avoid the buffering instead.

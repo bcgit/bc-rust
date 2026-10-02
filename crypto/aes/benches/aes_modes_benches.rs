@@ -29,6 +29,12 @@
 //! decryption builds its input blocks in series and then batches the ciphers four at a time while
 //! encryption cannot.
 //!
+//! The `modes::gcm::AES_128` group is GCM against CTR: GCM is CTR plus GHASH over the ciphertext
+//! and AAD (SP 800-38D Sec 7.1), and its CTR half batches exactly as `modes::ctr::AES_128` does, so
+//! the difference between the two groups' 16 KiB encrypt figures is the cost of the table-free
+//! GF(2^128) multiply, one per block. The AAD-only measurement is GMAC (Sec 5.2), which is that
+//! multiply with no cipher calls at all beyond the two for `H` and `J0`.
+//!
 //! The cipher works in place, so each measurement runs on a fresh copy of the data made in
 //! criterion's untimed setup (`iter_batched`); the copy is not part of the timing.
 //!
@@ -39,15 +45,15 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_cipher::modes::hazmat::Ecb;
-use bouncycastle_cipher::modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipherEncryptor, Algorithm, BlockCipherDecryptor, BlockCipherEncryptor,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
+    BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -89,6 +95,10 @@ type Aes128CcmEncryptor = CcmEncryptor<
     CCM_BUFFER_LEN,
     { CCM_BUFFER_LEN + CCM_TAG_LEN },
 >;
+/// GCM with the full 16-byte tag, as the `AES_GCM_*` aliases fix it.
+const GCM_TAG_LEN: usize = 16;
+type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, GCM_TAG_LEN>;
+type Aes256Gcm<Dir> = Gcm<AES256Internal, Dir, 32, GCM_TAG_LEN>;
 type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, 12>;
 type Aes256Ctr<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, 12>;
 type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;
@@ -975,9 +985,165 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     group.finish();
 }
 
+/// GCM over the same 16 KiB as the CTR and CCM groups; see the module docs for what to compare
+/// it against. The nonce comes from a cheap deterministic RNG created outside the timed loop, so
+/// the figures measure the mode and not OS entropy or DRBG construction.
+fn bench_gcm_aes128(c: &mut Criterion) {
+    let key = key::<16>();
+    let data = [0xA5u8; DATA_LEN];
+    let no_aad: [u8; 0] = [];
+    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+
+    let mut group = c.benchmark_group("modes::gcm::AES_128");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    group.bench_function("encrypt 16KiB, no AAD", |b| {
+        b.iter_batched_ref(
+            || [0u8; DATA_LEN],
+            |out| {
+                black_box(
+                    Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+                        black_box(&key),
+                        &mut rng,
+                        &no_aad,
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // Encrypt once outside the loop so decryption measures a ciphertext that authenticates: a
+    // failing tag check would short-circuit the comparison and measure the wrong thing.
+    let mut ciphertext = [0u8; DATA_LEN];
+    let (nonce, _, tag) = Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+        &key, &mut rng, &no_aad, &data, &mut ciphertext,
+    )
+    .unwrap();
+
+    // The one-shot verifies the tag before it decrypts (SP 800-38D Sec 7's preamble permits the
+    // reordering), so this is GHASH over the whole ciphertext and then CTR over it: the same work
+    // as encryption in the other order.
+    group.bench_function("decrypt 16KiB, no AAD", |b| {
+        b.iter_batched_ref(
+            || [0u8; DATA_LEN],
+            |out| {
+                black_box(
+                    Aes128Gcm::<Decrypting>::decrypt_out_detached(
+                        black_box(&key),
+                        &nonce,
+                        &no_aad,
+                        black_box(&ciphertext),
+                        &tag,
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // The same payload with 16 KiB of AAD alongside it: one extra GHASH multiply per AAD block
+    // and no extra cipher calls, so the increment over the no-AAD case is the GHASH half alone.
+    group.bench_function("encrypt 16KiB with 16KiB AAD", |b| {
+        b.iter_batched_ref(
+            || [0u8; DATA_LEN],
+            |out| {
+                black_box(
+                    Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+                        black_box(&key),
+                        &mut rng,
+                        black_box(&data),
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // AAD only: GMAC (Sec 5.2). GHASH over 16 KiB plus the two cipher calls for `H` and `J0`,
+    // which is the GHASH cost on its own and the number the CTR comparison needs.
+    group.bench_function("authenticate 16KiB AAD, empty payload (GMAC)", |b| {
+        b.iter(|| {
+            let mut out: [u8; 0] = [];
+            black_box(
+                Aes128Gcm::<Encrypting>::encrypt_out_rng_detached(
+                    black_box(&key),
+                    &mut rng,
+                    black_box(&data),
+                    &no_aad,
+                    &mut out,
+                )
+                .unwrap(),
+            )
+        })
+    });
+
+    // Streaming in 128-byte pieces, the same call length as the N=8 CTR measurement, so the
+    // per-call overhead of the AEAD streaming path shows against the one-shot above.
+    group.bench_function("encrypt 16KiB -- N=8 streaming", |b| {
+        b.iter_batched(
+            || data.to_vec(),
+            |plaintext| {
+                let (mut enc, _nonce) =
+                    Aes128Gcm::<Encrypting>::do_encrypt_init_rng(black_box(&key), &mut rng)
+                        .unwrap();
+                let mut out = [0u8; 8 * BLOCK_LEN];
+                for piece in plaintext.chunks(8 * BLOCK_LEN) {
+                    enc.do_encrypt_out(piece, &mut out).unwrap();
+                    black_box(&out);
+                }
+                black_box(enc.do_final().unwrap())
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    group.finish();
+}
+
+/// AES-256 GCM, for the same key-length comparison the other modes carry.
+fn bench_gcm_aes256(c: &mut Criterion) {
+    let key = key::<32>();
+    let data = [0xA5u8; DATA_LEN];
+    let no_aad: [u8; 0] = [];
+    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+
+    let mut group = c.benchmark_group("modes::gcm::AES_256");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    group.bench_function("encrypt 16KiB, no AAD", |b| {
+        b.iter_batched_ref(
+            || [0u8; DATA_LEN],
+            |out| {
+                black_box(
+                    Aes256Gcm::<Encrypting>::encrypt_out_rng_detached(
+                        black_box(&key),
+                        &mut rng,
+                        &no_aad,
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_cfb8_aes128,
     bench_ctr_aes128, bench_ctr_aes256, bench_ecb_aes128, bench_ccm_aes128,
-    bench_ccm_one_shot_pair, bench_init
+    bench_ccm_one_shot_pair, bench_gcm_aes128, bench_gcm_aes256, bench_init
 );
 criterion_main!(benches);

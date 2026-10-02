@@ -3,13 +3,12 @@
 //!
 //! # Nonce and Tag
 //!
-//! NIST SP 800-38D fixes the GCM tag to 96 bits (12 bytes), so this module does not provide an
-//! interface for changing it.
-//! It also does not provide an interface for the user to provide a nonce, instead in provides
-//! [`SymmetricCipherEncryptor::do_encrypt_init`] and [`SymmetricCipherEncryptor::do_encrypt_init_rng`] that source
-//! the nonce from the default OS RNG or the provided RNG, respectively.
+//! [`Gcm`] fixes the nonce at 96 bits (12 bytes, [`GCM_NONCE_LEN`]): SP 800-38D Sec 5.2.1.1
+//! recommends that implementations "restrict support to the length of 96 bits", and the other IV
+//! lengths are not implemented. The nonce is never taken from the caller: instead
+//! [`SymmetricCipherEncryptor::do_encrypt_init`] and [`SymmetricCipherEncryptor::do_encrypt_init_rng`]
+//! draw it from the default OS RNG or the provided RNG, respectively.
 //!
-//! NIST SP 800-38D allows for tag lengths between 12 and 16 bytes.
 //! The tag length is a const generic `TAG_LEN`, checked at compile time to lie in `12..=16` bytes
 //! (96, 104, 112, 120 or 128 bits -- Sec 5.2.1.2's five recommended values). The 32- and 64-bit tags
 //! Sec 5.2.1.2 permits "for certain applications" (Appendix C) are not supported.
@@ -125,10 +124,10 @@
 //!
 //! ## Invocation limit
 //!
-//! NIST SP 800-38D §8.2.2 / 8.3:
+//! NIST SP 800-38D Sec 8.3:
 //!
 //! > "the total number of invocations of the authenticated encryption function shall not exceed 2^32
-//! ... with the given key."
+//! > ... with the given key."
 //!
 //! This is a caller obligation this type cannot enforce across calls; rotate the key well
 //!   before 2^32 messages.
@@ -348,9 +347,10 @@ where
     /// into GHASH (step 5). Nothing is held back.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::StateError`] if the underlying `Ctr` counter would be exhausted --
-    /// the SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits -- or if the AAD/data length
-    /// bookkeeping would overflow. Nothing is consumed in either case.
+    /// [`SymmetricCipherError::DataLimitExceeded`] if the underlying `Ctr` counter would be
+    /// exhausted -- the SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits -- or
+    /// [`SymmetricCipherError::StateError`] if the AAD/data length bookkeeping would overflow.
+    /// Nothing is consumed in either case.
     fn encrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.ctr.do_encrypt(data)?;
         self.absorb_data(data)
@@ -481,8 +481,9 @@ where
     /// Shared by the trait one-shots (`decrypt_out`, `decrypt_out_detached`,
     /// `decrypt_out_with_aad`): absorbs `aad` and
     /// `data` (still ciphertext) into GHASH and checks the tag *before* touching `data`, so no
-    /// unauthenticated plaintext is ever written to the caller's buffer (Sec 7.2 explicitly permits
-    /// checking the tag before computing the plaintext). Only on success is `data` decrypted.
+    /// unauthenticated plaintext is ever written to the caller's buffer. The preamble of Sec 7
+    /// explicitly permits this: "in Algorithm 5, the verification of the tag may precede the
+    /// computation of the plaintext". Only on success is `data` decrypted.
     fn verify_then_decrypt(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; GCM_NONCE_LEN],

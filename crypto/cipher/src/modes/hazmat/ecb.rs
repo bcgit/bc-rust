@@ -56,8 +56,8 @@
 //! SP 800-38A §6.1:
 //!
 //! > "In the ECB mode, under a given key, any given plaintext block always gets
-//! encrypted to the same ciphertext block. If this property is undesirable in a particular
-//! application, the ECB mode should not be used."
+//! > encrypted to the same ciphertext block. If this property is undesirable in a particular
+//! > application, the ECB mode should not be used."
 //!
 //! While this _might_ be secure for encrypting plaintext that is cryptographically random,
 //! it is certainly not ok for structured data (such as any file format with known and predictable

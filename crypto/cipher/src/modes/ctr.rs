@@ -16,7 +16,7 @@
 //!
 //! So [`Ctr`] **refuses** rather than wraps. [`CtrKeyStream`] reports how many counter values are
 //! left, and a call that would need more keystream than that returns
-//! [`SymmetricCipherError::StateError`] and consumes nothing -- [`StreamCipher`] makes the check up
+//! [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing -- [`StreamCipher`] makes the check up
 //! front, against the whole call, so a message is never half-encrypted before the mode notices.
 //!
 //! # Everything is parallel
@@ -37,9 +37,13 @@
 //! messages ever encrypted under a key, since:
 //!
 //! > "if any plaintext block that is encrypted using a given counter block is known, then the output
-//! of the forward cipher function can be determined easily from the associated ciphertext block"
+//! > of the forward cipher function can be determined easily from the associated ciphertext block"
 //!
-//! and used to recover any other plaintext encrypted under that same counter. That is why
+//! and used to recover any other plaintext encrypted under that same counter. That is why [`Ctr`]
+//! refuses to overflow the counter and returns a [`SymmetricCipherError::DataLimitExceeded`]
+//! instead, and why the nonce is generated rather than accepted from the caller: within one
+//! message the counter cannot repeat, and across messages a fresh random nonce is what keeps the
+//! counter blocks distinct.
 
 use crate::modes::hazmat::CtrKeyStream;
 use crate::stream::StreamCipher;

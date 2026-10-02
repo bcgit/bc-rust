@@ -10,7 +10,7 @@
 //! Sec 6.3:
 //!
 //! > "the bits of the first input block circularly shift s positions to the left, and then the
-//! ciphertext segment replaces the s least significant bits of the result".
+//! > ciphertext segment replaces the s least significant bits of the result".
 //!
 //! The smaller segment is not a security gain, but it makes the mode self-synchronising
 //! at byte granularity: after a dropped or inserted byte the shift register refills from ciphertext

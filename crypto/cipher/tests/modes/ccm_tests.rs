@@ -1,4 +1,4 @@
-//! Structural tests for CCM, driven by a toy permutation and by real AES.
+//! Structural tests for CCM, driven by toy permutations.
 //!
 //! These check the properties of the *mode* -- that only the forward cipher function is ever
 //! used, that the counter half batches while the CBC-MAC stays serial, that call chunking is
@@ -344,8 +344,8 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 /// Every nonce length A.1 permits, `n` in `7..=13`, works, and each one implies its own payload
 /// limit: `q = 15 - n` and "by definition, p < 2^8q", which `Ccm::MAX_PAYLOAD_LEN` exposes.
 /// `sp800_38c_tests.rs` reaches `n` of 7, 8, 12 and 13 through Appendix C; 9, 10 and 11 are
-/// reached only here. Over both the toy and real AES, since where the nonce goes (A.2.1 Table 2,
-/// A.3 Table 3) is the mode's business and not the permutation's.
+/// reached only here. Over the toy alone, since where the nonce goes (A.2.1 Table 2, A.3 Table 3)
+/// is the mode's business and not the permutation's.
 #[test]
 fn every_permitted_nonce_length_works() {
     fn round_trip<P, const KEY_LEN: usize, const N: usize>(

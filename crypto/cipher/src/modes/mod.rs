@@ -3,9 +3,9 @@
 //! The module is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
 //! trait.
 //!
-//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `ToyBlockCipher` and friends,
-//! or anything else implementing [`ElectronicCodeBook`] -- into something that can encrypt more than
-//! one block.
+//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES128Internal` and friends,
+//! `bouncycastle_core_test_framework::ToyBlockCipher`, or anything else implementing
+//! [`ElectronicCodeBook`] -- into something that can encrypt more than one block.
 //!
 //! This module provides:
 //!
