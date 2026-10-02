@@ -22,7 +22,8 @@
 
 use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::modes::{Cfb, Decrypting, Encrypting};
+use bouncycastle::cipher::modes::Cfb;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::sm4::hazmat::SM4;
 
 pub(crate) fn sm4_cfb_cmd(

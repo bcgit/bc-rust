@@ -1,8 +1,8 @@
 //! Type alias for SM4 in CBC mode (NIST SP 800-38A Sec 6.2; draft-ribose-cfrg-sm4-10 Sec 8.4),
 //! with padding.
 //!
-//! `bouncycastle-modes` is deliberately cipher-agnostic, so `Cbc` takes the permutation, the
-//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle-padding`'s
+//! `bouncycastle_cipher::modes` is deliberately cipher-agnostic, so `Cbc` takes the permutation, the
+//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle_cipher::padding`'s
 //! adapters take five more. This alias pins all of them except the two choices a caller actually
 //! makes: the direction and the padding scheme. It adds nothing to the engine: the permutation
 //! still implements none of the data-encryption traits itself (see the crate docs), the mode does.
@@ -16,21 +16,22 @@
 //! always CBC *plus a padding scheme*, and the scheme changes the ciphertext and must be agreed by
 //! both ends. Naming it in the type makes that choice explicit and makes a mismatched pair a
 //! compile error. The block-aligned API -- whole blocks in place, length checked at compile time --
-//! is `bouncycastle_modes::Cbc` itself, which this wraps. See
-//! [`Direction::Select`](bouncycastle_core::stream_cipher::Direction) for how one alias covers both
+//! is `bouncycastle_cipher::modes::Cbc` itself, which this wraps. See
+//! [`Direction::Select`](bouncycastle_cipher::Direction) for how one alias covers both
 //! directions.
 
 use crate::hazmat::SM4;
 use crate::{BLOCK_LEN, KEY_LEN};
-use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 // end of imports needed for docs
 
 /// SM4 in CBC mode with a padding scheme.
@@ -43,8 +44,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_sm4::SM4_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
+/// use bouncycastle_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_cipher::padding::PKCS7;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .expect("a 16-byte symmetric cipher key");
@@ -64,8 +65,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_sm4::SM4_CBC;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_modes::Encrypting;
-/// use bouncycastle_padding::NoPadding;
+/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::padding::NoPadding;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 ///

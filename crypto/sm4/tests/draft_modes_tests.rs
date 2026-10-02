@@ -6,7 +6,7 @@
 //! pair methods against published answers. (That is the only reason ECB appears in this crate;
 //! see the crate docs on why you must not use it to encrypt anything.)
 //!
-//! The CBC vectors go through `bouncycastle-modes`' `Cbc` over this permutation. There
+//! The CBC vectors go through `bouncycastle_cipher::modes`' `Cbc` over this permutation. There
 //! is no API for supplying an IV, so encryption is driven through
 //! [`BlockCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is the
 //! vector's IV, and the test asserts the returned init data really is that IV before comparing
@@ -15,12 +15,13 @@
 //! The draft notes these vectors "can be verified using" Botan and OpenSSL. All values are
 //! transcribed from the downloaded text of the draft.
 
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use bouncycastle_sm4::hazmat::SM4;
 use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN};
 

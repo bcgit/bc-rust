@@ -13,7 +13,8 @@
 use crate::helpers::block_mode_helpers::{
     BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
-use bouncycastle::modes::{Cbc, Decrypting, Encrypting};
+use bouncycastle::cipher::modes::Cbc;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::sm4::hazmat::SM4;
 
 /// Names the mode in error messages.

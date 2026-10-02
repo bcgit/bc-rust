@@ -493,7 +493,7 @@ fn aead128_encryptor_decryptor_trait_framework() {
 #[test]
 fn aead128_dir_alias_trait_framework() {
     use bouncycastle_ascon::Ascon_AEAD128;
-    use bouncycastle_core::stream_cipher::{Decrypting, Encrypting};
+    use bouncycastle_cipher::{Decrypting, Encrypting};
     TestFrameworkAEADCipher::new().test_encryptor_decryptor::<
         16,
         16,
@@ -505,9 +505,9 @@ fn aead128_dir_alias_trait_framework() {
 }
 
 /// The two tag layouts must agree byte for byte: `direct_ciphertext || direct_tag`, produced by
-/// streaming [`AsconAead128Encryptor`] and taking the tag from `do_final_out_detached`, must equal what
+/// streaming [`AsconAead128Encryptor`] and taking the tag from `do_final_detached_out`, must equal what
 /// the inline layout produces for the same key, nonce (driven by the same RNG stream), AAD and
-/// message -- through both `encrypt_out_with_aad` and the inherited `do_final` -- and either must
+/// message -- through both `encrypt_with_aad_out` and the inherited `do_final` -- and either must
 /// decrypt back to the original plaintext.
 #[test]
 fn aead128_tagged_and_direct_layouts_agree() {
@@ -531,7 +531,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         let mut direct_ct = vec![0u8; pt.len()];
         direct_enc.do_encrypt_out(&pt, &mut direct_ct).unwrap();
         let mut unused = [0u8; 16];
-        let (flushed, direct_tag) = direct_enc.do_final_out_detached(&mut unused).unwrap();
+        let (flushed, direct_tag) = direct_enc.do_final_detached_out(&mut unused).unwrap();
         assert_eq!(flushed, 0, "Ascon-AEAD128 holds nothing back to flush");
         let mut direct_inline = direct_ct.clone();
         direct_inline.extend_from_slice(&direct_tag);
@@ -555,10 +555,10 @@ fn aead128_tagged_and_direct_layouts_agree() {
         // and the length, not the bytes.
         let mut one_shot = vec![0u8; AsconAead128Encryptor::encrypt_out_len(pt.len())];
         let (one_nonce, one_len) =
-            AsconAead128Encryptor::encrypt_out_with_aad(&km, aad, &pt, &mut one_shot).unwrap();
+            AsconAead128Encryptor::encrypt_with_aad_out(&km, aad, &pt, &mut one_shot).unwrap();
         assert_eq!(one_len, tagged_out.len(), "pt_len {pt_len}: one-shot writes the same length");
         let mut one_back = vec![0u8; AsconAead128Decryptor::decrypt_out_max_len(one_len)];
-        let one_n = AsconAead128Decryptor::decrypt_out_with_aad(
+        let one_n = AsconAead128Decryptor::decrypt_with_aad_out(
             &km,
             &one_nonce,
             aad,
@@ -569,14 +569,14 @@ fn aead128_tagged_and_direct_layouts_agree() {
         assert_eq!(&one_back[..one_n], &pt[..], "pt_len {pt_len}: one-shot round trip");
 
         // ...and all of it decrypts back, each through its own view. The decryptor holds the
-        // last 16 bytes back either way; detached, `do_final_out_detached` releases them.
+        // last 16 bytes back either way; detached, `do_final_detached_out` releases them.
         let mut direct_dec = AsconAead128Decryptor::do_decrypt_init(&km, &direct_nonce).unwrap();
         direct_dec.do_update_aad(aad).unwrap();
         let mut direct_pt = vec![0u8; direct_ct.len()];
         let got = direct_dec.do_decrypt_out(&direct_ct, &mut direct_pt).unwrap();
         assert_eq!(got, pt_len.saturating_sub(16), "pt_len {pt_len}: the last 16 bytes are held");
         let mut last = [0u8; 16];
-        let last_len = direct_dec.do_final_out_detached(&direct_tag, &mut last).unwrap();
+        let last_len = direct_dec.do_final_detached_out(&direct_tag, &mut last).unwrap();
         assert_eq!(got + last_len, pt_len, "pt_len {pt_len}: detached final releases the rest");
         direct_pt[got..].copy_from_slice(&last[..last_len]);
         assert_eq!(direct_pt, pt, "pt_len {pt_len}: direct decrypt round trip");
@@ -591,7 +591,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         assert_eq!(&tagged_pt[..got], &pt[..], "pt_len {pt_len}: tagged decrypt round trip");
 
         let mut one_pt = vec![0u8; AsconAead128Decryptor::decrypt_out_max_len(tagged_out.len())];
-        let n = AsconAead128Decryptor::decrypt_out_with_aad(
+        let n = AsconAead128Decryptor::decrypt_with_aad_out(
             &km, &tagged_nonce, aad, &tagged_out, &mut one_pt,
         )
         .unwrap();

@@ -5,12 +5,13 @@
 //! and the padding scheme changes behaviour rather than being decorative. The cipher and the
 //! padding layer are tested in their own right elsewhere; this checks the wiring between them.
 
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
+use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_sm4::SM4_CBC;
 use bouncycastle_sm4::hazmat::SM4;
 

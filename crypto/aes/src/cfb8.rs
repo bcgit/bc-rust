@@ -1,6 +1,6 @@
 //! Type aliases for AES in CFB8 mode (NIST SP 800-38A Sec 6.3, `s = 8`).
 //!
-//! See [`bouncycastle_modes::cfb8`] for details on the CipherFeedback construction with an 8-bit segment.
+//! See [`bouncycastle_cipher::modes::cfb8`] for details on the CipherFeedback construction with an 8-bit segment.
 //!
 //! The aliases here are stream ciphers: the data is a `&mut [u8]` of any
 //! length, encrypted or decrypted in-place since the ciphertext is exactly as long as the plaintext.
@@ -9,7 +9,7 @@
 //!
 //! CFB8 is a **different, non-interoperable mode** from CFB, not a variant of it: their
 //! ciphertexts differ from the second byte, and it costs a full AES call per byte, sixteen times
-//! the work of [`AES_CFB_128`](crate::AES_CFB_128). See [`bouncycastle_modes::cfb8`] for when
+//! the work of [`AES_CFB_128`](crate::AES_CFB_128). See [`bouncycastle_cipher::modes::cfb8`] for when
 //! that is the right trade.
 //!
 //! # Usage Examples
@@ -22,7 +22,7 @@
 //! use bouncycastle_aes::AES_CFB8_256;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB8_256<Encrypting>;
@@ -57,7 +57,7 @@
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
 //!     SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB8_128<Encrypting>;
@@ -94,7 +94,7 @@
 //! use bouncycastle_aes::{AES_CFB8_128, AES_CFB_128};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let plaintext = *b"hello";
@@ -109,17 +109,17 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_modes::cfb8`] apply.
+//! All security considerations from [`bouncycastle_cipher::modes::cfb8`] apply.
 
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_modes::Cfb8;
+use bouncycastle_cipher::modes::Cfb8;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 #[allow(unused_imports)]
-use bouncycastle_modes::{Decrypting, Encrypting};
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs
 
 /// AES-128 in CFB8 mode.

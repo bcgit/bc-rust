@@ -68,7 +68,7 @@
 //!
 //! ## Modes of operation
 //!
-//! To encrypt more than one block, use a mode of operation from `bouncycastle-modes`. This crate
+//! To encrypt more than one block, use a mode of operation from `bouncycastle_cipher::modes`. This crate
 //! provides aliases that fill in the const parameters, leaving only the choices a caller actually
 //! makes. [`SM4_CBC`] is CBC (Sec 8.4; NIST SP 800-38A Sec 6.2), which takes the direction **and a
 //! padding scheme**; [`SM4_CFB`] is SM4-CFB-128 (Sec 8.5.1) and [`SM4_CFB8`] is SM4-CFB-8, the
@@ -78,7 +78,7 @@
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
 //! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
-//! with no padding at all. See the `bouncycastle-modes` crate docs for the comparison, and
+//! with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the comparison, and
 //! [`SM4_CBC`] for why the scheme is named in the type.
 //!
 //! ```
@@ -86,8 +86,8 @@
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
-//! use bouncycastle_padding::PKCS7;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::padding::PKCS7;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -110,7 +110,7 @@
 //! use bouncycastle_sm4::SM4_CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_modes::{Decrypting, Encrypting};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -128,7 +128,7 @@
 //! ```
 //!
 //! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_modes::Cbc` directly; that is what the CBC aliases wrap.
+//! name `bouncycastle_cipher::modes::Cbc` directly; that is what the CBC aliases wrap.
 //!
 //! There is no one-shot static on the permutation, because `SM4::new(&key)?.encrypt_block(..)`
 //! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take

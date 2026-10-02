@@ -4,14 +4,15 @@
 //! and behave as the mode they claim to be: the direction selects the encryptor or the decryptor,
 //! the init data is the length the mode defines, and the three modes are distinct from each other
 //! and from CBC. The known-answer coverage is in `stream_mode_tests.rs`, and the modes themselves
-//! are tested in their own right in `bouncycastle-modes`; this checks the wiring between them.
+//! are tested in their own right in `bouncycastle_cipher::modes`; this checks the wiring between them.
 
+use bouncycastle_cipher::modes::{Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Cfb, Cfb8, Ctr, Decrypting, Encrypting};
 use bouncycastle_sm4::hazmat::SM4;
 use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4_CFB, SM4_CFB8, SM4_CTR};
 

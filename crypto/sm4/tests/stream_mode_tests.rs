@@ -17,7 +17,7 @@
 //!   pin [`reference_ctr`], written straight from the Sec 8.7.1 equations over the permutation, and
 //!   `SM4_CTR` is then required to agree with that same reference on the counter blocks it does
 //!   produce. Everything internal to the mode -- the counter increment, the short final block, the
-//!   chunking -- is covered by the ACVP vectors in `bouncycastle-modes`.
+//!   chunking -- is covered by the ACVP vectors in `bouncycastle_cipher::modes`.
 //!
 //! The draft defines SM4-CFB-8 (Sec 8.5.1) but publishes no example of it, so `SM4_CFB8` is pinned
 //! the same way: against [`reference_cfb8`], the Sec 8.5.2 equations at `s = 8` evaluated over the
@@ -25,6 +25,7 @@
 //!
 //! All vector values are transcribed from the downloaded text of the draft.
 
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
@@ -33,7 +34,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_modes::{Decrypting, Encrypting};
 use bouncycastle_sm4::hazmat::SM4;
 use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4_CFB, SM4_CFB8, SM4_CTR};
 
