@@ -85,23 +85,28 @@
 //! schedule, which is `4 * (Nr + 1)` words -- exactly the size FIPS 197 Sec 5.2 defines, with the
 //! bit-sliced form stored at the one-block width so that bit-slicing costs nothing in space:
 //!
-//! | Type | Key | `Nr` | Schedule (persistent) | Tables |
-//! |---|---|---|---|---|
-//! | [`AES128Internal`](hazmat::AES128Internal) | 16 B | 10 | 176 B | 0 B |
-//! | [`AES192Internal`](hazmat::AES192Internal) | 24 B | 12 | 208 B | 0 B |
-//! | [`AES256Internal`](hazmat::AES256Internal) | 32 B | 14 | 240 B | 0 B |
+//! | | [`AES128Internal`](hazmat::AES128Internal) | [`AES192Internal`](hazmat::AES192Internal) | [`AES256Internal`](hazmat::AES256Internal) |
+//! |---|---|---|---|
+//! | Key | 16 B | 24 B | 32 B |
+//! | Rounds, `Nr` | 10 | 12 | 14 |
+//! | Key schedule, held between calls | 176 B | 208 B | 240 B |
+//! | Lookup tables | 0 B | 0 B | 0 B |
 //!
-//! Per-call stack usage is independent of key length and set by the plane width: 16, 32 or 64
-//! bytes of bit-sliced state for one, two or four blocks, the same again for the round key widened
-//! from its stored one-block form, plus the S-box circuit's spills. Measured as the deepest frame
-//! chain below each entry point in the release build (x86-64, return addresses included):
+//! Per-call stack usage is set by the plane width: 16, 32 or 64 bytes of bit-sliced state for
+//! one, two or four blocks, the same again for the round key widened from its stored one-block
+//! form, plus the S-box circuit's spills. Only key expansion depends on the key length. Measured
+//! as the deepest frame chain below each entry point in the release build (x86-64, return
+//! addresses included):
 //!
-//! | Entry point | Stack (bytes) |
-//! |---|---|
-//! | `new` (key expansion), AES-128 / 192 / 256 | 312 / 344 / 376 |
-//! | `encrypt_block` / `decrypt_block` (`u16` planes) | 208 / 208 |
-//! | `encrypt_2blocks` / `decrypt_2blocks` (`u32` planes) | 240 / 224 |
-//! | `encrypt_4blocks` / `decrypt_4blocks` (`u64` planes) | 320 / 352 |
+//! | Entry point | AES-128 | AES-192 | AES-256 |
+//! |---|---|---|---|
+//! | `new` (key expansion) | 312 B | 344 B | 376 B |
+//! | `encrypt_block` (`u16` planes) | 208 B | 208 B | 208 B |
+//! | `decrypt_block` (`u16` planes) | 208 B | 208 B | 208 B |
+//! | `encrypt_2blocks` (`u32` planes) | 240 B | 240 B | 240 B |
+//! | `decrypt_2blocks` (`u32` planes) | 224 B | 224 B | 224 B |
+//! | `encrypt_4blocks` (`u64` planes) | 320 B | 320 B | 320 B |
+//! | `decrypt_4blocks` (`u64` planes) | 352 B | 352 B | 352 B |
 //!
 //! # Security Considerations
 //!
@@ -179,8 +184,8 @@ pub const AES_BLOCK_LEN: usize = 16;
 
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use ccm::{
-    AES_CCM_128, AES_CCM_128_Buffered, AES_CCM_192, AES_CCM_192_Buffered, AES_CCM_256,
-    AES_CCM_256_Buffered, CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192, AES_CCM_192_Packet, AES_CCM_256,
+    AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
