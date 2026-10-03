@@ -62,7 +62,7 @@
 //! [`HMACParams`] is deliberately **not** sealed, so the same recipe works for a hash function
 //! defined in any other crate. Simply follow the recipe above!
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! These apply to every instantiation; the hash crates' `hmac` modules repeat the ones that matter
 //! most in day-to-day use.

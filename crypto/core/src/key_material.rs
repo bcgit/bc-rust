@@ -21,7 +21,7 @@
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
 //! run inside of a [`do_hazardous_operations`] closure, see below.
 //!
-//! # 🚨 Security 🚨
+//! # 🚨 Security Considerations 🚨
 //!
 //! Additional security features:
 //!   * Zeroizes on destruction.

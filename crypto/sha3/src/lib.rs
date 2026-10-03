@@ -175,7 +175,7 @@
 //! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
 //! massif entry points for measuring peak stack usage of the hash, XOF and suspend/resume paths.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * SHA3-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively; SHAKE128
 //!   and SHAKE256 offer 128 and 256 bits of security for output lengths at least twice that size

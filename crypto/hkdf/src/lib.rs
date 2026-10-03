@@ -80,7 +80,7 @@
 //! let _prk = resumed.do_extract_final().unwrap();
 //! ```
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! These apply to every instantiation; `bouncycastle_sha2::hkdf` repeats the ones that matter most in
 //! day-to-day use.

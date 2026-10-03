@@ -232,7 +232,7 @@
 //! as the output size grows. The suspended state is exactly the inner hash's suspended state -- the
 //! key is deliberately excluded -- so all four share the sponge's single value.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * The key must carry at least the security strength claimed by the HMAC, and [`MAC::new`]
 //!   enforces that. [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a

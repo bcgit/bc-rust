@@ -25,7 +25,7 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
 /// keystream block is the encryption of the last ciphertext block.
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// [`KeyStream::new`] takes the init data from the caller, so nothing stops a caller reusing a
 /// nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
 /// and nothing stops it running past [`KeyStream::remaining_blocks`]. `StreamCipher` generates

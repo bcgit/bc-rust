@@ -16,7 +16,7 @@
 //! **WARNING: most people should stop reading here and should not attempt to modify the internals of RNGs.
 //! This crate contains dragons and other horrible things. 🐉🐍🐜**
 //!
-//! # 🚨🚨🚨Security Warning 🚨🚨🚨
+//! # 🚨 Security Considerations 🚨
 //!
 //! Misuse of the objects in this crate can lead to output which may appear random, but
 //! is in fact completely deterministic (ie multiple runs of your application will give the same outputs)

@@ -219,6 +219,10 @@ Most crates should have a "Security Considerations" section that documents any f
 could undermine their own security; for example where providing a seed or a nonce that is not truly random would
 completely undermine the algorithm.
 
+The heading is always exactly `# 🚨 Security Considerations 🚨`, wherever it appears: crate docs, module docs, or the
+docs of an individual type or function. A consistent heading makes these sections easy to spot when reading and to find
+with a search.
+
 ## Release Notes
 
 For release note entries, keep succinct, one line per significant change at most.

@@ -45,7 +45,7 @@
 //!
 //! See the "Memory Usage" section of each module.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! See the "Security Considerations" section of each module.
 

@@ -221,7 +221,7 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// print!("{}\n", size_of::<Secret<[u8; 32]>>());  // also 32
 /// ```
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 ///
 /// What this does NOT guarantee:
 ///

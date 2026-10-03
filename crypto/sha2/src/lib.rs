@@ -109,7 +109,7 @@
 //! `T` does not affect either size: the truncation happens on the way out of `do_final`, so every
 //! member of the SHA-512 family carries the same 512-bit chaining value and 1024-bit buffer.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * SHA-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively;
 //!   SHA-512/224 and SHA-512/256 offer 112 and 128 bits (SP 800-107r1, Table 1 (§4.2)). More

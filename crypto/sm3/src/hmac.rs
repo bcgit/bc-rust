@@ -27,7 +27,7 @@
 //! assert_eq!(tag.len(), 32);
 //! ```
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
 //!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
