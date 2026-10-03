@@ -14,6 +14,7 @@ bouncycastle = { path = "./" }
 bouncycastle-aes = { path = "./crypto/aes" }
 bouncycastle-ascon = { path = "./crypto/ascon" }
 bouncycastle-base64 = { path = "./crypto/base64" }
+bouncycastle-camellia = { path = "./crypto/camellia" }
 bouncycastle-cipher = { path = "./crypto/cipher" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
@@ -50,6 +51,7 @@ edition.workspace = true
 bouncycastle-aes.workspace = true
 bouncycastle-ascon.workspace = true
 bouncycastle-base64.workspace = true
+bouncycastle-camellia.workspace = true
 bouncycastle-cipher.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-factory.workspace = true

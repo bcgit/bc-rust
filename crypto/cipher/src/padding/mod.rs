@@ -80,6 +80,7 @@
 //! It does not make unauthenticated encryption safe either.
 
 mod padded_block_cipher;
+
 pub use padded_block_cipher::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 
 use bouncycastle_core::errors::PaddingError;
