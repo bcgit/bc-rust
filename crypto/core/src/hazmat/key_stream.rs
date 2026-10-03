@@ -49,6 +49,12 @@ pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError>;
 
+    /// Whether this keystream may be used to encrypt, as [`ElectronicCodeBook::ENCRYPTION_APPROVED`]
+    /// is for a permutation: `false` makes building the `Encrypting` direction of a
+    /// `StreamCipher` over it a compile error, while decryption is unaffected. A keystream built
+    /// on a permutation takes that permutation's value.
+    const ENCRYPTION_APPROVED: bool = true;
+
     /// How many more keystream blocks this value can produce before its keystream would repeat.
     /// A keystream with no practical limit returns `u64::MAX`.
     fn remaining_blocks(&self) -> u64;

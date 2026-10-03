@@ -15,3 +15,4 @@ pub use bouncycastle_rng as rng;
 pub use bouncycastle_sha2 as sha2;
 pub use bouncycastle_sha3 as sha3;
 pub use bouncycastle_sm3 as sm3;
+pub use bouncycastle_tdes as tdes;

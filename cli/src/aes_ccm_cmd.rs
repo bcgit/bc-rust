@@ -51,6 +51,7 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::process::exit;
 
+use bouncycastle::aes::AES_BLOCK_LEN;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::Ccm;
 use bouncycastle::cipher::{Decrypting, Encrypting};
@@ -60,7 +61,7 @@ use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::hex;
 
 use crate::helpers;
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 
 /// Bytes of `--aad-file` read per call, matching the other commands' streaming chunk.
 const CHUNK_LEN: usize = 1024;
@@ -249,10 +250,10 @@ fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Aad {
 /// encoding that does not match the AAD; that is reported and the command exits rather than
 /// producing it.
 fn feed_aad<P, Dir, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
-    ccm: &mut Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
+    ccm: &mut Ccm<P, Dir, KEY_LEN, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>,
     aad: &mut Aad,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     match aad {
         Aad::Bytes(bytes) => {
@@ -307,7 +308,7 @@ fn run<P, const KEY_LEN: usize>(
     tag_len: usize,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     // Reject this before opening nonce/AAD files or waiting for stdin. Appendix A.1: "t is an
     // element of {4, 6, 8, 10, 12, 14, 16}".
@@ -380,14 +381,14 @@ fn payload_past_the_q_limit<P, const KEY_LEN: usize, const NONCE_LEN: usize, con
     payload_len: usize,
 ) -> !
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     eprintln!("Error: {msg}");
     eprintln!(
         "       Payload is {payload_len} bytes; with a {NONCE_LEN}-byte nonce, q = {} and the \
          limit is {} bytes.",
         15 - NONCE_LEN,
-        Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
+        Ccm::<P, Encrypting, KEY_LEN, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
     );
     eprintln!("       Use a shorter nonce for a larger payload.");
     exit(-1)
@@ -408,12 +409,12 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     encrypt: bool,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     type Enc<P, const K: usize, const N: usize, const T: usize> =
-        Ccm<P, Encrypting, K, BLOCK_LEN, N, T>;
+        Ccm<P, Encrypting, K, AES_BLOCK_LEN, N, T>;
     type Dec<P, const K: usize, const N: usize, const T: usize> =
-        Ccm<P, Decrypting, K, BLOCK_LEN, N, T>;
+        Ccm<P, Decrypting, K, AES_BLOCK_LEN, N, T>;
 
     // `run` dispatched on this exact length, so the conversion cannot fail.
     let Ok(nonce) = <[u8; NONCE_LEN]>::try_from(nonce_bytes) else {

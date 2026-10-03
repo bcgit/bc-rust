@@ -25,8 +25,9 @@
 //! plaintext byte, corrupts the following 16 bytes, and then decryption resynchronises. Do not
 //! decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
+use bouncycastle::aes::AES_BLOCK_LEN;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::Cfb8;
 use bouncycastle::cipher::{Decrypting, Encrypting};
@@ -66,12 +67,12 @@ fn run<P, const KEY_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     run_stream_mode::<
-        Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>,
+        Cfb8<P, Encrypting, KEY_LEN, AES_BLOCK_LEN>,
+        Cfb8<P, Decrypting, KEY_LEN, AES_BLOCK_LEN>,
         KEY_LEN,
-        BLOCK_LEN,
+        AES_BLOCK_LEN,
     >(action, key, output_hex)
 }

@@ -10,8 +10,9 @@
 //! separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
+use bouncycastle::aes::AES_BLOCK_LEN;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::Cbc;
 use bouncycastle::cipher::{Decrypting, Encrypting};
@@ -54,18 +55,20 @@ fn run<P, const KEY_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     match action {
-        CipherDirection::Encrypt => {
-            encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
-                key, output_hex, MODE,
-            )
-        }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
-                key, output_hex, MODE,
-            )
-        }
+        CipherDirection::Encrypt => encrypt_stream::<
+            Cbc<P, Encrypting, KEY_LEN, AES_BLOCK_LEN>,
+            KEY_LEN,
+            AES_BLOCK_LEN,
+            AES_BLOCK_LEN,
+        >(key, output_hex, MODE),
+        CipherDirection::Decrypt => decrypt_stream::<
+            Cbc<P, Decrypting, KEY_LEN, AES_BLOCK_LEN>,
+            KEY_LEN,
+            AES_BLOCK_LEN,
+            AES_BLOCK_LEN,
+        >(key, output_hex, MODE),
     }
 }

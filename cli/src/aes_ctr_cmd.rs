@@ -33,10 +33,10 @@
 //! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
 //! one.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::CTR_NONCE_LEN;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{AES_BLOCK_LEN, CTR_NONCE_LEN};
 use bouncycastle::cipher::modes::Ctr;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
@@ -75,11 +75,11 @@ fn run<P, const KEY_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     run_stream_mode::<
-        Ctr<P, Encrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
-        Ctr<P, Decrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
+        Ctr<P, Encrypting, KEY_LEN, AES_BLOCK_LEN, CTR_NONCE_LEN>,
+        Ctr<P, Decrypting, KEY_LEN, AES_BLOCK_LEN, CTR_NONCE_LEN>,
         KEY_LEN,
         CTR_NONCE_LEN,
     >(action, key, output_hex)

@@ -16,8 +16,9 @@
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
+use bouncycastle::aes::AES_BLOCK_LEN;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::hazmat::Ecb;
 use bouncycastle::cipher::{Decrypting, Encrypting};
@@ -61,16 +62,16 @@ fn run<P, const KEY_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, AES_BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
+            encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, AES_BLOCK_LEN>, KEY_LEN, 0, AES_BLOCK_LEN>(
                 key, output_hex, MODE,
             )
         }
         CipherDirection::Decrypt => {
-            decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
+            decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, AES_BLOCK_LEN>, KEY_LEN, 0, AES_BLOCK_LEN>(
                 key, output_hex, MODE,
             )
         }

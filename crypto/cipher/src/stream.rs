@@ -228,6 +228,12 @@ where
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         Self::check_shape();
+        const {
+            assert!(
+                KS::ENCRYPTION_APPROVED,
+                "this keystream is approved for decryption only (KeyStream::ENCRYPTION_APPROVED is false)"
+            )
+        };
         let mut init_data = [0u8; INIT_DATA_LEN];
         rng.next_bytes_out(&mut init_data)?;
         let keystream = KS::new(key, &init_data)?;

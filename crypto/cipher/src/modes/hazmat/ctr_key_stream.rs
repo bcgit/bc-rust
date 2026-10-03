@@ -140,6 +140,9 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
+    /// The permutation's: a decryption-only permutation makes a decryption-only CTR.
+    const ENCRYPTION_APPROVED: bool = P::ENCRYPTION_APPROVED;
+
     /// Expands the key; the keystream starts at `T1 = N | [0]m`.
     fn new(
         key: &KeyMaterial<KEY_LEN>,
