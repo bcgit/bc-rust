@@ -60,11 +60,13 @@ impl TestFrameworkSignature {
         let sig = SIGNER::sign(&sk, msg, Some(b"test with ctx")).unwrap();
         VERIFIER::verify(&pk, msg, Some(b"test with ctx"), &sig).unwrap();
 
-        // but it had better produce something different
-        if !self.alg_accepts_ctx {
+        // an algorithm that ignores ctx must produce the same signature with and without one,
+        // provided it is also deterministic -- a non-deterministic algorithm's signatures differ
+        // from run to run regardless of ctx, so it can't be used to test this property
+        if !self.alg_accepts_ctx && self.alg_is_deterministic {
             let sig1 = SIGNER::sign(&sk, msg, None).unwrap();
             let sig2 = SIGNER::sign(&sk, msg, Some(&[0u8; 1])).unwrap();
-            assert_ne!(sig1, sig2);
+            assert_eq!(sig1, sig2);
         }
 
         // Test that verification fails for broken signature value
@@ -101,11 +103,11 @@ impl TestFrameworkSignature {
         // test the sign_out interface
         // fn sign_out(sk: &SK, msg: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<usize, SignatureError>;
 
-        // Success case
+        // Success case: what sign_out wrote must itself verify (not merely have the right length)
         let mut output = [0u8; SIG_LEN];
         let bytes_written = SIGNER::sign_out(&sk, msg, None, &mut output).unwrap();
         assert_eq!(bytes_written, SIG_LEN);
-        VERIFIER::verify(&pk, msg, None, &sig_val).unwrap();
+        VERIFIER::verify(&pk, msg, None, &output).unwrap();
 
         // test with a large message
         let sig = SIGNER::sign(&sk, DUMMY_SEED, None).unwrap();
@@ -163,10 +165,17 @@ impl TestFrameworkSignature {
         assert_eq!(bytes_written, SIG_LEN);
         VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val).unwrap();
 
-        // the ::verify API should accept a sig value that's too long and just ignore the extra bytes
+        // A signature with trailing bytes is a different, malformed encoding, not a valid one in
+        // a roomy buffer: accepting it would let anyone mint unlimited distinct byte strings that
+        // all verify. Implementations report this either as a length error or as a plain
+        // verification failure; both are rejections, and either is fine.
         let mut sig_val_too_long = vec![1u8; SIG_LEN + 2];
         sig_val_too_long[..SIG_LEN].copy_from_slice(&sig_val);
-        VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val).unwrap();
+        match VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val_too_long) {
+            Err(SignatureError::LengthError(_))
+            | Err(SignatureError::SignatureVerificationFailed) => (),
+            other => panic!("a signature with trailing bytes must be rejected, got {other:?}"),
+        }
     }
 
     /// Test all the members of traits [`PHSigner`] and [`PHSignatureVerifier`] against the given input-output pair.
@@ -209,11 +218,13 @@ impl TestFrameworkSignature {
         let sig = PHSIGNER::sign(&sk, msg, Some(b"test with ctx")).unwrap();
         PHVERIFIER::verify(&pk, msg, Some(b"test with ctx"), &sig).unwrap();
 
-        // but it had better produce something different
-        if !self.alg_accepts_ctx {
+        // an algorithm that ignores ctx must produce the same signature with and without one,
+        // provided it is also deterministic -- a non-deterministic algorithm's signatures differ
+        // from run to run regardless of ctx, so it can't be used to test this property
+        if !self.alg_accepts_ctx && self.alg_is_deterministic {
             let sig1 = PHSIGNER::sign(&sk, msg, None).unwrap();
             let sig2 = PHSIGNER::sign(&sk, msg, Some(&[0u8; 1])).unwrap();
-            assert_ne!(sig1, sig2);
+            assert_eq!(sig1, sig2);
         }
 
         // Test that verification fails for broken signature value
