@@ -5,6 +5,8 @@
 * New algorithms added to crypto/ :
     * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java.
     * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_CCM, AES_CFB, AES_CFB8, AES_CTR, and AES_GCM.
+    * SM4 -- the SM4 block cipher (GB/T 32907-2016), ported from bc-java, along with its SM4_CBC, SM4_CFB,
+      SM4_CFB8 and SM4_CTR modes.
     * ASCON -- Ascon-AEAD128, Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 (NIST SP 800-232).
 * Further memory usage improvements on ML-DSA / ML-KEM. New figures for the largest size are:
     * ML-DSA-87/Sign 118 kb, ML-DSA-87/Verify 212 kb

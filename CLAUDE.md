@@ -204,4 +204,31 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test --workspace` is the gate, and nothing but a developer running it stands between a broken test and `main`.
+Five workflows in `.github/workflows/`, every one of them triggered by `pull_request` — so they run
+when the branch you push has a PR open, and a bare branch push with no PR runs nothing.
+
+| Workflow | File | What it runs |
+|---|---|---|
+| Rust Build | `rust-build.yml` | `cargo build --workspace --all-targets --all-features` |
+| Rust Tests | `rust-test.yml` | `cargo test --all` |
+| Rust Docs | `rust-docs.yml` | `cargo doc --all` |
+| Rust Style | `rust-style.yml` | `cargo fmt --all --check`, under nightly rustfmt |
+| Build and Publish Docs | `publish_doc_benches_to_ghpages.yaml` | `cargo doc`, and `quality_stats.sh ./crypto` |
+
+Run those first four locally before pushing — together they are the gate, and `Rust Tests` is the
+one that actually fails PRs. (`cargo test --all` is the same thing as `cargo test --workspace`;
+`--all` is the old spelling. Either way the point in [Common commands](#common-commands) stands:
+without it you run zero tests.)
+
+Things worth knowing about the fifth:
+
+- It only **publishes** to GitHub Pages (`https://bcgit.github.io/bc-rust/`) on a push to `main`;
+  its `collect_ghpages` and `publish_to_gh_pages` jobs are gated on
+  `github.ref == 'refs/heads/main'`. On a PR it just builds the doc and code-stats artifacts.
+- It does **not** run benchmarks, despite the file name: the `run_benches` job is commented out
+  ("the benches run crazy slow on the github agent"), so no benchmark results reach the site.
+- It uses `concurrency: group: "pages"` with `cancel-in-progress: true`, which is global rather than
+  per branch. Push several branches at once and all but the last report **cancelled** — that is the
+  concurrency group, not a failure.
+
+`Rust Style` is skipped on forks (`if: github.repository == 'bcgit/bc-rust'`).
