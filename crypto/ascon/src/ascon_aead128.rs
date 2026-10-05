@@ -3,7 +3,7 @@
 //! Rate = 128 bits, capacity = 192 bits, 128-bit key/nonce/tag. Initialization and finalization use
 //! `Ascon-p[12]`; associated-data and plaintext/ciphertext blocks use `Ascon-p[8]`.
 //!
-//! [`Ascon_AEAD128`] is used through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], with
+//! [`Ascon_AEAD_128`] is used through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], with
 //! `FINAL_LEN = TAG_LEN`, and through the [`SymmetricCipherEncryptor`] /
 //! [`SymmetricCipherDecryptor`] traits they extend, in the same shape as
 //! `bouncycastle_cipher::modes::Gcm`: the direction is the type parameter, [`Encrypting`] or
@@ -75,13 +75,13 @@ impl Phase {
 /// associated data and the tag inline:
 ///
 /// ```
-/// use bouncycastle_ascon::Ascon_AEAD128;
+/// use bouncycastle_ascon::Ascon_AEAD_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_cipher::{Decrypting, Encrypting};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 ///
-/// type Enc = Ascon_AEAD128<Encrypting>;
-/// type Dec = Ascon_AEAD128<Decrypting>;
+/// type Enc = Ascon_AEAD_128<Encrypting>;
+/// type Dec = Ascon_AEAD_128<Decrypting>;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .expect("a 16-byte symmetric cipher key");
@@ -103,7 +103,7 @@ impl Phase {
 /// tag; [`AEADCipherDecryptor::do_decrypt_final_detachedtag_out`] releases them as ciphertext.
 #[allow(non_camel_case_types)]
 #[derive(Clone)]
-pub struct Ascon_AEAD128<Dir> {
+pub struct Ascon_AEAD_128<Dir> {
     // 128-bit secret key (two 64-bit words). It is re-added to the state at finalization, so it must
     // be retained; wrapped in `Secret` for volatile-write zeroization on drop.
     key: Secret<[u64; 2]>,
@@ -123,7 +123,7 @@ pub struct Ascon_AEAD128<Dir> {
     _dir: PhantomData<Dir>,
 }
 
-impl<Dir> Ascon_AEAD128<Dir> {
+impl<Dir> Ascon_AEAD_128<Dir> {
     /// Validate a [`KeyMaterial`] for use with Ascon-AEAD128 and return its key words.
     /// The key must be tagged as a [`KeyType::SymmetricCipherKey`] and carry at least the
     /// algorithm's 128-bit security strength (SP 800-232 R1/R2).
@@ -283,12 +283,12 @@ impl<Dir> Ascon_AEAD128<Dir> {
     }
 }
 
-impl<Dir> Algorithm for Ascon_AEAD128<Dir> {
+impl<Dir> Algorithm for Ascon_AEAD_128<Dir> {
     const ALG_NAME: &'static str = ASCON_AEAD128_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl Ascon_AEAD128<Encrypting> {
+impl Ascon_AEAD_128<Encrypting> {
     /// Encrypts `data` in place (SP 800-232 §4.1.1 step 3). Every byte is transformed as soon as
     /// it is seen: within a rate block each byte is independent of the others, and the
     /// permutation runs only once a full 16-byte block has been absorbed, so nothing is held back.
@@ -316,7 +316,7 @@ impl Ascon_AEAD128<Encrypting> {
     }
 }
 
-impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
+impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD_128<Encrypting> {
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
@@ -364,7 +364,7 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Enc
     }
 }
 
-impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
+impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD_128<Encrypting> {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
     }
@@ -379,7 +379,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128
     }
 }
 
-impl Ascon_AEAD128<Decrypting> {
+impl Ascon_AEAD_128<Decrypting> {
     /// Decrypts `data` in place (SP 800-232 §4.1.2 step 3), the mirror of `encrypt_in_place`:
     /// the ciphertext replaces the rate bytes rather than being XORed in. The plaintext this
     /// releases is **not yet authenticated**; see the crate docs' Security Considerations.
@@ -418,7 +418,7 @@ impl Ascon_AEAD128<Decrypting> {
     }
 }
 
-impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
+impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD_128<Decrypting> {
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -481,7 +481,7 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Dec
     }
 }
 
-impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
+impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD_128<Decrypting> {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
     }
@@ -507,19 +507,19 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128
     }
 }
 
-impl<Dir> Debug for Ascon_AEAD128<Dir> {
+impl<Dir> Debug for Ascon_AEAD_128<Dir> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Ascon_AEAD128 (key/state masked)")
+        write!(f, "Ascon_AEAD_128 (key/state masked)")
     }
 }
 
-impl<Dir> Display for Ascon_AEAD128<Dir> {
+impl<Dir> Display for Ascon_AEAD_128<Dir> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Ascon_AEAD128 (key/state masked)")
+        write!(f, "Ascon_AEAD_128 (key/state masked)")
     }
 }
 
-/// Length in bytes of the serialized state of [`Ascon_AEAD128`].
+/// Length in bytes of the serialized state of [`Ascon_AEAD_128`].
 /// Layout: 3-byte library version || 1-byte state tag || 40-byte permutation state (5 × u64 LE)
 /// || 1-byte byte position within the current rate block || 1-byte phase || 16-byte held-back
 /// tail || 1-byte tail length.
@@ -537,7 +537,7 @@ const TAIL_OFFSET: usize = PHASE_OFFSET + 1;
 const TAIL_LEN_OFFSET: usize = TAIL_OFFSET + TAG_LEN;
 const _: () = assert!(TAIL_LEN_OFFSET + 1 == SUSPENDED_ASCON_AEAD128_STATE_LEN - 3);
 
-impl<Dir> SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for Ascon_AEAD128<Dir> {
+impl<Dir> SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for Ascon_AEAD_128<Dir> {
     // The 128-bit key must be re-supplied when resuming; it is never part of the serialized state,
     // and is re-validated exactly as the constructors validate it.
     type Key = KeyMaterial<KEY_LEN>;
