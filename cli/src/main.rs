@@ -377,13 +377,10 @@ enum Subcommands {
     /// On encrypt, a fresh nonce is generated and written as the FIRST 16 BYTES of the output,
     /// followed by the ciphertext and then the 16-byte tag; on --decrypt the nonce is read back
     /// from the first 16 bytes of the input, so the two compose directly in a pipeline. This is
-    /// the same convention the AES commands use for their IV. Decryption fails with a non-zero
-    /// exit status if the tag does not verify.
-    ///
-    /// --nonce/--nonce-file override that: the nonce is then neither written on encrypt nor read
-    /// on decrypt, and the stream is exactly ciphertext||tag in both directions. That override
-    /// exists for reproducing known-answer vectors; repeating a nonce under one key destroys both
-    /// the confidentiality and the authenticity of Ascon-AEAD128.
+    /// the same convention the AES commands use for their IV. There is no flag to supply a nonce,
+    /// as with the AES modes: repeating a nonce under one key destroys both the confidentiality
+    /// and the authenticity of Ascon-AEAD128. Decryption fails with a non-zero exit status if the
+    /// tag does not verify.
     ///
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -401,15 +398,6 @@ enum Subcommands {
         /// A file containing the 128-bit key in hex or binary.
         #[arg(long)]
         key_file: Option<String>,
-
-        /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
-        /// stream (see above), and reusing one under a given key breaks the cipher.
-        #[arg(long)]
-        nonce: Option<String>,
-
-        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
-        #[arg(long)]
-        nonce_file: Option<String>,
 
         /// Associated data in hex (authenticated but not encrypted).
         #[arg(long)]
@@ -1837,9 +1825,9 @@ fn run() {
         Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
             ascon_cmd::cxof128_cmd(customization, *length, *x);
         }
-        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, direction, x }) => {
+        Some(Subcommands::AsconAEAD128 { key, key_file, ad, direction, x }) => {
             let decrypt = matches!(direction, CipherDirection::Decrypt);
-            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, decrypt, *x);
+            ascon_cmd::aead128_cmd(key, key_file, ad, decrypt, *x);
         }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
