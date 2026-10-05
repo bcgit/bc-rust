@@ -54,13 +54,13 @@ const TINY_CAPACITY: usize = 256 * TOY_LEN;
 
 fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, NONCE_LEN>, plaintext: &[u8]) -> Vec<u8> {
     let mut data = plaintext.to_vec();
-    e.do_encrypt(&mut data).unwrap();
+    e.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
 fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, NONCE_LEN>, ciphertext: &[u8]) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
-    d.do_decrypt(&mut data).unwrap();
+    d.do_decrypt_inplace(&mut data).unwrap();
     data
 }
 
@@ -71,7 +71,7 @@ fn dec_chunked(
 ) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
     for piece in data.chunks_mut(chunk) {
-        d.do_decrypt(piece).unwrap();
+        d.do_decrypt_inplace(piece).unwrap();
     }
     data
 }
@@ -249,7 +249,7 @@ fn check_counter_blocks<const N: usize>(blocks: usize) {
     .unwrap();
     assert_eq!(got, nonce);
     let mut keystream = vec![0u8; blocks * TOY_LEN];
-    e.do_encrypt(&mut keystream).expect("the run must fit in the counter space");
+    e.do_encrypt_inplace(&mut keystream).expect("the run must fit in the counter space");
 
     for j in 0..blocks {
         let mut expected = [0u8; TOY_LEN];
@@ -354,11 +354,11 @@ fn the_counter_limit_is_enforced() {
 
     // Exactly the capacity is allowed, in one call.
     let mut data = vec![0u8; TINY_CAPACITY];
-    encryptor().do_encrypt(&mut data).expect("the full counter space must be usable");
+    encryptor().do_encrypt_inplace(&mut data).expect("the full counter space must be usable");
 
     // One byte more is refused.
     let mut data = vec![0u8; TINY_CAPACITY + 1];
-    match encryptor().do_encrypt(&mut data) {
+    match encryptor().do_encrypt_inplace(&mut data) {
         Err(SymmetricCipherError::DataLimitExceeded) => {}
         other => panic!("expected DataLimitExceeded past the counter limit, got {other:?}"),
     }
@@ -368,30 +368,31 @@ fn the_counter_limit_is_enforced() {
     let mut e = encryptor();
     let mut sixteenth = vec![0u8; TINY_CAPACITY / 16];
     for i in 0..16 {
-        e.do_encrypt(&mut sixteenth).unwrap_or_else(|err| panic!("call {i} should fit: {err:?}"));
+        e.do_encrypt_inplace(&mut sixteenth)
+            .unwrap_or_else(|err| panic!("call {i} should fit: {err:?}"));
     }
     let mut one = [0u8; 1];
-    assert!(e.do_encrypt(&mut one).is_err(), "the next byte must be refused");
+    assert!(e.do_encrypt_inplace(&mut one).is_err(), "the next byte must be refused");
     assert_eq!(one, [0u8; 1], "a refused call must not touch the data");
 
     // ...and a refused call must not disturb the state either: the mode is exhausted, so it stays
     // exhausted, and a smaller call is refused too rather than silently wrapping.
     let mut one = [0u8; 1];
-    assert!(e.do_encrypt(&mut one).is_err(), "still exhausted on a second attempt");
+    assert!(e.do_encrypt_inplace(&mut one).is_err(), "still exhausted on a second attempt");
 
     // A call refused part-way through the counter space leaves the state untouched, so the bytes
     // that *do* fit are unchanged by the attempt.
     let mut e = encryptor();
     let mut half = vec![0u8; TINY_CAPACITY / 2];
-    e.do_encrypt(&mut half).unwrap();
+    e.do_encrypt_inplace(&mut half).unwrap();
     let mut too_big = vec![0u8; TINY_CAPACITY]; // more than the half that is left
-    assert!(e.do_encrypt(&mut too_big).is_err(), "must refuse what does not fit");
+    assert!(e.do_encrypt_inplace(&mut too_big).is_err(), "must refuse what does not fit");
     assert_eq!(too_big, vec![0u8; TINY_CAPACITY], "refused call must not touch the data");
     // The remaining half still encrypts, and to exactly what an uninterrupted run would give.
     let mut rest = vec![0u8; TINY_CAPACITY / 2];
-    e.do_encrypt(&mut rest).expect("the untouched remainder must still be usable");
+    e.do_encrypt_inplace(&mut rest).expect("the untouched remainder must still be usable");
     let mut whole = vec![0u8; TINY_CAPACITY];
-    encryptor().do_encrypt(&mut whole).unwrap();
+    encryptor().do_encrypt_inplace(&mut whole).unwrap();
     assert_eq!(
         &rest[..],
         &whole[TINY_CAPACITY / 2..],
@@ -423,10 +424,15 @@ fn the_counter_limit_is_enforced_at_two_bytes_too() {
     };
 
     let mut data = vec![0u8; CAPACITY];
-    encryptor().do_encrypt(&mut data).expect("the full 2-byte counter space must be usable");
+    encryptor()
+        .do_encrypt_inplace(&mut data)
+        .expect("the full 2-byte counter space must be usable");
 
     let mut data = vec![0u8; CAPACITY + 1];
-    assert!(encryptor().do_encrypt(&mut data).is_err(), "one byte past the limit must be refused");
+    assert!(
+        encryptor().do_encrypt_inplace(&mut data).is_err(),
+        "one byte past the limit must be refused"
+    );
     assert_eq!(data, vec![0u8; CAPACITY + 1], "a refused call must not touch the data");
 }
 
@@ -438,7 +444,10 @@ fn the_counter_limit_is_enforced_when_decrypting_too() {
     let nonce: [u8; SHORT_CTR_NONCE_LEN] = core::array::from_fn(|i| 0x5A ^ (i as u8));
     let mut d = TinyCtr::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
     let mut data = vec![0u8; TINY_CAPACITY + 1];
-    assert!(d.do_decrypt(&mut data).is_err(), "decryption must refuse past the counter limit");
+    assert!(
+        d.do_decrypt_inplace(&mut data).is_err(),
+        "decryption must refuse past the counter limit"
+    );
     assert_eq!(data, vec![0u8; TINY_CAPACITY + 1], "a refused call must not touch the data");
 }
 
@@ -458,18 +467,18 @@ fn neither_direction_uses_the_inverse_cipher() {
     )
     .unwrap();
     let mut ct = plaintext.clone();
-    e.do_encrypt(&mut ct).unwrap();
+    e.do_encrypt_inplace(&mut ct).unwrap();
 
     let mut d = ForwardOnlyCtr::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
     let mut back = ct.clone();
-    d.do_decrypt(&mut back).unwrap();
+    d.do_decrypt_inplace(&mut back).unwrap();
     assert_eq!(back, plaintext, "all paths, forward cipher only");
 
     // Byte by byte, so the single-block path runs too.
     let mut d = ForwardOnlyCtr::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
     let mut back = ct.clone();
     for piece in back.chunks_mut(1) {
-        d.do_decrypt(piece).unwrap();
+        d.do_decrypt_inplace(piece).unwrap();
     }
     assert_eq!(back, plaintext, "byte path, forward cipher only");
 
@@ -493,7 +502,7 @@ fn call_chunking_does_not_change_the_result() {
         let mut ct = plaintext.clone();
         let mut e = pinned_encryptor(nonce);
         for piece in ct.chunks_mut(enc_chunk) {
-            e.do_encrypt(piece).unwrap();
+            e.do_encrypt_inplace(piece).unwrap();
         }
         assert_eq!(ct, reference, "encrypting in {enc_chunk}-byte calls");
 
@@ -508,11 +517,11 @@ fn call_chunking_does_not_change_the_result() {
 
     // Empty calls anywhere are no-ops, including mid-block.
     let mut e = pinned_encryptor(nonce);
-    e.do_encrypt(&mut []).unwrap();
+    e.do_encrypt_inplace(&mut []).unwrap();
     let mut ct = plaintext.clone();
-    e.do_encrypt(&mut ct[..5]).unwrap();
-    e.do_encrypt(&mut []).unwrap();
-    e.do_encrypt(&mut ct[5..]).unwrap();
+    e.do_encrypt_inplace(&mut ct[..5]).unwrap();
+    e.do_encrypt_inplace(&mut []).unwrap();
+    e.do_encrypt_inplace(&mut ct[5..]).unwrap();
     assert_eq!(ct, reference, "empty calls must not disturb the state");
 }
 
@@ -549,18 +558,18 @@ fn chunking_matches_a_single_call_over_several_batches() {
         };
 
         let mut reference = plaintext.clone();
-        encryptor().do_encrypt(&mut reference).expect("one-call encryption");
+        encryptor().do_encrypt_inplace(&mut reference).expect("one-call encryption");
         assert_ne!(reference, plaintext, "{name}: the data must actually be encrypted");
 
         let mut back = reference.clone();
-        decryptor().do_decrypt(&mut back).expect("one-call decryption");
+        decryptor().do_decrypt_inplace(&mut back).expect("one-call decryption");
         assert_eq!(back, plaintext, "{name}: one-call round trip");
 
         for &enc_chunk in &CHUNKINGS {
             let mut ct = plaintext.clone();
             let mut e = encryptor();
             for piece in ct.chunks_mut(enc_chunk) {
-                e.do_encrypt(piece).expect("chunked encryption");
+                e.do_encrypt_inplace(piece).expect("chunked encryption");
             }
             assert_eq!(ct, reference, "{name}: encrypting in {enc_chunk}-byte calls");
 
@@ -568,7 +577,7 @@ fn chunking_matches_a_single_call_over_several_batches() {
                 let mut pt = ct.clone();
                 let mut d = decryptor();
                 for piece in pt.chunks_mut(dec_chunk) {
-                    d.do_decrypt(piece).expect("chunked decryption");
+                    d.do_decrypt_inplace(piece).expect("chunked decryption");
                 }
                 assert_eq!(
                     pt, plaintext,
@@ -597,7 +606,7 @@ fn the_pair_path_is_really_used_in_both_directions() {
     let (mut e, _) =
         SwappedCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
-    e.do_encrypt(&mut swapped).unwrap();
+    e.do_encrypt_inplace(&mut swapped).unwrap();
     assert_ne!(swapped, ct, "CTR encryption must use the pair path");
 
     // ...but one block at a time avoids it, and then it agrees with the correct toy.
@@ -605,14 +614,14 @@ fn the_pair_path_is_really_used_in_both_directions() {
         SwappedCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
     let mut single = plaintext.clone();
     for piece in single.chunks_mut(TOY_LEN) {
-        e.do_encrypt(piece).unwrap();
+        e.do_encrypt_inplace(piece).unwrap();
     }
     assert_eq!(single, ct, "the single-block path must not pair");
 
     // Decryption: the same, on the correct ciphertext.
     let mut d = SwappedCtr::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
     let mut back = ct.clone();
-    d.do_decrypt(&mut back).unwrap();
+    d.do_decrypt_inplace(&mut back).unwrap();
     assert_ne!(back, plaintext, "CTR decryption must use the pair path");
 }
 
@@ -628,7 +637,7 @@ fn the_four_block_path_is_really_used_in_both_directions() {
     let (mut e, _) =
         SwappedFourCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
-    e.do_encrypt(&mut swapped).unwrap();
+    e.do_encrypt_inplace(&mut swapped).unwrap();
     assert_ne!(swapped, ct, "five blocks must go through encrypt_4blocks");
 
     // Two blocks at a time uses pairs only, so the rotated-four toy is correct there.
@@ -636,13 +645,13 @@ fn the_four_block_path_is_really_used_in_both_directions() {
         SwappedFourCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut pinned_rng(nonce)).unwrap();
     let mut pairs = plaintext.clone();
     for piece in pairs.chunks_mut(2 * TOY_LEN) {
-        e.do_encrypt(piece).unwrap();
+        e.do_encrypt_inplace(piece).unwrap();
     }
     assert_eq!(pairs, ct, "pairs must not use the four path");
 
     let mut d = SwappedFourCtr::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
     let mut back = ct.clone();
-    d.do_decrypt(&mut back).unwrap();
+    d.do_decrypt_inplace(&mut back).unwrap();
     assert_ne!(back, plaintext, "decryption must batch fours too");
 }
 
@@ -666,9 +675,9 @@ fn identical_plaintext_gives_different_ciphertext() {
     let plaintext = [0x77u8; 2 * TOY_LEN];
 
     let mut first = plaintext;
-    ToyCtr::<Encrypting>::encrypt_in_place(&key, &mut first).unwrap();
+    ToyCtr::<Encrypting>::encrypt_inplace(&key, &mut first).unwrap();
     let mut second = plaintext;
-    ToyCtr::<Encrypting>::encrypt_in_place(&key, &mut second).unwrap();
+    ToyCtr::<Encrypting>::encrypt_inplace(&key, &mut second).unwrap();
     assert_ne!(first, second);
 
     // ...and two identical plaintext blocks within one message differ, because the counter moves.
@@ -696,13 +705,13 @@ fn every_length_round_trips_without_padding() {
         let plaintext = message(len);
         let mut data = plaintext.clone();
         let (n, nonce) =
-            ToyCtr::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+            ToyCtr::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
         assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         if len >= 8 {
             assert_ne!(data, plaintext, "len {len}: the data must actually be encrypted");
         }
-        ToyCtr::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
+        ToyCtr::<Decrypting>::decrypt_inplace(&key, &nonce, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: round trip");
     }
 }
@@ -726,10 +735,10 @@ fn every_permitted_nonce_length_works() {
         .unwrap();
         assert_eq!(got, nonce);
         let mut ct = plaintext.clone();
-        e.do_encrypt(&mut ct).unwrap();
+        e.do_encrypt_inplace(&mut ct).unwrap();
         assert_ne!(ct, plaintext, "nonce length {N}: must actually encrypt");
 
-        Ctr::<Toy, Decrypting, TOY_LEN, TOY_LEN, N>::decrypt_in_place(&key, &nonce, &mut ct)
+        Ctr::<Toy, Decrypting, TOY_LEN, TOY_LEN, N>::decrypt_inplace(&key, &nonce, &mut ct)
             .unwrap();
         assert_eq!(ct, plaintext, "nonce length {N}: round trip");
     }

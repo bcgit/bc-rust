@@ -55,7 +55,8 @@ pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
 
     /// XORs the next `blocks.len()` keystream blocks into `blocks`, in place, and advances past
     /// them. A sequence of calls is equivalent to one call over the concatenation; how to batch
-    /// the blocks is the implementor's decision, as for [`BlockCipherEncryptor::do_encrypt_blocks`].
+    /// the blocks is the implementor's decision, as for
+    /// [`BlockCipherEncryptor::do_encrypt_blocks_inplace`].
     ///
     /// Infallible because the caller has already checked `blocks.len()` against
     /// [`Self::remaining_blocks`]. Asking for more is a programmer error, and the implementor may

@@ -640,7 +640,7 @@ where
     pub fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.mac_absorb(data);
-        self.ctr.do_encrypt(data)?;
+        self.ctr.do_encrypt_inplace(data)?;
         Ok(())
     }
 
@@ -668,18 +668,21 @@ where
     /// One-shot generation-encryption with a **detached** tag (Sec 6.1).
     ///
     /// Writes `plaintext.len()` bytes of ciphertext into `ciphertext` and returns that count with
-    /// the tag. For the spec's own inline `ciphertext || tag` string, use [`Self::encrypt_out`].
+    /// the tag. The entire output buffer is zeroized before the ciphertext is written, so any bytes
+    /// past that count will be 0. For the spec's own inline `ciphertext || tag` string, use
+    /// [`Self::encrypt_out`].
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, plus
     /// [`Self::new`]'s errors.
-    pub fn encrypt_out_detached(
+    pub fn encrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         if ciphertext.len() < plaintext.len() {
             return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
@@ -695,9 +698,11 @@ where
     /// `C = (P XOR MSB_Plen(S)) || (T XOR MSB_Tlen(S0))`, i.e. `ciphertext || tag` inline.
     ///
     /// `ciphertext` needs `plaintext.len() + TAG_LEN` bytes; the return is how many were written.
+    /// The entire output buffer is zeroized before the output is written, so any bytes past that
+    /// count will be 0.
     ///
     /// # Errors
-    /// As [`Self::encrypt_out_detached`].
+    /// As [`Self::encrypt_detached_out`].
     pub fn encrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -705,12 +710,13 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
         let needed = plaintext.len() + TAG_LEN;
         if ciphertext.len() < needed {
             return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }
         let (data, tag_out) = ciphertext[..needed].split_at_mut(plaintext.len());
-        let (_, tag) = Self::encrypt_out_detached(key, nonce, aad, plaintext, data)?;
+        let (_, tag) = Self::encrypt_detached_out(key, nonce, aad, plaintext, data)?;
         tag_out.copy_from_slice(&tag);
         Ok(needed)
     }
@@ -738,7 +744,7 @@ where
     /// still outstanding. Nothing is consumed in either case.
     pub fn do_decrypt_update(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
-        self.ctr.do_decrypt(data)?;
+        self.ctr.do_decrypt_inplace(data)?;
         self.mac_absorb(data);
         Ok(())
     }
@@ -774,14 +780,15 @@ where
 
     /// One-shot decryption-verification with a **detached** tag (Sec 6.2).
     ///
-    /// On failure `plaintext` is zeroized before the error is returned, so Sec 6.2's "the payload P
+    /// Returns the number of plaintext bytes written. The entire output buffer is zeroized before
+    /// the plaintext is written, so any bytes past that count will be 0. On failure `plaintext` is zeroized before the error is returned, so Sec 6.2's "the payload P
     /// and the MAC T shall not be revealed" holds even for a caller who ignores the `Result`.
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify,
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, plus
     /// [`Self::new`]'s errors.
-    pub fn decrypt_out_detached(
+    pub fn decrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -789,6 +796,7 @@ where
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         if plaintext.len() < ciphertext.len() {
             return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
         }
@@ -810,15 +818,17 @@ where
     }
 
     /// One-shot decryption-verification of the spec's own output string (Sec 6.2), splitting the
-    /// trailing `TAG_LEN` bytes off `ciphertext` as the tag -- step 6's `LSB_Tlen(C)`.
+    /// trailing `TAG_LEN` bytes off `ciphertext` as the tag -- step 6's `LSB_Tlen(C)`. Returns the
+    /// number of plaintext bytes written. The entire output buffer is zeroized before the plaintext
+    /// is written, so any bytes past that count will be 0.
     ///
     /// # Errors
     /// [`SymmetricCipherError::DecryptionFailed`] for Sec 6.2 step 1, "If Clen <= Tlen, then
     /// return INVALID": a malformed input rather than a failed check, reported with the variant
-    /// [`SymmetricCipherDecryptor::do_final`] specifies for a malformed ciphertext so that every
-    /// inline entry point -- this one, [`CcmDecryptor::do_final`] and
+    /// [`SymmetricCipherDecryptor::do_decrypt_final`] specifies for a malformed ciphertext so that
+    /// every inline entry point -- this one, [`CcmDecryptor::do_decrypt_final`] and
     /// [`CcmDecryptor::decrypt_with_aad_out`](AEADCipherDecryptor::decrypt_with_aad_out) -- agrees
-    /// on the same input. Otherwise as [`Self::decrypt_out_detached`].
+    /// on the same input. Otherwise as [`Self::decrypt_detached_out`].
     pub fn decrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -826,10 +836,11 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
             return Err(SymmetricCipherError::DecryptionFailed);
         };
-        Self::decrypt_out_detached(key, nonce, aad, data, tag, plaintext)
+        Self::decrypt_detached_out(key, nonce, aad, data, tag, plaintext)
     }
 }
 
@@ -1149,19 +1160,19 @@ where
 ///     written += enc.do_encrypt_out(piece, &mut ct[written..]).expect("within DATA_LEN");
 /// }
 /// assert_eq!(written, 40);
-/// let (_, _, tag) = enc.do_final_detached().expect("exactly DATA_LEN was supplied");
+/// let (_, _, tag) = enc.do_encrypt_final_detachedtag().expect("exactly DATA_LEN was supplied");
 ///
 /// let mut dec = Dec::do_decrypt_init(&key, &nonce).expect("init");
 /// dec.do_update_aad(header).expect("within AAD_LEN");
 /// let mut pt = [0u8; 40];
 /// dec.do_decrypt_out(&ct, &mut pt).expect("released, but not yet authenticated");
-/// dec.do_final_detached(&tag).expect("...until the tag verifies");
+/// dec.do_decrypt_final_detachedtag(&tag).expect("...until the tag verifies");
 /// assert_eq!(pt, frame);
 ///
 /// // 39 bytes is not a frame: the final refuses rather than authenticate a length `B0` did not commit to.
 /// let (mut short, _) = Enc::do_encrypt_init(&key).expect("init");
 /// short.do_encrypt_out(&frame[..39], &mut ct).expect("within DATA_LEN");
-/// assert!(short.do_final().is_err());
+/// assert!(short.do_encrypt_final().is_err());
 /// ```
 ///
 /// # Nonce length
@@ -1300,13 +1311,14 @@ where
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
     /// `plaintext`, and [`SymmetricCipherError::StateError`] if `plaintext` would take the total
-    /// past `DATA_LEN`. Nothing is consumed or written in either case, though a non-empty call
-    /// refused for its length has still ended the AAD phase.
+    /// past `DATA_LEN`. Nothing is consumed in either case and `ciphertext` is left zeroed, as on
+    /// every call, though a non-empty call refused for its length has still ended the AAD phase.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
         if plaintext.is_empty() {
             return Ok(0);
         }
@@ -1317,7 +1329,7 @@ where
         // the phase order is about call history, and this call happened.
         self.0.begin_data();
         // `Ccm::do_encrypt` would refuse this too, but only after the plaintext had been copied
-        // into the caller's output buffer, and a refused call must leave that buffer alone.
+        // into the caller's output buffer, and a refused call must not leave plaintext there.
         if plaintext.len() > self.0.ccm.owed {
             return Err(SymmetricCipherError::StateError(
                 "CCM: plaintext longer than DATA_LEN, the payload length the type declares",
@@ -1332,8 +1344,8 @@ where
     /// The tag, and nothing else: all of the ciphertext has already been released.
     ///
     /// # Errors
-    /// As [`AEADCipherEncryptor::do_final_detached_out`].
-    fn do_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    /// As [`AEADCipherEncryptor::do_encrypt_final_detachedtag_out`].
+    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         Ok((self.finish()?, TAG_LEN))
     }
 
@@ -1368,14 +1380,15 @@ where
         self.0.do_update_aad(aad)
     }
 
-    /// Sec 6.1 steps 4 and 8: the tag. `ciphertext` is left untouched, since nothing is held back.
+    /// Sec 6.1 steps 4 and 8: the tag. Nothing is held back, so `ciphertext` is left zeroed.
     ///
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if fewer than `DATA_LEN` payload bytes were supplied.
-    fn do_final_detached_out(
+    fn do_encrypt_final_detachedtag_out(
         self,
-        _ciphertext: &mut [u8; TAG_LEN],
+        ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         Ok((0, self.finish()?))
     }
 }
@@ -1500,13 +1513,14 @@ where
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// [`do_decrypt_out_len`](Self::do_decrypt_out_len), and [`SymmetricCipherError::StateError`]
     /// if `ciphertext` would take the total past `DATA_LEN + TAG_LEN`, more than either layout
-    /// can be. Nothing is consumed or written in either case, though a non-empty call refused
-    /// for its length has still ended the AAD phase.
+    /// can be. Nothing is consumed in either case and `plaintext` is left zeroed, as on every
+    /// call, though a non-empty call refused for its length has still ended the AAD phase.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         if ciphertext.is_empty() {
             return Ok(0);
         }
@@ -1540,7 +1554,7 @@ where
     /// [`SymmetricCipherError::DecryptionFailed`] if fewer than `DATA_LEN + TAG_LEN` bytes were
     /// supplied -- Sec 6.2 step 1's "If Clen <= Tlen, then return INVALID", for a `C` whose
     /// length is fixed; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn do_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         // Tag bytes are only held once the whole payload has been released, so a full tag means
         // a full payload too; a short payload shows up here as no tag at all.
         if self.tag_len < TAG_LEN {
@@ -1556,7 +1570,7 @@ where
     /// `C` it is still what [`do_decrypt_out`](Self::do_decrypt_out) releases, so a one-shot that
     /// sizes its buffer by this reaches the final and reports the short `C` as malformed, rather
     /// than refusing the buffer first.
-    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len.min(DATA_LEN)
     }
 }
@@ -1583,18 +1597,19 @@ where
     }
 
     /// The detached layout: every byte of `C` is ciphertext, so `C` is exactly `DATA_LEN` long
-    /// and Sec 6.2 runs over all of it against `tag`. Releases nothing, and `plaintext` is left
-    /// untouched: every plaintext byte went out as it was recovered.
+    /// and Sec 6.2 runs over all of it against `tag`. Releases nothing, so `plaintext` is left
+    /// zeroed: every plaintext byte went out as it was recovered.
     ///
     /// # Errors
     /// [`SymmetricCipherError::DecryptionFailed`] if `C` was not exactly `DATA_LEN` bytes -- a
     /// payload still owed, or bytes held back as a possible inline tag that this layout has no
     /// place for; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn do_final_detached_out(
+    fn do_decrypt_final_detachedtag_out(
         self,
         tag: &[u8; TAG_LEN],
-        _plaintext: &mut [u8; TAG_LEN],
+        plaintext: &mut [u8; TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         if self.tag_len != 0 || self.inner.ccm.owed != 0 {
             return Err(SymmetricCipherError::DecryptionFailed);
         }

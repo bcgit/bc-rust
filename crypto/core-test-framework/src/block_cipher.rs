@@ -42,8 +42,8 @@ impl TestFrameworkBlockCipher {
         // one block at a time, through the flat streaming methods (LEN = BLOCK_LEN), in place
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
             let mut buf = *msg_chunk;
-            encryptor.do_encrypt(&mut buf).unwrap();
-            decryptor.do_decrypt(&mut buf).unwrap();
+            encryptor.do_encrypt_inplace(&mut buf).unwrap();
+            decryptor.do_decrypt_inplace(&mut buf).unwrap();
             assert_eq!(msg_chunk, &buf);
         }
 
@@ -56,24 +56,24 @@ impl TestFrameworkBlockCipher {
         for msg_pair in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.as_chunks::<2>().0.iter() {
             // encrypt together, decrypt together
             let mut buf = *msg_pair;
-            encryptor.do_encrypt_blocks(&mut buf).unwrap();
-            decryptor.do_decrypt_blocks(&mut buf).unwrap();
+            encryptor.do_encrypt_blocks_inplace(&mut buf).unwrap();
+            decryptor.do_decrypt_blocks_inplace(&mut buf).unwrap();
             assert_eq!(msg_pair, &buf);
 
             // encrypt together, decrypt one at a time
             let mut buf = *msg_pair;
-            encryptor.do_encrypt_blocks(&mut buf).unwrap();
+            encryptor.do_encrypt_blocks_inplace(&mut buf).unwrap();
             for (msg_chunk, block) in msg_pair.iter().zip(buf.iter_mut()) {
-                decryptor.do_decrypt(block).unwrap();
+                decryptor.do_decrypt_inplace(block).unwrap();
                 assert_eq!(msg_chunk, block);
             }
 
             // encrypt one at a time, decrypt together
             let mut buf = *msg_pair;
             for block in buf.iter_mut() {
-                encryptor.do_encrypt(block).unwrap();
+                encryptor.do_encrypt_inplace(block).unwrap();
             }
-            decryptor.do_decrypt_blocks(&mut buf).unwrap();
+            decryptor.do_decrypt_blocks_inplace(&mut buf).unwrap();
             assert_eq!(msg_pair, &buf);
         }
 
@@ -83,16 +83,16 @@ impl TestFrameworkBlockCipher {
         // covered by the modes crate's tests with a concrete BLOCK_LEN.
         let one_block: &[u8; BLOCK_LEN] = &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0[0];
         let mut buf = *one_block;
-        let (n, iv) = E::encrypt_in_place(&key, &mut buf).unwrap();
+        let (n, iv) = E::encrypt_inplace(&key, &mut buf).unwrap();
         assert_eq!(n, BLOCK_LEN, "encrypt must report the number of bytes written");
         let ct = buf;
-        let n = D::decrypt_in_place(&key, &iv, &mut buf).unwrap();
+        let n = D::decrypt_inplace(&key, &iv, &mut buf).unwrap();
         assert_eq!(n, BLOCK_LEN, "decrypt must report the number of bytes written");
         assert_eq!(buf, *one_block);
         // ...and it must agree with the streaming API under the same init data.
         let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
         let mut buf = ct;
-        streamed.do_decrypt(&mut buf).unwrap();
+        streamed.do_decrypt_inplace(&mut buf).unwrap();
         assert_eq!(buf, *one_block);
 
         // The RNG-taking constructor is only exercised for a cipher that has init data to
@@ -105,9 +105,9 @@ impl TestFrameworkBlockCipher {
             let (mut streamed, iv_streamed) =
                 E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned))
                     .unwrap();
-            streamed.do_encrypt(&mut expected).unwrap();
+            streamed.do_encrypt_inplace(&mut expected).unwrap();
             let mut buf = *one_block;
-            let (n, iv) = E::encrypt_in_place_rng(
+            let (n, iv) = E::encrypt_rng_inplace(
                 &key,
                 &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned),
                 &mut buf,

@@ -61,7 +61,10 @@ impl BlockCipherEncryptor<B, B, B> for ToyCbc {
         rng.next_bytes_out(&mut iv)?;
         Ok((Self { key, chain: iv }, iv))
     }
-    fn do_encrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<usize, SymmetricCipherError> {
+    fn do_encrypt_blocks_inplace(
+        &mut self,
+        blocks: &mut [[u8; B]],
+    ) -> Result<usize, SymmetricCipherError> {
         for block in blocks.iter_mut() {
             for (b, (c, k)) in block.iter_mut().zip(self.chain.iter().zip(self.key.iter())) {
                 *b ^= c ^ k;
@@ -76,7 +79,10 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
     fn do_decrypt_init(key: &KeyMaterial<B>, iv: &[u8; B]) -> Result<Self, SymmetricCipherError> {
         Ok(Self { key: Self::check_key(key)?, chain: *iv })
     }
-    fn do_decrypt_blocks(&mut self, blocks: &mut [[u8; B]]) -> Result<usize, SymmetricCipherError> {
+    fn do_decrypt_blocks_inplace(
+        &mut self,
+        blocks: &mut [[u8; B]],
+    ) -> Result<usize, SymmetricCipherError> {
         let len = blocks.len() * B;
         for block in blocks.iter_mut() {
             let ct = *block;
@@ -125,7 +131,7 @@ fn one_shot_roundtrip_all_lengths() {
         assert_eq!(n, ct.len());
         assert_eq!(n, (len / B + 1) * B, "always one extra padding block");
 
-        let mut out = vec![0u8; Dec::decrypt_out_max_len(n)];
+        let mut out = vec![0u8; Dec::decrypt_out_len(n)];
         let m = Dec::decrypt_out(&key, &iv, &ct[..n], &mut out).unwrap();
         assert_eq!(&out[..m], &pt[..]);
     }
@@ -148,13 +154,13 @@ fn streaming_matches_one_shot_for_every_chunking() {
             assert_eq!(n, expect, "update_out_len must be exact");
             ct.extend_from_slice(&buf[..n]);
         }
-        let (last, last_len) = enc.do_final().unwrap();
+        let (last, last_len) = enc.do_encrypt_final().unwrap();
         assert_eq!(last_len, B, "PKCS7 always emits a final block");
         ct.extend_from_slice(&last[..last_len]);
         assert_eq!(ct.len(), Enc::encrypt_out_len(len));
 
         // one-shot decrypt
-        let mut out = vec![0u8; Dec::decrypt_out_max_len(ct.len())];
+        let mut out = vec![0u8; Dec::decrypt_out_len(ct.len())];
         let m = Dec::decrypt_out(&key, &iv, &ct, &mut out).unwrap();
         assert_eq!(&out[..m], &pt[..], "chunk {chunk}");
 
@@ -168,7 +174,7 @@ fn streaming_matches_one_shot_for_every_chunking() {
             assert_eq!(n, expect, "update_out_len must be exact (decrypt)");
             rec.extend_from_slice(&buf[..n]);
         }
-        let (block, data_len) = dec.do_final().unwrap();
+        let (block, data_len) = dec.do_decrypt_final().unwrap();
         rec.extend_from_slice(&block[..data_len]);
         assert_eq!(rec, pt, "chunk {chunk}");
     }
@@ -193,7 +199,7 @@ fn decryptor_lags_by_exactly_one_block() {
     assert_eq!(dec.do_decrypt_out(&ct[B..2 * B], &mut out).unwrap(), B);
     // third block: releases the second
     assert_eq!(dec.do_decrypt_out(&ct[2 * B..], &mut out[B..]).unwrap(), B);
-    let (last, n) = dec.do_final().unwrap();
+    let (last, n) = dec.do_decrypt_final().unwrap();
     assert_eq!(n, 0, "block-aligned plaintext => final block is all padding");
     assert_eq!(&out[..2 * B], &msg(2 * B)[..]);
     let _ = last;
@@ -207,14 +213,14 @@ fn final_out_variants() {
     let n = enc.do_encrypt_out(&msg(B + 2), &mut ct).unwrap();
     assert_eq!(n, B);
     let mut last = [0u8; B];
-    assert_eq!(enc.do_final_out(&mut last).unwrap(), B);
+    assert_eq!(enc.do_encrypt_final_out(&mut last).unwrap(), B);
     ct[B..].copy_from_slice(&last);
 
     let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     let mut out = [0u8; B];
     assert_eq!(dec.do_decrypt_out(&ct, &mut out).unwrap(), B);
     let mut last_pt = [0u8; B];
-    let data_len = dec.do_final_out(&mut last_pt).unwrap();
+    let data_len = dec.do_decrypt_final_out(&mut last_pt).unwrap();
     assert_eq!(data_len, 2);
     let mut rec = out.to_vec();
     rec.extend_from_slice(&last_pt[..data_len]);
@@ -256,10 +262,10 @@ fn malformed_ciphertext_lengths_are_rejected() {
     // streaming: partial trailing block at final
     let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     dec.do_decrypt_out(&[0u8; B + 3], &mut out).unwrap();
-    assert!(matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)));
+    assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)));
     // streaming: nothing fed at all
     let dec = Dec::do_decrypt_init(&key, &iv).unwrap();
-    assert!(matches!(dec.do_final(), Err(SymmetricCipherError::DecryptionFailed)));
+    assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)));
 }
 
 #[test]
@@ -308,7 +314,7 @@ fn wrong_key_type_is_rejected_by_adapters() {
 
 /// With `NoPadding` the adapters enforce alignment: the framework is told that only multiples of
 /// the block length are accepted, and it asserts that every other length is refused with a
-/// `PaddingError`, at `encrypt_out` and at a streaming `do_final`.
+/// `PaddingError`, at `encrypt_out` and at a streaming `do_encrypt_final`.
 #[test]
 fn no_padding_adapters_pass_the_symmetric_cipher_framework() {
     let mut framework = TestFrameworkSymmetricCipher::new();
@@ -325,7 +331,7 @@ fn no_padding_adds_nothing_to_aligned_data() {
         let len = blocks * B;
         let pt = msg(len);
         assert_eq!(EncNP::encrypt_out_len(len), len);
-        assert_eq!(DecNP::decrypt_out_max_len(len), len);
+        assert_eq!(DecNP::decrypt_out_len(len), len);
 
         let mut ct = vec![0u8; len];
         let (iv, n) = EncNP::encrypt_out(&key, &pt, &mut ct).unwrap();
@@ -336,24 +342,24 @@ fn no_padding_adds_nothing_to_aligned_data() {
         let (mut enc, _) =
             ToyCbc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<B>::new(iv)).unwrap();
         let (blocks_mut, _) = bare.as_chunks_mut::<B>();
-        enc.do_encrypt_blocks(blocks_mut).unwrap();
+        enc.do_encrypt_blocks_inplace(blocks_mut).unwrap();
         assert_eq!(ct, bare, "{blocks} blocks: the adapter must not alter the ciphertext");
 
         let mut out = vec![0u8; len];
         let m = DecNP::decrypt_out(&key, &iv, &ct, &mut out).unwrap();
         assert_eq!(&out[..m], &pt[..], "{blocks} blocks: round trip");
 
-        // Streaming: do_final reports zero output bytes.
+        // Streaming: do_encrypt_final reports zero output bytes.
         let (mut enc, _) = EncNP::do_encrypt_init(&key).unwrap();
         let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
         assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), len);
-        let (_, last_len) = enc.do_final().unwrap();
+        let (_, last_len) = enc.do_encrypt_final().unwrap();
         assert_eq!(last_len, 0, "{blocks} blocks: no final block");
     }
 }
 
 /// An unaligned message is refused with `PaddingNotPermitted`, from the one-shot and from a
-/// streaming `do_final`, and nothing is written for the final block.
+/// streaming `do_encrypt_final`, and nothing is written for the final block.
 #[test]
 fn no_padding_refuses_unaligned_data() {
     let key = key();
@@ -374,10 +380,10 @@ fn no_padding_refuses_unaligned_data() {
         assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), whole, "whole blocks still stream");
         assert!(
             matches!(
-                enc.do_final(),
+                enc.do_encrypt_final(),
                 Err(SymmetricCipherError::PaddingError(PaddingError::PaddingNotPermitted))
             ),
-            "len {len}: do_final must refuse the buffered partial block"
+            "len {len}: do_encrypt_final must refuse the buffered partial block"
         );
     }
 }
@@ -391,7 +397,7 @@ fn no_padding_decryptor_accepts_empty_and_rejects_unaligned() {
     let mut out = [0u8; 0];
     assert_eq!(DecNP::decrypt_out(&key, &iv, &[], &mut out).unwrap(), 0);
     let dec = DecNP::do_decrypt_init(&key, &iv).unwrap();
-    assert_eq!(dec.do_final().unwrap().1, 0);
+    assert_eq!(dec.do_decrypt_final().unwrap().1, 0);
 
     for len in [1usize, B - 1, B + 1, 2 * B + 5] {
         let mut out = vec![0u8; len];

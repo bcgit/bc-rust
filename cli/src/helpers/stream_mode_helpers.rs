@@ -59,7 +59,7 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
         // Cannot fail: neither CFB nor CFB8 has a per-IV data limit.
         // CFB and CFB8 cannot fail here; CTR can, once its counter is exhausted, which is a real
         // limit a long enough stream reaches rather than a bug.
-        enc.do_encrypt(data).unwrap_or_else(|e| {
+        enc.do_encrypt_inplace(data).unwrap_or_else(|e| {
             eprintln!("Error: encryption failed: {e:?}");
             exit(-1);
         });
@@ -93,7 +93,7 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     });
 
     stream(|data| {
-        dec.do_decrypt(data).unwrap_or_else(|e| {
+        dec.do_decrypt_inplace(data).unwrap_or_else(|e| {
             eprintln!("Error: decryption failed: {e:?}");
             exit(-1);
         });

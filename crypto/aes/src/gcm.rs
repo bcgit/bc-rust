@@ -77,7 +77,7 @@
 //! let (nonce, written) = AESEnc::encrypt_out(&key, message, &mut ciphertext).expect("encryption");
 //! assert_eq!(written, message.len() + 16, "the ciphertext plus the tag");
 //!
-//! let mut plaintext = vec![0u8; AESDec::decrypt_out_max_len(ciphertext.len())];
+//! let mut plaintext = vec![0u8; AESDec::decrypt_out_len(ciphertext.len())];
 //! let n = AESDec::decrypt_out(&key, &nonce, &ciphertext, &mut plaintext).expect("decryption");
 //! assert_eq!(&plaintext[..n], message);
 //! ```
@@ -85,7 +85,8 @@
 //! ## Streaming API
 //!
 //! For data that arrives in pieces, the following APIs can be used. All associated data must be
-//! given via `do_update_aad` before the first piece of data, and the tag comes from `do_final`:
+//! given via `do_update_aad` before the first piece of data, and the tag comes from
+//! `do_encrypt_final`:
 //!
 //! ```
 //! use bouncycastle_aes::AES_GCM_128;
@@ -115,12 +116,12 @@
 //!     ciphertext.extend_from_slice(&out[..bytes_written]);
 //! }
 //! // The tag is computed over everything, so it is the last thing out.
-//! let (tag, tag_len) = encryptor.do_final().expect("the tag");
+//! let (tag, tag_len) = encryptor.do_encrypt_final().expect("the tag");
 //! ciphertext.extend_from_slice(&tag[..tag_len]);
 //! assert_eq!(ciphertext.len(), plaintext.len() + 16);
 //!
 //! // Decrypt in 19-byte pieces. The decryptor holds back the last 16 bytes it has seen, since
-//! // those may be the tag, so a call can write fewer bytes than it was handed; `do_final`
+//! // those may be the tag, so a call can write fewer bytes than it was handed; `do_decrypt_final`
 //! // checks the tag and releases whatever is still held back.
 //! let mut decryptor = AESDec::do_decrypt_init(&key, &nonce).expect("decrypt init");
 //! decryptor.do_update_aad(aad).expect("aad");
@@ -130,7 +131,7 @@
 //!     let bytes_written = decryptor.do_decrypt_out(piece, &mut out).expect("decryption");
 //!     recovered.extend_from_slice(&out[..bytes_written]);
 //! }
-//! let (last, last_len) = decryptor.do_final().expect("a valid tag");
+//! let (last, last_len) = decryptor.do_decrypt_final().expect("a valid tag");
 //! recovered.extend_from_slice(&last[..last_len]);
 //! assert_eq!(recovered, plaintext);
 //! ```

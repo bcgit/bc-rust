@@ -102,14 +102,14 @@
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
-//! let (tag_block, tag_len) = enc.do_final().unwrap();
+//! let (tag_block, tag_len) = enc.do_encrypt_final().unwrap();
 //! ct.extend_from_slice(&tag_block[..tag_len]);
 //!
 //! let mut dec = ToyGcm::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
-//! let (_last, last_len) = dec.do_final().unwrap();
+//! let (_last, last_len) = dec.do_decrypt_final().unwrap();
 //! pt.truncate(written + last_len);
 //! assert_eq!(pt, message);
 //! ```
@@ -152,13 +152,14 @@
 //! [`SymmetricCipherDecryptor::do_decrypt_out`] hands back plaintext as it goes, which is
 //! unauthenticated until the tag has been checked after the final block.
 //! It is the application's responsibility not to take any action on the decrypted plaintext until
-//! the end of the ciphertext has been reached, and the `do_final` / `do_final_detached` succeeds.
+//! the end of the ciphertext has been reached, and the `do_decrypt_final` /
+//! `do_decrypt_final_detachedtag` succeeds.
 //!
 //! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) verify the
 //! tag first and release nothing on failure, making them more robust.
 //!
-//! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call `do_final_detached`: there
-//!   is no separate `Gmac` type.
+//! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call
+//!   `do_encrypt_final_detachedtag`: there is no separate `Gmac` type.
 
 use crate::modes::Ctr;
 use crate::modes::ghash::{GHASH_STATE_LEN, Ghash};
@@ -386,7 +387,7 @@ where
     /// [`SymmetricCipherError::StateError`] if the AAD/data length bookkeeping would overflow.
     /// Nothing is consumed in either case.
     fn encrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        self.ctr.do_encrypt(data)?;
+        self.ctr.do_encrypt_inplace(data)?;
         self.absorb_data(data)
     }
 
@@ -436,6 +437,7 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
         if ciphertext.len() < plaintext.len() {
             return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
@@ -444,7 +446,7 @@ where
         Ok(plaintext.len())
     }
 
-    fn do_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         let tag = self.finish();
         Ok((tag, TAG_LEN))
     }
@@ -467,11 +469,12 @@ where
         self.absorb_aad(aad)
     }
 
-    /// Algorithm 4 steps 4-6; `ciphertext` is left untouched, since nothing is held back.
-    fn do_final_detached_out(
+    /// Algorithm 4 steps 4-6; nothing is held back, so `ciphertext` is left zeroed.
+    fn do_encrypt_final_detachedtag_out(
         self,
-        _ciphertext: &mut [u8; TAG_LEN],
+        ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         Ok((0, self.finish()))
     }
 }
@@ -491,7 +494,7 @@ where
     /// As `encrypt_in_place`.
     fn decrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_data(data)?;
-        self.ctr.do_decrypt(data)?;
+        self.ctr.do_decrypt_inplace(data)?;
         Ok(())
     }
 
@@ -535,7 +538,7 @@ where
         if !ct_eq_bytes(&computed[..TAG_LEN], tag) {
             return Err(SymmetricCipherError::AEADTagCheckFailed);
         }
-        gcm.ctr.do_decrypt(data)?;
+        gcm.ctr.do_decrypt_inplace(data)?;
         Ok(())
     }
 }
@@ -568,6 +571,7 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let release = self.do_decrypt_out_len(ciphertext.len());
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
@@ -610,7 +614,7 @@ where
     /// all (Algorithm 5 step 1's "lengths not supported"). Otherwise checks the tag held in `tail`
     /// against the GHASH state built up by every prior `do_update_out` call. Releases nothing: an
     /// authenticated cipher's final output may be empty once the tag has been checked.
-    fn do_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         if self.tail_len < TAG_LEN {
             return Err(SymmetricCipherError::DecryptionFailed);
         }
@@ -619,7 +623,7 @@ where
         Ok(([0u8; TAG_LEN], 0))
     }
 
-    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len.saturating_sub(TAG_LEN)
     }
 
@@ -632,6 +636,7 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         <Self as AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_with_aad_out(
             key,
             init_data,
@@ -658,11 +663,12 @@ where
     /// The detached layout: the up to `TAG_LEN` bytes held back as a possible tag are ciphertext
     /// after all, so they are decrypted into `plaintext` before the tag is checked against `tag`
     /// (Algorithm 5 steps 5-8). On failure `plaintext` is zeroized before the error is returned.
-    fn do_final_detached_out(
+    fn do_decrypt_final_detachedtag_out(
         mut self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let n = self.tail_len;
         plaintext[..n].copy_from_slice(&self.tail[..n]);
         self.decrypt_in_place(&mut plaintext[..n])?;
@@ -683,6 +689,7 @@ where
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let len = ciphertext.len();
         if plaintext.len() < len {
             return Err(SymmetricCipherError::OutputBufferTooSmall(len));
@@ -708,7 +715,8 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        let needed = Self::decrypt_out_max_len(ciphertext.len());
+        plaintext.fill(0);
+        let needed = Self::decrypt_out_len(ciphertext.len());
         if plaintext.len() < needed {
             return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
         }

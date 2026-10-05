@@ -169,7 +169,7 @@ impl Hash for AsconCXof128 {
 
     fn do_final(self) -> Vec<u8> {
         let output_len = self.output_len();
-        self.into_squeezer().do_final(output_len)
+        self.into_squeezer().do_output_final(output_len)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
@@ -179,7 +179,7 @@ impl Hash for AsconCXof128 {
         // Hash::do_final_out requires bytes beyond output_len to be zero.
         output[written..].fill(0);
 
-        self.into_squeezer().do_final_out(&mut output[..written])
+        self.into_squeezer().do_output_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(

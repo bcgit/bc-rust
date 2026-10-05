@@ -76,7 +76,7 @@
 //!         ciphertext.extend_from_slice(&out[..bytes_written]);
 //!     }
 //! }
-//! let (last_block, last_len) = encryptor.do_final().expect("padding the final block");
+//! let (last_block, last_len) = encryptor.do_encrypt_final().expect("padding the final block");
 //! ciphertext.extend_from_slice(&last_block[..last_len]);
 //! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
 //!
@@ -90,7 +90,7 @@
 //!         recovered.extend_from_slice(&out[..bytes_written]);
 //!     }
 //! }
-//! let (last_block, last_len) = decryptor.do_final().expect("a valid final block");
+//! let (last_block, last_len) = decryptor.do_decrypt_final().expect("a valid final block");
 //! recovered.extend_from_slice(&last_block[..last_len]);
 //! assert_eq!(recovered, plaintext);
 //! ```
@@ -98,7 +98,7 @@
 //! ## With no padding scheme
 //!
 //! With [`NoPadding`] nothing is added, and a message that is not a whole number of blocks is an
-//! error at `do_final` rather than something silently padded:
+//! error at `do_encrypt_final` rather than something silently padded:
 //!
 //! ```
 //! use bouncycastle_aes::AES_CBC_128;

@@ -38,10 +38,10 @@
 //!
 //! // One shot, in place: encrypts under a freshly generated IV, which is returned.
 //! let mut data = plaintext;
-//! let (_, iv) = ToyCbc::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (_, iv) = ToyCbc::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
-//! ToyCbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+//! ToyCbc::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
@@ -64,12 +64,12 @@
 //!     ToyCbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
 //! let mut first = [0xAAu8; 16];
 //! let mut rest = [0xBBu8; 32];
-//! encryptor.do_encrypt(&mut first).expect("block 1");
-//! encryptor.do_encrypt(&mut rest).expect("blocks 2-3");
+//! encryptor.do_encrypt_inplace(&mut first).expect("block 1");
+//! encryptor.do_encrypt_inplace(&mut rest).expect("blocks 2-3");
 //!
 //! let mut decryptor = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
-//! decryptor.do_decrypt(&mut first).unwrap();
-//! decryptor.do_decrypt(&mut rest).unwrap();
+//! decryptor.do_decrypt_inplace(&mut first).unwrap();
+//! decryptor.do_decrypt_inplace(&mut rest).unwrap();
 //! assert_eq!(first, [0xAAu8; 16]);
 //! assert_eq!(rest, [0xBBu8; 32]);
 //! ```
@@ -253,11 +253,11 @@ where
         Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
     }
 
-    /// The implementor hook (the flat `do_encrypt` is provided over it).
+    /// The implementor hook (the flat `do_encrypt_inplace` is provided over it).
     ///
     /// Strictly serial: `Cj` is the input to block `j + 1`, so there is no pair path here. See the
     /// module docs. Never fails: CBC has no per-IV data limit.
-    fn do_encrypt_blocks(
+    fn do_encrypt_blocks_inplace(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError> {
@@ -283,13 +283,13 @@ where
         Ok(Self { perm, chain: *init_data, _dir: PhantomData })
     }
 
-    /// The implementor hook (the flat `do_decrypt` is provided over it).
+    /// The implementor hook (the flat `do_decrypt_inplace` is provided over it).
     ///
     /// Walks the input in fours through `decrypt_4blocks`, then pairs through `decrypt_2blocks`,
     /// then the at-most-one block left over: Sec 6.2's parallelism, in the units the permutation
     /// offers. `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
     /// indexing arithmetic. Never fails: CBC has no per-IV data limit.
-    fn do_decrypt_blocks(
+    fn do_decrypt_blocks_inplace(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError> {

@@ -46,7 +46,7 @@ fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
     let mut ct = vec![0u8; plaintext.len()];
     let (written, tag) =
-        Ccm::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::encrypt_out_detached(
+        Ccm::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
             &toy_key(),
             nonce,
             aad,
@@ -119,7 +119,7 @@ fn neither_direction_uses_the_inverse_cipher() {
 
     let (ct, tag) = encrypt::<ForwardOnlyToy>(&nonce, aad, &plaintext);
     let mut back = vec![0u8; plaintext.len()];
-    ForwardOnlyCcm::<Decrypting>::decrypt_out_detached(
+    ForwardOnlyCcm::<Decrypting>::decrypt_detached_out(
         &toy_key(),
         &nonce,
         aad,
@@ -314,10 +314,10 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
             type Dec = Ccm<Toy, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
             let mut ct = vec![0u8; plaintext.len()];
             let (_, tag) =
-                Enc::encrypt_out_detached(&toy_key(), &nonce, aad, &plaintext, &mut ct).unwrap();
+                Enc::encrypt_detached_out(&toy_key(), &nonce, aad, &plaintext, &mut ct).unwrap();
             assert_eq!(ct, ct16, "ciphertext must not depend on TAG_LEN ({})", $t);
             let mut pt = vec![0u8; plaintext.len()];
-            Dec::decrypt_out_detached(&toy_key(), &nonce, aad, &ct, &tag, &mut pt).unwrap();
+            Dec::decrypt_detached_out(&toy_key(), &nonce, aad, &ct, &tag, &mut pt).unwrap();
             assert_eq!(pt, plaintext, "TAG_LEN={} round trip", $t);
             tag.to_vec()
         }};
@@ -371,12 +371,12 @@ fn every_permitted_nonce_length_works() {
         let plaintext = message(100);
         let mut ct = vec![0u8; plaintext.len()];
         let (_, tag) =
-            Enc::<P, KEY_LEN, N>::encrypt_out_detached(key, &nonce, b"aad", &plaintext, &mut ct)
+            Enc::<P, KEY_LEN, N>::encrypt_detached_out(key, &nonce, b"aad", &plaintext, &mut ct)
                 .unwrap();
         assert_ne!(ct, plaintext, "nonce length {N}: must actually encrypt");
 
         let mut back = vec![0u8; plaintext.len()];
-        Dec::<P, KEY_LEN, N>::decrypt_out_detached(key, &nonce, b"aad", &ct, &tag, &mut back)
+        Dec::<P, KEY_LEN, N>::decrypt_detached_out(key, &nonce, b"aad", &ct, &tag, &mut back)
             .unwrap();
         assert_eq!(back, plaintext, "nonce length {N}: round trip");
 
@@ -386,7 +386,7 @@ fn every_permitted_nonce_length_works() {
         wrong[N - 1] ^= 0x01;
         assert!(
             matches!(
-                Dec::<P, KEY_LEN, N>::decrypt_out_detached(
+                Dec::<P, KEY_LEN, N>::decrypt_detached_out(
                     key, &wrong, b"aad", &ct, &tag, &mut back
                 ),
                 Err(SymmetricCipherError::AEADTagCheckFailed)
@@ -426,7 +426,7 @@ fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
     // The inherent one-shot: verify-then-return, so a forged tag leaves nothing but zeros.
     let mut one_shot = [0xEEu8; 19];
     assert!(matches!(
-        ToyCcm::<Decrypting>::decrypt_out_detached(
+        ToyCcm::<Decrypting>::decrypt_detached_out(
             &toy_key(),
             &nonce,
             b"aad",
@@ -460,11 +460,11 @@ fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
     assert_eq!(&streamed[..], &plaintext[..], "the stream already produced plaintext");
     let mut detached = [0xEEu8; 16];
     assert!(matches!(
-        dec.do_final_detached_out(&tag, &mut detached),
+        dec.do_decrypt_final_detachedtag_out(&tag, &mut detached),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert_eq!(&streamed[..], &plaintext[..], "...and a rejected tag cannot take it back");
-    assert_eq!(detached, [0xEEu8; 16], "the detached final writes nothing");
+    assert_eq!(detached, [0u8; 16], "the detached final only zeroes its buffer");
 
     let mut inline = ct.clone();
     inline.extend_from_slice(&tag);
@@ -473,7 +473,7 @@ fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
     let mut streamed = [0u8; 19];
     assert_eq!(dec.do_decrypt_out(&inline, &mut streamed).unwrap(), 19);
     assert_eq!(&streamed[..], &plaintext[..]);
-    assert!(matches!(dec.do_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
+    assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
 }
 
 /// Tests a large payload that would blow the Linux stack limit if we try to hard-copy it.
@@ -490,12 +490,12 @@ fn test_large_payload_inherent() {
     // round-tripped though the inherent CCM interface
     let mut ct = vec![0u8; LARGE_LEN];
     let (written, tag) =
-        ToyCcm::<Encrypting>::encrypt_out_detached(&key, &nonce, aad, &plaintext, &mut ct).unwrap();
+        ToyCcm::<Encrypting>::encrypt_detached_out(&key, &nonce, aad, &plaintext, &mut ct).unwrap();
     assert_eq!(written, LARGE_LEN);
     assert_ne!(ct, plaintext, "must actually encrypt");
 
     let mut back = vec![0u8; LARGE_LEN];
-    let n = ToyCcm::<Decrypting>::decrypt_out_detached(&key, &nonce, aad, &ct, &tag, &mut back)
+    let n = ToyCcm::<Decrypting>::decrypt_detached_out(&key, &nonce, aad, &ct, &tag, &mut back)
         .unwrap();
     assert_eq!(n, LARGE_LEN);
     assert_eq!(back, plaintext, "inherent round trip");

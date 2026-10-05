@@ -144,7 +144,7 @@ pub(crate) fn aead128_cmd(
 }
 
 /// Generated-nonce encryption: drives [`AsconAead128Encryptor`] in the inline `ciphertext || tag`
-/// layout (the inherited [`SymmetricCipherEncryptor::do_final_out`]), writing the nonce it
+/// layout (the inherited [`SymmetricCipherEncryptor::do_encrypt_final_out`]), writing the nonce it
 /// generated ahead of the stream.
 /// With an explicit nonce there is no nonce to write, so that case goes to
 /// [`aead128_encrypt_stream_with_explicit_nonce`] instead.
@@ -185,7 +185,7 @@ fn aead128_encrypt_stream(
     }
     // infallible: Ascon-AEAD128 holds nothing back, so the inline final is only the 16-byte tag.
     let mut tail = [0u8; 16];
-    let tail_len = cipher.do_final_out(&mut tail).unwrap();
+    let tail_len = cipher.do_encrypt_final_out(&mut tail).unwrap();
     helpers::write_bytes_or_hex(&tail[..tail_len], output_hex);
     if output_hex {
         crate::helpers::write_stdout(b"\n");
@@ -225,7 +225,7 @@ fn aead128_encrypt_stream_with_explicit_nonce(
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
 /// [`AsconAead128Decryptor`] holds the last 16 bytes it has seen back itself, releasing everything
 /// before them as soon as it is known not to be part of the tag; at EOF
-/// [`SymmetricCipherDecryptor::do_final`] checks what it held back as the tag.
+/// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
     key: &KeyMaterial<16>,
     nonce: Option<&[u8; 16]>,
@@ -270,7 +270,7 @@ fn aead128_decrypt_stream(
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
 
-    match cipher.do_final() {
+    match cipher.do_decrypt_final() {
         Ok((last, last_len)) => {
             helpers::write_bytes_or_hex(&last[..last_len], output_hex);
             if output_hex {

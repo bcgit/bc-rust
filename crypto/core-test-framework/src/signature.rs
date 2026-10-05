@@ -112,54 +112,54 @@ impl TestFrameworkSignature {
         VERIFIER::verify(&pk, DUMMY_SEED, None, &sig).unwrap();
 
         // Test the streaming signing API
-        // fn sign_init(&mut self, sk: &SK) -> Result<(), SignatureError>;
-        // fn sign_update(&mut self, msg_chunk: &[u8]);
-        // fn sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
-        // fn sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
+        // fn do_sign_init(&mut self, sk: &SK) -> Result<(), SignatureError>;
+        // fn do_sign_update(&mut self, msg_chunk: &[u8]);
+        // fn do_sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
+        // fn do_sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
 
-        // First, test the streaming API with one call to .sign_update
-        let mut s = SIGNER::sign_init(&sk, Some(b"streaming API")).unwrap();
-        s.sign_update(DUMMY_SEED);
-        let sig_val = s.sign_final().unwrap();
+        // First, test the streaming API with one call to .do_sign_update
+        let mut s = SIGNER::do_sign_init(&sk, Some(b"streaming API")).unwrap();
+        s.do_sign_update(DUMMY_SEED);
+        let sig_val = s.do_sign_final().unwrap();
         VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val).unwrap();
 
         // Then with the message broken into chunks
-        let mut s = SIGNER::sign_init(&sk, Some(b"streaming API chunked")).unwrap();
+        let mut s = SIGNER::do_sign_init(&sk, Some(b"streaming API chunked")).unwrap();
         for msg_chunk in DUMMY_SEED.chunks(100) {
-            s.sign_update(msg_chunk);
+            s.do_sign_update(msg_chunk);
         }
-        let sig_val = s.sign_final().unwrap();
+        let sig_val = s.do_sign_final().unwrap();
         VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API chunked"), &sig_val).unwrap();
 
         // Test the streaming verification API
         // one-shot
         let sig = SIGNER::sign(&sk, DUMMY_SEED, Some(b"streaming API")).unwrap();
-        let mut v = VERIFIER::verify_init(&pk, Some(b"streaming API")).unwrap();
-        v.verify_update(DUMMY_SEED);
-        v.verify_final(&sig).unwrap();
+        let mut v = VERIFIER::do_verify_init(&pk, Some(b"streaming API")).unwrap();
+        v.do_verify_update(DUMMY_SEED);
+        v.do_verify_final(&sig).unwrap();
 
         // chunked
         let sig = SIGNER::sign(&sk, DUMMY_SEED, Some(b"streaming API")).unwrap();
-        let mut v = VERIFIER::verify_init(&pk, Some(b"streaming API")).unwrap();
+        let mut v = VERIFIER::do_verify_init(&pk, Some(b"streaming API")).unwrap();
         for msg_chunk in DUMMY_SEED.chunks(100) {
-            v.verify_update(msg_chunk);
+            v.do_verify_update(msg_chunk);
         }
-        v.verify_final(&sig).unwrap();
+        v.do_verify_final(&sig).unwrap();
 
         // failure case for streaming verify
         let sig = SIGNER::sign(&sk, DUMMY_SEED, Some(b"streaming API")).unwrap();
-        let mut v = VERIFIER::verify_init(&pk, Some(b"streaming API")).unwrap();
-        v.verify_update(b"this is the wrong message");
-        match v.verify_final(&sig) {
+        let mut v = VERIFIER::do_verify_init(&pk, Some(b"streaming API")).unwrap();
+        v.do_verify_update(b"this is the wrong message");
+        match v.do_verify_final(&sig) {
             Err(SignatureError::SignatureVerificationFailed) => (),
             _ => panic!("This should have thrown an error but it didn't."),
         }
 
         // test sign_out version of streaming API
-        let mut s = SIGNER::sign_init(&sk, Some(b"streaming API")).unwrap();
-        s.sign_update(DUMMY_SEED);
+        let mut s = SIGNER::do_sign_init(&sk, Some(b"streaming API")).unwrap();
+        s.do_sign_update(DUMMY_SEED);
         let mut sig_val = [0u8; SIG_LEN];
-        let bytes_written = s.sign_final_out(&mut sig_val).unwrap();
+        let bytes_written = s.do_sign_final_out(&mut sig_val).unwrap();
         assert_eq!(bytes_written, SIG_LEN);
         VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val).unwrap();
 

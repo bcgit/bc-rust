@@ -12,7 +12,8 @@
 //!   [`BlockCipherEncryptor`](bouncycastle_core::traits::BlockCipherEncryptor) /
 //!   [`BlockCipherDecryptor`](bouncycastle_core::traits::BlockCipherDecryptor) to arbitrary-length
 //!   data, streaming or one-shot. With [`NoPadding`] they instead *enforce* block alignment: an
-//!   aligned message passes through unchanged in length, and an unaligned one fails at `do_final`.
+//!   aligned message passes through unchanged in length, and an unaligned one fails at
+//!   `do_encrypt_final`.
 //!
 //! # Usage Examples
 //!
@@ -156,11 +157,11 @@ impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for PKCS7 {
 /// called, because being called means there was a partial block to pad -- and `unpad` reports the
 /// whole block as data. Since [`ALWAYS_PADS`](BlockCipherPadding::ALWAYS_PADS) is `false`, a
 /// [`PaddedBlockCipherEncryptor`] over it emits no final block for an aligned message and fails at
-/// `do_final` for an unaligned one, and a [`PaddedBlockCipherDecryptor`] releases every block as data. The
-/// adapters thereby turn "the caller must supply whole blocks" into a checked error instead of a
-/// silent assumption, which is what this scheme is for: interoperating with formats that are
-/// defined on whole blocks (and, when used with ECB, with the raw block-by-block operation they
-/// specify) while keeping the arbitrary-length API shape.
+/// `do_encrypt_final` for an unaligned one, and a [`PaddedBlockCipherDecryptor`] releases every
+/// block as data. The adapters thereby turn "the caller must supply whole blocks" into a checked
+/// error instead of a silent assumption, which is what this scheme is for: interoperating with
+/// formats that are defined on whole blocks (and, when used with ECB, with the raw block-by-block
+/// operation they specify) while keeping the arbitrary-length API shape.
 ///
 /// It offers nothing that authentication would; see this module's "Security Considerations".
 #[derive(Debug, Clone, Copy)]

@@ -72,7 +72,7 @@ fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
 {
     let mut ct = vec![0u8; data.len()];
-    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_out_rng(
+    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
         key,
         &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
         aad,
@@ -137,7 +137,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     );
 
     // The inline `SymmetricCipherDecryptor` streaming view, `ciphertext || tag` through
-    // `do_update_out`/`do_final`, with AAD fed via `do_update_aad` first. Note this is
+    // `do_update_out`/`do_decrypt_final`, with AAD fed via `do_update_aad` first. Note this is
     // *not* the AAD-less static `decrypt_out` one-shot (which has no AAD parameter at all and so
     // cannot be checked against these vectors, none of which have empty AAD): the streaming path
     // is where the inline layout meets AAD support, and unlike the one-shot it releases plaintext
@@ -153,7 +153,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         .do_decrypt_out(&inline_ct, &mut inline_pt)
         .expect("do_update_out on a correctly sized buffer must not fail");
     assert_eq!(written, expect_written, "update_out_len must be exact");
-    let inline_result = dec.do_final();
+    let inline_result = dec.do_decrypt_final();
 
     match expected_pt {
         Some(pt) => {
@@ -179,7 +179,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 
             assert!(
                 matches!(inline_result, Err(SymmetricCipherError::AEADTagCheckFailed)),
-                "expected AEADTagCheckFailed from the inline stream's do_final, got {inline_result:?}"
+                "expected AEADTagCheckFailed from the inline stream's do_decrypt_final, got {inline_result:?}"
             );
         }
     }

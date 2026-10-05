@@ -235,7 +235,7 @@ mod tests {
             nonce,
         ));
         let mut discarded = [0u8; 32];
-        from_start.do_encrypt(&mut discarded).unwrap();
+        from_start.do_encrypt_inplace(&mut discarded).unwrap();
 
         let mut from_start_at = ToyCtr::from_keystream(ToyKeyStream::start_at(
             ToyBlockCipher::new(&key()).unwrap(),
@@ -245,8 +245,8 @@ mod tests {
 
         let mut a = [0x42u8; 48];
         let mut b = a;
-        from_start.do_encrypt(&mut a).unwrap();
-        from_start_at.do_encrypt(&mut b).unwrap();
+        from_start.do_encrypt_inplace(&mut a).unwrap();
+        from_start_at.do_encrypt_inplace(&mut b).unwrap();
         assert_eq!(a, b, "start_at(.., 2) must agree with start() past its first two blocks");
     }
 

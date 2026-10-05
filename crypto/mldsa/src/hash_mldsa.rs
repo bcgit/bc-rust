@@ -412,9 +412,9 @@ impl<
         Ok(bytes_written)
     }
 
-    /// To be used for deterministic signing in conjunction with the [`Signer::sign_init`],
-    /// [`Signer::sign_update`], and [`Signer::sign_final`] flow.
-    /// Can be set anywhere after [`Signer::sign_init`] and before [`Signer::sign_final`]
+    /// To be used for deterministic signing in conjunction with the [`Signer::do_sign_init`],
+    /// [`Signer::do_sign_update`], and [`Signer::do_sign_final`] flow.
+    /// Can be set anywhere after [`Signer::do_sign_init`] and before [`Signer::do_sign_final`]
     pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
         self.signer_rnd = Some(rnd);
     }
@@ -557,7 +557,7 @@ impl<
         Self::sign_ph_out(sk, &ph_m, ctx, output)
     }
 
-    fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
         Ok(Self {
             _phantom: PhantomData,
@@ -571,23 +571,23 @@ impl<
         })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
-        self.sign_final_out(&mut out)?;
+        self.do_sign_final_out(&mut out)?;
         Ok(out)
     }
 
-    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
 
         if self.sk.is_none() && self.seed.is_none() {
             return Err(SignatureError::GenericError(
-                "sign_final_out called on a streaming context with no private key or seed; \
-                this is a verify-initialized context. Call verify_final instead",
+                "do_sign_final_out called on a streaming context with no private key or seed; \
+                this is a verify-initialized context. Call do_verify_final instead",
             ));
         }
 
@@ -649,7 +649,7 @@ impl<
         Self::verify_ph(pk, &ph_m, ctx, sig)
     }
 
-    fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
         Ok(Self {
             _phantom: Default::default(),
@@ -663,11 +663,11 @@ impl<
         })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         assert!(
             self.pk.is_some(),
             "Somehow you managed to construct a streaming verifier without a public key, impressive!"

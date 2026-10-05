@@ -133,11 +133,12 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             plaintext: &[u8],
             ciphertext: &mut [u8],
         ) -> Result<usize, SymmetricCipherError> {
+            ciphertext.fill(0);
             Ok(self.0.update_out(plaintext, ciphertext))
         }
-        fn do_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        fn do_encrypt_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
             let mut out = [0u8; FINAL_LEN];
-            let (n, tag) = self.do_final_detached_out(&mut out)?;
+            let (n, tag) = self.do_encrypt_final_detachedtag_out(&mut out)?;
             out[n..n + TAG_LEN].copy_from_slice(&tag);
             Ok((out, n + TAG_LEN))
         }
@@ -150,10 +151,11 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
-        fn do_final_detached_out(
+        fn do_encrypt_final_detachedtag_out(
             mut self,
             ciphertext: &mut [u8; FINAL_LEN],
         ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+            ciphertext.fill(0);
             let n = self.0.held_len;
             self.0.finish(n, ciphertext);
             Ok((n, toy_tag(self.0.len_seen)))
@@ -175,10 +177,11 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             ciphertext: &[u8],
             plaintext: &mut [u8],
         ) -> Result<usize, SymmetricCipherError> {
+            plaintext.fill(0);
             Ok(self.0.update_out(ciphertext, plaintext))
         }
         /// The last `TAG_LEN` held-back bytes are the tag, the rest ciphertext.
-        fn do_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
+        fn do_decrypt_final(mut self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
             let Some(n) = self.0.held_len.checked_sub(TAG_LEN) else {
                 return Err(SymmetricCipherError::DecryptionFailed);
             };
@@ -189,7 +192,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             }
             Ok((out, n))
         }
-        fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+        fn decrypt_out_len(ciphertext_len: usize) -> usize {
             ciphertext_len.saturating_sub(TAG_LEN)
         }
     }
@@ -198,11 +201,12 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
-        fn do_final_detached_out(
+        fn do_decrypt_final_detachedtag_out(
             mut self,
             tag: &[u8; TAG_LEN],
             plaintext: &mut [u8; FINAL_LEN],
         ) -> Result<usize, SymmetricCipherError> {
+            plaintext.fill(0);
             let n = self.0.held_len;
             self.0.finish(n, plaintext);
             if *tag != toy_tag(self.0.len_seen) {
@@ -236,7 +240,8 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
                 chunked.extend_from_slice(&buf[..n]);
             }
             let mut final_buf = [0u8; FINAL_LEN];
-            let (final_len, chunked_tag) = enc.do_final_detached_out(&mut final_buf).unwrap();
+            let (final_len, chunked_tag) =
+                enc.do_encrypt_final_detachedtag_out(&mut final_buf).unwrap();
             chunked.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(chunked, ct, "len {len} chunk {chunk}: chunking must not be visible");
             assert_eq!(
@@ -245,7 +250,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             );
 
             // detached: the decryptor releases what it held back as a possible tag in
-            // `do_final_detached_out`, alongside what it held back of its own accord
+            // `do_decrypt_final_detachedtag_out`, alongside what it held back of its own accord
             let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
             let mut pt = Vec::new();
             for piece in ct.chunks(chunk) {
@@ -256,7 +261,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
                 pt.extend_from_slice(&buf[..n]);
             }
             let mut final_buf = [0u8; FINAL_LEN];
-            let final_len = dec.do_final_detached_out(&tag, &mut final_buf).unwrap();
+            let final_len = dec.do_decrypt_final_detachedtag_out(&tag, &mut final_buf).unwrap();
             pt.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(pt, msg, "len {len} chunk {chunk}: detached round trip");
 
@@ -272,19 +277,19 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
                 assert_eq!(n, expect, "len {len} chunk {chunk}: update_out_len must be exact");
                 pt.extend_from_slice(&buf[..n]);
             }
-            let (last, data_len) = dec.do_final().unwrap();
+            let (last, data_len) = dec.do_decrypt_final().unwrap();
             pt.extend_from_slice(&last[..data_len]);
             assert_eq!(pt, msg, "len {len} chunk {chunk}: inline round trip");
         }
 
         // The inline `ciphertext || tag` layout, which is where a buffering cipher makes
-        // `do_final` do two things at once: flush the held-back bytes and then append the tag
-        // after them.
+        // `do_encrypt_final` do two things at once: flush the held-back bytes and then append the
+        // tag after them.
         let (mut enc, nonce) = Enc::do_encrypt_init(&key).unwrap();
         let mut inline = vec![0u8; enc.do_encrypt_out_len(len)];
         let written = enc.do_encrypt_out(msg, &mut inline).unwrap();
         assert!(written < len || len == 0, "len {len}: the toy must be holding something back");
-        let (last, last_len) = enc.do_final().unwrap();
+        let (last, last_len) = enc.do_encrypt_final().unwrap();
         inline.extend_from_slice(&last[..last_len]);
         assert_eq!(
             inline.len(),
@@ -298,7 +303,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         assert_eq!(one_nonce, nonce);
         // Exactly the buffer it asks for: that is what makes the `+ data_len` arithmetic in
         // the one-shot observable, since with a generous buffer any arithmetic there would do.
-        let mut back = vec![0u8; Dec::decrypt_out_max_len(one_len)];
+        let mut back = vec![0u8; Dec::decrypt_out_len(one_len)];
         let back_len =
             Dec::decrypt_with_aad_out(&key, &one_nonce, b"", &one[..one_len], &mut back).unwrap();
         assert_eq!(&back[..back_len], msg, "len {len}: inline one-shot round trip");
@@ -306,7 +311,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         // Every other one-shot over the toy too: its final calls flush real data, which is
         // what makes the `written + final_len` arithmetic in each of them observable.
         let mut ct_rng = vec![0u8; len];
-        let (_, n_rng, tag_rng) = Enc::encrypt_detached_out_rng(
+        let (_, n_rng, tag_rng) = Enc::encrypt_detached_rng_out(
             &key,
             &mut bouncycastle_rng::DefaultRNG::default(),
             b"",
@@ -314,24 +319,23 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             &mut ct_rng,
         )
         .unwrap();
-        assert_eq!(&ct_rng[..n_rng], &ct[..], "len {len}: encrypt_detached_out_rng");
-        assert_eq!(tag_rng, tag, "len {len}: encrypt_detached_out_rng tag");
+        assert_eq!(&ct_rng[..n_rng], &ct[..], "len {len}: encrypt_detached_rng_out");
+        assert_eq!(tag_rng, tag, "len {len}: encrypt_detached_rng_out tag");
         let mut back = vec![0u8; len];
         let back_len = Dec::decrypt_detached_out(&key, &nonce, b"", &ct, &tag, &mut back).unwrap();
         assert_eq!(&back[..back_len], msg, "len {len}: decrypt_detached_out");
         let mut plain = vec![0u8; Enc::encrypt_out_len(len)];
         let (plain_nonce, plain_len) = Enc::encrypt_out(&key, msg, &mut plain).unwrap();
         assert_eq!(&plain[..plain_len], &inline[..], "len {len}: encrypt_out");
-        let mut back = vec![0u8; Dec::decrypt_out_max_len(plain_len)];
+        let mut back = vec![0u8; Dec::decrypt_out_len(plain_len)];
         let back_len =
             Dec::decrypt_out(&key, &plain_nonce, &plain[..plain_len], &mut back).unwrap();
         assert_eq!(&back[..back_len], msg, "len {len}: decrypt_out");
 
         // For any length past the hold-back window, at least one prefix of the input must be
         // held back rather than released immediately -- the property this whole test exists
-        // to pin. (For `len < HOLD_BACK` nothing is ever releasable until `do_final`, which is
-        // also correct but does not exercise `do_update_out` returning less than it was
-        // given.)
+        // to pin. (For `len < HOLD_BACK` nothing is ever releasable until `do_encrypt_final`, which
+        // is also correct but does not exercise `do_update_out` returning less than it was given.)
         if len > HOLD_BACK {
             let (mut enc, _) = Enc::do_encrypt_init(&key).unwrap();
             let first = &msg[..1];

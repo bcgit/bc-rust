@@ -166,11 +166,11 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     stream_aligned(mode, |data| {
         if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
             // Cannot fail: none of these modes has a per-IV data limit.
-            enc.do_encrypt(chunk).unwrap();
+            enc.do_encrypt_inplace(chunk).unwrap();
         } else {
             // The bounded tail at end of input: whole blocks, fewer than a chunk.
             for block in data.as_chunks_mut::<BLOCK_LEN>().0 {
-                enc.do_encrypt(block).unwrap();
+                enc.do_encrypt_inplace(block).unwrap();
             }
         }
         write_bytes_or_hex(data, output_hex);
@@ -208,10 +208,10 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     stream_aligned(mode, |data| {
         if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
             // A full chunk is 32 pairs, so this is the mode's two-block path.
-            dec.do_decrypt(chunk).unwrap();
+            dec.do_decrypt_inplace(chunk).unwrap();
         } else {
             for block in data.as_chunks_mut::<BLOCK_LEN>().0 {
-                dec.do_decrypt(block).unwrap();
+                dec.do_decrypt_inplace(block).unwrap();
             }
         }
         write_bytes_or_hex(data, output_hex);

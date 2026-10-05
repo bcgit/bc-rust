@@ -62,7 +62,7 @@ fn key<const N: usize>() -> KeyMaterial<N> {
 /// The message every bench processes, filled at run time and then only ever reached through a
 /// `black_box`ed reference, so that it is a whole stack array in every bench alike. Without that,
 /// a `[0xA5; N]` literal is a constant the compiler may keep in read-only data in one bench, or
-/// fuse straight into the copy `encrypt_out_detached` makes in another, and the two paths that do
+/// fuse straight into the copy `encrypt_detached_out` makes in another, and the two paths that do
 /// identical work measured a whole `MESSAGE_LEN` apart.
 fn message() -> [u8; MESSAGE_LEN] {
     let mut m = [0u8; MESSAGE_LEN];
@@ -124,7 +124,7 @@ fn print_struct_sizes() {
 /// `bench_oneshot_encrypt_out_detached`.
 #[inline(never)]
 fn bench_direct_encrypt_detached() {
-    eprintln!("Ccm::encrypt_out_detached, {MESSAGE_LEN} B");
+    eprintln!("Ccm::encrypt_detached_out, {MESSAGE_LEN} B");
 
     let k = key::<16>();
     let nonce = [0x24u8; NONCE_LEN];
@@ -132,7 +132,7 @@ fn bench_direct_encrypt_detached() {
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
     let (_, tag) =
-        Aes128Ccm::<Encrypting>::encrypt_out_detached(&k, &nonce, &[], plaintext, &mut ciphertext)
+        Aes128Ccm::<Encrypting>::encrypt_detached_out(&k, &nonce, &[], plaintext, &mut ciphertext)
             .unwrap();
     print!("{:x?}", &tag);
 }
@@ -143,7 +143,7 @@ fn bench_direct_encrypt_detached() {
 #[inline(never)]
 fn bench_streaming_encrypt() {
     eprintln!(
-        "CcmEncryptor do_encrypt_init/do_update_out/do_final_detached_out, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmEncryptor do_encrypt_init/do_update_out/do_encrypt_final_detachedtag_out, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
     let k = key::<16>();
@@ -156,7 +156,7 @@ fn bench_streaming_encrypt() {
         written += enc.do_encrypt_out(chunk, &mut ciphertext[written..]).unwrap();
     }
     let mut last = [0u8; TAG_LEN];
-    let (_, tag) = enc.do_final_detached_out(&mut last).unwrap();
+    let (_, tag) = enc.do_encrypt_final_detachedtag_out(&mut last).unwrap();
     print!("{:x?}", &tag);
 }
 
@@ -169,7 +169,7 @@ fn bench_streaming_encrypt() {
 #[inline(never)]
 fn bench_streaming_decrypt() {
     eprintln!(
-        "CcmDecryptor do_decrypt_init/do_update_out/do_final, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmDecryptor do_decrypt_init/do_update_out/do_decrypt_final, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
     let k = key::<16>();
@@ -188,7 +188,7 @@ fn bench_streaming_decrypt() {
     for chunk in sealed.chunks(1024) {
         written += dec.do_decrypt_out(chunk, &mut opened[written..]).unwrap();
     }
-    let (_, m) = dec.do_final().unwrap();
+    let (_, m) = dec.do_decrypt_final().unwrap();
     print!("{}", written + m);
 }
 

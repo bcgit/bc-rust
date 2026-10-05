@@ -208,7 +208,7 @@ where
     let expected_tag = hex::decode(case.tag).expect("valid hex tag");
 
     let mut data = vec![0u8; pt.len()];
-    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_out_rng(
+    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_rng_out(
         &key,
         &mut FixedSeedRNG::<12>::new(iv),
         &aad,

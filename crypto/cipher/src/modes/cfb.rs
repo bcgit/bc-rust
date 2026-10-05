@@ -71,12 +71,12 @@
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (bytes_written, iv) = ToyCfb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (bytes_written, iv) = ToyCfb::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
 //! // `data` now contains the ciphertext
 //!
-//! ToyCfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+//! ToyCfb::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
@@ -101,16 +101,16 @@
 //!
 //! // Just to prove that this can handle arbitrary sizes, we'll feed in
 //! //  7 bytes, then 33: neither is a whole block.
-//! let bytes_written = encryptor.do_encrypt(&mut data[..7]).expect("first chunk");
+//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[..7]).expect("first chunk");
 //! assert_eq!(bytes_written, 7);
 //!
-//! let bytes_written = encryptor.do_encrypt(&mut data[7..]).expect("the rest");
+//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[7..]).expect("the rest");
 //! assert_eq!(bytes_written, 33);
 //!
 //! // Decrypting in a different chunking must also agree.
 //! let mut decryptor = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
-//! decryptor.do_decrypt(&mut data[..19]).expect("first chunk");
-//! decryptor.do_decrypt(&mut data[19..]).expect("the rest");
+//! decryptor.do_decrypt_inplace(&mut data[..19]).expect("first chunk");
+//! decryptor.do_decrypt_inplace(&mut data[19..]).expect("the rest");
 //! assert_eq!(data, [0x5Au8; 40]);
 //! ```
 //!
@@ -432,11 +432,12 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt(data))
+        ciphertext.fill(0);
+        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt_inplace(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
@@ -459,7 +460,7 @@ where
     /// module docs. Never fails: CFB has no per-IV data limit.
     ///
     /// Infallible -- cannot produce an error.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let len = data.len();
         let (head, blocks, tail) = self.split(data);
         self.encrypt_bytes(head);
@@ -498,16 +499,17 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt(data))
+        plaintext.fill(0);
+        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt_inplace(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
-    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len
     }
 }
@@ -524,7 +526,7 @@ where
     /// `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
     /// indexing arithmetic. The bytes that complete an open segment, and the final short segment,
     /// go singly. Never fails: CFB has no per-IV data limit.
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let len = data.len();
         let (head, blocks, tail) = self.split(data);
         self.decrypt_bytes(head);
