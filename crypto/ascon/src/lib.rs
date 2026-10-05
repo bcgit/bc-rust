@@ -2,9 +2,9 @@
 //!
 //! This crate implements the four Ascon functions standardized in NIST SP 800-232 (August 2025):
 //!
-//! - [`Ascon_AEAD_128`] — Ascon-AEAD128 authenticated encryption (128-bit key/nonce/tag, 128-bit
-//!   single-key security), direction typed as `Ascon_AEAD_128<Encrypting>` /
-//!   `Ascon_AEAD_128<Decrypting>`.
+//! - [`Ascon_AEAD128`] — Ascon-AEAD128 authenticated encryption (128-bit key/nonce/tag, 128-bit
+//!   single-key security), direction typed as `Ascon_AEAD128<Encrypting>` /
+//!   `Ascon_AEAD128<Decrypting>`.
 //! - [`ascon_hash256::AsconHash256`] — Ascon-Hash256 hash function (256-bit digest, 128-bit
 //!   security).
 //! - [`ascon_xof128::AsconXof128`] — Ascon-XOF128 extendable-output function.
@@ -34,7 +34,7 @@
 //! Authenticated encryption (one-shot, inline `ciphertext || tag`). The nonce is generated and
 //! returned, never supplied:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD_128;
+//! use bouncycastle_ascon::Ascon_AEAD128;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
@@ -43,10 +43,10 @@
 //! let ad = b"associated data";
 //! let plaintext = b"secret message";
 //!
-//! let (nonce, ct) = Ascon_AEAD_128::<Encrypting>::encrypt_with_aad(&key, ad, plaintext).unwrap();
+//! let (nonce, ct) = Ascon_AEAD128::<Encrypting>::encrypt_with_aad(&key, ad, plaintext).unwrap();
 //! assert_eq!(ct.len(), plaintext.len() + 16); // ciphertext || 16-byte tag
 //!
-//! let pt = Ascon_AEAD_128::<Decrypting>::decrypt_with_aad(&key, &nonce, ad, &ct).unwrap();
+//! let pt = Ascon_AEAD128::<Decrypting>::decrypt_with_aad(&key, &nonce, ad, &ct).unwrap();
 //! assert_eq!(&pt, plaintext);
 //! ```
 //!
@@ -54,7 +54,7 @@
 //! bytes it has seen, in case they are an inline tag, so `do_decrypt_final_detachedtag_out` is
 //! where they come out:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD_128;
+//! use bouncycastle_ascon::Ascon_AEAD128;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
@@ -64,14 +64,14 @@
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
 //! let plaintext = b"secret message!!";
-//! let (mut enc, nonce) = Ascon_AEAD_128::<Encrypting>::do_encrypt_init(&key).unwrap();
+//! let (mut enc, nonce) = Ascon_AEAD128::<Encrypting>::do_encrypt_init(&key).unwrap();
 //! enc.do_update_aad(b"associated data").unwrap();
 //! let mut ciphertext = [0u8; 16];
 //! enc.do_encrypt_out(plaintext, &mut ciphertext).unwrap();
 //! let mut final_buf = [0u8; 16];
 //! let (_, tag) = enc.do_encrypt_final_detachedtag_out(&mut final_buf).unwrap();
 //!
-//! let mut dec = Ascon_AEAD_128::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
+//! let mut dec = Ascon_AEAD128::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(b"associated data").unwrap();
 //! let mut recovered = [0u8; 16];
 //! let n = dec.do_decrypt_out(&ciphertext, &mut recovered).unwrap(); // 0: all 16 held back
@@ -85,13 +85,13 @@
 //! [`bouncycastle_core::traits::SymmetricCipherDecryptor`], which covers the no-AAD case,
 //! streaming or through its `encrypt_out` / `decrypt_out` one-shots:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD_128;
+//! use bouncycastle_ascon::Ascon_AEAD128;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //!
-//! type Enc = Ascon_AEAD_128<Encrypting>;
-//! type Dec = Ascon_AEAD_128<Decrypting>;
+//! type Enc = Ascon_AEAD128<Encrypting>;
+//! type Dec = Ascon_AEAD128<Decrypting>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let plaintext = b"secret message!!";
@@ -122,7 +122,7 @@
 //!
 //! | Type | In-memory size (bytes) | Suspended state size (bytes) |
 //! |------|-------------------------|-------------------------------|
-//! | [`Ascon_AEAD_128`] | 96 | [`ascon_aead128::SUSPENDED_ASCON_AEAD128_STATE_LEN`] (63) |
+//! | [`Ascon_AEAD128`] | 96 | [`ascon_aead128::SUSPENDED_ASCON_AEAD128_STATE_LEN`] (63) |
 //! | [`ascon_hash256::AsconHash256`] | 64 | [`ascon_hash256::SUSPENDED_ASCON_HASH256_STATE_LEN`] (53) |
 //! | [`ascon_xof128::AsconXof128`] | 64 | [`ascon_xof128::SUSPENDED_ASCON_XOF128_STATE_LEN`] (54) |
 //! | [`ascon_cxof128::AsconCXof128`] | 64 | [`ascon_cxof128::SUSPENDED_ASCON_CXOF128_STATE_LEN`] (54) |
@@ -163,7 +163,7 @@ mod permutation;
 mod sponge;
 
 pub mod ascon_aead128;
-pub use ascon_aead128::Ascon_AEAD_128;
+pub use ascon_aead128::Ascon_AEAD128;
 pub mod ascon_cxof128;
 pub mod ascon_hash256;
 pub mod ascon_xof128;

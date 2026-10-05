@@ -9,7 +9,7 @@
 
 #[cfg(test)]
 mod bc_test_data {
-    use bouncycastle_ascon::Ascon_AEAD_128;
+    use bouncycastle_ascon::Ascon_AEAD128;
     use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
     use bouncycastle_ascon::ascon_hash256::AsconHash256;
     use bouncycastle_ascon::ascon_xof128::AsconXof128;
@@ -154,8 +154,8 @@ mod bc_test_data {
             let pt = decode_hex(field(case, &["PT", "P"]));
             let expected_ct = decode_hex(field(case, &["CT", "C"]));
 
-            type Enc = Ascon_AEAD_128<Encrypting>;
-            type Dec = Ascon_AEAD_128<Decrypting>;
+            type Enc = Ascon_AEAD128<Encrypting>;
+            type Dec = Ascon_AEAD128<Decrypting>;
             let count = field(case, &["Count"]);
 
             // One-shot encrypt, the nonce driven to the vector's by a fixed RNG.

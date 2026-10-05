@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The ascon-hash256 / ascon-xof128 / ascon-cxof128 / ascon-aead-128 subcommands, end to end
+# The ascon-hash256 / ascon-xof128 / ascon-cxof128 / ascon-aead128 subcommands, end to end
 # through the binary.
 #
 # Framing for the AEAD: encrypt writes a fresh 16-byte nonce as the first bytes of its output,
@@ -77,30 +77,30 @@ test_cxof128_with_no_customization_matches_an_empty_one() {
         "empty-message, empty-customization squeeze"
 }
 
-# ---- ascon-aead-128: round trips --------------------------------------------------------------
+# ---- ascon-aead128: round trips --------------------------------------------------------------
 
 test_aead128_encrypt_then_decrypt_round_trips() {
     rng 16 >"$TMP/key"
     rng 4096 >"$TMP/pt"
-    "$BC_RUST" ascon-aead-128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
     assert_size "$TMP/ct" $((4096 + NONCE_LEN + TAG_LEN)) "ciphertext is nonce plus plaintext plus tag"
-    "$BC_RUST" ascon-aead-128 -d decrypt --key-file "$TMP/key" <"$TMP/ct" >"$TMP/rec"
+    "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" <"$TMP/ct" >"$TMP/rec"
     assert_same "$TMP/pt" "$TMP/rec" "decrypt must recover the plaintext"
 }
 
 test_aead128_associated_data_round_trips() {
     rng 16 >"$TMP/key"
     rng 256 >"$TMP/pt"
-    "$BC_RUST" ascon-aead-128 -d encrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/pt" >"$TMP/ct"
-    "$BC_RUST" ascon-aead-128 -d decrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/ct" >"$TMP/rec"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/pt" >"$TMP/ct"
+    "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/ct" >"$TMP/rec"
     assert_same "$TMP/pt" "$TMP/rec" "the same AD on both sides must round-trip"
 }
 
 test_aead128_each_invocation_uses_a_fresh_nonce() {
     rng 16 >"$TMP/key"
     rng 32 >"$TMP/pt"
-    "$BC_RUST" ascon-aead-128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct1"
-    "$BC_RUST" ascon-aead-128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct2"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct1"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct2"
     assert_size "$TMP/ct1" $((32 + NONCE_LEN + TAG_LEN)) "first ciphertext length"
     assert_size "$TMP/ct2" $((32 + NONCE_LEN + TAG_LEN)) "second ciphertext length"
     head -c $NONCE_LEN "$TMP/ct1" >"$TMP/n1"
@@ -108,34 +108,34 @@ test_aead128_each_invocation_uses_a_fresh_nonce() {
     assert_differs "$TMP/n1" "$TMP/n2" "two encryptions must draw different nonces"
 }
 
-# ---- ascon-aead-128: rejected inputs --------------------------------------------------------
+# ---- ascon-aead128: rejected inputs --------------------------------------------------------
 
 test_aead128_wrong_associated_data_is_rejected() {
     rng 16 >"$TMP/key"
     rng 64 >"$TMP/pt"
-    "$BC_RUST" ascon-aead-128 -d encrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/pt" >"$TMP/ct"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/pt" >"$TMP/ct"
     expect_fail "different AD must fail the tag check" \
-        "$BC_RUST" ascon-aead-128 -d decrypt --key-file "$TMP/key" --ad cafebabe <"$TMP/ct"
+        "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" --ad cafebabe <"$TMP/ct"
     assert_stderr_has "authentication failed"
 }
 
 test_aead128_a_flipped_ciphertext_byte_is_rejected() {
     rng 16 >"$TMP/key"
     rng 64 >"$TMP/pt"
-    "$BC_RUST" ascon-aead-128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
     flip_byte "$TMP/ct" $NONCE_LEN
     expect_fail "a flipped ciphertext byte must fail the tag check" \
-        "$BC_RUST" ascon-aead-128 -d decrypt --key-file "$TMP/key" <"$TMP/ct"
+        "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" <"$TMP/ct"
     assert_stderr_has "authentication failed"
 }
 
 test_aead128_a_flipped_tag_byte_is_rejected() {
     rng 16 >"$TMP/key"
     rng 64 >"$TMP/pt"
-    "$BC_RUST" ascon-aead-128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
     flip_byte "$TMP/ct" $(($(wc -c <"$TMP/ct") - 1))
     expect_fail "a flipped tag byte must fail the tag check" \
-        "$BC_RUST" ascon-aead-128 -d decrypt --key-file "$TMP/key" <"$TMP/ct"
+        "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" <"$TMP/ct"
     assert_stderr_has "authentication failed"
 }
 
@@ -147,7 +147,7 @@ test_aead128_decrypt_input_shorter_than_the_nonce_is_rejected() {
     for len in 0 1 15; do
         rng "$len" >"$TMP/short"
         expect_fail "$len bytes cannot hold a 16-byte nonce" \
-            "$BC_RUST" ascon-aead-128 -d decrypt --key-file "$TMP/key" <"$TMP/short"
+            "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" <"$TMP/short"
         assert_stderr_has "shorter than the 16-byte nonce"
     done
 }
@@ -157,7 +157,7 @@ test_aead128_decrypt_input_shorter_than_the_nonce_is_rejected() {
 test_the_subcommands_are_listed_in_help() {
     local name
     "$BC_RUST" --help >"$TMP/help"
-    for name in ascon-hash256 ascon-xof128 ascon-cxof128 ascon-aead-128; do
+    for name in ascon-hash256 ascon-xof128 ascon-cxof128 ascon-aead128; do
         grep -q -- "$name" "$TMP/help" || fail "--help should list $name"
     done
 }

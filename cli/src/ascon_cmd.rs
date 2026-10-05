@@ -1,7 +1,7 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::Ascon_AEAD_128;
+use bouncycastle::ascon::Ascon_AEAD128;
 use bouncycastle::ascon::ascon_cxof128::AsconCXof128;
 use bouncycastle::ascon::ascon_hash256::AsconHash256;
 use bouncycastle::ascon::ascon_xof128::AsconXof128;
@@ -119,12 +119,12 @@ pub(crate) fn aead128_cmd(
     }
 }
 
-/// Drives `Ascon_AEAD_128<Encrypting>` in the inline `ciphertext || tag` layout (the inherited
+/// Drives `Ascon_AEAD128<Encrypting>` in the inline `ciphertext || tag` layout (the inherited
 /// [`SymmetricCipherEncryptor::do_encrypt_final_out`]), writing the nonce it generated ahead of
 /// the stream.
 fn aead128_encrypt_stream(key: &KeyMaterial<16>, ad: &[u8], output_hex: bool) {
     let (mut cipher, nonce) =
-        Ascon_AEAD_128::<Encrypting>::do_encrypt_init(key).unwrap_or_else(|e| {
+        Ascon_AEAD128::<Encrypting>::do_encrypt_init(key).unwrap_or_else(|e| {
             eprintln!("Error: couldn't start encryption: {e:?}");
             exit(-1);
         });
@@ -156,7 +156,7 @@ fn aead128_encrypt_stream(key: &KeyMaterial<16>, ad: &[u8], output_hex: bool) {
 }
 
 /// Decrypts a stream whose first 16 bytes are the nonce and whose final 16 bytes are the tag,
-/// which is only known once EOF is reached. `Ascon_AEAD_128<Decrypting>` holds the last 16 bytes
+/// which is only known once EOF is reached. `Ascon_AEAD128<Decrypting>` holds the last 16 bytes
 /// it has seen back itself, releasing everything before them as soon as it is known not to be
 /// part of the tag; at EOF [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held
 /// back as the tag.
@@ -172,7 +172,7 @@ fn aead128_decrypt_stream(key: &KeyMaterial<16>, ad: &[u8], output_hex: bool) {
     }
 
     let mut cipher =
-        Ascon_AEAD_128::<Decrypting>::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
+        Ascon_AEAD128::<Decrypting>::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
             eprintln!("Error: couldn't start decryption: {e:?}");
             exit(-1);
         });

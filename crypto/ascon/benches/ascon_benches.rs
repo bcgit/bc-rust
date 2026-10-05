@@ -2,7 +2,7 @@ use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ascon::Ascon_AEAD_128;
+use bouncycastle_ascon::Ascon_AEAD128;
 use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
 use bouncycastle_ascon::ascon_hash256::AsconHash256;
 use bouncycastle_ascon::ascon_xof128::AsconXof128;
@@ -27,12 +27,12 @@ fn bench_aead128_encrypt(c: &mut Criterion) {
     // 16 KiB of data, where seeding a fresh OS-backed DRBG per message would not be.
     let mut nonce_rng = rng::DefaultRNG::default();
 
-    let mut group = c.benchmark_group("ascon::Ascon_AEAD_128");
+    let mut group = c.benchmark_group("ascon::Ascon_AEAD128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function(format!("{DATA_LEN} bytes -- ::encrypt_rng_out()"), |b| {
         b.iter(|| {
-            Ascon_AEAD_128::<Encrypting>::encrypt_rng_out(
+            Ascon_AEAD128::<Encrypting>::encrypt_rng_out(
                 &key,
                 &mut nonce_rng,
                 black_box(&data),

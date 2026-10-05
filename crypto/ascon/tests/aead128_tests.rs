@@ -11,7 +11,7 @@
 //!   `ciphertext || tag` layouts -- the latter also through the
 //!   `SymmetricCipherEncryptor`/`SymmetricCipherDecryptor` traits they extend.
 
-use bouncycastle_ascon::Ascon_AEAD_128;
+use bouncycastle_ascon::Ascon_AEAD128;
 use bouncycastle_ascon::ascon_aead128::SUSPENDED_ASCON_AEAD128_STATE_LEN;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
@@ -29,8 +29,8 @@ use bouncycastle_core_test_framework::aead::{
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
 use bouncycastle_hex as hex;
 
-type Enc = Ascon_AEAD_128<Encrypting>;
-type Dec = Ascon_AEAD_128<Decrypting>;
+type Enc = Ascon_AEAD128<Encrypting>;
+type Dec = Ascon_AEAD128<Decrypting>;
 
 // All embedded vectors use this fixed key/nonce (the NIST LWC KAT convention).
 const KEY: [u8; 16] = [
@@ -79,7 +79,7 @@ fn pattern(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i as u8).wrapping_mul(7).wrapping_add(1)).collect()
 }
 
-/// Build a `KeyMaterial<16>` suitable for `Ascon_AEAD_128`. The NIST LWC KAT vectors include an
+/// Build a `KeyMaterial<16>` suitable for `Ascon_AEAD128`. The NIST LWC KAT vectors include an
 /// all-zero key (Count=1), which `KeyMaterial::from_bytes_as_type` would otherwise tag
 /// `KeyType::Zeroized` / `SecurityStrength::None`; force the type/strength the way a caller who
 /// knows the provenance of the key would (see `cli/src/helpers.rs::parse_seed`).

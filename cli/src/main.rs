@@ -389,7 +389,7 @@ enum Subcommands {
     /// before the authentication tag (the last 16 bytes of input) can be checked. Do not treat
     /// the output as authentic until this command exits with status 0; a non-zero exit means the
     /// input was tampered with and any plaintext already written must be discarded.
-    AsconAEAD_128 {
+    AsconAEAD128 {
         /// The 128-bit key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
@@ -1001,8 +1001,8 @@ enum Subcommands {
     /// not a limitation of this implementation -- Sec 3: "CCM is not designed to support partial
     /// processing or stream processing", because Appendix A.2.1 puts the payload length inside the
     /// first block the MAC covers. It does buy one thing: on `decrypt` NO plaintext is written
-    /// until the tag has verified, so unlike `ascon-aead-128` a non-zero exit leaves nothing to
-    /// discard. For large inputs use `ascon-aead-128`, which streams. The AAD is the exception:
+    /// until the tag has verified, so unlike `ascon-aead128` a non-zero exit leaves nothing to
+    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is the exception:
     /// `--aad-file` is streamed, because a file's size can be declared before it is read.
     ///
     /// Input may be any length: CCM pads internally and the payload is not block-aligned.
@@ -1825,7 +1825,7 @@ fn run() {
         Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
             ascon_cmd::cxof128_cmd(customization, *length, *x);
         }
-        Some(Subcommands::AsconAEAD_128 { key, key_file, ad, direction, x }) => {
+        Some(Subcommands::AsconAEAD128 { key, key_file, ad, direction, x }) => {
             let decrypt = matches!(direction, CipherDirection::Decrypt);
             ascon_cmd::aead128_cmd(key, key_file, ad, decrypt, *x);
         }
