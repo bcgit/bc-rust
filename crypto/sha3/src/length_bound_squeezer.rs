@@ -18,9 +18,9 @@ use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 /// * [`XOFSqueezer::do_output`] is the XOF reading. It is the caller saying "give me some bytes and
 ///   I may be back for more", which only `right_encode(0)` can answer, since a length bound into
 ///   the sponge cannot be revised once output has begun.
-/// * [`XOFSqueezer::do_final`], as the **first** read, is the fixed-length reading. It is the
-///   caller saying how many bytes it wants and that it will not be back, so `L` is that length in
-///   bits and the result is the fixed-length function of s. 4.3, 5.3 or 6.3 -- the same bytes
+/// * [`XOFSqueezer::do_output_final`], as the **first** read, is the fixed-length reading. It is
+///   the caller saying how many bytes it wants and that it will not be back, so `L` is that length
+///   in bits and the result is the fixed-length function of s. 4.3, 5.3 or 6.3 -- the same bytes
 ///   `KMAC128(K, X, L, S)` produces, not a truncation of `KMACXOF128`.
 ///
 /// The first read commits: the encoding is in the sponge from then on, so a `do_final` that
@@ -47,13 +47,13 @@ impl<PARAMS: SHAKEParams> LengthBoundSqueezer<PARAMS> {
         Self { phase: Phase::Unbound(cshake) }
     }
 
-    /// [`XOFSqueezer::do_final_out`] with `L` given rather than taken from the buffer.
+    /// [`XOFSqueezer::do_output_final_out`] with `L` given rather than taken from the buffer.
     ///
     /// For the `Hash` view of these functions, whose length is fixed by the type: it binds the
     /// nominal output length and then writes as much of it as the caller's buffer has room for,
     /// which is what [`Hash::do_final_out`] promises. Going through
-    /// [`XOFSqueezer::do_final_out`] would bind the buffer's length instead, and a short buffer
-    /// would then compute a different function rather than truncating this one.
+    /// [`XOFSqueezer::do_output_final_out`] would bind the buffer's length instead, and a short
+    /// buffer would then compute a different function rather than truncating this one.
     pub(crate) fn do_final_out_with_length(mut self, length_bits: u64, output: &mut [u8]) -> usize {
         self.read(length_bits, output)
     }
@@ -91,16 +91,16 @@ impl<PARAMS: SHAKEParams> XOFSqueezer for LengthBoundSqueezer<PARAMS> {
         self.read(0, output)
     }
 
-    fn do_final(self, num_bytes: usize) -> Vec<u8> {
+    fn do_output_final(self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
-        self.do_final_out(&mut out);
+        self.do_output_final_out(&mut out);
         out
     }
 
     /// The last read, so if it is also the first, `L` is its length in bits and this is the
     /// fixed-length function of s. 4.3, 5.3 or 6.3. After a [`XOFSqueezer::do_output`] the encoding
     /// is already in the sponge and this just continues that stream.
-    fn do_final_out(mut self, output: &mut [u8]) -> usize {
+    fn do_output_final_out(mut self, output: &mut [u8]) -> usize {
         self.read((output.len() as u64) * 8, output)
     }
 }

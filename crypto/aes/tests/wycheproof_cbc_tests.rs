@@ -122,14 +122,14 @@ fn run_case<E, D, const KEY_LEN: usize>(
     if expected == Expected::Valid {
         let mut ct = vec![0u8; E::encrypt_out_len(msg.len())];
         let (got_iv, written) =
-            E::encrypt_out_rng(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv), msg, &mut ct)
+            E::encrypt_rng_out(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv), msg, &mut ct)
                 .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
         ct.truncate(written);
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
     }
 
-    let mut plaintext = vec![0u8; D::decrypt_out_max_len(expected_ct.len())];
+    let mut plaintext = vec![0u8; D::decrypt_out_len(expected_ct.len())];
     let outcome = D::decrypt_out(&key, &iv, expected_ct, &mut plaintext);
     match (expected, outcome) {
         (Expected::Valid, Ok(n)) => {

@@ -142,3 +142,57 @@ fn each_encryption_gets_a_fresh_iv() {
         assert_eq!(back, plaintext);
     }
 }
+
+/// The allocating streaming wrappers `do_encrypt` / `do_decrypt` return exactly what their `_out`
+/// counterparts write -- `do_*_out_len` bytes, including none when a piece is wholly buffered or
+/// held back -- and a message streamed through them round-trips.
+#[test]
+fn the_allocating_streaming_wrappers_match_the_out_versions() {
+    type Enc = AES_CBC_128<Encrypting, PKCS7>;
+    type Dec = AES_CBC_128<Decrypting, PKCS7>;
+
+    let plaintext: Vec<u8> = (0u8..40).collect();
+    // Piece lengths 5, 11, 1, 20, 0, 3: CBC releases a block only once it is full, so these
+    // release 0, 16, 0, 16, 0, 0 bytes, leaving 8 buffered for `do_encrypt_final` to pad.
+    let pieces = [0..5, 5..16, 16..17, 17..37, 37..37, 37..40];
+    let expected_released = [0, 16, 0, 16, 0, 0];
+
+    let (mut enc, iv) = Enc::do_encrypt_init(&key::<16>()).unwrap();
+    let mut ciphertext = Vec::new();
+    for (range, expected) in pieces.into_iter().zip(expected_released) {
+        let piece = &plaintext[range];
+        let mut via_out = vec![0u8; enc.do_encrypt_out_len(piece.len())];
+        let n = enc.clone().do_encrypt_out(piece, &mut via_out).unwrap();
+        assert_eq!(n, via_out.len());
+
+        let released = enc.do_encrypt(piece).unwrap();
+        assert_eq!(released.len(), expected, "piece of {} bytes", piece.len());
+        assert_eq!(released, via_out, "do_encrypt must match do_encrypt_out");
+        ciphertext.extend_from_slice(&released);
+    }
+    let (last, last_len) = enc.do_encrypt_final().unwrap();
+    ciphertext.extend_from_slice(&last[..last_len]);
+    assert_eq!(ciphertext.len(), 48);
+    assert_eq!(Dec::decrypt(&key::<16>(), &iv, &ciphertext).unwrap(), plaintext);
+
+    // Decrypt the same ciphertext through `do_decrypt` in uneven pieces: the decryptor holds back
+    // the block that might carry the padding, so some pieces release nothing.
+    let mut dec = Dec::do_decrypt_init(&key::<16>(), &iv).unwrap();
+    let mut recovered = Vec::new();
+    let mut saw_empty = false;
+    for range in [0..16, 16..17, 17..48] {
+        let piece = &ciphertext[range];
+        let mut via_out = vec![0u8; dec.do_decrypt_out_len(piece.len())];
+        let n = dec.clone().do_decrypt_out(piece, &mut via_out).unwrap();
+        assert_eq!(n, via_out.len());
+
+        let released = dec.do_decrypt(piece).unwrap();
+        assert_eq!(released, via_out, "do_decrypt must match do_decrypt_out");
+        saw_empty |= released.is_empty();
+        recovered.extend_from_slice(&released);
+    }
+    assert!(saw_empty, "the piece lengths must exercise the held-back case");
+    let (last, data_len) = dec.do_decrypt_final().unwrap();
+    recovered.extend_from_slice(&last[..data_len]);
+    assert_eq!(recovered, plaintext);
+}
