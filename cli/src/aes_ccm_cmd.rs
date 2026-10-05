@@ -12,12 +12,12 @@
 //! Appendix A.2.1 puts the payload's octet length inside `B0`, the first block the CBC-MAC absorbs,
 //! so nothing can be authenticated until the whole payload length is known. Buffering the input is
 //! therefore the correct behaviour, not a compromise -- and it has a real benefit on the decryption
-//! side: unlike `ascon-aead-128`, this command writes **no plaintext at all** until the tag has
+//! side: unlike `ascon-aead128`, this command writes **no plaintext at all** until the tag has
 //! verified, so a non-zero exit leaves nothing to discard.
 //!
 //! The practical consequence is that memory use is proportional to the input, so this is not the
 //! command to point at a multi-gigabyte file. `aes256-ctr` piped through a separate MAC, or
-//! `ascon-aead-128`, are the streaming alternatives.
+//! `ascon-aead128`, are the streaming alternatives.
 //!
 //! The AAD is read whole too: the key's one-shot takes it as a slice. (A.2.2 needs its length
 //! before its first byte, so streaming it would need the declared-length constructor the type
