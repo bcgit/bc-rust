@@ -18,52 +18,12 @@
 //! Note: print!() is used to force the compiler not to optimize away the actual code.
 //! The important stuff for benchmarking goes to stderr so the junk can be piped to /dev/null.
 //!
-//! Main is at the bottom, and runs the one bench named by the binary's only argument (`nothing`,
-//! `direct`, `direct_stream`, `oneshot`, `stream_enc`, `stream_dec`; anything else prints the
-//! struct sizes) -- measure one at a time, because massif reports the peak across the whole
-//! process. Each bench is `#[inline(never)]` so that its arrays are its own frame rather than all
-//! of them `main`'s at once.
-//!
-//! # Why CCM gets a harness when the other modes do not
-//!
-//! CCM (NIST SP 800-38C) is the one mode whose trait adapters used to carry a non-trivial stack
-//! profile: `CcmEncryptor` / `CcmDecryptor` once buffered the whole message, because
-//! `AEADCipherEncryptor::do_encrypt_init` is handed a key and no length and CCM cannot form `B0`
-//! without one. They now take the payload length as the `DATA_LEN` const parameter and stream,
-//! holding back only up to `AAD_LEN` bytes of AAD, so the claim this harness exists to check is
-//! that **the streaming path through the traits costs what the direct `Ccm` path costs**, at
-//! any `DATA_LEN`. `print_struct_sizes` records the values' sizes, which are the persistent cost.
-//!
 //! # What it measures
 //!
 //! Peak stack from `ms_print`, `--heap=no --stacks=yes`, release, on x86-64, at
 //! `DATA_LEN = 16384` and `AAD_LEN = 64`; every bench processes the same `DATA_LEN` bytes.
 //! `bench_do_nothing`'s figure is the process's own start-up, below which nothing is visible; the
 //! frame is sized to clear it by a wide margin so the comparisons are legible:
-//!
-//! ```text
-//! bench_do_nothing                       7 696 B
-//! bench_direct_encrypt_detached         35 944 B   two 16 KiB arrays (message, ciphertext) + frames
-//! bench_direct_streaming                19 112 B   one 16 KiB array, encrypted in place
-//! bench_oneshot_encrypt_out_detached    37 576 B   = direct + 1 632 B: the adapter and the nonce draw, as for the streaming path
-//! bench_streaming_encrypt               37 400 B   = direct + 1 456 B: the 344 B value, the nonce draw and the frames
-//! bench_streaming_decrypt               36 168 B   = direct + 224 B: the 368 B value, less a frame
-//! ```
-//!
-//! Nothing in the right-hand column scales with the message: at any `DATA_LEN`, the adapters sit
-//! within 1.5 KB of the direct path. For the record, the buffering adapters they replace measured
-//! 68 632 B / 52 504 B / 67 864 B on these three streaming benches at the same `DATA_LEN` --
-//! about `3 * DATA_LEN` above the message arrays.
-//!
-//! The comparisons to draw, all on the *same* message:
-//!
-//! * `bench_streaming_encrypt` against `bench_direct_encrypt_detached`: identical cipher work
-//!   through the trait and directly, so the difference is the whole cost of the adapter -- which
-//!   is the DRBG it draws its nonce from, and nothing that scales with the message;
-//! * `bench_streaming_decrypt` against `bench_direct_encrypt_detached`: the decrypting adapter
-//!   draws no nonce, so these are within a frame of each other;
-//! * `bench_oneshot_encrypt_out_detached` against `bench_streaming_encrypt`: the one-shot is
-//!   provided over the streaming methods, so the two should match.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
