@@ -37,11 +37,12 @@ where
 // Every constant-time construction in this file is masked arithmetic on a value the optimiser
 // could otherwise prove to be one of a small number of constants (a `Condition` mask is all-ones
 // or all-zeros; the accumulator of a comparison loop is zero until the first difference). Given
-// that knowledge the compiler is free to lower `(t & m) | (f & !m)` to a branch or a conditional
-// move on the secret, or to leave a comparison loop early. To stop that, the value is routed
-// through a volatile store and load.
+// that knowledge the compiler is free to lower an expression like `(t & m) | (f & !m)` to a branch
+// or a conditional move on the secret, or to leave a comparison loop early. To stop that, the value
+// is routed through a volatile store and load.
 //
-// The language guarantees less than is relied on here. The documentation of
+// This is still a best-effort, not a guarantee.
+// The language guarantees less than is relied on here. The documentation (as of rust 1.99.0) of
 // `core::ptr::read_volatile` / `write_volatile` says the accesses "are guaranteed to not be
 // elided or reordered" relative to other externally observable events, and that a volatile read
 // "will actually access memory and not e.g. be lowered to reusing data from a previous read". It
@@ -59,7 +60,7 @@ where
 fn value_barrier<T: Copy>(value: T) -> T {
     let mut slot = value;
     // SAFETY:
-    //  * `&mut slot` is a reference to an initialised, aligned `T` local on this stack frame, so
+    //  * `&mut slot` must be a reference to an initialised, aligned `T` local on this stack frame, so
     //    it is valid for reads and writes for the duration of both calls, which is the only
     //    precondition of `write_volatile` and `read_volatile`.
     //  * The reference is exclusive; nothing else can observe `slot` during the two accesses.

@@ -76,9 +76,9 @@ pub(crate) fn sm2_cmd(
             let id = require_id(idfile);
 
             // stream the message from stdin
-            let mut signer = SM2::sign_init(&sk, Some(&id)).unwrap();
-            stream_stdin_into(|chunk| signer.sign_update(chunk));
-            let sig = signer.sign_final().unwrap();
+            let mut signer = SM2::do_sign_init(&sk, Some(&id)).unwrap();
+            stream_stdin_into(|chunk| signer.do_sign_update(chunk));
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -89,10 +89,10 @@ pub(crate) fn sm2_cmd(
             let id = require_id(idfile);
 
             // stream the message from stdin
-            let mut verifier = SM2::verify_init(&pk, Some(&id)).unwrap();
-            stream_stdin_into(|chunk| verifier.verify_update(chunk));
+            let mut verifier = SM2::do_verify_init(&pk, Some(&id)).unwrap();
+            stream_stdin_into(|chunk| verifier.do_verify_update(chunk));
 
-            if verifier.verify_final(&sig).is_ok() {
+            if verifier.do_verify_final(&sig).is_ok() {
                 println!("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");

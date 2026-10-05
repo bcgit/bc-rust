@@ -65,7 +65,7 @@ fn keystream<const NONCE_LEN: usize>(nonce_hex: &str, blocks: usize) -> Vec<u8> 
     assert_eq!(got, nonce, "the pinned RNG should reproduce the nonce");
 
     let mut data = vec![0u8; blocks * 16];
-    enc.do_encrypt(&mut data).expect("encryption");
+    enc.do_encrypt_inplace(&mut data).expect("encryption");
     data
 }
 
@@ -159,12 +159,13 @@ fn the_counter_limit_falls_where_bc_java_throws() {
 
     // BC Java encrypts 4096 bytes under this IV without complaint.
     let mut data = vec![0u8; 4096];
-    enc.do_encrypt(&mut data).expect("4096 bytes must be accepted, as BC Java accepts them");
+    enc.do_encrypt_inplace(&mut data)
+        .expect("4096 bytes must be accepted, as BC Java accepts them");
 
     // ...and throws on the next byte.
     let mut one = [0u8; 1];
     assert!(
-        matches!(enc.do_encrypt(&mut one), Err(SymmetricCipherError::DataLimitExceeded)),
+        matches!(enc.do_encrypt_inplace(&mut one), Err(SymmetricCipherError::DataLimitExceeded)),
         "byte 4097 must be refused, where BC Java throws IllegalStateException"
     );
 }

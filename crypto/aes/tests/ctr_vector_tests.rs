@@ -121,7 +121,7 @@ where
 
         let mut data = plaintext.clone();
         for piece in data.chunks_mut(chunk) {
-            enc.do_encrypt(piece).expect("encryption");
+            enc.do_encrypt_inplace(piece).expect("encryption");
         }
         assert_eq!(data, expected, "{name}: encrypting in {chunk}-byte calls");
     }
@@ -133,14 +133,14 @@ where
                 .expect("decrypt init");
         let mut data = expected.clone();
         for piece in data.chunks_mut(chunk) {
-            dec.do_decrypt(piece).expect("decryption");
+            dec.do_decrypt_inplace(piece).expect("decryption");
         }
         assert_eq!(data, plaintext, "{name}: decrypting in {chunk}-byte calls");
     }
 
     // ...and the one-shot.
     let mut data = expected.clone();
-    Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::decrypt_in_place(&key, &nonce, &mut data)
+    Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::decrypt_inplace(&key, &nonce, &mut data)
         .expect("one-shot decryption");
     assert_eq!(data, plaintext, "{name}: one-shot");
 }

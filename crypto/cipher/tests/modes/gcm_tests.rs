@@ -26,7 +26,7 @@ fn toy_encrypt<const TAG_LEN: usize>(
     seed: [u8; 12],
 ) -> ([u8; 12], Vec<u8>, [u8; TAG_LEN]) {
     let mut ct = vec![0u8; message.len()];
-    let (nonce, _, tag) = ToyGcm::<Encrypting, TAG_LEN>::encrypt_detached_out_rng(
+    let (nonce, _, tag) = ToyGcm::<Encrypting, TAG_LEN>::encrypt_detached_rng_out(
         &toy_key(),
         &mut FixedSeedRNG::<12>::new(seed),
         aad,
@@ -53,7 +53,7 @@ fn aad_after_data_is_a_state_error_unless_empty() {
     }
     // An empty call after data is always fine.
     enc.do_update_aad(&[]).unwrap();
-    let _ = enc.do_final_detached().unwrap();
+    let _ = enc.do_encrypt_final_detachedtag().unwrap();
 }
 
 /// The decryptor holds back the last `TAG_LEN` bytes it has seen, so a first `do_update_out` of
@@ -94,7 +94,7 @@ fn chunking_is_independent_for_aad_and_data() {
             let mut ct = [0u8; 50];
             let n = enc.do_encrypt_out(&message[..data_split], &mut ct).unwrap();
             enc.do_encrypt_out(&message[data_split..], &mut ct[n..]).unwrap();
-            let (_, _, tag) = enc.do_final_detached().unwrap();
+            let (_, _, tag) = enc.do_encrypt_final_detachedtag().unwrap();
             assert_eq!(&ct[..], &expected_ct[..], "aad_split {aad_split}, data_split {data_split}");
             assert_eq!(tag, expected_tag, "aad_split {aad_split}, data_split {data_split}");
         }
@@ -201,7 +201,7 @@ fn update_out_len_is_exact_across_irregular_chunking() {
     let expect = dec.do_decrypt_out_len(rest.len());
     let mut buf = vec![0u8; expect];
     dec.do_decrypt_out(rest, &mut buf).unwrap();
-    let (_last, last_len) = dec.do_final().unwrap();
+    let (_last, last_len) = dec.do_decrypt_final().unwrap();
     assert_eq!(last_len, 0);
 }
 
@@ -232,7 +232,7 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
     let released = dec.do_decrypt_out(&ct, &mut streaming_buf).unwrap();
     assert_eq!(released, 3, "19 bytes in, the last 16 held back");
     assert_eq!(&streaming_buf[..3], &message[..3], "streaming already produced plaintext");
-    match dec.do_final_detached(&tag) {
+    match dec.do_decrypt_final_detachedtag(&tag) {
         Err(SymmetricCipherError::AEADTagCheckFailed) => {}
         other => panic!("expected AEADTagCheckFailed, got {other:?}"),
     }
@@ -254,7 +254,7 @@ fn neither_direction_uses_the_inverse_cipher() {
         let message = b"a message that is not a whole number of blocks!!";
 
         let mut ct = [0u8; 48];
-        let (nonce, _, tag) = Gcm::<P, Encrypting, TOY_LEN, 16>::encrypt_detached_out_rng(
+        let (nonce, _, tag) = Gcm::<P, Encrypting, TOY_LEN, 16>::encrypt_detached_rng_out(
             &key,
             &mut FixedSeedRNG::<12>::new([0x4Du8; 12]),
             aad,

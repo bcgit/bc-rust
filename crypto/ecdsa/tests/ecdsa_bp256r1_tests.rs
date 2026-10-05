@@ -318,8 +318,8 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
 #[test]
 fn sign_final_on_verify_initialized_state_errors() {
     let (pk, _) = keygen().unwrap();
-    let v = ECDSABp256r1::verify_init(&pk, None).unwrap();
-    match v.sign_final() {
+    let v = ECDSABp256r1::do_verify_init(&pk, None).unwrap();
+    match v.do_sign_final() {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }
@@ -328,8 +328,8 @@ fn sign_final_on_verify_initialized_state_errors() {
 #[test]
 fn verify_final_on_sign_initialized_state_errors() {
     let (_, sk) = keygen().unwrap();
-    let s = ECDSABp256r1::sign_init(&sk, None).unwrap();
-    match s.verify_final(&[0u8; 64]) {
+    let s = ECDSABp256r1::do_sign_init(&sk, None).unwrap();
+    match s.do_verify_final(&[0u8; 64]) {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }

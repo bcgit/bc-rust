@@ -90,7 +90,7 @@ where
             Grouping::Single => {
                 for block in input {
                     let mut c = *block;
-                    enc.do_encrypt(&mut c).unwrap();
+                    enc.do_encrypt_inplace(&mut c).unwrap();
                     out.push(c);
                 }
             }
@@ -98,12 +98,12 @@ where
                 let (pairs, tail) = input.as_chunks::<2>();
                 for pair in pairs {
                     let mut c = *pair;
-                    enc.do_encrypt_blocks(&mut c).unwrap();
+                    enc.do_encrypt_blocks_inplace(&mut c).unwrap();
                     out.extend_from_slice(&c);
                 }
                 for block in tail {
                     let mut c = *block;
-                    enc.do_encrypt(&mut c).unwrap();
+                    enc.do_encrypt_inplace(&mut c).unwrap();
                     out.push(c);
                 }
             }
@@ -116,7 +116,7 @@ where
             Grouping::Single => {
                 for block in input {
                     let mut p = *block;
-                    dec.do_decrypt(&mut p).unwrap();
+                    dec.do_decrypt_inplace(&mut p).unwrap();
                     out.push(p);
                 }
             }
@@ -124,12 +124,12 @@ where
                 let (pairs, tail) = input.as_chunks::<2>();
                 for pair in pairs {
                     let mut p = *pair;
-                    dec.do_decrypt_blocks(&mut p).unwrap();
+                    dec.do_decrypt_blocks_inplace(&mut p).unwrap();
                     out.extend_from_slice(&p);
                 }
                 for block in tail {
                     let mut p = *block;
-                    dec.do_decrypt(&mut p).unwrap();
+                    dec.do_decrypt_inplace(&mut p).unwrap();
                     out.push(p);
                 }
             }

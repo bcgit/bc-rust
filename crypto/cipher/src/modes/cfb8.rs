@@ -216,11 +216,12 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt(data))
+        ciphertext.fill(0);
+        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt_inplace(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
@@ -241,7 +242,7 @@ where
     /// Strictly serial, one forward cipher per byte: `I_{j+1}` needs `Cj`, which is the result of
     /// the XOR that the cipher call produced. See the module docs. Never fails: CFB has no per-IV
     /// data limit.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         for byte in data.iter_mut() {
             *byte ^= self.keystream_byte();
             self.shift_in(*byte);
@@ -277,16 +278,17 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt(data))
+        plaintext.fill(0);
+        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt_inplace(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
-    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len
     }
 }
@@ -303,7 +305,7 @@ where
     /// Walks the data in fours through the permutation's *forward* four-block path, then in pairs
     /// through its forward pair path, then the remaining bytes singly (Sec 6.3's parallel
     /// decryption; see the module docs). Never fails: CFB has no per-IV data limit.
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let len = data.len();
         let (fours, rest) = data.as_chunks_mut::<4>();
         for four in fours.iter_mut() {

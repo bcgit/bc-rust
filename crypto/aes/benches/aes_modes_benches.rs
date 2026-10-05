@@ -16,10 +16,11 @@
 //! decryption falls back to the single-block path and the ratio should be about 1.
 //!
 //! CFB is a stream cipher (`StreamCipherEncryptor` / `StreamCipherDecryptor`), so `N` there is
-//! simply the call length in blocks; the same 16 KiB goes through `do_encrypt` / `do_decrypt` as
-//! `16 * N`-byte slices. Two extra CFB measurements use calls that are *not* a whole number of
-//! blocks: every such call ends mid-segment and the next one starts by finishing it byte by byte,
-//! so they show what the byte path costs relative to the block path at a comparable call length.
+//! simply the call length in blocks; the same 16 KiB goes through `do_encrypt_inplace` /
+//! `do_decrypt_inplace` as `16 * N`-byte slices. Two extra CFB measurements use calls that are
+//! *not* a whole number of blocks: every such call ends mid-segment and the next one starts by
+//! finishing it byte by byte, so they show what the byte path costs relative to the block path at
+//! a comparable call length.
 //!
 //! The `modes::cfb8::AES_128` group measures the other thing worth knowing about CFB8: it spends one
 //! full forward cipher per *byte*, so on a 16-byte block it should come out at roughly **1/16** the
@@ -182,7 +183,7 @@ fn bench_aes128(c: &mut Criterion) {
             |mut scratch| {
                 let (mut enc, _) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
                 for block in scratch.iter_mut() {
-                    enc.do_encrypt(block).unwrap();
+                    enc.do_encrypt_inplace(block).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -198,7 +199,7 @@ fn bench_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    enc.do_encrypt(arr).unwrap();
+                    enc.do_encrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -210,7 +211,7 @@ fn bench_aes128(c: &mut Criterion) {
     let (mut enc, iv) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
-        enc.do_encrypt_blocks(chunk).unwrap();
+        enc.do_encrypt_blocks_inplace(chunk).unwrap();
     }
 
     // N=1 never forms a pair, so this is the single-block path: the ratio against encrypt should
@@ -221,7 +222,7 @@ fn bench_aes128(c: &mut Criterion) {
             |mut scratch| {
                 let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
                 for block in scratch.iter_mut() {
-                    dec.do_decrypt(block).unwrap();
+                    dec.do_decrypt_inplace(block).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -239,7 +240,7 @@ fn bench_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(2) {
                     let arr: &mut [u8; 2 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt(arr).unwrap();
+                    dec.do_decrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -255,7 +256,7 @@ fn bench_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt(arr).unwrap();
+                    dec.do_decrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -272,7 +273,7 @@ fn bench_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(9) {
                     let arr: &mut [u8; 9 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt(arr).unwrap();
+                    dec.do_decrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -290,7 +291,7 @@ fn bench_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt(arr).unwrap();
+                    dec.do_decrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -306,7 +307,7 @@ fn bench_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt(arr).unwrap();
+                    dec.do_decrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -332,7 +333,7 @@ fn bench_aes256(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    enc.do_encrypt(arr).unwrap();
+                    enc.do_encrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -343,7 +344,7 @@ fn bench_aes256(c: &mut Criterion) {
     let (mut enc, iv) = Aes256Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
-        enc.do_encrypt_blocks(chunk).unwrap();
+        enc.do_encrypt_blocks_inplace(chunk).unwrap();
     }
 
     group.bench_function("16KiB decrypt -- N=8 (all fours)", |b| {
@@ -354,7 +355,7 @@ fn bench_aes256(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt(arr).unwrap();
+                    dec.do_decrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -378,7 +379,7 @@ fn cfb_encrypt_in_calls<
 ) {
     let (mut enc, _) = E::do_encrypt_init(k).unwrap();
     for piece in scratch.chunks_mut(call_len) {
-        enc.do_encrypt(piece).unwrap();
+        enc.do_encrypt_inplace(piece).unwrap();
     }
 }
 
@@ -395,7 +396,7 @@ fn cfb_decrypt_in_calls<
 ) {
     let mut dec = D::do_decrypt_init(k, iv).unwrap();
     for piece in scratch.chunks_mut(call_len) {
-        dec.do_decrypt(piece).unwrap();
+        dec.do_decrypt_inplace(piece).unwrap();
     }
 }
 
@@ -433,7 +434,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
     // batch methods ----
     let (mut enc, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = flat.clone();
-    enc.do_encrypt(&mut ciphertext).unwrap();
+    enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
     for (name, call_len) in [
         // N=1 never forms a pair, so this is the single-block path: the ratio against encrypt
@@ -522,7 +523,7 @@ fn bench_cfb_aes256(c: &mut Criterion) {
 
     let (mut enc, iv) = Aes256Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = flat.clone();
-    enc.do_encrypt(&mut ciphertext).unwrap();
+    enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
     group.bench_function("16KiB decrypt -- N=8 (all fours)", |b| {
         b.iter_batched(
@@ -572,7 +573,7 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
 
     let (mut enc, iv) = Aes128Cfb8::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = flat.clone();
-    enc.do_encrypt(&mut ciphertext).unwrap();
+    enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
     for (name, call_len) in [
         // One call: fours, then pairs, then the tail. This is the batched path.
@@ -637,7 +638,7 @@ fn bench_ctr_aes128(c: &mut Criterion) {
 
     let (mut enc, nonce) = Aes128Ctr::<Encrypting>::do_encrypt_init(&k).unwrap();
     let mut ciphertext = flat.clone();
-    enc.do_encrypt(&mut ciphertext).unwrap();
+    enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
     for (name, call_len) in [
         ("16KiB decrypt -- N=1 (no batching)", BLOCK_LEN),
@@ -703,7 +704,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
             |mut scratch| {
                 let (mut enc, _) = Aes128Ecb::<Encrypting>::do_encrypt_init(&k).unwrap();
                 for block in scratch.iter_mut() {
-                    enc.do_encrypt(block).unwrap();
+                    enc.do_encrypt_inplace(block).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -719,7 +720,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    enc.do_encrypt(arr).unwrap();
+                    enc.do_encrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -735,7 +736,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt(arr).unwrap();
+                    dec.do_decrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -752,7 +753,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    enc.do_encrypt(arr).unwrap();
+                    enc.do_encrypt_inplace(arr).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -846,7 +847,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEnc::encrypt_out_detached(
+                    Aes128CcmEnc::encrypt_detached_out(
                         black_box(&key),
                         &nonce,
                         &no_aad,
@@ -864,14 +865,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
     // failing tag check would short-circuit the comparison and measure the wrong thing.
     let mut ciphertext = [0u8; DATA_LEN];
     let (_, tag) =
-        Aes128CcmEnc::encrypt_out_detached(&key, &nonce, &no_aad, &data, &mut ciphertext).unwrap();
+        Aes128CcmEnc::encrypt_detached_out(&key, &nonce, &no_aad, &data, &mut ciphertext).unwrap();
 
     group.bench_function("decrypt 16KiB, no AAD", |b| {
         b.iter_batched_ref(
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128CcmDec::decrypt_out_detached(
+                    Aes128CcmDec::decrypt_detached_out(
                         black_box(&key),
                         &nonce,
                         &no_aad,
@@ -893,7 +894,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEnc::encrypt_out_detached(
+                    Aes128CcmEnc::encrypt_detached_out(
                         black_box(&key),
                         &nonce,
                         black_box(&data),
@@ -913,7 +914,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128CcmEnc::encrypt_out_detached(
+                Aes128CcmEnc::encrypt_detached_out(
                     black_box(&key),
                     &nonce,
                     black_box(&data),
@@ -943,12 +944,12 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let mut group = c.benchmark_group("modes::ccm::one_shot");
     group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
 
-    group.bench_function("AEADCipherEncryptor::encrypt_detached_out_rng 4KiB", |b| {
+    group.bench_function("AEADCipherEncryptor::encrypt_detached_rng_out 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEncryptor::encrypt_detached_out_rng(
+                    Aes128CcmEncryptor::encrypt_detached_rng_out(
                         black_box(&key),
                         &mut rng,
                         &no_aad,
@@ -963,12 +964,12 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     });
 
     // The same 4 KiB and nonce through `Ccm` directly, for the ratio.
-    group.bench_function("Ccm::encrypt_out_detached 4KiB", |b| {
+    group.bench_function("Ccm::encrypt_detached_out 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEnc::encrypt_out_detached(
+                    Aes128CcmEnc::encrypt_detached_out(
                         black_box(&key),
                         &nonce,
                         &no_aad,
@@ -1002,7 +1003,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
+                    Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
                         black_box(&key),
                         &mut rng,
                         &no_aad,
@@ -1019,7 +1020,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
     // Encrypt once outside the loop so decryption measures a ciphertext that authenticates: a
     // failing tag check would short-circuit the comparison and measure the wrong thing.
     let mut ciphertext = [0u8; DATA_LEN];
-    let (nonce, _, tag) = Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
+    let (nonce, _, tag) = Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
         &key, &mut rng, &no_aad, &data, &mut ciphertext,
     )
     .unwrap();
@@ -1054,7 +1055,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
+                    Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
                         black_box(&key),
                         &mut rng,
                         black_box(&data),
@@ -1074,7 +1075,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128Gcm::<Encrypting>::encrypt_detached_out_rng(
+                Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
                     black_box(&key),
                     &mut rng,
                     black_box(&data),
@@ -1100,7 +1101,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
                     enc.do_encrypt_out(piece, &mut out).unwrap();
                     black_box(&out);
                 }
-                black_box(enc.do_final().unwrap())
+                black_box(enc.do_encrypt_final().unwrap())
             },
             BatchSize::LargeInput,
         )
@@ -1124,7 +1125,7 @@ fn bench_gcm_aes256(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes256Gcm::<Encrypting>::encrypt_detached_out_rng(
+                    Aes256Gcm::<Encrypting>::encrypt_detached_rng_out(
                         black_box(&key),
                         &mut rng,
                         &no_aad,

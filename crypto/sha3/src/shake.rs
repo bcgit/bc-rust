@@ -406,7 +406,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
     /// many*: a hash has one output length and it is this one. Ask for another through the XOF.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_final(n)
+        self.into_squeezer().do_output_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
@@ -417,7 +417,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         // buffer, which is exactly the difference between a XOF and a hash.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out(&mut output[..written])
+        self.into_squeezer().do_output_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(
@@ -442,7 +442,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
         let written = n.min(output.len());
         output[written..].fill(0);
-        Ok(squeezer.do_final_out(&mut output[..written]))
+        Ok(squeezer.do_output_final_out(&mut output[..written]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

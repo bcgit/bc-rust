@@ -19,10 +19,10 @@
 //! let msg_chunk1 = b"The quick brown fox ";
 //! let msg_chunk2 = b"jumped over the lazy dog";
 //!
-//! let mut signer = MLDSA65::sign_init(&sk, None).unwrap();
-//! signer.sign_update(msg_chunk1);
-//! signer.sign_update(msg_chunk2);
-//! let sig = signer.sign_final().unwrap();
+//! let mut signer = MLDSA65::do_sign_init(&sk, None).unwrap();
+//! signer.do_sign_update(msg_chunk1);
+//! signer.do_sign_update(msg_chunk2);
+//! let sig = signer.do_sign_final().unwrap();
 //! // This is the signature value that can be saved to a file or whatever is needed.
 //!
 //! // This is compatible with a verifier that takes the whole message as one chunk:
@@ -35,11 +35,11 @@
 //!
 //! // There is also a streaming API for the verifier.
 //!
-//! let mut verifier = MLDSA65::verify_init(&pk, None).unwrap();
-//! verifier.verify_update(msg_chunk1);
-//! verifier.verify_update(msg_chunk2);
+//! let mut verifier = MLDSA65::do_verify_init(&pk, None).unwrap();
+//! verifier.do_verify_update(msg_chunk1);
+//! verifier.do_verify_update(msg_chunk2);
 //!
-//! match verifier.verify_final(&sig.as_slice()) {
+//! match verifier.do_verify_final(&sig.as_slice()) {
 //!     Ok(()) => println!("Signature is valid!"),
 //!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
 //!     Err(e) => panic!("Something else went wrong: {:?}", e),
@@ -62,11 +62,11 @@
 //! let msg_chunk1 = b"The quick brown fox ";
 //! let msg_chunk2 = b"jumped over the lazy dog";
 //!
-//! let mut signer = MLDSA65::sign_init(&sk, Some(b"signing ctx value")).unwrap();
+//! let mut signer = MLDSA65::do_sign_init(&sk, Some(b"signing ctx value")).unwrap();
 //! signer.set_signer_rnd([0u8; 32]); // an all-zero rnd is the "deterministic" mode of ML-DSA
-//! signer.sign_update(msg_chunk1);
-//! signer.sign_update(msg_chunk2);
-//! let sig = signer.sign_final().unwrap();
+//! signer.do_sign_update(msg_chunk1);
+//! signer.do_sign_update(msg_chunk2);
+//! let sig = signer.do_sign_final().unwrap();
 //! ```
 //!
 //! # External Mu mode
@@ -1771,8 +1771,8 @@ pub trait MLDSATrait<
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
-    /// To be used for deterministic signing in conjunction with the [`MLDSA44::sign_init`], [`MLDSA44::sign_update`], and [`MLDSA44::sign_final`] flow.
-    /// Can be set anywhere after [`MLDSA44::sign_init`] and before [`MLDSA44::sign_final`].
+    /// To be used for deterministic signing in conjunction with the [`MLDSA44::do_sign_init`], [`MLDSA44::do_sign_update`], and [`MLDSA44::do_sign_final`] flow.
+    /// Can be set anywhere after [`MLDSA44::do_sign_init`] and before [`MLDSA44::do_sign_final`].
     fn set_signer_rnd(&mut self, rnd: [u8; 32]);
     /// Alternative initialization of the streaming signer where the user has their private key
     /// as a seed and they want to delay its expansion as late as possible for memory-usage reasons.
@@ -1829,7 +1829,7 @@ impl<
         Ok(bytes_written)
     }
 
-    fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: PhantomData,
             mu_builder: MuBuilder::do_init(&sk.tr(), ctx)?,
@@ -1840,23 +1840,23 @@ impl<
         })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
-        self.sign_final_out(&mut out)?;
+        self.do_sign_final_out(&mut out)?;
         Ok(out)
     }
 
-    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         let mu = self.mu_builder.do_final();
 
         if self.sk.is_none() && self.seed.is_none() {
             return Err(SignatureError::GenericError(
-                "sign_final_out called on a streaming context with no private key or seed; \
-     			this is a verify-initialized context. Call verify_final instead",
+                "do_sign_final_out called on a streaming context with no private key or seed; \
+     			this is a verify-initialized context. Call do_verify_final instead",
             ));
         }
 
@@ -1906,7 +1906,7 @@ impl<
         Self::verify_mu(pk, Some(&pk.A_hat()), &mu, sig)
     }
 
-    fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: Default::default(),
             mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
@@ -1917,11 +1917,11 @@ impl<
         })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = self.mu_builder.do_final();
 
         let pk: &PK = self

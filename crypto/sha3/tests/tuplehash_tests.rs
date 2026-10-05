@@ -165,8 +165,8 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         // construction -- the shortest way to spell fixed-length TupleHash through the XOF type.
         let n = f.output.len();
         let got = match f.strength {
-            128 => TUPLEHASHXOF128::new(s).output_for(&t).do_final(n),
-            256 => TUPLEHASHXOF256::new(s).output_for(&t).do_final(n),
+            128 => TUPLEHASHXOF128::new(s).output_for(&t).do_output_final(n),
+            256 => TUPLEHASHXOF256::new(s).output_for(&t).do_output_final(n),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(got, f.output, "{ctx}: output_for().do_final()");
@@ -194,17 +194,21 @@ fn check_do_final_binds_length<X: XOF>(
     };
 
     // The first read, with no do_output before it: right_encode(8n), so the fixed-length function.
-    assert_eq!(absorbed().do_final(n), fixed_expected, "{ctx}: do_final binds the length");
+    assert_eq!(absorbed().do_output_final(n), fixed_expected, "{ctx}: do_final binds the length");
 
     // Pre-filled, so the documented zeroization is observable.
     let mut buf = vec![0xFFu8; n];
-    assert_eq!(absorbed().do_final_out(&mut buf), n, "{ctx}: do_final_out returns the length");
+    assert_eq!(
+        absorbed().do_output_final_out(&mut buf),
+        n,
+        "{ctx}: do_final_out returns the length"
+    );
     assert_eq!(buf, fixed_expected, "{ctx}: do_final_out binds the length");
 
     // The `L` bound is the length actually asked for, not a fixed one. No sample value covers
     // these lengths, so the comparison is against this library's own fixed-length function.
     for shorter in [n / 2, n - 1] {
-        assert_eq!(absorbed().do_final(shorter), fixed_of(shorter), "{ctx}: L = {shorter}");
+        assert_eq!(absorbed().do_output_final(shorter), fixed_of(shorter), "{ctx}: L = {shorter}");
     }
 
     // The one-shots name their length and never come back, so they bind it too. They take one
@@ -226,7 +230,7 @@ fn check_do_final_binds_length<X: XOF>(
     let split = n / 2;
     let mut squeezer = absorbed();
     let head = squeezer.do_output(split);
-    let tail = squeezer.do_final(n - split);
+    let tail = squeezer.do_output_final(n - split);
     assert_eq!([head, tail].concat(), xof_expected, "{ctx}: do_final after a read stays the XOF");
 }
 

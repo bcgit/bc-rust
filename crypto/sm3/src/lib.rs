@@ -15,11 +15,9 @@
 //!
 //! let data: &[u8] = b"abc";
 //! let output: Vec<u8> = SM3::new().hash(data);
-//! assert_eq!(output[..4], [0x66, 0xc7, 0xf0, 0xf4]);
 //! ```
 //!
-//! More advanced usage will require creating an SM3 object to hold state between successive calls,
-//! for example if input is received in chunks and not all available at the same time:
+//! It also has a streaming API that can accept input in chunks of any size.
 //!
 //! ```
 //! use bouncycastle_core::traits::Hash;
@@ -71,7 +69,7 @@
 //!
 //! * SM3 offers 128 bits of collision resistance and 256 bits of preimage resistance.
 //! * SM3 is a Merkle–Damgård construction and is therefore subject to length-extension:
-//!   `H(k || m)` is not a secure MAC. Use HMAC ([`crate::hmac`]) for keyed hashing.
+//!   `H(k || m)` is not a secure MAC. Use HMAC ([`sm3::hmac`](crate::hmac) for keyed hashing.
 //! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
 //!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
 //!   locals during compression are not zeroized.

@@ -157,14 +157,14 @@ where
     // All four segments in one call.
     let mut enc = init();
     let mut data = flat(&PLAINTEXTS);
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_inplace(&mut data).unwrap();
     assert_eq!(data, flat(expected), "{section}: four segments in one call");
 
     // One segment at a time.
     let mut enc = init();
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
         let mut got = *p;
-        enc.do_encrypt(&mut got).unwrap();
+        enc.do_encrypt_inplace(&mut got).unwrap();
         assert_eq!(&got, c, "{section}: segment #{}", i + 1);
     }
 
@@ -173,7 +173,7 @@ where
         let mut enc = init();
         let mut data = flat(&PLAINTEXTS);
         for piece in data.chunks_mut(chunk) {
-            enc.do_encrypt(piece).unwrap();
+            enc.do_encrypt_inplace(piece).unwrap();
         }
         assert_eq!(data, flat(expected), "{section}: {chunk}-byte calls");
     }
@@ -182,8 +182,8 @@ where
 /// Runs one Appendix F.3 decrypt subsection.
 ///
 /// Checks one call, one segment at a time, the odd grouping `3 + 1` -- which is the grouping that
-/// leaves a one-block remainder after the pair loop in `do_decrypt` -- and chunks that straddle the
-/// segments.
+/// leaves a one-block remainder after the pair loop in `do_decrypt_inplace` -- and chunks that
+/// straddle the segments.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
@@ -198,23 +198,23 @@ where
     // All four segments in one call (two pairs, no remainder).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     let mut data = flat(ciphertext);
-    dec.do_decrypt(&mut data).unwrap();
+    dec.do_decrypt_inplace(&mut data).unwrap();
     assert_eq!(data, flat(&PLAINTEXTS), "{section}: four segments in one call");
 
     // One segment at a time (never takes the pair path).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     for (i, (c, p)) in ct.iter().zip(pt.iter()).enumerate() {
         let mut got = *c;
-        dec.do_decrypt(&mut got).unwrap();
+        dec.do_decrypt_inplace(&mut got).unwrap();
         assert_eq!(&got, p, "{section}: segment #{}", i + 1);
     }
 
     // 3 + 1: one pair plus a remainder, then a lone block.
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     let mut three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
-    dec.do_decrypt(&mut three).unwrap();
+    dec.do_decrypt_inplace(&mut three).unwrap();
     let mut one = ct[3];
-    dec.do_decrypt(&mut one).unwrap();
+    dec.do_decrypt_inplace(&mut one).unwrap();
     assert_eq!(&three[..], pt[..3].as_flattened(), "{section}: segments 1-3");
     assert_eq!(one, pt[3], "{section}: segment 4");
 
@@ -223,7 +223,7 @@ where
         let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
         let mut data = flat(ciphertext);
         for piece in data.chunks_mut(chunk) {
-            dec.do_decrypt(piece).unwrap();
+            dec.do_decrypt_inplace(piece).unwrap();
         }
         assert_eq!(data, flat(&PLAINTEXTS), "{section}: {chunk}-byte calls");
     }
@@ -357,11 +357,11 @@ fn cfb128_agrees_with_ofb_on_the_first_block_only() {
     assert_eq!(got_iv, iv);
 
     let mut c1 = block(PLAINTEXTS[0]);
-    enc.do_encrypt(&mut c1).unwrap();
+    enc.do_encrypt_inplace(&mut c1).unwrap();
     assert_eq!(c1, block(OFB_CIPHERTEXT_1), "block 1 must match OFB, and F.3.13");
 
     let mut c2 = block(PLAINTEXTS[1]);
-    enc.do_encrypt(&mut c2).unwrap();
+    enc.do_encrypt_inplace(&mut c2).unwrap();
     assert_eq!(c2, block(CIPHERTEXTS_128[1]), "block 2 must match F.3.13");
     assert_ne!(c2, block(OFB_CIPHERTEXT_2), "block 2 must NOT match OFB");
 }

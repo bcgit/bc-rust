@@ -29,43 +29,44 @@ type ToyEcb<Dir> = Ecb<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedEcb<Dir> = Ecb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedFourEcb<Dir> = Ecb<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
 
-/// The implementor hook `do_encrypt_blocks`, by value, for tests whose data is block-shaped.
+/// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
+/// block-shaped.
 fn enc_blocks<const N: usize>(
     enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
-    enc.do_encrypt_blocks(&mut blocks).unwrap();
+    enc.do_encrypt_blocks_inplace(&mut blocks).unwrap();
     blocks
 }
 
-/// The implementor hook `do_decrypt_blocks`, by value.
+/// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
     dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
-    dec.do_decrypt_blocks(&mut blocks).unwrap();
+    dec.do_decrypt_blocks_inplace(&mut blocks).unwrap();
     blocks
 }
 
-/// The flat streaming method `do_encrypt`, by value.
+/// The flat streaming method `do_encrypt_inplace`, by value.
 fn enc_flat<const LEN: usize>(
     enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
     plaintext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *plaintext;
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
-/// The flat streaming method `do_decrypt`, by value.
+/// The flat streaming method `do_decrypt_inplace`, by value.
 fn dec_flat<const LEN: usize>(
     dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
     ciphertext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *ciphertext;
-    dec.do_decrypt(&mut data).unwrap();
+    dec.do_decrypt_inplace(&mut data).unwrap();
     data
 }
 
@@ -153,7 +154,7 @@ fn the_mode_matches_the_spec_equations() {
     )
     .unwrap();
     let mut first = plaintext[0];
-    cbc.do_encrypt(&mut first).unwrap();
+    cbc.do_encrypt_inplace(&mut first).unwrap();
     assert_ne!(first, ct[0], "ECB must not agree with CBC");
 }
 
@@ -182,10 +183,10 @@ fn ecb_is_deterministic_and_leaks_equal_blocks() {
     let flat: [u8; 4 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
     let mut once = flat;
     let (n_a, init_a): (usize, [u8; 0]) =
-        ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut once).unwrap();
+        ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut once).unwrap();
     assert_eq!(n_a, once.len(), "encrypt must report the number of bytes written");
     let mut twice = flat;
-    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut twice).unwrap();
+    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut twice).unwrap();
     assert_eq!(n_b, twice.len(), "encrypt must report the number of bytes written");
     assert_eq!(init_a, init_b);
     assert_eq!(once, twice, "no init data and no randomness, so the one-shot is repeatable");
@@ -206,15 +207,15 @@ fn the_rng_constructor_panics() {
     let _ = ToyEcb::<Encrypting>::do_encrypt_init_rng(&key, &mut rng);
 }
 
-/// ...and so does the one-shot provided over it: `encrypt_rng` is `do_encrypt_init_rng` followed by
-/// `do_encrypt`, so it panics in the same case and for the same reason. Pinned separately because
-/// it is the call a user is most likely to reach for.
+/// ...and so does the one-shot provided over it: `encrypt_rng_inplace` is `do_encrypt_init_rng`
+/// followed by `do_encrypt_inplace`, so it panics in the same case and for the same reason. Pinned
+/// separately because it is the call a user is most likely to reach for.
 #[test]
 #[should_panic(expected = "ECB has no initialization data")]
 fn the_rng_one_shot_panics() {
     let key = toy_key();
     let mut block = [0x42u8; TOY_LEN];
-    let _ = ToyEcb::<Encrypting>::encrypt_in_place_rng(
+    let _ = ToyEcb::<Encrypting>::encrypt_rng_inplace(
         &key,
         &mut FixedSeedRNG::<0>::new([]),
         &mut block,
@@ -304,7 +305,7 @@ fn call_grouping_does_not_change_the_result() {
         let mut out = Vec::new();
         for chunk in reference.chunks(grouping) {
             let mut buf = chunk.to_vec();
-            dec.do_decrypt_blocks(&mut buf).unwrap();
+            dec.do_decrypt_blocks_inplace(&mut buf).unwrap();
             out.extend_from_slice(&buf);
         }
         assert_eq!(out, plaintext.to_vec(), "decrypting in groups of {grouping}");
@@ -322,9 +323,9 @@ fn flat_streaming_and_one_shots_agree_with_the_block_hook() {
     assert_eq!(*block_ct.as_flattened(), enc_flat(&mut encryptor(), &flat_plaintext));
 
     let mut buf = flat_plaintext;
-    let (_, init) = ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut buf).unwrap();
+    let (_, init) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut buf).unwrap();
     assert_eq!(buf, *block_ct.as_flattened(), "one-shot must equal streaming");
-    ToyEcb::<Decrypting>::decrypt_in_place(&key, &init, &mut buf).unwrap();
+    ToyEcb::<Decrypting>::decrypt_inplace(&key, &init, &mut buf).unwrap();
     assert_eq!(buf, flat_plaintext);
 
     assert_eq!(dec_blocks(&mut decryptor(), &block_ct), plaintext);
@@ -391,7 +392,7 @@ fn the_padding_layer_round_trips_every_length() {
             Enc::encrypt_out(&toy_key(), &plaintext, &mut ciphertext).expect("padded encryption");
         assert_eq!(init, []);
         assert_eq!(written, ciphertext.len(), "len {len}");
-        let mut recovered = vec![0u8; Dec::decrypt_out_max_len(written)];
+        let mut recovered = vec![0u8; Dec::decrypt_out_len(written)];
         let n = Dec::decrypt_out(&toy_key(), &init, &ciphertext, &mut recovered)
             .expect("padded decryption");
         assert_eq!(&recovered[..n], &plaintext[..], "len {len}: round trip through PKCS7");

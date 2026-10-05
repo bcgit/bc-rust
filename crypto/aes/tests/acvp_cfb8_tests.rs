@@ -110,13 +110,13 @@ where
         .expect("encrypt init");
         assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
         for piece in data.chunks_mut(chunk) {
-            enc.do_encrypt(piece).unwrap();
+            enc.do_encrypt_inplace(piece).unwrap();
         }
     } else {
         let mut dec = Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv)
             .expect("dec init");
         for piece in data.chunks_mut(chunk) {
-            dec.do_decrypt(piece).unwrap();
+            dec.do_decrypt_inplace(piece).unwrap();
         }
     }
 

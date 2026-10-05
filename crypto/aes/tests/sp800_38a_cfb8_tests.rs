@@ -154,7 +154,7 @@ where
 
         let mut data = plaintext.clone();
         for piece in data.chunks_mut(chunk) {
-            enc.do_encrypt(piece).unwrap();
+            enc.do_encrypt_inplace(piece).unwrap();
         }
         assert_eq!(data, expected, "{section}: {chunk}-byte calls");
     }
@@ -175,14 +175,14 @@ where
             Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).unwrap();
         let mut data = ciphertext.clone();
         for piece in data.chunks_mut(chunk) {
-            dec.do_decrypt(piece).unwrap();
+            dec.do_decrypt_inplace(piece).unwrap();
         }
         assert_eq!(data, plaintext, "{section}: {chunk}-byte calls");
     }
 
     // ...and the one-shot, where the IV is an input.
     let mut data = ciphertext.clone();
-    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_in_place(&key, &iv, &mut data).unwrap();
+    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_inplace(&key, &iv, &mut data).unwrap();
     assert_eq!(data, plaintext, "{section}: one-shot");
 }
 

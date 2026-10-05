@@ -40,6 +40,7 @@ use core::marker::PhantomData;
 /// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
 /// `input` into `output` and applies `in_place` there, so the caller's input is left untouched.
 /// Returns `input.len()`, since a stream cipher neither buffers nor changes the length of its data.
+/// The whole of `output` is zeroized first, so any bytes past `input.len()` will be 0.
 ///
 /// # Errors
 /// [`SymmetricCipherError::OutputBufferTooSmall`] if `output` is shorter than `input`, checked
@@ -49,6 +50,7 @@ pub fn stream_update_out(
     output: &mut [u8],
     in_place: impl FnOnce(&mut [u8]) -> Result<usize, SymmetricCipherError>,
 ) -> Result<usize, SymmetricCipherError> {
+    output.fill(0);
     if output.len() < input.len() {
         return Err(SymmetricCipherError::OutputBufferTooSmall(input.len()));
     }
@@ -58,8 +60,8 @@ pub fn stream_update_out(
     Ok(input.len())
 }
 
-/// The `do_final` of a stream cipher: nothing is held back, so there is nothing to finish -- an
-/// empty buffer, none of it output, and no padding or tag to check.
+/// The `do_encrypt_final` / `do_decrypt_final` of a stream cipher: nothing is held back, so there
+/// is nothing to finish -- an empty buffer, none of it output, and no padding or tag to check.
 ///
 /// `cargo mutants` reports the `[]` here as a surviving mutant against `[0; 0]` and `[1; 0]`.
 /// Those are the same value: a zero-length array has no element to differ in, so the three
@@ -245,11 +247,12 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
         stream_update_out(plaintext, ciphertext, |data| self.apply(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
@@ -270,7 +273,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::DataLimitExceeded`] if the keystream cannot cover the call. Nothing
     /// is consumed in that case; see [`StreamCipher`].
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
     }
 }
@@ -302,16 +305,17 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         stream_update_out(ciphertext, plaintext, |data| self.apply(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
-    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len
     }
 }
@@ -325,8 +329,8 @@ where
     /// The same XOR as encryption.
     ///
     /// # Errors
-    /// As [`StreamCipherEncryptor::do_encrypt`].
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    /// As [`StreamCipherEncryptor::do_encrypt_inplace`].
+    fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
     }
 }

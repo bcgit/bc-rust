@@ -42,7 +42,7 @@ fn every_alias_family_is_suspendable() {
     round_trip::<{ CbcEnc::SUSPENDED_STATE_LEN }, _>(cbc, |mut e| {
         let mut out = [0u8; 16];
         e.do_encrypt_out(&[0x22u8; 12], &mut out).unwrap();
-        let (last, n) = e.do_final().unwrap();
+        let (last, n) = e.do_encrypt_final().unwrap();
         [out.as_slice(), &last[..n]].concat()
     });
 
@@ -50,31 +50,31 @@ fn every_alias_family_is_suspendable() {
     let (mut ecb, _) = EcbEnc::do_encrypt_init(&key()).unwrap();
     ecb.do_encrypt_out(&[0x11u8; 20], &mut [0u8; 16]).unwrap();
     round_trip::<{ EcbEnc::SUSPENDED_STATE_LEN }, _>(ecb, |e| {
-        let (last, n) = e.do_final().unwrap();
+        let (last, n) = e.do_encrypt_final().unwrap();
         last[..n].to_vec()
     });
 
     let (mut cfb, _) = AES_CFB_128::<Encrypting>::do_encrypt_init(&key()).unwrap();
-    cfb.do_encrypt(&mut [0x11u8; 7]).unwrap();
+    cfb.do_encrypt_inplace(&mut [0x11u8; 7]).unwrap();
     round_trip::<{ AES_CFB_128::<Encrypting>::SUSPENDED_STATE_LEN }, _>(cfb, |mut e| {
         let mut data = [0x22u8; 25];
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data.to_vec()
     });
 
     let (mut cfb8, _) = AES_CFB8_128::<Encrypting>::do_encrypt_init(&key()).unwrap();
-    cfb8.do_encrypt(&mut [0x11u8; 7]).unwrap();
+    cfb8.do_encrypt_inplace(&mut [0x11u8; 7]).unwrap();
     round_trip::<{ AES_CFB8_128::<Encrypting>::SUSPENDED_STATE_LEN }, _>(cfb8, |mut e| {
         let mut data = [0x22u8; 9];
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data.to_vec()
     });
 
     let (mut ctr, _) = AES_CTR_128::<Encrypting>::do_encrypt_init(&key()).unwrap();
-    ctr.do_encrypt(&mut [0x11u8; 7]).unwrap();
+    ctr.do_encrypt_inplace(&mut [0x11u8; 7]).unwrap();
     round_trip::<{ AES_CTR_128::<Encrypting>::SUSPENDED_STATE_LEN }, _>(ctr, |mut e| {
         let mut data = [0x22u8; 25];
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data.to_vec()
     });
 
@@ -84,7 +84,7 @@ fn every_alias_family_is_suspendable() {
     round_trip::<{ AES_GCM_128::<Encrypting>::SUSPENDED_STATE_LEN }, _>(gcm, |mut e| {
         let mut out = [0u8; 25];
         e.do_encrypt_out(&[0x22u8; 25], &mut out).unwrap();
-        let (tag, n) = e.do_final().unwrap();
+        let (tag, n) = e.do_encrypt_final().unwrap();
         [out.as_slice(), &tag[..n]].concat()
     });
 

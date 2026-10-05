@@ -57,19 +57,19 @@ where
 fn cbc_both_directions() {
     let (mut enc, iv) = ToyCbc::<Encrypting>::do_encrypt_init(&key()).unwrap();
     let mut first = [0x11u8; 16];
-    enc.do_encrypt(&mut first).unwrap();
+    enc.do_encrypt_inplace(&mut first).unwrap();
     let rest = round_trip::<{ ToyCbc::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut data = [0x22u8; 48];
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data.to_vec()
     });
 
     let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key(), &iv).unwrap();
-    dec.do_decrypt(&mut first).unwrap();
+    dec.do_decrypt_inplace(&mut first).unwrap();
     assert_eq!(first, [0x11u8; 16]);
     let plain = round_trip::<{ ToyCbc::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data: [u8; 48] = rest.as_slice().try_into().unwrap();
-        d.do_decrypt(&mut data).unwrap();
+        d.do_decrypt_inplace(&mut data).unwrap();
         data.to_vec()
     });
     assert_eq!(plain, vec![0x22u8; 48]);
@@ -78,16 +78,16 @@ fn cbc_both_directions() {
 #[test]
 fn ecb_both_directions() {
     let (mut enc, _) = ToyEcb::<Encrypting>::do_encrypt_init(&key()).unwrap();
-    enc.do_encrypt(&mut [0x11u8; 16]).unwrap();
+    enc.do_encrypt_inplace(&mut [0x11u8; 16]).unwrap();
     round_trip::<{ ToyEcb::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut data = [0x22u8; 32];
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data.to_vec()
     });
     let dec = ToyEcb::<Decrypting>::do_decrypt_init(&key(), &[]).unwrap();
     round_trip::<{ ToyEcb::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = [0x33u8; 32];
-        d.do_decrypt(&mut data).unwrap();
+        d.do_decrypt_inplace(&mut data).unwrap();
         data.to_vec()
     });
 }
@@ -97,19 +97,19 @@ fn cfb_mid_segment_both_directions() {
     let msg = message(40);
     let (mut enc, iv) = ToyCfb::<Encrypting>::do_encrypt_init(&key()).unwrap();
     let mut head = msg[..7].to_vec();
-    enc.do_encrypt(&mut head).unwrap();
+    enc.do_encrypt_inplace(&mut head).unwrap();
     let tail = round_trip::<{ ToyCfb::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut data = msg[7..].to_vec();
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data
     });
 
     let mut dec = ToyCfb::<Decrypting>::do_decrypt_init(&key(), &iv).unwrap();
-    dec.do_decrypt(&mut head).unwrap();
+    dec.do_decrypt_inplace(&mut head).unwrap();
     assert_eq!(head, msg[..7]);
     let plain = round_trip::<{ ToyCfb::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = tail.clone();
-        d.do_decrypt(&mut data).unwrap();
+        d.do_decrypt_inplace(&mut data).unwrap();
         data
     });
     assert_eq!(plain, msg[7..]);
@@ -120,17 +120,17 @@ fn cfb8_both_directions() {
     let msg = message(20);
     let (mut enc, iv) = ToyCfb8::<Encrypting>::do_encrypt_init(&key()).unwrap();
     let mut head = msg[..5].to_vec();
-    enc.do_encrypt(&mut head).unwrap();
+    enc.do_encrypt_inplace(&mut head).unwrap();
     let tail = round_trip::<{ ToyCfb8::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut data = msg[5..].to_vec();
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data
     });
     let mut dec = ToyCfb8::<Decrypting>::do_decrypt_init(&key(), &iv).unwrap();
-    dec.do_decrypt(&mut head).unwrap();
+    dec.do_decrypt_inplace(&mut head).unwrap();
     let plain = round_trip::<{ ToyCfb8::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = tail.clone();
-        d.do_decrypt(&mut data).unwrap();
+        d.do_decrypt_inplace(&mut data).unwrap();
         data
     });
     assert_eq!(plain, msg[5..]);
@@ -141,17 +141,17 @@ fn ctr_mid_block_both_directions() {
     let msg = message(50);
     let (mut enc, nonce) = ToyCtr::<Encrypting>::do_encrypt_init(&key()).unwrap();
     let mut head = msg[..7].to_vec();
-    enc.do_encrypt(&mut head).unwrap();
+    enc.do_encrypt_inplace(&mut head).unwrap();
     let tail = round_trip::<{ ToyCtr::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut data = msg[7..].to_vec();
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data
     });
     let mut dec = ToyCtr::<Decrypting>::do_decrypt_init(&key(), &nonce).unwrap();
-    dec.do_decrypt(&mut head).unwrap();
+    dec.do_decrypt_inplace(&mut head).unwrap();
     let plain = round_trip::<{ ToyCtr::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = tail.clone();
-        d.do_decrypt(&mut data).unwrap();
+        d.do_decrypt_inplace(&mut data).unwrap();
         data
     });
     assert_eq!(plain, msg[7..]);
@@ -170,7 +170,7 @@ fn gcm_both_directions_with_aad() {
     let tail = round_trip::<{ ToyGcm::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut out = vec![0u8; 40];
         e.do_encrypt_out(&msg[5..], &mut out).unwrap();
-        let (tag, tag_len) = e.do_final().unwrap();
+        let (tag, tag_len) = e.do_encrypt_final().unwrap();
         out.extend_from_slice(&tag[..tag_len]);
         out
     });
@@ -186,7 +186,7 @@ fn gcm_both_directions_with_aad() {
     let plain = round_trip::<{ ToyGcm::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut out = vec![0u8; ciphertext.len()];
         let n = d.do_decrypt_out(&ciphertext[10..], &mut out).unwrap();
-        let (_, last) = d.do_final().expect("the tag must verify after a resume");
+        let (_, last) = d.do_decrypt_final().expect("the tag must verify after a resume");
         out.truncate(n + last);
         out
     });
@@ -233,7 +233,7 @@ fn padded_cbc_both_directions() {
         let mut out = vec![0u8; 32];
         let n = e.do_encrypt_out(&msg[20..], &mut out).unwrap();
         out.truncate(n);
-        let (last, last_len) = e.do_final().unwrap();
+        let (last, last_len) = e.do_encrypt_final().unwrap();
         out.extend_from_slice(&last[..last_len]);
         out
     });
@@ -249,7 +249,7 @@ fn padded_cbc_both_directions() {
         let mut out = vec![0u8; 32];
         let n = d.do_decrypt_out(&ciphertext[36..], &mut out).unwrap();
         out.truncate(n);
-        let (last, data_len) = d.do_final().unwrap();
+        let (last, data_len) = d.do_decrypt_final().unwrap();
         out.extend_from_slice(&last[..data_len]);
         out
     });

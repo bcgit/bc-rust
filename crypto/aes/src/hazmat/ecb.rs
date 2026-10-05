@@ -11,7 +11,7 @@
 //!
 //! ECB has no IV, so its `INIT_DATA_LEN` is 0: encryption returns an empty array, decryption takes
 //! one, and the ciphertext is exactly the padded plaintext with nothing prepended. The RNG-taking
-//! constructors, `do_encrypt_init_rng` and `encrypt_out_rng`, panic, as
+//! constructors, `do_encrypt_init_rng` and `encrypt_rng_out`, panic, as
 //! [`SymmetricCipherEncryptor::do_encrypt_init_rng`] requires of a cipher with no init data to
 //! generate; use the plain `do_encrypt_init` / `encrypt_out`.
 //!
@@ -86,7 +86,7 @@
 //!         ciphertext.extend_from_slice(&out[..bytes_written]);
 //!     }
 //! }
-//! let (last_block, last_len) = encryptor.do_final().expect("padding the final block");
+//! let (last_block, last_len) = encryptor.do_encrypt_final().expect("padding the final block");
 //! ciphertext.extend_from_slice(&last_block[..last_len]);
 //! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
 //!
@@ -100,7 +100,7 @@
 //!         recovered.extend_from_slice(&out[..bytes_written]);
 //!     }
 //! }
-//! let (last_block, last_len) = decryptor.do_final().expect("a valid final block");
+//! let (last_block, last_len) = decryptor.do_decrypt_final().expect("a valid final block");
 //! recovered.extend_from_slice(&last_block[..last_len]);
 //! assert_eq!(recovered, plaintext);
 //! ```

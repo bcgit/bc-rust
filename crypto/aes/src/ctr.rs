@@ -42,9 +42,9 @@
 //! // Encryption works in place. The nonce is generated for you and returned; there is no API for
 //! // supplying one.
 //! let mut data = plaintext;
-//! let (_, nonce) = AESEnc::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (_, nonce) = AESEnc::encrypt_inplace(&key, &mut data).expect("encryption");
 //!
-//! AESDec::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
+//! AESDec::decrypt_inplace(&key, &nonce, &mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
@@ -77,14 +77,14 @@
 //! let (mut encryptor, nonce) = AESEnc::do_encrypt_init(&key).expect("encrypt init");
 //! let mut ciphertext = plaintext;
 //! for piece in ciphertext.chunks_mut(7) {
-//!     encryptor.do_encrypt(piece).expect("encryption");
+//!     encryptor.do_encrypt_inplace(piece).expect("encryption");
 //! }
 //!
 //! // Decrypt in 19-byte pieces: the boundaries need not match the encryptor's.
 //! let mut decryptor = AESDec::do_decrypt_init(&key, &nonce).expect("decrypt init");
 //! let mut recovered = ciphertext;
 //! for piece in recovered.chunks_mut(19) {
-//!     decryptor.do_decrypt(piece).expect("decryption");
+//!     decryptor.do_decrypt_inplace(piece).expect("decryption");
 //! }
 //! assert_eq!(recovered, plaintext);
 //! ```

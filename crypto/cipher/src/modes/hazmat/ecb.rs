@@ -26,11 +26,11 @@
 //!     .expect("a 16-byte symmetric cipher key");
 //! let mut data = [0x5Au8; 32]; // two equal blocks
 //!
-//! let (bytes_written, no_iv): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (bytes_written, no_iv): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
 //! assert_eq!(no_iv.len(), 0, "ECB mode returns the IV as an empty array");
 //! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
 //!
-//! ToyEcb::<Decrypting>::decrypt_in_place(&key, &[], &mut data).expect("decryption");
+//! ToyEcb::<Decrypting>::decrypt_inplace(&key, &[], &mut data).expect("decryption");
 //! assert_eq!(data, [0x5Au8; 32]);
 //! ```
 //!
@@ -173,14 +173,14 @@ where
         )
     }
 
-    /// The implementor hook (the flat `do_encrypt` is provided over it): `Cj = CIPH_K(Pj)` for every
-    /// block, in place.
+    /// The implementor hook (the flat `do_encrypt_inplace` is provided over it):
+    /// `Cj = CIPH_K(Pj)` for every block, in place.
     ///
     /// Sec 6.1 allows the forward cipher functions to "be computed in parallel", so the blocks go
     /// to the permutation in fours, then pairs, then the remaining block singly. `as_chunks_mut`
     /// splits into exactly those shapes with no runtime length check. Never fails: ECB has no
     /// per-initialization data limit.
-    fn do_encrypt_blocks(
+    fn do_encrypt_blocks_inplace(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError> {
@@ -214,10 +214,10 @@ where
         Self::new(key)
     }
 
-    /// The implementor hook (the flat `do_decrypt` is provided over it): `Pj = CIPH^-1_K(Cj)` for
-    /// every block, in place -- fours, then pairs, then the remaining block, as on the encrypt
-    /// side. Never fails.
-    fn do_decrypt_blocks(
+    /// The implementor hook (the flat `do_decrypt_inplace` is provided over it):
+    /// `Pj = CIPH^-1_K(Cj)` for every block, in place -- fours, then pairs, then the remaining
+    /// block, as on the encrypt side. Never fails.
+    fn do_decrypt_blocks_inplace(
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError> {

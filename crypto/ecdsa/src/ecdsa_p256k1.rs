@@ -148,9 +148,9 @@ impl Signer<ECDSASecp256K1PrivateKey, SK_LEN, SIG_LEN> for ECDSASecp256K1 {
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut s = Self::sign_init(sk, ctx)?;
-        s.sign_update(msg);
-        s.sign_final()
+        let mut s = Self::do_sign_init(sk, ctx)?;
+        s.do_sign_update(msg);
+        s.do_sign_final()
     }
 
     fn sign_out(
@@ -164,20 +164,20 @@ impl Signer<ECDSASecp256K1PrivateKey, SK_LEN, SIG_LEN> for ECDSASecp256K1 {
         Ok(SIG_LEN)
     }
 
-    fn sign_init(
+    fn do_sign_init(
         sk: &ECDSASecp256K1PrivateKey,
         _ctx: Option<&[u8]>,
     ) -> Result<Self, SignatureError> {
         Ok(Self { hash: SHA256::default(), sk: Some(sk.clone()), pk: None })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let sk = self.sk.ok_or(SignatureError::GenericError(
-            "sign_final called on a verify-initialized ECDSASecp256K1; call verify_final instead",
+            "do_sign_final called on a verify-initialized ECDSASecp256K1; call do_verify_final instead",
         ))?;
         let mut h = [0u8; 32];
         self.hash.do_final_out(&mut h);
@@ -186,9 +186,9 @@ impl Signer<ECDSASecp256K1PrivateKey, SK_LEN, SIG_LEN> for ECDSASecp256K1 {
         sign_with_k(&sk, &e, k)
     }
 
-    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         output.fill(0);
-        *output = self.sign_final()?;
+        *output = self.do_sign_final()?;
         Ok(SIG_LEN)
     }
 }
@@ -200,25 +200,25 @@ impl SignatureVerifier<ECDSASecp256K1PublicKey, PK_LEN, SIG_LEN> for ECDSASecp25
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        let mut v = Self::verify_init(pk, ctx)?;
-        v.verify_update(msg);
-        v.verify_final(sig)
+        let mut v = Self::do_verify_init(pk, ctx)?;
+        v.do_verify_update(msg);
+        v.do_verify_final(sig)
     }
 
-    fn verify_init(
+    fn do_verify_init(
         pk: &ECDSASecp256K1PublicKey,
         _ctx: Option<&[u8]>,
     ) -> Result<Self, SignatureError> {
         Ok(Self { hash: SHA256::default(), sk: None, pk: Some(*pk) })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let pk = self.pk.ok_or(SignatureError::GenericError(
-            "verify_final called on a sign-initialized ECDSASecp256K1; call sign_final instead",
+            "do_verify_final called on a sign-initialized ECDSASecp256K1; call do_sign_final instead",
         ))?;
         // Exactly SIG_LEN, not "at least": the raw encoding is two fixed-width integers and
         // nothing else, so trailing bytes make this a different, malformed encoding rather than a

@@ -38,9 +38,9 @@
 //! // Encryption works in place. The IV is generated for you and returned; there is no API for
 //! // supplying one.
 //! let mut data = plaintext;
-//! let (_, iv) = AESEnc::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (_, iv) = AESEnc::encrypt_inplace(&key, &mut data).expect("encryption");
 //!
-//! AESDec::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+//! AESDec::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
@@ -73,14 +73,14 @@
 //! let (mut encryptor, iv) = AESEnc::do_encrypt_init(&key).expect("encrypt init");
 //! let mut ciphertext = plaintext;
 //! for piece in ciphertext.chunks_mut(3) {
-//!     encryptor.do_encrypt(piece).expect("encryption");
+//!     encryptor.do_encrypt_inplace(piece).expect("encryption");
 //! }
 //!
 //! // Decrypt in 20-byte pieces: the boundaries need not match the encryptor's.
 //! let mut decryptor = AESDec::do_decrypt_init(&key, &iv).expect("decrypt init");
 //! let mut recovered = ciphertext;
 //! for piece in recovered.chunks_mut(20) {
-//!     decryptor.do_decrypt(piece).expect("decryption");
+//!     decryptor.do_decrypt_inplace(piece).expect("decryption");
 //! }
 //! assert_eq!(recovered, plaintext);
 //! ```
@@ -100,10 +100,10 @@
 //! let plaintext = *b"hello";
 //!
 //! let mut data = plaintext;
-//! let (_, iv) = AES_CFB8_128::<Encrypting>::encrypt_in_place(&key, &mut data).unwrap();
+//! let (_, iv) = AES_CFB8_128::<Encrypting>::encrypt_inplace(&key, &mut data).unwrap();
 //!
 //! // Decrypting CFB8 output as CFB128 does not recover the plaintext.
-//! AES_CFB_128::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
+//! AES_CFB_128::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).unwrap();
 //! assert_ne!(data, plaintext);
 //! ```
 //!

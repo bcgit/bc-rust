@@ -12,7 +12,7 @@
 //! 16-byte tag once stdin is exhausted. `decrypt` reads the 12-byte nonce first, then streams the
 //! rest of stdin through the inline decryptor -- which, per [`SymmetricCipherDecryptor`]'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
-//! `do_final`.
+//! `do_decrypt_final`.
 //!
 //! # The exit code is the signal, not the output
 //!
@@ -108,7 +108,7 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     }
 
     // The detached final flushes nothing for GCM and returns the tag, written last.
-    let (_, _, tag) = enc.do_final_detached().unwrap_or_else(|e| {
+    let (_, _, tag) = enc.do_encrypt_final_detachedtag().unwrap_or_else(|e| {
         eprintln!("Error: encryption failed: {e:?}");
         exit(-1);
     });
@@ -117,8 +117,8 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 }
 
 /// Decrypts stdin to stdout under GCM: reads the 12-byte nonce, streams the rest through the
-/// inline decryptor, and checks the tag on `do_final`. See the module docs for why plaintext may
-/// already be written to stdout by the time a tag failure is reported.
+/// inline decryptor, and checks the tag on `do_decrypt_final`. See the module docs for why
+/// plaintext may already be written to stdout by the time a tag failure is reported.
 pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     aad: &[u8],
@@ -162,7 +162,7 @@ pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         write_bytes_or_hex(&out, output_hex);
     }
 
-    if let Err(e) = dec.do_final() {
+    if let Err(e) = dec.do_decrypt_final() {
         // Whatever plaintext was already written above stands; the exit code is the signal a
         // script must check (see the module docs).
         io::stdout().flush().ok();

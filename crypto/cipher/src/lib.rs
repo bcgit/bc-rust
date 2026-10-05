@@ -32,13 +32,13 @@
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let (mut enc, _iv) = ToyCbc::do_encrypt_init(&key).unwrap();
 //! let mut first = [0x11u8; 16];
-//! enc.do_encrypt(&mut first).unwrap();
+//! enc.do_encrypt_inplace(&mut first).unwrap();
 //!
 //! // Suspending consumes the cipher. The key is not in the state and is re-supplied to resume.
 //! let state: [u8; STATE_LEN] = enc.suspend();
 //! let mut enc = ToyCbc::from_suspended(state, &key).unwrap();
 //! let mut second = [0x22u8; 16];
-//! enc.do_encrypt(&mut second).unwrap();
+//! enc.do_encrypt_inplace(&mut second).unwrap();
 //! ```
 //!
 //! # Memory Usage

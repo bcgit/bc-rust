@@ -189,10 +189,10 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
 /// one length is a prefix of output at a longer one, the opposite of fixed-length KMAC.
 ///
 /// Read as a *final* read, it is bound, because a caller that names a length and will not be back
-/// has said what `L` is: [`XOFSqueezer::do_final`] and [`XOF::xof`] absorb `right_encode(8n)` and
-/// so produce `KMAC(K, X, 8n, S)` exactly (see [`LengthBoundSqueezer`]), and the [`Hash`] view --
-/// [`Hash::do_final`], [`Hash::hash`] and [`Hash::hash_out`] -- does the same at the nominal
-/// [`Hash::output_len`], since a hash's output length is fixed by its type.
+/// has said what `L` is: [`XOFSqueezer::do_output_final`] and [`XOF::xof`] absorb
+/// `right_encode(8n)` and so produce `KMAC(K, X, 8n, S)` exactly (see [`LengthBoundSqueezer`]), and
+/// the [`Hash`] view -- [`Hash::do_final`], [`Hash::hash`] and [`Hash::hash_out`] -- does the same
+/// at the nominal [`Hash::output_len`], since a hash's output length is fixed by its type.
 #[derive(Clone)]
 pub struct KMACXOFInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
@@ -255,7 +255,7 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
     /// KMACXOF stream.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_final(n)
+        self.into_squeezer().do_output_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {

@@ -146,30 +146,30 @@ fn large_message_round_trips() {
 fn streaming_sign_and_verify_single_update() {
     let (pk, sk) = keygen().unwrap();
 
-    let mut s = SM2::sign_init(&sk, Some(ID)).unwrap();
-    s.sign_update(DUMMY_SEED);
-    let sig = s.sign_final().unwrap();
+    let mut s = SM2::do_sign_init(&sk, Some(ID)).unwrap();
+    s.do_sign_update(DUMMY_SEED);
+    let sig = s.do_sign_final().unwrap();
 
-    let mut v = SM2::verify_init(&pk, Some(ID)).unwrap();
-    v.verify_update(DUMMY_SEED);
-    v.verify_final(&sig).unwrap();
+    let mut v = SM2::do_verify_init(&pk, Some(ID)).unwrap();
+    v.do_verify_update(DUMMY_SEED);
+    v.do_verify_final(&sig).unwrap();
 }
 
 #[test]
 fn streaming_sign_and_verify_chunked() {
     let (pk, sk) = keygen().unwrap();
 
-    let mut s = SM2::sign_init(&sk, Some(ID)).unwrap();
+    let mut s = SM2::do_sign_init(&sk, Some(ID)).unwrap();
     for chunk in DUMMY_SEED.chunks(100) {
-        s.sign_update(chunk);
+        s.do_sign_update(chunk);
     }
-    let sig = s.sign_final().unwrap();
+    let sig = s.do_sign_final().unwrap();
 
-    let mut v = SM2::verify_init(&pk, Some(ID)).unwrap();
+    let mut v = SM2::do_verify_init(&pk, Some(ID)).unwrap();
     for chunk in DUMMY_SEED.chunks(100) {
-        v.verify_update(chunk);
+        v.do_verify_update(chunk);
     }
-    v.verify_final(&sig).unwrap();
+    v.do_verify_final(&sig).unwrap();
 }
 
 #[test]
@@ -177,9 +177,9 @@ fn streaming_verify_rejects_wrong_message() {
     let (pk, sk) = keygen().unwrap();
     let sig = SM2::sign(&sk, DUMMY_SEED, Some(ID)).unwrap();
 
-    let mut v = SM2::verify_init(&pk, Some(ID)).unwrap();
-    v.verify_update(b"this is the wrong message");
-    match v.verify_final(&sig) {
+    let mut v = SM2::do_verify_init(&pk, Some(ID)).unwrap();
+    v.do_verify_update(b"this is the wrong message");
+    match v.do_verify_final(&sig) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
@@ -189,10 +189,10 @@ fn streaming_verify_rejects_wrong_message() {
 fn sign_final_out_matches_sign_final() {
     let (pk, sk) = keygen().unwrap();
 
-    let mut s = SM2::sign_init(&sk, Some(ID)).unwrap();
-    s.sign_update(DUMMY_SEED);
+    let mut s = SM2::do_sign_init(&sk, Some(ID)).unwrap();
+    s.do_sign_update(DUMMY_SEED);
     let mut sig = [0u8; 64];
-    let written = s.sign_final_out(&mut sig).unwrap();
+    let written = s.do_sign_final_out(&mut sig).unwrap();
     assert_eq!(written, 64);
 
     SM2::verify(&pk, DUMMY_SEED, Some(ID), &sig).unwrap();
@@ -228,8 +228,8 @@ fn verify_rejects_signature_of_the_wrong_length() {
 #[test]
 fn sign_final_on_verify_initialized_state_errors() {
     let (pk, _) = keygen().unwrap();
-    let v = SM2::verify_init(&pk, Some(ID)).unwrap();
-    match v.sign_final() {
+    let v = SM2::do_verify_init(&pk, Some(ID)).unwrap();
+    match v.do_sign_final() {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }
@@ -238,8 +238,8 @@ fn sign_final_on_verify_initialized_state_errors() {
 #[test]
 fn verify_final_on_sign_initialized_state_errors() {
     let (_, sk) = keygen().unwrap();
-    let s = SM2::sign_init(&sk, Some(ID)).unwrap();
-    match s.verify_final(&[0u8; 64]) {
+    let s = SM2::do_sign_init(&sk, Some(ID)).unwrap();
+    match s.do_verify_final(&[0u8; 64]) {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }
