@@ -141,9 +141,9 @@
 //! The core building block is "customizable SHAKE" or "cSHAKE", which is implemented in this crate
 //! but not intended for direct use since NIST SP 800-185 §3.4 says:
 //!
-//!     > The cSHAKE function includes an input string that may be used to provide a function name (N).
-//!       This is intended for use by NIST in defining SHA-3-derived functions, and should only be set to
-//!       values defined by NIST
+//! > The cSHAKE function includes an input string that may be used to provide a function name (N).
+//!   This is intended for use by NIST in defining SHA-3-derived functions, and should only be set to
+//!   values defined by NIST
 //!
 //! See:
 //!

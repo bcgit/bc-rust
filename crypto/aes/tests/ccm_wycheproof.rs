@@ -1,26 +1,26 @@
-//! Known-answer tests against Project Wycheproof's `aes_ccm_test.json`, vendored into
-//! `bc-test-data/crypto/wycheproof/` alongside the sibling `sm4_ccm_test.json`.
+//! Known-answer tests against Project Wycheproof's `testvectors_v1/aes_ccm_test.json`.
 //!
-//! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
-//! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ACVP suite in this crate.
+//! Requires the Wycheproof repository (https://github.com/C2SP/wycheproof) to be cloned alongside
+//! this repository, i.e. at `../wycheproof` relative to the root of this git project. If it is
+//! absent the test prints a warning and passes, matching the convention used by the other vector
+//! suites in this crate.
 //!
 //! # Why this set is worth having alongside the ACVP one
 //!
-//! `acvp_ccm_tests.rs` covers 480 cases, but every one of them uses a 96-bit nonce, and the only
+//! `ccm_bc-test-data.rs` covers 480 cases, but every one of them uses a 96-bit nonce, and the only
 //! failures it carries are tag-check failures on an otherwise well-formed message. Wycheproof's
 //! set is deliberately adversarial in the ways ACVP is not: malformed and truncated tags, every
 //! nonce length from 8 to 2144 *bits* (most of which A.1 does not permit at all), a tag size of
 //! 16 bits that SP 800-38C Appendix B.2 calls insecure, and pseudorandom sizes meant to catch an
 //! implementation that only handles the common cases. See
-//! `bc-test-data/crypto/wycheproof/aes_ccm_test.json`'s own `"notes"` object for exactly what each
+//! `aes_ccm_test.json`'s own `"notes"` object for exactly what each
 //! `flags` entry is checking.
 //!
 //! # Ciphertext and tag are separate fields, unlike the ACVP set
 //!
 //! Wycheproof's AEAD schema carries `ct` and `tag` as distinct fields (the `aead_test_schema_v1`
 //! schema), so these cases go through [`Ccm::encrypt_detached_out`] / [`Ccm::decrypt_detached_out`], not
-//! the inline pair `acvp_ccm_tests.rs` uses.
+//! the inline pair `ccm_bc-test-data.rs` uses.
 //!
 //! # Most of the parameter space cannot be dispatched to at all, by design
 //!
@@ -30,8 +30,8 @@
 //! a runtime check, this is not something a case can "fail", because it is a compile-time property
 //! of the type, not a value the library ever sees. Those groups (most of the file: the point of
 //! `InvalidNonceSize`/`InvalidTagSize` and most of the `Pseudorandom` groups is to probe exactly
-//! this boundary) are counted as skipped rather than silently dropped, and the counts are asserted
-//! at the end so a change in the vector file's shape is visible.
+//! this boundary) are counted as not supported rather than silently dropped, and the counts are
+//! asserted at the end so a change in the vector file's shape is visible.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Ccm;
@@ -41,30 +41,9 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
 use bouncycastle_hex as hex;
 use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-/// Candidate locations, covering `cargo test` run from the crate root or from the repo root.
-const TEST_DATA_PATHS: [&str; 2] = [
-    "../../../bc-test-data/crypto/wycheproof/aes_ccm_test.json",
-    "../bc-test-data/crypto/wycheproof/aes_ccm_test.json",
-];
-
-fn test_data_file() -> Option<PathBuf> {
-    for candidate in TEST_DATA_PATHS {
-        let path = Path::new(candidate);
-        if path.exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); \
-         Wycheproof AES-CCM tests will be skipped"
-    );
-    None
-}
 
 fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
     let s = value
@@ -214,18 +193,17 @@ fn dispatch(
 
 #[test]
 fn wycheproof_aes_ccm_known_answer_tests() {
-    let Some(path) = test_data_file() else { return };
+    let Some(contents) = wycheproof("aes_ccm_test.json") else { return };
 
-    let doc: Value = serde_json::from_str(&fs::read_to_string(&path).expect("readable file"))
-        .expect("valid wycheproof JSON");
+    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
 
     let groups = doc.get("testGroups").and_then(Value::as_array).expect("testGroups");
 
     let mut run = 0usize;
     let mut valid_count = 0usize;
     let mut invalid_count = 0usize;
-    let mut skipped_groups = 0usize;
-    let mut skipped_cases = 0usize;
+    let mut unsupported_groups = 0usize;
+    let mut unsupported_cases = 0usize;
 
     for group in groups {
         let iv_size_bits = group.get("ivSize").and_then(Value::as_u64).expect("ivSize");
@@ -237,12 +215,12 @@ fn wycheproof_aes_ccm_known_answer_tests() {
 
         // A group is only fully within A.1's dispatchable sets if its *declared* nonce/tag sizes
         // are; a `Pseudorandom` group whose individual tests vary can still contribute some
-        // dispatched and some skipped cases, so this is a per-group tally for the printout, not
+        // dispatched and some unsupported cases, so this is a per-group tally for the printout, not
         // something the per-case counts below depend on.
         if !(7..=13).contains(&(iv_size_bits / 8))
             || ![4u64, 6, 8, 10, 12, 14, 16].contains(&(tag_size_bits / 8))
         {
-            skipped_groups += 1;
+            unsupported_groups += 1;
         }
 
         let tests = group.get("tests").and_then(Value::as_array).expect("tests");
@@ -287,14 +265,15 @@ fn wycheproof_aes_ccm_known_answer_tests() {
                     invalid_count += 1;
                 }
             } else {
-                skipped_cases += 1;
+                unsupported_cases += 1;
             }
         }
     }
 
     println!(
         "Wycheproof AES-CCM: {run} cases run ({valid_count} valid, {invalid_count} invalid), \
-         {skipped_cases} cases in {skipped_groups} groups skipped (no A.1 instantiation)"
+         {unsupported_cases} cases in {unsupported_groups} groups not supported \
+         (no A.1 instantiation)"
     );
 
     // Guards against a silently-vacuous run: at least the common 96-bit-nonce/128-bit-tag groups
@@ -302,5 +281,8 @@ fn wycheproof_aes_ccm_known_answer_tests() {
     assert!(run > 0, "expected at least some cases to be within A.1's dispatchable sets");
     assert!(valid_count > 0, "expected at least some valid cases to be run");
     assert!(invalid_count > 0, "expected at least some invalid (tag-failure) cases to be run");
-    assert!(skipped_groups > 0, "expected most of this adversarial set to be outside A.1's sets");
+    assert!(
+        unsupported_groups > 0,
+        "expected most of this adversarial set to be outside A.1's sets"
+    );
 }

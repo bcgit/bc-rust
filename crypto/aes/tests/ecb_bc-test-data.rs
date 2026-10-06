@@ -18,14 +18,14 @@
 //! | Vector set | Consumed by |
 //! |---|---|
 //! | `ACVP-AES-ECB` | this file (the permutation; the `Ecb` mode's own tests are toy-driven, in `crypto/cipher/tests/modes/ecb_tests.rs`) |
-//! | `ACVP-AES-CBC` | `acvp_cbc_tests.rs` |
+//! | `ACVP-AES-CBC` | `cbc_bc-test-data.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
-//! | `ACVP-AES-CCM` | `acvp_ccm_tests.rs` |
-//! | `ACVP-AES-CFB128` | `acvp_cfb_tests.rs` |
-//! | `ACVP-AES-CFB8` | `acvp_cfb8_tests.rs` |
+//! | `ACVP-AES-CCM` | `ccm_bc-test-data.rs` |
+//! | `ACVP-AES-CFB128` | `cfb_bc-test-data.rs` |
+//! | `ACVP-AES-CFB8` | `cfb8_bc-test-data.rs` |
 //! | `ACVP-AES-OFB` | nothing yet (OFB is unimplemented) |
-//! | `ACVP-AES-CTR` | `acvp_ctr_tests.rs` |
-//! | `ACVP-AES-GCM` / `-GMAC` | `acvp_gcm_tests.rs` / `acvp_gmac_tests.rs` |
+//! | `ACVP-AES-CTR` | `ctr_bc-test-data.rs` |
+//! | `ACVP-AES-GCM` / `-GMAC` | `gcm_bc-test-data.rs` / `gmac_bc-test-data.rs` |
 //! | `ACVP-AES-KW` / `-KWP` | nothing yet (key wrap is unimplemented) |
 //! | `ACVP-AES-FF1` / `-FF3-1` | nothing yet (format-preserving encryption is unimplemented) |
 //!
@@ -52,33 +52,12 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
 
-/// Candidate locations, covering `cargo test` run from the crate root or from the repo root.
-const TEST_DATA_PATHS: [&str; 2] = [
-    "../../../bc-test-data/crypto/aes_tdes_vectors/AES",
-    "../bc-test-data/crypto/aes_tdes_vectors/AES",
-];
-
+const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/AES";
 const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";
-
-/// Locates the AES directory of `bc-test-data`, or `None` if that repository is not checked out.
-fn test_data_dir() -> Option<PathBuf> {
-    for candidate in TEST_DATA_PATHS {
-        let path = Path::new(candidate);
-        if path.join(RESPONSE_FILE).exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); \
-         ACVP AES-ECB tests will be skipped"
-    );
-    None
-}
 
 /// Builds a `KeyMaterial` from raw ACVP key bytes, including the all-zero keys.
 ///
@@ -208,9 +187,7 @@ fn run_pairwise(
 
 #[test]
 fn acvp_aes_ecb_known_answer_tests() {
-    let Some(dir) = test_data_dir() else { return };
-
-    let contents = fs::read_to_string(dir.join(RESPONSE_FILE)).expect("readable response file");
+    let Some(contents) = bc_test_data(TEST_DATA_DIR, RESPONSE_FILE) else { return };
     let parsed: Value = serde_json::from_str(&contents).expect("valid ACVP JSON");
 
     // The ACVP file is an array: element 0 is the version header, element 1 the vector set.

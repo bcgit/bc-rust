@@ -17,31 +17,9 @@
 //!    only the previous digest.)
 
 use bouncycastle_core::traits::Hash;
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use std::fs;
-use std::path::Path;
-use std::sync::Once;
-
-const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto/sha2";
-const TEST_DATA_PATH: &str = "../bc-test-data/crypto/sha2";
-
-static TEST_DATA_CHECK: Once = Once::new();
-
-/// Returns the contents of `<orientation>/<filename>` from bc-test-data, or `None` (after a one-time
-/// warning) if the repo is not checked out.
-fn get_test_data(orientation: &str, filename: &str) -> Option<String> {
-    let dir = [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH].into_iter().find(|d| Path::new(d).exists());
-    TEST_DATA_CHECK.call_once(|| match dir {
-        Some(d) => println!("bc-test-data found at: {d:?}"),
-        None => println!("WARNING: bc-test-data directory not found; CAVP tests will be skipped"),
-    });
-    let dir = dir?;
-    Some(
-        fs::read_to_string(format!("{dir}/{orientation}/{filename}"))
-            .expect("failed to read CAVP test vector file"),
-    )
-}
 
 /// Splits a `Key = value` line from a `.rsp` file.
 fn kv(line: &str) -> Option<(&str, &str)> {
@@ -91,7 +69,9 @@ fn hash_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
 }
 
 fn run_msg_file<H: Hash + Default>(orientation: &str, filename: &str) {
-    let Some(content) = get_test_data(orientation, filename) else { return };
+    let Some(content) = bc_test_data(&format!("crypto/sha2/{orientation}"), filename) else {
+        return;
+    };
     let cases = parse_msg_file(&content);
     assert!(!cases.is_empty(), "{orientation}/{filename}: no test cases parsed");
     let mut partial_cases = 0;
@@ -147,7 +127,9 @@ fn parse_monte_file(content: &str) -> MonteFile {
 
 /// SHAVS s. 6.4 Monte Carlo test.
 fn run_monte_file<H: Hash + Default>(orientation: &str, filename: &str) {
-    let Some(content) = get_test_data(orientation, filename) else { return };
+    let Some(content) = bc_test_data(&format!("crypto/sha2/{orientation}"), filename) else {
+        return;
+    };
     let MonteFile { mut seed, mds } = parse_monte_file(&content);
     assert_eq!(mds.len(), 100, "{orientation}/{filename}: expected 100 COUNTs");
     for (count, expected) in mds.iter().enumerate() {

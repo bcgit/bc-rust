@@ -1,9 +1,9 @@
-//! Known-answer tests against Project Wycheproof's `aes_cbc_pkcs5_test.json`, vendored into
-//! `bc-test-data/crypto/wycheproof/` alongside the sibling AES-GCM and AES-CCM files.
+//! Known-answer tests against Project Wycheproof's `testvectors_v1/aes_cbc_pkcs5_test.json`.
 //!
-//! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
-//! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ACVP suites in this crate.
+//! Requires the Wycheproof repository (https://github.com/C2SP/wycheproof) to be cloned alongside
+//! this repository, i.e. at `../wycheproof` relative to the root of this git project. If it is
+//! absent the test prints a warning and passes, matching the convention used by the other vector
+//! suites in this crate.
 //!
 //! # PKCS #5 is PKCS #7 at a 16-byte block
 //!
@@ -11,7 +11,7 @@
 //! `k - (lth mod k)`), which the cipher crate provides as [`PKCS7`]; the two names differ only in
 //! that PKCS #5 was written for 8-byte blocks. So these vectors drive the padded aliases
 //! `AES_CBC_128<_, PKCS7>` and friends, i.e. CBC through the `PaddedBlockCipherEncryptor` /
-//! `PaddedBlockCipherDecryptor` adapters, where `acvp_cbc_tests.rs` and `sp800_38a_cbc_tests.rs`
+//! `PaddedBlockCipherDecryptor` adapters, where `cbc_bc-test-data.rs` and `sp800_38a_cbc_tests.rs`
 //! drive the unpadded [`Cbc`](bouncycastle_cipher::modes::Cbc) underneath them.
 //!
 //! # Why this set is worth having alongside the ACVP one
@@ -23,7 +23,7 @@
 //! than accepting an alternative padding, and that the adapter refuses a ciphertext too short to
 //! carry one. See the file's own `"notes"` object for what each `flags` entry is checking.
 //!
-//! The IV is supplied through a `FixedSeedRNG`, as in `acvp_cbc_tests.rs`, and the returned IV is
+//! The IV is supplied through a `FixedSeedRNG`, as in `cbc_bc-test-data.rs`, and the returned IV is
 //! asserted to be the vector's.
 
 use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
@@ -35,32 +35,11 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
 use bouncycastle_hex as hex;
 use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
 
 const BLOCK_LEN: usize = 16;
-
-/// Candidate locations, covering `cargo test` run from the crate root or from the repo root.
-const TEST_DATA_PATHS: [&str; 2] = [
-    "../../../bc-test-data/crypto/wycheproof/aes_cbc_pkcs5_test.json",
-    "../bc-test-data/crypto/wycheproof/aes_cbc_pkcs5_test.json",
-];
-
-fn test_data_file() -> Option<PathBuf> {
-    for candidate in TEST_DATA_PATHS {
-        let path = Path::new(candidate);
-        if path.exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); \
-         Wycheproof AES-CBC tests will be skipped"
-    );
-    None
-}
 
 fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
     let s = value
@@ -175,10 +154,11 @@ fn dispatch(
 
 #[test]
 fn wycheproof_aes_cbc_pkcs7_known_answer_tests() {
-    let Some(path) = test_data_file() else { return };
+    let Some(contents) = wycheproof("aes_cbc_pkcs5_test.json") else {
+        return;
+    };
 
-    let doc: Value = serde_json::from_str(&fs::read_to_string(&path).expect("readable file"))
-        .expect("valid wycheproof JSON");
+    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(
         doc.get("algorithm").and_then(Value::as_str),
         Some("AES-CBC-PKCS5"),

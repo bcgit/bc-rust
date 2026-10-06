@@ -3,8 +3,9 @@
 //! These are the only NIST-published known-answer vectors for AES-192 and AES-256 that live in a
 //! specification document rather than a separate vector file -- FIPS 197 Appendix B only covers
 //! AES-128, and FIPS 197 (Update 1) removed the Appendix C example vectors in favour of a pointer
-//! to the CSRC website. `acvp_ecb_tests.rs` covers far more cases, but only when the `bc-test-data`
-//! repository is present, so these vectors are the always-available known-answer floor.
+//! to the CSRC website. `ecb_bc-test-data.rs` covers far more cases, but only when the
+//! `bc-test-data` repository is present, so these vectors are the always-available known-answer
+//! floor.
 //!
 //! ECB applies the raw permutation to each block independently, so an ECB example vector *is* a
 //! block-permutation test vector. (That is the only reason ECB appears in this crate; see the

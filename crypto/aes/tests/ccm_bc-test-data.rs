@@ -51,20 +51,19 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs;
 
-// See `acvp_gcm_tests.rs` for why this is its own module path rather than `mod common;`.
+// See `gcm_bc-test-data.rs` for why this is its own module path rather than `mod common;`.
 #[path = "common/acvp_helpers.rs"]
 mod acvp_helpers;
-use acvp_helpers::{cipher_key, decode, test_data_dir};
+use acvp_helpers::{cipher_key, decode};
 
 /// Every group in this set has `ivLen: 96`.
 const NONCE_LEN: usize = 12;
 
-/// Where the vectors live under `bc-test-data/crypto`.
-const SUBDIR: &str = "aes_tdes_vectors/CCM";
+const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/CCM";
 const REQUEST_FILE: &str = "ACVP-AES-CCM.4014548.req.json";
 const RESPONSE_FILE: &str = "ACVP-AES-CCM.4014548.rsp.json";
 
@@ -195,16 +194,13 @@ fn run_case(
 
 #[test]
 fn acvp_aes_ccm_known_answer_tests() {
-    let Some(dir) = test_data_dir(SUBDIR, &[REQUEST_FILE, RESPONSE_FILE]) else { return };
-
-    let req: Value = serde_json::from_str(
-        &fs::read_to_string(dir.join(REQUEST_FILE)).expect("readable request file"),
-    )
-    .expect("valid ACVP request JSON");
-    let rsp: Value = serde_json::from_str(
-        &fs::read_to_string(dir.join(RESPONSE_FILE)).expect("readable response file"),
-    )
-    .expect("valid ACVP response JSON");
+    let (Some(req), Some(rsp)) =
+        (bc_test_data(TEST_DATA_DIR, REQUEST_FILE), bc_test_data(TEST_DATA_DIR, RESPONSE_FILE))
+    else {
+        return;
+    };
+    let req: Value = serde_json::from_str(&req).expect("valid ACVP request JSON");
+    let rsp: Value = serde_json::from_str(&rsp).expect("valid ACVP response JSON");
 
     // The response file carries only the answer, against a tcId. Index it.
     let mut answers: BTreeMap<u64, Value> = BTreeMap::new();

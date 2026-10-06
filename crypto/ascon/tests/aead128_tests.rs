@@ -1,7 +1,7 @@
 //! Ascon-AEAD128 tests (NIST SP 800-232).
 //!
 //! - A small embedded set of NIST LWC known-answer vectors (always-on correctness, no external
-//!   repo required). The full sweep lives in `bc_test_data.rs`.
+//!   repo required). The full sweep lives in `ascon_bc-test-data.rs`.
 //! - Behavioral / contract tests (round-trips, streaming chunk-boundary equivalence, authentication
 //!   failures, determinism), driven through the inherent explicit-nonce API.
 //! - The shared conformance framework (`core-test-framework`), which exercises the

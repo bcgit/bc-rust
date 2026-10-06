@@ -1,10 +1,9 @@
 //! Shared plumbing for every known-answer suite in this crate that reads `bc-test-data`'s ACVP
-//! JSON: locating the vector files, decoding a hex field, and building a `KeyMaterial` from the
-//! raw key bytes. The per-mode suites differ only in how they run a case, so that part stays with
-//! each of them.
+//! JSON: decoding a hex field, and building a `KeyMaterial` from the raw key bytes. The per-mode
+//! suites differ only in how they run a case, so that part stays with each of them.
 //!
 //! Included via `#[path = "common/acvp_helpers.rs"]` rather than through `mod common;`, for the
-//! reason `acvp_gcm_tests.rs` gives: the `serde_json::Value` import here makes `u8: PartialEq<_>`
+//! reason `gcm_bc-test-data.rs` gives: the `serde_json::Value` import here makes `u8: PartialEq<_>`
 //! ambiguous at every bare `assert_eq!(byte_array, [])` in the files that share `common/mod.rs`.
 
 #![allow(dead_code)]
@@ -14,29 +13,6 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_hex as hex;
 use serde_json::Value;
-use std::path::{Path, PathBuf};
-
-/// Finds the directory holding every one of `files` under either of the two candidate roots --
-/// `bc-test-data` cloned beside this repository, seen from the crate or from the workspace root --
-/// or `None`, with a printed warning, if neither has them all. Callers return early on `None`, so
-/// `cargo test` stays green for someone who has cloned only this repository.
-pub fn test_data_dir(subdir: &str, files: &[&str]) -> Option<PathBuf> {
-    let candidates = [
-        format!("../../../bc-test-data/crypto/{subdir}"),
-        format!("../bc-test-data/crypto/{subdir}"),
-    ];
-    for candidate in &candidates {
-        let path = Path::new(candidate);
-        if files.iter().all(|f| path.join(f).exists()) {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {candidates:?} for {files:?}); \
-         this suite will be skipped"
-    );
-    None
-}
 
 /// Builds a `KeyMaterial` from raw ACVP key bytes, including the all-zero keys.
 ///

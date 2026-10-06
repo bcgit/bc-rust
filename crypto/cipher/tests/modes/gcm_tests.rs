@@ -3,7 +3,8 @@
 //! These check the properties of the *mode* -- AAD-before-data ordering, chunking independence,
 //! the tag-length family, the inline decryptor's tail hold-back, and the one-shot's
 //! verify-before-decrypt guarantee -- independently of (or alongside) the ACVP/bc-java known-answer
-//! vectors in the `aes` crate's `acvp_gcm_tests.rs`, `acvp_gmac_tests.rs` and `gcm_bc_java_tests.rs`.
+//! vectors in the `aes` crate's `gcm_bc-test-data.rs`, `gmac_bc-test-data.rs` and
+//! `gcm_bc_java_tests.rs`.
 
 mod common;
 

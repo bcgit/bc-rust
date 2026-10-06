@@ -25,6 +25,7 @@ pub mod mac;
 pub mod signature;
 pub mod suspendable_state;
 pub mod symmetric_ciphers;
+pub mod test_data_loaders;
 pub mod xof;
 
 mod fixed_seed_rng;

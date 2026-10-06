@@ -24,6 +24,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem::{
@@ -31,256 +32,174 @@ use bouncycastle_mlkem::{
     MLKEM768PublicKey, MLKEM1024, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMTrait,
 };
 
-#[cfg(test)]
-mod wycheproof {
-    use crate::{
-        MLKEMEncapsTestCase, MLKEMKeygenSeedTestCase, MLKEMSemiExpandedDecapsTestCase,
-        MLKEMTestCase, ParameterSet,
+#[test]
+fn mlkem_512_encaps_test() {
+    let Some(contents) = wycheproof("mlkem_512_encaps_test.json") else { return };
+
+    let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem512);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem512();
+    }
+
+    println!("mlkem_512_encaps_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_512_keygen_seed_test() {
+    let Some(contents) = wycheproof("mlkem_512_keygen_seed_test.json") else { return };
+
+    let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem512);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem512();
+    }
+
+    println!("mlkem_512_keygen_seed_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_512_semi_expanded_decaps_test() {
+    let Some(contents) = wycheproof("mlkem_512_semi_expanded_decaps_test.json") else { return };
+
+    let test_cases = MLKEMSemiExpandedDecapsTestCase::parse(contents, ParameterSet::Mlkem512);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem512();
+    }
+
+    println!("mlkem_512_semi_expanded_decaps_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_512_test() {
+    let Some(contents) = wycheproof("mlkem_512_test.json") else { return };
+
+    let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem512);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem512();
+    }
+
+    println!("mlkem_512_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_768_encaps_test() {
+    let Some(contents) = wycheproof("mlkem_768_encaps_test.json") else { return };
+
+    let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem768);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem768();
+    }
+
+    println!("mlkem_768_encaps_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_768_keygen_seed_test() {
+    let Some(contents) = wycheproof("mlkem_768_keygen_seed_test.json") else { return };
+
+    let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem768);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem768();
+    }
+
+    println!("mlkem_768_keygen_seed_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_768_semi_expanded_decaps_test() {
+    let Some(contents) = wycheproof("mlkem_768_semi_expanded_decaps_test.json") else { return };
+
+    let test_cases = MLKEMSemiExpandedDecapsTestCase::parse(contents, ParameterSet::Mlkem768);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem768();
+    }
+
+    println!("mlkem_768_semi_expanded_decaps_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_768_test() {
+    let Some(contents) = wycheproof("mlkem_768_test.json") else { return };
+
+    let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem768);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem768();
+    }
+
+    println!("mlkem_768_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_1024_encaps_test() {
+    let Some(contents) = wycheproof("mlkem_1024_encaps_test.json") else { return };
+
+    let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem1024);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem1024();
+    }
+
+    println!("mlkem_1024_encaps_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_1024_keygen_seed_test() {
+    let Some(contents) = wycheproof("mlkem_1024_keygen_seed_test.json") else { return };
+
+    let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem1024);
+
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem1024();
+    }
+
+    println!("mlkem_1024_keygen_seed_test: all {} test cases passed.", num_test_cases);
+}
+
+#[test]
+fn mlkem_1024_semi_expanded_decaps_test() {
+    let Some(contents) = wycheproof("mlkem_1024_semi_expanded_decaps_test.json") else {
+        return;
     };
-    use std::fs;
-    use std::path::Path;
-    use std::sync::Once;
 
-    const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
-    const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
+    let test_cases = MLKEMSemiExpandedDecapsTestCase::parse(contents, ParameterSet::Mlkem1024);
 
-    static TEST_DATA_CHECK: Once = Once::new();
-
-    fn get_test_data(filename: &str) -> Result<String, ()> {
-        let found: u8;
-        if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            found = 1;
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            found = 2;
-        } else {
-            found = 3;
-        };
-
-        // just print once
-        TEST_DATA_CHECK.call_once(|| match found {
-            1 => println!("wycheproof found at: {:?}", TEST_DATA_PATH_RELATIVE),
-            2 => println!("wycheproof found at: {:?}", TEST_DATA_PATH),
-            _ => println!("WARNING: wycheproof directory not found; tests will be skipped"),
-        });
-
-        if !found == 3 {
-            return Err(());
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/" + filename).unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/" + filename).unwrap()
-        } else {
-            return Err(());
-        };
-
-        Ok(contents)
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem1024();
     }
 
-    #[test]
-    fn mlkem_512_encaps_test() {
-        let contents = match get_test_data("mlkem_512_encaps_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
+    println!("mlkem_1024_semi_expanded_decaps_test: all {} test cases passed.", num_test_cases);
+}
 
-        let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem512);
+#[test]
+fn mlkem_1024_test() {
+    let Some(contents) = wycheproof("mlkem_1024_test.json") else { return };
 
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem512();
-        }
+    let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem1024);
 
-        println!("mlkem_512_encaps_test: all {} test cases passed.", num_test_cases);
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mlkem1024();
     }
 
-    #[test]
-    fn mlkem_512_keygen_seed_test() {
-        let contents = match get_test_data("mlkem_512_keygen_seed_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem512);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem512();
-        }
-
-        println!("mlkem_512_keygen_seed_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_512_semi_expanded_decaps_test() {
-        let contents = match get_test_data("mlkem_512_semi_expanded_decaps_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMSemiExpandedDecapsTestCase::parse(contents, ParameterSet::Mlkem512);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem512();
-        }
-
-        println!("mlkem_512_semi_expanded_decaps_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_512_test() {
-        let contents = match get_test_data("mlkem_512_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem512);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem512();
-        }
-
-        println!("mlkem_512_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_768_encaps_test() {
-        let contents = match get_test_data("mlkem_768_encaps_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem768);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem768();
-        }
-
-        println!("mlkem_768_encaps_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_768_keygen_seed_test() {
-        let contents = match get_test_data("mlkem_768_keygen_seed_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem768);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem768();
-        }
-
-        println!("mlkem_768_keygen_seed_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_768_semi_expanded_decaps_test() {
-        let contents = match get_test_data("mlkem_768_semi_expanded_decaps_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMSemiExpandedDecapsTestCase::parse(contents, ParameterSet::Mlkem768);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem768();
-        }
-
-        println!("mlkem_768_semi_expanded_decaps_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_768_test() {
-        let contents = match get_test_data("mlkem_768_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem768);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem768();
-        }
-
-        println!("mlkem_768_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_1024_encaps_test() {
-        let contents = match get_test_data("mlkem_1024_encaps_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem1024);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem1024();
-        }
-
-        println!("mlkem_1024_encaps_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_1024_keygen_seed_test() {
-        let contents = match get_test_data("mlkem_1024_keygen_seed_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem1024);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem1024();
-        }
-
-        println!("mlkem_1024_keygen_seed_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_1024_semi_expanded_decaps_test() {
-        let contents = match get_test_data("mlkem_1024_semi_expanded_decaps_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMSemiExpandedDecapsTestCase::parse(contents, ParameterSet::Mlkem1024);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem1024();
-        }
-
-        println!("mlkem_1024_semi_expanded_decaps_test: all {} test cases passed.", num_test_cases);
-    }
-
-    #[test]
-    fn mlkem_1024_test() {
-        let contents = match get_test_data("mlkem_1024_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-
-        let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem1024);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mlkem1024();
-        }
-
-        println!("mlkem_1024_test: all {} test cases passed.", num_test_cases);
-    }
+    println!("mlkem_1024_test: all {} test cases passed.", num_test_cases);
 }
 
 /* Structs for holding test data */

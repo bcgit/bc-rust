@@ -2,7 +2,7 @@
 //!
 //! # Why these exist alongside the ACVP suite
 //!
-//! `acvp_ctr_tests.rs` runs 1853 official NIST vectors, but **every one of them is a single
+//! `ctr_bc-test-data.rs` runs 1853 official NIST vectors, but **every one of them is a single
 //! block**, so all of them use counter 0 and none exercises the increment. A counter that never
 //! advanced -- or advanced the wrong way, or wrote its bytes little-endian -- would pass the entire
 //! ACVP set. (That is not hypothetical: a deliberately little-endian counter was checked against

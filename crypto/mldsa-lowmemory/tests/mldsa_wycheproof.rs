@@ -26,151 +26,89 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa_lowmemory::{
     MLDSA44, MLDSA44PublicKey, MLDSA65, MLDSA65PublicKey, MLDSA87, MLDSA87PublicKey,
     MLDSAPublicKeyTrait, MLDSATrait, MuBuilder,
 };
 
-#[cfg(test)]
-mod wycheproof {
-    use crate::{MLDSASignSeedTestCase, MLDSAVerifyTestCase, ParameterSet};
-    use std::fs;
-    use std::path::Path;
-    use std::sync::Once;
+#[test]
+fn mldsa_44_sign_seed_test() {
+    let Some(contents) = wycheproof("mldsa_44_sign_seed_test.json") else { return };
+    let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa44);
 
-    const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
-    const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
-
-    static TEST_DATA_CHECK: Once = Once::new();
-
-    fn get_test_data(filename: &str) -> Result<String, ()> {
-        let found: u8;
-        if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            found = 1;
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            found = 2;
-        } else {
-            found = 3;
-        };
-
-        // just print once
-        TEST_DATA_CHECK.call_once(|| match found {
-            1 => println!("wycheproof found at: {:?}", TEST_DATA_PATH_RELATIVE),
-            2 => println!("wycheproof found at: {:?}", TEST_DATA_PATH),
-            _ => println!("WARNING: wycheproof directory not found; tests will be skipped"),
-        });
-
-        if !found == 3 {
-            return Err(());
-        }
-
-        let contents = if Path::new(TEST_DATA_PATH_RELATIVE).exists() {
-            fs::read_to_string(TEST_DATA_PATH_RELATIVE.to_string() + "/" + filename).unwrap()
-        } else if Path::new(TEST_DATA_PATH).exists() {
-            fs::read_to_string(TEST_DATA_PATH.to_string() + "/" + filename).unwrap()
-        } else {
-            return Err(());
-        };
-
-        Ok(contents)
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mldsa44();
     }
 
-    #[test]
-    fn mldsa_44_sign_seed_test() {
-        let contents = match get_test_data("mldsa_44_sign_seed_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-        let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa44);
+    println!("mldsa_44_sign_seed_test: all {} test cases passed.", num_test_cases);
+}
 
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mldsa44();
-        }
+#[test]
+fn mldsa_44_verify_test() {
+    let Some(contents) = wycheproof("mldsa_44_verify_test.json") else { return };
+    let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa44);
 
-        println!("mldsa_44_sign_seed_test: all {} test cases passed.", num_test_cases);
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mldsa44();
     }
 
-    #[test]
-    fn mldsa_44_verify_test() {
-        let contents = match get_test_data("mldsa_44_verify_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-        let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa44);
+    println!("mldsa_44_verify_test: all {} test cases passed.", num_test_cases);
+}
 
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mldsa44();
-        }
+#[test]
+fn mldsa_65_sign_seed_test() {
+    let Some(contents) = wycheproof("mldsa_65_sign_seed_test.json") else { return };
+    let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa65);
 
-        println!("mldsa_44_verify_test: all {} test cases passed.", num_test_cases);
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mldsa65();
     }
 
-    #[test]
-    fn mldsa_65_sign_seed_test() {
-        let contents = match get_test_data("mldsa_65_sign_seed_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-        let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa65);
+    println!("mldsa_65_sign_seed_test: all {} test cases passed.", num_test_cases);
+}
 
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mldsa65();
-        }
+#[test]
+fn mldsa_65_verify_test() {
+    let Some(contents) = wycheproof("mldsa_65_verify_test.json") else { return };
+    let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa65);
 
-        println!("mldsa_65_sign_seed_test: all {} test cases passed.", num_test_cases);
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mldsa65();
     }
 
-    #[test]
-    fn mldsa_65_verify_test() {
-        let contents = match get_test_data("mldsa_65_verify_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-        let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa65);
+    println!("mldsa_65_verify_test: all {} test cases passed.", num_test_cases);
+}
 
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mldsa65();
-        }
+#[test]
+fn mldsa_87_sign_seed_test() {
+    let Some(contents) = wycheproof("mldsa_87_sign_seed_test.json") else { return };
+    let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa87);
 
-        println!("mldsa_65_verify_test: all {} test cases passed.", num_test_cases);
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mldsa87();
     }
 
-    #[test]
-    fn mldsa_87_sign_seed_test() {
-        let contents = match get_test_data("mldsa_87_sign_seed_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-        let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa87);
+    println!("mldsa_87_sign_seed_test: all {} test cases passed.", num_test_cases);
+}
 
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mldsa87();
-        }
+#[test]
+fn mldsa_87_verify_test() {
+    let Some(contents) = wycheproof("mldsa_87_verify_test.json") else { return };
+    let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa87);
 
-        println!("mldsa_87_sign_seed_test: all {} test cases passed.", num_test_cases);
+    let num_test_cases = test_cases.len();
+    for test_case in test_cases {
+        test_case.run_mldsa87();
     }
 
-    #[test]
-    fn mldsa_87_verify_test() {
-        let contents = match get_test_data("mldsa_87_verify_test.json") {
-            Ok(contents) => contents,
-            Err(()) => return,
-        };
-        let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa87);
-
-        let num_test_cases = test_cases.len();
-        for test_case in test_cases {
-            test_case.run_mldsa87();
-        }
-
-        println!("mldsa_87_verify_test: all {} test cases passed.", num_test_cases);
-    }
+    println!("mldsa_87_verify_test: all {} test cases passed.", num_test_cases);
 }
 
 /* Structs for holding test data */

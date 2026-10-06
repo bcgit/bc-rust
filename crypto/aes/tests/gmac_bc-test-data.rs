@@ -1,36 +1,33 @@
 //! Known-answer tests against the NIST ACVP `ACVP-AES-GMAC` vectors from the `bc-test-data` repo.
 //!
-//! Same joiner and shape as `acvp_gcm_tests.rs` (see its module docs for the `bc-test-data`
+//! Same joiner and shape as `gcm_bc-test-data.rs` (see its module docs for the `bc-test-data`
 //! requirement and what is and is not covered against `bc-test-data`), over the GMAC set
 //! (`ACVP-AES-GMAC.4014543`, 270 cases): `payloadLen` is 0 throughout -- SP 800-38D Sec 5.2, GMAC is
 //! GCM restricted to `P = ""` -- with AAD lengths of 128/192/256 bits, both directions, all three
 //! key lengths, 96- and 128-bit tags.
 
-// See `acvp_gcm_tests.rs` for why this is its own module path rather than `mod common;`.
+// See `gcm_bc-test-data.rs` for why this is its own module path rather than `mod common;`.
 #[path = "common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;
 
-use acvp_gcm_helpers::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case, test_data_dir};
+use acvp_gcm_helpers::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case};
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs;
 
-const SUBDIR: &str = "aes_tdes_vectors/GCM";
+const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/GCM";
 const REQUEST_FILE: &str = "ACVP-AES-GMAC.4014543.req.json";
 const RESPONSE_FILE: &str = "ACVP-AES-GMAC.4014543.rsp.json";
 
 #[test]
 fn acvp_aes_gmac_known_answer_tests() {
-    let Some(dir) = test_data_dir(SUBDIR, &[REQUEST_FILE, RESPONSE_FILE]) else { return };
-
-    let req: Value = serde_json::from_str(
-        &fs::read_to_string(dir.join(REQUEST_FILE)).expect("readable request file"),
-    )
-    .expect("valid ACVP request JSON");
-    let rsp: Value = serde_json::from_str(
-        &fs::read_to_string(dir.join(RESPONSE_FILE)).expect("readable response file"),
-    )
-    .expect("valid ACVP response JSON");
+    let (Some(req), Some(rsp)) =
+        (bc_test_data(TEST_DATA_DIR, REQUEST_FILE), bc_test_data(TEST_DATA_DIR, RESPONSE_FILE))
+    else {
+        return;
+    };
+    let req: Value = serde_json::from_str(&req).expect("valid ACVP request JSON");
+    let rsp: Value = serde_json::from_str(&rsp).expect("valid ACVP response JSON");
 
     let mut answers: BTreeMap<u64, Value> = BTreeMap::new();
     for group in rsp[1]["testGroups"].as_array().expect("response testGroups") {
@@ -78,9 +75,9 @@ fn acvp_aes_gmac_known_answer_tests() {
                     let tag = decode(test, "tag", tc_id);
                     let answer =
                         answers.get(&tc_id).unwrap_or_else(|| panic!("tcId {tc_id}: no answer"));
-                    // See `acvp_gcm_tests.rs`: a forgery reports `testPassed: false`; a valid case
-                    // reports success with no `testPassed` field at all (here there is no `pt` to
-                    // report either, since GMAC's plaintext is always empty).
+                    // See `gcm_bc-test-data.rs`: a forgery reports `testPassed: false`; a valid
+                    // case reports success with no `testPassed` field at all (here there is no `pt`
+                    // to report either, since GMAC's plaintext is always empty).
                     if answer.get("testPassed").and_then(Value::as_bool) == Some(false) {
                         run_decrypt_case(&key_bytes, iv, &aad, &[], &tag, None);
                         decrypt_failed_checked += 1;

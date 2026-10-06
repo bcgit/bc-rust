@@ -1,7 +1,7 @@
 //! Ascon-XOF128 tests (NIST SP 800-232 §5.2).
 //!
-//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `bc_test_data.rs`) plus the
-//! prefix property, streaming/byte-at-a-time equivalence, trait-API, partial-input rejection,
+//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `ascon_bc-test-data.rs`) plus
+//! the prefix property, streaming/byte-at-a-time equivalence, trait-API, partial-input rejection,
 //! and suspend/resume tests.
 
 use bouncycastle_ascon::ascon_xof128::{AsconXof128, AsconXof128Squeezer};

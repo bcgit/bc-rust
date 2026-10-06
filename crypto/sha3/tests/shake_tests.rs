@@ -2,7 +2,6 @@ extern crate core;
 
 #[cfg(test)]
 mod shake_tests {
-    use super::shake_test_helpers::*;
     use bouncycastle_core::errors::HashError;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
@@ -121,21 +120,6 @@ mod shake_tests {
         let mut hash_view = [0xFFu8; 100];
         assert_eq!(SHAKE256::new().hash_out(b"abc", &mut hash_view), 64, "the nominal length");
         assert_eq!(&hash_view[64..], &[0u8; 36][..], "everything past output_len is zeroized");
-    }
-
-    #[test]
-    fn test_update_bytes() {
-        for tc in read_test_vectors("SHAKETestVectors.txt") {
-            //println!("SHAKE-{} {}-bits", &tc.algorithm, &tc.bits);
-            //println!("msg {}", hex::encode_upper(&tc.msg));
-            //println!("hashes {}", hex::encode_upper(&tc.output));
-
-            match tc.algorithm {
-                128 => run_test_case(tc, SHAKE128::new()),
-                256 => run_test_case(tc, SHAKE256::new()),
-                _ => panic!("Unsupported algorithm {}", tc.algorithm),
-            }
-        }
     }
 
     #[test]
@@ -295,11 +279,6 @@ mod shake_tests {
     }
 
     #[test]
-    fn run_kats() {
-        run_test_vectors(read_test_vectors("SHAKETestVectors.txt"));
-    }
-
-    #[test]
     fn test_framework_xof() {
         let test_framework = TestFrameworkXOF::new();
         test_framework.test_xof(SHAKE128::new, &DUMMY_SEED[..512], b"\x88\x90\xED\x20\x4D\x22\x89\xE1\x72\xE9\xAE\x68\x48\x18\x23\x77\x08\x20\x90\x80\x60\xA4\xDF\x33\x51\xA3\xF1\x84\xEB\xB6\xDD\x0F\x9D\x23\x15\x60\x68\x0F\x2C\x65\x8A\xC4\x84\x97\xAD\xB5\xA4\x83\x99\x36\xA3\x16\x55\x16\xFA\x5E\x13\xBF\x8A\x15\xBA\xBC\x14\x1F");
@@ -393,181 +372,5 @@ mod shake_tests {
             Err(SuspendableError::InvalidData) => { /* good */ }
             _ => panic!("Expected an error when loading a SHAKE256 state into SHA3-256"),
         }
-    }
-
-    fn run_test_vectors(test_vectors: Vec<TestCase>) {
-        for tc in test_vectors {
-            //println!("SHA3-{} {}-bits", &tc.algorithm, &tc.bits);
-            //println!("msg {}", hex::encode_upper(&tc.msg));
-            //println!("hashes {}", hex::encode_upper(&tc.hashes));
-
-            match tc.algorithm {
-                128 => run_test_case(tc, SHAKE128::new()),
-                256 => run_test_case(tc, SHAKE256::new()),
-                _ => panic!("Unsupported algorithm {}", tc.algorithm),
-            }
-        }
-    }
-
-    fn run_test_case(tc: TestCase, mut shake: impl XOF) {
-        let partial_bits = tc.bits % 8;
-        let output: Vec<u8>;
-
-        if partial_bits == 0 {
-            shake.do_update(tc.msg.as_slice());
-            let mut shake = shake.into_squeezer();
-            output = shake.do_output(tc.output.len());
-        } else {
-            shake.do_update(&tc.msg[..(tc.msg.len() - 1)]);
-            let mut shake = shake
-                .into_squeezer_partial_bits(tc.msg[tc.msg.len() - 1], partial_bits)
-                .expect("partial_bits is in 1..=7");
-            output = shake.do_output(tc.output.len());
-        }
-
-        assert_eq!(tc.output, output);
-    }
-}
-
-/** Constant helpers **/
-
-pub(crate) mod shake_test_helpers {
-    use bouncycastle_hex as hex;
-    use std::fs;
-    use std::path::Path;
-    use std::sync::Once;
-
-    // Test vectors are read from the bc-test-data repo (https://github.com/bcgit/bc-test-data),
-    // which must be cloned alongside this repo at "../bc-test-data" (same convention as the mldsa
-    // and mlkem crates). If it is not present the vector tests print a warning and pass vacuously.
-    const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto";
-    const TEST_DATA_PATH: &str = "../bc-test-data/crypto";
-
-    static TEST_DATA_CHECK: Once = Once::new();
-
-    /// Returns the contents of `filename` from bc-test-data, or `None` (after a one-time warning)
-    /// if the repo is not checked out.
-    fn get_test_data(filename: &str) -> Option<String> {
-        let dir =
-            [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH].into_iter().find(|d| Path::new(d).exists());
-        TEST_DATA_CHECK.call_once(|| match dir {
-            Some(d) => println!("bc-test-data found at: {d:?}"),
-            None => {
-                println!("WARNING: bc-test-data directory not found; vector tests will be skipped")
-            }
-        });
-        let dir = dir?;
-        Some(
-            fs::read_to_string(format!("{dir}/{filename}"))
-                .expect("failed to read test vector file"),
-        )
-    }
-
-    const SAMPLE_OF: &str = " sample of ";
-    const MSG_HEADER: &str = "Msg as bit string";
-    const OUTPUT_HEADER: &str = "Output val is";
-
-    pub(crate) struct TestCase {
-        pub(crate) algorithm: usize,
-        pub(crate) bits: usize,
-        pub(crate) msg: Vec<u8>,
-        pub(crate) output: Vec<u8>,
-    }
-
-    /// Parses the named NIST FIPS 202 example-vector file from bc-test-data. Returns an empty list
-    /// (skipping the test) if bc-test-data is not available.
-    pub(crate) fn read_test_vectors(filename: &str) -> Vec<TestCase> {
-        let mut test_vectors: Vec<TestCase> = vec![];
-        let Some(content) = get_test_data(filename) else {
-            return test_vectors;
-        };
-        let string_content: Vec<String> = content.lines().map(String::from).collect();
-
-        let mut i = 0;
-        while i < string_content.len() {
-            if string_content[i].contains(SAMPLE_OF) {
-                let header = string_content[i].split(SAMPLE_OF).collect::<Vec<&str>>();
-
-                let algorithm =
-                    header[0].split("-").collect::<Vec<&str>>()[1].parse::<usize>().unwrap();
-                let bits = header[1].split("-").collect::<Vec<&str>>()[0].parse::<usize>().unwrap();
-
-                i += 2;
-                if !string_content[i].contains(MSG_HEADER) {
-                    panic!("Missing header {}", MSG_HEADER);
-                }
-
-                i += 1;
-                let mut block: Vec<u8> = vec![];
-                while string_content[i].len() != 0 {
-                    if string_content[i].trim().eq("#(empty message)") {
-                        i += 1;
-                        break;
-                    }
-                    let line = string_content[i].replace(" ", "");
-                    block.append(&mut Vec::from(line));
-                    i += 1;
-                }
-                if block.len() != bits {
-                    panic!(
-                        "Test vector length mismatch: block len = {}, bits = {}",
-                        block.len(),
-                        bits
-                    )
-                }
-                let msg = decode_binary(&mut block);
-
-                i += 1;
-                if !string_content[i].contains(OUTPUT_HEADER) {
-                    panic!("Missing header {}", OUTPUT_HEADER);
-                }
-
-                i += 1;
-                let mut block: Vec<u8> = vec![];
-                while string_content[i].len() != 0 {
-                    let line = string_content[i].replace(" ", "");
-                    block.append(&mut Vec::from(line));
-                    i += 1;
-                }
-                let output = hex::decode(&*String::from_utf8(block).unwrap()).unwrap();
-
-                let v = TestCase { algorithm, bits, msg, output };
-                test_vectors.push(v);
-            }
-            i += 1;
-        }
-
-        test_vectors
-    }
-
-    fn decode_binary(block: &mut Vec<u8>) -> Vec<u8> {
-        let bits = block.len();
-        let full_bytes = bits / 8;
-        let total_bytes = (bits + 7) / 8;
-        let mut result = vec![0u8; total_bytes];
-
-        // Whole bytes are packed per FIPS 202 Appendix B.1 (Algorithm 11, b2h: message bit 8i + j has
-        // weight 2^j in byte i, i.e. the first bit is the LSB), which is how SHA-3 reads a byte-oriented
-        // message.
-        for i in 0..full_bytes {
-            let index = i * 8;
-            block[index..(index + 8)].reverse();
-            result[i] = parse_binary(&block[index..(index + 8)]);
-        }
-
-        // The trailing partial byte is packed the way the API takes it: the remaining message bits
-        // in order from the most significant bit down (ASN.1 BIT STRING order, X.690 s. 8.6.2.1),
-        // with the unused low bits zero.
-        if total_bytes > full_bytes {
-            let partial_bits = bits - full_bytes * 8;
-            result[full_bytes] = parse_binary(&block[(full_bytes * 8)..]) << (8 - partial_bits);
-        }
-
-        result
-    }
-
-    fn parse_binary(block: &[u8]) -> u8 {
-        let str = std::str::from_utf8(block).unwrap();
-        isize::from_str_radix(str, 2).unwrap() as u8
     }
 }

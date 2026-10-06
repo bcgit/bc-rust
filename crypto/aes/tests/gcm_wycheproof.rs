@@ -1,19 +1,19 @@
-//! Known-answer tests against Project Wycheproof's `aes_gcm_test.json`, vendored into
-//! `bc-test-data/crypto/wycheproof/` alongside the sibling `aes_ccm_test.json`.
+//! Known-answer tests against Project Wycheproof's `testvectors_v1/aes_gcm_test.json`.
 //!
-//! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
-//! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ACVP suites in this crate.
+//! Requires the Wycheproof repository (https://github.com/C2SP/wycheproof) to be cloned alongside
+//! this repository, i.e. at `../wycheproof` relative to the root of this git project. If it is
+//! absent the test prints a warning and passes, matching the convention used by the other vector
+//! suites in this crate.
 //!
 //! # Why this set is worth having alongside the ACVP one
 //!
-//! `acvp_gcm_tests.rs` covers the NIST set, whose only failures are tag-check failures on an
+//! `gcm_bc-test-data.rs` covers the NIST set, whose only failures are tag-check failures on an
 //! otherwise well-formed message. Wycheproof's set is adversarial in the ways ACVP is not: a tag
 //! with every one of a chosen set of bits flipped (`ModifiedTag`, 81 cases), so that a comparison
 //! which checks only part of the tag is caught; IV lengths from 0 to 2056 bits (`ZeroLengthIv`,
 //! `SmallIv`, `LongIv`); IVs chosen so that the 32-bit counter wraps (`CounterWrap`); and
 //! pseudorandom sizes meant to catch an implementation that only handles the common cases. See
-//! `bc-test-data/crypto/wycheproof/aes_gcm_test.json`'s own `"notes"` object for exactly what each
+//! `aes_gcm_test.json`'s own `"notes"` object for exactly what each
 //! `flags` entry is checking.
 //!
 //! # Ciphertext and tag are separate fields
@@ -22,7 +22,7 @@
 //! these cases go through the detached pair, [`AEADCipherEncryptor::encrypt_detached_rng_out`] /
 //! [`AEADCipherDecryptor::decrypt_detached_out`]. [`Gcm`] generates its own nonce, so the vector's
 //! `iv` is supplied through a `FixedSeedRNG` and the returned nonce is asserted to be exactly that
-//! IV, the same technique as `acvp_gcm_tests.rs`.
+//! IV, the same technique as `gcm_bc-test-data.rs`.
 //!
 //! # Only the 96-bit-IV groups can be dispatched to, by design
 //!
@@ -31,9 +31,10 @@
 //! group with any other `ivSize` therefore has no instantiation to dispatch to: not a case that
 //! can fail, but a shape the library never sees. That is most of the file's groups -- the point
 //! of `ZeroLengthIv`, `SmallIv`, `LongIv` and `CounterWrap` is to probe exactly that boundary --
-//! and they are counted as skipped rather than silently dropped, with the counts asserted at the
-//! end so a change in the vector file's shape is visible. Every group in the file uses a 128-bit
-//! tag, which is within the `12..=16` bytes `Gcm` accepts, so the tag size never skips a case.
+//! and they are counted as not supported rather than silently dropped, with the counts asserted
+//! at the end so a change in the vector file's shape is visible. Every group in the file uses a
+//! 128-bit tag, which is within the `12..=16` bytes `Gcm` accepts, so the tag size never rules a
+//! case out.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, Gcm};
@@ -45,30 +46,9 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
 use bouncycastle_hex as hex;
 use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
-
-/// Candidate locations, covering `cargo test` run from the crate root or from the repo root.
-const TEST_DATA_PATHS: [&str; 2] = [
-    "../../../bc-test-data/crypto/wycheproof/aes_gcm_test.json",
-    "../bc-test-data/crypto/wycheproof/aes_gcm_test.json",
-];
-
-fn test_data_file() -> Option<PathBuf> {
-    for candidate in TEST_DATA_PATHS {
-        let path = Path::new(candidate);
-        if path.exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); \
-         Wycheproof AES-GCM tests will be skipped"
-    );
-    None
-}
 
 fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
     let s = value
@@ -195,10 +175,9 @@ fn dispatch(
 
 #[test]
 fn wycheproof_aes_gcm_known_answer_tests() {
-    let Some(path) = test_data_file() else { return };
+    let Some(contents) = wycheproof("aes_gcm_test.json") else { return };
 
-    let doc: Value = serde_json::from_str(&fs::read_to_string(&path).expect("readable file"))
-        .expect("valid wycheproof JSON");
+    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(
         doc.get("algorithm").and_then(Value::as_str),
         Some("AES-GCM"),
@@ -210,8 +189,8 @@ fn wycheproof_aes_gcm_known_answer_tests() {
     let mut run = 0usize;
     let mut valid_count = 0usize;
     let mut invalid_count = 0usize;
-    let mut skipped_groups = 0usize;
-    let mut skipped_cases = 0usize;
+    let mut unsupported_groups = 0usize;
+    let mut unsupported_cases = 0usize;
 
     for group in groups {
         let iv_size_bits = group.get("ivSize").and_then(Value::as_u64).expect("ivSize");
@@ -224,7 +203,7 @@ fn wycheproof_aes_gcm_known_answer_tests() {
         // A per-group tally for the printout; the per-case counts below come from `dispatch`,
         // which is the authority on what it can run.
         if iv_size_bits as usize != 8 * GCM_NONCE_LEN || tag_size_bits != 128 {
-            skipped_groups += 1;
+            unsupported_groups += 1;
         }
 
         let tests = group.get("tests").and_then(Value::as_array).expect("tests");
@@ -254,14 +233,15 @@ fn wycheproof_aes_gcm_known_answer_tests() {
                     invalid_count += 1;
                 }
             } else {
-                skipped_cases += 1;
+                unsupported_cases += 1;
             }
         }
     }
 
     println!(
         "Wycheproof AES-GCM: {run} cases run ({valid_count} valid, {invalid_count} invalid), \
-         {skipped_cases} cases in {skipped_groups} groups skipped (no 96-bit-IV instantiation)"
+         {unsupported_cases} cases in {unsupported_groups} groups not supported \
+         (no 96-bit-IV instantiation)"
     );
 
     // Guards against a silently-vacuous run: the three 96-bit-IV groups must have been dispatched
@@ -269,5 +249,8 @@ fn wycheproof_aes_gcm_known_answer_tests() {
     assert!(run > 0, "expected the 96-bit-IV groups to be dispatchable");
     assert!(valid_count > 0, "expected at least some valid cases to be run");
     assert!(invalid_count > 0, "expected at least some invalid (tag-failure) cases to be run");
-    assert!(skipped_groups > 0, "expected the other-IV-length groups to be outside Gcm's shape");
+    assert!(
+        unsupported_groups > 0,
+        "expected the other-IV-length groups to be outside Gcm's shape"
+    );
 }
