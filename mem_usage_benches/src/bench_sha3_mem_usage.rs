@@ -27,7 +27,10 @@
 
 use bouncycastle::core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle::sha3::{
-    SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN,
+    CSHAKE128, CSHAKE256, KMAC128, KMAC256, KMACXOF128, KMACXOF256, LengthBoundSqueezer,
+    PARALLELHASH128, PARALLELHASH256, PARALLELHASHXOF128, PARALLELHASHXOF256, SHA3_224, SHA3_256,
+    SHA3_384, SHA3_512, SHAKE128, SHAKE128Params, SHAKE256, SHAKE256Params, SHAKESqueezer,
+    SUSPENDED_SHA3_STATE_LEN, TUPLEHASH128, TUPLEHASH256, TUPLEHASHXOF128, TUPLEHASHXOF256,
 };
 
 /// A 1 KiB message so that the sponge is permuted several times.
@@ -45,6 +48,24 @@ fn print_struct_sizes() {
     println!("size_of<SHAKE128>: {}", size_of::<SHAKE128>());
     println!("size_of<SHAKE256>: {}", size_of::<SHAKE256>());
     println!("SUSPENDED_SHA3_STATE_LEN: {}", SUSPENDED_SHA3_STATE_LEN);
+    println!("size_of<SHAKESqueezer>: {}", size_of::<SHAKESqueezer<SHAKE128Params>>());
+
+    println!("\nSP 800-185");
+    println!("size_of<CSHAKE128>: {}", size_of::<CSHAKE128>());
+    println!("size_of<CSHAKE256>: {}", size_of::<CSHAKE256>());
+    println!("size_of<KMAC128>: {}", size_of::<KMAC128>());
+    println!("size_of<KMAC256>: {}", size_of::<KMAC256>());
+    println!("size_of<KMACXOF128>: {}", size_of::<KMACXOF128>());
+    println!("size_of<KMACXOF256>: {}", size_of::<KMACXOF256>());
+    println!("size_of<TUPLEHASH128>: {}", size_of::<TUPLEHASH128>());
+    println!("size_of<TUPLEHASH256>: {}", size_of::<TUPLEHASH256>());
+    println!("size_of<TUPLEHASHXOF128>: {}", size_of::<TUPLEHASHXOF128>());
+    println!("size_of<TUPLEHASHXOF256>: {}", size_of::<TUPLEHASHXOF256>());
+    println!("size_of<PARALLELHASH128>: {}", size_of::<PARALLELHASH128>());
+    println!("size_of<PARALLELHASH256>: {}", size_of::<PARALLELHASH256>());
+    println!("size_of<PARALLELHASHXOF128>: {}", size_of::<PARALLELHASHXOF128>());
+    println!("size_of<PARALLELHASHXOF256>: {}", size_of::<PARALLELHASHXOF256>());
+    println!("size_of<LengthBoundSqueezer>: {}", size_of::<LengthBoundSqueezer<SHAKE128Params>>());
 }
 
 fn bench_do_nothing() {

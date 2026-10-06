@@ -248,14 +248,20 @@
 //!
 //! # Memory Usage
 //!
-//! All SHA3 and SHAKE variants share the same Keccak-f\[1600\] sponge and so have identical memory
-//! footprints. No heap memory is used by the algorithms themselves; the `Vec<u8>`-returning
-//! convenience methods allocate only the output buffer, and the `*_out` variants allocate nothing.
+//! Everything here shares the same Keccak-f\[1600\] sponge, so sizes differ only by the bookkeeping
+//! each function adds. No heap memory is used by the algorithms themselves, except that ParallelHash
+//! buffers up to one partial block of `B` bytes; the `Vec<u8>`-returning convenience methods
+//! allocate only the output buffer, and the `*_out` variants allocate nothing.
 //!
-//! | Object                                  | Size (bytes) |
-//! |-----------------------------------------|--------------|
-//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256` | 440          |
-//! | Suspended state ([`Suspendable`])       | 415          |
+//! | Object                                                          | Size (bytes)              |
+//! |-----------------------------------------------------------------|---------------------------|
+//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 440                       |
+//! | `CSHAKE128/256`, `TUPLEHASHXOF128/256`, `LengthBoundSqueezer`   | 448                       |
+//! | `KMACXOF128/256`, `TUPLEHASH128/256`                            | 456                       |
+//! | `KMAC128/256`                                                   | 464                       |
+//! | `PARALLELHASHXOF128/256`                                        | 488, plus up to `B` heap  |
+//! | `PARALLELHASH128/256`                                           | 496, plus up to `B` heap  |
+//! | Suspended state ([`Suspendable`])                               | 415                       |
 //!
 //! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
 //! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
@@ -350,7 +356,7 @@ pub const PARALLELHASHXOF128_NAME: &str = "ParallelHashXOF128";
 pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 
 /*** pub types ***/
-pub use cshake::CSHAKEInternal;
+pub use cshake::{CSHAKEInternal, LengthBoundSqueezer};
 pub use kmac::{KMACInternal, KMACXOFInternal};
 pub use parallelhash::{ParallelHashInternal, ParallelHashXOFInternal};
 pub use sha3::SHA3Internal;
