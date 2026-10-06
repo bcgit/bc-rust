@@ -311,25 +311,17 @@ fn redc(t: &[u64; 8]) -> [u64; 4] {
             acc[idx] = s as u64;
             carry = s >> 64;
         }
-        // Mutating `idx += 1` here (e.g. to a no-op) is an accepted mutant, not a bug, though not
-        // for an obvious reason: this loop does occasionally run a genuine second iteration (not
-        // just once, as it always does for the outer 9-limb accumulator's own analogous tail loop
-        // -- see the module docs), so a "stuck" `idx` really does skip writing the carry into the
-        // next position within this round. But round `i`'s positions `i..i+5` are re-covered by
-        // round `i+1`'s own 5-term inner loop (`j in 0..5`, positions `(i+1)..(i+5)+1`), which
-        // reads whatever is there and re-derives its own carry from scratch -- so an under-written
-        // position from round `i` is corrected by round `i+1`'s pass over the same position, not
-        // left wrong. Verified (not checked in) against 2,000,000 random `a, b < n` pairs
-        // (including a specific pair confirmed, by direct simulation, to hit the genuine
-        // two-iteration case) that the mutated and unmutated `redc` always agree.
-        let mut idx = i + 5;
-        while carry != 0 {
-            debug_assert!(idx < 9, "REDC overflowed its verified 9-limb bound");
+        // Propagate the carry through every limb above the window, up to the accumulator's
+        // proven 9-limb bound. The trip count depends only on the public round index `i`,
+        // never on the operands: once the carry has propagated out, the remaining iterations
+        // add 0. A `while carry != 0` here would be a secret-dependent branch on the signing
+        // path.
+        for idx in (i + 5)..9 {
             let s = (acc[idx] as u128) + carry;
             acc[idx] = s as u64;
             carry = s >> 64;
-            idx += 1;
         }
+        debug_assert_eq!(carry, 0, "carry must be fully propagated within the 9-limb bound");
     }
     debug_assert_eq!(&acc[..4], &[0u64; 4], "REDC's low limbs must be cleared after 4 rounds");
     debug_assert!(acc[8] == 0 || acc[8] == 1, "REDC's top limb must be a single bit");

@@ -315,14 +315,17 @@ fn redc(t: &[u64; 12]) -> [u64; 6] {
             acc[idx] = s as u64;
             carry = s >> 64;
         }
-        let mut idx = i + 7;
-        while carry != 0 {
-            debug_assert!(idx < 13, "REDC overflowed its verified 13-limb bound");
+        // Propagate the carry through every limb above the window, up to the accumulator's
+        // proven 13-limb bound. The trip count depends only on the public round index `i`,
+        // never on the operands: once the carry has propagated out, the remaining iterations
+        // add 0. A `while carry != 0` here would be a secret-dependent branch on the signing
+        // path.
+        for idx in (i + 7)..13 {
             let s = (acc[idx] as u128) + carry;
             acc[idx] = s as u64;
             carry = s >> 64;
-            idx += 1;
         }
+        debug_assert_eq!(carry, 0, "carry must be fully propagated within the 13-limb bound");
     }
     debug_assert_eq!(&acc[..6], &[0u64; 6], "REDC's low limbs must be cleared after 6 rounds");
     debug_assert!(acc[12] == 0 || acc[12] == 1, "REDC's top limb must be a single bit");
