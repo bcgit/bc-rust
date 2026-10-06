@@ -8,14 +8,10 @@ bouncycastle-core.workspace = true
 bouncycastle-hmac.workspace = true
 bouncycastle-utils.workspace = true
 
-# The concrete HKDF instantiations (HKDF_SHA256, HKDF_SHA512) live in bouncycastle-sha2, which makes
-# that crate depend on this one, so this crate must not depend on it. bouncycastle-sha2 is a
-# dev-dependency so that the tests, benches and doc examples here can still exercise HKDF over the
-# library's own hashes; Cargo permits cycles through dev-dependencies.
-# todo -- we're about to change that and move them to their respective crates in the next phase.
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
-criterion.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-sha2.workspace = true
+criterion.workspace = true
+serde_json = "1.0" # for parsing the Wycheproof vector files

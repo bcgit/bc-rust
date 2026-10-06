@@ -8,6 +8,7 @@ mod kdf_factory_tests {
     use bouncycastle_factory as factory;
     use bouncycastle_factory::AlgorithmFactory;
     use bouncycastle_factory::kdf_factory::KDFFactory;
+    use bouncycastle_sha2::hkdf::HKDF_SHA384;
     use bouncycastle_utils::ct;
 
     #[test]
@@ -70,6 +71,16 @@ mod kdf_factory_tests {
             KDFFactory::new("HKDF-SHA256").unwrap().derive_key(&key_material, &[0u8; 0]).unwrap();
         let expected_key = KeyMaterial256::from_bytes(b"\x37\xad\x29\x10\x9f\x43\x26\x52\x87\x80\x4b\x67\x4e\x26\x53\xd0\xa5\x13\x71\x89\x07\xf9\x7f\xca\x97\xc9\x5b\xde\xd8\x10\x4b\xbf").unwrap();
         assert!(ct::ct_eq_bytes(derived_key.ref_to_bytes(), &expected_key.ref_to_bytes()));
+
+        /* HKDF-SHA384 */
+        // The factory must route to HKDF_SHA384 itself, which is checked against Wycheproof in
+        // `bouncycastle-hkdf`; so here its output is compared with the alias used directly.
+        let key_material = KeyMaterial512::from_bytes(&DUMMY_SEED[..48]).unwrap();
+        let derived_key =
+            KDFFactory::new("HKDF-SHA384").unwrap().derive_key(&key_material, b"info").unwrap();
+        let expected_key = HKDF_SHA384::new().derive_key(&key_material, b"info").unwrap();
+        assert!(ct::ct_eq_bytes(derived_key.ref_to_bytes(), expected_key.ref_to_bytes()));
+        assert_eq!(derived_key.key_len(), 48, "HKDF-SHA384 derives a hash-length key");
 
         /* HKDF-SHA512 */
         // Note: this value is not checked against any external reference implementation,

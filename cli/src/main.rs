@@ -500,7 +500,7 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform HMAC-SHA256 of the content provided on stdin.
+    /// Perform HKDF-SHA256 of the provided input keying material.
     ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -520,7 +520,7 @@ enum Subcommands {
         #[arg(long)]
         ikm: Option<String>,
 
-        /// A file containing the salt value in binary.
+        /// A file containing the input keying material in binary.
         /// If both ikm and ikm_file options are provided, the file will be used.
         #[arg(short, long)]
         ikm_file: Option<String>,
@@ -534,7 +534,7 @@ enum Subcommands {
         #[arg(short, long)]
         additional_input_file: Option<String>,
 
-        /// Length of output to produce, in bytes.
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
         #[arg(short, long)]
         len: usize,
 
@@ -543,7 +543,50 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform HMAC-SHA512 of the content provided on stdin.
+    /// Perform HKDF-SHA384 of the provided input keying material.
+    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_SHA384 {
+        /// The salt value in hex.
+        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// Additional input data in hex.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the additional input data in binary.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform HKDF-SHA512 of the provided input keying material.
     ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -563,7 +606,7 @@ enum Subcommands {
         #[arg(long)]
         ikm: Option<String>,
 
-        /// A file containing the salt value in binary.
+        /// A file containing the input keying material in binary.
         /// If both ikm and ikm_file options are provided, the file will be used.
         #[arg(short, long)]
         ikm_file: Option<String>,
@@ -577,7 +620,7 @@ enum Subcommands {
         #[arg(short, long)]
         additional_input_file: Option<String>,
 
-        /// Length of output to produce, in bytes.
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
         #[arg(short, long)]
         len: usize,
 
@@ -1638,6 +1681,19 @@ fn run() {
             x,
         }) => hkdf_cmd::hkdf_cmd(
             "HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
+            *len, *x,
+        ),
+        Some(Subcommands::HKDF_SHA384 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            "HKDF-SHA384", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
             *len, *x,
         ),
         Some(Subcommands::HKDF_SHA512 {

@@ -1,9 +1,9 @@
 //! HMAC-based Extract-and-Expand Key Derivation Function (HKDF) over the SHA-2 hashes, as per
 //! RFC 5869, as allowed by NIST SP 800-56Cr2.
 //!
-//! Uses [`bouncycastle_hkdf`] to provide the HKDF-SHA2 instantiations: [`HKDF_SHA256`] and
-//! [`HKDF_SHA512`]. Only those two are instantiated, matching what the KDF factory and the CLI
-//! expose.
+//! Uses [`bouncycastle_hkdf`] to provide the HKDF-SHA2 instantiations: [`HKDF_SHA256`],
+//! [`HKDF_SHA384`] and [`HKDF_SHA512`]. The KDF factory and the CLI expose HKDF-SHA256 and
+//! HKDF-SHA512.
 //!
 //! HKDF is implemented generically in [`bouncycastle_hkdf`]; this module pins its const parameters
 //! to the SHA-2 hashes and publishes the resulting type aliases, so that HKDF over a SHA-2 hash is
@@ -187,12 +187,14 @@
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
 //! | `HKDF_SHA256`                                     | 296          |
+//! | `HKDF_SHA384`                                     | 392          |
 //! | `HKDF_SHA512`                                     | 392          |
 //! | Suspended `HKDF_SHA256` state                     | 122          |
+//! | Suspended `HKDF_SHA384` state                     | 218          |
 //! | Suspended `HKDF_SHA512` state                     | 218          |
 //!
 //! The object is an `Option` of the inner extract-phase HMAC -- 272 bytes for SHA-256, 368 for
-//! SHA-512 -- plus 24 bytes of bookkeeping (the entropy counter, the accumulated security strength
+//! SHA-384 and SHA-512 -- plus 24 bytes of bookkeeping (the entropy counter, the accumulated security strength
 //! and the state-machine tag, with padding). Note that the inner HMAC is written as `HMAC<H>`, which
 //! takes the *default* key buffer length: the largest block length across all supported hashes
 //! (144 bytes) rather than the 64 or 128 that SHA-256 and SHA-512 actually need. So the inner
@@ -216,8 +218,11 @@
 //! * RFC 5869 Section 3.1 recommends a random salt where one is available; SP 800-56Cr2 permits an
 //!   all-zero salt. An all-zero salt is not a [`KeyType::MACKey`], so it needs
 //!   `MAC::new_allow_weak_key` semantics -- which is exactly what the extract phase does internally.
-use crate::hmac::{SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA512_STATE_LEN};
-use crate::{SHA256, SHA512};
+use crate::hmac::{
+    SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA384_STATE_LEN,
+    SUSPENDED_HMAC_SHA512_STATE_LEN,
+};
+use crate::{SHA256, SHA384, SHA512};
 use crate::{SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN};
 use bouncycastle_hkdf::HKDF;
 
@@ -233,6 +238,8 @@ use bouncycastle_core::traits::{KDF, SuspendableKeyed, XOF};
 ///
 pub const HKDF_SHA256_NAME: &str = "HKDF-SHA256";
 ///
+pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
+///
 pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
 
 /*** Serialized-state length constants ***/
@@ -241,6 +248,8 @@ pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
 // see the `SuspendableKeyed` impl in `bouncycastle-hkdf` for the layout.
 /// Length in bytes of the serialized state of [`HKDF_SHA256`].
 pub const SUSPENDED_HKDF_SHA256_STATE_LEN: usize = SUSPENDED_HMAC_SHA256_STATE_LEN + 14;
+/// Length in bytes of the serialized state of [`HKDF_SHA384`].
+pub const SUSPENDED_HKDF_SHA384_STATE_LEN: usize = SUSPENDED_HMAC_SHA384_STATE_LEN + 14;
 /// Length in bytes of the serialized state of [`HKDF_SHA512`].
 pub const SUSPENDED_HKDF_SHA512_STATE_LEN: usize = SUSPENDED_HMAC_SHA512_STATE_LEN + 14;
 
@@ -248,6 +257,10 @@ pub const SUSPENDED_HKDF_SHA512_STATE_LEN: usize = SUSPENDED_HMAC_SHA512_STATE_L
 /// Public type for HKDF using SHA256.
 #[allow(non_camel_case_types)]
 pub type HKDF_SHA256 = HKDF<SHA256, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN>;
+/// Public type for HKDF using SHA384. SHA-384 is a member of the SHA-512 family, so it shares
+/// SHA-512's suspended-state length.
+#[allow(non_camel_case_types)]
+pub type HKDF_SHA384 = HKDF<SHA384, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>;
 /// Public type for HKDF using SHA512.
 #[allow(non_camel_case_types)]
 pub type HKDF_SHA512 = HKDF<SHA512, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN>;
