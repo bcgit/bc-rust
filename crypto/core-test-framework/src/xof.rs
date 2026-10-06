@@ -20,8 +20,6 @@ impl TestFrameworkXOF {
         Self { enable_partial_byte_tests: true }
     }
 
-    // todo: may require no_std equivalent
-    #[cfg(feature = "std")]
     /// Test the absorb-after-squeeze members of trait XOF against the given input-output pair.
     /// This is not exhaustive; it covers the rules laid out in the "State and Absorb-after-Squeeze"
     /// section of the [`XOF`] docs: an XOF is an absorb phase followed by a squeeze phase, once
@@ -37,16 +35,19 @@ impl TestFrameworkXOF {
             xof.absorb(chunk).expect("absorb() before any squeeze must succeed");
         }
 
-        // "once the XOF has begun squeezing, attempting to absorb more will return
-        //     HashError::InvalidState"
-        // squeeze() begins squeezing ...
-        let mut xof = X::default();
-        xof.absorb(input).expect("absorb() before any squeeze must succeed");
-        let _ = xof.squeeze(expected_output.len());
-        assert!(
-            matches!(xof.absorb(b"more input"), Err(HashError::InvalidState(_))),
-            "absorb() after squeeze() must return InvalidState"
-        );
+        #[cfg(feature = "std")]
+        {
+            // "once the XOF has begun squeezing, attempting to absorb more will return
+            //     HashError::InvalidState"
+            // squeeze() begins squeezing ...
+            let mut xof = X::default();
+            xof.absorb(input).expect("absorb() before any squeeze must succeed");
+            let _ = xof.squeeze(expected_output.len());
+            assert!(
+                matches!(xof.absorb(b"more input"), Err(HashError::InvalidState(_))),
+                "absorb() after squeeze() must return InvalidState"
+            );
+        }
 
         // ... and so does squeeze_out()
         let mut xof = X::default();
@@ -58,7 +59,35 @@ impl TestFrameworkXOF {
             "absorb() after squeeze_out() must return InvalidState"
         );
 
-        /*** fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> ***/
+        #[cfg(feature = "std")]
+        {
+            /*** fn squeeze(&mut self, num_bytes: usize) -> Vec<u8> ***/
+            /*** fn squeeze_out(&mut self, output: &mut [u8]) -> usize ***/
+            // "... and leave the object usable for further squeezing"
+            // So squeezing the output in two halves around a rejected absorb must give exactly the same
+            // stream as one clean squeeze: a rejected absorb must not consume, pad, or otherwise
+            // disturb the sponge.
+            let split = expected_output.len() / 2;
+
+            let mut xof = X::default();
+            xof.absorb(input).expect("absorb() before any squeeze must succeed");
+            let first_half = xof.squeeze(split);
+            assert!(xof.absorb(b"more input").is_err());
+            let mut second_half = vec![0u8; expected_output.len() - split];
+            xof.squeeze_out(&mut second_half);
+
+            assert_eq!(
+                first_half.as_slice(),
+                &expected_output[..split],
+                "Incorrect output for input / the output stream must be unchanged by a rejected absorb"
+            );
+            assert_eq!(
+                second_half.as_slice(),
+                &expected_output[split..],
+                "Incorrect output for input / the output stream must continue as if the rejected absorb never happened"
+            );
+        }
+
         /*** fn squeeze_out(&mut self, output: &mut [u8]) -> usize ***/
         // "... and leave the object usable for further squeezing"
         // So squeezing the output in two halves around a rejected absorb must give exactly the same
@@ -68,7 +97,8 @@ impl TestFrameworkXOF {
 
         let mut xof = X::default();
         xof.absorb(input).expect("absorb() before any squeeze must succeed");
-        let first_half = xof.squeeze(split);
+        let mut first_half = vec![0u8; split];
+        xof.squeeze_out(&mut first_half);
         assert!(xof.absorb(b"more input").is_err());
         let mut second_half = vec![0u8; expected_output.len() - split];
         xof.squeeze_out(&mut second_half);
@@ -85,15 +115,73 @@ impl TestFrameworkXOF {
         );
 
         if self.enable_partial_byte_tests {
+            #[cfg(feature = "std")]
+            {
+                /*** fn absorb_last_partial_byte(&mut self, partial_byte: u8, num_bits: usize) -> Result<(), HashError> ***/
+                // The same phase rule applies to absorb_last_partial_byte() once squeezing has begun.
+                let mut xof = X::default();
+                xof.absorb(input).expect("absorb() before any squeeze must succeed");
+                let _ = xof.squeeze(expected_output.len());
+                assert!(
+                    matches!(
+                        xof.absorb_last_partial_byte(0x01, 3),
+                        Err(HashError::InvalidState(_))
+                    ),
+                    "absorb_last_partial_byte() after squeeze() must return InvalidState"
+                );
+            }
+
             /*** fn absorb_last_partial_byte(&mut self, partial_byte: u8, num_bits: usize) -> Result<(), HashError> ***/
             // The same phase rule applies to absorb_last_partial_byte() once squeezing has begun.
+            // using squeeze_out()
             let mut xof = X::default();
             xof.absorb(input).expect("absorb() before any squeeze must succeed");
-            let _ = xof.squeeze(expected_output.len());
+            let mut output = vec![0u8; expected_output.len()];
+            let _ = xof.squeeze_out(&mut output);
             assert!(
                 matches!(xof.absorb_last_partial_byte(0x01, 3), Err(HashError::InvalidState(_))),
                 "absorb_last_partial_byte() after squeeze() must return InvalidState"
             );
+
+            #[cfg(feature = "std")]
+            {
+                // "Unlike XOF::absorb, this switches the XOF from Absorbing mode into Squeezing mode
+                //     because absorbing more input after absorbing a partial byte is undefined
+                //     behaviour."
+                // So it leaves the object in the same state a squeeze does, for every valid num_bits,
+                // with no squeeze having happened at all.
+                for num_bits in 0..=7 {
+                    let mut xof = X::default();
+                    xof.absorb(input).expect("absorb() before any squeeze must succeed");
+                    xof.absorb_last_partial_byte(0xFF, num_bits)
+                        .expect("absorb_last_partial_byte() must succeed for num_bits in 0..=7");
+                    let expected_partial_output = xof.squeeze(expected_output.len());
+
+                    let mut xof = X::default();
+                    xof.absorb(input).expect("absorb() before any squeeze must succeed");
+                    xof.absorb_last_partial_byte(0xFF, num_bits)
+                        .expect("absorb_last_partial_byte() must succeed for num_bits in 0..=7");
+
+                    assert!(
+                        matches!(xof.absorb(b"more input"), Err(HashError::InvalidState(_))),
+                        "absorb() after absorb_last_partial_byte() must return InvalidState / num_bits: {num_bits}"
+                    );
+                    assert!(
+                        matches!(
+                            xof.absorb_last_partial_byte(0xFF, num_bits),
+                            Err(HashError::InvalidState(_))
+                        ),
+                        "a second absorb_last_partial_byte() must return InvalidState / num_bits: {num_bits}"
+                    );
+
+                    // ... and, again, the rejections must leave the object usable for further squeezing.
+                    assert_eq!(
+                        xof.squeeze(expected_output.len()),
+                        expected_partial_output,
+                        "the output stream must be unchanged by a rejected absorb / num_bits: {num_bits}"
+                    );
+                }
+            }
 
             // "Unlike XOF::absorb, this switches the XOF from Absorbing mode into Squeezing mode
             //     because absorbing more input after absorbing a partial byte is undefined
@@ -105,7 +193,8 @@ impl TestFrameworkXOF {
                 xof.absorb(input).expect("absorb() before any squeeze must succeed");
                 xof.absorb_last_partial_byte(0xFF, num_bits)
                     .expect("absorb_last_partial_byte() must succeed for num_bits in 0..=7");
-                let expected_partial_output = xof.squeeze(expected_output.len());
+                let mut expected_partial_output = vec![0u8; expected_output.len()];
+                xof.squeeze_out(&mut expected_partial_output);
 
                 let mut xof = X::default();
                 xof.absorb(input).expect("absorb() before any squeeze must succeed");
@@ -125,9 +214,10 @@ impl TestFrameworkXOF {
                 );
 
                 // ... and, again, the rejections must leave the object usable for further squeezing.
+                let mut partial_output = vec![0u8; expected_output.len()];
+                xof.squeeze_out(&mut partial_output);
                 assert_eq!(
-                    xof.squeeze(expected_output.len()),
-                    expected_partial_output,
+                    partial_output, expected_partial_output,
                     "the output stream must be unchanged by a rejected absorb / num_bits: {num_bits}"
                 );
             }
@@ -139,7 +229,9 @@ impl TestFrameworkXOF {
                 xof.absorb(input).expect("absorb() before any squeeze must succeed");
                 xof.absorb_last_partial_byte(partial_byte, num_bits)
                     .expect("absorb_last_partial_byte() must succeed for num_bits in 0..=7");
-                xof.squeeze(expected_output.len())
+                let mut output = vec![0u8; expected_output.len()];
+                xof.squeeze_out(&mut output);
+                output
             };
 
             // "0 is a valid value and means the message ends on a byte boundary (equivalent to
@@ -194,56 +286,80 @@ impl TestFrameworkXOF {
                 // no overflow: 1u8 << 7 == 0x80
                 let mask = (1u8 << num_bits) - 1;
 
-                let mut xof = X::default();
-                xof.absorb(input).expect("absorb() before any squeeze must succeed");
-                let _ = xof.squeeze(split);
-                let partial_byte = xof
-                    .squeeze_partial_byte_final(num_bits)
-                    .expect("squeeze_partial_byte_final() must succeed for num_bits in 0..=7");
-
-                assert_eq!(
-                    partial_byte,
-                    expected_output[split] & mask,
-                    "the squeezed bits must be the low bits of the next output byte / num_bits: {num_bits}"
-                );
-                assert_eq!(
-                    partial_byte & !mask,
-                    0x00,
-                    "the unused high bits of the result must be zero / num_bits: {num_bits}"
-                );
-
                 // "The same as XOF::squeeze_partial_byte_final, but writes into the provided output
                 //     byte. The output byte is zeroized before the result is written."
                 // Pre-filled with 0xFF so that the zeroization is observable.
                 let mut output_byte = 0xFFu8;
                 let mut xof = X::default();
                 xof.absorb(input).expect("absorb() before any squeeze must succeed");
-                let _ = xof.squeeze(split);
+                let mut output_split = vec![0u8; split];
+                xof.squeeze_out(&mut output_split);
                 xof.squeeze_partial_byte_final_out(num_bits, &mut output_byte)
                     .expect("squeeze_partial_byte_final_out() must succeed for num_bits in 0..=7");
+
                 assert_eq!(
-                    output_byte, partial_byte,
-                    "squeeze_partial_byte_final_out() must agree with squeeze_partial_byte_final() / num_bits: {num_bits}"
+                    output_byte,
+                    expected_output[split] & mask,
+                    "the squeezed bits must be the low bits of the next output byte / num_bits: {num_bits}"
                 );
+                assert_eq!(
+                    output_byte & !mask,
+                    0x00,
+                    "the unused high bits of the result must be zero / num_bits: {num_bits}"
+                );
+
+                #[cfg(feature = "std")]
+                {
+                    // XOF::squeeze_partial_byte_final
+                    let mut xof = X::default();
+                    xof.absorb(input).expect("absorb() before any squeeze must succeed");
+                    let _ = xof.squeeze(split);
+                    let partial_byte = xof
+                        .squeeze_partial_byte_final(num_bits)
+                        .expect("squeeze_partial_byte_final() must succeed for num_bits in 0..=7");
+
+                    assert_eq!(
+                        partial_byte,
+                        expected_output[split] & mask,
+                        "the squeezed bits must be the low bits of the next output byte / num_bits: {num_bits}"
+                    );
+                    assert_eq!(
+                        partial_byte & !mask,
+                        0x00,
+                        "the unused high bits of the result must be zero / num_bits: {num_bits}"
+                    );
+
+                    assert_eq!(
+                        output_byte, partial_byte,
+                        "squeeze_partial_byte_final_out() must agree with squeeze_partial_byte_final() / num_bits: {num_bits}"
+                    );
+                }
+            }
+
+            #[cfg(feature = "std")]
+            {
+                // "num_bits must be in 0..=7; larger values return HashError::InvalidLength."
+                for num_bits in [8usize, 9, 15, 16, 64, usize::MAX] {
+                    let mut xof = X::default();
+                    xof.absorb(input).expect("absorb() before any squeeze must succeed");
+                    let _ = xof.squeeze(split);
+                    assert!(
+                        matches!(
+                            xof.squeeze_partial_byte_final(num_bits),
+                            Err(HashError::InvalidLength(_))
+                        ),
+                        "squeeze_partial_byte_final() must reject num_bits = {num_bits} with InvalidLength"
+                    );
+                }
             }
 
             // "num_bits must be in 0..=7; larger values return HashError::InvalidLength."
             for num_bits in [8usize, 9, 15, 16, 64, usize::MAX] {
-                let mut xof = X::default();
-                xof.absorb(input).expect("absorb() before any squeeze must succeed");
-                let _ = xof.squeeze(split);
-                assert!(
-                    matches!(
-                        xof.squeeze_partial_byte_final(num_bits),
-                        Err(HashError::InvalidLength(_))
-                    ),
-                    "squeeze_partial_byte_final() must reject num_bits = {num_bits} with InvalidLength"
-                );
-
                 let mut output_byte = 0u8;
                 let mut xof = X::default();
                 xof.absorb(input).expect("absorb() before any squeeze must succeed");
-                let _ = xof.squeeze(split);
+                let mut output_split = vec![0u8; split];
+                xof.squeeze_out(&mut output_split);
                 assert!(
                     matches!(
                         xof.squeeze_partial_byte_final_out(num_bits, &mut output_byte),
