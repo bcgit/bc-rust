@@ -12,6 +12,13 @@ use bouncycastle_utils::ct;
 /// it is what separates KMAC from any other cSHAKE-derived function.
 const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
 
+// Suspend/resume, when added, is `Suspendable` rather than `SuspendableKeyed`, keyed though KMAC
+// is. `SuspendableKeyed` lets a state omit the key because the key is wanted again at resume --
+// HMAC needs it for the outer `K xor opad` step. KMAC's key goes into the sponge here in
+// `new_with_params` and is never touched again, so a re-supplied key could neither rebuild
+// anything nor be checked. The suspended state therefore has to be protected as the key is:
+// Keccak-f is a permutation, so anyone holding the state and the data absorbed so far can invert
+// it back to the key block. The HMAC-SHA3 state after `K xor ipad` is in the same position.
 /// Internal struct for KMAC. Use [`crate::KMAC128`] or [`crate::KMAC256`].
 ///
 /// KMAC is cSHAKE with the function name `"KMAC"`, the key bound to the front of the message and
