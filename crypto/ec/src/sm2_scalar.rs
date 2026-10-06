@@ -319,20 +319,17 @@ fn redc(t: &[u64; 8]) -> [u64; 4] {
             acc[idx] = s as u64;
             carry = s >> 64;
         }
-        // Verified (over 50,000 pseudorandom trials plus the (n-1)*(n-1) worst case) that this
-        // loop never needs more than a single iteration for any input reachable from an actual
-        // scalar-field multiplication: `idx`'s post-increment value is therefore never read again
-        // once the loop exits, which is why mutating `idx += 1` itself (as opposed to the bound
-        // check above it) is an accepted equivalent mutant here -- the same reasoning
-        // `crate::montgomery::redc`'s own tail loop documents for the brainpool curves.
-        let mut idx = i + 5;
-        while carry != 0 {
-            debug_assert!(idx < 9, "REDC overflowed its verified 9-limb bound");
+        // Propagate the carry through every limb above the window, up to the accumulator's
+        // proven 9-limb bound. The trip count depends only on the public round index `i`,
+        // never on the operands: once the carry has propagated out, the remaining iterations
+        // add 0. A `while carry != 0` here would be a secret-dependent branch on the signing
+        // path.
+        for idx in (i + 5)..9 {
             let s = (acc[idx] as u128) + carry;
             acc[idx] = s as u64;
             carry = s >> 64;
-            idx += 1;
         }
+        debug_assert_eq!(carry, 0, "carry must be fully propagated within the 9-limb bound");
     }
     debug_assert_eq!(&acc[..4], &[0u64; 4], "REDC's low limbs must be cleared after 4 rounds");
     debug_assert!(acc[8] == 0 || acc[8] == 1, "REDC's top limb must be a single bit");
