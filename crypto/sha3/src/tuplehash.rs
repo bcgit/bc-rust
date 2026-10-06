@@ -2,11 +2,21 @@
 
 use crate::SHAKEParams;
 use crate::cshake::{
-    CSHAKEInternal, LengthBoundSqueezer, absorb_encoded_string_into, right_encode,
+    CSHAKE_COMPONENT_LEN, CSHAKEInternal, LengthBoundSqueezer, absorb_encoded_string_into,
+    right_encode,
 };
-use bouncycastle_core::errors::HashError;
+use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
+    suspend_component,
+};
+
+/// Length in bytes of the suspended state of TupleHash.
+pub const SUSPENDED_TUPLEHASH_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN + 8;
+/// Length in bytes of the suspended state of TupleHashXOF.
+pub const SUSPENDED_TUPLEHASHXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN;
 
 /// The function-name string every TupleHash binds, per SP 800-185 Sec 5.3.
 const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
@@ -58,6 +68,41 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
             self.do_update(element);
         }
         self.do_final()
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashInternal<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN + 8;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (cshake, rest) = out.split_at_mut(CSHAKE_COMPONENT_LEN);
+        self.cshake.write_tagged(PARAMS::TUPLEHASH_STATE_TAG, cshake);
+        let mut w = CursorMut::new(rest);
+        w.u64(self.output_len as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
+        let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::TUPLEHASH_STATE_TAG)?;
+        let mut r = Cursor::new(rest);
+        let output_len = bounded_usize(r.u64(), usize::MAX)?;
+        debug_assert!(r.is_done());
+        Ok(Self { cshake, output_len })
+    }
+}
+
+/// Elements are absorbed whole, so a suspended TupleHash is always between elements.
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_TUPLEHASH_STATE_LEN> for TupleHashInternal<PARAMS> {
+    fn suspend(self) -> [u8; SUSPENDED_TUPLEHASH_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(
+        state: [u8; SUSPENDED_TUPLEHASH_STATE_LEN],
+    ) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 
@@ -176,6 +221,35 @@ impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
             self.do_update(element);
         }
         self.into_squeezer()
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashXOFInternal<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        self.cshake.write_tagged(PARAMS::TUPLEHASHXOF_STATE_TAG, out)
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        let cshake = CSHAKEInternal::read_tagged_customized(state, PARAMS::TUPLEHASHXOF_STATE_TAG)?;
+        Ok(Self { cshake })
+    }
+}
+
+/// The absorbing phase, always between elements; the squeezing half is a [`LengthBoundSqueezer`].
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_TUPLEHASHXOF_STATE_LEN>
+    for TupleHashXOFInternal<PARAMS>
+{
+    fn suspend(self) -> [u8; SUSPENDED_TUPLEHASHXOF_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(
+        state: [u8; SUSPENDED_TUPLEHASHXOF_STATE_LEN],
+    ) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 

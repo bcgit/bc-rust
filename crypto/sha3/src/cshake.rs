@@ -1,10 +1,23 @@
 //! cSHAKE, the customizable SHAKE of NIST SP 800-185 Sec 3.
 
 use crate::SHAKEParams;
+use crate::keccak::SHA3_FAMILY_STATE_LEN;
 use crate::shake::{SHAKEInternal, SHAKESqueezer};
-use bouncycastle_core::errors::HashError;
+use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
+};
+
+/// Length in bytes of the suspended state of cSHAKE.
+pub const SUSPENDED_CSHAKE_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN;
+/// Length in bytes of the suspended state of a [`LengthBoundSqueezer`].
+pub const SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN: usize = SUSPENDED_CSHAKE_STATE_LEN;
+/// The cSHAKE state without its version header: the SHA3-family state, then one byte saying
+/// whether `N` or `S` was non-empty. The functions built on cSHAKE write this first, under their
+/// own tag, and their own fields after it.
+pub(crate) const CSHAKE_COMPONENT_LEN: usize = SHA3_FAMILY_STATE_LEN + 1;
 
 /// The domain separator cSHAKE absorbs in place of SHAKE's `1111`: the `00` of SP 800-185 Sec 3.3,
 /// two zero bits, which is what keeps a customized instance separate from plain SHAKE.
@@ -123,6 +136,71 @@ fn absorb_zeros<PARAMS: SHAKEParams>(shake: &mut SHAKEInternal<PARAMS>, mut coun
         let n = count.min(ZEROS.len());
         shake.do_update(&ZEROS[..n]);
         count -= n;
+    }
+}
+
+impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
+    /// Writes the state under `tag` into `out`, which is exactly [`CSHAKE_COMPONENT_LEN`] bytes.
+    pub(crate) fn write_tagged(&self, tag: u8, out: &mut [u8]) {
+        let (family, rest) = out.split_at_mut(SHA3_FAMILY_STATE_LEN);
+        self.shake.write_family_state(tag, family);
+        let mut w = CursorMut::new(rest);
+        w.u8(self.customized as u8);
+        debug_assert!(w.is_done());
+    }
+
+    /// The reverse of [`Self::write_tagged`]. A sponge that has begun squeezing is refused: a
+    /// cSHAKE a caller can hold is still absorbing, and the squeezing half is a [`SHAKESqueezer`]
+    /// or a [`LengthBoundSqueezer`], which resume their own states.
+    pub(crate) fn read_tagged(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
+        let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
+        let shake = SHAKEInternal::read_family_state(family, tag)?;
+        if shake.is_squeezing() {
+            return Err(SuspendableError::InvalidData);
+        }
+        let mut r = Cursor::new(rest);
+        let customized = match r.u8() {
+            0 => false,
+            1 => true,
+            _ => return Err(SuspendableError::InvalidData),
+        };
+        debug_assert!(r.is_done());
+        Ok(Self { shake, customized })
+    }
+
+    /// [`Self::read_tagged`] for the functions built on cSHAKE, whose `N` is never empty: a state
+    /// claiming otherwise is not one they wrote.
+    pub(crate) fn read_tagged_customized(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
+        let cshake = Self::read_tagged(state, tag)?;
+        if !cshake.customized {
+            return Err(SuspendableError::InvalidData);
+        }
+        Ok(cshake)
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKEInternal<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        self.write_tagged(PARAMS::CSHAKE_STATE_TAG, out)
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        Self::read_tagged(state, PARAMS::CSHAKE_STATE_TAG)
+    }
+}
+
+/// The absorbing phase. Once output begins the sponge is a [`SHAKESqueezer`] -- the domain suffix
+/// is in, and nothing cSHAKE-specific remains -- so it suspends and resumes as one.
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_CSHAKE_STATE_LEN> for CSHAKEInternal<PARAMS> {
+    fn suspend(self) -> [u8; SUSPENDED_CSHAKE_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; SUSPENDED_CSHAKE_STATE_LEN]) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 
@@ -314,11 +392,13 @@ fn value_bytes(value: u64) -> usize {
 /// The first read commits: the encoding is in the sponge from then on, so a `do_final` that
 /// follows a `do_output` cannot bind anything and simply continues the `right_encode(0)` stream
 /// the earlier read already chose.
+#[derive(Clone)]
 pub struct LengthBoundSqueezer<PARAMS: SHAKEParams> {
     phase: Phase<PARAMS>,
 }
 
 /// Which side of the first read this squeezer is on.
+#[derive(Clone)]
 enum Phase<PARAMS: SHAKEParams> {
     /// Nothing read yet, so `right_encode(L)` is still the caller's to choose.
     Unbound(CSHAKEInternal<PARAMS>),
@@ -364,6 +444,62 @@ impl<PARAMS: SHAKEParams> LengthBoundSqueezer<PARAMS> {
             // it, so neither can be live here.
             _ => unreachable!("the first read always leaves the squeezing phase"),
         }
+    }
+}
+
+/// Both phases suspend. The sponge's own phase flag records which, so the state is the cSHAKE
+/// layout under one tag, and a resumed `Unbound` squeezer still has its first read to make.
+impl<PARAMS: SHAKEParams> SuspendableComponent for LengthBoundSqueezer<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        let tag = PARAMS::LENGTH_BOUND_SQUEEZER_STATE_TAG;
+        match &self.phase {
+            Phase::Unbound(cshake) => cshake.write_tagged(tag, out),
+            Phase::Squeezing(squeezer) => {
+                let (family, rest) = out.split_at_mut(SHA3_FAMILY_STATE_LEN);
+                squeezer.write_family_state(tag, family);
+                // Every function that reaches this squeezer has a non-empty N.
+                let mut w = CursorMut::new(rest);
+                w.u8(1);
+                debug_assert!(w.is_done());
+            }
+            Phase::Binding => unreachable!("Binding is never live outside `read`"),
+        }
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
+        let shake = SHAKEInternal::<PARAMS>::read_family_state(
+            family,
+            PARAMS::LENGTH_BOUND_SQUEEZER_STATE_TAG,
+        )?;
+        let mut r = Cursor::new(rest);
+        if r.u8() != 1 {
+            return Err(SuspendableError::InvalidData);
+        }
+        debug_assert!(r.is_done());
+        let phase = if shake.is_squeezing() {
+            Phase::Squeezing(SHAKESqueezer::from_squeezing(shake))
+        } else {
+            Phase::Unbound(CSHAKEInternal { shake, customized: true })
+        };
+        Ok(Self { phase })
+    }
+}
+
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN>
+    for LengthBoundSqueezer<PARAMS>
+{
+    fn suspend(self) -> [u8; SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(
+        state: [u8; SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN],
+    ) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 

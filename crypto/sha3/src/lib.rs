@@ -221,7 +221,9 @@
 //! to a cache and resume it later; for example if waiting for the message to stream over a slow network
 //! connection.
 //!
-//! For this reason, the SHA3 and SHAKE types impl [`Suspendable`]; the SP 800-185 functions do not.
+//! For this reason, every SHA3, SHAKE and SP 800-185 type impls [`Suspendable`], squeezers included,
+//! so a long output stream can be paused as well as a long input. HMAC is keyed and impls
+//! `SuspendableKeyed` instead; see [hmac].
 //!
 //!```rust
 //! use bouncycastle_sha3 as sha3;
@@ -261,7 +263,16 @@
 //! | `KMAC128/256`                                                   | 464          |
 //! | `PARALLELHASHXOF128/256`                                        | 912          |
 //! | `PARALLELHASH128/256`                                           | 920          |
-//! | Suspended state ([`Suspendable`])                               | 415          |
+//!
+//! Suspended states, as `SUSPENDED_*_STATE_LEN`:
+//!
+//! | State                                                           | Size (bytes) |
+//! |-----------------------------------------------------------------|--------------|
+//! | SHA3, SHAKE and `SHAKESqueezer`                                 | 415          |
+//! | cSHAKE, KMACXOF, TupleHashXOF, `LengthBoundSqueezer`            | 416          |
+//! | KMAC, TupleHash                                                 | 424          |
+//! | ParallelHashXOF                                                 | 852          |
+//! | ParallelHash                                                    | 860          |
 //!
 //! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
 //! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
@@ -285,6 +296,8 @@
 //!   (Sec 8.2.2).
 //! * A customization string is not a key: for any `N` and `S`, cSHAKE has exactly SHAKE's
 //!   security (Sec 8.2.1). It separates instances; it does not strengthen them.
+//! * A suspended KMAC or KMACXOF state inverts to the key, as a suspended HMAC-SHA3 state does
+//!   (see [hmac]): store it as securely as the key.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
@@ -356,11 +369,22 @@ pub const PARALLELHASHXOF128_NAME: &str = "ParallelHashXOF128";
 pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 
 /*** pub types ***/
-pub use cshake::{CSHAKEInternal, LengthBoundSqueezer};
-pub use kmac::{KMACInternal, KMACXOFInternal};
-pub use parallelhash::{ParallelHashInternal, ParallelHashXOFInternal};
+pub use cshake::{
+    CSHAKEInternal, LengthBoundSqueezer, SUSPENDED_CSHAKE_STATE_LEN,
+    SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN,
+};
+pub use kmac::{
+    KMACInternal, KMACXOFInternal, SUSPENDED_KMAC_STATE_LEN, SUSPENDED_KMACXOF_STATE_LEN,
+};
+pub use parallelhash::{
+    ParallelHashInternal, ParallelHashXOFInternal, SUSPENDED_PARALLELHASH_STATE_LEN,
+    SUSPENDED_PARALLELHASHXOF_STATE_LEN,
+};
 pub use sha3::SHA3Internal;
-pub use tuplehash::{TupleHashInternal, TupleHashXOFInternal};
+pub use tuplehash::{
+    SUSPENDED_TUPLEHASH_STATE_LEN, SUSPENDED_TUPLEHASHXOF_STATE_LEN, TupleHashInternal,
+    TupleHashXOFInternal,
+};
 
 /// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
 ///
@@ -563,6 +587,18 @@ trait SHAKEParams: Algorithm + Clone {
     const PARALLELHASH_ALG_NAME: &'static str;
     /// The name of the ParallelHashXOF built on this parameter set.
     const PARALLELHASHXOF_ALG_NAME: &'static str;
+    /// The first of eight state tags for the SP 800-185 functions built on this parameter set,
+    /// which follow it in the order below. The same rule as [`SHA3Params::STATE_TAG`]: distinct
+    /// from every other tag in the crate, and never reused.
+    const SP800_185_STATE_TAG_BASE: u8;
+    const CSHAKE_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE;
+    const KMAC_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 1;
+    const KMACXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 2;
+    const TUPLEHASH_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 3;
+    const TUPLEHASHXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 4;
+    const PARALLELHASH_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 5;
+    const PARALLELHASHXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 6;
+    const LENGTH_BOUND_SQUEEZER_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 7;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -581,6 +617,7 @@ impl SHAKEParams for SHAKE128Params {
     const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF128_NAME;
     const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH128_NAME;
     const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF128_NAME;
+    const SP800_185_STATE_TAG_BASE: u8 = 7; // 7..=14
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake128 { hashAlgs 11 }
 impl AlgorithmOID for SHAKE128 {
@@ -605,6 +642,7 @@ impl SHAKEParams for SHAKE256Params {
     const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF256_NAME;
     const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH256_NAME;
     const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF256_NAME;
+    const SP800_185_STATE_TAG_BASE: u8 = 15; // 15..=22
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake256 { hashAlgs 12 }
 impl AlgorithmOID for SHAKE256 {

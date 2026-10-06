@@ -1,11 +1,27 @@
 //! ParallelHash, the parallelisable hash of NIST SP 800-185 Sec 6.
 
 use crate::SHAKEParams;
-use crate::cshake::{CSHAKEInternal, LengthBoundSqueezer, absorb_left_encode_into, right_encode};
+use crate::cshake::{
+    CSHAKE_COMPONENT_LEN, CSHAKEInternal, LengthBoundSqueezer, absorb_left_encode_into,
+    right_encode,
+};
+use crate::keccak::SHA3_FAMILY_STATE_LEN;
 use crate::shake::SHAKEInternal;
-use bouncycastle_core::errors::HashError;
+use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
+    suspend_component,
+};
+
+/// Length in bytes of the suspended state of ParallelHash.
+pub const SUSPENDED_PARALLELHASH_STATE_LEN: usize = LIB_VERSION_LEN + PARALLEL_STATE_LEN + 8;
+/// Length in bytes of the suspended state of ParallelHashXOF.
+pub const SUSPENDED_PARALLELHASHXOF_STATE_LEN: usize = LIB_VERSION_LEN + PARALLEL_STATE_LEN;
+/// The [`ParallelState`] layout: the outer cSHAKE, the inner SHAKE's family state, then
+/// `block_size`, `block_fill` and `blocks` as `u64`s.
+const PARALLEL_STATE_LEN: usize = CSHAKE_COMPONENT_LEN + SHA3_FAMILY_STATE_LEN + 24;
 
 /// The function-name string every ParallelHash binds, per SP 800-185 Sec 6.3.
 const PARALLELHASH_FUNCTION_NAME: &[u8] = b"ParallelHash";
@@ -50,6 +66,41 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
         self.cshake.do_update(digest);
         self.blocks += 1;
         self.block_fill = 0;
+    }
+
+    fn write_state(&self, tag: u8, out: &mut [u8]) {
+        let (cshake, rest) = out.split_at_mut(CSHAKE_COMPONENT_LEN);
+        self.cshake.write_tagged(tag, cshake);
+        let (inner, rest) = rest.split_at_mut(SHA3_FAMILY_STATE_LEN);
+        // The inner sponge is plain SHAKE and carries SHAKE's own tag; it is only ever read back
+        // from inside this state, under the outer tag.
+        self.inner.write_family_state(PARAMS::STATE_TAG, inner);
+        let mut w = CursorMut::new(rest);
+        w.u64(self.block_size as u64);
+        w.u64(self.block_fill as u64);
+        w.u64(self.blocks);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
+        let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
+        let cshake = CSHAKEInternal::read_tagged_customized(cshake, tag)?;
+        let (inner, rest) = rest.split_at(SHA3_FAMILY_STATE_LEN);
+        let inner = SHAKEInternal::read_family_state(inner, PARAMS::STATE_TAG)?;
+        if inner.is_squeezing() {
+            return Err(SuspendableError::InvalidData);
+        }
+        let mut r = Cursor::new(rest);
+        let block_size = bounded_usize(r.u64(), usize::MAX)?;
+        // Sec 6.2: 0 < B. The fill is strictly inside the block, since a full block is absorbed
+        // the moment it completes.
+        if block_size == 0 {
+            return Err(SuspendableError::InvalidData);
+        }
+        let block_fill = bounded_usize(r.u64(), block_size - 1)?;
+        let blocks = r.u64();
+        debug_assert!(r.is_done());
+        Ok(Self { cshake, block_size, inner, block_fill, blocks })
     }
 
     fn do_update(&mut self, mut data: &[u8]) {
@@ -129,6 +180,43 @@ impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
     /// If `block_size` is zero, which Sec 6.2 forbids (`0 < B`).
     pub fn new(block_size: usize, customization: &[u8], output_len: usize) -> Self {
         Self { state: ParallelState::new(block_size, customization), output_len }
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for ParallelHashInternal<PARAMS> {
+    const STATE_LEN: usize = PARALLEL_STATE_LEN + 8;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (state, rest) = out.split_at_mut(PARALLEL_STATE_LEN);
+        self.state.write_state(PARAMS::PARALLELHASH_STATE_TAG, state);
+        let mut w = CursorMut::new(rest);
+        w.u64(self.output_len as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        let (parallel, rest) = state.split_at(PARALLEL_STATE_LEN);
+        let state = ParallelState::read_state(parallel, PARAMS::PARALLELHASH_STATE_TAG)?;
+        let mut r = Cursor::new(rest);
+        let output_len = bounded_usize(r.u64(), usize::MAX)?;
+        debug_assert!(r.is_done());
+        Ok(Self { state, output_len })
+    }
+}
+
+/// Suspends mid-block as well as between blocks: the block being filled travels as its sponge.
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_PARALLELHASH_STATE_LEN>
+    for ParallelHashInternal<PARAMS>
+{
+    fn suspend(self) -> [u8; SUSPENDED_PARALLELHASH_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(
+        state: [u8; SUSPENDED_PARALLELHASH_STATE_LEN],
+    ) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 
@@ -226,6 +314,34 @@ impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     /// If `block_size` is zero (Sec 6.2).
     pub fn new(block_size: usize, customization: &[u8]) -> Self {
         Self { state: ParallelState::new(block_size, customization) }
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for ParallelHashXOFInternal<PARAMS> {
+    const STATE_LEN: usize = PARALLEL_STATE_LEN;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        self.state.write_state(PARAMS::PARALLELHASHXOF_STATE_TAG, out)
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        Ok(Self { state: ParallelState::read_state(state, PARAMS::PARALLELHASHXOF_STATE_TAG)? })
+    }
+}
+
+/// The absorbing phase, mid-block or not; the squeezing half is a [`LengthBoundSqueezer`].
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_PARALLELHASHXOF_STATE_LEN>
+    for ParallelHashXOFInternal<PARAMS>
+{
+    fn suspend(self) -> [u8; SUSPENDED_PARALLELHASHXOF_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(
+        state: [u8; SUSPENDED_PARALLELHASHXOF_STATE_LEN],
+    ) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 

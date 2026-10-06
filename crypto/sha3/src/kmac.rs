@@ -1,24 +1,26 @@
 //! KMAC, the Keccak Message Authentication Code of NIST SP 800-185 Sec 4.
 
 use crate::SHAKEParams;
-use crate::cshake::{CSHAKEInternal, LengthBoundSqueezer, right_encode};
-use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError};
+use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, LengthBoundSqueezer, right_encode};
+use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::ct;
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
+    suspend_component,
+};
+
+/// Length in bytes of the suspended state of KMAC.
+pub const SUSPENDED_KMAC_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN + 8;
+/// Length in bytes of the suspended state of KMACXOF.
+pub const SUSPENDED_KMACXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN;
 
 /// The function-name string every KMAC binds, per SP 800-185 Sec 4.3. Fixed by the specification:
 /// it is what separates KMAC from any other cSHAKE-derived function.
 const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
 
-// Suspend/resume, when added, is `Suspendable` rather than `SuspendableKeyed`, keyed though KMAC
-// is. `SuspendableKeyed` lets a state omit the key because the key is wanted again at resume --
-// HMAC needs it for the outer `K xor opad` step. KMAC's key goes into the sponge here in
-// `new_with_params` and is never touched again, so a re-supplied key could neither rebuild
-// anything nor be checked. The suspended state therefore has to be protected as the key is:
-// Keccak-f is a permutation, so anyone holding the state and the data absorbed so far can invert
-// it back to the key block. The HMAC-SHA3 state after `K xor ipad` is in the same position.
 /// Internal struct for KMAC. Use [`crate::KMAC128`] or [`crate::KMAC256`].
 ///
 /// KMAC is cSHAKE with the function name `"KMAC"`, the key bound to the front of the message and
@@ -39,6 +41,7 @@ const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
 /// [`KMACXOFInternal`] is the separate function of Sec 4.3.1, KMACXOF, which binds
 /// `right_encode(0)` instead and produces as much output as asked for. Its bytes are *not* a
 /// prefix of the fixed-length KMAC over the same inputs, and are not meant to be.
+#[derive(Clone)]
 pub struct KMACInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
     output_len: usize,
@@ -95,6 +98,49 @@ impl<PARAMS: SHAKEParams> KMACInternal<PARAMS> {
     fn absorb_right_encode(&mut self, value: u64) {
         let (buf, len) = right_encode(value);
         self.cshake.do_update(&buf[..len]);
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN + 8;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (cshake, rest) = out.split_at_mut(CSHAKE_COMPONENT_LEN);
+        self.cshake.write_tagged(PARAMS::KMAC_STATE_TAG, cshake);
+        let mut w = CursorMut::new(rest);
+        w.u64(self.output_len as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
+        let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::KMAC_STATE_TAG)?;
+        let mut r = Cursor::new(rest);
+        let output_len = bounded_usize(r.u64(), usize::MAX)?;
+        debug_assert!(r.is_done());
+        // The strength is fixed by the parameter set (see `new_with_params`), not stored.
+        Ok(Self {
+            cshake,
+            output_len,
+            strength: SecurityStrength::from_bits(PARAMS::SIZE as usize),
+        })
+    }
+}
+
+// `Suspendable` rather than `SuspendableKeyed`, keyed though KMAC is. `SuspendableKeyed` lets a
+// state omit the key because the key is wanted again at resume -- HMAC needs it for the outer
+// `K xor opad` step. KMAC's key goes into the sponge in `new_with_params` and is never touched
+// again, so a re-supplied key could neither rebuild anything nor be checked.
+/// The suspended state is not key-free: Keccak-f is a permutation, so anyone holding the state
+/// and the data absorbed so far can invert it back to the key. Store it as securely as the key.
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_KMAC_STATE_LEN> for KMACInternal<PARAMS> {
+    fn suspend(self) -> [u8; SUSPENDED_KMAC_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; SUSPENDED_KMAC_STATE_LEN]) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 
@@ -226,6 +272,32 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
         // applied when output begins.
         let kmac = KMACInternal::<PARAMS>::new_with_params(key, customization, 0, allow_weak_key)?;
         Ok(Self { cshake: kmac.cshake, strength: kmac.strength })
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for KMACXOFInternal<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        self.cshake.write_tagged(PARAMS::KMACXOF_STATE_TAG, out)
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        let cshake = CSHAKEInternal::read_tagged_customized(state, PARAMS::KMACXOF_STATE_TAG)?;
+        Ok(Self { cshake, strength: SecurityStrength::from_bits(PARAMS::SIZE as usize) })
+    }
+}
+
+/// The absorbing phase; the squeezing half is a [`LengthBoundSqueezer`], which suspends on its
+/// own. The state inverts to the key exactly as [`KMACInternal`]'s does: store it as the key.
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_KMACXOF_STATE_LEN> for KMACXOFInternal<PARAMS> {
+    fn suspend(self) -> [u8; SUSPENDED_KMACXOF_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; SUSPENDED_KMACXOF_STATE_LEN]) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
     }
 }
 
