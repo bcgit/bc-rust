@@ -11,14 +11,18 @@ use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 const PARALLELHASH_FUNCTION_NAME: &[u8] = b"ParallelHash";
 
 /// The shared machinery of [`ParallelHashInternal`] and [`ParallelHashXOFInternal`]: the outer
-/// cSHAKE, the block buffer, and the count of blocks hashed so far.
+/// cSHAKE, the block being filled, and the count of blocks hashed so far.
 #[derive(Clone)]
 struct ParallelState<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
     block_size: usize,
-    /// The partial block still being filled. Bounded by `block_size`, which the caller chooses at
-    /// construction, so this cannot be a const-sized array.
-    buffer: Vec<u8>,
+    /// The block being filled, as the SHAKE over its bytes so far: each block's contribution is
+    /// `SHAKE(block, 2c)`, so the sponge can take the bytes as they arrive. Holding the sponge
+    /// rather than the bytes keeps this a fixed size whatever `B` is, which a suspended state
+    /// needs.
+    inner: SHAKEInternal<PARAMS>,
+    /// Bytes of the current block absorbed into `inner` so far, always less than `block_size`.
+    block_fill: usize,
     blocks: u64,
 }
 
@@ -32,38 +36,33 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
         let mut cshake = CSHAKEInternal::new(PARALLELHASH_FUNCTION_NAME, customization);
         // Step 2: z = left_encode(B).
         absorb_left_encode_into(&mut cshake, block_size as u64);
-        Self { cshake, block_size, buffer: Vec::new(), blocks: 0 }
+        Self { cshake, block_size, inner: SHAKEInternal::new(), block_fill: 0, blocks: 0 }
     }
 
-    /// Step 3 for one whole block: hash it and absorb the digest into the outer cSHAKE.
+    /// Step 3 for the block in `inner`: finish its digest and absorb it into the outer cSHAKE.
     ///
     /// The inner call is `cSHAKE(block, 2c, "", "")`, which by Sec 3.3 step 1 is plain SHAKE --
     /// so SHAKE is what is used here.
-    fn absorb_block(&mut self, block: &[u8]) {
-        let inner = SHAKEInternal::<PARAMS>::new().xof(block, Self::INNER_LEN);
-        self.cshake.do_update(&inner);
+    fn absorb_block_digest(&mut self) {
+        let mut digest = [0u8; 64];
+        let digest = &mut digest[..Self::INNER_LEN];
+        core::mem::replace(&mut self.inner, SHAKEInternal::new()).xof_out(&[], digest);
+        self.cshake.do_update(digest);
         self.blocks += 1;
+        self.block_fill = 0;
     }
 
     fn do_update(&mut self, mut data: &[u8]) {
-        // Top up a partial block first, then take whole blocks straight from `data` so that a
-        // caller feeding block-aligned input never copies.
-        if !self.buffer.is_empty() {
-            let need = self.block_size - self.buffer.len();
-            let take = need.min(data.len());
-            self.buffer.extend_from_slice(&data[..take]);
-            data = &data[take..];
-            if self.buffer.len() == self.block_size {
-                let block = core::mem::take(&mut self.buffer);
-                self.absorb_block(&block);
+        while !data.is_empty() {
+            let take = (self.block_size - self.block_fill).min(data.len());
+            let (now, rest) = data.split_at(take);
+            self.inner.do_update(now);
+            self.block_fill += take;
+            data = rest;
+            if self.block_fill == self.block_size {
+                self.absorb_block_digest();
             }
         }
-        while data.len() >= self.block_size {
-            let (block, rest) = data.split_at(self.block_size);
-            self.absorb_block(block);
-            data = rest;
-        }
-        self.buffer.extend_from_slice(data);
     }
 
     /// Flushes the short final block and binds the block count: step 3, and the `right_encode(n)`
@@ -73,9 +72,8 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     /// carries is not settled here: the fixed-length function knows it up front ([`Self::finish`]),
     /// and the XOF leaves it to the first read ([`LengthBoundSqueezer`]).
     fn finish_blocks(mut self) -> CSHAKEInternal<PARAMS> {
-        if !self.buffer.is_empty() {
-            let block = core::mem::take(&mut self.buffer);
-            self.absorb_block(&block);
+        if self.block_fill > 0 {
+            self.absorb_block_digest();
         }
         // Step 4: z = z || right_encode(n) ...
         let (buf, len) = right_encode(self.blocks);
