@@ -284,7 +284,7 @@ pub use sha3::SHA3Internal;
 pub use shake::{SHAKEInternal, SHAKESqueezer};
 
 pub use cshake::{
-    CSHAKEInternal, CSHAKESqueezer, CSHAKE128, CSHAKE256, SUSPENDED_CSHAKE_STATE_LEN,
+    CSHAKE128, CSHAKE256, CSHAKEInternal, CSHAKESqueezer, SUSPENDED_CSHAKE_STATE_LEN,
     SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN,
 };
 
