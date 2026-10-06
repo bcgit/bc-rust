@@ -84,8 +84,8 @@ mod sealed {
 /// written as a projection through this trait instead:
 ///
 /// ```text
-/// pub type Ascon_AEAD128<Dir> =
-///     <Dir as Direction>::Select<AsconAead128Encryptor, AsconAead128Decryptor>;
+/// pub type AES_CBC_128<Dir, Pad> =
+///     <Dir as Direction>::Select<PaddedBlockCipherEncryptor<...>, PaddedBlockCipherDecryptor<...>>;
 /// ```
 ///
 /// Sealed: implemented for the two markers and for nothing else, so `Encrypting` and `Decrypting`

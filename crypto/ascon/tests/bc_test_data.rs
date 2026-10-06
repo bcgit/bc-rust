@@ -9,14 +9,19 @@
 
 #[cfg(test)]
 mod bc_test_data {
-    use bouncycastle_ascon::ascon_aead128::AsconAead128;
+    use bouncycastle_ascon::Ascon_AEAD128;
     use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
     use bouncycastle_ascon::ascon_hash256::AsconHash256;
     use bouncycastle_ascon::ascon_xof128::AsconXof128;
+    use bouncycastle_cipher::{Decrypting, Encrypting};
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Hash, XOF};
+    use bouncycastle_core::traits::{
+        AEADCipherDecryptor, AEADCipherEncryptor, Hash, SymmetricCipherDecryptor,
+        SymmetricCipherEncryptor, XOF,
+    };
+    use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_hex as hex;
     use std::collections::BTreeMap;
     use std::fs;
@@ -149,57 +154,69 @@ mod bc_test_data {
             let pt = decode_hex(field(case, &["PT", "P"]));
             let expected_ct = decode_hex(field(case, &["CT", "C"]));
 
-            let ad_opt = if ad.is_empty() { None } else { Some(ad.as_slice()) };
+            type Enc = Ascon_AEAD128<Encrypting>;
+            type Dec = Ascon_AEAD128<Decrypting>;
+            let count = field(case, &["Count"]);
 
-            // One-shot encrypt.
-            let mut ct = vec![0u8; pt.len() + 16];
-            let n = AsconAead128::encrypt(&key, &nonce, ad_opt, &pt, &mut ct).unwrap();
+            // One-shot encrypt, the nonce driven to the vector's by a fixed RNG.
+            let mut ct = vec![0u8; Enc::encrypt_out_len(pt.len())];
+            let (got_nonce, n) = Enc::encrypt_with_aad_rng_out(
+                &key,
+                &mut FixedSeedRNG::<16>::new(nonce),
+                &ad,
+                &pt,
+                &mut ct,
+            )
+            .unwrap();
+            assert_eq!(got_nonce, nonce, "the fixed RNG must supply the nonce (Count {count})");
             ct.truncate(n);
 
-            assert_eq!(ct, expected_ct, "encrypt mismatch (Count {})", field(case, &["Count"]));
+            assert_eq!(ct, expected_ct, "encrypt mismatch (Count {count})");
 
             // One-shot decrypt round-trip.
-            let mut pt_out = vec![0u8; expected_ct.len()];
-            let m = AsconAead128::decrypt(&key, &nonce, ad_opt, &expected_ct, &mut pt_out)
+            let mut pt_out = vec![0u8; Dec::decrypt_out_len(expected_ct.len())];
+            let m = Dec::decrypt_with_aad_out(&key, &nonce, &ad, &expected_ct, &mut pt_out)
                 .expect("decrypt should authenticate");
 
             pt_out.truncate(m);
 
-            assert_eq!(pt_out, pt, "decrypt mismatch (Count {})", field(case, &["Count"]));
+            assert_eq!(pt_out, pt, "decrypt mismatch (Count {count})");
 
-            // Byte-at-a-time streaming encrypt/decrypt, through the inherent API.
-            let mut enc = AsconAead128::new_encrypting(&key, &nonce, ad_opt).unwrap();
-            let mut stream_ct = pt.clone();
+            // Byte-at-a-time streaming encrypt, tag detached and appended.
+            let (mut enc, _) =
+                Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(nonce)).unwrap();
+            enc.do_update_aad(&ad).unwrap();
+            let mut stream_ct = Vec::with_capacity(expected_ct.len());
 
-            for byte in stream_ct.iter_mut() {
-                enc.do_encrypt_update(core::slice::from_mut(byte));
+            for byte in &pt {
+                let mut out = [0u8; 1];
+                enc.do_encrypt_out(core::slice::from_ref(byte), &mut out).unwrap();
+                stream_ct.push(out[0]);
             }
 
-            let tag = enc.do_encrypt_final();
+            let (_, _, tag) = enc.do_encrypt_final_detachedtag().unwrap();
             stream_ct.extend_from_slice(&tag);
 
-            assert_eq!(
-                stream_ct,
-                expected_ct,
-                "streaming encrypt mismatch (Count {})",
-                field(case, &["Count"])
-            );
+            assert_eq!(stream_ct, expected_ct, "streaming encrypt mismatch (Count {count})");
 
-            let mut dec = AsconAead128::new_decrypting(&key, &nonce, ad_opt).unwrap();
-            let mut stream_pt = expected_ct[..pt.len()].to_vec();
+            // Byte-at-a-time streaming decrypt with the tag detached: the decryptor holds up to
+            // 16 bytes back, which `do_decrypt_final_detachedtag` releases.
+            let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
+            dec.do_update_aad(&ad).unwrap();
+            let mut stream_pt = Vec::with_capacity(pt.len());
 
-            for byte in stream_pt.iter_mut() {
-                dec.do_decrypt_update(core::slice::from_mut(byte));
+            for byte in &expected_ct[..pt.len()] {
+                let mut out = [0u8; 1];
+                let w = dec.do_decrypt_out(core::slice::from_ref(byte), &mut out).unwrap();
+                stream_pt.extend_from_slice(&out[..w]);
             }
 
-            dec.do_decrypt_final(&tag).expect("streaming decrypt should authenticate");
+            let (last, last_len) = dec
+                .do_decrypt_final_detachedtag(&tag)
+                .expect("streaming decrypt should authenticate");
+            stream_pt.extend_from_slice(&last[..last_len]);
 
-            assert_eq!(
-                stream_pt,
-                pt,
-                "streaming decrypt mismatch (Count {})",
-                field(case, &["Count"])
-            );
+            assert_eq!(stream_pt, pt, "streaming decrypt mismatch (Count {count})");
         }
 
         println!("Ascon-AEAD128: {} KAT cases passed", cases.len());

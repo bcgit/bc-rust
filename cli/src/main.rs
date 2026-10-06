@@ -6,6 +6,7 @@ mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
 mod ascon_cmd;
+mod ecdsa_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -15,11 +16,14 @@ mod mlkem_cmd;
 mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
+mod sm2_cmd;
 mod sm3_cmd;
 
+use crate::ecdsa_cmd::ECDSAAction;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use crate::sha2_cmd::SHA2Variant;
+use crate::sm2_cmd::SM2Action;
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::CipherDirection;
 
@@ -373,13 +377,10 @@ enum Subcommands {
     /// On encrypt, a fresh nonce is generated and written as the FIRST 16 BYTES of the output,
     /// followed by the ciphertext and then the 16-byte tag; on --decrypt the nonce is read back
     /// from the first 16 bytes of the input, so the two compose directly in a pipeline. This is
-    /// the same convention the AES commands use for their IV. Decryption fails with a non-zero
-    /// exit status if the tag does not verify.
-    ///
-    /// --nonce/--nonce-file override that: the nonce is then neither written on encrypt nor read
-    /// on decrypt, and the stream is exactly ciphertext||tag in both directions. That override
-    /// exists for reproducing known-answer vectors; repeating a nonce under one key destroys both
-    /// the confidentiality and the authenticity of Ascon-AEAD128.
+    /// the same convention the AES commands use for their IV. There is no flag to supply a nonce,
+    /// as with the AES modes: repeating a nonce under one key destroys both the confidentiality
+    /// and the authenticity of Ascon-AEAD128. Decryption fails with a non-zero exit status if the
+    /// tag does not verify.
     ///
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -397,15 +398,6 @@ enum Subcommands {
         /// A file containing the 128-bit key in hex or binary.
         #[arg(long)]
         key_file: Option<String>,
-
-        /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
-        /// stream (see above), and reusing one under a given key breaks the cipher.
-        #[arg(long)]
-        nonce: Option<String>,
-
-        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
-        #[arg(long)]
-        nonce_file: Option<String>,
 
         /// Associated data in hex (authenticated but not encrypted).
         #[arg(long)]
@@ -1556,6 +1548,183 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// The ECDSA signature algorithm over NIST P-256 (FIPS 186-5), deterministic (RFC 6979) by
+    /// default. `ctx` has no effect: ECDSA has no context-string input.
+    ECDSA_P256 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ECDSA signature algorithm over NIST P-384 (FIPS 186-5). See ecdsa-p256.
+    ECDSA_P384 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ECDSA signature algorithm over NIST P-521 (FIPS 186-5). See ecdsa-p256.
+    ECDSA_P521 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ECDSA signature algorithm over secp256k1 (SEC 2). See ecdsa-p256.
+    ECDSA_SECP256K1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ECDSA signature algorithm over brainpoolP256r1 (RFC 5639). See ecdsa-p256.
+    ECDSA_BP256R1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ECDSA signature algorithm over brainpoolP384r1 (RFC 5639). See ecdsa-p256.
+    ECDSA_BP384R1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ECDSA signature algorithm over brainpoolP512r1 (RFC 5639). See ecdsa-p256.
+    ECDSA_BP512R1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The SM2 Digital Signature Algorithm (draft-shen-sm2-ecdsa-02 S5, GB/T 32918.2-2016),
+    /// randomised only (the draft specifies no deterministic scheme). `--idfile` is mandatory for
+    /// signing and verifying: it carries the signer's identity IDA, which every SM2 operation
+    /// needs and which has no default value in the draft.
+    SM2 {
+        action: SM2Action,
+
+        #[arg(long)]
+        /// The file containing the signer's identity IDA (raw bytes), mandatory for signing and
+        /// verifying
+        idfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 }
 
 fn main() {
@@ -1656,9 +1825,9 @@ fn run() {
         Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
             ascon_cmd::cxof128_cmd(customization, *length, *x);
         }
-        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, direction, x }) => {
+        Some(Subcommands::AsconAEAD128 { key, key_file, ad, direction, x }) => {
             let decrypt = matches!(direction, CipherDirection::Decrypt);
-            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, decrypt, *x);
+            ascon_cmd::aead128_cmd(key, key_file, ad, decrypt, *x);
         }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
@@ -1827,6 +1996,30 @@ fn run() {
         }
         Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_P256 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_p256_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_P384 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_p384_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_P521 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_p521_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_SECP256K1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_secp256k1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_BP256R1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_bp256r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_BP384R1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_bp384r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
+            sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
         }
         None => {
             eprintln!("No command provided. See -h")
