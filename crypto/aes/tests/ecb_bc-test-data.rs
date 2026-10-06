@@ -52,9 +52,8 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json};
 use bouncycastle_hex as hex;
-use serde_json::Value;
 
 const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/AES";
 const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";
@@ -187,8 +186,7 @@ fn run_pairwise(
 
 #[test]
 fn acvp_aes_ecb_known_answer_tests() {
-    let Some(contents) = bc_test_data(TEST_DATA_DIR, RESPONSE_FILE) else { return };
-    let parsed: Value = serde_json::from_str(&contents).expect("valid ACVP JSON");
+    let Some(parsed) = bc_test_data_json(TEST_DATA_DIR, RESPONSE_FILE) else { return };
 
     // The ACVP file is an array: element 0 is the version header, element 1 the vector set.
     let groups = parsed

@@ -12,21 +12,11 @@
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::MAC;
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
-use bouncycastle_hex as hex;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_sha3::kmac::{KMAC128, KMAC256};
-use serde_json::Value;
 
 /// The longest key in either file is 129 bytes.
 const MAX_KEY_LEN: usize = 160;
-
-fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
 
 /// Runs every case in one KMAC file; `new_kmac(key, output_len)` builds the KMAC under test.
 fn run<M: MAC>(
@@ -34,9 +24,8 @@ fn run<M: MAC>(
     algorithm: &str,
     new_kmac: impl Fn(&KeyMaterial<MAX_KEY_LEN>, usize) -> M,
 ) {
-    let Some(contents) = wycheproof(filename) else { return };
+    let Some(doc) = wycheproof_json(filename) else { return };
 
-    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some(algorithm), "{filename}");
 
     let (mut valid_count, mut invalid_count) = (0usize, 0usize);
@@ -47,12 +36,12 @@ fn run<M: MAC>(
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
             let ctx = format!("{filename} tcId {tc_id}");
             let key = KeyMaterial::<MAX_KEY_LEN>::from_bytes_as_type(
-                &decode(test, "key", tc_id),
+                &hex_field(test, "key", tc_id),
                 KeyType::MACKey,
             )
             .expect("a MAC key");
-            let msg = decode(test, "msg", tc_id);
-            let tag = decode(test, "tag", tc_id);
+            let msg = hex_field(test, "msg", tc_id);
+            let tag = hex_field(test, "tag", tc_id);
 
             match test.get("result").and_then(Value::as_str).expect("result") {
                 "valid" => {

@@ -6,13 +6,11 @@
 //! GCM restricted to `P = ""` -- with AAD lengths of 128/192/256 bits, both directions, all three
 //! key lengths, 96- and 128-bit tags.
 
-// See `gcm_bc-test-data.rs` for why this is its own module path rather than `mod common;`.
 #[path = "common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;
 
-use acvp_gcm_helpers::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case};
-use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use serde_json::Value;
+use acvp_gcm_helpers::{GCM_NONCE_LEN, run_decrypt_case, run_encrypt_case};
+use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
 
 const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/GCM";
@@ -21,13 +19,12 @@ const RESPONSE_FILE: &str = "ACVP-AES-GMAC.4014543.rsp.json";
 
 #[test]
 fn acvp_aes_gmac_known_answer_tests() {
-    let (Some(req), Some(rsp)) =
-        (bc_test_data(TEST_DATA_DIR, REQUEST_FILE), bc_test_data(TEST_DATA_DIR, RESPONSE_FILE))
-    else {
+    let (Some(req), Some(rsp)) = (
+        bc_test_data_json(TEST_DATA_DIR, REQUEST_FILE),
+        bc_test_data_json(TEST_DATA_DIR, RESPONSE_FILE),
+    ) else {
         return;
     };
-    let req: Value = serde_json::from_str(&req).expect("valid ACVP request JSON");
-    let rsp: Value = serde_json::from_str(&rsp).expect("valid ACVP response JSON");
 
     let mut answers: BTreeMap<u64, Value> = BTreeMap::new();
     for group in rsp[1]["testGroups"].as_array().expect("response testGroups") {
@@ -54,9 +51,9 @@ fn acvp_aes_gmac_known_answer_tests() {
 
         for test in group["tests"].as_array().expect("tests") {
             let tc_id = test["tcId"].as_u64().expect("tcId");
-            let key_bytes = decode(test, "key", tc_id);
-            let aad = decode(test, "aad", tc_id);
-            let iv_bytes = decode(test, "iv", tc_id);
+            let key_bytes = hex_field(test, "key", tc_id);
+            let aad = hex_field(test, "aad", tc_id);
+            let iv_bytes = hex_field(test, "iv", tc_id);
             let iv: [u8; GCM_NONCE_LEN] = iv_bytes
                 .try_into()
                 .unwrap_or_else(|_| panic!("tcId {tc_id}: expected a 12-byte IV"));
@@ -65,14 +62,14 @@ fn acvp_aes_gmac_known_answer_tests() {
                 "encrypt" => {
                     let answer =
                         answers.get(&tc_id).unwrap_or_else(|| panic!("tcId {tc_id}: no answer"));
-                    let tag = decode(answer, "tag", tc_id);
+                    let tag = hex_field(answer, "tag", tc_id);
                     // A GMAC "ciphertext" is always empty.
                     run_encrypt_case(&key_bytes, iv, &aad, &[], tag_len, &[], &tag);
                     run_decrypt_case(&key_bytes, iv, &aad, &[], &tag, Some(&[]));
                     encrypt_checked += 1;
                 }
                 "decrypt" => {
-                    let tag = decode(test, "tag", tc_id);
+                    let tag = hex_field(test, "tag", tc_id);
                     let answer =
                         answers.get(&tc_id).unwrap_or_else(|| panic!("tcId {tc_id}: no answer"));
                     // See `gcm_bc-test-data.rs`: a forgery reports `testPassed: false`; a valid

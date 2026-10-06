@@ -13,19 +13,16 @@
 //! `Gcm` fixes the IV at 96 bits, so the file's 128-bit-IV groups are counted as not supported, as
 //! in `gcm_wycheproof.rs`.
 
-// See `gcm_bc-test-data.rs` for why this is its own module path rather than `mod common;`.
 #[path = "common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;
 
-use acvp_gcm_helpers::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case};
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
-use serde_json::Value;
+use acvp_gcm_helpers::{GCM_NONCE_LEN, run_decrypt_case, run_encrypt_case};
+use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 #[test]
 fn wycheproof_aes_gmac() {
-    let Some(contents) = wycheproof("aes_gmac_test.json") else { return };
+    let Some(doc) = wycheproof_json("aes_gmac_test.json") else { return };
 
-    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some("AES-GMAC"));
 
     let (mut valid_count, mut invalid_count) = (0usize, 0usize);
@@ -41,11 +38,11 @@ fn wycheproof_aes_gmac() {
 
         for test in tests {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
-            let key = decode(test, "key", tc_id);
+            let key = hex_field(test, "key", tc_id);
             let iv: [u8; GCM_NONCE_LEN] =
-                decode(test, "iv", tc_id).try_into().expect("a 96-bit IV");
-            let aad = decode(test, "msg", tc_id);
-            let tag = decode(test, "tag", tc_id);
+                hex_field(test, "iv", tc_id).try_into().expect("a 96-bit IV");
+            let aad = hex_field(test, "msg", tc_id);
+            let tag = hex_field(test, "tag", tc_id);
 
             match test.get("result").and_then(Value::as_str).expect("result") {
                 "valid" => {

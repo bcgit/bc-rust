@@ -51,14 +51,12 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use serde_json::Value;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
 
-// See `gcm_bc-test-data.rs` for why this is its own module path rather than `mod common;`.
 #[path = "common/acvp_helpers.rs"]
 mod acvp_helpers;
-use acvp_helpers::{cipher_key, decode};
+use acvp_helpers::cipher_key;
 
 /// Every group in this set has `ivLen: 96`.
 const NONCE_LEN: usize = 12;
@@ -194,13 +192,12 @@ fn run_case(
 
 #[test]
 fn acvp_aes_ccm_known_answer_tests() {
-    let (Some(req), Some(rsp)) =
-        (bc_test_data(TEST_DATA_DIR, REQUEST_FILE), bc_test_data(TEST_DATA_DIR, RESPONSE_FILE))
-    else {
+    let (Some(req), Some(rsp)) = (
+        bc_test_data_json(TEST_DATA_DIR, REQUEST_FILE),
+        bc_test_data_json(TEST_DATA_DIR, RESPONSE_FILE),
+    ) else {
         return;
     };
-    let req: Value = serde_json::from_str(&req).expect("valid ACVP request JSON");
-    let rsp: Value = serde_json::from_str(&rsp).expect("valid ACVP response JSON");
 
     // The response file carries only the answer, against a tcId. Index it.
     let mut answers: BTreeMap<u64, Value> = BTreeMap::new();
@@ -247,15 +244,15 @@ fn acvp_aes_ccm_known_answer_tests() {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
             let answer = answers.get(&tc_id).unwrap_or_else(|| panic!("tcId {tc_id}: no answer"));
 
-            let key_bytes = decode(test, "key", tc_id);
-            let nonce_bytes = decode(test, "iv", tc_id);
+            let key_bytes = hex_field(test, "key", tc_id);
+            let nonce_bytes = hex_field(test, "iv", tc_id);
             let nonce: [u8; NONCE_LEN] = nonce_bytes
                 .try_into()
                 .unwrap_or_else(|_| panic!("tcId {tc_id}: iv is not 12 bytes"));
-            let aad = decode(test, "aad", tc_id);
+            let aad = hex_field(test, "aad", tc_id);
 
             // Input comes from the request, expected output from the response.
-            let input = decode(test, if encrypt { "pt" } else { "ct" }, tc_id);
+            let input = hex_field(test, if encrypt { "pt" } else { "ct" }, tc_id);
 
             let expect_failure = answer
                 .get("testPassed")
@@ -267,7 +264,7 @@ fn acvp_aes_ccm_known_answer_tests() {
 
             if encrypt {
                 assert!(!expect_failure, "tcId {tc_id}: an encrypt case cannot be a failure case");
-                let expected = decode(answer, "ct", tc_id);
+                let expected = hex_field(answer, "ct", tc_id);
                 assert_eq!(
                     expected.len() as u64,
                     (payload_len + tag_len) / 8,
@@ -284,7 +281,7 @@ fn acvp_aes_ccm_known_answer_tests() {
                 );
                 decrypt_fail_cases += 1;
             } else {
-                let expected = decode(answer, "pt", tc_id);
+                let expected = hex_field(answer, "pt", tc_id);
                 let got = got.unwrap_or_else(|()| {
                     panic!("tcId {tc_id}: an authentic ACVP case failed its tag check")
                 });
