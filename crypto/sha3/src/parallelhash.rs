@@ -1,10 +1,8 @@
 //! ParallelHash, the parallelisable hash of NIST SP 800-185 Sec 6.
 
 use crate::SHAKEParams;
-use crate::cshake::{CSHAKEInternal, absorb_left_encode_into};
-use crate::length_bound_squeezer::LengthBoundSqueezer;
+use crate::cshake::{CSHAKEInternal, LengthBoundSqueezer, absorb_left_encode_into, right_encode};
 use crate::shake::SHAKEInternal;
-use crate::xof_utils::right_encode;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};

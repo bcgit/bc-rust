@@ -205,12 +205,10 @@ use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF};
 mod cshake;
 mod keccak;
 mod kmac;
-mod length_bound_squeezer;
 mod parallelhash;
 mod sha3;
 mod shake;
 mod tuplehash;
-mod xof_utils;
 
 pub mod hmac;
 
@@ -259,7 +257,6 @@ pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 /*** pub types ***/
 pub use cshake::CSHAKEInternal;
 pub use kmac::{KMACInternal, KMACXOFInternal};
-pub use length_bound_squeezer::LengthBoundSqueezer;
 pub use parallelhash::{ParallelHashInternal, ParallelHashXOFInternal};
 pub use sha3::SHA3Internal;
 pub use tuplehash::{TupleHashInternal, TupleHashXOFInternal};
@@ -339,7 +336,7 @@ pub type SHAKE256 = SHAKEInternal<SHAKE256Params>;
 
 /*** Param traits ***/
 
-/// Private trait on purpose so that only the NIST-approved params can be used.
+/// Private (sealed) trait on purpose so that only the NIST-approved params can be used.
 trait SHA3Params: HashAlgParams + Clone {
     const SIZE: KeccakSize;
     /// A tag, unique across all SHA3 *and* SHAKE variants, identifying which variant produced a
@@ -443,6 +440,7 @@ impl AlgorithmOID for SHA3_512 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0a];
 }
 
+/// Private (sealed) trait on purpose so that only the NIST-approved params can be used.
 trait SHAKEParams: Algorithm + Clone {
     const SIZE: KeccakSize;
     /// See [`SHA3Params::STATE_TAG`]. Must be distinct from every SHA3 *and* SHAKE variant's tag.

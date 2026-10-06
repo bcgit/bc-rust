@@ -1,9 +1,9 @@
 //! TupleHash, the tuple-hashing function of NIST SP 800-185 Sec 5.
 
 use crate::SHAKEParams;
-use crate::cshake::{CSHAKEInternal, absorb_encoded_string_into};
-use crate::length_bound_squeezer::LengthBoundSqueezer;
-use crate::xof_utils::right_encode;
+use crate::cshake::{
+    CSHAKEInternal, LengthBoundSqueezer, absorb_encoded_string_into, right_encode,
+};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};

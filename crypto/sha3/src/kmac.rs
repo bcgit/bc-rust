@@ -1,9 +1,7 @@
 //! KMAC, the Keccak Message Authentication Code of NIST SP 800-185 Sec 4.
 
 use crate::SHAKEParams;
-use crate::cshake::CSHAKEInternal;
-use crate::length_bound_squeezer::LengthBoundSqueezer;
-use crate::xof_utils::right_encode;
+use crate::cshake::{CSHAKEInternal, LengthBoundSqueezer, right_encode};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;

@@ -2,7 +2,6 @@
 
 use crate::SHAKEParams;
 use crate::shake::{SHAKEInternal, SHAKESqueezer};
-use crate::xof_utils::left_encode;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
@@ -231,6 +230,219 @@ impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
             self.shake.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)
         } else {
             self.shake.into_squeezer_partial_bits(partial_byte, num_bits)
+        }
+    }
+}
+
+/*** cshake helpers ***/
+/// The widest encoding these functions produce: a length byte plus up to eight value bytes.
+///
+/// SP 800-185 Sec 2.3.1 permits integers up to `2^2040 - 1`, which would need 255 value bytes. A
+/// `u64` covers every length this library can be handed -- an input of `2^64` bits is 2 exabytes --
+/// so the buffer is sized for that rather than for the spec's theoretical maximum.
+pub(crate) const MAX_ENCODED_LEN: usize = 9;
+
+/// `left_encode(x)`: SP 800-185 Sec 2.3.1.
+///
+/// Encodes `value` so that it can be parsed unambiguously *from the beginning*: the number of
+/// value bytes comes first, then the value itself, big-endian. Returns the buffer and how much of
+/// it is used.
+///
+/// The spec's example: `left_encode(0)` is `10000000 00000000`, which in this document's
+/// low-order-bit-first notation is the bytes `01 00`.
+pub(crate) fn left_encode(value: u64) -> ([u8; MAX_ENCODED_LEN], usize) {
+    let mut buf = [0u8; MAX_ENCODED_LEN];
+    // Step 1: n is the smallest positive integer with 2^(8n) > value. Zero still takes one byte,
+    // which is why the count starts at 1 rather than 0.
+    let n = value_bytes(value);
+    buf[0] = n as u8;
+    // Steps 2-4: the base-256 digits of value, most significant first.
+    for i in 0..n {
+        buf[1 + i] = (value >> (8 * (n - 1 - i))) as u8;
+    }
+    (buf, n + 1)
+}
+
+/// `right_encode(x)`: SP 800-185 Sec 2.3.1.
+///
+/// Unused until KMAC and TupleHash land, which bind the requested output length with it.
+///
+/// As [`left_encode`], but the length byte comes *last*, so the encoding can be parsed from the end
+/// of a string. The spec's example: `right_encode(0)` is the bytes `00 01`.
+#[allow(dead_code)] // used by KMAC and TupleHash
+pub(crate) fn right_encode(value: u64) -> ([u8; MAX_ENCODED_LEN], usize) {
+    let mut buf = [0u8; MAX_ENCODED_LEN];
+    let n = value_bytes(value);
+    for i in 0..n {
+        buf[i] = (value >> (8 * (n - 1 - i))) as u8;
+    }
+    buf[n] = n as u8;
+    (buf, n + 1)
+}
+
+/// The number of base-256 digits in `value`: the spec's `n`, the smallest positive integer with
+/// `2^(8n) > value`. Positive, so zero encodes as one byte.
+fn value_bytes(value: u64) -> usize {
+    let mut n = 1;
+    let mut v = value;
+    while {
+        v >>= 8;
+        v != 0
+    } {
+        n += 1;
+    }
+    n
+}
+
+/// The squeezing phase of KMACXOF, TupleHashXOF and ParallelHashXOF, which still has a choice to
+/// make.
+///
+/// Every SP 800-185 function ends its absorbed input with `right_encode(L)`, and the two forms of
+/// each function differ only in what goes in there: the fixed-length KMAC, TupleHash and
+/// ParallelHash of s. 4.3, 5.3 and 6.3 encode the requested output length, and the XOF forms of
+/// s. 4.3.1, 5.3.1 and 6.3.1 encode 0. Nothing else about them differs, so the choice can be left
+/// until the caller says how it wants to read -- which is what this type does:
+///
+/// * [`XOFSqueezer::do_output`] is the XOF reading. It is the caller saying "give me some bytes and
+///   I may be back for more", which only `right_encode(0)` can answer, since a length bound into
+///   the sponge cannot be revised once output has begun.
+/// * [`XOFSqueezer::do_output_final`], as the **first** read, is the fixed-length reading. It is
+///   the caller saying how many bytes it wants and that it will not be back, so `L` is that length
+///   in bits and the result is the fixed-length function of s. 4.3, 5.3 or 6.3 -- the same bytes
+///   `KMAC128(K, X, L, S)` produces, not a truncation of `KMACXOF128`.
+///
+/// The first read commits: the encoding is in the sponge from then on, so a `do_final` that
+/// follows a `do_output` cannot bind anything and simply continues the `right_encode(0)` stream
+/// the earlier read already chose.
+pub struct LengthBoundSqueezer<PARAMS: SHAKEParams> {
+    phase: Phase<PARAMS>,
+}
+
+/// Which side of the first read this squeezer is on.
+enum Phase<PARAMS: SHAKEParams> {
+    /// Nothing read yet, so `right_encode(L)` is still the caller's to choose.
+    Unbound(CSHAKEInternal<PARAMS>),
+    /// The encoding has been absorbed and the sponge is producing output.
+    Squeezing(SHAKESqueezer<PARAMS>),
+    /// Never observed: [`LengthBoundSqueezer::read`] leaves this here only while the value moves
+    /// from one of the phases above to the other.
+    Binding,
+}
+
+impl<PARAMS: SHAKEParams> LengthBoundSqueezer<PARAMS> {
+    /// Wraps a cSHAKE with everything but its `right_encode(L)` absorbed.
+    pub(crate) fn new(cshake: CSHAKEInternal<PARAMS>) -> Self {
+        Self { phase: Phase::Unbound(cshake) }
+    }
+
+    /// [`XOFSqueezer::do_output_final_out`] with `L` given rather than taken from the buffer.
+    ///
+    /// For the `Hash` view of these functions, whose length is fixed by the type: it binds the
+    /// nominal output length and then writes as much of it as the caller's buffer has room for,
+    /// which is what [`Hash::do_final_out`] promises. Going through
+    /// [`XOFSqueezer::do_output_final_out`] would bind the buffer's length instead, and a short
+    /// buffer would then compute a different function rather than truncating this one.
+    pub(crate) fn do_final_out_with_length(mut self, length_bits: u64, output: &mut [u8]) -> usize {
+        self.read(length_bits, output)
+    }
+
+    /// Fills `output` from the stream, absorbing `right_encode(length_bits)` first if this is the
+    /// first read. `output` is zeroized before anything is written to it.
+    fn read(&mut self, length_bits: u64, output: &mut [u8]) -> usize {
+        self.phase = match core::mem::replace(&mut self.phase, Phase::Binding) {
+            Phase::Unbound(mut cshake) => {
+                let (buf, len) = right_encode(length_bits);
+                cshake.do_update(&buf[..len]);
+                Phase::Squeezing(cshake.into_squeezer())
+            }
+            // An earlier read chose the encoding; this one continues that stream.
+            committed => committed,
+        };
+        match &mut self.phase {
+            Phase::Squeezing(squeezer) => squeezer.do_output_out(output),
+            // The match above turns `Unbound` into `Squeezing` and puts `Binding` back as it found
+            // it, so neither can be live here.
+            _ => unreachable!("the first read always leaves the squeezing phase"),
+        }
+    }
+}
+
+impl<PARAMS: SHAKEParams> XOFSqueezer for LengthBoundSqueezer<PARAMS> {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_out(&mut out);
+        out
+    }
+
+    /// Reading as a XOF, so `right_encode(0)` if this is the first read (s. 4.3.1, 5.3.1, 6.3.1).
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        self.read(0, output)
+    }
+
+    fn do_output_final(self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_final_out(&mut out);
+        out
+    }
+
+    /// The last read, so if it is also the first, `L` is its length in bits and this is the
+    /// fixed-length function of s. 4.3, 5.3 or 6.3. After a [`XOFSqueezer::do_output`] the encoding
+    /// is already in the sponge and this just continues that stream.
+    fn do_output_final_out(mut self, output: &mut [u8]) -> usize {
+        self.read((output.len() as u64) * 8, output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The two worked examples in SP 800-185 Sec 2.3.1, in the byte spelling of Sec 2
+    /// ("bytes are written with the low-order bit first" in binary, high-order digit first in hex).
+    #[test]
+    fn spec_examples() {
+        let (b, n) = right_encode(0);
+        assert_eq!(&b[..n], &[0x00, 0x01], "right_encode(0) = 00000000 10000000");
+
+        let (b, n) = left_encode(0);
+        assert_eq!(&b[..n], &[0x01, 0x00], "left_encode(0) = 10000000 00000000");
+    }
+
+    /// The encodings that appear in the NIST cSHAKE sample file: `left_encode(168)` opens the
+    /// bytepad block, and `left_encode(120)` prefixes the 15-character "Email Signature".
+    #[test]
+    fn cshake_sample_encodings() {
+        let (b, n) = left_encode(168);
+        assert_eq!(&b[..n], &[0x01, 0xA8], "left_encode(168), the cSHAKE128 rate");
+
+        let (b, n) = left_encode(120);
+        assert_eq!(&b[..n], &[0x01, 0x78], "left_encode(15 * 8), for \"Email Signature\"");
+    }
+
+    /// The length byte grows with the value, and the value is big-endian after it.
+    #[test]
+    fn multi_byte_values() {
+        let (b, n) = left_encode(0x0100);
+        assert_eq!(&b[..n], &[0x02, 0x01, 0x00]);
+        let (b, n) = right_encode(0x0100);
+        assert_eq!(&b[..n], &[0x01, 0x00, 0x02]);
+
+        let (b, n) = left_encode(u64::MAX);
+        assert_eq!(&b[..n], &[0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+        let (b, n) = right_encode(u64::MAX);
+        assert_eq!(&b[..n], &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x08]);
+    }
+
+    /// Every boundary where the number of value bytes increases.
+    #[test]
+    fn byte_count_boundaries() {
+        for n in 1..=8u32 {
+            let just_under = if n == 8 { u64::MAX } else { (1u64 << (8 * n)) - 1 };
+            assert_eq!(left_encode(just_under).1, n as usize + 1, "2^{} - 1", 8 * n);
+            assert_eq!(right_encode(just_under).1, n as usize + 1, "2^{} - 1", 8 * n);
+            if n < 8 {
+                assert_eq!(left_encode(1u64 << (8 * n)).1, n as usize + 2, "2^{}", 8 * n);
+            }
         }
     }
 }
