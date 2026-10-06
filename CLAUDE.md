@@ -144,6 +144,8 @@ Repo mechanics behind those rules, which the documents don't spell out:
   covers) -- there, read the whole input once and process it in place, rather than adding a second
   buffer the size of the input on top of it; see `aes_ccm_cmd.rs`.
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
+- AI-drafted docs and comments run long. Before committing, check them against QUALITY_AND_STYLE.md's "Proportion"
+  rule: cut duplicated material, long rationale and restated spec text rather than adding more.
 
 ## Scope of changes
 
