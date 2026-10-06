@@ -1,7 +1,7 @@
 //! AES-GCM authenticated encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the nonce/tag framing, AAD loading and stdin streaming are in
-//! [`crate::aead_mode_cmd`], shared across all three key lengths. See that module for the
+//! [`helpers::aead_cipher_helpers`], shared across all three key lengths. See that module for the
 //! command-line contract (`nonce || ciphertext || tag`, the AAD flags, and why a tag failure may be
 //! reported after plaintext has already reached stdout).
 //!
@@ -17,6 +17,7 @@ use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
+use crate::helpers;
 
 pub(crate) fn aes128_gcm_cmd(
     action: &CipherDirection,

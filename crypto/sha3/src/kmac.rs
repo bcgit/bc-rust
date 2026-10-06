@@ -1,7 +1,56 @@
 //! KMAC, the Keccak Message Authentication Code of NIST SP 800-185 Sec 4.
+//!
+//! # KMAC
+//! KMAC is a [`MAC`]. [`MAC::new`] takes a key tagged [`KeyType::MACKey`] and produces the nominal
+//! output length; [`KMACInternal::new_with_params`] chooses `S` and the output length, which is
+//! bound into the function rather than a truncation of it (see [`KMAC128`]):
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_sha3::kmac::KMAC128;
+//!
+//! let key = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
+//!
+//! let tag: Vec<u8> = KMAC128::new(&key).unwrap().mac(b"Hello, world!");
+//! assert!(KMAC128::new(&key).unwrap().verify(b"Hello, world!", &tag));
+//!
+//! // 16-byte tags, under a customization string.
+//! let kmac = KMAC128::new_with_params(&key, b"My Tagged Application", 16, false).unwrap();
+//! let short_tag: Vec<u8> = kmac.mac(b"Hello, world!");
+//! assert_eq!(short_tag.len(), 16);
+//! ```
+//!
+//! # KMACXOF
+//! KMACXOF, is an arbitrary-output-length form of KMAC and it implements the [`XOF`] trait.
+//! It is a separate function from its fixed-length counterpart since its *final* read ([`XOF::xof`],
+//! [`XOFSqueezer::do_output_final`]) binds its output length so that outputs of different lengths,
+//! even over the same input, are completely unrelated (ie they don't have the problem that one is
+//! a prefix of the other).
+//!
+//! See [`KMACXOF128`] for detail.
+//!
+//! Example of `KMACXOF128`:
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::{Hash, MAC, XOF, XOFSqueezer};
+//! use bouncycastle_sha3::kmac::{KMAC128, KMACXOF128};
+//!
+//! let key = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
+//!
+//! let mut kmac = KMACXOF128::new(&key, b"", false).unwrap();
+//! kmac.do_update(b"Hello, world!");
+//! let mut squeezer = kmac.into_squeezer();
+//! let first: Vec<u8> = squeezer.do_output(16);
+//! let more: Vec<u8> = squeezer.do_output(1024);
+//!
+//! // A final read of 32 bytes is KMAC128 at its nominal length, not a prefix of the stream above.
+//! let bound: Vec<u8> = KMACXOF128::new(&key, b"", false).unwrap().xof(b"Hello, world!", 32);
+//! assert_eq!(bound, KMAC128::new(&key).unwrap().mac(b"Hello, world!"));
+//! assert_ne!(bound[..16], first[..]);
+//! ```
 
-use crate::SHAKEParams;
-use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, LengthBoundSqueezer, right_encode};
+use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, right_encode};
+use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -12,6 +61,36 @@ use bouncycastle_utils::suspendable_state::{
     suspend_component,
 };
 
+/// The name of the KMAC128 algorithm (NIST SP 800-185 Sec 4).
+pub const KMAC128_NAME: &str = "KMAC128";
+/// The name of the KMAC256 algorithm (NIST SP 800-185 Sec 4).
+pub const KMAC256_NAME: &str = "KMAC256";
+/// The name of the KMACXOF128 algorithm (NIST SP 800-185 Sec 4.3.1).
+pub const KMACXOF128_NAME: &str = "KMACXOF128";
+/// The name of the KMACXOF256 algorithm (NIST SP 800-185 Sec 4.3.1).
+pub const KMACXOF256_NAME: &str = "KMACXOF256";
+
+/// KMAC128: the Keccak MAC of NIST SP 800-185 Sec 4, at a 128-bit security strength.
+///
+/// [`bouncycastle_core::traits::MAC::new`] gives the common case -- no customization, 32-byte
+/// output. [`KMACInternal::new_with_params`] chooses the customization string and output length,
+/// [`KMACXOF128`] is the separate arbitrary-length function of Sec 4.3.1.
+pub type KMAC128 = KMACInternal<SHAKE128Params>;
+/// KMAC256: the Keccak MAC of NIST SP 800-185 Sec 4, at a 256-bit security strength.
+///
+/// See [`KMAC128`]. The nominal output length is 64 bytes.
+pub type KMAC256 = KMACInternal<SHAKE256Params>;
+
+/// KMACXOF128: the arbitrary-output-length KMAC of NIST SP 800-185 Sec 4.3.1.
+///
+/// A keyed [`XOF`]. Distinct from [`KMAC128`], and not a longer
+/// view of it: over the same inputs the two produce unrelated output.
+pub type KMACXOF128 = KMACXOFInternal<SHAKE128Params>;
+/// KMACXOF256: the arbitrary-output-length KMAC of NIST SP 800-185 Sec 4.3.1.
+///
+/// See [`KMACXOF128`].
+pub type KMACXOF256 = KMACXOFInternal<SHAKE256Params>;
+
 /// Length in bytes of the suspended state of KMAC.
 pub const SUSPENDED_KMAC_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN + 8;
 /// Length in bytes of the suspended state of KMACXOF.
@@ -21,7 +100,7 @@ pub const SUSPENDED_KMACXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONEN
 /// it is what separates KMAC from any other cSHAKE-derived function.
 const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
 
-/// Internal struct for KMAC. Use [`crate::KMAC128`] or [`crate::KMAC256`].
+/// Internal struct for KMAC. Use [`KMAC128`] or [`KMAC256`].
 ///
 /// KMAC is cSHAKE with the function name `"KMAC"`, the key bound to the front of the message and
 /// the requested output length bound to the end (Sec 4.3):
@@ -217,7 +296,7 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
     }
 }
 
-/// Internal struct for KMACXOF. Use [`crate::KMACXOF128`] or [`crate::KMACXOF256`].
+/// Internal struct for KMACXOF. Use [`KMACXOF128`] or [`KMACXOF256`].
 ///
 /// KMACXOF is the arbitrary-output-length function of SP 800-185 Sec 4.3.1: KMAC with
 /// `right_encode(0)` bound in place of the output length.
@@ -241,7 +320,7 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
 ///
 /// Read as a *final* read, it is bound, because a caller that names a length and will not be back
 /// has said what `L` is: [`XOFSqueezer::do_output_final`] and [`XOF::xof`] absorb
-/// `right_encode(8n)` and so produce `KMAC(K, X, 8n, S)` exactly (see [`LengthBoundSqueezer`]), and
+/// `right_encode(8n)` and so produce `KMAC(K, X, 8n, S)` exactly (see [`CSHAKESqueezer`]), and
 /// the [`Hash`] view -- [`Hash::do_final`], [`Hash::hash`] and [`Hash::hash_out`] -- does the same
 /// at the nominal [`Hash::output_len`], since a hash's output length is fixed by its type.
 #[derive(Clone)]
@@ -289,7 +368,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACXOFInternal<PARAMS> {
     }
 }
 
-/// The absorbing phase; the squeezing half is a [`LengthBoundSqueezer`], which suspends on its
+/// The absorbing phase; the squeezing half is a [`CSHAKESqueezer`], which suspends on its
 /// own. The state inverts to the key exactly as [`KMACInternal`]'s does: store it as the key.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_KMACXOF_STATE_LEN> for KMACXOFInternal<PARAMS> {
     fn suspend(self) -> [u8; SUSPENDED_KMACXOF_STATE_LEN] {
@@ -381,12 +460,12 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for KMACXOFInternal<PARAMS> {
-    type Squeezer = LengthBoundSqueezer<PARAMS>;
+    type Squeezer = CSHAKESqueezer<PARAMS>;
 
     /// The `right_encode(L)` of Sec 4.3.1 step 1 is not absorbed here: which `L` it carries depends
-    /// on how the first output is read, so [`LengthBoundSqueezer`] decides it.
+    /// on how the first output is read, so [`CSHAKESqueezer`] decides it.
     fn into_squeezer(self) -> Self::Squeezer {
-        LengthBoundSqueezer::new(self.cshake)
+        CSHAKESqueezer::new(self.cshake)
     }
 
     fn into_squeezer_partial_bits(

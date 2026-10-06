@@ -1,10 +1,57 @@
 //! TupleHash, the tuple-hashing function of NIST SP 800-185 Sec 5.
+//!
+//! # TupleHash
+//! TupleHash is a [`Hash`] over a sequence of strings rather than one string: each
+//! [`Hash::do_update`] call is one tuple element, so the chunking is part of the input.
+//!
+//! The advantage of TupleHash over straight SHAKE is that `TupleHash( ("ab", "cd") )` and `TupleHash( ("a", "bcd") )`
+//! yield unrelated outputs.
+//!
+//! `TupleHash` has two interfaces: `.hash_tuple()` which takes an array-of-arrays, or successive calls to `.do_update()`.
+//!```
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha3::tuplehash::TupleHash128;
+//!
+//! // .hash_tuple() takes tuples as an array of arrays
+//! let tuple: [&[u8]; 2] = [b"user id", b"session"];
+//! let output: Vec<u8> = TupleHash128::new(b"", 32).hash_tuple(&tuple);
+//!
+//! // The same computation, one element per .do_update()
+//! let mut th = TupleHash128::new(b"", 32);
+//! th.do_update(b"user id");
+//! th.do_update(b"session");
+//! assert_eq!(th.do_final(), output);
+//! ```
+//!
+//! # TupleHashXOF
+//! TupleHashXOF, is an arbitrary-output-length form of TupleHash and it implements the [`XOF`] trait.
+//! It is a separate function from its fixed-length counterpart since its *final* read ([`XOF::xof`],
+//! [`XOFSqueezer::do_output_final`]) binds its output length so that outputs of different lengths,
+//! even over the same input, are completely unrelated (ie they don't have the problem that one is
+//! a prefix of the other).
+//!
+//! See [`TupleHashXOF128`] for detail.
+//!
+//! Example of `KMACXOF128`:
+//!```
+//! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+//! use bouncycastle_sha3::tuplehash::{TupleHash128, TupleHashXOF128};
+//!
+//! let mut tuplehash = TupleHashXOF128::new(b"");
+//! tuplehash.do_update(b"Hello, world!");
+//! let mut squeezer = tuplehash.into_squeezer();
+//! let first: Vec<u8> = squeezer.do_output(16);
+//! let more: Vec<u8> = squeezer.do_output(1024);
+//!
+//! let bound: Vec<u8> = TupleHashXOF128::new(b"").xof(b"Hello, world!", 32);
+//! assert_eq!(bound, TupleHash128::new(b"", 32).hash(b"Hello, world!"));
+//! assert_ne!(bound[..16], first[..]);
+//! ```
 
-use crate::SHAKEParams;
 use crate::cshake::{
-    CSHAKE_COMPONENT_LEN, CSHAKEInternal, LengthBoundSqueezer, absorb_encoded_string_into,
-    right_encode,
+    CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_encoded_string_into, right_encode,
 };
+use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
@@ -12,6 +59,15 @@ use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
 };
+
+/// The name of the TupleHash128 algorithm (NIST SP 800-185 Sec 5).
+pub const TUPLEHASH128_NAME: &str = "TupleHash128";
+/// The name of the TupleHash256 algorithm (NIST SP 800-185 Sec 5).
+pub const TUPLEHASH256_NAME: &str = "TupleHash256";
+/// The name of the TupleHashXOF128 algorithm (NIST SP 800-185 Sec 5.3.1).
+pub const TUPLEHASHXOF128_NAME: &str = "TupleHashXOF128";
+/// The name of the TupleHashXOF256 algorithm (NIST SP 800-185 Sec 5.3.1).
+pub const TUPLEHASHXOF256_NAME: &str = "TupleHashXOF256";
 
 /// Length in bytes of the suspended state of TupleHash.
 pub const SUSPENDED_TUPLEHASH_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN + 8;
@@ -21,7 +77,20 @@ pub const SUSPENDED_TUPLEHASHXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COM
 /// The function-name string every TupleHash binds, per SP 800-185 Sec 5.3.
 const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
 
-/// Internal struct for TupleHash. Use [`crate::TUPLEHASH128`] or [`crate::TUPLEHASH256`].
+/// TupleHash128: the unambiguous tuple hash of NIST SP 800-185 Sec 5, 128-bit strength.
+///
+/// Each [`Hash::do_update`] call appends one *tuple
+/// element*, not a run of bytes -- so unlike every other hash here, the chunking is part of the
+/// input. See [`TupleHashInternal`].
+pub type TupleHash128 = TupleHashInternal<SHAKE128Params>;
+/// TupleHash256: see [`TupleHash128`].
+pub type TupleHash256 = TupleHashInternal<SHAKE256Params>;
+/// TupleHashXOF128: the arbitrary-output-length TupleHash of Sec 5.3.1.
+pub type TupleHashXOF128 = TupleHashXOFInternal<SHAKE128Params>;
+/// TupleHashXOF256: see [`TupleHashXOF128`].
+pub type TupleHashXOF256 = TupleHashXOFInternal<SHAKE256Params>;
+
+/// Internal struct for TupleHash. Use [`TupleHash128`] or [`TupleHash256`].
 ///
 /// TupleHash hashes a *sequence of strings* unambiguously (Sec 5.1): each element is length-
 /// prefixed with `encode_string` before absorption, so the boundaries between elements are part of
@@ -184,7 +253,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
     }
 }
 
-/// Internal struct for TupleHashXOF. Use [`crate::TUPLEHASHXOF128`] or [`crate::TUPLEHASHXOF256`].
+/// Internal struct for TupleHashXOF. Use [`TupleHashXOF128`] or [`TupleHashXOF256`].
 ///
 /// The arbitrary-output-length TupleHash of Sec 5.3.1: `right_encode(0)` in place of the length.
 /// As with KMAC, it is a *different function* from the fixed-length one, not a longer view of it,
@@ -194,7 +263,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
 ///
 /// A *final* read binds it, because a caller that names a length and will not be back has said
 /// what `L` is: [`XOFSqueezer::do_output_final`] and [`XOF::xof`] produce the fixed-length
-/// TupleHash of Sec 5.3 (see [`LengthBoundSqueezer`]), and the [`Hash`] view -- [`Hash::do_final`],
+/// TupleHash of Sec 5.3 (see [`CSHAKESqueezer`]), and the [`Hash`] view -- [`Hash::do_final`],
 /// [`Hash::hash`] and [`Hash::hash_out`] -- does the same at the nominal [`Hash::output_len`],
 /// since a hash's output length is fixed by its type.
 ///
@@ -216,7 +285,7 @@ impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
     }
 
     /// Hashes a whole tuple and returns the output stream.
-    pub fn output_for(mut self, tuple: &[&[u8]]) -> LengthBoundSqueezer<PARAMS> {
+    pub fn output_for(mut self, tuple: &[&[u8]]) -> CSHAKESqueezer<PARAMS> {
         for element in tuple {
             self.do_update(element);
         }
@@ -238,7 +307,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashXOFInternal<PARAMS> 
     }
 }
 
-/// The absorbing phase, always between elements; the squeezing half is a [`LengthBoundSqueezer`].
+// The absorbing phase, always between elements; the squeezing half is a LengthBoundSqueezer.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_TUPLEHASHXOF_STATE_LEN>
     for TupleHashXOFInternal<PARAMS>
 {
@@ -330,12 +399,12 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
-    type Squeezer = LengthBoundSqueezer<PARAMS>;
+    type Squeezer = CSHAKESqueezer<PARAMS>;
 
-    /// The `right_encode` of Sec 5.3.1 step 4 is not absorbed here: whether it carries 0 or the
-    /// length of a final read is [`LengthBoundSqueezer`]'s decision.
+    // The `right_encode` of Sec 5.3.1 step 4 is not absorbed here: whether it carries 0 or the
+    // length of a final read is LengthBoundSqueezer's decision.
     fn into_squeezer(self) -> Self::Squeezer {
-        LengthBoundSqueezer::new(self.cshake)
+        CSHAKESqueezer::new(self.cshake)
     }
 
     fn into_squeezer_partial_bits(

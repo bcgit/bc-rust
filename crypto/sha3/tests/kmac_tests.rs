@@ -7,7 +7,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
-use bouncycastle_sha3::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
+use bouncycastle_sha3::kmac::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
 use std::fs;
 use std::path::Path;
 

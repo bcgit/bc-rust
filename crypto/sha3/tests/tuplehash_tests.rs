@@ -6,7 +6,7 @@ use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;
-use bouncycastle_sha3::{TUPLEHASH128, TUPLEHASH256, TUPLEHASHXOF128, TUPLEHASHXOF256};
+use bouncycastle_sha3::tuplehash::{TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256};
 use std::fs;
 use std::path::Path;
 
@@ -82,8 +82,8 @@ fn nist_sp800_185_tuplehash_sample_values() {
         let want = v.output_len / 8;
         let t = as_slices(&v.tuple);
         let got = match v.strength {
-            128 => TUPLEHASH128::new(v.s.as_bytes(), want).hash_tuple(&t),
-            256 => TUPLEHASH256::new(v.s.as_bytes(), want).hash_tuple(&t),
+            128 => TupleHash128::new(v.s.as_bytes(), want).hash_tuple(&t),
+            256 => TupleHash256::new(v.s.as_bytes(), want).hash_tuple(&t),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(
@@ -110,8 +110,8 @@ fn nist_sp800_185_tuplehashxof_sample_values() {
         // do_output is the XOF reading of the stream; do_final and the one-shots bind the length
         // they are given, and are checked against the fixed-length samples elsewhere.
         let got = match v.strength {
-            128 => TUPLEHASHXOF128::new(v.s.as_bytes()).output_for(&t).do_output(want),
-            256 => TUPLEHASHXOF256::new(v.s.as_bytes()).output_for(&t).do_output(want),
+            128 => TupleHashXOF128::new(v.s.as_bytes()).output_for(&t).do_output(want),
+            256 => TupleHashXOF256::new(v.s.as_bytes()).output_for(&t).do_output(want),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(got, v.output, "COUNT {i}: TupleHashXOF{} S={:?}", v.strength, v.s);
@@ -143,16 +143,16 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         let s = f.s.as_bytes();
         match f.strength {
             128 => check_do_final_binds_length(
-                || TUPLEHASHXOF128::new(s),
-                |n| TUPLEHASH128::new(s, n).hash_tuple(&t),
+                || TupleHashXOF128::new(s),
+                |n| TupleHash128::new(s, n).hash_tuple(&t),
                 &t,
                 &f.output,
                 &x.output,
                 &ctx,
             ),
             256 => check_do_final_binds_length(
-                || TUPLEHASHXOF256::new(s),
-                |n| TUPLEHASH256::new(s, n).hash_tuple(&t),
+                || TupleHashXOF256::new(s),
+                |n| TupleHash256::new(s, n).hash_tuple(&t),
                 &t,
                 &f.output,
                 &x.output,
@@ -165,8 +165,8 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         // construction -- the shortest way to spell fixed-length TupleHash through the XOF type.
         let n = f.output.len();
         let got = match f.strength {
-            128 => TUPLEHASHXOF128::new(s).output_for(&t).do_output_final(n),
-            256 => TUPLEHASHXOF256::new(s).output_for(&t).do_output_final(n),
+            128 => TupleHashXOF128::new(s).output_for(&t).do_output_final(n),
+            256 => TupleHashXOF256::new(s).output_for(&t).do_output_final(n),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(got, f.output, "{ctx}: output_for().do_final()");
@@ -255,16 +255,16 @@ fn tuplehashxof_is_not_tuplehash_truncated() {
 /// opposite property, which is why it is worth pinning explicitly.
 #[test]
 fn the_tuple_boundaries_are_part_of_the_hash() {
-    let a = TUPLEHASH128::new(b"", 32).hash_tuple(&[b"abc", b"d"]);
-    let b = TUPLEHASH128::new(b"", 32).hash_tuple(&[b"ab", b"cd"]);
-    let c = TUPLEHASH128::new(b"", 32).hash_tuple(&[b"abcd"]);
+    let a = TupleHash128::new(b"", 32).hash_tuple(&[b"abc", b"d"]);
+    let b = TupleHash128::new(b"", 32).hash_tuple(&[b"ab", b"cd"]);
+    let c = TupleHash128::new(b"", 32).hash_tuple(&[b"abcd"]);
     assert_ne!(a, b, "the same bytes split differently must hash differently");
     assert_ne!(a, c, "... and differently again from a single element");
     assert_ne!(b, c);
 
     // An empty element is an element: dropping it changes the answer.
-    let with = TUPLEHASH128::new(b"", 32).hash_tuple(&[b"a", b"", b"b"]);
-    let without = TUPLEHASH128::new(b"", 32).hash_tuple(&[b"a", b"b"]);
+    let with = TupleHash128::new(b"", 32).hash_tuple(&[b"a", b"", b"b"]);
+    let without = TupleHash128::new(b"", 32).hash_tuple(&[b"a", b"b"]);
     assert_ne!(with, without, "an empty tuple element must still count");
 }
 
@@ -272,9 +272,9 @@ fn the_tuple_boundaries_are_part_of_the_hash() {
 #[test]
 fn hash_tuple_matches_successive_updates() {
     let tuple: [&[u8]; 3] = [b"first", b"second", b"third"];
-    let one = TUPLEHASH128::new(b"S", 32).hash_tuple(&tuple);
+    let one = TupleHash128::new(b"S", 32).hash_tuple(&tuple);
 
-    let mut t = TUPLEHASH128::new(b"S", 32);
+    let mut t = TupleHash128::new(b"S", 32);
     for element in tuple {
         t.do_update(element);
     }
@@ -287,12 +287,12 @@ fn hash_tuple_matches_successive_updates() {
 fn length_binding_differs_between_the_two() {
     let t: [&[u8]; 2] = [b"x", b"y"];
 
-    let short = TUPLEHASH128::new(b"", 16).hash_tuple(&t);
-    let long = TUPLEHASH128::new(b"", 32).hash_tuple(&t);
+    let short = TupleHash128::new(b"", 16).hash_tuple(&t);
+    let long = TupleHash128::new(b"", 32).hash_tuple(&t);
     assert_ne!(&long[..16], &short[..], "TupleHash: a different length is a different function");
 
-    let short = TUPLEHASHXOF128::new(b"").output_for(&t).do_output(16);
-    let long = TUPLEHASHXOF128::new(b"").output_for(&t).do_output(32);
+    let short = TupleHashXOF128::new(b"").output_for(&t).do_output(16);
+    let long = TupleHashXOF128::new(b"").output_for(&t).do_output(32);
     assert_eq!(&long[..16], &short[..], "TupleHashXOF: one stream, so shorter is a prefix");
 }
 
@@ -301,44 +301,44 @@ fn length_binding_differs_between_the_two() {
 fn customization_separates_the_functions() {
     let t: [&[u8]; 2] = [b"x", b"y"];
     assert_ne!(
-        TUPLEHASH128::new(b"", 32).hash_tuple(&t),
-        TUPLEHASH128::new(b"My Application", 32).hash_tuple(&t),
+        TupleHash128::new(b"", 32).hash_tuple(&t),
+        TupleHash128::new(b"My Application", 32).hash_tuple(&t),
     );
 }
 
 /// A partial final byte cannot be expressed: the length encoding has to follow the tuple.
 #[test]
 fn partial_final_byte_is_refused() {
-    let mut t = TUPLEHASH128::new(b"", 32);
+    let mut t = TupleHash128::new(b"", 32);
     t.do_update(b"abc");
     assert!(matches!(t.do_final_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
 
-    let mut t = TUPLEHASHXOF128::new(b"");
+    let mut t = TupleHashXOF128::new(b"");
     t.do_update(b"abc");
     assert!(matches!(t.into_squeezer_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
 }
 
 #[test]
 fn algorithm_names() {
-    assert_eq!(TUPLEHASH128::ALG_NAME, "TupleHash128");
-    assert_eq!(TUPLEHASH256::ALG_NAME, "TupleHash256");
-    assert_eq!(TUPLEHASHXOF128::ALG_NAME, "TupleHashXOF128");
-    assert_eq!(TUPLEHASHXOF256::ALG_NAME, "TupleHashXOF256");
+    assert_eq!(TupleHash128::ALG_NAME, "TupleHash128");
+    assert_eq!(TupleHash256::ALG_NAME, "TupleHash256");
+    assert_eq!(TupleHashXOF128::ALG_NAME, "TupleHashXOF128");
+    assert_eq!(TupleHashXOF256::ALG_NAME, "TupleHashXOF256");
 }
 
 /// Sponge rates from FIPS 202 Table 3, the nominal lengths of the XOF forms, and the constructed
 /// length of the fixed forms. The generic checks elsewhere only require these to be positive.
 #[test]
 fn metadata() {
-    assert_eq!(TUPLEHASH128::new(b"", 32).block_bitlen(), 1344, "cSHAKE128 rate");
-    assert_eq!(TUPLEHASH256::new(b"", 64).block_bitlen(), 1088, "cSHAKE256 rate");
-    assert_eq!(TUPLEHASHXOF128::new(b"").block_bitlen(), 1344);
-    assert_eq!(TUPLEHASHXOF256::new(b"").block_bitlen(), 1088);
+    assert_eq!(TupleHash128::new(b"", 32).block_bitlen(), 1344, "cSHAKE128 rate");
+    assert_eq!(TupleHash256::new(b"", 64).block_bitlen(), 1088, "cSHAKE256 rate");
+    assert_eq!(TupleHashXOF128::new(b"").block_bitlen(), 1344);
+    assert_eq!(TupleHashXOF256::new(b"").block_bitlen(), 1088);
 
-    assert_eq!(TUPLEHASH128::new(b"", 17).output_len(), 17, "whatever was asked for");
-    assert_eq!(TUPLEHASH256::new(b"", 100).output_len(), 100);
-    assert_eq!(TUPLEHASHXOF128::new(b"").output_len(), 32, "the nominal length");
-    assert_eq!(TUPLEHASHXOF256::new(b"").output_len(), 64);
+    assert_eq!(TupleHash128::new(b"", 17).output_len(), 17, "whatever was asked for");
+    assert_eq!(TupleHash256::new(b"", 100).output_len(), 100);
+    assert_eq!(TupleHashXOF128::new(b"").output_len(), 32, "the nominal length");
+    assert_eq!(TupleHashXOF256::new(b"").output_len(), 64);
 }
 
 /// Every `Hash` entry point of the fixed-length form, against one sample value.
@@ -468,8 +468,8 @@ fn hash_trait_view_agrees_with_the_sample_values() {
         let t = as_slices(&v.tuple);
         let ctx = format!("COUNT {i}: TupleHash{}", v.strength);
         match v.strength {
-            128 => check_fixed_view(|| TUPLEHASH128::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
-            256 => check_fixed_view(|| TUPLEHASH256::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
+            128 => check_fixed_view(|| TupleHash128::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
+            256 => check_fixed_view(|| TupleHash256::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }
@@ -489,8 +489,8 @@ fn xof_trait_view_agrees_with_the_sample_values() {
         let ctx = format!("COUNT {i}: TupleHashXOF{}", v.strength);
         let s = v.s.as_bytes();
         match v.strength {
-            128 => check_xof_view(|| TUPLEHASHXOF128::new(s), &t, &v.output, &f.output, &ctx),
-            256 => check_xof_view(|| TUPLEHASHXOF256::new(s), &t, &v.output, &f.output, &ctx),
+            128 => check_xof_view(|| TupleHashXOF128::new(s), &t, &v.output, &f.output, &ctx),
+            256 => check_xof_view(|| TupleHashXOF256::new(s), &t, &v.output, &f.output, &ctx),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }
@@ -506,10 +506,10 @@ fn output_buffers_of_every_length() {
     let framework = TestFrameworkHash::new();
     let input = b"the quick brown fox";
 
-    framework.test_hash_output_buffers(|| TUPLEHASH128::new(b"", 32), input);
-    framework.test_hash_output_buffers(|| TUPLEHASH256::new(b"", 64), input);
+    framework.test_hash_output_buffers(|| TupleHash128::new(b"", 32), input);
+    framework.test_hash_output_buffers(|| TupleHash256::new(b"", 64), input);
 
     // Non-default lengths, and a customization string.
-    framework.test_hash_output_buffers(|| TUPLEHASH128::new(b"My Tuple App", 17), input);
-    framework.test_hash_output_buffers(|| TUPLEHASH256::new(b"My Tuple App", 5), input);
+    framework.test_hash_output_buffers(|| TupleHash128::new(b"My Tuple App", 17), input);
+    framework.test_hash_output_buffers(|| TupleHash256::new(b"My Tuple App", 5), input);
 }

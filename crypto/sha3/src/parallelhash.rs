@@ -1,12 +1,58 @@
 //! ParallelHash, the parallelisable hash of NIST SP 800-185 Sec 6.
+//!
+//! The purpose of ParallelHash10 is to support the efficient hashing of very long strings, by taking
+//! advantage of the parallelism available in modern processors. ParallelHash supports the 128- and
+//! 256-bit security strengths, and also provides variable-length output. Changing any input
+//! parameter to ParallelHash, even the requested output length, will result in unrelated output. Like
+//! the other functions defined in this document, ParallelHash also supports user-selected
+//! customization strings.
+//!
+//! ParallelHash divides the input bit string X into a sequence of contiguous, non-overlapping
+//! blocks, each of length B bytes, and then computes the hash value for each block separately.
+//! Finally, these hash values are combined and passed to cSHAKE along with the function name
+//! (N) of "ParallelHash", the optional customization string S, and some encoded integer values,
+//! to generate the final hash value of the function.
+//!
+//! # ParallelHash
+//!
+//!```
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha3::parallelhash::ParallelHash128;
+//!
+//! let output: Vec<u8> = ParallelHash128::new(8192, b"", 32).hash(b"Hello, world!");
+//! ```
+//!
+//! # ParallelHashXOF
+//! ParallelHashXOF, is an arbitrary-output-length form of ParallelHash and it implements the [`XOF`] trait.
+//! It is a separate function from its fixed-length counterpart since its *final* read ([`XOF::xof`],
+//! [`XOFSqueezer::do_output_final`]) binds its output length so that outputs of different lengths,
+//! even over the same input, are completely unrelated (ie they don't have the problem that one is
+//! a prefix of the other).
+//!
+//! See [`ParallelHash128`] for detail.
+//!
+//! Example of `ParallelHash128`:
+//! ```
+//! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+//! use bouncycastle_sha3::parallelhash::{ParallelHash128, ParallelHashXOF128};
+//!
+//! let mut parallelhash = ParallelHashXOF128::new(8192, b"");
+//! parallelhash.do_update(b"Hello, world!");
+//! let mut squeezer = parallelhash.into_squeezer();
+//! let first: Vec<u8> = squeezer.do_output(16);
+//! let more: Vec<u8> = squeezer.do_output(1024);
+//!
+//! let bound: Vec<u8> = ParallelHashXOF128::new(8192, b"").xof(b"Hello, world!", 32);
+//! assert_eq!(bound, ParallelHash128::new(8192, b"", 32).hash(b"Hello, world!"));
+//! assert_ne!(bound[..16], first[..]);
+//! ```
 
-use crate::SHAKEParams;
 use crate::cshake::{
-    CSHAKE_COMPONENT_LEN, CSHAKEInternal, LengthBoundSqueezer, absorb_left_encode_into,
-    right_encode,
+    CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, absorb_left_encode_into, right_encode,
 };
 use crate::keccak::SHA3_FAMILY_STATE_LEN;
 use crate::shake::SHAKEInternal;
+use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
@@ -14,6 +60,15 @@ use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
 };
+
+/// The name of the ParallelHash128 algorithm (NIST SP 800-185 Sec 6).
+pub const PARALLELHASH128_NAME: &str = "ParallelHash128";
+/// The name of the ParallelHash256 algorithm (NIST SP 800-185 Sec 6).
+pub const PARALLELHASH256_NAME: &str = "ParallelHash256";
+/// The name of the ParallelHashXOF128 algorithm (NIST SP 800-185 Sec 6.3.1).
+pub const PARALLELHASHXOF128_NAME: &str = "ParallelHashXOF128";
+/// The name of the ParallelHashXOF256 algorithm (NIST SP 800-185 Sec 6.3.1).
+pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 
 /// Length in bytes of the suspended state of ParallelHash.
 pub const SUSPENDED_PARALLELHASH_STATE_LEN: usize = LIB_VERSION_LEN + PARALLEL_STATE_LEN + 8;
@@ -25,6 +80,18 @@ const PARALLEL_STATE_LEN: usize = CSHAKE_COMPONENT_LEN + SHA3_FAMILY_STATE_LEN +
 
 /// The function-name string every ParallelHash binds, per SP 800-185 Sec 6.3.
 const PARALLELHASH_FUNCTION_NAME: &[u8] = b"ParallelHash";
+
+/// ParallelHash128: the parallelisable hash of NIST SP 800-185 Sec 6, 128-bit strength.
+///
+/// The block size `B` is part of the function, not a tuning knob: the same message under a
+/// different `B` hashes differently. See [`ParallelHashInternal`].
+pub type ParallelHash128 = ParallelHashInternal<SHAKE128Params>;
+/// ParallelHash256: see [`ParallelHash128`].
+pub type ParallelHash256 = ParallelHashInternal<SHAKE256Params>;
+/// ParallelHashXOF128: the arbitrary-output-length ParallelHash of Sec 6.3.1.
+pub type ParallelHashXOF128 = ParallelHashXOFInternal<SHAKE128Params>;
+/// ParallelHashXOF256: see [`ParallelHashXOF128`].
+pub type ParallelHashXOF256 = ParallelHashXOFInternal<SHAKE256Params>;
 
 /// The shared machinery of [`ParallelHashInternal`] and [`ParallelHashXOFInternal`]: the outer
 /// cSHAKE, the block being filled, and the count of blocks hashed so far.
@@ -121,7 +188,7 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     ///
     /// The `right_encode(L)` that completes step 4 is left to the caller, because which `L` it
     /// carries is not settled here: the fixed-length function knows it up front ([`Self::finish`]),
-    /// and the XOF leaves it to the first read ([`LengthBoundSqueezer`]).
+    /// and the XOF leaves it to the first read ([`CSHAKESqueezer`]).
     fn finish_blocks(mut self) -> CSHAKEInternal<PARAMS> {
         if self.block_fill > 0 {
             self.absorb_block_digest();
@@ -143,7 +210,7 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     }
 }
 
-/// Internal struct for ParallelHash. Use [`crate::PARALLELHASH128`] or [`crate::PARALLELHASH256`].
+/// Internal struct for ParallelHash. Use [`ParallelHash128`] or [`ParallelHash256`].
 ///
 /// ParallelHash splits the message into `B`-byte blocks, hashes each independently, and hashes the
 /// concatenated digests (Sec 6.1). The point is that the per-block hashes can be computed in
@@ -160,8 +227,8 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
 /// `B` is bound by `left_encode(B)`, so the same message under a different block size gives an
 /// unrelated result. It is a parameter of the function, not a tuning knob.
 ///
-/// Unlike [`crate::TUPLEHASH128`], `do_update` here *is* ordinary byte-wise streaming: the block
-/// boundaries come from `B`, not from how the caller chunks its calls.
+// Unlike TupleHash128, `do_update` here *is* ordinary byte-wise streaming: the block
+// boundaries come from `B`, not from how the caller chunks its calls.
 #[derive(Clone)]
 pub struct ParallelHashInternal<PARAMS: SHAKEParams> {
     state: ParallelState<PARAMS>,
@@ -291,8 +358,8 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
     }
 }
 
-/// Internal struct for ParallelHashXOF (Sec 6.3.1). Use [`crate::PARALLELHASHXOF128`] or
-/// [`crate::PARALLELHASHXOF256`].
+/// Internal struct for ParallelHashXOF (Sec 6.3.1). Use [`ParallelHashXOF128`] or
+/// [`ParallelHashXOF256`].
 ///
 /// Binds `right_encode(0)` in place of the output length, so -- as for KMACXOF and TupleHashXOF --
 /// it is a different function from the fixed-length one, and its output at one length is a prefix
@@ -330,7 +397,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for ParallelHashXOFInternal<PARAM
     }
 }
 
-/// The absorbing phase, mid-block or not; the squeezing half is a [`LengthBoundSqueezer`].
+/// The absorbing phase, mid-block or not; the squeezing half is a [`CSHAKESqueezer`].
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_PARALLELHASHXOF_STATE_LEN>
     for ParallelHashXOFInternal<PARAMS>
 {
@@ -420,13 +487,13 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
-    type Squeezer = LengthBoundSqueezer<PARAMS>;
+    type Squeezer = CSHAKESqueezer<PARAMS>;
 
-    /// The block count of Sec 6.3.1 step 4 is bound here; the `right_encode` that follows it is
-    /// not, because whether it carries 0 or the length of a final read is
-    /// [`LengthBoundSqueezer`]'s decision.
+    // The block count of Sec 6.3.1 step 4 is bound here; the `right_encode` that follows it is
+    // not, because whether it carries 0 or the length of a final read is
+    // LengthBoundSqueezer's decision.
     fn into_squeezer(self) -> Self::Squeezer {
-        LengthBoundSqueezer::new(self.state.finish_blocks())
+        CSHAKESqueezer::new(self.state.finish_blocks())
     }
 
     fn into_squeezer_partial_bits(

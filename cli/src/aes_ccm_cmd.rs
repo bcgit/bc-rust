@@ -142,8 +142,8 @@ pub(crate) fn aes256_ccm_cmd(
 /// Unlike the key there is no entropy question here: Sec 5.3 asks for uniqueness, not randomness,
 /// so an all-zero nonce is a perfectly valid *first* nonce and only a repeat is a problem.
 ///
-/// `--nonce-file` reads raw bytes ([`r#mod::read_from_file_raw`]), not the hex-or-raw guess
-/// [`r#mod::read_from_file`] uses for keys: a repeated nonce under one key is fatal for CCM (see
+/// `--nonce-file` reads raw bytes ([`helpers::read_from_file_raw`]), not the hex-or-raw guess
+/// [`helpers::read_from_file`] uses for keys: a repeated nonce under one key is fatal for CCM (see
 /// the module docs), so two distinct binary nonce files that happen to look like hex text of the
 /// same value must not silently collapse to the same nonce.
 ///

@@ -6,7 +6,9 @@ use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;
-use bouncycastle_sha3::{PARALLELHASH128, PARALLELHASH256, PARALLELHASHXOF128, PARALLELHASHXOF256};
+use bouncycastle_sha3::parallelhash::{
+    ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
+};
 use std::fs;
 use std::path::Path;
 
@@ -74,8 +76,8 @@ fn nist_sp800_185_parallelhash_sample_values() {
     for (i, v) in vectors.iter().enumerate() {
         let want = v.output_len / 8;
         let got = match v.strength {
-            128 => PARALLELHASH128::new(v.block_size, v.s.as_bytes(), want).hash(&v.msg),
-            256 => PARALLELHASH256::new(v.block_size, v.s.as_bytes(), want).hash(&v.msg),
+            128 => ParallelHash128::new(v.block_size, v.s.as_bytes(), want).hash(&v.msg),
+            256 => ParallelHash256::new(v.block_size, v.s.as_bytes(), want).hash(&v.msg),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(
@@ -99,12 +101,12 @@ fn nist_sp800_185_parallelhashxof_sample_values() {
         // length they are given, and are checked against the fixed-length samples elsewhere.
         let got = match v.strength {
             128 => {
-                let mut p = PARALLELHASHXOF128::new(v.block_size, v.s.as_bytes());
+                let mut p = ParallelHashXOF128::new(v.block_size, v.s.as_bytes());
                 p.do_update(&v.msg);
                 p.into_squeezer().do_output(want)
             }
             256 => {
-                let mut p = PARALLELHASHXOF256::new(v.block_size, v.s.as_bytes());
+                let mut p = ParallelHashXOF256::new(v.block_size, v.s.as_bytes());
                 p.do_update(&v.msg);
                 p.into_squeezer().do_output(want)
             }
@@ -144,16 +146,16 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         let (b, s) = (f.block_size, f.s.as_bytes());
         match f.strength {
             128 => check_do_final_binds_length(
-                || PARALLELHASHXOF128::new(b, s),
-                |n| PARALLELHASH128::new(b, s, n).hash(&f.msg),
+                || ParallelHashXOF128::new(b, s),
+                |n| ParallelHash128::new(b, s, n).hash(&f.msg),
                 &f.msg,
                 &f.output,
                 &x.output,
                 &ctx,
             ),
             256 => check_do_final_binds_length(
-                || PARALLELHASHXOF256::new(b, s),
-                |n| PARALLELHASH256::new(b, s, n).hash(&f.msg),
+                || ParallelHashXOF256::new(b, s),
+                |n| ParallelHash256::new(b, s, n).hash(&f.msg),
                 &f.msg,
                 &f.output,
                 &x.output,
@@ -240,10 +242,10 @@ fn parallelhashxof_is_not_parallelhash_truncated() {
 #[test]
 fn chunking_does_not_change_the_result() {
     let msg: Vec<u8> = (0..=200u8).collect();
-    let one = PARALLELHASH128::new(8, b"S", 32).hash(&msg);
+    let one = ParallelHash128::new(8, b"S", 32).hash(&msg);
 
     for chunk in [1usize, 3, 7, 8, 9, 16, 64, 201] {
-        let mut p = PARALLELHASH128::new(8, b"S", 32);
+        let mut p = ParallelHash128::new(8, b"S", 32);
         for piece in msg.chunks(chunk) {
             p.do_update(piece);
         }
@@ -256,9 +258,9 @@ fn chunking_does_not_change_the_result() {
 #[test]
 fn the_block_size_is_part_of_the_hash() {
     let msg: Vec<u8> = (0..=100u8).collect();
-    let b8 = PARALLELHASH128::new(8, b"", 32).hash(&msg);
-    let b12 = PARALLELHASH128::new(12, b"", 32).hash(&msg);
-    let b16 = PARALLELHASH128::new(16, b"", 32).hash(&msg);
+    let b8 = ParallelHash128::new(8, b"", 32).hash(&msg);
+    let b12 = ParallelHash128::new(12, b"", 32).hash(&msg);
+    let b16 = ParallelHash128::new(16, b"", 32).hash(&msg);
     assert_ne!(b8, b12);
     assert_ne!(b8, b16);
     assert_ne!(b12, b16);
@@ -274,16 +276,16 @@ fn the_block_size_is_part_of_the_hash() {
 #[test]
 fn block_boundary_cases() {
     // exactly one full block, versus one full block plus one byte
-    let full = PARALLELHASH128::new(8, b"", 32).hash(&[0xAAu8; 8]);
-    let plus = PARALLELHASH128::new(8, b"", 32).hash(&[0xAAu8; 9]);
+    let full = ParallelHash128::new(8, b"", 32).hash(&[0xAAu8; 8]);
+    let plus = ParallelHash128::new(8, b"", 32).hash(&[0xAAu8; 9]);
     assert_ne!(full, plus);
 
     // two full blocks versus one short block: different block counts, so different output
-    let two = PARALLELHASH128::new(8, b"", 32).hash(&[0xAAu8; 16]);
+    let two = ParallelHash128::new(8, b"", 32).hash(&[0xAAu8; 16]);
     assert_ne!(two, full);
 
     // an empty message is zero blocks, and must still produce a hash
-    let empty = PARALLELHASH128::new(8, b"", 32).hash(b"");
+    let empty = ParallelHash128::new(8, b"", 32).hash(b"");
     assert_eq!(empty.len(), 32);
     assert_ne!(empty, full);
 }
@@ -293,12 +295,12 @@ fn block_boundary_cases() {
 #[test]
 fn length_binding_differs_between_the_two() {
     let msg = b"parallel";
-    let short = PARALLELHASH128::new(4, b"", 16).hash(msg);
-    let long = PARALLELHASH128::new(4, b"", 32).hash(msg);
+    let short = ParallelHash128::new(4, b"", 16).hash(msg);
+    let long = ParallelHash128::new(4, b"", 32).hash(msg);
     assert_ne!(&long[..16], &short[..], "ParallelHash: a different length is a different function");
 
     let squeeze = |n| {
-        let mut p = PARALLELHASHXOF128::new(4, b"");
+        let mut p = ParallelHashXOF128::new(4, b"");
         p.do_update(msg);
         p.into_squeezer().do_output(n)
     };
@@ -310,11 +312,11 @@ fn length_binding_differs_between_the_two() {
 /// A partial final byte cannot be expressed: the block count and length encodings must follow.
 #[test]
 fn partial_final_byte_is_refused() {
-    let mut p = PARALLELHASH128::new(8, b"", 32);
+    let mut p = ParallelHash128::new(8, b"", 32);
     p.do_update(b"abc");
     assert!(matches!(p.do_final_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
 
-    let mut p = PARALLELHASHXOF128::new(8, b"");
+    let mut p = ParallelHashXOF128::new(8, b"");
     p.do_update(b"abc");
     assert!(matches!(p.into_squeezer_partial_bits(0xF0, 4), Err(HashError::InvalidLength(_))));
 }
@@ -323,30 +325,30 @@ fn partial_final_byte_is_refused() {
 #[test]
 #[should_panic(expected = "block size B must be positive")]
 fn zero_block_size_is_rejected() {
-    let _ = PARALLELHASH128::new(0, b"", 32);
+    let _ = ParallelHash128::new(0, b"", 32);
 }
 
 #[test]
 fn algorithm_names() {
-    assert_eq!(PARALLELHASH128::ALG_NAME, "ParallelHash128");
-    assert_eq!(PARALLELHASH256::ALG_NAME, "ParallelHash256");
-    assert_eq!(PARALLELHASHXOF128::ALG_NAME, "ParallelHashXOF128");
-    assert_eq!(PARALLELHASHXOF256::ALG_NAME, "ParallelHashXOF256");
+    assert_eq!(ParallelHash128::ALG_NAME, "ParallelHash128");
+    assert_eq!(ParallelHash256::ALG_NAME, "ParallelHash256");
+    assert_eq!(ParallelHashXOF128::ALG_NAME, "ParallelHashXOF128");
+    assert_eq!(ParallelHashXOF256::ALG_NAME, "ParallelHashXOF256");
 }
 
 /// Sponge rates from FIPS 202 Table 3, the nominal lengths of the XOF forms, and the constructed
 /// length of the fixed forms. The generic checks elsewhere only require these to be positive.
 #[test]
 fn metadata() {
-    assert_eq!(PARALLELHASH128::new(8, b"", 32).block_bitlen(), 1344, "cSHAKE128 rate");
-    assert_eq!(PARALLELHASH256::new(8, b"", 64).block_bitlen(), 1088, "cSHAKE256 rate");
-    assert_eq!(PARALLELHASHXOF128::new(8, b"").block_bitlen(), 1344);
-    assert_eq!(PARALLELHASHXOF256::new(8, b"").block_bitlen(), 1088);
+    assert_eq!(ParallelHash128::new(8, b"", 32).block_bitlen(), 1344, "cSHAKE128 rate");
+    assert_eq!(ParallelHash256::new(8, b"", 64).block_bitlen(), 1088, "cSHAKE256 rate");
+    assert_eq!(ParallelHashXOF128::new(8, b"").block_bitlen(), 1344);
+    assert_eq!(ParallelHashXOF256::new(8, b"").block_bitlen(), 1088);
 
-    assert_eq!(PARALLELHASH128::new(8, b"", 17).output_len(), 17, "whatever was asked for");
-    assert_eq!(PARALLELHASH256::new(8, b"", 100).output_len(), 100);
-    assert_eq!(PARALLELHASHXOF128::new(8, b"").output_len(), 32, "the nominal length");
-    assert_eq!(PARALLELHASHXOF256::new(8, b"").output_len(), 64);
+    assert_eq!(ParallelHash128::new(8, b"", 17).output_len(), 17, "whatever was asked for");
+    assert_eq!(ParallelHash256::new(8, b"", 100).output_len(), 100);
+    assert_eq!(ParallelHashXOF128::new(8, b"").output_len(), 32, "the nominal length");
+    assert_eq!(ParallelHashXOF256::new(8, b"").output_len(), 64);
 }
 
 /// Every `Hash` entry point of the fixed-length form, against one sample value.
@@ -454,8 +456,8 @@ fn hash_trait_view_agrees_with_the_sample_values() {
         let (b, s) = (v.block_size, v.s.as_bytes());
         let ctx = format!("COUNT {i}: ParallelHash{} B={b}", v.strength);
         match v.strength {
-            128 => check_fixed_view(|| PARALLELHASH128::new(b, s, n), &v.msg, &v.output, &ctx),
-            256 => check_fixed_view(|| PARALLELHASH256::new(b, s, n), &v.msg, &v.output, &ctx),
+            128 => check_fixed_view(|| ParallelHash128::new(b, s, n), &v.msg, &v.output, &ctx),
+            256 => check_fixed_view(|| ParallelHash256::new(b, s, n), &v.msg, &v.output, &ctx),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }
@@ -475,10 +477,10 @@ fn xof_trait_view_agrees_with_the_sample_values() {
         let ctx = format!("COUNT {i}: ParallelHashXOF{} B={b}", v.strength);
         match v.strength {
             128 => {
-                check_xof_view(|| PARALLELHASHXOF128::new(b, s), &v.msg, &v.output, &f.output, &ctx)
+                check_xof_view(|| ParallelHashXOF128::new(b, s), &v.msg, &v.output, &f.output, &ctx)
             }
             256 => {
-                check_xof_view(|| PARALLELHASHXOF256::new(b, s), &v.msg, &v.output, &f.output, &ctx)
+                check_xof_view(|| ParallelHashXOF256::new(b, s), &v.msg, &v.output, &f.output, &ctx)
             }
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
@@ -494,10 +496,10 @@ fn output_buffers_of_every_length() {
     let framework = TestFrameworkHash::new();
     let input = b"the quick brown fox jumps over the lazy dog";
 
-    framework.test_hash_output_buffers(|| PARALLELHASH128::new(8, b"", 32), input);
-    framework.test_hash_output_buffers(|| PARALLELHASH256::new(8, b"", 64), input);
+    framework.test_hash_output_buffers(|| ParallelHash128::new(8, b"", 32), input);
+    framework.test_hash_output_buffers(|| ParallelHash256::new(8, b"", 64), input);
 
     // A block size that does not divide the input, a customization string, odd output lengths.
-    framework.test_hash_output_buffers(|| PARALLELHASH128::new(12, b"Parallel Data", 17), input);
-    framework.test_hash_output_buffers(|| PARALLELHASH256::new(5, b"Parallel Data", 5), input);
+    framework.test_hash_output_buffers(|| ParallelHash128::new(12, b"Parallel Data", 17), input);
+    framework.test_hash_output_buffers(|| ParallelHash256::new(5, b"Parallel Data", 5), input);
 }

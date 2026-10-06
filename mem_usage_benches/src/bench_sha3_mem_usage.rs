@@ -26,11 +26,14 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle::sha3::kmac::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
+use bouncycastle::sha3::parallelhash::{
+    ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
+};
+use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256};
 use bouncycastle::sha3::{
-    CSHAKE128, CSHAKE256, KMAC128, KMAC256, KMACXOF128, KMACXOF256, LengthBoundSqueezer,
-    PARALLELHASH128, PARALLELHASH256, PARALLELHASHXOF128, PARALLELHASHXOF256, SHA3_224, SHA3_256,
-    SHA3_384, SHA3_512, SHAKE128, SHAKE128Params, SHAKE256, SHAKE256Params, SHAKESqueezer,
-    SUSPENDED_SHA3_STATE_LEN, TUPLEHASH128, TUPLEHASH256, TUPLEHASHXOF128, TUPLEHASHXOF256,
+    CSHAKE128, CSHAKE256, CSHAKESqueezer, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128,
+    SHAKE128Params, SHAKE256, SHAKE256Params, SHAKESqueezer, SUSPENDED_SHA3_STATE_LEN,
 };
 
 /// A 1 KiB message so that the sponge is permuted several times.
@@ -57,15 +60,15 @@ fn print_struct_sizes() {
     println!("size_of<KMAC256>: {}", size_of::<KMAC256>());
     println!("size_of<KMACXOF128>: {}", size_of::<KMACXOF128>());
     println!("size_of<KMACXOF256>: {}", size_of::<KMACXOF256>());
-    println!("size_of<TUPLEHASH128>: {}", size_of::<TUPLEHASH128>());
-    println!("size_of<TUPLEHASH256>: {}", size_of::<TUPLEHASH256>());
-    println!("size_of<TUPLEHASHXOF128>: {}", size_of::<TUPLEHASHXOF128>());
-    println!("size_of<TUPLEHASHXOF256>: {}", size_of::<TUPLEHASHXOF256>());
-    println!("size_of<PARALLELHASH128>: {}", size_of::<PARALLELHASH128>());
-    println!("size_of<PARALLELHASH256>: {}", size_of::<PARALLELHASH256>());
-    println!("size_of<PARALLELHASHXOF128>: {}", size_of::<PARALLELHASHXOF128>());
-    println!("size_of<PARALLELHASHXOF256>: {}", size_of::<PARALLELHASHXOF256>());
-    println!("size_of<LengthBoundSqueezer>: {}", size_of::<LengthBoundSqueezer<SHAKE128Params>>());
+    println!("size_of<TUPLEHASH128>: {}", size_of::<TupleHash128>());
+    println!("size_of<TUPLEHASH256>: {}", size_of::<TupleHash256>());
+    println!("size_of<TUPLEHASHXOF128>: {}", size_of::<TupleHashXOF128>());
+    println!("size_of<TUPLEHASHXOF256>: {}", size_of::<TupleHashXOF256>());
+    println!("size_of<PARALLELHASH128>: {}", size_of::<ParallelHash128>());
+    println!("size_of<PARALLELHASH256>: {}", size_of::<ParallelHash256>());
+    println!("size_of<PARALLELHASHXOF128>: {}", size_of::<ParallelHashXOF128>());
+    println!("size_of<PARALLELHASHXOF256>: {}", size_of::<ParallelHashXOF256>());
+    println!("size_of<LengthBoundSqueezer>: {}", size_of::<CSHAKESqueezer<SHAKE128Params>>());
 }
 
 fn bench_do_nothing() {

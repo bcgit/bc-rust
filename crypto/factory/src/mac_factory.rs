@@ -84,7 +84,7 @@ use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::hmac::{
     HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME,
 };
-use bouncycastle_sha3::{KMAC128, KMAC128_NAME, KMAC256, KMAC256_NAME};
+use bouncycastle_sha3::kmac::{KMAC128, KMAC128_NAME, KMAC256, KMAC256_NAME};
 use bouncycastle_sm3 as sm3;
 use bouncycastle_sm3::hmac::HMAC_SM3_NAME;
 

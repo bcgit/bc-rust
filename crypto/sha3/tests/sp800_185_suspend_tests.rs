@@ -9,6 +9,9 @@ use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{Hash, MAC, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
+use bouncycastle_sha3::kmac::*;
+use bouncycastle_sha3::parallelhash::*;
+use bouncycastle_sha3::tuplehash::*;
 use bouncycastle_sha3::*;
 
 const PART1: &[u8] = b"Colorless green ideas";
@@ -106,12 +109,12 @@ fn kmacxof_round_trips() {
 
 #[test]
 fn tuplehash_round_trips() {
-    hash_round_trip(|| TUPLEHASH128::new(b"", 32));
-    hash_round_trip(|| TUPLEHASH256::new(b"My Tuple App", 48));
-    hash_round_trip(|| TUPLEHASHXOF128::new(b""));
-    hash_round_trip(|| TUPLEHASHXOF256::new(b"My Tuple App"));
-    squeezer_round_trip(|| TUPLEHASHXOF128::new(b""));
-    squeezer_round_trip(|| TUPLEHASHXOF256::new(b"My Tuple App"));
+    hash_round_trip(|| TupleHash128::new(b"", 32));
+    hash_round_trip(|| TupleHash256::new(b"My Tuple App", 48));
+    hash_round_trip(|| TupleHashXOF128::new(b""));
+    hash_round_trip(|| TupleHashXOF256::new(b"My Tuple App"));
+    squeezer_round_trip(|| TupleHashXOF128::new(b""));
+    squeezer_round_trip(|| TupleHashXOF256::new(b"My Tuple App"));
 }
 
 #[test]
@@ -119,12 +122,12 @@ fn parallelhash_round_trips() {
     // PART1 is 21 bytes: a block size of 8 suspends five bytes into a block, 7 suspends exactly
     // on a block boundary, and 64 suspends before the first block completes.
     for block_size in [8usize, 7, 64] {
-        hash_round_trip(|| PARALLELHASH128::new(block_size, b"", 32));
-        hash_round_trip(|| PARALLELHASH256::new(block_size, b"Parallel Data", 64));
-        hash_round_trip(|| PARALLELHASHXOF128::new(block_size, b""));
-        hash_round_trip(|| PARALLELHASHXOF256::new(block_size, b"Parallel Data"));
-        squeezer_round_trip(|| PARALLELHASHXOF128::new(block_size, b""));
-        squeezer_round_trip(|| PARALLELHASHXOF256::new(block_size, b"Parallel Data"));
+        hash_round_trip(|| ParallelHash128::new(block_size, b"", 32));
+        hash_round_trip(|| ParallelHash256::new(block_size, b"Parallel Data", 64));
+        hash_round_trip(|| ParallelHashXOF128::new(block_size, b""));
+        hash_round_trip(|| ParallelHashXOF256::new(block_size, b"Parallel Data"));
+        squeezer_round_trip(|| ParallelHashXOF128::new(block_size, b""));
+        squeezer_round_trip(|| ParallelHashXOF256::new(block_size, b"Parallel Data"));
     }
 }
 
@@ -141,16 +144,13 @@ fn each_type_rejects_the_others() {
     x.do_update(PART1);
     rejected::<_, CSHAKE256>(x.clone().suspend(), "a cSHAKE128 state in cSHAKE256");
     rejected::<_, KMACXOF128>(x.clone().suspend(), "a cSHAKE128 state in KMACXOF128");
-    rejected::<_, TUPLEHASHXOF128>(x.clone().suspend(), "a cSHAKE128 state in TupleHashXOF128");
-    rejected::<_, LengthBoundSqueezer<SHAKE128Params>>(
-        x.suspend(),
-        "a cSHAKE128 state in a squeezer",
-    );
+    rejected::<_, TupleHashXOF128>(x.clone().suspend(), "a cSHAKE128 state in TupleHashXOF128");
+    rejected::<_, CSHAKESqueezer<SHAKE128Params>>(x.suspend(), "a cSHAKE128 state in a squeezer");
 
     let mut k = KMACXOF128::new(&key(), b"", false).unwrap();
     k.do_update(PART1);
     rejected::<_, CSHAKE128>(k.clone().suspend(), "a KMACXOF128 state in cSHAKE128");
-    rejected::<_, TUPLEHASHXOF128>(k.clone().suspend(), "a KMACXOF128 state in TupleHashXOF128");
+    rejected::<_, TupleHashXOF128>(k.clone().suspend(), "a KMACXOF128 state in TupleHashXOF128");
     rejected::<_, KMACXOF256>(k.clone().suspend(), "a KMACXOF128 state in KMACXOF256");
     let squeezer = k.into_squeezer();
     rejected::<_, KMACXOF128>(squeezer.clone().suspend(), "an unbound squeezer in KMACXOF128");
@@ -158,18 +158,18 @@ fn each_type_rejects_the_others() {
 
     let mut k = KMAC128::new(&key()).unwrap();
     k.do_update(PART1);
-    rejected::<_, TUPLEHASH128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
+    rejected::<_, TupleHash128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
     rejected::<_, KMAC256>(k.suspend(), "a KMAC128 state in KMAC256");
-    let mut t = TUPLEHASH128::new(b"", 32);
+    let mut t = TupleHash128::new(b"", 32);
     t.do_update(PART1);
     rejected::<_, KMAC128>(t.suspend(), "a TupleHash128 state in KMAC128");
 
-    let mut p = PARALLELHASH128::new(8, b"", 32);
+    let mut p = ParallelHash128::new(8, b"", 32);
     p.do_update(PART1);
-    rejected::<_, PARALLELHASH256>(p.suspend(), "a ParallelHash128 state in ParallelHash256");
-    let mut p = PARALLELHASHXOF128::new(8, b"");
+    rejected::<_, ParallelHash256>(p.suspend(), "a ParallelHash128 state in ParallelHash256");
+    let mut p = ParallelHashXOF128::new(8, b"");
     p.do_update(PART1);
-    rejected::<_, PARALLELHASHXOF256>(p.suspend(), "a ParallelHashXOF128 state in 256");
+    rejected::<_, ParallelHashXOF256>(p.suspend(), "a ParallelHashXOF128 state in 256");
 }
 
 #[test]
@@ -201,29 +201,29 @@ fn corrupt_fields_are_rejected() {
     k.do_update(PART1);
     let mut bad = k.into_squeezer().suspend();
     bad[CUSTOMIZED] = 0;
-    rejected::<_, LengthBoundSqueezer<SHAKE128Params>>(bad, "a squeezer claiming no function name");
+    rejected::<_, CSHAKESqueezer<SHAKE128Params>>(bad, "a squeezer claiming no function name");
 
     // ParallelHash: outer cSHAKE 3..416, inner SHAKE 416..828, then block_size, block_fill, blocks.
     const INNER_SQUEEZING_FLAG: usize = 416 + 1 + 400;
     const BLOCK_SIZE: usize = 416 + 412;
     const BLOCK_FILL: usize = BLOCK_SIZE + 8;
-    let mut p = PARALLELHASH128::new(8, b"", 32);
+    let mut p = ParallelHash128::new(8, b"", 32);
     p.do_update(PART1);
     let good = p.suspend();
     assert_eq!(&good[BLOCK_SIZE..BLOCK_SIZE + 8], &8u64.to_le_bytes(), "layout check");
     assert_eq!(&good[BLOCK_FILL..BLOCK_FILL + 8], &5u64.to_le_bytes(), "21 bytes = 2 blocks + 5");
     let mut bad = good;
     bad[BLOCK_SIZE..BLOCK_SIZE + 8].copy_from_slice(&0u64.to_le_bytes());
-    rejected::<_, PARALLELHASH128>(bad, "a block size of zero");
+    rejected::<_, ParallelHash128>(bad, "a block size of zero");
     let mut bad = good;
     bad[BLOCK_FILL..BLOCK_FILL + 8].copy_from_slice(&8u64.to_le_bytes());
-    rejected::<_, PARALLELHASH128>(bad, "a fill equal to the block size");
+    rejected::<_, ParallelHash128>(bad, "a fill equal to the block size");
     let mut bad = good;
     bad[INNER_SQUEEZING_FLAG] = 1;
-    rejected::<_, PARALLELHASH128>(bad, "an inner sponge that is squeezing");
+    rejected::<_, ParallelHash128>(bad, "an inner sponge that is squeezing");
     let mut bad = good;
     bad[CUSTOMIZED] = 0;
-    rejected::<_, PARALLELHASH128>(bad, "a ParallelHash claiming an empty function name");
+    rejected::<_, ParallelHash128>(bad, "a ParallelHash claiming an empty function name");
 }
 
 /// Every type in the crate writes a different variant tag, so no state can be misread as
@@ -243,19 +243,19 @@ fn state_tags_are_distinct() {
         tag(CSHAKE128::new(b"", b"S")),
         tag(KMAC128::new(&key()).unwrap()),
         tag(KMACXOF128::new(&key(), b"", false).unwrap()),
-        tag(TUPLEHASH128::new(b"", 32)),
-        tag(TUPLEHASHXOF128::new(b"")),
-        tag(PARALLELHASH128::new(8, b"", 32)),
-        tag(PARALLELHASHXOF128::new(8, b"")),
-        tag(TUPLEHASHXOF128::new(b"").into_squeezer()),
+        tag(TupleHash128::new(b"", 32)),
+        tag(TupleHashXOF128::new(b"")),
+        tag(ParallelHash128::new(8, b"", 32)),
+        tag(ParallelHashXOF128::new(8, b"")),
+        tag(TupleHashXOF128::new(b"").into_squeezer()),
         tag(CSHAKE256::new(b"", b"S")),
         tag(KMAC256::new(&key()).unwrap()),
         tag(KMACXOF256::new(&key(), b"", false).unwrap()),
-        tag(TUPLEHASH256::new(b"", 32)),
-        tag(TUPLEHASHXOF256::new(b"")),
-        tag(PARALLELHASH256::new(8, b"", 32)),
-        tag(PARALLELHASHXOF256::new(8, b"")),
-        tag(TUPLEHASHXOF256::new(b"").into_squeezer()),
+        tag(TupleHash256::new(b"", 32)),
+        tag(TupleHashXOF256::new(b"")),
+        tag(ParallelHash256::new(8, b"", 32)),
+        tag(ParallelHashXOF256::new(8, b"")),
+        tag(TupleHashXOF256::new(b"").into_squeezer()),
     ];
     let n = tags.len();
     tags.sort_unstable();

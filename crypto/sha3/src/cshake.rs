@@ -1,8 +1,8 @@
 //! cSHAKE, the customizable SHAKE of NIST SP 800-185 Sec 3.
 
-use crate::SHAKEParams;
 use crate::keccak::SHA3_FAMILY_STATE_LEN;
 use crate::shake::{SHAKEInternal, SHAKESqueezer};
+use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
@@ -10,9 +10,19 @@ use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
 
+// imports needed for docs
+#[allow(unused_imports)]
+use crate::SHAKE128;
+// end of doc-only imports
+
+/// The name of the cSHAKE128 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE128_NAME: &str = "CSHAKE128";
+/// The name of the cSHAKE256 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE256_NAME: &str = "CSHAKE256";
+
 /// Length in bytes of the suspended state of cSHAKE.
 pub const SUSPENDED_CSHAKE_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN;
-/// Length in bytes of the suspended state of a [`LengthBoundSqueezer`].
+/// Length in bytes of the suspended state of a [`CSHAKESqueezer`].
 pub const SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN: usize = SUSPENDED_CSHAKE_STATE_LEN;
 /// The cSHAKE state without its version header: the SHA3-family state, then one byte saying
 /// whether `N` or `S` was non-empty. The functions built on cSHAKE write this first, under their
@@ -23,7 +33,18 @@ pub(crate) const CSHAKE_COMPONENT_LEN: usize = SHA3_FAMILY_STATE_LEN + 1;
 /// two zero bits, which is what keeps a customized instance separate from plain SHAKE.
 const CSHAKE_SUFFIX: (u8, usize) = (0x00, 2);
 
-/// Internal struct for cSHAKE. Use [`crate::CSHAKE128`] or [`crate::CSHAKE256`].
+/// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
+///
+/// Construct with [`CSHAKEInternal::new`], passing the function-name string `N` (reserved for
+/// NIST, normally empty) and the customization string `S`. With both empty this is exactly
+/// [`SHAKE128`].
+pub type CSHAKE128 = CSHAKEInternal<SHAKE128Params>;
+/// cSHAKE256: the customizable SHAKE256 of NIST SP 800-185 Sec 3, at a 256-bit security strength.
+///
+/// See [`CSHAKE128`].
+pub type CSHAKE256 = CSHAKEInternal<SHAKE256Params>;
+
+/// Internal struct for cSHAKE.
 ///
 /// cSHAKE is SHAKE with two extra inputs bound to the front of the message: a function-name string
 /// `N`, reserved for NIST, and a customization string `S`, chosen by the caller. SP 800-185 Sec 3.1
@@ -151,7 +172,7 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
 
     /// The reverse of [`Self::write_tagged`]. A sponge that has begun squeezing is refused: a
     /// cSHAKE a caller can hold is still absorbing, and the squeezing half is a [`SHAKESqueezer`]
-    /// or a [`LengthBoundSqueezer`], which resume their own states.
+    /// or a [`CSHAKESqueezer`], which resume their own states.
     pub(crate) fn read_tagged(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
         let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
         let shake = SHAKEInternal::read_family_state(family, tag)?;
@@ -393,7 +414,7 @@ fn value_bytes(value: u64) -> usize {
 /// follows a `do_output` cannot bind anything and simply continues the `right_encode(0)` stream
 /// the earlier read already chose.
 #[derive(Clone)]
-pub struct LengthBoundSqueezer<PARAMS: SHAKEParams> {
+pub struct CSHAKESqueezer<PARAMS: SHAKEParams> {
     phase: Phase<PARAMS>,
 }
 
@@ -404,12 +425,12 @@ enum Phase<PARAMS: SHAKEParams> {
     Unbound(CSHAKEInternal<PARAMS>),
     /// The encoding has been absorbed and the sponge is producing output.
     Squeezing(SHAKESqueezer<PARAMS>),
-    /// Never observed: [`LengthBoundSqueezer::read`] leaves this here only while the value moves
+    /// Never observed: [`CSHAKESqueezer::read`] leaves this here only while the value moves
     /// from one of the phases above to the other.
     Binding,
 }
 
-impl<PARAMS: SHAKEParams> LengthBoundSqueezer<PARAMS> {
+impl<PARAMS: SHAKEParams> CSHAKESqueezer<PARAMS> {
     /// Wraps a cSHAKE with everything but its `right_encode(L)` absorbed.
     pub(crate) fn new(cshake: CSHAKEInternal<PARAMS>) -> Self {
         Self { phase: Phase::Unbound(cshake) }
@@ -449,7 +470,7 @@ impl<PARAMS: SHAKEParams> LengthBoundSqueezer<PARAMS> {
 
 /// Both phases suspend. The sponge's own phase flag records which, so the state is the cSHAKE
 /// layout under one tag, and a resumed `Unbound` squeezer still has its first read to make.
-impl<PARAMS: SHAKEParams> SuspendableComponent for LengthBoundSqueezer<PARAMS> {
+impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKESqueezer<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -490,7 +511,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for LengthBoundSqueezer<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN>
-    for LengthBoundSqueezer<PARAMS>
+    for CSHAKESqueezer<PARAMS>
 {
     fn suspend(self) -> [u8; SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN] {
         suspend_component(&self)
@@ -503,7 +524,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN>
     }
 }
 
-impl<PARAMS: SHAKEParams> XOFSqueezer for LengthBoundSqueezer<PARAMS> {
+impl<PARAMS: SHAKEParams> XOFSqueezer for CSHAKESqueezer<PARAMS> {
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
         self.do_output_out(&mut out);
