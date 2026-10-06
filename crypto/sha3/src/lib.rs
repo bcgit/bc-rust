@@ -1,4 +1,4 @@
-//! Implements SHA3 as per NIST FIPS 202.
+//! Implements SHA3 as per NIST FIPS 202, and the SHA-3 derived functions of NIST SP 800-185.
 //!
 //! This crate provides the following primitives:
 //!
@@ -6,8 +6,11 @@
 //! * SHAKE [`XOF`] functions.
 //! * SHA3-based [`KDF`] functions.
 //! * HMAC_SHA3_* [`MAC`] functions.
+//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC ([`MAC`]), TupleHash and ParallelHash
+//!   ([`Hash`]), and their arbitrary-output-length forms KMACXOF, TupleHashXOF and
+//!   ParallelHashXOF ([`XOF`]).
 //!
-//! # Examples
+//! # Usage Examples
 //! ## Hash
 //! Hash functionality is accessed via the [`Hash`] trait,
 //! which is implemented by [`SHA3_224`], [`SHA3_256`], [`SHA3_384`] and [`SHA3_512`].
@@ -74,7 +77,7 @@
 //!
 //! [`XOF`] extends [`Hash`], so SHAKE takes input through [`Hash::do_update`] like any other hash.
 //! Output is where they differ: [`XOF::into_squeezer`] ends the input phase and returns an
-//! [`XOFSqueezer`](bouncycastle_core::traits::XOFSqueezer), whose
+//! [`XOFSqueezer`], whose
 //! [`do_output`](bouncycastle_core::traits::XOFSqueezer::do_output) can be called as many times as you
 //! like, each call continuing one stream.
 //!
@@ -129,13 +132,96 @@
 //! ## HMAC
 //! See [hmac].
 //!
+//! ## cSHAKE, KMAC, TupleHash and ParallelHash
+//! The SP 800-185 functions are SHAKE with further inputs bound into the computation, used through
+//! the same traits. Each takes a customization string `S`, which may be empty; instances with
+//! different `S` are unrelated functions (SP 800-185 Sec 8.2.2).
+//!
+//! cSHAKE is an [`XOF`] exactly as SHAKE is, with `S` fixed at construction. The function-name
+//! string `N` is reserved for NIST and is normally empty:
+//! ```
+//! use bouncycastle_core::traits::XOF;
+//! use bouncycastle_sha3::CSHAKE128;
+//!
+//! let output: Vec<u8> = CSHAKE128::new(b"", b"Email Signature").xof(b"Hello, world!", 32);
+//! ```
+//!
+//! KMAC is a [`MAC`]. [`MAC::new`] takes a key tagged [`KeyType::MACKey`] and produces the nominal
+//! output length; [`KMACInternal::new_with_params`] chooses `S` and the output length, which is
+//! bound into the function rather than a truncation of it (see [`KMAC128`]):
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_sha3::KMAC128;
+//!
+//! let key = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
+//!
+//! let tag: Vec<u8> = KMAC128::new(&key).unwrap().mac(b"Hello, world!");
+//! assert!(KMAC128::new(&key).unwrap().verify(b"Hello, world!", &tag));
+//!
+//! // 16-byte tags, under a customization string.
+//! let kmac = KMAC128::new_with_params(&key, b"My Tagged Application", 16, false).unwrap();
+//! let short_tag: Vec<u8> = kmac.mac(b"Hello, world!");
+//! assert_eq!(short_tag.len(), 16);
+//! ```
+//!
+//! TupleHash is a [`Hash`] over a sequence of strings rather than one string: each
+//! [`Hash::do_update`] call is one tuple element, so the chunking is part of the input.
+//! [`TupleHashInternal::hash_tuple`] takes the whole tuple at once:
+//! ```
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha3::TUPLEHASH128;
+//!
+//! let tuple: [&[u8]; 2] = [b"user id", b"session"];
+//! let output: Vec<u8> = TUPLEHASH128::new(b"", 32).hash_tuple(&tuple);
+//!
+//! // The same computation, one element per call.
+//! let mut th = TUPLEHASH128::new(b"", 32);
+//! th.do_update(b"user id");
+//! th.do_update(b"session");
+//! assert_eq!(th.do_final(), output);
+//! ```
+//!
+//! ParallelHash is a [`Hash`] whose block size `B` is part of the function; its `do_update`
+//! streams bytes in the usual way:
+//! ```
+//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_sha3::PARALLELHASH128;
+//!
+//! let output: Vec<u8> = PARALLELHASH128::new(8192, b"", 32).hash(b"Hello, world!");
+//! ```
+//!
+//! KMACXOF, TupleHashXOF and ParallelHashXOF are the arbitrary-output-length forms of Sec 4.3.1,
+//! 5.3.1 and 6.3.1, read through [`XOF`] as SHAKE is. Each is a separate function from its
+//! fixed-length counterpart, except that a *final* read ([`XOF::xof`],
+//! [`XOFSqueezer::do_output_final`]) binds its length and so gives the fixed-length function.
+//! [`KMACXOF128`], [`TUPLEHASHXOF128`] and [`PARALLELHASHXOF128`] have the detail.
+//! ```
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::traits::{Hash, MAC, XOF, XOFSqueezer};
+//! use bouncycastle_sha3::{KMAC128, KMACXOF128};
+//!
+//! let key = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
+//!
+//! let mut kmac = KMACXOF128::new(&key, b"", false).unwrap();
+//! kmac.do_update(b"Hello, world!");
+//! let mut squeezer = kmac.into_squeezer();
+//! let first: Vec<u8> = squeezer.do_output(16);
+//! let more: Vec<u8> = squeezer.do_output(1024);
+//!
+//! // A final read of 32 bytes is KMAC128 at its nominal length, not a prefix of the stream above.
+//! let bound: Vec<u8> = KMACXOF128::new(&key, b"", false).unwrap().xof(b"Hello, world!", 32);
+//! assert_eq!(bound, KMAC128::new(&key).unwrap().mac(b"Hello, world!"));
+//! assert_ne!(bound[..16], first[..]);
+//! ```
+//!
 //! # Suspending and resuming execution
 //!
 //! When hashing a large message, it can be advantageous to be able to suspend the operation
 //! to a cache and resume it later; for example if waiting for the message to stream over a slow network
 //! connection.
 //!
-//! For this reason, all SHA3 algorithms impl [`Suspendable`].
+//! For this reason, the SHA3 and SHAKE types impl [`Suspendable`]; the SP 800-185 functions do not.
 //!
 //!```rust
 //! use bouncycastle_sha3 as sha3;
@@ -184,6 +270,15 @@
 //!   length must be bound to the digest, include it in the message (FIPS 202 Appendix A.2).
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
 //!   drop.
+//! * KMAC's security rests on its key and output lengths (SP 800-185 Sec 8.4): the key check is
+//!   [`KMACInternal::new_with_params`]'s, with `allow_weak_key` as the bypass, and an output
+//!   shorter than 8 bytes is the caller's to justify (Sec 8.4.2: never below 4, and below 8
+//!   only after a risk analysis).
+//! * cSHAKE has SHAKE's prefix property; the fixed-length KMAC, TupleHash and ParallelHash do
+//!   not, because the output length is bound in, but their XOF forms read as a stream do
+//!   (Sec 8.2.2).
+//! * A customization string is not a key: for any `N` and `S`, cSHAKE has exactly SHAKE's
+//!   security (Sec 8.2.1). It separates instances; it does not strengthen them.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
@@ -199,7 +294,7 @@ use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF};
+use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF, XOFSqueezer};
 // end of doc-only imports
 
 mod cshake;
