@@ -27,18 +27,18 @@ impl TestFrameworkMAC {
         input: &[u8],
         expected_output: &[u8],
     ) {
-        #[cfg(feature = "std")]
-        {
-            // Test ::mac()
-            let out = M::new_allow_weak_key(key).unwrap().mac(input);
-            assert_eq!(out, expected_output);
-        }
-
-        // Test ::mac_out
+        // Test ::mac_out()
         let mut out = vec![0u8; expected_output.len()];
         let bytes_written = M::new_allow_weak_key(key).unwrap().mac_out(input, &mut out).unwrap();
         assert_eq!(bytes_written, expected_output.len());
         assert_eq!(out, expected_output);
+
+        // ... and the same via ::mac()
+        #[cfg(feature = "std")]
+        {
+            let out = M::new_allow_weak_key(key).unwrap().mac(input);
+            assert_eq!(out, expected_output);
+        }
 
         // Test an output buffer that's too small (should truncate)
         let mut out = vec![0u8; expected_output.len() - 2];
@@ -56,20 +56,6 @@ impl TestFrameworkMAC {
         // Test ::verify()
         assert!(M::new_allow_weak_key(key).unwrap().verify(input, expected_output));
 
-        #[cfg(feature = "std")]
-        {
-            // Test .do_update(), .do_final()
-            // At the same time, test .output_len()
-            let mut mac = M::new_allow_weak_key(key).unwrap();
-            let output_len = mac.output_len();
-            mac.do_update(input);
-            let out = mac.do_final();
-            assert_eq!(out, expected_output);
-
-            // Test .output_len()
-            assert_eq!(output_len, out.len());
-        }
-
         // Test .do_update(), .do_final_out()
         // At the same time, test .output_len()
         let mut out = vec![0u8; expected_output.len()];
@@ -81,6 +67,19 @@ impl TestFrameworkMAC {
 
         // Test .output_len()
         assert_eq!(output_len, out.len());
+
+        // ... and the same via .do_final()
+        #[cfg(feature = "std")]
+        {
+            let mut mac = M::new_allow_weak_key(key).unwrap();
+            let output_len = mac.output_len();
+            mac.do_update(input);
+            let out = mac.do_final();
+            assert_eq!(out, expected_output);
+
+            // Test .output_len()
+            assert_eq!(output_len, out.len());
+        }
 
         // Test ::mac_array() and ::do_final_array() (no_std alternatives).
         // N = 64 is >= every supported MAC output length (and >= the FIPS minimum), so the tag lands
