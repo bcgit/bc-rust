@@ -35,19 +35,9 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
-use bouncycastle_hex as hex;
-use serde_json::Value;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 const BLOCK_LEN: usize = 16;
-
-fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
 /// to call them a cipher key. Same helper as the other vector suites in this crate.
@@ -154,11 +144,10 @@ fn dispatch(
 
 #[test]
 fn wycheproof_aes_cbc_pkcs7_known_answer_tests() {
-    let Some(contents) = wycheproof("aes_cbc_pkcs5_test.json") else {
+    let Some(doc) = wycheproof_json("aes_cbc_pkcs5_test.json") else {
         return;
     };
 
-    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(
         doc.get("algorithm").and_then(Value::as_str),
         Some("AES-CBC-PKCS5"),
@@ -181,12 +170,12 @@ fn wycheproof_aes_cbc_pkcs7_known_answer_tests() {
 
         for test in tests {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
-            let key_bytes = decode(test, "key", tc_id);
-            let iv: [u8; BLOCK_LEN] = decode(test, "iv", tc_id)
+            let key_bytes = hex_field(test, "key", tc_id);
+            let iv: [u8; BLOCK_LEN] = hex_field(test, "iv", tc_id)
                 .try_into()
                 .unwrap_or_else(|_| panic!("tcId {tc_id}: the IV must be one block"));
-            let msg = decode(test, "msg", tc_id);
-            let ct = decode(test, "ct", tc_id);
+            let msg = hex_field(test, "msg", tc_id);
+            let ct = hex_field(test, "ct", tc_id);
             let result = test.get("result").and_then(Value::as_str).expect("result");
             let flags: Vec<&str> = test
                 .get("flags")

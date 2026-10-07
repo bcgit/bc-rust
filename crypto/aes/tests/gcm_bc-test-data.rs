@@ -25,19 +25,14 @@
 //! The Wycheproof `aes_gcm_test.json` set, which `bc-test-data` also carries, is run by
 //! `gcm_wycheproof.rs`.
 
-// Not `mod common;`: this crate-private helper's `serde_json::Value` usage, if pulled into the
-// shared `common` module that most other test binaries in this crate include via `mod common;`,
-// makes `u8: PartialEq<_>` ambiguous (`core`'s impl vs. serde_json's `impl PartialEq<Value> for
-// u8`) at every bare `assert_eq!(byte_array, [])` in *those* files too -- `ecb_tests.rs` hit this
-// exactly. Giving it its own module path keeps that ambiguity local to the two files that actually
-// need ACVP JSON parsing.
 #[path = "common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;
 
-use acvp_gcm_helpers::{GCM_NONCE_LEN, decode, run_decrypt_case, run_encrypt_case};
-use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
+use acvp_gcm_helpers::{GCM_NONCE_LEN, run_decrypt_case, run_encrypt_case};
+use bouncycastle_core_test_framework::test_data_loaders::{
+    Value, bc_test_data, bc_test_data_json, hex_field,
+};
 use bouncycastle_hex as hex;
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/GCM";
@@ -46,13 +41,12 @@ const RESPONSE_FILE: &str = "ACVP-AES-GCM.4014542.rsp.json";
 
 #[test]
 fn acvp_aes_gcm_known_answer_tests() {
-    let (Some(req), Some(rsp)) =
-        (bc_test_data(TEST_DATA_DIR, REQUEST_FILE), bc_test_data(TEST_DATA_DIR, RESPONSE_FILE))
-    else {
+    let (Some(req), Some(rsp)) = (
+        bc_test_data_json(TEST_DATA_DIR, REQUEST_FILE),
+        bc_test_data_json(TEST_DATA_DIR, RESPONSE_FILE),
+    ) else {
         return;
     };
-    let req: Value = serde_json::from_str(&req).expect("valid ACVP request JSON");
-    let rsp: Value = serde_json::from_str(&rsp).expect("valid ACVP response JSON");
 
     // The response file carries only the answer, against a tcId. Index it.
     let mut answers: BTreeMap<u64, Value> = BTreeMap::new();
@@ -78,20 +72,20 @@ fn acvp_aes_gcm_known_answer_tests() {
 
         for test in group["tests"].as_array().expect("tests") {
             let tc_id = test["tcId"].as_u64().expect("tcId");
-            let key_bytes = decode(test, "key", tc_id);
-            let aad = decode(test, "aad", tc_id);
-            let iv_bytes = decode(test, "iv", tc_id);
+            let key_bytes = hex_field(test, "key", tc_id);
+            let aad = hex_field(test, "aad", tc_id);
+            let iv_bytes = hex_field(test, "iv", tc_id);
             let iv: [u8; GCM_NONCE_LEN] = iv_bytes
                 .try_into()
                 .unwrap_or_else(|_| panic!("tcId {tc_id}: expected a 12-byte IV"));
 
             match direction {
                 "encrypt" => {
-                    let pt = decode(test, "pt", tc_id);
+                    let pt = hex_field(test, "pt", tc_id);
                     let answer =
                         answers.get(&tc_id).unwrap_or_else(|| panic!("tcId {tc_id}: no answer"));
-                    let ct = decode(answer, "ct", tc_id);
-                    let tag = decode(answer, "tag", tc_id);
+                    let ct = hex_field(answer, "ct", tc_id);
+                    let tag = hex_field(answer, "tag", tc_id);
                     run_encrypt_case(&key_bytes, iv, &aad, &pt, tag_len, &ct, &tag);
 
                     // Also round-trip this known-good ciphertext through decryption, adding the
@@ -101,8 +95,8 @@ fn acvp_aes_gcm_known_answer_tests() {
                     encrypt_checked += 1;
                 }
                 "decrypt" => {
-                    let ct = decode(test, "ct", tc_id);
-                    let tag = decode(test, "tag", tc_id);
+                    let ct = hex_field(test, "ct", tc_id);
+                    let tag = hex_field(test, "tag", tc_id);
                     let answer =
                         answers.get(&tc_id).unwrap_or_else(|| panic!("tcId {tc_id}: no answer"));
                     // A forgery reports `testPassed: false` and no plaintext; a valid case reports
@@ -112,7 +106,7 @@ fn acvp_aes_gcm_known_answer_tests() {
                         run_decrypt_case(&key_bytes, iv, &aad, &ct, &tag, None);
                         decrypt_failed_checked += 1;
                     } else {
-                        let pt = decode(answer, "pt", tc_id);
+                        let pt = hex_field(answer, "pt", tc_id);
                         run_decrypt_case(&key_bytes, iv, &aad, &ct, &tag, Some(&pt));
                     }
                 }

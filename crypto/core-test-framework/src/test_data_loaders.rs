@@ -12,9 +12,14 @@
 //! `cargo mutants`, which copies the tree into `/tmp`, they resolve to `/tmp/bc-test-data` and
 //! `/tmp/wycheproof`.
 
+use bouncycastle_hex as hex;
 use std::fs;
 use std::path::Path;
 use std::sync::Once;
+
+/// The parsed form of a vector file, re-exported so that suites need no `serde_json` dependency
+/// of their own.
+pub use serde_json::Value;
 
 const BC_TEST_DATA_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../bc-test-data");
 const WYCHEPROOF_ROOT: &str =
@@ -37,6 +42,33 @@ pub fn bc_test_data(dir: &str, filename: &str) -> Option<String> {
 /// Panics if Wycheproof is present but the file cannot be read.
 pub fn wycheproof(filename: &str) -> Option<String> {
     read(WYCHEPROOF_ROOT, &WYCHEPROOF_CHECK, "wycheproof", filename)
+}
+
+/// [`bc_test_data`], parsed as JSON.
+///
+/// Panics if the file is not valid JSON.
+pub fn bc_test_data_json(dir: &str, filename: &str) -> Option<Value> {
+    bc_test_data(dir, filename).map(|s| parse(&s, filename))
+}
+
+/// [`wycheproof`], parsed as JSON.
+///
+/// Panics if the file is not valid JSON.
+pub fn wycheproof_json(filename: &str) -> Option<Value> {
+    wycheproof(filename).map(|s| parse(&s, filename))
+}
+
+/// The hex-encoded `field` of one test case, decoded; a missing field or bad hex names the case.
+pub fn hex_field(case: &Value, field: &str, tc_id: u64) -> Vec<u8> {
+    let s = case
+        .get(field)
+        .and_then(Value::as_str)
+        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
+    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
+}
+
+fn parse(contents: &str, filename: &str) -> Value {
+    serde_json::from_str(contents).unwrap_or_else(|e| panic!("{filename} is not valid JSON: {e}"))
 }
 
 fn read(root: &str, check: &Once, repo: &str, path: &str) -> Option<String> {

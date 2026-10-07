@@ -122,7 +122,7 @@ fn the_mode_matches_the_spec_equations() {
         core::array::from_fn(|i| core::array::from_fn(|j| (i * 31 + j * 7 + 1) as u8));
 
     let (mut enc, init) = ToyEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
-    assert_eq!(init, [], "ECB has no init data");
+    assert_eq!(init, [0u8; 0], "ECB has no init data");
     let ct = enc_blocks(&mut enc, &plaintext);
     assert_eq!(
         ct.to_vec(),
@@ -390,7 +390,7 @@ fn the_padding_layer_round_trips_every_length() {
         let mut ciphertext = vec![0u8; Enc::encrypt_out_len(len)];
         let (init, written) =
             Enc::encrypt_out(&toy_key(), &plaintext, &mut ciphertext).expect("padded encryption");
-        assert_eq!(init, []);
+        assert_eq!(init, [0u8; 0]);
         assert_eq!(written, ciphertext.len(), "len {len}");
         let mut recovered = vec![0u8; Dec::decrypt_out_len(written)];
         let n = Dec::decrypt_out(&toy_key(), &init, &ciphertext, &mut recovered)

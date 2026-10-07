@@ -22,7 +22,7 @@ use bouncycastle_core_test_framework::FixedSeedRNG;
 /// The nonce length these vectors use; every group in the ACVP AES-GCM/GMAC sets has `ivLen = 96`.
 #[path = "acvp_helpers.rs"]
 mod acvp_helpers;
-pub use acvp_helpers::{cipher_key, decode};
+pub use acvp_helpers::cipher_key;
 
 pub const GCM_NONCE_LEN: usize = 12;
 

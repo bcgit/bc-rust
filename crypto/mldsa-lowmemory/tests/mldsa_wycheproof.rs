@@ -26,7 +26,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa_lowmemory::{
     MLDSA44, MLDSA44PublicKey, MLDSA65, MLDSA65PublicKey, MLDSA87, MLDSA87PublicKey,
@@ -35,8 +35,8 @@ use bouncycastle_mldsa_lowmemory::{
 
 #[test]
 fn mldsa_44_sign_seed_test() {
-    let Some(contents) = wycheproof("mldsa_44_sign_seed_test.json") else { return };
-    let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa44);
+    let Some(json) = wycheproof_json("mldsa_44_sign_seed_test.json") else { return };
+    let test_cases = MLDSASignSeedTestCase::parse(json, ParameterSet::Mldsa44);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -48,8 +48,8 @@ fn mldsa_44_sign_seed_test() {
 
 #[test]
 fn mldsa_44_verify_test() {
-    let Some(contents) = wycheproof("mldsa_44_verify_test.json") else { return };
-    let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa44);
+    let Some(json) = wycheproof_json("mldsa_44_verify_test.json") else { return };
+    let test_cases = MLDSAVerifyTestCase::parse(json, ParameterSet::Mldsa44);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -61,8 +61,8 @@ fn mldsa_44_verify_test() {
 
 #[test]
 fn mldsa_65_sign_seed_test() {
-    let Some(contents) = wycheproof("mldsa_65_sign_seed_test.json") else { return };
-    let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa65);
+    let Some(json) = wycheproof_json("mldsa_65_sign_seed_test.json") else { return };
+    let test_cases = MLDSASignSeedTestCase::parse(json, ParameterSet::Mldsa65);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -74,8 +74,8 @@ fn mldsa_65_sign_seed_test() {
 
 #[test]
 fn mldsa_65_verify_test() {
-    let Some(contents) = wycheproof("mldsa_65_verify_test.json") else { return };
-    let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa65);
+    let Some(json) = wycheproof_json("mldsa_65_verify_test.json") else { return };
+    let test_cases = MLDSAVerifyTestCase::parse(json, ParameterSet::Mldsa65);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -87,8 +87,8 @@ fn mldsa_65_verify_test() {
 
 #[test]
 fn mldsa_87_sign_seed_test() {
-    let Some(contents) = wycheproof("mldsa_87_sign_seed_test.json") else { return };
-    let test_cases = MLDSASignSeedTestCase::parse(contents, ParameterSet::Mldsa87);
+    let Some(json) = wycheproof_json("mldsa_87_sign_seed_test.json") else { return };
+    let test_cases = MLDSASignSeedTestCase::parse(json, ParameterSet::Mldsa87);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -100,8 +100,8 @@ fn mldsa_87_sign_seed_test() {
 
 #[test]
 fn mldsa_87_verify_test() {
-    let Some(contents) = wycheproof("mldsa_87_verify_test.json") else { return };
-    let test_cases = MLDSAVerifyTestCase::parse(contents, ParameterSet::Mldsa87);
+    let Some(json) = wycheproof_json("mldsa_87_verify_test.json") else { return };
+    let test_cases = MLDSAVerifyTestCase::parse(json, ParameterSet::Mldsa87);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -155,10 +155,7 @@ impl MLDSASignSeedTestCase {
         }
     }
 
-    fn parse(data: String, parameter_set: ParameterSet) -> Vec<Self> {
-        let json: serde_json::Value =
-            serde_json::from_str(&data).expect("test data is not valid JSON");
-
+    fn parse(json: Value, parameter_set: ParameterSet) -> Vec<Self> {
         let mut test_cases = Vec::<Self>::new();
 
         let groups = json["testGroups"].as_array().expect("testGroups is not an array");
@@ -524,10 +521,7 @@ impl MLDSAVerifyTestCase {
         }
     }
 
-    fn parse(data: String, parameter_set: ParameterSet) -> Vec<Self> {
-        let json: serde_json::Value =
-            serde_json::from_str(&data).expect("test data is not valid JSON");
-
+    fn parse(json: Value, parameter_set: ParameterSet) -> Vec<Self> {
         let mut test_cases = Vec::<Self>::new();
 
         let groups = json["testGroups"].as_array().expect("testGroups is not an array");

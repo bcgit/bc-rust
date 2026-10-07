@@ -15,4 +15,3 @@ bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-sm3.workspace = true
 criterion.workspace = true
-serde_json = "1.0" # for parsing the Wycheproof vector files

@@ -46,14 +46,12 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
-use serde_json::Value;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
 
-// See `gcm_bc-test-data.rs` for why this is its own module path rather than `mod common;`.
 #[path = "common/acvp_helpers.rs"]
 mod acvp_helpers;
-use acvp_helpers::{cipher_key, decode};
+use acvp_helpers::cipher_key;
 
 const BLOCK_LEN: usize = 16;
 
@@ -145,13 +143,12 @@ fn run_case_for_key_len(
 
 #[test]
 fn acvp_aes_cfb128_known_answer_tests() {
-    let (Some(req), Some(rsp)) =
-        (bc_test_data(TEST_DATA_DIR, REQUEST_FILE), bc_test_data(TEST_DATA_DIR, RESPONSE_FILE))
-    else {
+    let (Some(req), Some(rsp)) = (
+        bc_test_data_json(TEST_DATA_DIR, REQUEST_FILE),
+        bc_test_data_json(TEST_DATA_DIR, RESPONSE_FILE),
+    ) else {
         return;
     };
-    let req: Value = serde_json::from_str(&req).expect("valid ACVP request JSON");
-    let rsp: Value = serde_json::from_str(&rsp).expect("valid ACVP response JSON");
 
     // The response file carries only the answer, against a tcId. Index it.
     let mut answers: BTreeMap<u64, Value> = BTreeMap::new();
@@ -201,13 +198,14 @@ fn acvp_aes_cfb128_known_answer_tests() {
                 continue;
             }
 
-            let key_bytes = decode(test, "key", tc_id);
-            let iv: [u8; BLOCK_LEN] = decode(test, "iv", tc_id).try_into().expect("a 16-byte IV");
+            let key_bytes = hex_field(test, "key", tc_id);
+            let iv: [u8; BLOCK_LEN] =
+                hex_field(test, "iv", tc_id).try_into().expect("a 16-byte IV");
 
             // Input comes from the request, expected output from the response.
             let (input_field, output_field) = if encrypt { ("pt", "ct") } else { ("ct", "pt") };
-            let input = decode(test, input_field, tc_id);
-            let expected = decode(answer, output_field, tc_id);
+            let input = hex_field(test, input_field, tc_id);
+            let expected = hex_field(answer, output_field, tc_id);
 
             assert_eq!(input.len(), expected.len(), "tcId {tc_id}: length mismatch");
             assert_eq!(

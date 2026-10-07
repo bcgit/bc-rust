@@ -13,8 +13,7 @@
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Hash, HashAlgParams};
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
-use bouncycastle_hex as hex;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_hkdf::HKDF;
 use bouncycastle_sha2::hkdf::{
     SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN,
@@ -23,20 +22,11 @@ use bouncycastle_sha2::hkdf::{
 use bouncycastle_sha2::{
     SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
 };
-use serde_json::Value;
 
 /// The longest IKM or salt in any of the files is 80 bytes.
 const MAX_INPUT_LEN: usize = 80;
 /// 255 * 64, the most HKDF-SHA-512 can produce.
 const MAX_OKM_LEN: usize = 255 * 64;
-
-fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
 
 /// Runs every case in one `hkdf_*_test.json` file through `HKDF<H, ..>`. The state lengths are
 /// those of `bouncycastle_sha2::hkdf`'s aliases, which cannot be passed as a type here.
@@ -48,9 +38,8 @@ fn run<
     filename: &str,
     algorithm: &str,
 ) {
-    let Some(contents) = wycheproof(filename) else { return };
+    let Some(doc) = wycheproof_json(filename) else { return };
 
-    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some(algorithm), "{filename}");
 
     let (mut valid_count, mut invalid_count) = (0usize, 0usize);
@@ -59,17 +48,17 @@ fn run<
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
             let ctx = format!("{filename} tcId {tc_id}");
             let ikm = KeyMaterial::<MAX_INPUT_LEN>::from_bytes_as_type(
-                &decode(test, "ikm", tc_id),
+                &hex_field(test, "ikm", tc_id),
                 KeyType::Seed,
             )
             .expect("ikm fits");
             // An empty salt is an absent one: a zero-length KeyMaterial.
             let salt = KeyMaterial::<MAX_INPUT_LEN>::from_bytes_as_type(
-                &decode(test, "salt", tc_id),
+                &hex_field(test, "salt", tc_id),
                 KeyType::MACKey,
             )
             .expect("salt fits");
-            let info = decode(test, "info", tc_id);
+            let info = hex_field(test, "info", tc_id);
             let size = test.get("size").and_then(Value::as_u64).expect("size") as usize;
 
             let mut okm = KeyMaterial::<MAX_OKM_LEN>::new();
@@ -81,7 +70,11 @@ fn run<
                 "valid" => {
                     let written = result.unwrap_or_else(|e| panic!("{ctx}: {e:?}"));
                     assert_eq!(written, size, "{ctx}: bytes written");
-                    assert_eq!(okm.ref_to_bytes(), &decode(test, "okm", tc_id)[..], "{ctx}: okm");
+                    assert_eq!(
+                        okm.ref_to_bytes(),
+                        &hex_field(test, "okm", tc_id)[..],
+                        "{ctx}: okm"
+                    );
                     valid_count += 1;
                 }
                 "invalid" => {

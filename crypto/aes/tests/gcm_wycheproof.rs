@@ -46,17 +46,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
-use bouncycastle_hex as hex;
-use serde_json::Value;
-
-fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
+use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
 /// to call them a cipher key. Same helper as the ACVP and CCM suites in this crate.
@@ -175,9 +165,8 @@ fn dispatch(
 
 #[test]
 fn wycheproof_aes_gcm_known_answer_tests() {
-    let Some(contents) = wycheproof("aes_gcm_test.json") else { return };
+    let Some(doc) = wycheproof_json("aes_gcm_test.json") else { return };
 
-    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(
         doc.get("algorithm").and_then(Value::as_str),
         Some("AES-GCM"),
@@ -210,12 +199,12 @@ fn wycheproof_aes_gcm_known_answer_tests() {
 
         for test in tests {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
-            let key_bytes = decode(test, "key", tc_id);
-            let iv_bytes = decode(test, "iv", tc_id);
-            let aad = decode(test, "aad", tc_id);
-            let msg = decode(test, "msg", tc_id);
-            let ct = decode(test, "ct", tc_id);
-            let tag = decode(test, "tag", tc_id);
+            let key_bytes = hex_field(test, "key", tc_id);
+            let iv_bytes = hex_field(test, "iv", tc_id);
+            let aad = hex_field(test, "aad", tc_id);
+            let msg = hex_field(test, "msg", tc_id);
+            let ct = hex_field(test, "ct", tc_id);
+            let tag = hex_field(test, "tag", tc_id);
             let result = test.get("result").and_then(Value::as_str).expect("result");
             let valid = match result {
                 "valid" => true,

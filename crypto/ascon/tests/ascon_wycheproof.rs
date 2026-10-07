@@ -14,17 +14,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
-use bouncycastle_hex as hex;
-use serde_json::Value;
-
-fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
+use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 /// Wraps the vector's key bytes as a cipher key, promoting them if `KeyMaterial`'s entropy
 /// heuristic declined to (as `ascon_bc-test-data.rs` does for the NIST KAT keys).
@@ -41,9 +31,8 @@ fn cipher_key(bytes: &[u8]) -> KeyMaterial<KEY_LEN> {
 
 #[test]
 fn wycheproof_ascon_aead128() {
-    let Some(contents) = wycheproof("ascon_sp800_232_aead128_test.json") else { return };
+    let Some(doc) = wycheproof_json("ascon_sp800_232_aead128_test.json") else { return };
 
-    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some("ASCON-AEAD128"));
 
     let (mut valid_count, mut invalid_count) = (0usize, 0usize);
@@ -55,13 +44,13 @@ fn wycheproof_ascon_aead128() {
 
         for test in group.get("tests").and_then(Value::as_array).expect("tests") {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
-            let key = cipher_key(&decode(test, "key", tc_id));
+            let key = cipher_key(&hex_field(test, "key", tc_id));
             let nonce: [u8; NONCE_LEN] =
-                decode(test, "iv", tc_id).try_into().expect("a 16-byte nonce");
-            let aad = decode(test, "aad", tc_id);
+                hex_field(test, "iv", tc_id).try_into().expect("a 16-byte nonce");
+            let aad = hex_field(test, "aad", tc_id);
             let ad = if aad.is_empty() { None } else { Some(aad.as_slice()) };
-            let msg = decode(test, "msg", tc_id);
-            let ct_and_tag = [decode(test, "ct", tc_id), decode(test, "tag", tc_id)].concat();
+            let msg = hex_field(test, "msg", tc_id);
+            let ct_and_tag = [hex_field(test, "ct", tc_id), hex_field(test, "tag", tc_id)].concat();
 
             let mut pt = vec![0xEEu8; ct_and_tag.len().saturating_sub(TAG_LEN)];
             let decrypted = AsconAead128::decrypt(&key, &nonce, ad, &ct_and_tag, &mut pt);

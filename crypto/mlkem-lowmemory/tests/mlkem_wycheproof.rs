@@ -28,7 +28,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KEMDecapsulator, KEMPublicKey};
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem_lowmemory::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem_lowmemory::{
@@ -38,9 +38,9 @@ use bouncycastle_mlkem_lowmemory::{
 
 #[test]
 fn mlkem_512_encaps_test() {
-    let Some(contents) = wycheproof("mlkem_512_encaps_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_512_encaps_test.json") else { return };
 
-    let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem512);
+    let test_cases = MLKEMEncapsTestCase::parse(json, ParameterSet::Mlkem512);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -52,9 +52,9 @@ fn mlkem_512_encaps_test() {
 
 #[test]
 fn mlkem_512_keygen_seed_test() {
-    let Some(contents) = wycheproof("mlkem_512_keygen_seed_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_512_keygen_seed_test.json") else { return };
 
-    let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem512);
+    let test_cases = MLKEMKeygenSeedTestCase::parse(json, ParameterSet::Mlkem512);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -66,9 +66,9 @@ fn mlkem_512_keygen_seed_test() {
 
 #[test]
 fn mlkem_512_test() {
-    let Some(contents) = wycheproof("mlkem_512_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_512_test.json") else { return };
 
-    let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem512);
+    let test_cases = MLKEMTestCase::parse(json, ParameterSet::Mlkem512);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -80,9 +80,9 @@ fn mlkem_512_test() {
 
 #[test]
 fn mlkem_768_encaps_test() {
-    let Some(contents) = wycheproof("mlkem_768_encaps_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_768_encaps_test.json") else { return };
 
-    let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem768);
+    let test_cases = MLKEMEncapsTestCase::parse(json, ParameterSet::Mlkem768);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -94,9 +94,9 @@ fn mlkem_768_encaps_test() {
 
 #[test]
 fn mlkem_768_keygen_seed_test() {
-    let Some(contents) = wycheproof("mlkem_768_keygen_seed_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_768_keygen_seed_test.json") else { return };
 
-    let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem768);
+    let test_cases = MLKEMKeygenSeedTestCase::parse(json, ParameterSet::Mlkem768);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -108,9 +108,9 @@ fn mlkem_768_keygen_seed_test() {
 
 #[test]
 fn mlkem_768_test() {
-    let Some(contents) = wycheproof("mlkem_768_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_768_test.json") else { return };
 
-    let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem768);
+    let test_cases = MLKEMTestCase::parse(json, ParameterSet::Mlkem768);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -122,9 +122,9 @@ fn mlkem_768_test() {
 
 #[test]
 fn mlkem_1024_encaps_test() {
-    let Some(contents) = wycheproof("mlkem_1024_encaps_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_1024_encaps_test.json") else { return };
 
-    let test_cases = MLKEMEncapsTestCase::parse(contents, ParameterSet::Mlkem1024);
+    let test_cases = MLKEMEncapsTestCase::parse(json, ParameterSet::Mlkem1024);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -136,9 +136,9 @@ fn mlkem_1024_encaps_test() {
 
 #[test]
 fn mlkem_1024_keygen_seed_test() {
-    let Some(contents) = wycheproof("mlkem_1024_keygen_seed_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_1024_keygen_seed_test.json") else { return };
 
-    let test_cases = MLKEMKeygenSeedTestCase::parse(contents, ParameterSet::Mlkem1024);
+    let test_cases = MLKEMKeygenSeedTestCase::parse(json, ParameterSet::Mlkem1024);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -150,9 +150,9 @@ fn mlkem_1024_keygen_seed_test() {
 
 #[test]
 fn mlkem_1024_test() {
-    let Some(contents) = wycheproof("mlkem_1024_test.json") else { return };
+    let Some(json) = wycheproof_json("mlkem_1024_test.json") else { return };
 
-    let test_cases = MLKEMTestCase::parse(contents, ParameterSet::Mlkem1024);
+    let test_cases = MLKEMTestCase::parse(json, ParameterSet::Mlkem1024);
 
     let num_test_cases = test_cases.len();
     for test_case in test_cases {
@@ -197,10 +197,7 @@ impl MLKEMEncapsTestCase {
         }
     }
 
-    fn parse(data: String, parameter_set: ParameterSet) -> Vec<Self> {
-        let json: serde_json::Value =
-            serde_json::from_str(&data).expect("test data is not valid JSON");
-
+    fn parse(json: Value, parameter_set: ParameterSet) -> Vec<Self> {
         let mut test_cases = Vec::<Self>::new();
 
         let groups = json["testGroups"].as_array().expect("testGroups is not an array");
@@ -355,10 +352,7 @@ impl MLKEMKeygenSeedTestCase {
         }
     }
 
-    fn parse(data: String, parameter_set: ParameterSet) -> Vec<Self> {
-        let json: serde_json::Value =
-            serde_json::from_str(&data).expect("test data is not valid JSON");
-
+    fn parse(json: Value, parameter_set: ParameterSet) -> Vec<Self> {
         let mut test_cases = Vec::<Self>::new();
 
         let groups = json["testGroups"].as_array().expect("testGroups is not an array");
@@ -458,10 +452,7 @@ impl MLKEMTestCase {
         }
     }
 
-    fn parse(data: String, parameter_set: ParameterSet) -> Vec<Self> {
-        let json: serde_json::Value =
-            serde_json::from_str(&data).expect("test data is not valid JSON");
-
+    fn parse(json: Value, parameter_set: ParameterSet) -> Vec<Self> {
         let mut test_cases = Vec::<Self>::new();
 
         let groups = json["testGroups"].as_array().expect("testGroups is not an array");

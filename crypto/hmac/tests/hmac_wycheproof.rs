@@ -13,31 +13,20 @@
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::MAC;
-use bouncycastle_core_test_framework::test_data_loaders::wycheproof;
-use bouncycastle_hex as hex;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_sha2::hmac::{
     HMAC_SHA224, HMAC_SHA256, HMAC_SHA384, HMAC_SHA512, HMAC_SHA512_224, HMAC_SHA512_256,
 };
 use bouncycastle_sha3::hmac::{HMAC_SHA3_224, HMAC_SHA3_256, HMAC_SHA3_384, HMAC_SHA3_512};
 use bouncycastle_sm3::hmac::HMAC_SM3;
-use serde_json::Value;
 
 /// The longest key in any of the files is 65 bytes.
 const MAX_KEY_LEN: usize = 128;
 
-fn decode(value: &Value, field: &str, tc_id: u64) -> Vec<u8> {
-    let s = value
-        .get(field)
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| panic!("tcId {tc_id}: missing field {field}"));
-    hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc_id}: bad hex in {field}"))
-}
-
 /// Runs every case in one `hmac_*_test.json` file through `M`.
 fn run<M: MAC>(filename: &str, algorithm: &str) {
-    let Some(contents) = wycheproof(filename) else { return };
+    let Some(doc) = wycheproof_json(filename) else { return };
 
-    let doc: Value = serde_json::from_str(&contents).expect("valid wycheproof JSON");
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some(algorithm), "{filename}");
 
     let (mut full, mut truncated, mut invalid) = (0usize, 0usize, 0usize);
@@ -46,8 +35,8 @@ fn run<M: MAC>(filename: &str, algorithm: &str) {
 
         for test in group.get("tests").and_then(Value::as_array).expect("tests") {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
-            let msg = decode(test, "msg", tc_id);
-            let tag = decode(test, "tag", tc_id);
+            let msg = hex_field(test, "msg", tc_id);
+            let tag = hex_field(test, "tag", tc_id);
             let valid = match test.get("result").and_then(Value::as_str).expect("result") {
                 "valid" => true,
                 "invalid" => false,
@@ -56,7 +45,7 @@ fn run<M: MAC>(filename: &str, algorithm: &str) {
             // Some keys are shorter than the hash's security strength (128-bit keys for
             // HMAC-SHA-512, say); the key-strength policy is tested in `hmac_tests.rs`.
             let key = KeyMaterial::<MAX_KEY_LEN>::from_bytes_as_type(
-                &decode(test, "key", tc_id),
+                &hex_field(test, "key", tc_id),
                 KeyType::MACKey,
             )
             .expect("a MAC key");
