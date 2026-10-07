@@ -26,7 +26,7 @@ jobs:
         run: rustup target add thumbv7em-none-eabi
 
       - name: Install just command runner
-        run: cargo install just
+        run: cargo install just # this takes approx 60s
 
       - name: Run full tests and no_std validation
-        run: just --unstable validate-all
+        run: just validate-all # this also takes approx 60s

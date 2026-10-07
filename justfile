@@ -56,6 +56,7 @@ no-std-self-crates := [
 # this list MUST be updated in PRs that add this complete level of no_std support for crates.
 no-std-complete-crates := [
   "bouncycastle-core",
+  "bouncycastle-utils",
 ]
 
 # do a thorough validation of all crates, individually and as a workspace
