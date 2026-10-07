@@ -1,6 +1,20 @@
 //! Ascon-based lightweight cryptography (NIST SP 800-232).
 //!
-//! This crate implements the four Ascon functions standardized in NIST SP 800-232 (August 2025):
+//! Ascon is a family of lightweight cryptographic algorithms designed for constrained
+//! environments where conventional cryptographic standards such as AES-GCM, SHA-2,
+//! and SHA-3 may be comparatively resource-intensive.
+//!
+//! NIST selected the Ascon family for lightweight cryptography standardization in 2023.
+//! The standardized algorithms are based on, but are not compatible with, the earlier
+//! Ascon algorithms selected for the final portfolio of the CAESAR competition in 2019.
+//!
+//! The Ascon family uses common underlying permutations across authenticated encryption,
+//! hashing, and extendable-output functions. This allows implementations to share logic
+//! between the different primitives. The algorithms are also single-pass and inverse-free;
+//! Ascon-AEAD128 additionally supports online processing.
+//!
+//! This crate implements the four Ascon functions standardized in NIST SP 800-232
+//! (August 2025), which can be found here: https://doi.org/10.6028/NIST.SP.800-232
 //!
 //! - [`ascon_aead128::AsconAead128`] — Ascon-AEAD128 authenticated encryption (128-bit
 //!   key/nonce/tag, 128-bit single-key security).
