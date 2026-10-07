@@ -17,29 +17,36 @@ mod common;
 use bouncycastle_cipher::modes::{Cbc, Cfb};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::ToyCipherKey;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
-type ToyCfb<Dir> = Cfb<Toy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedCfb<Dir> = Cfb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
-type ForwardOnlyCfb<Dir> = Cfb<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedFourCfb<Dir> = Cfb<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
+type ToyCfb<Dir> = Cfb<Toy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedCfb<Dir> = Cfb<SwappedPairToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type ForwardOnlyCfb<Dir> = Cfb<ForwardOnlyToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedFourCfb<Dir> = Cfb<SwappedFourToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
 
 /// `do_encrypt_inplace`, by value.
-fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>, plaintext: &[u8]) -> Vec<u8> {
+fn enc(
+    e: &mut impl StreamCipherEncryptor<ToyCipherKey, TOY_LEN, TOY_LEN>,
+    plaintext: &[u8],
+) -> Vec<u8> {
     let mut data = plaintext.to_vec();
     e.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
 /// `do_decrypt_inplace`, by value.
-fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>, ciphertext: &[u8]) -> Vec<u8> {
+fn dec(
+    d: &mut impl StreamCipherDecryptor<ToyCipherKey, TOY_LEN, TOY_LEN>,
+    ciphertext: &[u8],
+) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
     d.do_decrypt_inplace(&mut data).unwrap();
     data
@@ -47,7 +54,7 @@ fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>, ciphertext: &[u8]) 
 
 /// `do_encrypt_inplace` in `chunk`-byte calls, by value. The last call may be shorter.
 fn enc_chunked(
-    e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>,
+    e: &mut impl StreamCipherEncryptor<ToyCipherKey, TOY_LEN, TOY_LEN>,
     plaintext: &[u8],
     chunk: usize,
 ) -> Vec<u8> {
@@ -60,7 +67,7 @@ fn enc_chunked(
 
 /// `do_decrypt_inplace` in `chunk`-byte calls, by value. The last call may be shorter.
 fn dec_chunked(
-    d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>,
+    d: &mut impl StreamCipherDecryptor<ToyCipherKey, TOY_LEN, TOY_LEN>,
     ciphertext: &[u8],
     chunk: usize,
 ) -> Vec<u8> {
@@ -106,7 +113,7 @@ const CHUNKINGS: [usize; 12] = [1, 3, 5, 7, 15, 16, 17, 31, 32, 33, 64, 100];
 #[test]
 fn cfb_conforms_to_the_stream_cipher_framework() {
     TestFrameworkStreamCipher::new()
-        .test::<TOY_LEN, TOY_LEN, ToyCfb<Encrypting>, ToyCfb<Decrypting>>();
+        .test::<TOY_LEN, TOY_LEN, ToyCipherKey, ToyCfb<Encrypting>, ToyCfb<Decrypting>>();
 }
 
 // ---- the spec equations -------------------------------------------------------------------
@@ -152,7 +159,8 @@ fn reference_cfb(perm: &Toy, iv: [u8; TOY_LEN], input: &[u8], encrypt: bool) -> 
 fn the_mode_matches_the_spec_equations() {
     let key = toy_key();
     let iv = pinned_iv();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm =
+        <Toy as ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>::new(key.get_key()).unwrap();
 
     for len in [5 * TOY_LEN, 5 * TOY_LEN + 9, TOY_LEN - 1, 1] {
         let plaintext = message(len);
@@ -191,9 +199,11 @@ fn the_mode_matches_the_spec_equations() {
     );
 
     // ...and CFB is not CBC: CBC computes `CIPH_K(P1 XOR IV)`, CFB computes `P1 XOR CIPH_K(IV)`.
-    let (mut cbc, _) =
-        Cbc::<Toy, Encrypting, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(&key, &mut pinned_rng(iv))
-            .unwrap();
+    let (mut cbc, _) = Cbc::<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(
+        &key,
+        &mut pinned_rng(iv),
+    )
+    .unwrap();
     let mut cbc_c1: [u8; TOY_LEN] = plaintext[..TOY_LEN].try_into().unwrap();
     cbc.do_encrypt_inplace(&mut cbc_c1).unwrap();
     assert_ne!(&cbc_c1[..], &ct[..TOY_LEN], "CFB must not agree with CBC");
@@ -210,7 +220,8 @@ fn the_mode_matches_the_spec_equations() {
 fn the_final_short_segment_is_xored_with_the_leading_keystream_bytes() {
     let key = toy_key();
     let iv = pinned_iv();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm =
+        <Toy as ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>::new(key.get_key()).unwrap();
 
     let mut o1 = iv;
     perm.encrypt_block(&mut o1);
@@ -385,20 +396,19 @@ fn call_chunking_does_not_change_the_result() {
 /// single-call-versus-chunked comparison, kept free of an AES dependency.
 #[test]
 fn chunking_matches_a_single_call_over_several_batches() {
-    fn check<P, const KEY_LEN: usize>(name: &str)
+    fn check<P, K, const KEY_LEN: usize>(name: &str)
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        P: ElectronicCodeBook<K, KEY_LEN, 16>,
     {
         let key_bytes: [u8; KEY_LEN] =
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
-        let key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-                .expect("a valid key");
+        let key = K::from_bytes(&key_bytes).expect("a valid key");
         let iv: [u8; 16] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
         let encryptor = || {
-            let (enc, got) = Cfb::<P, Encrypting, KEY_LEN, 16>::do_encrypt_init_rng(
+            let (enc, got) = Cfb::<P, Encrypting, K, KEY_LEN, 16>::do_encrypt_init_rng(
                 &key,
                 &mut FixedSeedRNG::<16>::new(iv),
             )
@@ -406,8 +416,9 @@ fn chunking_matches_a_single_call_over_several_batches() {
             assert_eq!(got, iv, "{name}: the pinned RNG should reproduce the IV");
             enc
         };
-        let decryptor =
-            || Cfb::<P, Decrypting, KEY_LEN, 16>::do_decrypt_init(&key, &iv).expect("decrypt init");
+        let decryptor = || {
+            Cfb::<P, Decrypting, K, KEY_LEN, 16>::do_decrypt_init(&key, &iv).expect("decrypt init")
+        };
 
         // The reference: the whole message in one call.
         let mut reference = plaintext.clone();
@@ -441,8 +452,8 @@ fn chunking_matches_a_single_call_over_several_batches() {
         }
     }
 
-    check::<Toy, TOY_LEN>("Toy");
-    check::<ForwardOnlyToy, TOY_LEN>("ForwardOnlyToy");
+    check::<Toy, ToyCipherKey, TOY_LEN>("Toy");
+    check::<ForwardOnlyToy, ToyCipherKey, TOY_LEN>("ForwardOnlyToy");
 }
 
 /// The pair path in `do_decrypt_inplace` must actually be taken, and only where a pair of whole
@@ -712,16 +723,6 @@ fn identical_plaintext_gives_different_ciphertext() {
     );
 }
 
-// ---- key handling ------------------------------------------------------------------------
-
-#[test]
-fn a_key_of_the_wrong_type_is_rejected() {
-    let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8) + 1);
-    let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
-    assert!(ToyCfb::<Encrypting>::do_encrypt_init(&seed).is_err());
-    assert!(ToyCfb::<Decrypting>::do_decrypt_init(&seed, &[0u8; TOY_LEN]).is_err());
-}
-
 // ---- every length, no padding ------------------------------------------------------------
 
 /// CFB is a stream cipher: every length round-trips, the ciphertext is exactly as long as the
@@ -767,6 +768,6 @@ fn sizes_match_the_documented_memory_table() {
     // The docs say CFB is one `usize` bigger than CBC.
     assert_eq!(
         size_of::<ToyCfb<Encrypting>>(),
-        size_of::<Cbc<Toy, Encrypting, TOY_LEN, TOY_LEN>>() + size_of::<usize>()
+        size_of::<Cbc<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN>>() + size_of::<usize>()
     );
 }

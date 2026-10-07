@@ -8,11 +8,10 @@
 //! all, in which case `do_encrypt_final` reports 0 of the `FINAL_LEN` bytes as output.
 
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
-    SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey,
 };
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
@@ -37,25 +36,30 @@ const GROUP: usize = 8;
 pub struct PaddedBlockCipherEncryptor<
     E,
     P,
+    K,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
 > where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     encryptor: E,
     _padding: PhantomData<P>,
+    /// Records `K`, which no other field mentions; without it `K` would be an unused parameter.
+    _key: PhantomData<K>,
     /// Partial plaintext block; `buf_len < BLOCK_LEN` between calls.
     buf: Secret<[u8; BLOCK_LEN]>,
     buf_len: usize,
 }
 
-impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<E, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for PaddedBlockCipherEncryptor<E, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
     const ALG_NAME: &'static str = E::ALG_NAME;
@@ -63,26 +67,43 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = E::MAX_SECURITY_STRENGTH;
 }
 
-impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
-    for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<E, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherEncryptor<E, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    fn do_encrypt_init(key: &K) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (encryptor, init_data) = E::do_encrypt_init(key)?;
-        Ok((Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }, init_data))
+        Ok((
+            Self {
+                encryptor,
+                _padding: PhantomData,
+                _key: PhantomData,
+                buf: Secret::new(),
+                buf_len: 0,
+            },
+            init_data,
+        ))
     }
 
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (encryptor, init_data) = E::do_encrypt_init_rng(key, rng)?;
-        Ok((Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }, init_data))
+        Ok((
+            Self {
+                encryptor,
+                _padding: PhantomData,
+                _key: PhantomData,
+                buf: Secret::new(),
+                buf_len: 0,
+            },
+            init_data,
+        ))
     }
 
     /// Whole blocks among the buffered bytes plus `input_len`.
@@ -185,15 +206,19 @@ where
 pub struct PaddedBlockCipherDecryptor<
     D,
     P,
+    K,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
 > where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     decryptor: D,
     _padding: PhantomData<P>,
+    /// Records `K`, which no other field mentions; without it `K` would be an unused parameter.
+    _key: PhantomData<K>,
     /// Partial ciphertext block; `buf_len < BLOCK_LEN` between calls.
     buf: [u8; BLOCK_LEN],
     buf_len: usize,
@@ -201,11 +226,12 @@ pub struct PaddedBlockCipherDecryptor<
     held: Option<[u8; BLOCK_LEN]>,
 }
 
-impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<D, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for PaddedBlockCipherDecryptor<D, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
     const ALG_NAME: &'static str = D::ALG_NAME;
@@ -213,20 +239,22 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = D::MAX_SECURITY_STRENGTH;
 }
 
-impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
-    for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<D, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for PaddedBlockCipherDecryptor<D, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Ok(Self {
             decryptor: D::do_decrypt_init(key, init_data)?,
             _padding: PhantomData,
+            _key: PhantomData,
             buf: [0u8; BLOCK_LEN],
             buf_len: 0,
             held: None,
@@ -334,11 +362,12 @@ where
     }
 }
 
-impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<E, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedBlockCipherEncryptor<E, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the inner
     /// cipher's state, the partial plaintext block and its length as a `u64`. See
@@ -349,11 +378,12 @@ where
 
 /// The suspended state is the inner cipher's followed by the buffered partial block. That block
 /// is plaintext, so the state must be protected; see [`bouncycastle_utils::suspendable_state`].
-impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SuspendableComponent for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<E, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SuspendableComponent for PaddedBlockCipherEncryptor<E, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const STATE_LEN: usize = E::STATE_LEN + BLOCK_LEN + 8;
     type Key = E::Key;
@@ -376,17 +406,25 @@ where
         // A full block is encrypted as soon as it is full, so `buf_len < BLOCK_LEN` between calls.
         let buf_len = bounded_usize(r.u64(), BLOCK_LEN - 1)?;
         debug_assert!(r.is_done());
-        Ok(Self { encryptor, _padding: PhantomData, buf, buf_len })
+        Ok(Self { encryptor, _padding: PhantomData, _key: PhantomData, buf, buf_len })
     }
 }
 
 /// `N` must be [`PaddedBlockCipherEncryptor::SUSPENDED_STATE_LEN`]; anything else is a compile
 /// error.
-impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
-    SuspendableKeyed<N> for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<
+    E,
+    P,
+    K,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+    const N: usize,
+> SuspendableKeyed<N> for PaddedBlockCipherEncryptor<E, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     type Key = E::Key;
 
@@ -399,11 +437,12 @@ where
     }
 }
 
-impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<D, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedBlockCipherDecryptor<D, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the inner
     /// cipher's state, the partial ciphertext block and its length as a `u64`, a flag for
@@ -414,11 +453,12 @@ where
 
 /// The suspended state is the inner cipher's, the buffered partial block, and the withheld
 /// block if there is one (all ciphertext). See [`bouncycastle_utils::suspendable_state`].
-impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SuspendableComponent for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<D, P, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SuspendableComponent for PaddedBlockCipherDecryptor<D, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const STATE_LEN: usize = D::STATE_LEN + BLOCK_LEN + 8 + 1 + BLOCK_LEN;
     type Key = D::Key;
@@ -458,17 +498,25 @@ where
             _ => return Err(SuspendableError::InvalidData),
         };
         debug_assert!(r.is_done());
-        Ok(Self { decryptor, _padding: PhantomData, buf, buf_len, held })
+        Ok(Self { decryptor, _padding: PhantomData, _key: PhantomData, buf, buf_len, held })
     }
 }
 
 /// `N` must be [`PaddedBlockCipherDecryptor::SUSPENDED_STATE_LEN`]; anything else is a compile
 /// error.
-impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
-    SuspendableKeyed<N> for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<
+    D,
+    P,
+    K,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+    const N: usize,
+> SuspendableKeyed<N> for PaddedBlockCipherDecryptor<D, P, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     type Key = D::Key;
 

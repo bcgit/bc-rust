@@ -19,16 +19,15 @@
 //! ciphertext has been altered.
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_cipher::modes::Ccm;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
-//! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+//! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, ToyCipherKey, 16, 16, 12, 16>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = ToyCipherKey::new_from_os().expect("a fresh key");
 //!
 //! // Supplied, not generated
 //! // It is the caller's responsibility that it never repeat under this key.
@@ -108,11 +107,11 @@ use crate::modes::iv::random_iv;
 use crate::stream::StreamCipher;
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
-use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    SymmetricCipherKey,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -127,55 +126,56 @@ use crate::{Decrypting, Encrypting};
 
 /// CCM (SP 800-38C) over any [`ElectronicCodeBook`] with a 128-bit block.
 ///
-/// `Dir` is [`Encrypting`] or [`Decrypting`], `Ccm<P, Encrypting, ..>` has Sec 6.1's methods and
-/// nothing else, and `Ccm<P, Decrypting, ..>` has Sec 6.2's.
+/// `Dir` is [`Encrypting`] or [`Decrypting`], `Ccm<P, Encrypting, K, ..>` has Sec 6.1's methods and
+/// nothing else, and `Ccm<P, Decrypting, K, ..>` has Sec 6.2's.
 ///
 /// Asking an encryptor to verify a tag does not compile -- `do_decrypt_final` exists only on
-/// `Ccm<P, Decrypting, ..>`:
+/// `Ccm<P, Decrypting, K, ..>`:
 ///
 /// A nonce length A.1 does not permit does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+/// use bouncycastle_core::traits::SymmetricCipherKey;
 /// use bouncycastle_cipher::modes::Ccm;
 /// use bouncycastle_cipher::Encrypting;
 ///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
+/// let key = ToyCipherKey::new_from_os().expect("a fresh key");
 /// // n = 6 is not in {7, ..., 13}: it would make q = 9, which A.1 does not allow.
-/// let _ = Ccm::<ToyBlockCipher, Encrypting, 16, 16, 6, 16>::new(&key, &[0u8; 6], &[], 0);
+/// let _ = Ccm::<ToyBlockCipher, Encrypting, ToyCipherKey, 16, 16, 6, 16>::new(&key, &[0u8; 6], &[], 0);
 /// ```
 ///
 /// Nor does an odd tag length:
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+/// use bouncycastle_core::traits::SymmetricCipherKey;
 /// use bouncycastle_cipher::modes::Ccm;
 /// use bouncycastle_cipher::Encrypting;
 ///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
+/// let key = ToyCipherKey::new_from_os().expect("a fresh key");
 /// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
-/// let _ = Ccm::<ToyBlockCipher, Encrypting, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
+/// let _ = Ccm::<ToyBlockCipher, Encrypting, ToyCipherKey, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
 /// ```
 #[derive(Clone)]
 pub struct Ccm<
     P,
     Dir,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
 > where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     // The CTR half (Sec 6.1 steps 5-8): the payload keystream `S1 || S2 || ...`, and the key
     // schedule, which the CBC-MAC half below shares (Sec 5.2).
     ctr: StreamCipher<
-        CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>,
+        CcmKeyStream<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>,
         Dir,
+        K,
         KEY_LEN,
         NONCE_LEN,
         BLOCK_LEN,
@@ -206,16 +206,18 @@ pub struct Ccm<
 impl<
     P,
     Dir,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
-> Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+> Ccm<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The spec's `q`: the octet length of the payload-length field `Q`. A.1 requires `n + q = 15`.
-    const Q_LEN: usize = CcmKeyStream::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>::Q_LEN;
+    const Q_LEN: usize = CcmKeyStream::<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>::Q_LEN;
 
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the CTR state,
     /// the CBC-MAC chaining block and three counts as `u64`s. See [`bouncycastle_utils::suspendable_state`].
@@ -224,8 +226,9 @@ where
 
     /// The CTR half's share of the suspended state.
     const CTR_STATE_LEN: usize = <StreamCipher<
-        CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>,
+        CcmKeyStream<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>,
         Dir,
+        K,
         KEY_LEN,
         NONCE_LEN,
         BLOCK_LEN,
@@ -287,7 +290,7 @@ where
     /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`; see
     /// [`Ccm`] for the table.
     pub fn new(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         payload_len: usize,
@@ -296,7 +299,7 @@ where
         // which is the one path every construction goes through; duplicating them here would be
         // two more `Err` sites that could drift apart from it. `P::new`'s own `KeyType`/strength
         // checks are the only key validation needed, exactly as for every other mode in this crate.
-        let perm = P::new(key)?;
+        let perm = P::new(key.get_key())?;
         let mut ccm = Self::from_perm_with_lengths(perm, nonce, aad.len(), payload_len)?;
         // Exactly the length just declared, so nothing is left owed.
         ccm.absorb_aad(aad);
@@ -317,15 +320,14 @@ where
     /// AAD must be complete before any payload: A.2.3 puts the payload blocks after the AAD blocks.
     ///
     /// ```
-    /// use bouncycastle_core_test_framework::ToyBlockCipher;
-    /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+    /// use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+    /// use bouncycastle_core::traits::SymmetricCipherKey;
     /// use bouncycastle_cipher::modes::Ccm;
     /// use bouncycastle_cipher::Encrypting;
     ///
-    /// type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+    /// type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, ToyCipherKey, 16, 16, 12, 16>;
     ///
-    /// let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-    ///     .expect("a 16-byte symmetric cipher key");
+    /// let key = ToyCipherKey::new_from_os().expect("a fresh key");
     /// let nonce = [0x01u8; 12];
     /// let header: [&[u8]; 2] = [b"version: 1; ", b"route: a->b"];
     /// let mut message = *b"attack at dawn";
@@ -349,12 +351,12 @@ where
     /// # Errors
     /// As [`Self::new`].
     pub fn new_with_lengths(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad_len: usize,
         payload_len: usize,
     ) -> Result<Self, SymmetricCipherError> {
-        let perm = P::new(key)?;
+        let perm = P::new(key.get_key())?;
         Self::from_perm_with_lengths(perm, nonce, aad_len, payload_len)
     }
 
@@ -531,7 +533,7 @@ where
             | ((((TAG_LEN - 2) / 2) as u8) << 3)
             | ((Self::Q_LEN - 1) as u8);
         b0[1..1 + NONCE_LEN].copy_from_slice(nonce);
-        CcmKeyStream::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>::put_q_field(&mut b0, payload_len);
+        CcmKeyStream::<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>::put_q_field(&mut b0, payload_len);
         b0
     }
 
@@ -606,7 +608,7 @@ where
         // rather than a plain local that outlives this function's stack frame unzeroed.
         let keystream = self.ctr.keystream();
         let mut s0: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        *s0 = CcmKeyStream::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>::counter_block(
+        *s0 = CcmKeyStream::<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>::counter_block(
             &keystream.ctr_template, 0,
         );
         keystream.perm.encrypt_block(&mut s0);
@@ -623,10 +625,17 @@ where
 
 /// Sec 6.1, the generation-encryption process. Present only on the encrypting direction, so a
 /// decryptor cannot be asked to produce a tag.
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
-    Ccm<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+impl<
+    P,
+    K,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+> Ccm<P, Encrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Encrypts `data` in place and authenticates it.
     ///
@@ -676,7 +685,7 @@ where
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, plus
     /// [`Self::new`]'s errors.
     pub fn encrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         plaintext: &[u8],
@@ -704,7 +713,7 @@ where
     /// # Errors
     /// As [`Self::encrypt_detached_out`].
     pub fn encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         plaintext: &[u8],
@@ -724,10 +733,17 @@ where
 
 /// Sec 6.2, the decryption-verification process. Present only on the decrypting direction, so an
 /// encryptor cannot be asked to verify a tag.
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
-    Ccm<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+impl<
+    P,
+    K,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+> Ccm<P, Decrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Decrypts `data` in place and authenticates the recovered plaintext.
     ///
@@ -789,7 +805,7 @@ where
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, plus
     /// [`Self::new`]'s errors.
     pub fn decrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
@@ -830,7 +846,7 @@ where
     /// [`CcmDecryptor::decrypt_with_aad_out`](AEADCipherDecryptor::decrypt_with_aad_out) -- agrees
     /// on the same input. Otherwise as [`Self::decrypt_detached_out`].
     pub fn decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
@@ -847,13 +863,15 @@ where
 impl<
     P,
     Dir,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
-> Algorithm for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+> Algorithm for Ccm<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
     /// concatenated in a `const`, and the mode is already in the type.
@@ -869,9 +887,10 @@ where
 /// through [`Ccm`]. It shares its key schedule with the CBC-MAC half, which reaches it through
 /// [`StreamCipher::keystream`].
 #[derive(Clone)]
-struct CcmKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
+struct CcmKeyStream<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     perm: P,
     // `Ctr_i` with its counter field zeroed (A.3, Table 3): the flags octet and the nonce, which
@@ -881,12 +900,15 @@ where
     // The index `j` of the next keystream block. Starts at 1: step 7 sets `S = S1 || ... || Sm`,
     // and `S0` is reserved for the tag.
     next_ctr: u64,
+    /// Records `K`, which no other field mentions; without it `K` would be an unused parameter.
+    _key: PhantomData<K>,
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
-    CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
+    CcmKeyStream<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The spec's `q`: the octet length of the payload-length field `Q`, which is also the width
     /// of the counter field. A.1 requires `n + q = 15`.
@@ -906,7 +928,7 @@ where
         let mut ctr_template = [0u8; BLOCK_LEN];
         ctr_template[0] = (Self::Q_LEN - 1) as u8;
         ctr_template[1..1 + NONCE_LEN].copy_from_slice(nonce);
-        Self { perm, ctr_template, next_ctr: 1 }
+        Self { perm, ctr_template, next_ctr: 1, _key: PhantomData }
     }
 
     /// The nonce `N`, read back out of the counter template: A.3 Table 3 puts it in octets
@@ -942,25 +964,25 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize> Algorithm
-    for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize> Algorithm
+    for CcmKeyStream<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
-    KeyStream<KEY_LEN, NONCE_LEN, BLOCK_LEN> for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
+    KeyStream<K, KEY_LEN, NONCE_LEN, BLOCK_LEN>
+    for CcmKeyStream<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Ok(Self::from_perm(P::new(key)?, nonce))
+    fn new(key: &K, nonce: &[u8; NONCE_LEN]) -> Result<Self, SymmetricCipherError> {
+        Ok(Self::from_perm(P::new(key.get_key())?, nonce))
     }
 
     /// Every counter value from `next_ctr` to `2^8q - 1`. Never the binding limit in practice:
@@ -999,6 +1021,7 @@ where
 struct CcmAdapter<
     P,
     Dir,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
@@ -1006,9 +1029,10 @@ struct CcmAdapter<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    ccm: Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
+    ccm: Ccm<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
     // Associated data is authenticated but not encrypted, and travels in the clear, so it is not
     // secret and is not wrapped.
     aad: [u8; AAD_LEN],
@@ -1020,15 +1044,17 @@ struct CcmAdapter<
 impl<
     P,
     Dir,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> CcmAdapter<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> CcmAdapter<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The compile-time checks for the trait adapters, run from both [`CcmEncryptor`]'s and
     /// [`CcmDecryptor`]'s constructors, which every entry point goes through, so that a parameter
@@ -1053,7 +1079,7 @@ where
             // known at compile time, so it is a compile error rather than `Ccm::new`'s `Err`.
             assert!(
                 DATA_LEN as u64
-                    <= Ccm::<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
+                    <= Ccm::<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
                 "CCM: DATA_LEN exceeds the payload limit 2^8q - 1 that NONCE_LEN implies (A.1)"
             );
         }
@@ -1137,17 +1163,18 @@ where
 /// see `CcmAdapter`. More is refused.
 ///
 /// ```
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-/// use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+/// use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+/// use bouncycastle_core::traits::{
+///     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+///     SymmetricCipherKey,
+/// };
 /// use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
 ///
 /// // Frames of exactly 40 payload bytes, with up to 16 bytes of header.
-/// type Enc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 16, 40>;
-/// type Dec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 16, 40>;
+/// type Enc = CcmEncryptor<ToyBlockCipher, ToyCipherKey, 16, 16, 12, 16, 16, 40>;
+/// type Dec = CcmDecryptor<ToyBlockCipher, ToyCipherKey, 16, 16, 12, 16, 16, 40>;
 ///
-/// let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .expect("a 16-byte symmetric cipher key");
+/// let key = ToyCipherKey::new_from_os().expect("a fresh key");
 /// let header = b"frame 7";
 /// let frame = [0x5Au8; 40];
 ///
@@ -1184,27 +1211,25 @@ where
 /// uniqueness. A shorter nonce does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
+/// use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+/// use bouncycastle_core::traits::{SymmetricCipherEncryptor, SymmetricCipherKey};
 /// use bouncycastle_cipher::modes::CcmEncryptor;
 ///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+/// let key = ToyCipherKey::new_from_os().expect("a fresh key");
 /// // n = 8 is permitted by A.1, but too short for a random draw.
-/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 8, 16, 64, 256>::do_encrypt_init(&key);
+/// let _ = CcmEncryptor::<ToyBlockCipher, ToyCipherKey, 16, 16, 8, 16, 64, 256>::do_encrypt_init(&key);
 /// ```
 ///
 /// Nor does a `DATA_LEN` that `B0` could not carry under this `NONCE_LEN` (A.1's `p < 2^8q`):
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
+/// use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+/// use bouncycastle_core::traits::{SymmetricCipherEncryptor, SymmetricCipherKey};
 /// use bouncycastle_cipher::modes::CcmEncryptor;
 ///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+/// let key = ToyCipherKey::new_from_os().expect("a fresh key");
 /// // n = 13 leaves q = 2, so the payload is at most 65535 bytes.
-/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 13, 16, 64, 65536>::do_encrypt_init(&key);
+/// let _ = CcmEncryptor::<ToyBlockCipher, ToyCipherKey, 16, 16, 13, 16, 64, 65536>::do_encrypt_init(&key);
 /// ```
 ///
 /// # Memory
@@ -1215,27 +1240,32 @@ where
 #[derive(Clone)]
 pub struct CcmEncryptor<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
->(CcmAdapter<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>)
+>(CcmAdapter<P, Encrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>;
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>;
 
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> Algorithm for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> Algorithm for CcmEncryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
@@ -1243,15 +1273,17 @@ where
 
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> CcmEncryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Every final comes here: Sec 6.1 steps 4 and 8, the tag. The header goes in first if no
     /// payload call put it there, which is the `DATA_LEN = 0` message.
@@ -1268,33 +1300,33 @@ where
 
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>
-    for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> SymmetricCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN>
+    for CcmEncryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
+    fn do_encrypt_init(key: &K) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         let mut rng = HashDRBG_SHA512::new_from_os();
         Self::do_encrypt_init_rng(key, &mut rng)
     }
 
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         // `P::new`'s own checks are the only key validation needed, exactly as for `Ccm` itself
         // and every other mode in this crate; `random_iv` is CBC/CFB's same OS-backed draw --
         // Sec 5.3 asks only for uniqueness, not CBC/CFB's unpredictability, but a CSPRNG draw is
         // the only way to be unique without state `do_encrypt_init` does not have.
-        let perm = P::new(key)?;
+        let perm = P::new(key.get_key())?;
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         Ok((Self(CcmAdapter::new(perm, &nonce)), nonce))
     }
@@ -1359,16 +1391,18 @@ where
 /// final flushes nothing and returns only the tag.
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
-    for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> AEADCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+    for CcmEncryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Holds back `aad` until the payload begins; see `CcmAdapter`.
     ///
@@ -1417,6 +1451,7 @@ where
 #[derive(Clone)]
 pub struct CcmDecryptor<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
@@ -1424,9 +1459,10 @@ pub struct CcmDecryptor<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    inner: CcmAdapter<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    inner: CcmAdapter<P, Decrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
     // The bytes past the `DATA_LEN`th, as they arrive: an inline tag, if the final says the
     // layout is inline, and excess ciphertext if it says detached. Public either way (the tag
     // travels in the clear), so not wrapped.
@@ -1436,15 +1472,17 @@ pub struct CcmDecryptor<
 
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> Algorithm for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> Algorithm for CcmDecryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
@@ -1452,15 +1490,17 @@ where
 
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> CcmDecryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Every final comes here once it has settled which bytes are the tag: Sec 6.2 step 10,
     /// through [`Ccm::do_decrypt_final`]. The header goes in first if no payload call put it
@@ -1478,23 +1518,22 @@ where
 
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>
-    for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> SymmetricCipherDecryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN>
+    for CcmDecryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
+    fn do_decrypt_init(key: &K, nonce: &[u8; NONCE_LEN]) -> Result<Self, SymmetricCipherError> {
         // `P::new`'s own checks are the only key validation needed; see the encryptor.
-        let perm = P::new(key)?;
+        let perm = P::new(key.get_key())?;
         Ok(Self { inner: CcmAdapter::new(perm, nonce), tag: [0u8; TAG_LEN], tag_len: 0 })
     }
 
@@ -1579,16 +1618,18 @@ where
 /// any length but the frame's is refused like any other wrong-length stream.
 impl<
     P,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
-    for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+> AEADCipherDecryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+    for CcmDecryptor<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// As [`CcmEncryptor::do_update_aad`](AEADCipherEncryptor::do_update_aad); the concatenation
     /// must match the encryptor's byte for byte or the tag check fails.
@@ -1624,16 +1665,18 @@ where
 impl<
     P,
     Dir,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
-> SuspendableComponent for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+> SuspendableComponent for Ccm<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const STATE_LEN: usize = Self::CTR_STATE_LEN + BLOCK_LEN + 8 + 8 + 8;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = K;
 
     fn write_state(&self, out: &mut [u8]) {
         let (ctr, rest) = out.split_at_mut(Self::CTR_STATE_LEN);
@@ -1670,16 +1713,18 @@ where
 impl<
     P,
     Dir,
+    K,
     const KEY_LEN: usize,
     const BLOCK_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const N: usize,
-> SuspendableKeyed<N> for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
+> SuspendableKeyed<N> for Ccm<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = K;
 
     fn suspend(self) -> [u8; N] {
         suspend_component(&self)
@@ -1693,13 +1738,14 @@ where
 /// The suspended state is the counter template and the next counter index; the permutation is
 /// rebuilt from the re-supplied key. Crate-private like the type, reachable only through
 /// [`Ccm`]'s state.
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize> SuspendableComponent
-    for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
+    SuspendableComponent for CcmKeyStream<P, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const STATE_LEN: usize = BLOCK_LEN + 8;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = K;
 
     fn write_state(&self, out: &mut [u8]) {
         let mut w = CursorMut::new(out);
@@ -1709,7 +1755,7 @@ where
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
-        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let perm = P::new(key.get_key()).map_err(|_| SuspendableError::InvalidData)?;
         let mut r = Cursor::new(state);
         let ctr_template = r.array::<BLOCK_LEN>();
         // A.3: the flags octet is `[q-1]_3` and nothing else, and the counter field is zero in
@@ -1722,7 +1768,7 @@ where
             return Err(SuspendableError::InvalidData);
         }
         debug_assert!(r.is_done());
-        Ok(Self { perm, ctr_template, next_ctr })
+        Ok(Self { perm, ctr_template, next_ctr, _key: PhantomData })
     }
 }
 
@@ -1737,7 +1783,8 @@ mod tests {
     //! the AAD length encoding against the document rather than against this implementation.
 
     use super::*;
-    use bouncycastle_core::key_material::KeyType;
+    use bouncycastle_core::key_material::KeyMaterial;
+    use bouncycastle_core_test_framework::ToyCipherKey;
 
     /// A stand-in permutation: the identity. `B0` and `Ctr_i` are formatted *before* any cipher
     /// call, so the identity is enough to read them back out of the state, and it keeps these
@@ -1749,7 +1796,7 @@ mod tests {
         const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     }
 
-    impl ElectronicCodeBook<16, 16> for Identity {
+    impl ElectronicCodeBook<ToyCipherKey, 16, 16> for Identity {
         fn new(_key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
             Ok(Identity)
         }
@@ -1761,14 +1808,11 @@ mod tests {
         fn decrypt_4blocks(&self, _blocks: &mut [[u8; 16]; 4]) {}
     }
 
-    fn key() -> KeyMaterial<16> {
-        KeyMaterial::<16>::from_bytes_as_type(
-            &[
-                0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d,
-                0x4e, 0x4f,
-            ],
-            KeyType::SymmetricCipherKey,
-        )
+    fn key() -> ToyCipherKey {
+        ToyCipherKey::from_bytes(&[
+            0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d,
+            0x4e, 0x4f,
+        ])
         .expect("Appendix C's 128-bit key")
     }
 
@@ -1784,7 +1828,7 @@ mod tests {
     fn c1_b0_matches_the_spec() {
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
         assert_eq!(
-            Ccm::<Identity, Encrypting, 16, 16, 7, 4>::format_b0(&nonce, true, 4),
+            Ccm::<Identity, Encrypting, ToyCipherKey, 16, 16, 7, 4>::format_b0(&nonce, true, 4),
             [0x4f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0, 0, 0, 0, 0, 0, 0, 4],
             "C.1 B0: flags 0x4f = Adata 1 | [(4-2)/2]_3 = 001 | [8-1]_3 = 111, then Q = [4]_64"
         );
@@ -1795,8 +1839,10 @@ mod tests {
     #[test]
     fn adata_flag_is_bit_6_of_the_flags_octet() {
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        let with = Ccm::<Identity, Encrypting, 16, 16, 7, 4>::format_b0(&nonce, true, 4);
-        let without = Ccm::<Identity, Encrypting, 16, 16, 7, 4>::format_b0(&nonce, false, 4);
+        let with =
+            Ccm::<Identity, Encrypting, ToyCipherKey, 16, 16, 7, 4>::format_b0(&nonce, true, 4);
+        let without =
+            Ccm::<Identity, Encrypting, ToyCipherKey, 16, 16, 7, 4>::format_b0(&nonce, false, 4);
         assert_eq!(without[0], 0x0f, "a = 0 clears bit 6, leaving the t and q fields alone");
         assert_eq!(with[0] ^ without[0], 1 << 6, "Adata is bit 6 and nothing else");
         assert_eq!(with[1..], without[1..], "the flag must not disturb N or Q");
@@ -1810,8 +1856,13 @@ mod tests {
     #[test]
     fn the_constructor_absorbs_b0() {
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        let ccm = Ccm::<Identity, Encrypting, 16, 16, 7, 4>::new(&key(), &nonce, &[], 4).unwrap();
-        assert_eq!(*ccm.y, Ccm::<Identity, Encrypting, 16, 16, 7, 4>::format_b0(&nonce, false, 4));
+        let ccm =
+            Ccm::<Identity, Encrypting, ToyCipherKey, 16, 16, 7, 4>::new(&key(), &nonce, &[], 4)
+                .unwrap();
+        assert_eq!(
+            *ccm.y,
+            Ccm::<Identity, Encrypting, ToyCipherKey, 16, 16, 7, 4>::format_b0(&nonce, false, 4)
+        );
         assert_eq!(ccm.mac_pos, 0, "a whole block was absorbed, so nothing is part-filled");
     }
 
@@ -1824,7 +1875,7 @@ mod tests {
     fn c4_b0_matches_the_spec() {
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
         assert_eq!(
-            Ccm::<Identity, Encrypting, 16, 16, 13, 14>::format_b0(&nonce, true, 32),
+            Ccm::<Identity, Encrypting, ToyCipherKey, 16, 16, 13, 14>::format_b0(&nonce, true, 32),
             [
                 0x71, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
                 0x00, 0x20
@@ -1841,9 +1892,11 @@ mod tests {
     #[test]
     fn counter_blocks_match_the_spec() {
         let nonce_c1 = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        let mut ks = CcmKeyStream::<Identity, 16, 16, 7>::from_perm(Identity, &nonce_c1);
+        let mut ks =
+            CcmKeyStream::<Identity, ToyCipherKey, 16, 16, 7>::from_perm(Identity, &nonce_c1);
         // `Ctr0` is the template with a zero counter field.
-        let ctr0 = CcmKeyStream::<Identity, 16, 16, 7>::counter_block(&ks.ctr_template, 0);
+        let ctr0 =
+            CcmKeyStream::<Identity, ToyCipherKey, 16, 16, 7>::counter_block(&ks.ctr_template, 0);
         assert_eq!(
             ctr0,
             [0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -1859,9 +1912,10 @@ mod tests {
 
         let nonce_c4 =
             [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
-        let ks4 = CcmKeyStream::<Identity, 16, 16, 13>::from_perm(Identity, &nonce_c4);
+        let ks4 =
+            CcmKeyStream::<Identity, ToyCipherKey, 16, 16, 13>::from_perm(Identity, &nonce_c4);
         assert_eq!(
-            CcmKeyStream::<Identity, 16, 16, 13>::counter_block(&ks4.ctr_template, 0),
+            CcmKeyStream::<Identity, ToyCipherKey, 16, 16, 13>::counter_block(&ks4.ctr_template, 0),
             [
                 0x01, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
                 0x00, 0x00
@@ -1878,10 +1932,11 @@ mod tests {
     #[test]
     fn a_fresh_keystream_has_every_counter_but_ctr0_left() {
         // n = 13, so q = 2: counters 1 ..= 65535.
-        let ks = CcmKeyStream::<Identity, 16, 16, 13>::from_perm(Identity, &[0u8; 13]);
+        let ks =
+            CcmKeyStream::<Identity, ToyCipherKey, 16, 16, 13>::from_perm(Identity, &[0u8; 13]);
         assert_eq!(ks.remaining_blocks(), 65535);
         // n = 7, so q = 8: counters 1 ..= 2^64 - 1, which is `u64::MAX` of them.
-        let ks = CcmKeyStream::<Identity, 16, 16, 7>::from_perm(Identity, &[0u8; 7]);
+        let ks = CcmKeyStream::<Identity, ToyCipherKey, 16, 16, 7>::from_perm(Identity, &[0u8; 7]);
         assert_eq!(ks.remaining_blocks(), u64::MAX);
     }
 
@@ -1894,8 +1949,10 @@ mod tests {
         use bouncycastle_core_test_framework::ToyBlockCipher;
         use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
         let framework = TestFrameworkKeyStream::new();
-        framework.test::<16, 7, 16, CcmKeyStream<ToyBlockCipher, 16, 16, 7>>();
-        framework.test::<16, 13, 16, CcmKeyStream<ToyBlockCipher, 16, 16, 13>>();
+        framework
+            .test::<16, 7, 16, ToyCipherKey, CcmKeyStream<ToyBlockCipher, ToyCipherKey, 16, 16, 7>>(
+            );
+        framework.test::<16, 13, 16, ToyCipherKey, CcmKeyStream<ToyBlockCipher, ToyCipherKey, 16, 16, 13>>();
     }
 
     /// A.2.2's three AAD length encodings, at and around both boundaries.
@@ -1909,7 +1966,7 @@ mod tests {
     /// which through the public API would need a 4 GiB AAD.
     #[test]
     fn aad_length_encoding_matches_a_2_2() {
-        type Mode = Ccm<Identity, Encrypting, 16, 16, 7, 4>;
+        type Mode = Ccm<Identity, Encrypting, ToyCipherKey, 16, 16, 7, 4>;
 
         // Case 1: 0 < a < 2^16 - 2^8, two octets, `[a]_16`.
         assert_eq!(
@@ -1969,7 +2026,7 @@ mod tests {
     /// encoding readable back out, which is what pins the ordering rather than just the value.
     #[test]
     fn the_constructor_prefixes_the_aad_with_its_length() {
-        type Mode = Ccm<Identity, Encrypting, 16, 16, 7, 4>;
+        type Mode = Ccm<Identity, Encrypting, ToyCipherKey, 16, 16, 7, 4>;
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
         // 14 zero bytes of AAD: the 2-byte length plus 14 bytes is exactly one 16-byte block, so
         // there is no padding to reason about.

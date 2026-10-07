@@ -6,7 +6,7 @@
 //! `cargo test` must stay green for someone who has only cloned this repository.
 //!
 //! This is the CFB128 counterpart to `cbc_bc-test-data.rs` (AES-CBC) and to
-//! `ecb_bc-test-data.rs` (AES-ECB, the raw permutation). The `CFB128` file is
+//! `ecb_bc-test-data.rs` (AES-ECB). The `CFB128` file is
 //! the one that matches [`Cfb`]; `ACVP-AES-CFB8` matches `Cfb8` and is read by
 //! `cfb8_bc-test-data.rs`. `ACVP-AES-CFB1` is the one segment size this crate does not implement,
 //! and is deliberately not read.
@@ -38,9 +38,11 @@
 //! how many it skipped so the gap stays visible.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_CFB_128_Key, AES_CFB_192_Key, AES_CFB_256_Key};
 use bouncycastle_cipher::modes::Cfb;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
@@ -90,7 +92,7 @@ impl Grouping {
 /// Encryption is driven through `do_encrypt_init_rng` with a `FixedSeedRNG` emitting the vector's
 /// IV, and the returned init data is checked against that IV before any ciphertext is compared --
 /// so a change that ignored the RNG could not pass silently.
-fn run_case<P, const KEY_LEN: usize>(
+fn run_case<P, K, const KEY_LEN: usize>(
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
     input: &[u8],
@@ -98,14 +100,15 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = cipher_key::<K, KEY_LEN>(key_bytes);
     let mut data = input.to_vec();
     let chunk = grouping.chunk_len(data.len());
 
     if encrypt {
-        let (mut enc, got_iv) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
+        let (mut enc, got_iv) = Cfb::<P, Encrypting, K, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
             &key,
             &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
         )
@@ -115,8 +118,8 @@ where
             enc.do_encrypt_inplace(piece).unwrap();
         }
     } else {
-        let mut dec =
-            Cfb::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).expect("dec init");
+        let mut dec = Cfb::<P, Decrypting, K, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv)
+            .expect("dec init");
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).unwrap();
         }
@@ -134,9 +137,15 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<u8> {
     match key_bytes.len() {
-        16 => run_case::<AES128Internal, 16>(key_bytes, iv, input, encrypt, grouping),
-        24 => run_case::<AES192Internal, 24>(key_bytes, iv, input, encrypt, grouping),
-        32 => run_case::<AES256Internal, 32>(key_bytes, iv, input, encrypt, grouping),
+        16 => {
+            run_case::<AES128Internal, AES_CFB_128_Key, 16>(key_bytes, iv, input, encrypt, grouping)
+        }
+        24 => {
+            run_case::<AES192Internal, AES_CFB_192_Key, 24>(key_bytes, iv, input, encrypt, grouping)
+        }
+        32 => {
+            run_case::<AES256Internal, AES_CFB_256_Key, 32>(key_bytes, iv, input, encrypt, grouping)
+        }
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }

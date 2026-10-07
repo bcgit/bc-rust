@@ -2,7 +2,7 @@
 
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyMaterial;
-use crate::traits::Algorithm;
+use crate::traits::{Algorithm, SymmetricCipherKey};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -25,8 +25,11 @@ use crate::key_material::KeyType;
 /// Every length here is fixed by a type, and a constructed value is always ready to use, so there
 /// is nothing a caller can get wrong once [`ElectronicCodeBook::new`] has returned. Only `new` can
 /// fail, and only because of the key.
-pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
-    Algorithm + Sized
+pub trait ElectronicCodeBook<
+    K: SymmetricCipherKey<KEY_LEN>,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+>: Algorithm + Sized
 {
     /// Expands the key.
     ///

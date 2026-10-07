@@ -29,9 +29,10 @@
 #![allow(unused_imports)]
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{AES_CCM_128_Key, AES_CCM_192_Key, AES_CCM_256_Key};
 use bouncycastle::cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor};
 use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
@@ -49,14 +50,14 @@ const DATA_LEN: usize = 16384;
 const AAD_LEN: usize = 64;
 const MESSAGE_LEN: usize = DATA_LEN;
 
-type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, 16, 16, NONCE_LEN, TAG_LEN>;
+type Aes128Ccm<Dir> = Ccm<AES128Internal, Dir, AES_CCM_128_Key, 16, 16, NONCE_LEN, TAG_LEN>;
 type Aes128CcmEncryptor =
-    CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+    CcmEncryptor<AES128Internal, AES_CCM_128_Key, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 type Aes128CcmDecryptor =
-    CcmDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+    CcmDecryptor<AES128Internal, AES_CCM_128_Key, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 
-fn key<const N: usize>() -> KeyMaterial<N> {
-    KeyMaterial::<N>::from_bytes_as_type(&[0x42u8; N], KeyType::SymmetricCipherKey).unwrap()
+fn key() -> AES_CCM_128_Key {
+    AES_CCM_128_Key::from_bytes(&[0x42u8; 16]).unwrap()
 }
 
 /// The message every bench processes, filled at run time and then only ever reached through a
@@ -91,19 +92,19 @@ fn print_struct_sizes() {
     eprintln!("Ccm<AES128Internal, .., 12, 16>  {:>7} B", size_of::<Aes128Ccm<Encrypting>>());
     eprintln!(
         "Ccm<AES128Internal, .., 7, 4>    {:>7} B",
-        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 7, 4>>()
+        size_of::<Ccm<AES128Internal, Encrypting, AES_CCM_128_Key, 16, 16, 7, 4>>()
     );
     eprintln!(
         "Ccm<AES128Internal, .., 13, 16>  {:>7} B",
-        size_of::<Ccm<AES128Internal, Encrypting, 16, 16, 13, 16>>()
+        size_of::<Ccm<AES128Internal, Encrypting, AES_CCM_128_Key, 16, 16, 13, 16>>()
     );
     eprintln!(
         "Ccm<AES192Internal, .., 12, 16>  {:>7} B",
-        size_of::<Ccm<AES192Internal, Encrypting, 24, 16, 12, 16>>()
+        size_of::<Ccm<AES192Internal, Encrypting, AES_CCM_192_Key, 24, 16, 12, 16>>()
     );
     eprintln!(
         "Ccm<AES256Internal, .., 12, 16>  {:>7} B",
-        size_of::<Ccm<AES256Internal, Encrypting, 32, 16, 12, 16>>()
+        size_of::<Ccm<AES256Internal, Encrypting, AES_CCM_256_Key, 32, 16, 12, 16>>()
     );
     eprintln!("Decrypting is the same size:");
     eprintln!("Ccm<AES128Internal, Decrypting>  {:>7} B", size_of::<Aes128Ccm<Decrypting>>());
@@ -113,7 +114,8 @@ fn print_struct_sizes() {
     eprintln!("CcmDecryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B", size_of::<Aes128CcmDecryptor>());
     eprintln!(
         "CcmEncryptor<.., 64, 240>      {:>7} B",
-        size_of::<CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
+        size_of::<CcmEncryptor<AES128Internal, AES_CCM_128_Key, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>(
+        )
     );
 
     print!("{}", size_of::<Aes128Ccm<Encrypting>>());
@@ -126,7 +128,7 @@ fn print_struct_sizes() {
 fn bench_direct_encrypt_detached() {
     eprintln!("Ccm::encrypt_detached_out, {MESSAGE_LEN} B");
 
-    let k = key::<16>();
+    let k = key();
     let nonce = [0x24u8; NONCE_LEN];
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
@@ -146,7 +148,7 @@ fn bench_streaming_encrypt() {
         "CcmEncryptor do_encrypt_init/do_update_out/do_encrypt_final_detachedtag_out, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
-    let k = key::<16>();
+    let k = key();
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
@@ -172,7 +174,7 @@ fn bench_streaming_decrypt() {
         "CcmDecryptor do_decrypt_init/do_update_out/do_decrypt_final, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
-    let k = key::<16>();
+    let k = key();
     let nonce = [0x24u8; NONCE_LEN];
     let mut sealed = [0u8; MESSAGE_LEN + TAG_LEN];
     sealed[..MESSAGE_LEN].fill(core::hint::black_box(0xA5));
@@ -199,7 +201,7 @@ fn bench_streaming_decrypt() {
 fn bench_oneshot_encrypt_out_detached() {
     eprintln!("CcmEncryptor::encrypt_detached_out, {MESSAGE_LEN} B");
 
-    let k = key::<16>();
+    let k = key();
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
@@ -215,7 +217,7 @@ fn bench_oneshot_encrypt_out_detached() {
 fn bench_direct_streaming() {
     eprintln!("Ccm::do_encrypt_update, {MESSAGE_LEN} B in 1 KiB chunks");
 
-    let k = key::<16>();
+    let k = key();
     let nonce = [0x24u8; NONCE_LEN];
     let mut data = message();
     let data = core::hint::black_box(&mut data);

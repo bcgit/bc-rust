@@ -8,12 +8,12 @@
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
-use bouncycastle_core::errors::{KeyMaterialError, PaddingError, SymmetricCipherError};
+use bouncycastle_core::errors::{KeyMaterialError, PaddingError, RNGError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    SymmetricCipherEncryptor, SymmetricCipherKey,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
@@ -21,6 +21,25 @@ use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricC
 use bouncycastle_rng::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256};
 
 const B: usize = 8;
+
+/// The key type for [`ToyCbc`]. The test framework's `ToyCipherKey` is 16 bytes, so this
+/// 8-byte toy needs its own; the type check is the toy's, in `check_key`.
+#[derive(Clone, PartialEq, Eq)]
+struct ToyKey(KeyMaterial<B>);
+
+impl SymmetricCipherKey<B> for ToyKey {
+    fn from_keymaterial(key: KeyMaterial<B>) -> Result<Self, KeyMaterialError> {
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<B> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG80090A::<HashDRBG80090AParams_SHA256>::new_from_os())
+    }
+}
 
 /// c_j = p_j ^ c_{j-1} ^ key ; p_j = c_j ^ c_{j-1} ^ key
 struct ToyCbc {
@@ -47,16 +66,16 @@ impl Algorithm for ToyCbc {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
 }
 
-impl BlockCipherEncryptor<B, B, B> for ToyCbc {
-    fn do_encrypt_init(key: &KeyMaterial<B>) -> Result<(Self, [u8; B]), SymmetricCipherError> {
+impl BlockCipherEncryptor<ToyKey, B, B, B> for ToyCbc {
+    fn do_encrypt_init(key: &ToyKey) -> Result<(Self, [u8; B]), SymmetricCipherError> {
         let mut rng = HashDRBG80090A::<HashDRBG80090AParams_SHA256>::new_from_os();
         Self::do_encrypt_init_rng(key, &mut rng)
     }
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<B>,
+        key: &ToyKey,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; B]), SymmetricCipherError> {
-        let key = Self::check_key(key)?;
+        let key = Self::check_key(key.get_key())?;
         let mut iv = [0u8; B];
         rng.next_bytes_out(&mut iv)?;
         Ok((Self { key, chain: iv }, iv))
@@ -75,9 +94,9 @@ impl BlockCipherEncryptor<B, B, B> for ToyCbc {
     }
 }
 
-impl BlockCipherDecryptor<B, B, B> for ToyCbc {
-    fn do_decrypt_init(key: &KeyMaterial<B>, iv: &[u8; B]) -> Result<Self, SymmetricCipherError> {
-        Ok(Self { key: Self::check_key(key)?, chain: *iv })
+impl BlockCipherDecryptor<ToyKey, B, B, B> for ToyCbc {
+    fn do_decrypt_init(key: &ToyKey, iv: &[u8; B]) -> Result<Self, SymmetricCipherError> {
+        Ok(Self { key: Self::check_key(key.get_key())?, chain: *iv })
     }
     fn do_decrypt_blocks_inplace(
         &mut self,
@@ -95,14 +114,14 @@ impl BlockCipherDecryptor<B, B, B> for ToyCbc {
     }
 }
 
-type Enc = PaddedBlockCipherEncryptor<ToyCbc, PKCS7, B, B, B>;
-type Dec = PaddedBlockCipherDecryptor<ToyCbc, PKCS7, B, B, B>;
+type Enc = PaddedBlockCipherEncryptor<ToyCbc, PKCS7, ToyKey, B, B, B>;
+type Dec = PaddedBlockCipherDecryptor<ToyCbc, PKCS7, ToyKey, B, B, B>;
 /// The same adapters over `NoPadding`: an alignment check rather than a padding scheme.
-type EncNP = PaddedBlockCipherEncryptor<ToyCbc, NoPadding, B, B, B>;
-type DecNP = PaddedBlockCipherDecryptor<ToyCbc, NoPadding, B, B, B>;
+type EncNP = PaddedBlockCipherEncryptor<ToyCbc, NoPadding, ToyKey, B, B, B>;
+type DecNP = PaddedBlockCipherDecryptor<ToyCbc, NoPadding, ToyKey, B, B, B>;
 
-fn key() -> KeyMaterial<B> {
-    KeyMaterial::<B>::from_bytes_as_type(&[0x5a; B], KeyType::SymmetricCipherKey).unwrap()
+fn key() -> ToyKey {
+    ToyKey::from_bytes(&[0x5a; B]).unwrap()
 }
 
 fn msg(len: usize) -> Vec<u8> {
@@ -111,14 +130,14 @@ fn msg(len: usize) -> Vec<u8> {
 
 #[test]
 fn toy_cipher_passes_core_test_framework() {
-    TestFrameworkBlockCipher::new().test::<B, B, B, ToyCbc, ToyCbc>();
+    TestFrameworkBlockCipher::new().test::<B, B, B, ToyKey, ToyCbc, ToyCbc>();
 }
 
 /// The padded adapters are the first implementors of `SymmetricCipherEncryptor` /
 /// `SymmetricCipherDecryptor`, so this is also what exercises those traits' provided one-shots.
 #[test]
 fn padded_adapters_pass_the_symmetric_cipher_framework() {
-    TestFrameworkSymmetricCipher::new().test_encryptor_decryptor::<B, B, B, Enc, Dec>();
+    TestFrameworkSymmetricCipher::new().test_encryptor_decryptor::<B, B, B, ToyKey, Enc, Dec>();
 }
 
 #[test]
@@ -299,7 +318,10 @@ fn output_buffer_too_small_reports_required_length() {
 
 #[test]
 fn wrong_key_type_is_rejected_by_adapters() {
-    let mac_key = KeyMaterial::<B>::from_bytes_as_type(&[1u8; B], KeyType::MACKey).unwrap();
+    let mac_key = ToyKey::from_keymaterial(
+        KeyMaterial::<B>::from_bytes_as_type(&[1u8; B], KeyType::MACKey).unwrap(),
+    )
+    .unwrap();
     assert!(matches!(
         Enc::do_encrypt_init(&mac_key),
         Err(SymmetricCipherError::KeyMaterialError(_))
@@ -319,7 +341,7 @@ fn wrong_key_type_is_rejected_by_adapters() {
 fn no_padding_adapters_pass_the_symmetric_cipher_framework() {
     let mut framework = TestFrameworkSymmetricCipher::new();
     framework.required_alignment = B;
-    framework.test_encryptor_decryptor::<B, B, B, EncNP, DecNP>();
+    framework.test_encryptor_decryptor::<B, B, B, ToyKey, EncNP, DecNP>();
 }
 
 /// An aligned message passes through with its length unchanged -- no final block is added -- and the

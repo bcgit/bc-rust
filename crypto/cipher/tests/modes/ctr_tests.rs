@@ -28,44 +28,51 @@ use bouncycastle_cipher::modes::hazmat::CtrKeyStream;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::ToyCipherKey;
 use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 /// The default shape under test: a 12-byte nonce, so a 4-byte counter.
 const NONCE_LEN: usize = 12;
-type ToyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
-type SwappedCtr<Dir> = Ctr<SwappedPairToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
-type ForwardOnlyCtr<Dir> = Ctr<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
-type SwappedFourCtr<Dir> = Ctr<SwappedFourToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
+type ToyCtr<Dir> = Ctr<Toy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN>;
+type SwappedCtr<Dir> = Ctr<SwappedPairToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN>;
+type ForwardOnlyCtr<Dir> = Ctr<ForwardOnlyToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN>;
+type SwappedFourCtr<Dir> = Ctr<SwappedFourToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN>;
 
 /// A 15-byte nonce leaves a **1-byte** counter, so the whole counter space is 256 blocks -- 4 KiB
 /// of keystream. That makes the exhaustion behaviour reachable in a test.
 const SHORT_CTR_NONCE_LEN: usize = 15;
-type TinyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>;
+type TinyCtr<Dir> = Ctr<Toy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>;
 /// Capacity of a 1-byte counter, in bytes.
 const TINY_CAPACITY: usize = 256 * TOY_LEN;
 
-fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, NONCE_LEN>, plaintext: &[u8]) -> Vec<u8> {
+fn enc(
+    e: &mut impl StreamCipherEncryptor<ToyCipherKey, TOY_LEN, NONCE_LEN>,
+    plaintext: &[u8],
+) -> Vec<u8> {
     let mut data = plaintext.to_vec();
     e.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
-fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, NONCE_LEN>, ciphertext: &[u8]) -> Vec<u8> {
+fn dec(
+    d: &mut impl StreamCipherDecryptor<ToyCipherKey, TOY_LEN, NONCE_LEN>,
+    ciphertext: &[u8],
+) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
     d.do_decrypt_inplace(&mut data).unwrap();
     data
 }
 
 fn dec_chunked(
-    d: &mut impl StreamCipherDecryptor<TOY_LEN, NONCE_LEN>,
+    d: &mut impl StreamCipherDecryptor<ToyCipherKey, TOY_LEN, NONCE_LEN>,
     ciphertext: &[u8],
     chunk: usize,
 ) -> Vec<u8> {
@@ -106,7 +113,7 @@ const CHUNKINGS: [usize; 12] = [1, 3, 5, 7, 15, 16, 17, 31, 32, 33, 64, 100];
 #[test]
 fn ctr_conforms_to_the_stream_cipher_framework() {
     TestFrameworkStreamCipher::new()
-        .test::<TOY_LEN, NONCE_LEN, ToyCtr<Encrypting>, ToyCtr<Decrypting>>();
+        .test::<TOY_LEN, NONCE_LEN, ToyCipherKey, ToyCtr<Encrypting>, ToyCtr<Decrypting>>();
 }
 
 /// The keystream under the mode, on its own: over the toy at the default nonce length and at the
@@ -115,18 +122,18 @@ fn ctr_conforms_to_the_stream_cipher_framework() {
 #[test]
 fn ctr_keystream_conforms_to_the_key_stream_framework() {
     let framework = TestFrameworkKeyStream::new();
-    framework.test::<TOY_LEN, NONCE_LEN, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, NONCE_LEN>>();
+    framework.test::<TOY_LEN, NONCE_LEN, TOY_LEN, ToyCipherKey, CtrKeyStream<Toy, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN>>();
     framework.test::<
         TOY_LEN,
         SHORT_CTR_NONCE_LEN,
         TOY_LEN,
-        CtrKeyStream<Toy, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>,
+        ToyCipherKey, CtrKeyStream<Toy, ToyCipherKey, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>,
     >();
     framework.test::<
         TOY_LEN,
         NONCE_LEN,
         TOY_LEN,
-        CtrKeyStream<ForwardOnlyToy, TOY_LEN, TOY_LEN, NONCE_LEN>,
+        ToyCipherKey, CtrKeyStream<ForwardOnlyToy, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN>,
     >();
 }
 
@@ -165,7 +172,8 @@ fn reference_ctr(perm: &Toy, nonce: [u8; NONCE_LEN], input: &[u8]) -> Vec<u8> {
 fn the_mode_matches_the_spec_equations() {
     let key = toy_key();
     let nonce = pinned_nonce();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm =
+        <Toy as ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>::new(key.get_key()).unwrap();
 
     for len in [1, TOY_LEN - 1, TOY_LEN, TOY_LEN + 1, 5 * TOY_LEN, 5 * TOY_LEN + 9] {
         let plaintext = message(len);
@@ -239,14 +247,16 @@ fn check_counter_blocks<const N: usize>(blocks: usize) {
     }
 
     let key = toy_key();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm =
+        <Toy as ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>::new(key.get_key()).unwrap();
     let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(13).wrapping_add(5));
 
-    let (mut e, got) = Ctr::<Toy, Encrypting, TOY_LEN, TOY_LEN, N>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<N>::new(nonce),
-    )
-    .unwrap();
+    let (mut e, got) =
+        Ctr::<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN, N>::do_encrypt_init_rng(
+            &key,
+            &mut FixedSeedRNG::<N>::new(nonce),
+        )
+        .unwrap();
     assert_eq!(got, nonce);
     let mut keystream = vec![0u8; blocks * TOY_LEN];
     e.do_encrypt_inplace(&mut keystream).expect("the run must fit in the counter space");
@@ -414,11 +424,12 @@ fn the_counter_limit_is_enforced_at_two_bytes_too() {
     let nonce: [u8; NONCE] = core::array::from_fn(|i| 0x3C ^ (i as u8));
 
     let encryptor = || {
-        let (e, got) = Ctr::<Toy, Encrypting, TOY_LEN, TOY_LEN, NONCE>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<NONCE>::new(nonce),
-        )
-        .unwrap();
+        let (e, got) =
+            Ctr::<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE>::do_encrypt_init_rng(
+                &key,
+                &mut FixedSeedRNG::<NONCE>::new(nonce),
+            )
+            .unwrap();
         assert_eq!(got, nonce);
         e
     };
@@ -531,20 +542,19 @@ fn call_chunking_does_not_change_the_result() {
 /// modes, kept free of an AES dependency.
 #[test]
 fn chunking_matches_a_single_call_over_several_batches() {
-    fn check<P, const KEY_LEN: usize>(name: &str)
+    fn check<P, K, const KEY_LEN: usize>(name: &str)
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        P: ElectronicCodeBook<K, KEY_LEN, 16>,
     {
         let key_bytes: [u8; KEY_LEN] =
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
-        let key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-                .expect("a valid key");
+        let key = K::from_bytes(&key_bytes).expect("a valid key");
         let nonce: [u8; 12] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
         let encryptor = || {
-            let (e, got) = Ctr::<P, Encrypting, KEY_LEN, 16, 12>::do_encrypt_init_rng(
+            let (e, got) = Ctr::<P, Encrypting, K, KEY_LEN, 16, 12>::do_encrypt_init_rng(
                 &key,
                 &mut FixedSeedRNG::<12>::new(nonce),
             )
@@ -553,7 +563,7 @@ fn chunking_matches_a_single_call_over_several_batches() {
             e
         };
         let decryptor = || {
-            Ctr::<P, Decrypting, KEY_LEN, 16, 12>::do_decrypt_init(&key, &nonce)
+            Ctr::<P, Decrypting, K, KEY_LEN, 16, 12>::do_decrypt_init(&key, &nonce)
                 .expect("decrypt init")
         };
 
@@ -587,8 +597,8 @@ fn chunking_matches_a_single_call_over_several_batches() {
         }
     }
 
-    check::<Toy, TOY_LEN>("Toy");
-    check::<ForwardOnlyToy, TOY_LEN>("ForwardOnlyToy");
+    check::<Toy, ToyCipherKey, TOY_LEN>("Toy");
+    check::<ForwardOnlyToy, ToyCipherKey, TOY_LEN>("ForwardOnlyToy");
 }
 
 /// The pair path must be taken, **in both directions** -- unlike CBC and CFB, CTR encryption
@@ -684,16 +694,6 @@ fn identical_plaintext_gives_different_ciphertext() {
     assert_ne!(first[..TOY_LEN], first[TOY_LEN..], "the counter should change the keystream");
 }
 
-// ---- key handling --------------------------------------------------------------------------
-
-#[test]
-fn a_key_of_the_wrong_type_is_rejected() {
-    let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8) + 1);
-    let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
-    assert!(ToyCtr::<Encrypting>::do_encrypt_init(&seed).is_err());
-    assert!(ToyCtr::<Decrypting>::do_decrypt_init(&seed, &[0u8; NONCE_LEN]).is_err());
-}
-
 // ---- every length --------------------------------------------------------------------------
 
 /// CTR is a stream cipher: every length round-trips and the ciphertext is exactly as long as the
@@ -728,18 +728,21 @@ fn every_permitted_nonce_length_works() {
         let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(11).wrapping_add(3));
         let plaintext = (0..100u8).collect::<Vec<u8>>();
 
-        let (mut e, got) = Ctr::<Toy, Encrypting, TOY_LEN, TOY_LEN, N>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<N>::new(nonce),
-        )
-        .unwrap();
+        let (mut e, got) =
+            Ctr::<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN, N>::do_encrypt_init_rng(
+                &key,
+                &mut FixedSeedRNG::<N>::new(nonce),
+            )
+            .unwrap();
         assert_eq!(got, nonce);
         let mut ct = plaintext.clone();
         e.do_encrypt_inplace(&mut ct).unwrap();
         assert_ne!(ct, plaintext, "nonce length {N}: must actually encrypt");
 
-        Ctr::<Toy, Decrypting, TOY_LEN, TOY_LEN, N>::decrypt_inplace(&key, &nonce, &mut ct)
-            .unwrap();
+        Ctr::<Toy, Decrypting, ToyCipherKey, TOY_LEN, TOY_LEN, N>::decrypt_inplace(
+            &key, &nonce, &mut ct,
+        )
+        .unwrap();
         assert_eq!(ct, plaintext, "nonce length {N}: round trip");
     }
 

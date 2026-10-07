@@ -16,29 +16,36 @@ mod common;
 use bouncycastle_cipher::modes::{Cfb, Cfb8};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::ToyCipherKey;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
-type ToyCfb8<Dir> = Cfb8<Toy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedCfb8<Dir> = Cfb8<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
-type ForwardOnlyCfb8<Dir> = Cfb8<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedFourCfb8<Dir> = Cfb8<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
+type ToyCfb8<Dir> = Cfb8<Toy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedCfb8<Dir> = Cfb8<SwappedPairToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type ForwardOnlyCfb8<Dir> = Cfb8<ForwardOnlyToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedFourCfb8<Dir> = Cfb8<SwappedFourToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
 
 /// `do_encrypt_inplace`, by value.
-fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>, plaintext: &[u8]) -> Vec<u8> {
+fn enc(
+    e: &mut impl StreamCipherEncryptor<ToyCipherKey, TOY_LEN, TOY_LEN>,
+    plaintext: &[u8],
+) -> Vec<u8> {
     let mut data = plaintext.to_vec();
     e.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
 /// `do_decrypt_inplace`, by value.
-fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>, ciphertext: &[u8]) -> Vec<u8> {
+fn dec(
+    d: &mut impl StreamCipherDecryptor<ToyCipherKey, TOY_LEN, TOY_LEN>,
+    ciphertext: &[u8],
+) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
     d.do_decrypt_inplace(&mut data).unwrap();
     data
@@ -46,7 +53,7 @@ fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>, ciphertext: &[u8]) 
 
 /// `do_decrypt_inplace` in `chunk`-byte calls, by value. The last call may be shorter.
 fn dec_chunked(
-    d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>,
+    d: &mut impl StreamCipherDecryptor<ToyCipherKey, TOY_LEN, TOY_LEN>,
     ciphertext: &[u8],
     chunk: usize,
 ) -> Vec<u8> {
@@ -92,7 +99,7 @@ const CHUNKINGS: [usize; 11] = [1, 2, 3, 7, 8, 9, 15, 16, 17, 32, 100];
 #[test]
 fn cfb8_conforms_to_the_stream_cipher_framework() {
     TestFrameworkStreamCipher::new()
-        .test::<TOY_LEN, TOY_LEN, ToyCfb8<Encrypting>, ToyCfb8<Decrypting>>();
+        .test::<TOY_LEN, TOY_LEN, ToyCipherKey, ToyCfb8<Encrypting>, ToyCfb8<Decrypting>>();
 }
 
 // ---- the spec equations -------------------------------------------------------------------
@@ -139,7 +146,8 @@ fn reference_cfb8(perm: &Toy, iv: [u8; TOY_LEN], input: &[u8], encrypt: bool) ->
 fn the_mode_matches_the_spec_equations() {
     let key = toy_key();
     let iv = pinned_iv();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm =
+        <Toy as ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>::new(key.get_key()).unwrap();
 
     for len in [1, 2, TOY_LEN - 1, TOY_LEN, TOY_LEN + 1, 3 * TOY_LEN + 5] {
         let plaintext = message(len);
@@ -208,8 +216,11 @@ fn cfb8_is_not_cfb128() {
     let cfb8 = enc(&mut pinned_encryptor(iv), &plaintext);
 
     let (mut cfb, got) =
-        Cfb::<Toy, Encrypting, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(&key, &mut pinned_rng(iv))
-            .unwrap();
+        Cfb::<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(
+            &key,
+            &mut pinned_rng(iv),
+        )
+        .unwrap();
     assert_eq!(got, iv);
     let mut cfb128 = plaintext.clone();
     cfb.do_encrypt_inplace(&mut cfb128).unwrap();
@@ -223,7 +234,8 @@ fn cfb8_is_not_cfb128() {
     assert_ne!(wrong, plaintext, "CFB8 must not decrypt a CFB128 ciphertext");
 
     let mut wrong = cfb8.clone();
-    Cfb::<Toy, Decrypting, TOY_LEN, TOY_LEN>::decrypt_inplace(&key, &iv, &mut wrong).unwrap();
+    Cfb::<Toy, Decrypting, ToyCipherKey, TOY_LEN, TOY_LEN>::decrypt_inplace(&key, &iv, &mut wrong)
+        .unwrap();
     assert_ne!(wrong, plaintext, "CFB128 must not decrypt a CFB8 ciphertext");
 }
 
@@ -357,20 +369,19 @@ fn call_chunking_does_not_change_the_result() {
 /// single-call-versus-chunked comparison, kept free of an AES dependency.
 #[test]
 fn chunking_matches_a_single_call_at_every_batch_remainder() {
-    fn check<P, const KEY_LEN: usize>(name: &str)
+    fn check<P, K, const KEY_LEN: usize>(name: &str)
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        P: ElectronicCodeBook<K, KEY_LEN, 16>,
     {
         let key_bytes: [u8; KEY_LEN] =
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
-        let key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-                .expect("a valid key");
+        let key = K::from_bytes(&key_bytes).expect("a valid key");
         let iv: [u8; 16] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 
         let encryptor = || {
-            let (enc, got) = Cfb8::<P, Encrypting, KEY_LEN, 16>::do_encrypt_init_rng(
+            let (enc, got) = Cfb8::<P, Encrypting, K, KEY_LEN, 16>::do_encrypt_init_rng(
                 &key,
                 &mut FixedSeedRNG::<16>::new(iv),
             )
@@ -379,7 +390,7 @@ fn chunking_matches_a_single_call_at_every_batch_remainder() {
             enc
         };
         let decryptor = || {
-            Cfb8::<P, Decrypting, KEY_LEN, 16>::do_decrypt_init(&key, &iv).expect("decrypt init")
+            Cfb8::<P, Decrypting, K, KEY_LEN, 16>::do_decrypt_init(&key, &iv).expect("decrypt init")
         };
 
         // The reference: the whole message in one call.
@@ -414,8 +425,8 @@ fn chunking_matches_a_single_call_at_every_batch_remainder() {
         }
     }
 
-    check::<Toy, TOY_LEN>("Toy");
-    check::<ForwardOnlyToy, TOY_LEN>("ForwardOnlyToy");
+    check::<Toy, ToyCipherKey, TOY_LEN>("Toy");
+    check::<ForwardOnlyToy, ToyCipherKey, TOY_LEN>("ForwardOnlyToy");
 }
 
 /// The pair path in `do_decrypt_inplace` must actually be taken.
@@ -643,16 +654,6 @@ fn identical_plaintext_gives_different_ciphertext() {
         first[TOY_LEN..],
         "the shifting register should break the pattern within a message"
     );
-}
-
-// ---- key handling ------------------------------------------------------------------------
-
-#[test]
-fn a_key_of_the_wrong_type_is_rejected() {
-    let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8) + 1);
-    let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
-    assert!(ToyCfb8::<Encrypting>::do_encrypt_init(&seed).is_err());
-    assert!(ToyCfb8::<Decrypting>::do_decrypt_init(&seed, &[0u8; TOY_LEN]).is_err());
 }
 
 // ---- every length, no padding ------------------------------------------------------------

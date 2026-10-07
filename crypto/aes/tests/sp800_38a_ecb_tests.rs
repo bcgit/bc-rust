@@ -7,9 +7,8 @@
 //! `bc-test-data` repository is present, so these vectors are the always-available known-answer
 //! floor.
 //!
-//! ECB applies the raw permutation to each block independently, so an ECB example vector *is* a
-//! block-permutation test vector. (That is the only reason ECB appears in this crate; see the
-//! crate docs on why you must not use it to encrypt anything.)
+//! The vectors are driven through [`Ecb`] over the AES engines, which is the AES-ECB this crate
+//! exposes under `hazmat`; see the crate docs on why you must not use it to encrypt anything.
 //!
 //! The keys are the same three keys as FIPS 197 Appendix A.1, A.2 and A.3, so these vectors also
 //! pin each key expansion against a NIST-published answer, in both directions.
@@ -17,10 +16,18 @@
 //! Transcribed from the published SP 800-38A PDF, sections F.1.1 through F.1.6.
 
 use bouncycastle_aes::AES_BLOCK_LEN;
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_aes::hazmat::{
+    AES_ECB_128_Key, AES_ECB_192_Key, AES_ECB_256_Key, AES128Internal, AES192Internal,
+    AES256Internal,
+};
+use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherKey};
 use bouncycastle_hex as hex;
+
+type Ecb128<Dir> = Ecb<AES128Internal, Dir, AES_ECB_128_Key, 16, AES_BLOCK_LEN>;
+type Ecb192<Dir> = Ecb<AES192Internal, Dir, AES_ECB_192_Key, 24, AES_BLOCK_LEN>;
+type Ecb256<Dir> = Ecb<AES256Internal, Dir, AES_ECB_256_Key, 32, AES_BLOCK_LEN>;
 
 /// The four plaintext blocks shared by every F.1 subsection.
 const PLAINTEXTS: [&str; 4] = [
@@ -64,31 +71,31 @@ fn block(hex_str: &str) -> [u8; AES_BLOCK_LEN] {
     hex::decode(hex_str).expect("valid hex").try_into().expect("16 bytes")
 }
 
-fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
-    let bytes = hex::decode(hex_str).expect("valid hex");
-    assert_eq!(bytes.len(), N, "key length");
-    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-        .expect("a valid symmetric cipher key")
+fn key<K: SymmetricCipherKey<N>, const N: usize>(hex_str: &str) -> K {
+    let bytes: [u8; N] = hex::decode(hex_str).expect("valid hex").try_into().expect("key length");
+    K::from_bytes(&bytes).expect("a valid symmetric cipher key")
 }
 
 // ---- F.1.1 / F.1.2  ECB-AES128 -------------------------------------------------------------
 
 #[test]
 fn f_1_1_ecb_aes128_encrypt() {
-    let aes = AES128Internal::new(&key_material::<16>(KEY_128)).unwrap();
+    let (mut ecb, _) =
+        Ecb128::<Encrypting>::do_encrypt_init(&key::<AES_ECB_128_Key, 16>(KEY_128)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_128.iter()).enumerate() {
         let mut b = block(pt);
-        aes.encrypt_block(&mut b);
+        ecb.do_encrypt_inplace(&mut b).unwrap();
         assert_eq!(b, block(ct), "F.1.1 block #{}", i + 1);
     }
 }
 
 #[test]
 fn f_1_2_ecb_aes128_decrypt() {
-    let aes = AES128Internal::new(&key_material::<16>(KEY_128)).unwrap();
+    let mut ecb =
+        Ecb128::<Decrypting>::do_decrypt_init(&key::<AES_ECB_128_Key, 16>(KEY_128), &[]).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_128.iter()).enumerate() {
         let mut b = block(ct);
-        aes.decrypt_block(&mut b);
+        ecb.do_decrypt_inplace(&mut b).unwrap();
         assert_eq!(b, block(pt), "F.1.2 block #{}", i + 1);
     }
 }
@@ -97,20 +104,22 @@ fn f_1_2_ecb_aes128_decrypt() {
 
 #[test]
 fn f_1_3_ecb_aes192_encrypt() {
-    let aes = AES192Internal::new(&key_material::<24>(KEY_192)).unwrap();
+    let (mut ecb, _) =
+        Ecb192::<Encrypting>::do_encrypt_init(&key::<AES_ECB_192_Key, 24>(KEY_192)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_192.iter()).enumerate() {
         let mut b = block(pt);
-        aes.encrypt_block(&mut b);
+        ecb.do_encrypt_inplace(&mut b).unwrap();
         assert_eq!(b, block(ct), "F.1.3 block #{}", i + 1);
     }
 }
 
 #[test]
 fn f_1_4_ecb_aes192_decrypt() {
-    let aes = AES192Internal::new(&key_material::<24>(KEY_192)).unwrap();
+    let mut ecb =
+        Ecb192::<Decrypting>::do_decrypt_init(&key::<AES_ECB_192_Key, 24>(KEY_192), &[]).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_192.iter()).enumerate() {
         let mut b = block(ct);
-        aes.decrypt_block(&mut b);
+        ecb.do_decrypt_inplace(&mut b).unwrap();
         assert_eq!(b, block(pt), "F.1.4 block #{}", i + 1);
     }
 }
@@ -119,20 +128,22 @@ fn f_1_4_ecb_aes192_decrypt() {
 
 #[test]
 fn f_1_5_ecb_aes256_encrypt() {
-    let aes = AES256Internal::new(&key_material::<32>(KEY_256)).unwrap();
+    let (mut ecb, _) =
+        Ecb256::<Encrypting>::do_encrypt_init(&key::<AES_ECB_256_Key, 32>(KEY_256)).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_256.iter()).enumerate() {
         let mut b = block(pt);
-        aes.encrypt_block(&mut b);
+        ecb.do_encrypt_inplace(&mut b).unwrap();
         assert_eq!(b, block(ct), "F.1.5 block #{}", i + 1);
     }
 }
 
 #[test]
 fn f_1_6_ecb_aes256_decrypt() {
-    let aes = AES256Internal::new(&key_material::<32>(KEY_256)).unwrap();
+    let mut ecb =
+        Ecb256::<Decrypting>::do_decrypt_init(&key::<AES_ECB_256_Key, 32>(KEY_256), &[]).unwrap();
     for (i, (pt, ct)) in PLAINTEXTS.iter().zip(CIPHERTEXTS_256.iter()).enumerate() {
         let mut b = block(ct);
-        aes.decrypt_block(&mut b);
+        ecb.do_decrypt_inplace(&mut b).unwrap();
         assert_eq!(b, block(pt), "F.1.6 block #{}", i + 1);
     }
 }
@@ -146,17 +157,20 @@ fn f_1_6_ecb_aes256_decrypt() {
 /// single-block call has only one lane.
 #[test]
 fn two_block_path_matches_the_f_1_vectors() {
-    let aes = AES128Internal::new(&key_material::<16>(KEY_128)).unwrap();
+    let (mut enc, _) =
+        Ecb128::<Encrypting>::do_encrypt_init(&key::<AES_ECB_128_Key, 16>(KEY_128)).unwrap();
+    let mut dec =
+        Ecb128::<Decrypting>::do_decrypt_init(&key::<AES_ECB_128_Key, 16>(KEY_128), &[]).unwrap();
 
     // Blocks 1 and 2 as a pair, then 3 and 4.
     for chunk in 0..2 {
         let (i, j) = (chunk * 2, chunk * 2 + 1);
         let mut pair = [block(PLAINTEXTS[i]), block(PLAINTEXTS[j])];
-        aes.encrypt_2blocks(&mut pair);
+        enc.do_encrypt_blocks_inplace(&mut pair).unwrap();
         assert_eq!(pair[0], block(CIPHERTEXTS_128[i]), "pair {chunk} slot 0");
         assert_eq!(pair[1], block(CIPHERTEXTS_128[j]), "pair {chunk} slot 1");
 
-        aes.decrypt_2blocks(&mut pair);
+        dec.do_decrypt_blocks_inplace(&mut pair).unwrap();
         assert_eq!(pair[0], block(PLAINTEXTS[i]));
         assert_eq!(pair[1], block(PLAINTEXTS[j]));
     }
@@ -165,12 +179,13 @@ fn two_block_path_matches_the_f_1_vectors() {
 /// Swapping the two slots must swap the two results, and nothing else.
 #[test]
 fn two_block_path_is_slot_symmetric() {
-    let aes = AES256Internal::new(&key_material::<32>(KEY_256)).unwrap();
+    let (mut enc, _) =
+        Ecb256::<Encrypting>::do_encrypt_init(&key::<AES_ECB_256_Key, 32>(KEY_256)).unwrap();
 
     let mut forward = [block(PLAINTEXTS[0]), block(PLAINTEXTS[1])];
     let mut reversed = [block(PLAINTEXTS[1]), block(PLAINTEXTS[0])];
-    aes.encrypt_2blocks(&mut forward);
-    aes.encrypt_2blocks(&mut reversed);
+    enc.do_encrypt_blocks_inplace(&mut forward).unwrap();
+    enc.do_encrypt_blocks_inplace(&mut reversed).unwrap();
 
     assert_eq!(forward[0], reversed[1]);
     assert_eq!(forward[1], reversed[0]);
@@ -186,25 +201,29 @@ fn two_block_path_is_slot_symmetric() {
 /// is what pins the four 16-bit lanes of the `u64` planes to the four slots, in order.
 #[test]
 fn four_block_path_matches_the_f_1_vectors() {
-    let aes = AES192Internal::new(&key_material::<24>(KEY_192)).unwrap();
+    let (mut enc, _) =
+        Ecb192::<Encrypting>::do_encrypt_init(&key::<AES_ECB_192_Key, 24>(KEY_192)).unwrap();
+    let mut dec =
+        Ecb192::<Decrypting>::do_decrypt_init(&key::<AES_ECB_192_Key, 24>(KEY_192), &[]).unwrap();
 
     let mut four = PLAINTEXTS.map(block);
-    aes.encrypt_4blocks(&mut four);
+    enc.do_encrypt_blocks_inplace(&mut four).unwrap();
     assert_eq!(four, CIPHERTEXTS_192.map(block));
 
-    aes.decrypt_4blocks(&mut four);
+    dec.do_decrypt_blocks_inplace(&mut four).unwrap();
     assert_eq!(four, PLAINTEXTS.map(block));
 }
 
 /// Permuting the four slots must permute the four results, and nothing else.
 #[test]
 fn four_block_path_is_slot_symmetric() {
-    let aes = AES256Internal::new(&key_material::<32>(KEY_256)).unwrap();
+    let (mut enc, _) =
+        Ecb256::<Encrypting>::do_encrypt_init(&key::<AES_ECB_256_Key, 32>(KEY_256)).unwrap();
 
     // Every cyclic rotation of the four F.1 plaintexts.
     for shift in 0..4 {
         let mut four: [_; 4] = core::array::from_fn(|i| block(PLAINTEXTS[(i + shift) % 4]));
-        aes.encrypt_4blocks(&mut four);
+        enc.do_encrypt_blocks_inplace(&mut four).unwrap();
         for i in 0..4 {
             assert_eq!(four[i], block(CIPHERTEXTS_256[(i + shift) % 4]), "shift {shift}, slot {i}");
         }

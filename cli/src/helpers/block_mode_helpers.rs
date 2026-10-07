@@ -51,6 +51,7 @@ use crate::helpers::{
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle::hex;
 use clap::ValueEnum;
@@ -83,11 +84,11 @@ pub(crate) enum CipherDirection {
 ///
 /// `KEY_LEN` is exact: AES has three key lengths and the command selects one, so a key of the
 /// wrong length is a mistake rather than something to truncate or pad.
-pub(crate) fn load_key<const KEY_LEN: usize>(
+pub(crate) fn load_key<K: SymmetricCipherKey<KEY_LEN>, const KEY_LEN: usize>(
     key: &Option<String>,
     key_file: &Option<String>,
     alg: &str,
-) -> KeyMaterial<KEY_LEN> {
+) -> K {
     let key_bytes: Vec<u8> = if let Some(key_file) = key_file {
         // A file may hold raw bytes or hex; `read_from_file` tries hex first, as the other
         // commands do.
@@ -137,7 +138,10 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
         });
     }
 
-    key
+    K::from_keymaterial(key).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the key: {e:?}");
+        exit(-1);
+    })
 }
 
 /// Encrypts stdin to stdout under the mode `E`, writing the generated init data (the IV) first.
@@ -145,12 +149,13 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
 /// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
 /// ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "ECB"); it has no
 /// effect on the output.
-pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub(crate) fn encrypt_stream<E, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     output_hex: bool,
     mode: &str,
 ) where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
     let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
@@ -181,12 +186,13 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 
 /// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from the first
 /// `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB.
-pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub(crate) fn decrypt_stream<D, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     output_hex: bool,
     mode: &str,
 ) where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
     // The leading bytes are the IV, not ciphertext. (None for ECB: the read is skipped.)
     let mut iv = [0u8; INIT_DATA_LEN];

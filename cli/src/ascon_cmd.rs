@@ -1,6 +1,7 @@
 use std::io::{self, Read};
 use std::process::exit;
 
+use bouncycastle::ascon::Ascon_AEAD128_Key;
 use bouncycastle::ascon::ascon_aead128::{
     AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
 };
@@ -11,6 +12,7 @@ use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
@@ -57,9 +59,9 @@ fn require_16(bytes: Vec<u8>, label: &str) -> [u8; 16] {
     })
 }
 
-/// Build a `KeyMaterial<16>` for the AEAD key, warning (and forcing usable metadata) only if the
+/// Build an `Ascon_AEAD128_Key` for the AEAD key, warning (and forcing usable metadata) only if the
 /// key turns out to be low-entropy (e.g. all-zero), the same way `helpers::parse_seed` does.
-fn load_key_material(key_bytes: &[u8; 16]) -> KeyMaterial<16> {
+fn load_key_material(key_bytes: &[u8; 16]) -> Ascon_AEAD128_Key {
     let mut key =
         KeyMaterial::<16>::from_bytes_as_type(key_bytes, KeyType::SymmetricCipherKey).unwrap();
     if key.key_type() == KeyType::Zeroized || key.security_strength() < SecurityStrength::_128bit {
@@ -72,7 +74,7 @@ fn load_key_material(key_bytes: &[u8; 16]) -> KeyMaterial<16> {
         })
         .unwrap();
     }
-    key
+    Ascon_AEAD128_Key::from_keymaterial(key).unwrap()
 }
 
 /// Ascon-Hash256 of stdin. Streaming update; 256-bit digest.
@@ -149,7 +151,7 @@ pub(crate) fn aead128_cmd(
 /// With an explicit nonce there is no nonce to write, so that case goes to
 /// [`aead128_encrypt_stream_with_explicit_nonce`] instead.
 fn aead128_encrypt_stream(
-    key: &KeyMaterial<16>,
+    key: &Ascon_AEAD128_Key,
     nonce: Option<&[u8; 16]>,
     ad_opt: Option<&[u8]>,
     output_hex: bool,
@@ -197,7 +199,7 @@ fn aead128_encrypt_stream(
 /// pair generates its own nonce by construction -- `do_encrypt_init` owns that choice, which is
 /// the point of the trait -- and has no caller-supplied-nonce constructor to call here.
 fn aead128_encrypt_stream_with_explicit_nonce(
-    key: &KeyMaterial<16>,
+    key: &Ascon_AEAD128_Key,
     nonce: &[u8; 16],
     ad_opt: Option<&[u8]>,
     output_hex: bool,
@@ -227,7 +229,7 @@ fn aead128_encrypt_stream_with_explicit_nonce(
 /// before them as soon as it is known not to be part of the tag; at EOF
 /// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
-    key: &KeyMaterial<16>,
+    key: &Ascon_AEAD128_Key,
     nonce: Option<&[u8; 16]>,
     ad_opt: Option<&[u8]>,
     output_hex: bool,

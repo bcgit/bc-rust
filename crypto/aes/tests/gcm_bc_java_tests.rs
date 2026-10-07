@@ -10,9 +10,11 @@
 //! built programmatically rather than typed out (a zero key or plaintext cannot be mistyped).
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_GCM_128_Key, AES_GCM_192_Key, AES_GCM_256_Key};
 use bouncycastle_cipher::modes::Gcm;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
@@ -179,9 +181,10 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-fn run<P, const KEY_LEN: usize>(case: &Case)
+fn run<P, K, const KEY_LEN: usize>(case: &Case)
 where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<K, KEY_LEN, 16>,
 {
     let key_bytes = hex::decode(&case.key).expect("valid hex key");
     // `KeyMaterial` tags an all-zero buffer as `KeyType::Zeroized` regardless of the type
@@ -199,6 +202,7 @@ where
         })
         .expect("promoting a known-zero test key");
     }
+    let key = K::from_keymaterial(key).expect("a valid key");
 
     let aad = hex::decode(case.aad).expect("valid hex aad");
     let pt = hex::decode(&case.pt).expect("valid hex pt");
@@ -208,7 +212,7 @@ where
     let expected_tag = hex::decode(case.tag).expect("valid hex tag");
 
     let mut data = vec![0u8; pt.len()];
-    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_rng_out(
+    let (got_iv, _, tag) = Gcm::<P, Encrypting, K, KEY_LEN, 16>::encrypt_detached_rng_out(
         &key,
         &mut FixedSeedRNG::<12>::new(iv),
         &aad,
@@ -223,7 +227,7 @@ where
 
     let tag_arr: [u8; 16] = expected_tag.try_into().expect("16-byte tag");
     let mut recovered = vec![0u8; data.len()];
-    Gcm::<P, Decrypting, KEY_LEN, 16>::decrypt_detached_out(
+    Gcm::<P, Decrypting, K, KEY_LEN, 16>::decrypt_detached_out(
         &key, &iv, &aad, &data, &tag_arr, &mut recovered,
     )
     .unwrap_or_else(|e| panic!("{}: decrypt should have verified, got {e:?}", case.name));
@@ -236,9 +240,9 @@ fn bc_java_test_vectors_with_a_96_bit_iv() {
     for case in cases() {
         let key_len_bytes = case.key.len() / 2;
         match key_len_bytes {
-            16 => run::<AES128Internal, 16>(&case),
-            24 => run::<AES192Internal, 24>(&case),
-            32 => run::<AES256Internal, 32>(&case),
+            16 => run::<AES128Internal, AES_GCM_128_Key, 16>(&case),
+            24 => run::<AES192Internal, AES_GCM_192_Key, 24>(&case),
+            32 => run::<AES256Internal, AES_GCM_256_Key, 32>(&case),
             other => panic!("{}: unexpected key length {other} bytes", case.name),
         }
         checked += 1;

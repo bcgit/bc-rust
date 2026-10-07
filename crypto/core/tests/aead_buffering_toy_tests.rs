@@ -26,12 +26,12 @@
 /// data back observable.
 #[test]
 fn a_buffering_pair_is_handled_by_every_default_method() {
-    use bouncycastle_core::errors::SymmetricCipherError;
-    use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle_core::errors::{KeyMaterialError, RNGError, SymmetricCipherError};
+    use bouncycastle_core::key_material::KeyMaterial;
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
         AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SymmetricCipherDecryptor,
-        SymmetricCipherEncryptor,
+        SymmetricCipherEncryptor, SymmetricCipherKey,
     };
 
     const HOLD_BACK: usize = 3;
@@ -41,6 +41,24 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
     // What either side's final call can produce: the encryptor's held-back bytes plus the tag
     // after them, or everything the decryptor held back.
     const FINAL_LEN: usize = HOLD_BACK + TAG_LEN;
+
+    /// The toy's key type. It checks nothing: the key is never used.
+    #[derive(Clone, PartialEq, Eq)]
+    struct ToyKey(KeyMaterial<KEY_LEN>);
+
+    impl SymmetricCipherKey<KEY_LEN> for ToyKey {
+        fn from_keymaterial(key: KeyMaterial<KEY_LEN>) -> Result<Self, KeyMaterialError> {
+            Ok(Self(key))
+        }
+
+        fn get_key(&self) -> &KeyMaterial<KEY_LEN> {
+            &self.0
+        }
+
+        fn new_from_os() -> Result<Self, RNGError> {
+            Self::new_from_rng(&mut bouncycastle_rng::HashDRBG_SHA256::new_from_os())
+        }
+    }
 
     struct Buffered {
         hold: usize,
@@ -113,14 +131,12 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
     }
 
-    impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, FINAL_LEN> for Enc {
-        fn do_encrypt_init(
-            _key: &KeyMaterial<KEY_LEN>,
-        ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
+    impl SymmetricCipherEncryptor<ToyKey, KEY_LEN, NONCE_LEN, FINAL_LEN> for Enc {
+        fn do_encrypt_init(_key: &ToyKey) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
             Ok((Self(Buffered::new(HOLD_BACK)), [0u8; NONCE_LEN]))
         }
         fn do_encrypt_init_rng(
-            key: &KeyMaterial<KEY_LEN>,
+            key: &ToyKey,
             _rng: &mut dyn RNG,
         ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
             Self::do_encrypt_init(key)
@@ -147,7 +163,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         }
     }
 
-    impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for Enc {
+    impl AEADCipherEncryptor<ToyKey, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for Enc {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
@@ -162,9 +178,9 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         }
     }
 
-    impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, FINAL_LEN> for Dec {
+    impl SymmetricCipherDecryptor<ToyKey, KEY_LEN, NONCE_LEN, FINAL_LEN> for Dec {
         fn do_decrypt_init(
-            _key: &KeyMaterial<KEY_LEN>,
+            _key: &ToyKey,
             _nonce: &[u8; NONCE_LEN],
         ) -> Result<Self, SymmetricCipherError> {
             Ok(Self(Buffered::new(FINAL_LEN)))
@@ -197,7 +213,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         }
     }
 
-    impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for Dec {
+    impl AEADCipherDecryptor<ToyKey, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for Dec {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
@@ -219,9 +235,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
     // The bytes every key and message is cut from: `0x00, 0x01, ...`, long enough for the longest
     // message below.
     let seed: [u8; 64] = core::array::from_fn(|i| i as u8);
-    let key =
-        KeyMaterial::<KEY_LEN>::from_bytes_as_type(&seed[..KEY_LEN], KeyType::SymmetricCipherKey)
-            .unwrap();
+    let key = ToyKey::from_bytes(seed[..KEY_LEN].try_into().unwrap()).unwrap();
 
     for len in 0..=(3 * FINAL_LEN + 5) {
         let msg = &seed[..len];

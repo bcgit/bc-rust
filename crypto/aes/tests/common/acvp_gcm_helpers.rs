@@ -10,10 +10,11 @@
 #![allow(dead_code)]
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_GCM_128_Key, AES_GCM_192_Key, AES_GCM_256_Key};
 use bouncycastle_cipher::modes::Gcm;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor,
 };
@@ -40,46 +41,48 @@ pub fn run_encrypt_case(
     expected_tag: &[u8],
 ) {
     macro_rules! dispatch {
-        ($p:ty, $klen:literal) => {{
-            let key = cipher_key::<$klen>(key_bytes);
+        ($p:ty, $key:ty, $klen:literal) => {{
+            let key = cipher_key::<$key, $klen>(key_bytes);
             let mut data = pt.to_vec();
             match tag_len {
-                12 => run_encrypt::<$p, $klen, 12>(&key, iv, aad, &mut data, expected_tag),
-                13 => run_encrypt::<$p, $klen, 13>(&key, iv, aad, &mut data, expected_tag),
-                14 => run_encrypt::<$p, $klen, 14>(&key, iv, aad, &mut data, expected_tag),
-                15 => run_encrypt::<$p, $klen, 15>(&key, iv, aad, &mut data, expected_tag),
-                16 => run_encrypt::<$p, $klen, 16>(&key, iv, aad, &mut data, expected_tag),
+                12 => run_encrypt::<$p, $key, $klen, 12>(&key, iv, aad, &mut data, expected_tag),
+                13 => run_encrypt::<$p, $key, $klen, 13>(&key, iv, aad, &mut data, expected_tag),
+                14 => run_encrypt::<$p, $key, $klen, 14>(&key, iv, aad, &mut data, expected_tag),
+                15 => run_encrypt::<$p, $key, $klen, 15>(&key, iv, aad, &mut data, expected_tag),
+                16 => run_encrypt::<$p, $key, $klen, 16>(&key, iv, aad, &mut data, expected_tag),
                 other => panic!("unsupported ACVP tagLen {other} bytes"),
             }
             assert_eq!(data, expected_ct);
         }};
     }
     match key_bytes.len() {
-        16 => dispatch!(AES128Internal, 16),
-        24 => dispatch!(AES192Internal, 24),
-        32 => dispatch!(AES256Internal, 32),
+        16 => dispatch!(AES128Internal, AES_GCM_128_Key, 16),
+        24 => dispatch!(AES192Internal, AES_GCM_192_Key, 24),
+        32 => dispatch!(AES256Internal, AES_GCM_256_Key, 32),
         other => panic!("unexpected AES key length {other}"),
     }
 }
 
-fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+fn run_encrypt<P, K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     iv: [u8; GCM_NONCE_LEN],
     aad: &[u8],
     data: &mut [u8],
     expected_tag: &[u8],
 ) where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<K, KEY_LEN, 16>,
 {
     let mut ct = vec![0u8; data.len()];
-    let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
-        key,
-        &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
-        aad,
-        data,
-        &mut ct,
-    )
-    .expect("encrypt");
+    let (got_iv, written, tag) =
+        Gcm::<P, Encrypting, K, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
+            key,
+            &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
+            aad,
+            data,
+            &mut ct,
+        )
+        .expect("encrypt");
     assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
     assert_eq!(written, data.len(), "GCM ciphertext is as long as the plaintext");
     assert_eq!(&tag[..], expected_tag, "tag mismatch");
@@ -98,41 +101,42 @@ pub fn run_decrypt_case(
     expected_pt: Option<&[u8]>,
 ) {
     macro_rules! dispatch {
-        ($p:ty, $klen:literal) => {{
-            let key = cipher_key::<$klen>(key_bytes);
+        ($p:ty, $key:ty, $klen:literal) => {{
+            let key = cipher_key::<$key, $klen>(key_bytes);
             match tag.len() {
-                12 => run_decrypt::<$p, $klen, 12>(&key, iv, aad, ct, tag, expected_pt),
-                13 => run_decrypt::<$p, $klen, 13>(&key, iv, aad, ct, tag, expected_pt),
-                14 => run_decrypt::<$p, $klen, 14>(&key, iv, aad, ct, tag, expected_pt),
-                15 => run_decrypt::<$p, $klen, 15>(&key, iv, aad, ct, tag, expected_pt),
-                16 => run_decrypt::<$p, $klen, 16>(&key, iv, aad, ct, tag, expected_pt),
+                12 => run_decrypt::<$p, $key, $klen, 12>(&key, iv, aad, ct, tag, expected_pt),
+                13 => run_decrypt::<$p, $key, $klen, 13>(&key, iv, aad, ct, tag, expected_pt),
+                14 => run_decrypt::<$p, $key, $klen, 14>(&key, iv, aad, ct, tag, expected_pt),
+                15 => run_decrypt::<$p, $key, $klen, 15>(&key, iv, aad, ct, tag, expected_pt),
+                16 => run_decrypt::<$p, $key, $klen, 16>(&key, iv, aad, ct, tag, expected_pt),
                 other => panic!("unsupported ACVP tagLen {other} bytes"),
             }
         }};
     }
     match key_bytes.len() {
-        16 => dispatch!(AES128Internal, 16),
-        24 => dispatch!(AES192Internal, 24),
-        32 => dispatch!(AES256Internal, 32),
+        16 => dispatch!(AES128Internal, AES_GCM_128_Key, 16),
+        24 => dispatch!(AES192Internal, AES_GCM_192_Key, 24),
+        32 => dispatch!(AES256Internal, AES_GCM_256_Key, 32),
         other => panic!("unexpected AES key length {other}"),
     }
 }
 
-fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+fn run_decrypt<P, K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     iv: [u8; GCM_NONCE_LEN],
     aad: &[u8],
     ct: &[u8],
     tag: &[u8],
     expected_pt: Option<&[u8]>,
 ) where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<K, KEY_LEN, 16>,
 {
     let tag_arr: [u8; TAG_LEN] = tag.try_into().expect("tag length matches TAG_LEN");
 
     // The detached one-shot: AAD-capable, and never releases plaintext before the tag checks out.
     let mut data = vec![0xEEu8; ct.len()];
-    let one_shot_result = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached_out(
+    let one_shot_result = Gcm::<P, Decrypting, K, KEY_LEN, TAG_LEN>::decrypt_detached_out(
         key, &iv, aad, ct, &tag_arr, &mut data,
     );
 
@@ -143,7 +147,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     // layout meets AAD support, and unlike the one-shot it releases plaintext before the tag is
     // checked -- see `gcm_tests.rs` for that distinction pinned with empty AAD.
     let mut dec =
-        Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::do_decrypt_init(key, &iv).expect("decrypt init");
+        Gcm::<P, Decrypting, K, KEY_LEN, TAG_LEN>::do_decrypt_init(key, &iv).expect("decrypt init");
     dec.do_update_aad(aad).expect("aad");
     let mut inline_ct = ct.to_vec();
     inline_ct.extend_from_slice(tag);

@@ -57,11 +57,10 @@ use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::suspendable_state::{
@@ -97,19 +96,23 @@ use crate::modes::cfb;
 /// byte and lives only in a local, so no keystream outlives the call that used it. No partial
 /// segment is stored either, because a segment is one byte.
 #[derive(Clone)]
-pub struct Cfb8<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Cfb8<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     perm: P,
     /// `Ij`: the IV, then the shift register. See the module docs.
     chain: [u8; BLOCK_LEN],
     _dir: PhantomData<Dir>,
+    /// Records `K`, which no other field mentions; without it `K` would be an unused parameter.
+    _key: PhantomData<K>,
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb8<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header and the shift
     /// register. See [`bouncycastle_utils::suspendable_state`].
@@ -169,10 +172,11 @@ where
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for Cfb8<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
     /// concatenated in a `const`, and the mode is already in the type.
@@ -181,28 +185,28 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<K, KEY_LEN, BLOCK_LEN, 0>
+    for Cfb8<P, Encrypting, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    fn do_encrypt_init(key: &K) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
         let mut rng = HashDRBG_SHA512::new_from_os();
         Self::do_encrypt_init_rng(key, &mut rng)
     }
 
     /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        let perm = P::new(key)?;
+        let perm = P::new(key.get_key())?;
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
+        Ok((Self { perm, chain: iv, _dir: PhantomData, _key: PhantomData }, iv))
     }
 
     /// Every input byte produces exactly one output byte.
@@ -231,10 +235,11 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipherEncryptor<K, KEY_LEN, BLOCK_LEN> for Cfb8<P, Encrypting, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Encrypts `data`, of any length, in place: `Cj = Pj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// then `Cj` shifts into the register.
@@ -251,20 +256,19 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<K, KEY_LEN, BLOCK_LEN, 0>
+    for Cfb8<P, Decrypting, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; BLOCK_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        let perm = P::new(key)?;
+    fn do_decrypt_init(key: &K, init_data: &[u8; BLOCK_LEN]) -> Result<Self, SymmetricCipherError> {
+        let perm = P::new(key.get_key())?;
         // `I1 = IV`, exactly as on the encrypt side.
-        Ok(Self { perm, chain: *init_data, _dir: PhantomData })
+        Ok(Self { perm, chain: *init_data, _dir: PhantomData, _key: PhantomData })
     }
 
     /// Nothing is held back, so every input byte can be released immediately.
@@ -293,10 +297,11 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipherDecryptor<K, KEY_LEN, BLOCK_LEN> for Cfb8<P, Decrypting, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Decrypts `data`, of any length, in place: `Pj = Cj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// with the *ciphertext* byte -- the one that came in, not the plaintext going out -- shifted
@@ -326,33 +331,35 @@ where
 
 /// The suspended state is the shift register `Ij`, in both directions; the permutation is
 /// rebuilt from the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
-    for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
+    for Cfb8<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const STATE_LEN: usize = BLOCK_LEN;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = K;
 
     fn write_state(&self, out: &mut [u8]) {
         out.copy_from_slice(&self.chain);
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
-        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let perm = P::new(key.get_key()).map_err(|_| SuspendableError::InvalidData)?;
         let mut chain = [0u8; BLOCK_LEN];
         chain.copy_from_slice(state);
-        Ok(Self { perm, chain, _dir: PhantomData })
+        Ok(Self { perm, chain, _dir: PhantomData, _key: PhantomData })
     }
 }
 
 /// `N` must be [`Cfb8::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
-    for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
+    for Cfb8<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = K;
 
     fn suspend(self) -> [u8; N] {
         suspend_component(&self)

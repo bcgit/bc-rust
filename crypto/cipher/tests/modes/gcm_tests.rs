@@ -15,9 +15,10 @@ use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::ToyCipherKey;
 use common::{ForwardOnlyToy, TOY_LEN, Toy, toy_key};
 
-type ToyGcm<Dir, const TAG_LEN: usize> = Gcm<Toy, Dir, TOY_LEN, TAG_LEN>;
+type ToyGcm<Dir, const TAG_LEN: usize> = Gcm<Toy, Dir, ToyCipherKey, TOY_LEN, TAG_LEN>;
 
 /// Encrypts `message` under `aad` through the detached one-shot, with the nonce driven by `seed`
 /// so repeated calls are comparable. Returns the nonce, the ciphertext and the tag.
@@ -248,24 +249,25 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
 fn neither_direction_uses_the_inverse_cipher() {
     fn round_trip<P>() -> ([u8; 48], [u8; 16])
     where
-        P: bouncycastle_core::hazmat::ElectronicCodeBook<TOY_LEN, TOY_LEN>,
+        P: bouncycastle_core::hazmat::ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>,
     {
         let key = toy_key();
         let aad = b"associated data of no particular length";
         let message = b"a message that is not a whole number of blocks!!";
 
         let mut ct = [0u8; 48];
-        let (nonce, _, tag) = Gcm::<P, Encrypting, TOY_LEN, 16>::encrypt_detached_rng_out(
-            &key,
-            &mut FixedSeedRNG::<12>::new([0x4Du8; 12]),
-            aad,
-            message,
-            &mut ct,
-        )
-        .unwrap();
+        let (nonce, _, tag) =
+            Gcm::<P, Encrypting, ToyCipherKey, TOY_LEN, 16>::encrypt_detached_rng_out(
+                &key,
+                &mut FixedSeedRNG::<12>::new([0x4Du8; 12]),
+                aad,
+                message,
+                &mut ct,
+            )
+            .unwrap();
         assert_ne!(&ct[..], &message[..]);
         let mut pt = [0u8; 48];
-        Gcm::<P, Decrypting, TOY_LEN, 16>::decrypt_detached_out(
+        Gcm::<P, Decrypting, ToyCipherKey, TOY_LEN, 16>::decrypt_detached_out(
             &key, &nonce, aad, &ct, &tag, &mut pt,
         )
         .unwrap();
@@ -288,10 +290,10 @@ fn neither_direction_uses_the_inverse_cipher() {
 fn aead_trait_framework() {
     use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
     TestFrameworkAEADCipher::new()
-        .test_encryptor_decryptor::<TOY_LEN, 12, 16, 16, ToyGcm<Encrypting, 16>, ToyGcm<Decrypting, 16>>(
+        .test_encryptor_decryptor::<TOY_LEN, 12, 16, 16, ToyCipherKey, ToyGcm<Encrypting, 16>, ToyGcm<Decrypting, 16>>(
         );
     TestFrameworkAEADCipher::new()
-        .test_encryptor_decryptor::<TOY_LEN, 12, 12, 12, ToyGcm<Encrypting, 12>, ToyGcm<Decrypting, 12>>(
+        .test_encryptor_decryptor::<TOY_LEN, 12, 12, 12, ToyCipherKey, ToyGcm<Encrypting, 12>, ToyGcm<Decrypting, 12>>(
         );
 }
 
@@ -318,7 +320,7 @@ fn aead_trait_one_shots_release_nothing_on_forgery() {
     let tag: [u8; 16] = ct[32..48].try_into().unwrap();
     let mut out = [0xEEu8; 32];
     assert!(matches!(
-        <Dec as AEADCipherDecryptor<16, 12, 16, 16>>::decrypt_detached_out(
+        <Dec as AEADCipherDecryptor<ToyCipherKey, 16, 12, 16, 16>>::decrypt_detached_out(
             &key,
             &nonce,
             b"aad",

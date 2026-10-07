@@ -33,10 +33,11 @@
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_CFB_128_Key, AES_CFB_192_Key, AES_CFB_256_Key};
 use bouncycastle_cipher::modes::Cfb;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
@@ -121,11 +122,9 @@ fn flat(hex_strs: &[&str; 4]) -> [u8; 4 * BLOCK_LEN] {
     blocks(hex_strs).as_flattened().try_into().expect("4 blocks = 64 bytes")
 }
 
-fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
-    let bytes = hex::decode(hex_str).expect("valid hex");
-    assert_eq!(bytes.len(), N, "key length");
-    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-        .expect("a valid symmetric cipher key")
+fn key_material<K: SymmetricCipherKey<N>, const N: usize>(hex_str: &str) -> K {
+    let bytes: [u8; N] = hex::decode(hex_str).expect("valid hex").try_into().expect("key length");
+    K::from_bytes(&bytes).expect("a valid key")
 }
 
 /// Chunk sizes that never line up with a 16-byte segment, for the stream-cipher checks.
@@ -135,17 +134,18 @@ const ODD_CHUNKS: [usize; 3] = [5, 23, 63];
 ///
 /// Checks the whole message in one call, then again one segment at a time, then again in chunks
 /// that straddle the segments -- the vector should not care how the calls are grouped.
-fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
+fn check_encrypt<P, K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = key_material::<K, KEY_LEN>(key_hex);
     let iv = block(IV);
     let pt = blocks(&PLAINTEXTS);
     let ct = blocks(expected);
 
     let init = || {
-        let (enc, got_iv) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
+        let (enc, got_iv) = Cfb::<P, Encrypting, K, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
             &key,
             &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
         )
@@ -184,25 +184,26 @@ where
 /// Checks one call, one segment at a time, the odd grouping `3 + 1` -- which is the grouping that
 /// leaves a one-block remainder after the pair loop in `do_decrypt_inplace` -- and chunks that
 /// straddle the segments.
-fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
+fn check_decrypt<P, K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = key_material::<K, KEY_LEN>(key_hex);
     let iv = block(IV);
     let pt = blocks(&PLAINTEXTS);
     let ct = blocks(ciphertext);
 
-    type Dec<P, const K: usize> = Cfb<P, Decrypting, K, BLOCK_LEN>;
+    type Dec<P, K, const KL: usize> = Cfb<P, Decrypting, K, KL, BLOCK_LEN>;
 
     // All four segments in one call (two pairs, no remainder).
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = Dec::<P, K, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     let mut data = flat(ciphertext);
     dec.do_decrypt_inplace(&mut data).unwrap();
     assert_eq!(data, flat(&PLAINTEXTS), "{section}: four segments in one call");
 
     // One segment at a time (never takes the pair path).
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = Dec::<P, K, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     for (i, (c, p)) in ct.iter().zip(pt.iter()).enumerate() {
         let mut got = *c;
         dec.do_decrypt_inplace(&mut got).unwrap();
@@ -210,7 +211,7 @@ where
     }
 
     // 3 + 1: one pair plus a remainder, then a lone block.
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = Dec::<P, K, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     let mut three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
     dec.do_decrypt_inplace(&mut three).unwrap();
     let mut one = ct[3];
@@ -220,7 +221,7 @@ where
 
     // In chunks that cut across the segments.
     for chunk in ODD_CHUNKS {
-        let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+        let mut dec = Dec::<P, K, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
         let mut data = flat(ciphertext);
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).unwrap();
@@ -231,32 +232,32 @@ where
 
 #[test]
 fn f_3_13_cfb128_aes128_encrypt() {
-    check_encrypt::<AES128Internal, 16>("F.3.13", KEY_128, &CIPHERTEXTS_128);
+    check_encrypt::<AES128Internal, AES_CFB_128_Key, 16>("F.3.13", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_3_14_cfb128_aes128_decrypt() {
-    check_decrypt::<AES128Internal, 16>("F.3.14", KEY_128, &CIPHERTEXTS_128);
+    check_decrypt::<AES128Internal, AES_CFB_128_Key, 16>("F.3.14", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_3_15_cfb128_aes192_encrypt() {
-    check_encrypt::<AES192Internal, 24>("F.3.15", KEY_192, &CIPHERTEXTS_192);
+    check_encrypt::<AES192Internal, AES_CFB_192_Key, 24>("F.3.15", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_3_16_cfb128_aes192_decrypt() {
-    check_decrypt::<AES192Internal, 24>("F.3.16", KEY_192, &CIPHERTEXTS_192);
+    check_decrypt::<AES192Internal, AES_CFB_192_Key, 24>("F.3.16", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_3_17_cfb128_aes256_encrypt() {
-    check_encrypt::<AES256Internal, 32>("F.3.17", KEY_256, &CIPHERTEXTS_256);
+    check_encrypt::<AES256Internal, AES_CFB_256_Key, 32>("F.3.17", KEY_256, &CIPHERTEXTS_256);
 }
 
 #[test]
 fn f_3_18_cfb128_aes256_decrypt() {
-    check_decrypt::<AES256Internal, 32>("F.3.18", KEY_256, &CIPHERTEXTS_256);
+    check_decrypt::<AES256Internal, AES_CFB_256_Key, 32>("F.3.18", KEY_256, &CIPHERTEXTS_256);
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
@@ -276,16 +277,17 @@ fn f_3_18_cfb128_aes256_decrypt() {
 ///
 /// It also confirms the transcription: the ciphertext and output-block columns above are related by
 /// an XOR that would not survive a typo in either.
-fn check_output_blocks<P, const KEY_LEN: usize>(
+fn check_output_blocks<P, K, const KEY_LEN: usize>(
     section: &str,
     key_hex: &str,
     ciphertexts: &[&str; 4],
     output_blocks: &[&str; 4],
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
-    let perm = P::new(&key).expect("a valid key");
+    let key = key_material::<K, KEY_LEN>(key_hex);
+    let perm = P::new(key.get_key()).expect("a valid key");
     let pt = blocks(&PLAINTEXTS);
     let ct = blocks(ciphertexts);
     let o = blocks(output_blocks);
@@ -313,13 +315,13 @@ fn check_output_blocks<P, const KEY_LEN: usize>(
 
 #[test]
 fn the_tabulated_output_blocks_are_the_keystream() {
-    check_output_blocks::<AES128Internal, 16>(
+    check_output_blocks::<AES128Internal, AES_CFB_128_Key, 16>(
         "F.3.13", KEY_128, &CIPHERTEXTS_128, &OUTPUT_BLOCKS_128,
     );
-    check_output_blocks::<AES192Internal, 24>(
+    check_output_blocks::<AES192Internal, AES_CFB_192_Key, 24>(
         "F.3.15", KEY_192, &CIPHERTEXTS_192, &OUTPUT_BLOCKS_192,
     );
-    check_output_blocks::<AES256Internal, 32>(
+    check_output_blocks::<AES256Internal, AES_CFB_256_Key, 32>(
         "F.3.17", KEY_256, &CIPHERTEXTS_256, &OUTPUT_BLOCKS_256,
     );
 }
@@ -347,13 +349,14 @@ fn cfb128_agrees_with_ofb_on_the_first_block_only() {
         "F.3.13 and F.4.1 must tabulate the same O1 = CIPH_K(IV)"
     );
 
-    let key = key_material::<16>(KEY_128);
+    let key = key_material::<AES_CFB_128_Key, 16>(KEY_128);
     let iv = block(IV);
-    let (mut enc, got_iv) = Cfb::<AES128Internal, Encrypting, 16, 16>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<16>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, got_iv) =
+        Cfb::<AES128Internal, Encrypting, AES_CFB_128_Key, 16, 16>::do_encrypt_init_rng(
+            &key,
+            &mut FixedSeedRNG::<16>::new(iv),
+        )
+        .unwrap();
     assert_eq!(got_iv, iv);
 
     let mut c1 = block(PLAINTEXTS[0]);

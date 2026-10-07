@@ -62,7 +62,7 @@ use bouncycastle_utils::secret::Secret;
 #[allow(unused_imports)]
 use bouncycastle_core::errors::SymmetricCipherError;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherKey};
 // end of imports needed for docs
 
 /// CTR mode over any [`ElectronicCodeBook`] permutation function, with the direction encoded in the type: the
@@ -81,20 +81,20 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
+/// use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+/// use bouncycastle_core::traits::{SymmetricCipherEncryptor, SymmetricCipherKey};
 /// use bouncycastle_cipher::modes::Ctr;
 /// use bouncycastle_cipher::Encrypting;
 ///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// let _ = Ctr::<ToyBlockCipher, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
-/// let _ = Ctr::<ToyBlockCipher, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
+/// let key = ToyCipherKey::new_from_os().expect("a fresh key");
+/// let _ = Ctr::<ToyBlockCipher, Encrypting, ToyCipherKey, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
+/// let _ = Ctr::<ToyBlockCipher, Encrypting, ToyCipherKey, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
 /// ```
-pub type Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
+pub type Ctr<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
     StreamCipher<
-        CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>,
+        CtrKeyStream<P, K, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>,
         Dir,
+        K,
         KEY_LEN,
         INIT_DATA_LEN,
         BLOCK_LEN,
@@ -112,13 +112,14 @@ pub type Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DA
 ///
 /// The keystream scratch is one [`Secret`] per width and per call rather than per batch, so every
 /// block of `Oj` is zeroized when this returns.
-pub(crate) fn apply_counter_blocks<P, const KEY_LEN: usize, const BLOCK_LEN: usize>(
+pub(crate) fn apply_counter_blocks<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize>(
     perm: &P,
     next: &mut u64,
     counter_block: impl Fn(u64) -> [u8; BLOCK_LEN],
     blocks: &mut [[u8; BLOCK_LEN]],
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     let (fours, rest) = blocks.as_chunks_mut::<4>();
     let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
@@ -141,7 +142,7 @@ pub(crate) fn apply_counter_blocks<P, const KEY_LEN: usize, const BLOCK_LEN: usi
 /// One batch of [`apply_counter_blocks`]: builds `N` counter blocks into `keystream`, encrypts
 /// them with one `batch` call, and XORs the result into `blocks`.
 #[inline]
-fn apply_batch<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>(
+fn apply_batch<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>(
     perm: &P,
     next: &mut u64,
     counter_block: &impl Fn(u64) -> [u8; BLOCK_LEN],
@@ -149,7 +150,8 @@ fn apply_batch<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>(
     keystream: &mut [[u8; BLOCK_LEN]; N],
     batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     for slot in keystream.iter_mut() {
         *slot = counter_block(*next);

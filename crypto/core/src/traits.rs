@@ -8,12 +8,7 @@ use crate::security_strength::SecurityStrength;
 use core::fmt::{Debug, Display};
 use core::marker::Sized;
 
-// Imports needed for docs
-#[allow(unused_imports)]
-use crate::key_material::KeyMaterial;
-#[allow(unused_imports)]
-use crate::key_material::KeyType;
-// end of imports needed for docs
+use crate::key_material::{KeyMaterial, KeyType};
 
 /// What the allocating one-shot [`AEADCipherEncryptor::encrypt_detached`] hands back:
 /// `(nonce, ciphertext, tag)`
@@ -49,11 +44,12 @@ pub type AEADEncryptedTuple<const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// no such caveat: each owns the whole message, so it zeroizes the buffer itself before returning
 /// the error.
 pub trait AEADCipherDecryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
->: SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, FINAL_LEN>
+>: SymmetricCipherDecryptor<K, KEY_LEN, NONCE_LEN, FINAL_LEN>
 {
     /// Absorbs additional authenticated data; see [`AEADCipherEncryptor::do_update_aad`] for the
     /// rules, which are the same on both sides. The concatenation of what a decryptor absorbs must
@@ -124,7 +120,7 @@ pub trait AEADCipherDecryptor<
     /// before any work is done; otherwise whatever the streaming methods return, including
     /// [`do_decrypt_final_detachedtag_out`](Self::do_decrypt_final_detachedtag_out)'s.
     fn decrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
@@ -174,7 +170,7 @@ pub trait AEADCipherDecryptor<
     /// shorter than the tag it is supposed to end with;
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
     fn decrypt_with_aad_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
@@ -208,7 +204,7 @@ pub trait AEADCipherDecryptor<
     /// [`decrypt_detached_out`](Self::decrypt_detached_out), returning the plaintext as a
     /// `Vec<u8>` of exactly the recovered length. Only available with the `std` feature.
     fn decrypt_detached(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
@@ -226,7 +222,7 @@ pub trait AEADCipherDecryptor<
     /// `Vec<u8>` of exactly the recovered length. This is [`SymmetricCipherDecryptor::decrypt`]
     /// with an `aad`. Only available with the `std` feature.
     fn decrypt_with_aad(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
         ciphertext: &[u8],
@@ -289,11 +285,12 @@ pub trait AEADCipherDecryptor<
 ///   the advantage of being able to correctly size the output buffer for a subsequent
 ///   [`do_encrypt_out`](SymmetricCipherEncryptor::do_encrypt_out) call.
 pub trait AEADCipherEncryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
->: SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, FINAL_LEN>
+>: SymmetricCipherEncryptor<K, KEY_LEN, NONCE_LEN, FINAL_LEN>
 {
     /// Absorbs `aad`: data that is authenticated by the tag but not encrypted. May be called
     /// repeatedly before the first [`SymmetricCipherEncryptor::do_encrypt_out`]; a sequence of calls
@@ -357,7 +354,7 @@ pub trait AEADCipherEncryptor<
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn encrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -384,7 +381,7 @@ pub trait AEADCipherEncryptor<
     /// [`encrypt_detached_out`](Self::encrypt_detached_out), returning the ciphertext as a
     /// `Vec<u8>`. Only available with the `std` feature.
     fn encrypt_detached(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         aad: &[u8],
         plaintext: &[u8],
     ) -> Result<AEADEncryptedTuple<NONCE_LEN, TAG_LEN>, SymmetricCipherError> {
@@ -398,7 +395,7 @@ pub trait AEADCipherEncryptor<
     /// As [`encrypt_detached_out`](Self::encrypt_detached_out), but sources randomness from the
     /// provided RNG.
     fn encrypt_detached_rng_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
         aad: &[u8],
         plaintext: &[u8],
@@ -430,7 +427,7 @@ pub trait AEADCipherEncryptor<
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn encrypt_with_aad_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         aad: &[u8],
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -455,7 +452,7 @@ pub trait AEADCipherEncryptor<
     /// included, as a `Vec<u8>`. This is [`SymmetricCipherEncryptor::encrypt`] with an `aad`. Only
     /// available with the `std` feature.
     fn encrypt_with_aad(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         aad: &[u8],
         plaintext: &[u8],
     ) -> Result<([u8; NONCE_LEN], Vec<u8>), SymmetricCipherError> {
@@ -468,7 +465,7 @@ pub trait AEADCipherEncryptor<
     /// As [`encrypt_with_aad_out`](Self::encrypt_with_aad_out), but sources randomness from the
     /// provided RNG: [`SymmetricCipherEncryptor::encrypt_rng_out`] with an `aad`.
     fn encrypt_with_aad_rng_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
         aad: &[u8],
         plaintext: &[u8],
@@ -510,6 +507,7 @@ pub trait AlgorithmOID {
 /// The decryption half of a block cipher's streaming API; see [`BlockCipherEncryptor`], whose
 /// notes on in-place operation, compile-time lengths and the `Result` all apply here too.
 pub trait BlockCipherDecryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
@@ -517,7 +515,7 @@ pub trait BlockCipherDecryptor<
 {
     /// Begins a streaming decryption flow from the init data returned by [`BlockCipherEncryptor::do_encrypt_init`].
     fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError>;
     /// The implementor hook: decrypts consecutive whole blocks in place. See
@@ -553,7 +551,7 @@ pub trait BlockCipherDecryptor<
     /// checked at compile time exactly as for [`BlockCipherEncryptor::encrypt_inplace`]. Returns the
     /// number of bytes written; see [`Self::do_decrypt_blocks_inplace`].
     fn decrypt_inplace<const LEN: usize>(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
         data: &mut [u8; LEN],
     ) -> Result<usize, SymmetricCipherError> {
@@ -603,6 +601,7 @@ pub trait BlockCipherDecryptor<
 /// data limit -- a counter-based mode must refuse to encrypt past the point where its counter would
 /// repeat -- which a streaming API cannot check any earlier than the call that would cross it.
 pub trait BlockCipherEncryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
@@ -610,9 +609,7 @@ pub trait BlockCipherEncryptor<
 {
     /// Begins a streaming encryption flow, returning the generated init data (e.g. IV).
     /// Sources randomness from the library's default OS-backed RNG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    fn do_encrypt_init(key: &K) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// As [`BlockCipherEncryptor::do_encrypt_init`], but sources randomness from the provided RNG.
     ///
     /// # Panics
@@ -624,7 +621,7 @@ pub trait BlockCipherEncryptor<
     /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
     /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
     /// The implementor hook: encrypts consecutive whole blocks in place. A sequence of calls is
@@ -670,7 +667,7 @@ pub trait BlockCipherEncryptor<
     /// bytes written (see [`Self::do_encrypt_blocks_inplace`]) alongside the generated init data.
     /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs.
     fn encrypt_inplace<const LEN: usize>(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         data: &mut [u8; LEN],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
@@ -684,7 +681,7 @@ pub trait BlockCipherEncryptor<
     /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
     /// to consume. See that method for why.
     fn encrypt_rng_inplace<const LEN: usize>(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
         data: &mut [u8; LEN],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
@@ -1399,8 +1396,11 @@ pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG
 
 /// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose
 /// notes on in-place operation, arbitrary lengths and the `Result` all apply here too.
-pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
-    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>
+pub trait StreamCipherDecryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+>: SymmetricCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, 0>
 {
     /// Streaming: decrypts `data`, of any length, in place. A sequence of calls is equivalent to
     /// one call over the concatenation, whatever the chunking, exactly as for
@@ -1412,7 +1412,7 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     /// One-shot: decrypts `data` in place from the given init data. Returns the number of bytes
     /// written; see [`Self::do_decrypt_inplace`].
     fn decrypt_inplace(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
         data: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
@@ -1445,8 +1445,11 @@ pub trait StreamCipherDecryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// The data is a `&mut [u8]` because every length is valid, including zero.
 /// How the keystream is produced internally -- in 64-byte blocks, in words, a bit
 /// at a time -- is the cipher's business and must not leak to the caller.
-pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize>:
-    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
+pub trait StreamCipherEncryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+>: SymmetricCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, 0>
 {
     /// Streaming: encrypts `data`, of any length, in place; on top of the generic APIs offered by
     /// [`SymmetricCipherEncryptor`], a stream cipher can offer `_inplace()` versions since a stream
@@ -1472,7 +1475,7 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     /// # Errors
     /// Whatever [`SymmetricCipherEncryptor::do_encrypt_init`] or [`Self::do_encrypt_inplace`] returns.
     fn encrypt_inplace(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         data: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
@@ -1490,7 +1493,7 @@ pub trait StreamCipherEncryptor<const KEY_LEN: usize, const INIT_DATA_LEN: usize
     /// # Errors
     /// Whatever [`SymmetricCipherEncryptor::do_encrypt_init_rng`] or [`Self::do_encrypt_inplace`] returns.
     fn encrypt_rng_inplace(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
         data: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
@@ -1563,6 +1566,39 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
     ) -> Result<Self, SuspendableError>;
 }
 
+/// A key for a specific symmetric cipher algorithm, which is a shallow wrapper for a KeyMateriol,
+/// allowing for binding a specific key to a specific algorithm.
+pub trait SymmetricCipherKey<const KEY_LEN: usize>: Clone + PartialEq + Eq + Sized {
+    /// Instantiate a new SymmetricCipherKey from raw bytes: a passthrough to
+    /// [`KeyMaterial::from_bytes_as_type`] with [`KeyType::SymmetricCipherKey`], then
+    /// [`from_keymaterial`](Self::from_keymaterial).
+    fn from_bytes(bytes: &[u8; KEY_LEN]) -> Result<Self, KeyMaterialError> {
+        Self::from_keymaterial(KeyMaterial::<KEY_LEN>::from_bytes_as_type(
+            bytes,
+            KeyType::SymmetricCipherKey,
+        )?)
+    }
+    /// Instantiate a new SymmetricCipherKey from a KeyMaterial.
+    /// Must be [`KeyType::SymmetricCipherKey`] and have sufficient entropy.
+    fn from_keymaterial(key: KeyMaterial<KEY_LEN>) -> Result<Self, KeyMaterialError>;
+    /// Get a ref to the inner key material.
+    fn get_key(&self) -> &KeyMaterial<KEY_LEN>;
+
+    /// A fresh key drawn from `rng`: `KEY_LEN` bytes, tagged [`KeyType::SymmetricCipherKey`] at
+    /// the RNG's security strength, then [`from_keymaterial`](Self::from_keymaterial). An RNG
+    /// instantiated below the strength the key type requires is therefore refused.
+    fn new_from_rng(rng: &mut dyn RNG) -> Result<Self, RNGError> {
+        let mut key = KeyMaterial::<KEY_LEN>::from_rng(rng)?;
+        key.set_key_type(KeyType::SymmetricCipherKey)?;
+        Ok(Self::from_keymaterial(key)?)
+    }
+
+    /// A fresh key from an OS-seeded DRBG of the strength the key needs:
+    /// [`new_from_rng`](Self::new_from_rng) over HashDRBG-SHA256 for a 128-bit key, HashDRBG-SHA512
+    /// for 192- and 256-bit keys.
+    fn new_from_os() -> Result<Self, RNGError>;
+}
+
 /// The decryption half of a symmetric cipher's arbitrary-length API. See
 /// [`SymmetricCipherEncryptor`] for the shape of the API and the meaning of `FINAL_LEN`; this is
 /// its mirror image, and the two are implemented by paired types.
@@ -1580,6 +1616,7 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// [`do_update_out`](Self::do_decrypt_out), [`do_decrypt_final`](Self::do_decrypt_final) and
 /// [`decrypt_out_len`](Self::decrypt_out_len).
 pub trait SymmetricCipherDecryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const FINAL_LEN: usize,
@@ -1593,7 +1630,7 @@ pub trait SymmetricCipherDecryptor<
     /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
     fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError>;
 
@@ -1706,7 +1743,7 @@ pub trait SymmetricCipherDecryptor<
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
         ciphertext: &[u8],
         plaintext: &mut [u8],
@@ -1739,7 +1776,7 @@ pub trait SymmetricCipherDecryptor<
     /// `Vec<u8>` of exactly the recovered length. Only available with the `std` feature.
     #[cfg(feature = "std")]
     fn decrypt(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
         ciphertext: &[u8],
     ) -> Result<Vec<u8>, SymmetricCipherError> {
@@ -1773,6 +1810,7 @@ pub trait SymmetricCipherDecryptor<
 /// constructors, [`update_out_len`](Self::do_encrypt_out_len), [`do_update_out`](Self::do_encrypt_out),
 /// [`do_encrypt_final`](Self::do_encrypt_final) and [`encrypt_out_len`](Self::encrypt_out_len).
 pub trait SymmetricCipherEncryptor<
+    K: SymmetricCipherKey<KEY_LEN>,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const FINAL_LEN: usize,
@@ -1786,9 +1824,7 @@ pub trait SymmetricCipherEncryptor<
     /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
     /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    fn do_encrypt_init(key: &K) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
     /// As [`do_encrypt_init`](Self::do_encrypt_init), but sources randomness from the provided RNG.
     ///
@@ -1801,7 +1837,7 @@ pub trait SymmetricCipherEncryptor<
     /// [`SymmetricCipherError`]. Implementations with `INIT_DATA_LEN > 0` must draw their init
     /// data from `rng` and must not panic.
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
@@ -1906,7 +1942,7 @@ pub trait SymmetricCipherEncryptor<
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return.
     fn encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<([u8; INIT_DATA_LEN], usize), SymmetricCipherError> {
@@ -1933,7 +1969,7 @@ pub trait SymmetricCipherEncryptor<
     /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
     /// to consume. See that method for why.
     fn encrypt_rng_out(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
         plaintext: &[u8],
         ciphertext: &mut [u8],
@@ -1954,7 +1990,7 @@ pub trait SymmetricCipherEncryptor<
     /// One-shot, allocating: as [`encrypt_out`](Self::encrypt_out), returning the ciphertext as a
     /// `Vec<u8>`. Only available with the `std` feature.
     fn encrypt(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         plaintext: &[u8],
     ) -> Result<([u8; INIT_DATA_LEN], Vec<u8>), SymmetricCipherError> {
         let mut ciphertext = vec![0u8; Self::encrypt_out_len(plaintext.len())];

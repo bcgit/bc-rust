@@ -12,27 +12,26 @@ use bouncycastle_cipher::modes::hazmat::Ecb;
 use bouncycastle_cipher::modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
     StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    SymmetricCipherEncryptor, SymmetricCipherKey,
 };
-use bouncycastle_core_test_framework::ToyBlockCipher;
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
+use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
 
-type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
-type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
-type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
-type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
-type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
-type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
-type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
-type ToyPaddedEnc = PaddedBlockCipherEncryptor<ToyCbc<Encrypting>, PKCS7, 16, 16, 16>;
-type ToyPaddedDec = PaddedBlockCipherDecryptor<ToyCbc<Decrypting>, PKCS7, 16, 16, 16>;
+type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
+type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
+type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
+type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
+type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, ToyCipherKey, 16, 16, 12>;
+type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
+type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, ToyCipherKey, 16, 16, 12, 16>;
+type ToyPaddedEnc = PaddedBlockCipherEncryptor<ToyCbc<Encrypting>, PKCS7, ToyCipherKey, 16, 16, 16>;
+type ToyPaddedDec = PaddedBlockCipherDecryptor<ToyCbc<Decrypting>, PKCS7, ToyCipherKey, 16, 16, 16>;
 
-fn key() -> KeyMaterial<16> {
-    KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
+fn key() -> ToyCipherKey {
+    ToyCipherKey::from_bytes(&[0x42; 16]).unwrap()
 }
 
 fn message(len: usize) -> Vec<u8> {
@@ -43,7 +42,7 @@ fn message(len: usize) -> Vec<u8> {
 /// with `finish`. Whatever `finish` returns must be identical for the two.
 fn round_trip<const N: usize, C>(cipher: C, finish: impl Fn(C) -> Vec<u8>) -> Vec<u8>
 where
-    C: SuspendableKeyed<N, Key = KeyMaterial<16>> + Clone,
+    C: SuspendableKeyed<N, Key = ToyCipherKey> + Clone,
 {
     let key = key();
     TestFrameworkSuspendableKeyedState::new().test(&cipher, &key);

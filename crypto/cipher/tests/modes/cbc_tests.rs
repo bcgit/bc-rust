@@ -8,20 +8,20 @@ mod common;
 
 use bouncycastle_cipher::modes::Cbc;
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_core_test_framework::ToyCipherKey;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
-type ToyCbc<Dir> = Cbc<Toy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedCbc<Dir> = Cbc<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedFourCbc<Dir> = Cbc<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
+type ToyCbc<Dir> = Cbc<Toy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedCbc<Dir> = Cbc<SwappedPairToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedFourCbc<Dir> = Cbc<SwappedFourToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
 
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
 /// block-shaped.
 fn enc_blocks<const N: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<ToyCipherKey, TOY_LEN, TOY_LEN, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
@@ -31,7 +31,7 @@ fn enc_blocks<const N: usize>(
 
 /// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<ToyCipherKey, TOY_LEN, TOY_LEN, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
@@ -41,7 +41,7 @@ fn dec_blocks<const N: usize>(
 
 /// The flat streaming method `do_encrypt_inplace`, by value.
 fn enc_flat<const LEN: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<ToyCipherKey, TOY_LEN, TOY_LEN, TOY_LEN>,
     plaintext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *plaintext;
@@ -51,7 +51,7 @@ fn enc_flat<const LEN: usize>(
 
 /// The flat streaming method `do_decrypt_inplace`, by value.
 fn dec_flat<const LEN: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<ToyCipherKey, TOY_LEN, TOY_LEN, TOY_LEN>,
     ciphertext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *ciphertext;
@@ -64,13 +64,13 @@ fn dec_flat<const LEN: usize>(
 /// The toy must be a real permutation before any conclusion drawn from it is worth anything.
 #[test]
 fn the_toy_permutation_conforms_to_the_trait() {
-    TestFrameworkElectronicCodeBook::new().test::<TOY_LEN, TOY_LEN, Toy>();
+    TestFrameworkElectronicCodeBook::new().test::<TOY_LEN, TOY_LEN, ToyCipherKey, Toy>();
 }
 
 #[test]
 fn cbc_conforms_to_the_block_cipher_framework() {
     TestFrameworkBlockCipher::new()
-        .test::<TOY_LEN, TOY_LEN, TOY_LEN, ToyCbc<Encrypting>, ToyCbc<Decrypting>>();
+        .test::<TOY_LEN, TOY_LEN, TOY_LEN, ToyCipherKey, ToyCbc<Encrypting>, ToyCbc<Decrypting>>();
 }
 
 // ---- chaining and call sequencing --------------------------------------------------------
@@ -349,16 +349,6 @@ fn identical_plaintext_gives_different_ciphertext() {
         first[TOY_LEN..],
         "chaining should break the ECB pattern within a message"
     );
-}
-
-// ---- key handling ------------------------------------------------------------------------
-
-#[test]
-fn a_key_of_the_wrong_type_is_rejected() {
-    let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8) + 1);
-    let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
-    assert!(ToyCbc::<Encrypting>::do_encrypt_init(&seed).is_err());
-    assert!(ToyCbc::<Decrypting>::do_decrypt_init(&seed, &[0u8; TOY_LEN]).is_err());
 }
 
 /// The one-shots (`encrypt` / `decrypt` on a `[u8; LEN]`, in place) must produce exactly what the

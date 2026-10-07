@@ -25,11 +25,12 @@
 //! reason [`FixedSeedRNG`](crate::FixedSeedRNG) is: it is a test double, and this crate is only
 //! ever a dev-dependency.
 
-use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::errors::{KeyMaterialError, RNGError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::Algorithm;
+use bouncycastle_core::traits::{Algorithm, SymmetricCipherKey};
+use bouncycastle_rng::HashDRBG_SHA256;
 
 /// Key and block length of [`ToyBlockCipher`]: the same as AES-128, so the toy exercises the same
 /// shapes a real cipher would.
@@ -47,7 +48,7 @@ impl Algorithm for ToyBlockCipher {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl ElectronicCodeBook<TOY_BLOCK_LEN, TOY_BLOCK_LEN> for ToyBlockCipher {
+impl ElectronicCodeBook<ToyCipherKey, TOY_BLOCK_LEN, TOY_BLOCK_LEN> for ToyBlockCipher {
     /// Rejects the same keys a real permutation would, so that key-policy checks are meaningful.
     fn new(key: &KeyMaterial<TOY_BLOCK_LEN>) -> Result<Self, SymmetricCipherError> {
         if key.key_type() != KeyType::SymmetricCipherKey {
@@ -103,5 +104,33 @@ impl ElectronicCodeBook<TOY_BLOCK_LEN, TOY_BLOCK_LEN> for ToyBlockCipher {
         for block in blocks.iter_mut() {
             self.decrypt_block(block);
         }
+    }
+}
+
+/// The key type for a mode built over [`ToyBlockCipher`]: a 16-byte symmetric cipher key of at
+/// least 128-bit strength, so the modes' key-policy checks behave as they do with a real key.
+///
+/// One key type for every mode is fine for a toy -- the per-mode distinction is what the real
+/// cipher crates make, and it is their tests that check it.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ToyCipherKey(KeyMaterial<TOY_BLOCK_LEN>);
+
+impl SymmetricCipherKey<TOY_BLOCK_LEN> for ToyCipherKey {
+    fn from_keymaterial(key: KeyMaterial<TOY_BLOCK_LEN>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_128bit {
+            return Err(KeyMaterialError::SecurityStrength("ToyCipherKey needs a 128-bit key"));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<TOY_BLOCK_LEN> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA256::new_from_os())
     }
 }

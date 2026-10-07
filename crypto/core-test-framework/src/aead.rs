@@ -18,8 +18,7 @@
 use crate::symmetric_ciphers::TestFrameworkSymmetricCipher;
 use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherKey};
 
 /// Instance of the test framework.
 pub struct TestFrameworkAEADCipher {
@@ -81,8 +80,9 @@ impl TestFrameworkAEADCipher {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: AEADCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        D: AEADCipherDecryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
     >(
         &self,
     ) {
@@ -93,13 +93,9 @@ impl TestFrameworkAEADCipher {
         // No AAD and the tag inline is the plain symmetric-cipher contract.
         let mut symmetric = TestFrameworkSymmetricCipher::new();
         symmetric.fixed_message_len = self.fixed_message_len;
-        symmetric.test_encryptor_decryptor::<KEY_LEN, NONCE_LEN, FINAL_LEN, E, D>();
+        symmetric.test_encryptor_decryptor::<KEY_LEN, NONCE_LEN, FINAL_LEN, K, E, D>();
 
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
+        let key = K::from_bytes(DUMMY_SEED[..KEY_LEN].try_into().unwrap()).unwrap();
         let aad: &[u8] = b"some associated data";
         let pinned = [0xA5u8; NONCE_LEN];
 
@@ -756,23 +752,34 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: AEADCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        D: AEADCipherDecryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
     >(
         &self,
     ) {
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
-        Self::round_trip_at_every_length_and_chunking::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, E, D>(
+        let key = K::from_bytes(DUMMY_SEED[..KEY_LEN].try_into().unwrap()).unwrap();
+        Self::round_trip_at_every_length_and_chunking::<
+            KEY_LEN,
+            NONCE_LEN,
+            TAG_LEN,
+            FINAL_LEN,
+            K,
+            E,
+            D,
+        >(&key);
+        Self::tampering_and_short_input_are_rejected::<
+            KEY_LEN,
+            NONCE_LEN,
+            TAG_LEN,
+            FINAL_LEN,
+            K,
+            E,
+            D,
+        >(&key);
+        Self::undersized_buffers_are_rejected::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, K, E, D>(
             &key,
         );
-        Self::tampering_and_short_input_are_rejected::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, E, D>(
-            &key,
-        );
-        Self::undersized_buffers_are_rejected::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, E, D>(&key);
     }
 
     /// The pinned RNG every encryption draws its nonce from, so that all paths use one nonce.
@@ -787,9 +794,10 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: AEADCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
     >(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         msg: &[u8],
     ) -> (Vec<u8>, [u8; NONCE_LEN]) {
         let mut ct = vec![0u8; E::encrypt_out_len(msg.len())];
@@ -806,15 +814,16 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: AEADCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        D: AEADCipherDecryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
     >(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
     ) {
         for len in 0..=(4 * TAG_LEN + 5) {
             let msg = &DUMMY_SEED[..len];
             let (ct, nonce) =
-                Self::tagged_ct::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, E>(key, msg);
+                Self::tagged_ct::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, K, E>(key, msg);
 
             let mut pt = vec![0u8; D::decrypt_out_len(ct.len())];
             let n = D::decrypt_with_aad_out(key, &nonce, AAD, &ct, &mut pt).unwrap();
@@ -903,13 +912,14 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: AEADCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        D: AEADCipherDecryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
     >(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
     ) {
         let msg = &DUMMY_SEED[..10];
-        let (ct, nonce) = Self::tagged_ct::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, E>(key, msg);
+        let (ct, nonce) = Self::tagged_ct::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, K, E>(key, msg);
 
         let mut tampered = ct.clone();
         tampered[0] ^= 0xFF;
@@ -959,13 +969,14 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: AEADCipherEncryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        D: AEADCipherDecryptor<K, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
     >(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
     ) {
         let msg = &DUMMY_SEED[..8];
-        let (ct, nonce) = Self::tagged_ct::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, E>(key, msg);
+        let (ct, nonce) = Self::tagged_ct::<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN, K, E>(key, msg);
 
         let needed = E::encrypt_out_len(msg.len());
         assert_eq!(needed, msg.len() + TAG_LEN);

@@ -31,10 +31,11 @@
 //! any ciphertext. Decryption takes the IV directly, as init data.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_CFB8_128_Key, AES_CFB8_192_Key, AES_CFB8_256_Key};
 use bouncycastle_cipher::modes::Cfb8;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
@@ -119,11 +120,9 @@ fn bytes(hex_str: &str) -> Vec<u8> {
     hex::decode(hex_str).expect("valid hex")
 }
 
-fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
-    let raw = hex::decode(hex_str).expect("valid hex");
-    assert_eq!(raw.len(), N, "key length");
-    KeyMaterial::<N>::from_bytes_as_type(&raw, KeyType::SymmetricCipherKey)
-        .expect("a valid symmetric cipher key")
+fn key_material<K: SymmetricCipherKey<N>, const N: usize>(hex_str: &str) -> K {
+    let raw: [u8; N] = hex::decode(hex_str).expect("valid hex").try_into().expect("key length");
+    K::from_bytes(&raw).expect("a valid key")
 }
 
 /// Chunk sizes that cut across the four-byte batch and the 16-byte block: 1 is the single-byte
@@ -134,18 +133,19 @@ const CHUNKINGS: [usize; 7] = [1, 3, 4, 8, 9, 17, 18];
 ///
 /// Checks the whole message in one call, then in every chunking above -- the vector should not care
 /// how the calls are grouped.
-fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
+fn check_encrypt<P, K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = key_material::<K, KEY_LEN>(key_hex);
     let iv = block(IV);
     let plaintext = bytes(PLAINTEXT);
     let expected = bytes(expected_hex);
     assert_eq!(plaintext.len(), 18, "{section}: the CFB8 subsections use 18 one-byte segments");
 
     for chunk in [plaintext.len()].into_iter().chain(CHUNKINGS) {
-        let (mut enc, got_iv) = Cfb8::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
+        let (mut enc, got_iv) = Cfb8::<P, Encrypting, K, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
             &key,
             &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
         )
@@ -161,18 +161,19 @@ where
 }
 
 /// Runs one Appendix F.3 CFB8 decrypt subsection.
-fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
+fn check_decrypt<P, K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = key_material::<K, KEY_LEN>(key_hex);
     let iv = block(IV);
     let plaintext = bytes(PLAINTEXT);
     let ciphertext = bytes(ciphertext_hex);
 
     for chunk in [ciphertext.len()].into_iter().chain(CHUNKINGS) {
         let mut dec =
-            Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).unwrap();
+            Cfb8::<P, Decrypting, K, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).unwrap();
         let mut data = ciphertext.clone();
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).unwrap();
@@ -182,38 +183,38 @@ where
 
     // ...and the one-shot, where the IV is an input.
     let mut data = ciphertext.clone();
-    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_inplace(&key, &iv, &mut data).unwrap();
+    Cfb8::<P, Decrypting, K, KEY_LEN, BLOCK_LEN>::decrypt_inplace(&key, &iv, &mut data).unwrap();
     assert_eq!(data, plaintext, "{section}: one-shot");
 }
 
 #[test]
 fn f_3_7_cfb8_aes128_encrypt() {
-    check_encrypt::<AES128Internal, 16>("F.3.7", KEY_128, CIPHERTEXT_128);
+    check_encrypt::<AES128Internal, AES_CFB8_128_Key, 16>("F.3.7", KEY_128, CIPHERTEXT_128);
 }
 
 #[test]
 fn f_3_8_cfb8_aes128_decrypt() {
-    check_decrypt::<AES128Internal, 16>("F.3.8", KEY_128, CIPHERTEXT_128);
+    check_decrypt::<AES128Internal, AES_CFB8_128_Key, 16>("F.3.8", KEY_128, CIPHERTEXT_128);
 }
 
 #[test]
 fn f_3_9_cfb8_aes192_encrypt() {
-    check_encrypt::<AES192Internal, 24>("F.3.9", KEY_192, CIPHERTEXT_192);
+    check_encrypt::<AES192Internal, AES_CFB8_192_Key, 24>("F.3.9", KEY_192, CIPHERTEXT_192);
 }
 
 #[test]
 fn f_3_10_cfb8_aes192_decrypt() {
-    check_decrypt::<AES192Internal, 24>("F.3.10", KEY_192, CIPHERTEXT_192);
+    check_decrypt::<AES192Internal, AES_CFB8_192_Key, 24>("F.3.10", KEY_192, CIPHERTEXT_192);
 }
 
 #[test]
 fn f_3_11_cfb8_aes256_encrypt() {
-    check_encrypt::<AES256Internal, 32>("F.3.11", KEY_256, CIPHERTEXT_256);
+    check_encrypt::<AES256Internal, AES_CFB8_256_Key, 32>("F.3.11", KEY_256, CIPHERTEXT_256);
 }
 
 #[test]
 fn f_3_12_cfb8_aes256_decrypt() {
-    check_decrypt::<AES256Internal, 32>("F.3.12", KEY_256, CIPHERTEXT_256);
+    check_decrypt::<AES256Internal, AES_CFB8_256_Key, 32>("F.3.12", KEY_256, CIPHERTEXT_256);
 }
 
 /// The spec's tabulated **Input Blocks** are the shift register and its **Output Blocks** are
@@ -229,9 +230,10 @@ fn f_3_12_cfb8_aes256_decrypt() {
 /// a typo in any of them.
 #[test]
 fn the_tabulated_blocks_are_the_shift_register() {
-    let key = key_material::<16>(KEY_128);
+    let key = key_material::<AES_CFB8_128_Key, 16>(KEY_128);
     let perm =
-        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::new(&key).expect("a valid key");
+        <AES128Internal as ElectronicCodeBook<AES_CFB8_128_Key, 16, BLOCK_LEN>>::new(key.get_key())
+            .expect("a valid key");
     let plaintext = bytes(PLAINTEXT);
     let ciphertext = bytes(CIPHERTEXT_128);
 
@@ -259,7 +261,9 @@ fn the_tabulated_blocks_are_the_shift_register() {
 
         // Oj = CIPH_K(Ij) -- the *forward* cipher function, which is all CFB ever uses.
         let mut computed = input_block;
-        perm.encrypt_block(&mut computed);
+        <AES128Internal as ElectronicCodeBook<AES_CFB8_128_Key, 16, BLOCK_LEN>>::encrypt_block(
+            &perm, &mut computed,
+        );
         assert_eq!(
             computed,
             output_block,

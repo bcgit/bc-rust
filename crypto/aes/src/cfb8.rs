@@ -19,17 +19,15 @@
 //! Basic usage can be obtained via the [`StreamCipherEncryptor`] and [`StreamCipherDecryptor`] API:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CFB8_256;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_aes::{AES_CFB8_256, AES_CFB8_256_Key};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CFB8_256<Encrypting>;
 //! type AESDec = AES_CFB8_256<Decrypting>;
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
+//! let key = AES_CFB8_256_Key::new_from_os().expect("a fresh key");
 //!
 //! // An arbitrary plaintext to encrypt.
 //! // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
@@ -51,11 +49,11 @@
 //! length:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CFB8_128;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_aes::{AES_CFB8_128, AES_CFB8_128_Key};
 //! use bouncycastle_core::traits::{
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
 //!     SymmetricCipherEncryptor,
+//!     SymmetricCipherKey,
 //! };
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
@@ -63,8 +61,7 @@
 //! type AESEnc = AES_CFB8_128<Encrypting>;
 //! type AESDec = AES_CFB8_128<Decrypting>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES_CFB8_128_Key::new_from_os().expect("a fresh key");
 //!
 //! // An arbitrary plaintext to encrypt
 //! let plaintext = [0x5Au8; 50];
@@ -87,24 +84,24 @@
 //!
 //! ## Not interoperable with CFB
 //!
-//! CFB and CFB8 are not interchangeable: the same key and IV give a different ciphertext, so
-//! a message encrypted with one does not decrypt with the other.
+//! CFB and CFB8 are not interchangeable: the same key bytes and IV give a different ciphertext,
+//! so a message encrypted with one does not decrypt with the other. The key types make the
+//! mistake a compile error rather than a wrong answer: an [`AES_CFB8_128_Key`] is not an
+//! [`AES_CFB_128_Key`](crate::AES_CFB_128_Key).
 //!
-//! ```
-//! use bouncycastle_aes::{AES_CFB8_128, AES_CFB_128};
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! ```compile_fail
+//! use bouncycastle_aes::{AES_CFB8_128, AES_CFB_128, AES_CFB8_128_Key};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = AES_CFB8_128_Key::new_from_os().expect("a fresh key");
 //! let plaintext = *b"hello";
 //!
 //! let mut data = plaintext;
 //! let (_, iv) = AES_CFB8_128::<Encrypting>::encrypt_inplace(&key, &mut data).unwrap();
 //!
-//! // Decrypting CFB8 output as CFB128 does not recover the plaintext.
+//! // Decrypting CFB8 output as CFB128 is refused: `key` is an AES-CFB8 key.
 //! AES_CFB_128::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).unwrap();
-//! assert_ne!(data, plaintext);
 //! ```
 //!
 //! # 🚨 Security Considerations 🚨
@@ -115,6 +112,11 @@ use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Cfb8;
 
+use bouncycastle_core::errors::{KeyMaterialError, RNGError};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
+use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -124,12 +126,93 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 
 /// AES-128 in CFB8 mode.
 #[allow(non_camel_case_types)]
-pub type AES_CFB8_128<Dir> = Cfb8<AES128Internal, Dir, 16, AES_BLOCK_LEN>;
+pub type AES_CFB8_128<Dir> = Cfb8<AES128Internal, Dir, AES_CFB8_128_Key, 16, AES_BLOCK_LEN>;
+
+/// An AES-CFB8-128 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CFB8_128_Key(KeyMaterial<16>);
+
+impl SymmetricCipherKey<16> for AES_CFB8_128_Key {
+    fn from_keymaterial(key: KeyMaterial<16>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_128bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 128bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<16> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA256::new_from_os())
+    }
+}
 
 /// AES-192 in CFB8 mode.
 #[allow(non_camel_case_types)]
-pub type AES_CFB8_192<Dir> = Cfb8<AES192Internal, Dir, 24, AES_BLOCK_LEN>;
+pub type AES_CFB8_192<Dir> = Cfb8<AES192Internal, Dir, AES_CFB8_192_Key, 24, AES_BLOCK_LEN>;
+
+/// An AES-CFB8-192 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CFB8_192_Key(KeyMaterial<24>);
+
+impl SymmetricCipherKey<24> for AES_CFB8_192_Key {
+    fn from_keymaterial(key: KeyMaterial<24>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_192bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 192bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<24> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}
 
 /// AES-256 in CFB8 mode. See [`AES_CFB8_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CFB8_256<Dir> = Cfb8<AES256Internal, Dir, 32, AES_BLOCK_LEN>;
+pub type AES_CFB8_256<Dir> = Cfb8<AES256Internal, Dir, AES_CFB8_256_Key, 32, AES_BLOCK_LEN>;
+
+/// An AES-CFB8-256 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CFB8_256_Key(KeyMaterial<32>);
+
+impl SymmetricCipherKey<32> for AES_CFB8_256_Key {
+    fn from_keymaterial(key: KeyMaterial<32>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_256bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 256bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<32> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}
