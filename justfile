@@ -53,7 +53,7 @@ no-std-self-crates := [
 # builds can be validated by building with --no-default-features for a target tuple that does NOT support std
 # i.e., --target thumbv7em-none-eabi
 # tests must still be done in an std environment.
-# this list UST be updated in PRs that add this complete level of no_std support for crates.
+# this list MUST be updated in PRs that add this complete level of no_std support for crates.
 no-std-complete-crates := [
   "bouncycastle-core",
 ]
@@ -106,4 +106,4 @@ build-release-crate-no-std-self crate:
   cargo build --release -p {{crate}} --no-default-features
 
 build-release-crate-no-std-complete crate:
-  cargo build --release -p {{crate}} --no-default-features  --target thumbv7em-none-eabi
+  cargo build --release -p {{crate}} --no-default-features --target thumbv7em-none-eabi

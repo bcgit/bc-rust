@@ -7,7 +7,7 @@ use bouncycastle_core::key_material::{
 };
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{KDF, SecurityStrength};
-// emd imports needed for std
+// end imports needed for std
 
 /// Instance of the test framework.
 pub struct TestFrameworkKDF {

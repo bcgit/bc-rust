@@ -70,7 +70,7 @@ impl TestFrameworkMAC {
             assert_eq!(output_len, out.len());
         }
 
-        // Tetst .do_update(), .do_final_out()
+        // Test .do_update(), .do_final_out()
         // At the same time, test .output_len()
         let mut out = vec![0u8; expected_output.len()];
         let mut mac = M::new_allow_weak_key(key).unwrap();
