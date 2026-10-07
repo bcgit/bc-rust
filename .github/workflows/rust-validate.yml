@@ -1,0 +1,32 @@
+name: Rust Validate All
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate_all:
+    name: Validate All
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install no_std target
+        run: rustup target add thumbv7em-none-eabi
+
+      - name: Install just command runner
+        run: cargo install just # this takes approx 60s
+
+      - name: Run full tests and no_std validation
+        run: just validate-all # this also takes approx 60s

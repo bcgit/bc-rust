@@ -4,12 +4,12 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-bouncycastle-core.workspace = true
+bouncycastle-core = { workspace = true, default-features = true }
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-rng = { workspace = true, default-features = true }
 
 [[bench]]
 name = "base64_benches"
