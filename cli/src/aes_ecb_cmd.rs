@@ -18,11 +18,12 @@
 use crate::helpers::block_mode_helpers::{
     BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
+use bouncycastle::aes::hazmat::{AES_ECB_128_Key, AES_ECB_192_Key, AES_ECB_256_Key};
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::hazmat::Ecb;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::core::traits::SymmetricCipherKey;
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";
@@ -33,7 +34,11 @@ pub(crate) fn aes128_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
+    run::<AES128Internal, AES_ECB_128_Key, 16>(
+        action,
+        &load_key::<AES_ECB_128_Key, 16>(key, key_file, "AES-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes192_ecb_cmd(
@@ -42,7 +47,11 @@ pub(crate) fn aes192_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
+    run::<AES192Internal, AES_ECB_192_Key, 24>(
+        action,
+        &load_key::<AES_ECB_192_Key, 24>(key, key_file, "AES-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes256_ecb_cmd(
@@ -51,26 +60,28 @@ pub(crate) fn aes256_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
+    run::<AES256Internal, AES_ECB_256_Key, 32>(
+        action,
+        &load_key::<AES_ECB_256_Key, 32>(key, key_file, "AES-256"),
+        output_hex,
+    );
 }
 
 /// Dispatches to the shared streaming loops with `Ecb` filled in as the mode. `INIT_DATA_LEN` is 0,
 /// so the loops write and read no IV.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+fn run<P, K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+where
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
+            encrypt_stream::<Ecb<P, Encrypting, K, KEY_LEN, BLOCK_LEN>, K, KEY_LEN, 0>(
                 key, output_hex, MODE,
             )
         }
         CipherDirection::Decrypt => {
-            decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
+            decrypt_stream::<Ecb<P, Decrypting, K, KEY_LEN, BLOCK_LEN>, K, KEY_LEN, 0>(
                 key, output_hex, MODE,
             )
         }

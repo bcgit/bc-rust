@@ -2,14 +2,14 @@
 //! [`SymmetricCipherDecryptor`] and their stream-cipher refinement. The block-cipher and AEAD
 //! refinements have their own runners in [`crate::block_cipher`] and [`crate::aead`].
 
-use crate::{DUMMY_SEED, FixedSeedRNG};
+use crate::{DUMMY_SEED, FixedSeedRNG, with_key};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    SymmetricCipherEncryptor, SymmetricCipherKey,
 };
 
 /// Instance of the test framework.
@@ -64,16 +64,13 @@ impl TestFrameworkSymmetricCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const FINAL_LEN: usize,
-        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
-        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: SymmetricCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        D: SymmetricCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
     >(
         &self,
     ) {
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
+        let key = K::from_bytes(DUMMY_SEED[..KEY_LEN].try_into().unwrap()).unwrap();
         // Enough plaintext lengths to cross several final-chunk boundaries (a block, for padding).
         let align = self.required_alignment.max(1);
         let max_len = (3 * FINAL_LEN.max(1) + 5).next_multiple_of(align);
@@ -429,11 +426,11 @@ impl TestFrameworkSymmetricCipher {
         let mac_key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
                 .unwrap();
-        match E::do_encrypt_init(&mac_key) {
+        match with_key::<K, KEY_LEN, _>(mac_key.clone(), |k| E::do_encrypt_init(k)) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
         };
-        match D::do_decrypt_init(&mac_key, &init_data) {
+        match with_key::<K, KEY_LEN, _>(mac_key.clone(), |k| D::do_decrypt_init(k, &init_data)) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
         };
@@ -458,7 +455,7 @@ impl TestFrameworkSymmetricCipher {
             }
             do_hazardous_operations(&mut key, |key| key.set_security_strength(*ss)).unwrap();
 
-            match E::do_encrypt_init(&key) {
+            match with_key::<K, KEY_LEN, _>(key.clone(), |k| E::do_encrypt_init(k)) {
                 Ok(_) => assert!(
                     ss >= &E::MAX_SECURITY_STRENGTH,
                     "should have required a key at least as strong as the algorithm"
@@ -469,7 +466,7 @@ impl TestFrameworkSymmetricCipher {
                 ),
                 _ => panic!("Unexpected error"),
             };
-            match D::do_decrypt_init(&key, &init_data) {
+            match with_key::<K, KEY_LEN, _>(key.clone(), |k| D::do_decrypt_init(k, &init_data)) {
                 Ok(_) => assert!(ss >= &D::MAX_SECURITY_STRENGTH),
                 Err(SymmetricCipherError::KeyMaterialError(_)) => {
                     assert!(ss < &D::MAX_SECURITY_STRENGTH)
@@ -499,16 +496,13 @@ impl TestFrameworkStreamCipher {
     pub fn test<
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
-        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: StreamCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN>,
+        D: StreamCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN>,
     >(
         &self,
     ) {
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
+        let key = K::from_bytes(DUMMY_SEED[..KEY_LEN].try_into().unwrap()).unwrap();
 
         // one-shot, in place: must round-trip, and report every byte as written.
         let mut buf = *DUMMY_SEED;
@@ -618,11 +612,13 @@ impl TestFrameworkStreamCipher {
         let mac_key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
                 .unwrap();
-        match E::do_encrypt_init(&mac_key) {
+        match with_key::<K, KEY_LEN, _>(mac_key.clone(), |k| E::do_encrypt_init(k)) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
-        match D::do_decrypt_init(&mac_key, &[0u8; INIT_DATA_LEN]) {
+        match with_key::<K, KEY_LEN, _>(mac_key.clone(), |k| {
+            D::do_decrypt_init(k, &[0u8; INIT_DATA_LEN])
+        }) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
@@ -669,9 +665,15 @@ impl TestFrameworkStreamCipher {
                 }
                 _ => panic!("Unexpected error"),
             };
-            check(E::do_encrypt_init(&key).map(|_| ()), &E::MAX_SECURITY_STRENGTH);
             check(
-                D::do_decrypt_init(&key, &[0u8; INIT_DATA_LEN]).map(|_| ()),
+                with_key::<K, KEY_LEN, _>(key.clone(), |k| E::do_encrypt_init(k)).map(|_| ()),
+                &E::MAX_SECURITY_STRENGTH,
+            );
+            check(
+                with_key::<K, KEY_LEN, _>(key.clone(), |k| {
+                    D::do_decrypt_init(k, &[0u8; INIT_DATA_LEN])
+                })
+                .map(|_| ()),
                 &D::MAX_SECURITY_STRENGTH,
             );
         }

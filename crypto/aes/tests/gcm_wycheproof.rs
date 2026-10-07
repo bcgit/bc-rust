@@ -37,6 +37,7 @@
 //! case out.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_GCM_128_Key, AES_GCM_192_Key, AES_GCM_256_Key};
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, Gcm};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -44,25 +45,29 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
 /// to call them a cipher key. Same helper as the ACVP and CCM suites in this crate.
-fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
-    assert_eq!(bytes.len(), N, "key length should match the parameter set");
-    let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
-        .expect("wycheproof key bytes fit the buffer");
+fn cipher_key<K: SymmetricCipherKey<N>, const N: usize>(bytes: &[u8]) -> K {
+    K::from_keymaterial({
+        assert_eq!(bytes.len(), N, "key length should match the parameter set");
+        let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
+            .expect("wycheproof key bytes fit the buffer");
 
-    if key.key_type() != KeyType::SymmetricCipherKey {
-        do_hazardous_operations(&mut key, |k| {
-            k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(SecurityStrength::from_bytes(N))
-        })
-        .expect("promoting a wycheproof test key");
-    }
-    key
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            do_hazardous_operations(&mut key, |k| {
+                k.set_key_type(KeyType::SymmetricCipherKey)?;
+                k.set_security_strength(SecurityStrength::from_bytes(N))
+            })
+            .expect("promoting a wycheproof test key");
+        }
+        key
+    })
+    .expect("a valid key")
 }
 
 /// Runs one case at a fully-instantiated `(KEY_LEN, TAG_LEN, P)`.
@@ -73,7 +78,7 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// reason to reproduce a deliberately corrupted tag -- and it must fail the tag check rather than
 /// return a payload, leaving the caller's buffer zeroized as the trait contract requires.
 #[allow(clippy::too_many_arguments)]
-fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
+fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P, K>(
     tc_id: u64,
     key_bytes: &[u8],
     iv: [u8; GCM_NONCE_LEN],
@@ -83,16 +88,17 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     expected_tag: &[u8],
     valid: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, 16>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = cipher_key::<K, KEY_LEN>(key_bytes);
     let tag: [u8; TAG_LEN] =
         expected_tag.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad tag length"));
 
     if valid {
         let mut ct = vec![0u8; msg.len()];
         let (got_iv, written, got_tag) =
-            Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
+            Gcm::<P, Encrypting, K, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
                 &key,
                 &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
                 aad,
@@ -107,7 +113,7 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     }
 
     let mut plaintext = vec![0u8; expected_ct.len()];
-    match Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached_out(
+    match Gcm::<P, Decrypting, K, KEY_LEN, TAG_LEN>::decrypt_detached_out(
         &key, &iv, aad, expected_ct, &tag, &mut plaintext,
     ) {
         Ok(n) => {
@@ -149,13 +155,13 @@ fn dispatch(
         return false;
     }
     match key_bytes.len() {
-        16 => run_case::<16, 16, AES128Internal>(
+        16 => run_case::<16, 16, AES128Internal, AES_GCM_128_Key>(
             tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
         ),
-        24 => run_case::<24, 16, AES192Internal>(
+        24 => run_case::<24, 16, AES192Internal, AES_GCM_192_Key>(
             tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
         ),
-        32 => run_case::<32, 16, AES256Internal>(
+        32 => run_case::<32, 16, AES256Internal, AES_GCM_256_Key>(
             tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
         ),
         _ => return false,

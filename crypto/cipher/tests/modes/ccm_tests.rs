@@ -17,18 +17,21 @@ use bouncycastle_cipher::modes::{Ccm, CcmDecryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
+use bouncycastle_core_test_framework::ToyCipherKey;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 /// The default shape under test: a 12-byte nonce, so `q = 3`, and a full 16-byte tag.
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
 
-type ToyCcm<Dir> = Ccm<Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type SwappedCcm<Dir> = Ccm<SwappedPairToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type SwappedFourCcm<Dir> = Ccm<SwappedFourToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type ForwardOnlyCcm<Dir> = Ccm<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type ToyCcm<Dir> = Ccm<Toy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type SwappedCcm<Dir> = Ccm<SwappedPairToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type SwappedFourCcm<Dir> =
+    Ccm<SwappedFourToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type ForwardOnlyCcm<Dir> =
+    Ccm<ForwardOnlyToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
 
 fn pinned_nonce() -> [u8; NONCE_LEN] {
     core::array::from_fn(|i| 0xA0 ^ (i as u8))
@@ -39,14 +42,14 @@ fn message(len: usize) -> Vec<u8> {
 }
 
 /// One-shot Sec 6.1 over the toy permutation `P`, detached: the ciphertext and the tag.
-fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
+fn encrypt<P: ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
     let mut ct = vec![0u8; plaintext.len()];
     let (written, tag) =
-        Ccm::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
+        Ccm::<P, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
             &toy_key(),
             nonce,
             aad,
@@ -59,13 +62,13 @@ fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
 }
 
 /// Sec 6.1 through the streaming API over `P`, `chunk` bytes per `do_encrypt_update`.
-fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
+fn stream_encrypt<P: ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
     chunk: usize,
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
-    let mut ccm = Ccm::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
+    let mut ccm = Ccm::<P, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
         &toy_key(),
         nonce,
         aad,
@@ -81,14 +84,14 @@ fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
 }
 
 /// Sec 6.2 through the streaming API over `P`, `chunk` bytes per `do_decrypt_update`.
-fn stream_decrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
+fn stream_decrypt<P: ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     ciphertext: &[u8],
     tag: &[u8; TAG_LEN],
     chunk: usize,
 ) -> Result<Vec<u8>, SymmetricCipherError> {
-    let mut ccm = Ccm::<P, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
+    let mut ccm = Ccm::<P, Decrypting, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
         &toy_key(),
         nonce,
         aad,
@@ -310,8 +313,8 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 
     macro_rules! check_tag_len {
         ($t:literal) => {{
-            type Enc = Ccm<Toy, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
-            type Dec = Ccm<Toy, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
+            type Enc = Ccm<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
+            type Dec = Ccm<Toy, Decrypting, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
             let mut ct = vec![0u8; plaintext.len()];
             let (_, tag) =
                 Enc::encrypt_detached_out(&toy_key(), &nonce, aad, &plaintext, &mut ct).unwrap();
@@ -348,21 +351,20 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 /// is the mode's business and not the permutation's.
 #[test]
 fn every_permitted_nonce_length_works() {
-    fn round_trip<P, const KEY_LEN: usize, const N: usize>(
-        key: &KeyMaterial<KEY_LEN>,
-        expected_max_payload: u64,
-    ) where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+    fn round_trip<P, K, const KEY_LEN: usize, const N: usize>(key: &K, expected_max_payload: u64)
+    where
+        K: SymmetricCipherKey<KEY_LEN>,
+        P: ElectronicCodeBook<K, KEY_LEN, 16>,
     {
         // The full 16-byte tag, deliberately. `Toy` permutes each byte independently, so under
         // it the CBC-MAC is sixteen independent byte-chains and a `t`-byte tag witnesses only the
         // first `t` of them; the last nonce octet flipped below sits at block octet `N`, which an
         // 8-byte tag would never see once `N >= 8`. Real AES mixes every byte into every other,
         // so this is a limit of the toy, not of the mode.
-        type Enc<P, const K: usize, const N: usize> = Ccm<P, Encrypting, K, 16, N, 16>;
-        type Dec<P, const K: usize, const N: usize> = Ccm<P, Decrypting, K, 16, N, 16>;
+        type Enc<P, K, const KL: usize, const N: usize> = Ccm<P, Encrypting, K, KL, 16, N, 16>;
+        type Dec<P, K, const KL: usize, const N: usize> = Ccm<P, Decrypting, K, KL, 16, N, 16>;
         assert_eq!(
-            Enc::<P, KEY_LEN, N>::MAX_PAYLOAD_LEN,
+            Enc::<P, K, KEY_LEN, N>::MAX_PAYLOAD_LEN,
             expected_max_payload,
             "n = {N}: the payload limit 2^8q - 1 that q = 15 - n implies"
         );
@@ -371,12 +373,12 @@ fn every_permitted_nonce_length_works() {
         let plaintext = message(100);
         let mut ct = vec![0u8; plaintext.len()];
         let (_, tag) =
-            Enc::<P, KEY_LEN, N>::encrypt_detached_out(key, &nonce, b"aad", &plaintext, &mut ct)
+            Enc::<P, K, KEY_LEN, N>::encrypt_detached_out(key, &nonce, b"aad", &plaintext, &mut ct)
                 .unwrap();
         assert_ne!(ct, plaintext, "nonce length {N}: must actually encrypt");
 
         let mut back = vec![0u8; plaintext.len()];
-        Dec::<P, KEY_LEN, N>::decrypt_detached_out(key, &nonce, b"aad", &ct, &tag, &mut back)
+        Dec::<P, K, KEY_LEN, N>::decrypt_detached_out(key, &nonce, b"aad", &ct, &tag, &mut back)
             .unwrap();
         assert_eq!(back, plaintext, "nonce length {N}: round trip");
 
@@ -386,7 +388,7 @@ fn every_permitted_nonce_length_works() {
         wrong[N - 1] ^= 0x01;
         assert!(
             matches!(
-                Dec::<P, KEY_LEN, N>::decrypt_detached_out(
+                Dec::<P, K, KEY_LEN, N>::decrypt_detached_out(
                     key, &wrong, b"aad", &ct, &tag, &mut back
                 ),
                 Err(SymmetricCipherError::AEADTagCheckFailed)
@@ -397,13 +399,13 @@ fn every_permitted_nonce_length_works() {
 
     // `q = 8` makes `2^8q` exactly `2^64`, which does not fit a `u64`, so the bound is `u64::MAX`.
     let toy = toy_key();
-    round_trip::<Toy, TOY_LEN, 7>(&toy, u64::MAX);
-    round_trip::<Toy, TOY_LEN, 8>(&toy, (1 << 56) - 1);
-    round_trip::<Toy, TOY_LEN, 9>(&toy, (1 << 48) - 1);
-    round_trip::<Toy, TOY_LEN, 10>(&toy, (1 << 40) - 1);
-    round_trip::<Toy, TOY_LEN, 11>(&toy, (1 << 32) - 1);
-    round_trip::<Toy, TOY_LEN, 12>(&toy, (1 << 24) - 1);
-    round_trip::<Toy, TOY_LEN, 13>(&toy, (1 << 16) - 1);
+    round_trip::<Toy, ToyCipherKey, TOY_LEN, 7>(&toy, u64::MAX);
+    round_trip::<Toy, ToyCipherKey, TOY_LEN, 8>(&toy, (1 << 56) - 1);
+    round_trip::<Toy, ToyCipherKey, TOY_LEN, 9>(&toy, (1 << 48) - 1);
+    round_trip::<Toy, ToyCipherKey, TOY_LEN, 10>(&toy, (1 << 40) - 1);
+    round_trip::<Toy, ToyCipherKey, TOY_LEN, 11>(&toy, (1 << 32) - 1);
+    round_trip::<Toy, ToyCipherKey, TOY_LEN, 12>(&toy, (1 << 24) - 1);
+    round_trip::<Toy, ToyCipherKey, TOY_LEN, 13>(&toy, (1 << 16) - 1);
 }
 
 /// Which entry points release unauthenticated plaintext on a forgery, pinned side by side.
@@ -451,7 +453,7 @@ fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
     // the update that brings it, the finals release nothing, and a rejected tag cannot take it
     // back. The detached final leaves its (unused) buffer alone rather than zeroizing it, since
     // there is nothing of the plaintext in it to zeroize.
-    type Dec = CcmDecryptor<Toy, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, 48, 19>;
+    type Dec = CcmDecryptor<Toy, ToyCipherKey, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, 48, 19>;
 
     let mut dec = Dec::do_decrypt_init(&toy_key(), &nonce).unwrap();
     dec.do_update_aad(b"aad").unwrap();

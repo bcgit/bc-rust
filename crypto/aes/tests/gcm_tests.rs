@@ -10,16 +10,17 @@
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+use bouncycastle_aes::{AES_GCM_128_Key, AES_GCM_192_Key, AES_GCM_256_Key};
 use bouncycastle_cipher::modes::Gcm;
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADTaggedLayout;
 
-fn key<const N: usize>() -> KeyMaterial<N> {
+fn key<K: SymmetricCipherKey<N>, const N: usize>() -> K {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
+    K::from_bytes(&bytes).expect("a valid key")
 }
 
 /// The alias must resolve to exactly the type it claims to, at both directions.
@@ -29,11 +30,11 @@ fn the_alias_names_the_expected_type() {
 
     assert_eq!(
         size_of::<AES_GCM_128<Encrypting>>(),
-        size_of::<Gcm<AES128Internal, Encrypting, 16, 16>>()
+        size_of::<Gcm<AES128Internal, Encrypting, AES_GCM_128_Key, 16, 16>>()
     );
     assert_eq!(
         size_of::<AES_GCM_128<Decrypting>>(),
-        size_of::<Gcm<AES128Internal, Decrypting, 16, 16>>()
+        size_of::<Gcm<AES128Internal, Decrypting, AES_GCM_128_Key, 16, 16>>()
     );
 }
 
@@ -47,7 +48,7 @@ fn all_three_key_lengths_conform_to_the_aead_suite() {
         12,
         16,
         16,
-        AES_GCM_128<Encrypting>,
+        AES_GCM_128_Key, AES_GCM_128<Encrypting>,
         AES_GCM_128<Decrypting>,
     >();
     framework.test_encryptor_decryptor::<
@@ -55,7 +56,7 @@ fn all_three_key_lengths_conform_to_the_aead_suite() {
         12,
         16,
         16,
-        AES_GCM_192<Encrypting>,
+        AES_GCM_192_Key, AES_GCM_192<Encrypting>,
         AES_GCM_192<Decrypting>,
     >();
     framework.test_encryptor_decryptor::<
@@ -63,7 +64,7 @@ fn all_three_key_lengths_conform_to_the_aead_suite() {
         12,
         16,
         16,
-        AES_GCM_256<Encrypting>,
+        AES_GCM_256_Key, AES_GCM_256<Encrypting>,
         AES_GCM_256<Decrypting>,
     >();
 }
@@ -75,8 +76,12 @@ fn all_three_key_lengths_conform_to_the_aead_suite() {
 #[test]
 fn the_inline_tag_layout_conforms_at_every_edge() {
     let framework = TestFrameworkAEADTaggedLayout::new();
-    framework.test::<16, 12, 16, 16, AES_GCM_128<Encrypting>, AES_GCM_128<Decrypting>>();
-    framework.test::<32, 12, 16, 16, AES_GCM_256<Encrypting>, AES_GCM_256<Decrypting>>();
+    framework
+        .test::<16, 12, 16, 16, AES_GCM_128_Key, AES_GCM_128<Encrypting>, AES_GCM_128<Decrypting>>(
+        );
+    framework
+        .test::<32, 12, 16, 16, AES_GCM_256_Key, AES_GCM_256<Encrypting>, AES_GCM_256<Decrypting>>(
+        );
 }
 
 /// The nonce is generated per encryption, so the same plaintext gives different ciphertext, and
@@ -87,13 +92,17 @@ fn each_encryption_gets_a_fresh_nonce() {
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..16 {
         let mut ct = [0u8; 46];
-        let (nonce, _, tag) =
-            AES_GCM_128::<Encrypting>::encrypt_detached_out(&key::<16>(), b"aad", &data, &mut ct)
-                .unwrap();
+        let (nonce, _, tag) = AES_GCM_128::<Encrypting>::encrypt_detached_out(
+            &key::<AES_GCM_128_Key, 16>(),
+            b"aad",
+            &data,
+            &mut ct,
+        )
+        .unwrap();
         assert!(seen.insert(nonce), "nonce repeated across encryptions");
         let mut pt = [0u8; 46];
         AES_GCM_128::<Decrypting>::decrypt_detached_out(
-            &key::<16>(),
+            &key::<AES_GCM_128_Key, 16>(),
             &nonce,
             b"aad",
             &ct,

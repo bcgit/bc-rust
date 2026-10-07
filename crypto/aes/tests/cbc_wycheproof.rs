@@ -27,12 +27,14 @@
 //! asserted to be the vector's.
 
 use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+use bouncycastle_aes::{AES_CBC_128_Key, AES_CBC_192_Key, AES_CBC_256_Key};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
@@ -41,19 +43,22 @@ const BLOCK_LEN: usize = 16;
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
 /// to call them a cipher key. Same helper as the other vector suites in this crate.
-fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
-    assert_eq!(bytes.len(), N, "key length should match the parameter set");
-    let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
-        .expect("wycheproof key bytes fit the buffer");
+fn cipher_key<K: SymmetricCipherKey<N>, const N: usize>(bytes: &[u8]) -> K {
+    K::from_keymaterial({
+        assert_eq!(bytes.len(), N, "key length should match the parameter set");
+        let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
+            .expect("wycheproof key bytes fit the buffer");
 
-    if key.key_type() != KeyType::SymmetricCipherKey {
-        do_hazardous_operations(&mut key, |k| {
-            k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(SecurityStrength::from_bytes(N))
-        })
-        .expect("promoting a wycheproof test key");
-    }
-    key
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            do_hazardous_operations(&mut key, |k| {
+                k.set_key_type(KeyType::SymmetricCipherKey)?;
+                k.set_security_strength(SecurityStrength::from_bytes(N))
+            })
+            .expect("promoting a wycheproof test key");
+        }
+        key
+    })
+    .expect("a valid key")
 }
 
 /// What an invalid case must fail with, from its `flags`.
@@ -75,7 +80,7 @@ enum Expected {
 /// `expected_ct` must decrypt back to `msg`. For an invalid case only the decrypt direction is
 /// checked -- re-encrypting `msg` with correct padding has no reason to reproduce a deliberately
 /// mis-padded `ct` -- and it must fail with the variant the case's flags predict.
-fn run_case<E, D, const KEY_LEN: usize>(
+fn run_case<E, D, K, const KEY_LEN: usize>(
     tc_id: u64,
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
@@ -83,10 +88,11 @@ fn run_case<E, D, const KEY_LEN: usize>(
     expected_ct: &[u8],
     expected: Expected,
 ) where
-    E: SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
-    D: SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    E: SymmetricCipherEncryptor<K, KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+    D: SymmetricCipherDecryptor<K, KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = cipher_key::<K, KEY_LEN>(key_bytes);
 
     if expected == Expected::Valid {
         let mut ct = vec![0u8; E::encrypt_out_len(msg.len())];
@@ -129,15 +135,24 @@ fn dispatch(
     expected: Expected,
 ) {
     match key_bytes.len() {
-        16 => run_case::<AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>, 16>(
-            tc_id, key_bytes, iv, msg, expected_ct, expected,
-        ),
-        24 => run_case::<AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>, 24>(
-            tc_id, key_bytes, iv, msg, expected_ct, expected,
-        ),
-        32 => run_case::<AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>, 32>(
-            tc_id, key_bytes, iv, msg, expected_ct, expected,
-        ),
+        16 => run_case::<
+            AES_CBC_128<Encrypting, PKCS7>,
+            AES_CBC_128<Decrypting, PKCS7>,
+            AES_CBC_128_Key,
+            16,
+        >(tc_id, key_bytes, iv, msg, expected_ct, expected),
+        24 => run_case::<
+            AES_CBC_192<Encrypting, PKCS7>,
+            AES_CBC_192<Decrypting, PKCS7>,
+            AES_CBC_192_Key,
+            24,
+        >(tc_id, key_bytes, iv, msg, expected_ct, expected),
+        32 => run_case::<
+            AES_CBC_256<Encrypting, PKCS7>,
+            AES_CBC_256<Decrypting, PKCS7>,
+            AES_CBC_256_Key,
+            32,
+        >(tc_id, key_bytes, iv, msg, expected_ct, expected),
         other => panic!("tcId {tc_id}: AES keys are 16, 24 or 32 bytes, got {other}"),
     }
 }

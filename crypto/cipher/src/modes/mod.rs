@@ -68,28 +68,29 @@
 //! direction too, plus its nonce and tag lengths, and GCM takes the direction and its tag length:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //! use bouncycastle_cipher::modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
 //!
 //! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
-//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
+//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
+//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
-//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
+//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, ToyCipherKey, 16, 16, 12>;
 //!
 //! // CCM takes the permutation, a direction, key length, and a block length like the rest,
 //! // plus the nonce length and the tag length -- both CCM-specific choices rather than cipher params.
 //! // The nonce length caps the payload (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag
 //! // length is the forgery bound; 12 and 16 are the usual pair.
-//! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+//! type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, ToyCipherKey, 16, 16, 12, 16>;
 //!
 //! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
 //! // parameter.
-//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
 //! ```
 //!
 //! ## Encrypting and decrypting

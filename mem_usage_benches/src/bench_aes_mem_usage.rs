@@ -40,15 +40,28 @@
 //! non-returning closure so nothing crosses back across the boundary. The persistent cost, the
 //! engine itself, is what `print_struct_sizes` prints.
 //!
+//! Everything runs through [`Ecb`], the mode that is exactly the engine: `size_of::<Ecb<P, ..>>()`
+//! is `size_of::<P>()`, and each entry point is one call into the engine's matching block method,
+//! so the engine is never driven directly.
+//!
 //! The point of comparison is that a table-driven AES adds 256 B (`AESLightEngine`) to 8 KiB
 //! (T-tables) of static data on top of these numbers; this implementation adds zero.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+use bouncycastle::aes::hazmat::{
+    AES_ECB_128_Key, AES_ECB_192_Key, AES_ECB_256_Key, AES128Internal, AES192Internal,
+    AES256Internal,
+};
+use bouncycastle::cipher::modes::hazmat::Ecb;
+use bouncycastle::cipher::{Decrypting, Encrypting};
+use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherKey};
+use std::hint::black_box;
+
+type Ecb128<Dir> = Ecb<AES128Internal, Dir, AES_ECB_128_Key, 16, 16>;
+type Ecb192<Dir> = Ecb<AES192Internal, Dir, AES_ECB_192_Key, 24, 16>;
+type Ecb256<Dir> = Ecb<AES256Internal, Dir, AES_ECB_256_Key, 32, 16>;
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {
@@ -93,51 +106,63 @@ const KEY_256: [u8; 32] = [
 /// Wraps a hard-coded key. `#[inline(never)]` so the wrapping is a sibling frame of whatever
 /// uses the key, not part of it.
 #[inline(never)]
-fn key<const N: usize>(bytes: &[u8; N]) -> KeyMaterial<N> {
-    KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey).unwrap()
+fn key<K: SymmetricCipherKey<N>, const N: usize>(bytes: &[u8; N]) -> K {
+    K::from_bytes(bytes).unwrap()
 }
 
 /// Expands the key into an engine, in its own frame, so the expansion's temporaries are popped
 /// before an operation on the engine runs.
 #[inline(never)]
-fn load_aes128() -> AES128Internal {
-    AES128Internal::new(&key(&KEY_128)).unwrap()
+fn load_enc128() -> Ecb128<Encrypting> {
+    Ecb128::<Encrypting>::do_encrypt_init(&key::<AES_ECB_128_Key, 16>(&KEY_128)).unwrap().0
 }
 #[inline(never)]
-fn load_aes192() -> AES192Internal {
-    AES192Internal::new(&key(&KEY_192)).unwrap()
+fn load_dec128() -> Ecb128<Decrypting> {
+    Ecb128::<Decrypting>::do_decrypt_init(&key::<AES_ECB_128_Key, 16>(&KEY_128), &[]).unwrap()
 }
 #[inline(never)]
-fn load_aes256() -> AES256Internal {
-    AES256Internal::new(&key(&KEY_256)).unwrap()
+fn load_enc192() -> Ecb192<Encrypting> {
+    Ecb192::<Encrypting>::do_encrypt_init(&key::<AES_ECB_192_Key, 24>(&KEY_192)).unwrap().0
+}
+#[inline(never)]
+fn load_dec192() -> Ecb192<Decrypting> {
+    Ecb192::<Decrypting>::do_decrypt_init(&key::<AES_ECB_192_Key, 24>(&KEY_192), &[]).unwrap()
+}
+#[inline(never)]
+fn load_enc256() -> Ecb256<Encrypting> {
+    Ecb256::<Encrypting>::do_encrypt_init(&key::<AES_ECB_256_Key, 32>(&KEY_256)).unwrap().0
+}
+#[inline(never)]
+fn load_dec256() -> Ecb256<Decrypting> {
+    Ecb256::<Decrypting>::do_decrypt_init(&key::<AES_ECB_256_Key, 32>(&KEY_256), &[]).unwrap()
 }
 
 // ---- key expansion: the expansion is the operation, so it runs inside `measure` ------------
 
 fn bench_aes128_key_expansion() {
-    eprintln!("AES128Internal::new (key expansion)");
-    let key = key(&KEY_128);
+    eprintln!("Ecb<AES128Internal> do_encrypt_init (key expansion)");
+    let key = key::<AES_ECB_128_Key, 16>(&KEY_128);
     measure(|| {
-        let aes = AES128Internal::new(&key).unwrap();
-        print!("{aes:?}");
+        let (aes, _) = Ecb128::<Encrypting>::do_encrypt_init(&key).unwrap();
+        black_box(aes);
     });
 }
 
 fn bench_aes192_key_expansion() {
-    eprintln!("AES192Internal::new (key expansion)");
-    let key = key(&KEY_192);
+    eprintln!("Ecb<AES192Internal> do_encrypt_init (key expansion)");
+    let key = key::<AES_ECB_192_Key, 24>(&KEY_192);
     measure(|| {
-        let aes = AES192Internal::new(&key).unwrap();
-        print!("{aes:?}");
+        let (aes, _) = Ecb192::<Encrypting>::do_encrypt_init(&key).unwrap();
+        black_box(aes);
     });
 }
 
 fn bench_aes256_key_expansion() {
-    eprintln!("AES256Internal::new (key expansion)");
-    let key = key(&KEY_256);
+    eprintln!("Ecb<AES256Internal> do_encrypt_init (key expansion)");
+    let key = key::<AES_ECB_256_Key, 32>(&KEY_256);
     measure(|| {
-        let aes = AES256Internal::new(&key).unwrap();
-        print!("{aes:?}");
+        let (aes, _) = Ecb256::<Encrypting>::do_encrypt_init(&key).unwrap();
+        black_box(aes);
     });
 }
 
@@ -148,181 +173,181 @@ fn bench_aes256_key_expansion() {
 // stack arrays in the closure, never a heap buffer, so massif's --heap=no does not hide them.
 
 fn bench_aes128_encrypt_block() {
-    eprintln!("AES128Internal::encrypt_block");
-    let aes = load_aes128();
+    eprintln!("Ecb<AES128Internal> do_encrypt_inplace, 1 block");
+    let mut aes = load_enc128();
     measure(|| {
         let mut block = [0x11u8; 16];
-        aes.encrypt_block(&mut block);
+        aes.do_encrypt_inplace(&mut block).unwrap();
         print!("{block:x?}");
     });
 }
 
 fn bench_aes128_decrypt_block() {
-    eprintln!("AES128Internal::decrypt_block");
-    let aes = load_aes128();
+    eprintln!("Ecb<AES128Internal> do_decrypt_inplace, 1 block");
+    let mut aes = load_dec128();
     measure(|| {
         let mut block = [0x11u8; 16];
-        aes.decrypt_block(&mut block);
+        aes.do_decrypt_inplace(&mut block).unwrap();
         print!("{block:x?}");
     });
 }
 
 fn bench_aes128_encrypt_2blocks() {
-    eprintln!("AES128Internal::encrypt_2blocks");
-    let aes = load_aes128();
+    eprintln!("Ecb<AES128Internal> do_encrypt_blocks_inplace, 2 blocks");
+    let mut aes = load_enc128();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aes.encrypt_2blocks(&mut blocks);
+        aes.do_encrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes128_decrypt_2blocks() {
-    eprintln!("AES128Internal::decrypt_2blocks");
-    let aes = load_aes128();
+    eprintln!("Ecb<AES128Internal> do_decrypt_blocks_inplace, 2 blocks");
+    let mut aes = load_dec128();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aes.decrypt_2blocks(&mut blocks);
+        aes.do_decrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes128_encrypt_4blocks() {
-    eprintln!("AES128Internal::encrypt_4blocks");
-    let aes = load_aes128();
+    eprintln!("Ecb<AES128Internal> do_encrypt_blocks_inplace, 4 blocks");
+    let mut aes = load_enc128();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aes.encrypt_4blocks(&mut blocks);
+        aes.do_encrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes128_decrypt_4blocks() {
-    eprintln!("AES128Internal::decrypt_4blocks");
-    let aes = load_aes128();
+    eprintln!("Ecb<AES128Internal> do_decrypt_blocks_inplace, 4 blocks");
+    let mut aes = load_dec128();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aes.decrypt_4blocks(&mut blocks);
+        aes.do_decrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes192_encrypt_block() {
-    eprintln!("AES192Internal::encrypt_block");
-    let aes = load_aes192();
+    eprintln!("Ecb<AES192Internal> do_encrypt_inplace, 1 block");
+    let mut aes = load_enc192();
     measure(|| {
         let mut block = [0x11u8; 16];
-        aes.encrypt_block(&mut block);
+        aes.do_encrypt_inplace(&mut block).unwrap();
         print!("{block:x?}");
     });
 }
 
 fn bench_aes192_decrypt_block() {
-    eprintln!("AES192Internal::decrypt_block");
-    let aes = load_aes192();
+    eprintln!("Ecb<AES192Internal> do_decrypt_inplace, 1 block");
+    let mut aes = load_dec192();
     measure(|| {
         let mut block = [0x11u8; 16];
-        aes.decrypt_block(&mut block);
+        aes.do_decrypt_inplace(&mut block).unwrap();
         print!("{block:x?}");
     });
 }
 
 fn bench_aes192_encrypt_2blocks() {
-    eprintln!("AES192Internal::encrypt_2blocks");
-    let aes = load_aes192();
+    eprintln!("Ecb<AES192Internal> do_encrypt_blocks_inplace, 2 blocks");
+    let mut aes = load_enc192();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aes.encrypt_2blocks(&mut blocks);
+        aes.do_encrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes192_decrypt_2blocks() {
-    eprintln!("AES192Internal::decrypt_2blocks");
-    let aes = load_aes192();
+    eprintln!("Ecb<AES192Internal> do_decrypt_blocks_inplace, 2 blocks");
+    let mut aes = load_dec192();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aes.decrypt_2blocks(&mut blocks);
+        aes.do_decrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes192_encrypt_4blocks() {
-    eprintln!("AES192Internal::encrypt_4blocks");
-    let aes = load_aes192();
+    eprintln!("Ecb<AES192Internal> do_encrypt_blocks_inplace, 4 blocks");
+    let mut aes = load_enc192();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aes.encrypt_4blocks(&mut blocks);
+        aes.do_encrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes192_decrypt_4blocks() {
-    eprintln!("AES192Internal::decrypt_4blocks");
-    let aes = load_aes192();
+    eprintln!("Ecb<AES192Internal> do_decrypt_blocks_inplace, 4 blocks");
+    let mut aes = load_dec192();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aes.decrypt_4blocks(&mut blocks);
+        aes.do_decrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes256_encrypt_block() {
-    eprintln!("AES256Internal::encrypt_block");
-    let aes = load_aes256();
+    eprintln!("Ecb<AES256Internal> do_encrypt_inplace, 1 block");
+    let mut aes = load_enc256();
     measure(|| {
         let mut block = [0x11u8; 16];
-        aes.encrypt_block(&mut block);
+        aes.do_encrypt_inplace(&mut block).unwrap();
         print!("{block:x?}");
     });
 }
 
 fn bench_aes256_decrypt_block() {
-    eprintln!("AES256Internal::decrypt_block");
-    let aes = load_aes256();
+    eprintln!("Ecb<AES256Internal> do_decrypt_inplace, 1 block");
+    let mut aes = load_dec256();
     measure(|| {
         let mut block = [0x11u8; 16];
-        aes.decrypt_block(&mut block);
+        aes.do_decrypt_inplace(&mut block).unwrap();
         print!("{block:x?}");
     });
 }
 
 fn bench_aes256_encrypt_2blocks() {
-    eprintln!("AES256Internal::encrypt_2blocks");
-    let aes = load_aes256();
+    eprintln!("Ecb<AES256Internal> do_encrypt_blocks_inplace, 2 blocks");
+    let mut aes = load_enc256();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aes.encrypt_2blocks(&mut blocks);
+        aes.do_encrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes256_decrypt_2blocks() {
-    eprintln!("AES256Internal::decrypt_2blocks");
-    let aes = load_aes256();
+    eprintln!("Ecb<AES256Internal> do_decrypt_blocks_inplace, 2 blocks");
+    let mut aes = load_dec256();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aes.decrypt_2blocks(&mut blocks);
+        aes.do_decrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes256_encrypt_4blocks() {
-    eprintln!("AES256Internal::encrypt_4blocks");
-    let aes = load_aes256();
+    eprintln!("Ecb<AES256Internal> do_encrypt_blocks_inplace, 4 blocks");
+    let mut aes = load_enc256();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aes.encrypt_4blocks(&mut blocks);
+        aes.do_encrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }
 
 fn bench_aes256_decrypt_4blocks() {
-    eprintln!("AES256Internal::decrypt_4blocks");
-    let aes = load_aes256();
+    eprintln!("Ecb<AES256Internal> do_decrypt_blocks_inplace, 4 blocks");
+    let mut aes = load_dec256();
     measure(|| {
         let mut blocks = [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aes.decrypt_4blocks(&mut blocks);
+        aes.do_decrypt_blocks_inplace(&mut blocks).unwrap();
         print!("{blocks:x?}");
     });
 }

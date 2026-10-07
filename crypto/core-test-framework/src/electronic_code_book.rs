@@ -6,6 +6,7 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
 
 /// Instance of the test framework.
 pub struct TestFrameworkElectronicCodeBook {
@@ -43,7 +44,8 @@ impl TestFrameworkElectronicCodeBook {
     pub fn test<
         const KEY_LEN: usize,
         const BLOCK_LEN: usize,
-        P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
     >(
         &self,
     ) {

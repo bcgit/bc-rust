@@ -7,17 +7,18 @@
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+use bouncycastle_aes::{AES_CBC_128_Key, AES_CBC_192_Key, AES_CBC_256_Key};
 use bouncycastle_cipher::modes::Cbc;
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 
-fn key<const N: usize>() -> KeyMaterial<N> {
+fn key<K: SymmetricCipherKey<N>, const N: usize>() -> K {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
+    K::from_bytes(&bytes).expect("a valid key")
 }
 
 /// The aliases must resolve to exactly the adapters they claim to, at both directions.
@@ -32,13 +33,27 @@ fn the_aliases_name_the_expected_types() {
     assert_eq!(
         size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 16, 16>,
+            PaddedBlockCipherEncryptor<
+                Cbc<AES128Internal, Encrypting, AES_CBC_128_Key, 16, 16>,
+                PKCS7,
+                AES_CBC_128_Key,
+                16,
+                16,
+                16,
+            >,
         >()
     );
     assert_eq!(
         size_of::<AES_CBC_128<Decrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 16, 16>,
+            PaddedBlockCipherDecryptor<
+                Cbc<AES128Internal, Decrypting, AES_CBC_128_Key, 16, 16>,
+                PKCS7,
+                AES_CBC_128_Key,
+                16,
+                16,
+                16,
+            >,
         >()
     );
 
@@ -55,14 +70,15 @@ fn the_aliases_name_the_expected_types() {
 /// not.
 #[test]
 fn every_key_length_round_trips() {
-    fn check<const N: usize, Enc, Dec>(name: &str)
+    fn check<const N: usize, K, Enc, Dec>(name: &str)
     where
-        Enc: SymmetricCipherEncryptor<N, 16, 16>,
-        Dec: SymmetricCipherDecryptor<N, 16, 16>,
+        K: SymmetricCipherKey<N>,
+        Enc: SymmetricCipherEncryptor<K, N, 16, 16>,
+        Dec: SymmetricCipherDecryptor<K, N, 16, 16>,
     {
         for len in [0usize, 1, 15, 16, 17, 63, 64] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 11 + 3) as u8).collect();
-            let (iv, ciphertext) = Enc::encrypt(&key::<N>(), &plaintext).expect("encryption");
+            let (iv, ciphertext) = Enc::encrypt(&key::<K, N>(), &plaintext).expect("encryption");
 
             // PKCS#7 always adds at least one byte, and rounds up to a whole block.
             assert_eq!(
@@ -71,14 +87,20 @@ fn every_key_length_round_trips() {
                 "{name}, len {len}: PKCS7 pads up to the next whole block"
             );
 
-            let recovered = Dec::decrypt(&key::<N>(), &iv, &ciphertext).expect("decryption");
+            let recovered = Dec::decrypt(&key::<K, N>(), &iv, &ciphertext).expect("decryption");
             assert_eq!(recovered, plaintext, "{name}, len {len}: round trip");
         }
     }
 
-    check::<16, AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>>("AES-128");
-    check::<24, AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>>("AES-192");
-    check::<32, AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>>("AES-256");
+    check::<16, AES_CBC_128_Key, AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>>(
+        "AES-128",
+    );
+    check::<24, AES_CBC_192_Key, AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>>(
+        "AES-192",
+    );
+    check::<32, AES_CBC_256_Key, AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>>(
+        "AES-256",
+    );
 }
 
 /// The padding parameter must actually select the scheme, not merely be carried around.
@@ -93,16 +115,21 @@ fn the_padding_parameter_selects_the_scheme() {
 
     // A whole block: both schemes accept it, and they disagree about the length.
     let aligned = [0x5Au8; 16];
-    let (_, pkcs7) = Pkcs7Enc::encrypt(&key::<16>(), &aligned).expect("PKCS7 accepts aligned data");
-    let (_, nopad) = NoPadEnc::encrypt(&key::<16>(), &aligned).expect("NoPadding accepts it too");
+    let (_, pkcs7) = Pkcs7Enc::encrypt(&key::<AES_CBC_128_Key, 16>(), &aligned)
+        .expect("PKCS7 accepts aligned data");
+    let (_, nopad) = NoPadEnc::encrypt(&key::<AES_CBC_128_Key, 16>(), &aligned)
+        .expect("NoPadding accepts it too");
     assert_eq!(pkcs7.len(), 32, "PKCS7 adds a whole block of padding to aligned data");
     assert_eq!(nopad.len(), 16, "NoPadding adds nothing");
 
     // Five bytes: PKCS7 pads it, NoPadding refuses rather than silently padding.
     let unaligned = b"hello";
-    assert!(Pkcs7Enc::encrypt(&key::<16>(), unaligned).is_ok(), "PKCS7 pads a partial block");
     assert!(
-        NoPadEnc::encrypt(&key::<16>(), unaligned).is_err(),
+        Pkcs7Enc::encrypt(&key::<AES_CBC_128_Key, 16>(), unaligned).is_ok(),
+        "PKCS7 pads a partial block"
+    );
+    assert!(
+        NoPadEnc::encrypt(&key::<AES_CBC_128_Key, 16>(), unaligned).is_err(),
         "NoPadding must refuse a message that is not a whole number of blocks"
     );
 }
@@ -115,18 +142,21 @@ fn the_padding_parameter_selects_the_scheme() {
 fn the_two_schemes_are_not_interchangeable() {
     let aligned = [0x5Au8; 16];
     let (iv, pkcs7) =
-        AES_CBC_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), &aligned).expect("encryption");
+        AES_CBC_128::<Encrypting, PKCS7>::encrypt(&key::<AES_CBC_128_Key, 16>(), &aligned)
+            .expect("encryption");
 
     // NoPadding will hand back the padded block as if it were data, so it "succeeds" with the
     // wrong answer -- exactly the silent mismatch the type parameter is there to prevent.
-    let as_nopad = AES_CBC_128::<Decrypting, NoPadding>::decrypt(&key::<16>(), &iv, &pkcs7)
-        .expect("NoPadding cannot tell that the trailing block is padding");
+    let as_nopad =
+        AES_CBC_128::<Decrypting, NoPadding>::decrypt(&key::<AES_CBC_128_Key, 16>(), &iv, &pkcs7)
+            .expect("NoPadding cannot tell that the trailing block is padding");
     assert_ne!(as_nopad, aligned, "the recovered data must not match the original");
     assert_eq!(as_nopad.len(), 32, "it keeps the padding block as data");
 
     // ...and the matching scheme gets it right.
     let correct =
-        AES_CBC_128::<Decrypting, PKCS7>::decrypt(&key::<16>(), &iv, &pkcs7).expect("decryption");
+        AES_CBC_128::<Decrypting, PKCS7>::decrypt(&key::<AES_CBC_128_Key, 16>(), &iv, &pkcs7)
+            .expect("decryption");
     assert_eq!(correct, aligned);
 }
 
@@ -136,9 +166,13 @@ fn each_encryption_gets_a_fresh_iv() {
     let plaintext = [0x77u8; 32];
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..16 {
-        let (iv, ct) = AES_CBC_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), &plaintext).unwrap();
+        let (iv, ct) =
+            AES_CBC_128::<Encrypting, PKCS7>::encrypt(&key::<AES_CBC_128_Key, 16>(), &plaintext)
+                .unwrap();
         assert!(seen.insert(iv), "IV repeated across encryptions");
-        let back = AES_CBC_128::<Decrypting, PKCS7>::decrypt(&key::<16>(), &iv, &ct).unwrap();
+        let back =
+            AES_CBC_128::<Decrypting, PKCS7>::decrypt(&key::<AES_CBC_128_Key, 16>(), &iv, &ct)
+                .unwrap();
         assert_eq!(back, plaintext);
     }
 }
@@ -157,7 +191,7 @@ fn the_allocating_streaming_wrappers_match_the_out_versions() {
     let pieces = [0..5, 5..16, 16..17, 17..37, 37..37, 37..40];
     let expected_released = [0, 16, 0, 16, 0, 0];
 
-    let (mut enc, iv) = Enc::do_encrypt_init(&key::<16>()).unwrap();
+    let (mut enc, iv) = Enc::do_encrypt_init(&key::<AES_CBC_128_Key, 16>()).unwrap();
     let mut ciphertext = Vec::new();
     for (range, expected) in pieces.into_iter().zip(expected_released) {
         let piece = &plaintext[range];
@@ -173,11 +207,11 @@ fn the_allocating_streaming_wrappers_match_the_out_versions() {
     let (last, last_len) = enc.do_encrypt_final().unwrap();
     ciphertext.extend_from_slice(&last[..last_len]);
     assert_eq!(ciphertext.len(), 48);
-    assert_eq!(Dec::decrypt(&key::<16>(), &iv, &ciphertext).unwrap(), plaintext);
+    assert_eq!(Dec::decrypt(&key::<AES_CBC_128_Key, 16>(), &iv, &ciphertext).unwrap(), plaintext);
 
     // Decrypt the same ciphertext through `do_decrypt` in uneven pieces: the decryptor holds back
     // the block that might carry the padding, so some pieces release nothing.
-    let mut dec = Dec::do_decrypt_init(&key::<16>(), &iv).unwrap();
+    let mut dec = Dec::do_decrypt_init(&key::<AES_CBC_128_Key, 16>(), &iv).unwrap();
     let mut recovered = Vec::new();
     let mut saw_empty = false;
     for range in [0..16, 16..17, 17..48] {

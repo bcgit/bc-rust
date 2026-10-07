@@ -23,17 +23,15 @@
 //! Basic usage can be obtained via the [`StreamCipherEncryptor`] and [`StreamCipherDecryptor`] API:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CTR_256;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_aes::{AES_CTR_256, AES_CTR_256_Key};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CTR_256<Encrypting>;
 //! type AESDec = AES_CTR_256<Decrypting>;
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
+//! let key = AES_CTR_256_Key::new_from_os().expect("a fresh key");
 //!
 //! // An arbitrary plaintext to encrypt.
 //! // Any length: a stream cipher does not need a whole number of blocks.
@@ -55,11 +53,11 @@
 //! length:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CTR_128;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_aes::{AES_CTR_128, AES_CTR_128_Key};
 //! use bouncycastle_core::traits::{
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
 //!     SymmetricCipherEncryptor,
+//!     SymmetricCipherKey,
 //! };
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
@@ -67,8 +65,7 @@
 //! type AESEnc = AES_CTR_128<Encrypting>;
 //! type AESDec = AES_CTR_128<Decrypting>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES_CTR_128_Key::new_from_os().expect("a fresh key");
 //!
 //! // An arbitrary plaintext to encrypt
 //! let plaintext = [0x5Au8; 50];
@@ -97,6 +94,11 @@ use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Ctr;
 
+use bouncycastle_core::errors::{KeyMaterialError, RNGError};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
+use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -109,12 +111,96 @@ pub const CTR_NONCE_LEN: usize = 12;
 
 /// AES-128 in CTR mode with a 12-byte nonce.
 #[allow(non_camel_case_types)]
-pub type AES_CTR_128<Dir> = Ctr<AES128Internal, Dir, 16, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_128<Dir> =
+    Ctr<AES128Internal, Dir, AES_CTR_128_Key, 16, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+
+/// An AES-CTR-128 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CTR_128_Key(KeyMaterial<16>);
+
+impl SymmetricCipherKey<16> for AES_CTR_128_Key {
+    fn from_keymaterial(key: KeyMaterial<16>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_128bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 128bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<16> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA256::new_from_os())
+    }
+}
 
 /// AES-192 in CTR mode with a 12-byte nonce.
 #[allow(non_camel_case_types)]
-pub type AES_CTR_192<Dir> = Ctr<AES192Internal, Dir, 24, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_192<Dir> =
+    Ctr<AES192Internal, Dir, AES_CTR_192_Key, 24, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+
+/// An AES-CTR-192 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CTR_192_Key(KeyMaterial<24>);
+
+impl SymmetricCipherKey<24> for AES_CTR_192_Key {
+    fn from_keymaterial(key: KeyMaterial<24>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_192bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 192bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<24> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}
 
 /// AES-256 in CTR mode with a 12-byte nonce. See [`AES_CTR_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CTR_256<Dir> = Ctr<AES256Internal, Dir, 32, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_256<Dir> =
+    Ctr<AES256Internal, Dir, AES_CTR_256_Key, 32, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+
+/// An AES-CTR-256 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CTR_256_Key(KeyMaterial<32>);
+
+impl SymmetricCipherKey<32> for AES_CTR_256_Key {
+    fn from_keymaterial(key: KeyMaterial<32>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_256bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 256bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<32> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}

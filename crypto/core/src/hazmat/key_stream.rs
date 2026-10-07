@@ -1,8 +1,7 @@
 //! The [`KeyStream`] trait: a keyed keystream generator.
 
 use crate::errors::SymmetricCipherError;
-use crate::key_material::KeyMaterial;
-use crate::traits::Algorithm;
+use crate::traits::{Algorithm, SymmetricCipherKey};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -35,8 +34,12 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// Implementors hold the key in a zeroize-on-drop wrapper, as for [`ElectronicCodeBook`]. Any
 /// keystream they produce into scratch space of their own is live key material until it has been
 /// XORed in, and gets the same treatment.
-pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
-    Algorithm + Sized
+pub trait KeyStream<
+    K: SymmetricCipherKey<KEY_LEN>,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>: Algorithm + Sized
 {
     /// Expands the key and positions the keystream at its first block for `init_data`.
     ///
@@ -44,10 +47,7 @@ pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
     /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
     /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError>;
+    fn new(key: &K, init_data: &[u8; INIT_DATA_LEN]) -> Result<Self, SymmetricCipherError>;
 
     /// How many more keystream blocks this value can produce before its keystream would repeat.
     /// A keystream with no practical limit returns `u64::MAX`.

@@ -6,9 +6,10 @@
 //! [`ElectronicCodeBook`]: bouncycastle_core::hazmat::ElectronicCodeBook
 
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
-use bouncycastle_core_test_framework::{TOY_BLOCK_LEN, ToyBlockCipher};
+use bouncycastle_core_test_framework::{TOY_BLOCK_LEN, ToyBlockCipher, ToyCipherKey};
 
 #[test]
 fn the_toy_block_cipher_conforms_to_the_trait() {
-    TestFrameworkElectronicCodeBook::new().test::<TOY_BLOCK_LEN, TOY_BLOCK_LEN, ToyBlockCipher>();
+    TestFrameworkElectronicCodeBook::new()
+        .test::<TOY_BLOCK_LEN, TOY_BLOCK_LEN, ToyCipherKey, ToyBlockCipher>();
 }

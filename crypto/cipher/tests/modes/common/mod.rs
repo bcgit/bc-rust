@@ -22,7 +22,8 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::Algorithm;
+use bouncycastle_core::traits::{Algorithm, SymmetricCipherKey};
+use bouncycastle_core_test_framework::ToyCipherKey;
 
 /// Block and key length of the toy ciphers, chosen to match AES so the tests exercise the same
 /// shapes the real thing will.
@@ -58,7 +59,7 @@ impl Algorithm for Toy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
+impl ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN> for Toy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         validate(key)?;
         let mut bytes = [0u8; TOY_LEN];
@@ -121,7 +122,7 @@ impl Algorithm for SwappedPairToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
+impl ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN> for SwappedPairToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
@@ -184,7 +185,7 @@ impl Algorithm for ForwardOnlyToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
+impl ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN> for ForwardOnlyToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
@@ -229,7 +230,7 @@ impl Algorithm for SwappedFourToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {
+impl ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN> for SwappedFourToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
@@ -265,9 +266,8 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {
     }
 }
 
-/// Builds a `KeyMaterial` for the toys from a fixed non-zero pattern.
-pub fn toy_key() -> KeyMaterial<TOY_LEN> {
+/// Builds a [`ToyCipherKey`] for the toys from a fixed non-zero pattern.
+pub fn toy_key() -> ToyCipherKey {
     let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-    KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-        .expect("a valid toy key")
+    ToyCipherKey::from_bytes(&bytes).expect("a valid toy key")
 }

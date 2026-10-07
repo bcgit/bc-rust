@@ -31,7 +31,7 @@
 
 use crate::helpers::block_mode_helpers::{CHUNK_LEN, CipherDirection};
 use crate::helpers::{flush_stdout, write_bytes_or_hex, write_stdout};
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use std::io;
 use std::io::Read;
@@ -40,11 +40,12 @@ use std::process::exit;
 /// Encrypts stdin to stdout under the stream mode `E`, writing the generated IV first.
 ///
 /// `INIT_DATA_LEN` is the mode's: one block for CFB and CFB8.
-pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub(crate) fn encrypt_stream<E, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     output_hex: bool,
 ) where
-    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    E: StreamCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN>,
 {
     let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
@@ -71,11 +72,12 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 
 /// Decrypts stdin to stdout under the stream mode `D`, taking the IV from the first
 /// `INIT_DATA_LEN` bytes of input.
-pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub(crate) fn decrypt_stream<D, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     output_hex: bool,
 ) where
-    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    D: StreamCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN>,
 {
     // The leading bytes are the IV, not ciphertext.
     let mut iv = [0u8; INIT_DATA_LEN];
@@ -136,16 +138,17 @@ fn finish(output_hex: bool) {
 
 /// Runs one direction of a stream mode. The two `run` dispatchers in `aes_cfb_cmd` and
 /// `aes_cfb8_cmd` differ only in which mode they name, so the match lives here.
-pub(crate) fn run_stream_mode<E, D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+pub(crate) fn run_stream_mode<E, D, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
+    key: &K,
     output_hex: bool,
 ) where
-    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    E: StreamCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN>,
+    D: StreamCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN>,
 {
     match action {
-        CipherDirection::Encrypt => encrypt_stream::<E, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
-        CipherDirection::Decrypt => decrypt_stream::<D, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
+        CipherDirection::Encrypt => encrypt_stream::<E, K, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
+        CipherDirection::Decrypt => decrypt_stream::<D, K, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
     }
 }

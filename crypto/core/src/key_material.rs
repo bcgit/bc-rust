@@ -305,7 +305,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     }
 
     /// Creates a new instance of KeyMaterial containing random bytes from the provided random number generator.
-    pub fn from_rng(rng: &mut impl RNG) -> Result<Self, KeyMaterialError> {
+    pub fn from_rng(rng: &mut (impl RNG + ?Sized)) -> Result<Self, KeyMaterialError> {
         let mut key = Self::new();
 
         do_hazardous_operations(&mut key, |key| {

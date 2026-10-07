@@ -9,6 +9,7 @@
 //!   the detached-tag (`*_detached`) and the inline `ciphertext || tag` layouts -- the latter also
 //!   through the `SymmetricCipherEncryptor`/`SymmetricCipherDecryptor` traits they extend.
 
+use bouncycastle_ascon::Ascon_AEAD128_Key;
 use bouncycastle_ascon::ascon_aead128::{
     AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
 };
@@ -16,6 +17,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
 
@@ -74,14 +76,14 @@ fn pattern(len: usize) -> Vec<u8> {
 /// all-zero key (Count=1), which `KeyMaterial::from_bytes_as_type` would otherwise tag
 /// `KeyType::Zeroized` / `SecurityStrength::None`; force the type/strength the way a caller who
 /// knows the provenance of the key would (see `cli/src/helpers.rs::parse_seed`).
-fn key_material(key: &[u8; 16]) -> KeyMaterial<16> {
+fn key_material(key: &[u8; 16]) -> Ascon_AEAD128_Key {
     let mut km = KeyMaterial::<16>::from_bytes_as_type(key, KeyType::SymmetricCipherKey).unwrap();
     do_hazardous_operations(&mut km, |k| {
         k.set_key_type(KeyType::SymmetricCipherKey)?;
         k.set_security_strength(SecurityStrength::_128bit)
     })
     .unwrap();
-    km
+    Ascon_AEAD128_Key::from_keymaterial(km).unwrap()
 }
 
 fn enc_oneshot(key: &[u8; 16], nonce: &[u8; 16], ad: &[u8], pt: &[u8]) -> Vec<u8> {
@@ -484,7 +486,7 @@ fn do_decrypt_update_on_encryptor_panics() {
 #[test]
 fn aead128_encryptor_decryptor_trait_framework() {
     TestFrameworkAEADCipher::new()
-        .test_encryptor_decryptor::<16, 16, 16, 16, AsconAead128Encryptor, AsconAead128Decryptor>();
+        .test_encryptor_decryptor::<16, 16, 16, 16, Ascon_AEAD128_Key, AsconAead128Encryptor, AsconAead128Decryptor>();
 }
 
 /// The same conformance suite through [`Ascon_AEAD128`], which must resolve to the same pair.
@@ -499,6 +501,7 @@ fn aead128_dir_alias_trait_framework() {
         16,
         16,
         16,
+        Ascon_AEAD128_Key,
         Ascon_AEAD128<Encrypting>,
         Ascon_AEAD128<Decrypting>,
     >();

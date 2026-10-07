@@ -16,16 +16,15 @@
 use bouncycastle_cipher::modes::Ccm;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SuspendableError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::SuspendableKeyed;
-use bouncycastle_core_test_framework::ToyBlockCipher;
+use bouncycastle_core::traits::{SuspendableKeyed, SymmetricCipherKey};
+use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
 use bouncycastle_utils::suspendable_state::LIB_VERSION_LEN;
 
 /// A 12-byte nonce, so `q = 3`: the counter field is the template's last three octets and the
 /// payload limit is `2^24 - 1`.
 const NONCE_LEN: usize = 12;
 const BLOCK_LEN: usize = 16;
-type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, BLOCK_LEN, NONCE_LEN, 16>;
+type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, ToyCipherKey, 16, BLOCK_LEN, NONCE_LEN, 16>;
 const N: usize = ToyCcm::<Encrypting>::SUSPENDED_STATE_LEN;
 
 /// A.1's `2^8q - 1`, which bounds both the owed payload and, since there is one counter block per
@@ -38,8 +37,8 @@ const NEXT_CTR: usize = TEMPLATE + BLOCK_LEN;
 const MAC_POS: usize = N - 24;
 const OWED: usize = N - 8;
 
-fn key() -> KeyMaterial<16> {
-    KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
+fn key() -> ToyCipherKey {
+    ToyCipherKey::from_bytes(&[0x42; 16]).unwrap()
 }
 
 /// A freshly constructed encryptor's state: `next_ctr = 1`, `mac_pos = 0` after `B0`, `owed` as

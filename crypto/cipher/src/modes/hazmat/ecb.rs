@@ -14,16 +14,14 @@
 //! The codebook property that makes it unsuitable for data is visible in the ciphertext:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+//! use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+//! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::modes::hazmat::Ecb;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
-//! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, ToyCipherKey, 16, 16>;
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = ToyCipherKey::new_from_os().expect("a fresh key");
 //! let mut data = [0x5Au8; 32]; // two equal blocks
 //!
 //! let (bytes_written, no_iv): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
@@ -82,10 +80,10 @@
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SuspendableKeyed,
+    SymmetricCipherKey,
 };
 use bouncycastle_utils::suspendable_state::{
     LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
@@ -98,7 +96,7 @@ use core::marker::PhantomData;
 /// Considerations". Provided for interoperability and test vectors.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`]. [`BlockCipherEncryptor`] is implemented only for the
-/// former and [`BlockCipherDecryptor`] only for the latter, so an `Ecb<_, Encrypting, _, _>` has no
+/// former and [`BlockCipherDecryptor`] only for the latter, so an `Ecb<_, Encrypting, ToyCipherKey, _, _>` has no
 /// decryption methods at all -- using one in the wrong direction is a compile error rather than a
 /// runtime check.
 ///
@@ -107,32 +105,37 @@ use core::marker::PhantomData;
 /// zeroize-on-drop wrapper. Nothing chains from one block to the next, so unlike `Cbc` and `Cfb`
 /// there is no block of chaining value: `size_of::<Ecb<P, ..>>() == size_of::<P>()`.
 #[derive(Clone)]
-pub struct Ecb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Ecb<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     perm: P,
     _dir: PhantomData<Dir>,
+    /// Records `K`, which no other field mentions; without it `K` would be an unused parameter.
+    _key: PhantomData<K>,
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize> Ecb<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header alone, since ECB
     /// has no state between blocks. See [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN;
 
     /// Expands the key. Both `_init` constructors are this; there is nothing else to set up.
-    fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        Ok(Self { perm: P::new(key)?, _dir: PhantomData })
+    fn new(key: &K) -> Result<Self, SymmetricCipherError> {
+        Ok(Self { perm: P::new(key.get_key())?, _dir: PhantomData, _key: PhantomData })
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for Ecb<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
     /// concatenated in a `const`, and the mode is already in the type.
@@ -142,16 +145,15 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<KEY_LEN, 0, BLOCK_LEN>
-    for Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    BlockCipherEncryptor<K, KEY_LEN, 0, BLOCK_LEN> for Ecb<P, Encrypting, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Expands the key. ECB has no initialization data (SP 800-38A Table D.2 lists the IV column
     /// as "Not applicable"), so the returned init data is the empty array.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
+    fn do_encrypt_init(key: &K) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
         Ok((Self::new(key)?, []))
     }
 
@@ -164,7 +166,7 @@ where
     /// applicable" -- so silently ignoring the RNG would leave that mistaken expectation
     /// undisturbed. Use [`do_encrypt_init`](Self::do_encrypt_init), or a mode that has an IV.
     fn do_encrypt_init_rng(
-        _key: &KeyMaterial<KEY_LEN>,
+        _key: &K,
         _rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
         unimplemented!(
@@ -200,17 +202,15 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>
-    for Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, K, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    BlockCipherDecryptor<K, KEY_LEN, 0, BLOCK_LEN> for Ecb<P, Decrypting, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Expands the key. The init data is the empty array [`BlockCipherEncryptor::do_encrypt_init`]
     /// returned; there is nothing in it to use.
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        _init_data: &[u8; 0],
-    ) -> Result<Self, SymmetricCipherError> {
+    fn do_decrypt_init(key: &K, _init_data: &[u8; 0]) -> Result<Self, SymmetricCipherError> {
         Self::new(key)
     }
 
@@ -240,13 +240,14 @@ where
 /// ECB carries nothing from one block to the next, so its suspended state is empty and resuming
 /// is re-expanding the key. It is implemented so that the padded adapters over it, which do hold
 /// a partial block, can be suspended. See [`bouncycastle_utils::suspendable_state`].
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
-    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
+    for Ecb<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const STATE_LEN: usize = 0;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = K;
 
     fn write_state(&self, out: &mut [u8]) {
         debug_assert!(out.is_empty());
@@ -259,12 +260,13 @@ where
 }
 
 /// `N` must be [`Ecb::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
-    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<P, Dir, K, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
+    for Ecb<P, Dir, K, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = K;
 
     fn suspend(self) -> [u8; N] {
         suspend_component(&self)

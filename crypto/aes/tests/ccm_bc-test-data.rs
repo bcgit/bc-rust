@@ -46,11 +46,12 @@
 //! set is `testType: "AFT"`, so nothing is skipped for that reason.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_CCM_128_Key, AES_CCM_192_Key, AES_CCM_256_Key};
 use bouncycastle_cipher::modes::Ccm;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
 
@@ -78,17 +79,18 @@ enum Decrypted {
 /// Also re-runs it through the length-declared streaming API in several chunkings, since these are
 /// the only real vectors available for that path and the one-shot is a single call over the whole
 /// payload.
-fn encrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
-    key: &KeyMaterial<KEY_LEN>,
+fn encrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P, K>(
+    key: &K,
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, 16>,
 {
     let mut inline = vec![0u8; plaintext.len() + TAG_LEN];
-    let written = Ccm::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_out(
+    let written = Ccm::<P, Encrypting, K, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_out(
         key, nonce, aad, plaintext, &mut inline,
     )
     .expect("CCM encryption of a valid ACVP case");
@@ -96,7 +98,7 @@ where
 
     // The same answer must come out of the streaming API, in any chunking of both phases.
     for chunk in [1usize, 5, 16] {
-        let mut ccm = Ccm::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::new(
+        let mut ccm = Ccm::<P, Encrypting, K, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::new(
             key,
             nonce,
             aad,
@@ -116,17 +118,18 @@ where
 }
 
 /// Runs one decrypt case over the inline `ciphertext || tag` string the vectors carry.
-fn decrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
-    key: &KeyMaterial<KEY_LEN>,
+fn decrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P, K>(
+    key: &K,
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     ct_and_tag: &[u8],
 ) -> Decrypted
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, 16>,
 {
     let mut plaintext = vec![0u8; ct_and_tag.len().saturating_sub(TAG_LEN)];
-    match Ccm::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_out(
+    match Ccm::<P, Decrypting, K, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_out(
         key, nonce, aad, ct_and_tag, &mut plaintext,
     ) {
         Ok(n) => {
@@ -162,12 +165,12 @@ fn run_case(
     input: &[u8],
 ) -> Result<Vec<u8>, ()> {
     macro_rules! dispatch {
-        ($k:literal, $t:literal, $p:ty) => {{
-            let key = cipher_key::<$k>(key_bytes);
+        ($k:literal, $t:literal, $p:ty, $key:ty) => {{
+            let key = cipher_key::<$key, $k>(key_bytes);
             if encrypt {
-                Ok(encrypt_case::<$k, $t, $p>(&key, nonce, aad, input))
+                Ok(encrypt_case::<$k, $t, $p, $key>(&key, nonce, aad, input))
             } else {
-                match decrypt_case::<$k, $t, $p>(&key, nonce, aad, input) {
+                match decrypt_case::<$k, $t, $p, $key>(&key, nonce, aad, input) {
                     Decrypted::Plaintext(p) => Ok(p),
                     Decrypted::TagCheckFailed => Err(()),
                 }
@@ -180,12 +183,12 @@ fn run_case(
     // runtime values. The body is one expression, and each arm is its own instantiation, so
     // `cargo mutants` still sees the code it expands to.
     match (key_len, tag_len) {
-        (128, 96) => dispatch!(16, 12, AES128Internal),
-        (128, 128) => dispatch!(16, 16, AES128Internal),
-        (192, 96) => dispatch!(24, 12, AES192Internal),
-        (192, 128) => dispatch!(24, 16, AES192Internal),
-        (256, 96) => dispatch!(32, 12, AES256Internal),
-        (256, 128) => dispatch!(32, 16, AES256Internal),
+        (128, 96) => dispatch!(16, 12, AES128Internal, AES_CCM_128_Key),
+        (128, 128) => dispatch!(16, 16, AES128Internal, AES_CCM_128_Key),
+        (192, 96) => dispatch!(24, 12, AES192Internal, AES_CCM_192_Key),
+        (192, 128) => dispatch!(24, 16, AES192Internal, AES_CCM_192_Key),
+        (256, 96) => dispatch!(32, 12, AES256Internal, AES_CCM_256_Key),
+        (256, 128) => dispatch!(32, 16, AES256Internal, AES_CCM_256_Key),
         other => panic!("tcId {tc_id}: unexpected (keyLen, tagLen) {other:?}"),
     }
 }

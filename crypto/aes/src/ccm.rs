@@ -59,9 +59,8 @@
 //! `DATA_LEN` bytes of payload:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CCM_128_Packet;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_aes::{AES_CCM_128_Packet, AES_CCM_128_Key};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Up to 64 bytes of AAD, and frames of exactly 2 KiB -- comfortably above an 802.11 frame,
@@ -69,8 +68,7 @@
 //! type AESEnc = AES_CCM_128_Packet<Encrypting, 12, 16, 64, 2048>;
 //! type AESDec = AES_CCM_128_Packet<Decrypting, 12, 16, 64, 2048>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES_CCM_128_Key::new_from_os().expect("a fresh key");
 //!
 //! let frame = [0x5Au8; 2048];
 //!
@@ -104,16 +102,15 @@
 //! `ciphertext || tag` (Sec 6.1 step 8):
 //!
 //! ```
-//! use bouncycastle_aes::{AES_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN};
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_aes::{AES_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN, AES_CCM_256_Key};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_256<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
 //! type AESDec = AES_CCM_256<Decrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
+//! let key = AES_CCM_256_Key::new_from_os().expect("a fresh key");
 //!
 //! // Supplied, not generated. It is the caller's responsibility that it never repeat under this key.
 //! let nonce = [0x01u8; CCM_NONCE_LEN];
@@ -143,16 +140,15 @@
 //! return and take it on its own:
 //!
 //! ```
-//! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN};
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN, AES_CCM_128_Key};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_128<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
 //! type AESDec = AES_CCM_128<Decrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES_CCM_128_Key::new_from_os().expect("a fresh key");
 //! let nonce = [0x02u8; CCM_NONCE_LEN];
 //! let message = b"a short packet";
 //!
@@ -173,16 +169,15 @@
 //! `do_encrypt_final`:
 //!
 //! ```
-//! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN};
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_aes::{AES_CCM_128, CCM_NONCE_LEN, CCM_TAG_LEN, AES_CCM_128_Key};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! // Define ourselves convenience types.
 //! type AESEnc = AES_CCM_128<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
 //! type AESDec = AES_CCM_128<Decrypting, CCM_NONCE_LEN, CCM_TAG_LEN>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES_CCM_128_Key::new_from_os().expect("a fresh key");
 //! let nonce = [0x03u8; CCM_NONCE_LEN];
 //! let aad = b"header";
 //! let plaintext = [0x5Au8; 50];
@@ -241,6 +236,11 @@ use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::Direction;
 use bouncycastle_cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor};
 
+use bouncycastle_core::errors::{KeyMaterialError, RNGError};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
+use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -267,17 +267,98 @@ pub const CCM_TAG_LEN: usize = 16;
 /// a compile error. Use [`CCM_NONCE_LEN`] and [`CCM_TAG_LEN`] if you have no reason to choose.
 #[allow(non_camel_case_types)]
 pub type AES_CCM_128<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
-    Ccm<AES128Internal, Dir, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>;
+    Ccm<AES128Internal, Dir, AES_CCM_128_Key, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>;
+
+/// An AES-CCM-128 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CCM_128_Key(KeyMaterial<16>);
+
+impl SymmetricCipherKey<16> for AES_CCM_128_Key {
+    fn from_keymaterial(key: KeyMaterial<16>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_128bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 128bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<16> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA256::new_from_os())
+    }
+}
 
 /// AES-192 in CCM mode with a `NONCE_LEN`-byte nonce and a `TAG_LEN`-byte tag. See [`AES_CCM_128`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_192<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
-    Ccm<AES192Internal, Dir, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>;
+    Ccm<AES192Internal, Dir, AES_CCM_192_Key, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>;
+
+/// An AES-CCM-192 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CCM_192_Key(KeyMaterial<24>);
+
+impl SymmetricCipherKey<24> for AES_CCM_192_Key {
+    fn from_keymaterial(key: KeyMaterial<24>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_192bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 192bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<24> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}
 
 /// AES-256 in CCM mode with a `NONCE_LEN`-byte nonce and a `TAG_LEN`-byte tag. See [`AES_CCM_128`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
-    Ccm<AES256Internal, Dir, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>;
+    Ccm<AES256Internal, Dir, AES_CCM_256_Key, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN>;
+
+/// An AES-CCM-256 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CCM_256_Key(KeyMaterial<32>);
+
+impl SymmetricCipherKey<32> for AES_CCM_256_Key {
+    fn from_keymaterial(key: KeyMaterial<32>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_256bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 256bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<32> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}
 
 /// AES-128 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`, for
 /// frames of exactly `DATA_LEN` payload bytes.
@@ -294,8 +375,26 @@ pub type AES_CCM_128_Packet<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmDecryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmEncryptor<
+        AES128Internal,
+        AES_CCM_128_Key,
+        16,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
+    CcmDecryptor<
+        AES128Internal,
+        AES_CCM_128_Key,
+        16,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
 >;
 
 /// AES-192 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128_Packet`].
@@ -307,8 +406,26 @@ pub type AES_CCM_192_Packet<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmDecryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmEncryptor<
+        AES192Internal,
+        AES_CCM_192_Key,
+        24,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
+    CcmDecryptor<
+        AES192Internal,
+        AES_CCM_192_Key,
+        24,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
 >;
 
 /// AES-256 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128_Packet`].
@@ -320,6 +437,24 @@ pub type AES_CCM_256_Packet<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmDecryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmEncryptor<
+        AES256Internal,
+        AES_CCM_256_Key,
+        32,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
+    CcmDecryptor<
+        AES256Internal,
+        AES_CCM_256_Key,
+        32,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
 >;

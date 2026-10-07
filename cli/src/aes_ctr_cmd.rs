@@ -37,10 +37,11 @@ use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::CTR_NONCE_LEN;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{AES_CTR_128_Key, AES_CTR_192_Key, AES_CTR_256_Key};
 use bouncycastle::cipher::modes::Ctr;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::core::traits::SymmetricCipherKey;
 
 pub(crate) fn aes128_ctr_cmd(
     action: &CipherDirection,
@@ -48,7 +49,11 @@ pub(crate) fn aes128_ctr_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
+    run::<AES128Internal, AES_CTR_128_Key, 16>(
+        action,
+        &load_key::<AES_CTR_128_Key, 16>(key, key_file, "AES-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes192_ctr_cmd(
@@ -57,7 +62,11 @@ pub(crate) fn aes192_ctr_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
+    run::<AES192Internal, AES_CTR_192_Key, 24>(
+        action,
+        &load_key::<AES_CTR_192_Key, 24>(key, key_file, "AES-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes256_ctr_cmd(
@@ -66,20 +75,23 @@ pub(crate) fn aes256_ctr_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
+    run::<AES256Internal, AES_CTR_256_Key, 32>(
+        action,
+        &load_key::<AES_CTR_256_Key, 32>(key, key_file, "AES-256"),
+        output_hex,
+    );
 }
 
 /// Dispatches to the shared streaming loops with `Ctr` filled in as the mode.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+fn run<P, K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+where
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
     run_stream_mode::<
-        Ctr<P, Encrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
-        Ctr<P, Decrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
+        Ctr<P, Encrypting, K, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
+        Ctr<P, Decrypting, K, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
+        K,
         KEY_LEN,
         CTR_NONCE_LEN,
     >(action, key, output_hex)

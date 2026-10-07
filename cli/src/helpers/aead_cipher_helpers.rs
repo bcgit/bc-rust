@@ -39,7 +39,7 @@ use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write
 use bouncycastle::cipher::modes::Gcm;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
@@ -70,14 +70,15 @@ pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
 
 /// Encrypts stdin to stdout under GCM: writes the generated nonce, then the ciphertext as it
 /// streams, then the tag.
-pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub fn encrypt_gcm<P, K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, 16>,
 {
-    let (mut enc, nonce) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::do_encrypt_init(key)
+    let (mut enc, nonce) = Gcm::<P, Encrypting, K, KEY_LEN, TAG_LEN>::do_encrypt_init(key)
         .unwrap_or_else(|e| {
             eprintln!("Error: couldn't start encryption: {e:?}");
             exit(-1);
@@ -119,12 +120,13 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 /// Decrypts stdin to stdout under GCM: reads the 12-byte nonce, streams the rest through the
 /// inline decryptor, and checks the tag on `do_decrypt_final`. See the module docs for why
 /// plaintext may already be written to stdout by the time a tag failure is reported.
-pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub fn decrypt_gcm<P, K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, 16>,
 {
     let mut nonce = [0u8; 12];
     if let Err(e) = io::stdin().read_exact(&mut nonce) {
@@ -134,7 +136,7 @@ pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         exit(-1);
     }
 
-    let mut dec = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::do_decrypt_init(key, &nonce)
+    let mut dec = Gcm::<P, Decrypting, K, KEY_LEN, TAG_LEN>::do_decrypt_init(key, &nonce)
         .unwrap_or_else(|e| {
             eprintln!("Error: couldn't start decryption: {e:?}");
             exit(-1);

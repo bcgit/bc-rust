@@ -17,22 +17,23 @@ use bouncycastle_cipher::modes::hazmat::Ecb;
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::ToyCipherKey;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
-type ToyEcb<Dir> = Ecb<Toy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedEcb<Dir> = Ecb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedFourEcb<Dir> = Ecb<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
+type ToyEcb<Dir> = Ecb<Toy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedEcb<Dir> = Ecb<SwappedPairToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
+type SwappedFourEcb<Dir> = Ecb<SwappedFourToy, Dir, ToyCipherKey, TOY_LEN, TOY_LEN>;
 
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
 /// block-shaped.
 fn enc_blocks<const N: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<ToyCipherKey, TOY_LEN, 0, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
@@ -42,7 +43,7 @@ fn enc_blocks<const N: usize>(
 
 /// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<ToyCipherKey, TOY_LEN, 0, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
@@ -52,7 +53,7 @@ fn dec_blocks<const N: usize>(
 
 /// The flat streaming method `do_encrypt_inplace`, by value.
 fn enc_flat<const LEN: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<ToyCipherKey, TOY_LEN, 0, TOY_LEN>,
     plaintext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *plaintext;
@@ -62,7 +63,7 @@ fn enc_flat<const LEN: usize>(
 
 /// The flat streaming method `do_decrypt_inplace`, by value.
 fn dec_flat<const LEN: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<ToyCipherKey, TOY_LEN, 0, TOY_LEN>,
     ciphertext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *ciphertext;
@@ -83,7 +84,7 @@ fn decryptor() -> ToyEcb<Decrypting> {
 #[test]
 fn ecb_conforms_to_the_block_cipher_framework() {
     TestFrameworkBlockCipher::new()
-        .test::<TOY_LEN, 0, TOY_LEN, ToyEcb<Encrypting>, ToyEcb<Decrypting>>();
+        .test::<TOY_LEN, 0, TOY_LEN, ToyCipherKey, ToyEcb<Encrypting>, ToyEcb<Decrypting>>();
 }
 
 // ---- the spec equations -------------------------------------------------------------------
@@ -117,7 +118,8 @@ fn reference_ecb(perm: &Toy, input: &[[u8; TOY_LEN]], encrypt: bool) -> Vec<[u8;
 #[test]
 fn the_mode_matches_the_spec_equations() {
     let key = toy_key();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm =
+        <Toy as ElectronicCodeBook<ToyCipherKey, TOY_LEN, TOY_LEN>>::new(key.get_key()).unwrap();
     let plaintext: [[u8; TOY_LEN]; 5] =
         core::array::from_fn(|i| core::array::from_fn(|j| (i * 31 + j * 7 + 1) as u8));
 
@@ -148,7 +150,7 @@ fn the_mode_matches_the_spec_equations() {
 
     // ...and ECB is not CBC: CBC computes CIPH_K(P1 XOR IV), ECB computes CIPH_K(P1).
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
-    let (mut cbc, _) = Cbc::<Toy, Encrypting, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(
+    let (mut cbc, _) = Cbc::<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(
         &key,
         &mut FixedSeedRNG::<TOY_LEN>::new(iv),
     )
@@ -366,24 +368,16 @@ fn a_ciphertext_bit_error_affects_only_its_own_block() {
     }
 }
 
-// ---- key handling ------------------------------------------------------------------------
-
-#[test]
-fn a_key_of_the_wrong_type_is_rejected() {
-    let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8) + 1);
-    let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
-    assert!(ToyEcb::<Encrypting>::do_encrypt_init(&seed).is_err());
-    assert!(ToyEcb::<Decrypting>::do_decrypt_init(&seed, &[]).is_err());
-}
-
 // ---- composition with the padding layer --------------------------------------------------
 
 /// ECB is block-aligned by contract, so arbitrary-length data goes through `bouncycastle_cipher::padding`
 /// like the other modes; its `INIT_DATA_LEN` of 0 flows through the adapters as an empty array.
 #[test]
 fn the_padding_layer_round_trips_every_length() {
-    type Enc = PaddedBlockCipherEncryptor<ToyEcb<Encrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
-    type Dec = PaddedBlockCipherDecryptor<ToyEcb<Decrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
+    type Enc =
+        PaddedBlockCipherEncryptor<ToyEcb<Encrypting>, PKCS7, ToyCipherKey, TOY_LEN, 0, TOY_LEN>;
+    type Dec =
+        PaddedBlockCipherDecryptor<ToyEcb<Decrypting>, PKCS7, ToyCipherKey, TOY_LEN, 0, TOY_LEN>;
 
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext: Vec<u8> = (0..len).map(|i| (i * 5 + 3) as u8).collect();
@@ -411,6 +405,6 @@ fn sizes_match_the_documented_memory_table() {
     // One block smaller than CBC, which stores a chaining value.
     assert_eq!(
         size_of::<ToyEcb<Encrypting>>() + TOY_LEN,
-        size_of::<Cbc<Toy, Encrypting, TOY_LEN, TOY_LEN>>()
+        size_of::<Cbc<Toy, Encrypting, ToyCipherKey, TOY_LEN, TOY_LEN>>()
     );
 }

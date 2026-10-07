@@ -7,17 +7,15 @@
 //!
 //! # Why ECB, and where the other ACVP AES files are used
 //!
-//! ECB applies the raw permutation to each block independently, so an ECB test vector *is* a
-//! block-permutation test vector -- which is the only reason ECB is mentioned in this crate. See
-//! the crate docs on why you must never use ECB to encrypt data.
+//! The vectors are driven through [`Ecb`] over the AES engines, which is the AES-ECB this crate
+//! exposes under `hazmat`. See the crate docs on why you must never use ECB to encrypt data.
 //!
 //! `bc-test-data` ships sixteen ACVP AES vector sets, one per mode. This file deliberately
-//! consumes only `ACVP-AES-ECB`, because that is the one that tests the permutation rather than a
-//! mode. The others belong with whatever implements the mode:
+//! consumes only `ACVP-AES-ECB`. The others belong with whatever implements the mode:
 //!
 //! | Vector set | Consumed by |
 //! |---|---|
-//! | `ACVP-AES-ECB` | this file (the permutation; the `Ecb` mode's own tests are toy-driven, in `crypto/cipher/tests/modes/ecb_tests.rs`) |
+//! | `ACVP-AES-ECB` | this file (the `Ecb` mode's structural tests are toy-driven, in `crypto/cipher/tests/modes/ecb_tests.rs`) |
 //! | `ACVP-AES-CBC` | `cbc_bc-test-data.rs` |
 //! | `ACVP-AES-CBC-CS1` / `-CS2` / `-CS3` | nothing yet (ciphertext stealing is unimplemented) |
 //! | `ACVP-AES-CCM` | `ccm_bc-test-data.rs` |
@@ -47,11 +45,17 @@
 //! reports how many it skipped so the gap is visible rather than silent.
 
 use bouncycastle_aes::AES_BLOCK_LEN;
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::{
+    AES_ECB_128_Key, AES_ECB_192_Key, AES_ECB_256_Key, AES128Internal, AES192Internal,
+    AES256Internal,
+};
+use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json};
 use bouncycastle_hex as hex;
 
@@ -63,10 +67,9 @@ const RESPONSE_FILE: &str = "ACVP-AES-ECB.4014527.rsp.json";
 /// The ACVP set deliberately includes an all-zero key (the GFSbox-style groups vary only the
 /// plaintext under a zero key). `KeyMaterial` tags an all-zero buffer as [`KeyType::Zeroized`]
 /// and will not promote it outside a [`do_hazardous_operations`] closure, which is the right
-/// default -- an all-zero key normally means a broken RNG, and `AESInternal128::new` rejecting it is
-/// tested in `fips197_tests.rs`. Here the zero key is deliberate and comes from NIST, so this
-/// opts in explicitly rather than the library weakening its guard.
-fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
+/// default, since an all-zero key normally means a broken RNG. Here the zero key is deliberate and
+/// comes from NIST, so this opts in explicitly rather than the library weakening its guard.
+fn cipher_key<K: SymmetricCipherKey<N>, const N: usize>(bytes: &[u8]) -> K {
     assert_eq!(bytes.len(), N, "key length should match the parameter set");
     let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
         .expect("ACVP key bytes fit the buffer");
@@ -79,108 +82,82 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
         .expect("promoting a NIST all-zero test key");
     }
 
-    key
+    K::from_keymaterial(key).expect("a valid key")
 }
 
-/// A single-block transformation, resolved once per test case rather than per block.
-type BlockTransform = Box<dyn Fn(&mut [u8; AES_BLOCK_LEN])>;
-
-/// Encrypts or decrypts `data` block by block, i.e. ECB, dispatching on the key length.
-fn ecb(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
-    assert_eq!(data.len() % AES_BLOCK_LEN, 0, "ACVP ECB data must be block-aligned");
-
-    let transform: BlockTransform = match key.len() {
-        16 => {
-            let km = cipher_key::<16>(key);
-            let aes = AES128Internal::new(&km).expect("valid AES-128 key");
-            if encrypt {
-                Box::new(move |b| aes.encrypt_block(b))
-            } else {
-                Box::new(move |b| aes.decrypt_block(b))
-            }
-        }
-        24 => {
-            let km = cipher_key::<24>(key);
-            let aes = AES192Internal::new(&km).expect("valid AES-192 key");
-            if encrypt {
-                Box::new(move |b| aes.encrypt_block(b))
-            } else {
-                Box::new(move |b| aes.decrypt_block(b))
-            }
-        }
-        32 => {
-            let km = cipher_key::<32>(key);
-            let aes = AES256Internal::new(&km).expect("valid AES-256 key");
-            if encrypt {
-                Box::new(move |b| aes.encrypt_block(b))
-            } else {
-                Box::new(move |b| aes.decrypt_block(b))
-            }
-        }
-        other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
-    };
-
-    let mut out = Vec::with_capacity(data.len());
-    for chunk in data.chunks(AES_BLOCK_LEN) {
-        // Cannot fail: the length is asserted block-aligned above.
-        let mut block: [u8; AES_BLOCK_LEN] = chunk.try_into().unwrap();
-        transform(&mut block);
-        out.extend_from_slice(&block);
-    }
-    out
+/// How the blocks are handed to the mode: one at a time, or in pairs through the two-block entry
+/// point, which must agree with the single-block path on real vectors too.
+#[derive(Clone, Copy)]
+enum Grouping {
+    Single,
+    Pairs,
 }
 
-/// The same, using the two-block entry points where a pair is available.
-fn ecb_pairwise(key: &[u8], data: &[u8], encrypt: bool) -> Vec<u8> {
+/// Runs `data` through [`Ecb`] over `P` in the given direction, grouped as asked.
+fn run_case<P, K, const KEY_LEN: usize>(
+    key_bytes: &[u8],
+    data: &[u8],
+    encrypt: bool,
+    grouping: Grouping,
+) -> Vec<u8>
+where
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, AES_BLOCK_LEN>,
+{
     assert_eq!(data.len() % AES_BLOCK_LEN, 0, "ACVP ECB data must be block-aligned");
-    let mut blocks: Vec<[u8; AES_BLOCK_LEN]> =
-        data.chunks(AES_BLOCK_LEN).map(|c| c.try_into().unwrap()).collect();
+    let key = cipher_key::<K, KEY_LEN>(key_bytes);
+    let mut blocks: Vec<[u8; AES_BLOCK_LEN]> = data.as_chunks::<AES_BLOCK_LEN>().0.to_vec();
 
-    match key.len() {
-        16 => {
-            let km = cipher_key::<16>(key);
-            let aes = AES128Internal::new(&km).unwrap();
-            run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
-            });
+    if encrypt {
+        let (mut enc, _) = Ecb::<P, Encrypting, K, KEY_LEN, AES_BLOCK_LEN>::do_encrypt_init(&key)
+            .expect("encrypt init");
+        match grouping {
+            Grouping::Single => {
+                for block in blocks.iter_mut() {
+                    enc.do_encrypt_inplace(block).unwrap();
+                }
+            }
+            Grouping::Pairs => {
+                let (pairs, tail) = blocks.as_chunks_mut::<2>();
+                for pair in pairs {
+                    enc.do_encrypt_blocks_inplace(pair).unwrap();
+                }
+                for block in tail {
+                    enc.do_encrypt_inplace(block).unwrap();
+                }
+            }
         }
-        24 => {
-            let km = cipher_key::<24>(key);
-            let aes = AES192Internal::new(&km).unwrap();
-            run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
-            });
+    } else {
+        let mut dec = Ecb::<P, Decrypting, K, KEY_LEN, AES_BLOCK_LEN>::do_decrypt_init(&key, &[])
+            .expect("decrypt init");
+        match grouping {
+            Grouping::Single => {
+                for block in blocks.iter_mut() {
+                    dec.do_decrypt_inplace(block).unwrap();
+                }
+            }
+            Grouping::Pairs => {
+                let (pairs, tail) = blocks.as_chunks_mut::<2>();
+                for pair in pairs {
+                    dec.do_decrypt_blocks_inplace(pair).unwrap();
+                }
+                for block in tail {
+                    dec.do_decrypt_inplace(block).unwrap();
+                }
+            }
         }
-        32 => {
-            let km = cipher_key::<32>(key);
-            let aes = AES256Internal::new(&km).unwrap();
-            run_pairwise(&mut blocks, encrypt, |p, e| {
-                if e { aes.encrypt_2blocks(p) } else { aes.decrypt_2blocks(p) }
-            });
-        }
-        other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 
     blocks.concat()
 }
 
-/// Walks `blocks` two at a time, leaving a trailing odd block to a duplicated pair.
-fn run_pairwise(
-    blocks: &mut [[u8; AES_BLOCK_LEN]],
-    encrypt: bool,
-    transform: impl Fn(&mut [[u8; AES_BLOCK_LEN]; 2], bool),
-) {
-    let mut chunks = blocks.chunks_exact_mut(2);
-    for pair in &mut chunks {
-        // Cannot fail: `chunks_exact_mut(2)` yields slices of length 2.
-        let pair: &mut [[u8; AES_BLOCK_LEN]; 2] = pair.try_into().unwrap();
-        transform(pair, encrypt);
-    }
-    // An odd trailing block still has to go through the two-block path.
-    if let [last] = chunks.into_remainder() {
-        let mut pair = [*last, *last];
-        transform(&mut pair, encrypt);
-        *last = pair[0];
+/// Encrypts or decrypts `data` with AES-ECB, dispatching on the key length.
+fn ecb(key: &[u8], data: &[u8], encrypt: bool, grouping: Grouping) -> Vec<u8> {
+    match key.len() {
+        16 => run_case::<AES128Internal, AES_ECB_128_Key, 16>(key, data, encrypt, grouping),
+        24 => run_case::<AES192Internal, AES_ECB_192_Key, 24>(key, data, encrypt, grouping),
+        32 => run_case::<AES256Internal, AES_ECB_256_Key, 32>(key, data, encrypt, grouping),
+        other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }
 
@@ -224,20 +201,30 @@ fn acvp_aes_ecb_known_answer_tests() {
 
             assert_eq!(pt.len(), ct.len(), "tcId {tc_id}: pt and ct differ in length");
 
-            assert_eq!(ecb(&key, &pt, true), ct, "tcId {tc_id}: AES-{} encrypt", key.len() * 8);
-            assert_eq!(ecb(&key, &ct, false), pt, "tcId {tc_id}: AES-{} decrypt", key.len() * 8);
-
-            // The two-block path must agree with the single-block path on real vectors too.
             assert_eq!(
-                ecb_pairwise(&key, &pt, true),
+                ecb(&key, &pt, true, Grouping::Single),
                 ct,
-                "tcId {tc_id}: AES-{} encrypt via encrypt_2blocks",
+                "tcId {tc_id}: AES-{} encrypt",
                 key.len() * 8
             );
             assert_eq!(
-                ecb_pairwise(&key, &ct, false),
+                ecb(&key, &ct, false, Grouping::Single),
                 pt,
-                "tcId {tc_id}: AES-{} decrypt via decrypt_2blocks",
+                "tcId {tc_id}: AES-{} decrypt",
+                key.len() * 8
+            );
+
+            // The two-block path must agree with the single-block path on real vectors too.
+            assert_eq!(
+                ecb(&key, &pt, true, Grouping::Pairs),
+                ct,
+                "tcId {tc_id}: AES-{} encrypt in pairs",
+                key.len() * 8
+            );
+            assert_eq!(
+                ecb(&key, &ct, false, Grouping::Pairs),
+                pt,
+                "tcId {tc_id}: AES-{} decrypt in pairs",
                 key.len() * 8
             );
 

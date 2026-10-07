@@ -9,16 +9,18 @@
 //! A `valid` case must encrypt to exactly `ct || tag` and decrypt back to `msg`. An `invalid` case
 //! must be rejected with `AEADTagCheckFailed`, leaving the output buffer zeroized.
 
+use bouncycastle_ascon::Ascon_AEAD128_Key;
 use bouncycastle_ascon::ascon_aead128::{AsconAead128, KEY_LEN, NONCE_LEN, TAG_LEN};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 /// Wraps the vector's key bytes as a cipher key, promoting them if `KeyMaterial`'s entropy
 /// heuristic declined to (as `ascon_bc-test-data.rs` does for the NIST KAT keys).
-fn cipher_key(bytes: &[u8]) -> KeyMaterial<KEY_LEN> {
+fn cipher_key(bytes: &[u8]) -> Ascon_AEAD128_Key {
     let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
         .expect("a 16-byte key");
     do_hazardous_operations(&mut key, |k| {
@@ -26,7 +28,7 @@ fn cipher_key(bytes: &[u8]) -> KeyMaterial<KEY_LEN> {
         k.set_security_strength(SecurityStrength::_128bit)
     })
     .expect("promoting a wycheproof test key");
-    key
+    Ascon_AEAD128_Key::from_keymaterial(key).expect("a valid key")
 }
 
 #[test]

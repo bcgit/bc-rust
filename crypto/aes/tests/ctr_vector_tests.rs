@@ -26,10 +26,11 @@
 //! which is why the IV above ends in `00000000`. See the [`Ctr`] module docs.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_CTR_128_Key, AES_CTR_192_Key, AES_CTR_256_Key};
 use bouncycastle_cipher::modes::Ctr;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::traits::SymmetricCipherKey;
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
@@ -87,22 +88,21 @@ fn unhex(s: &str) -> Vec<u8> {
     hex::decode(s).expect("valid hex")
 }
 
-fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
-    let raw = unhex(hex_str);
-    assert_eq!(raw.len(), N, "key length");
-    KeyMaterial::<N>::from_bytes_as_type(&raw, KeyType::SymmetricCipherKey)
-        .expect("a valid symmetric cipher key")
+fn key_material<K: SymmetricCipherKey<N>, const N: usize>(hex_str: &str) -> K {
+    let raw: [u8; N] = unhex(hex_str).try_into().expect("key length");
+    K::from_bytes(&raw).expect("a valid key")
 }
 
 /// Chunk sizes that cut across the block and the four-block batch, so the vectors are reproduced
 /// through every path rather than only the batched one.
 const CHUNKINGS: [usize; 6] = [1, 5, 16, 17, 33, 69];
 
-fn check<P, const KEY_LEN: usize>(name: &str, key_hex: &str, expected_hex: &str)
+fn check<P, K, const KEY_LEN: usize>(name: &str, key_hex: &str, expected_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = key_material::<K, KEY_LEN>(key_hex);
     let nonce: [u8; NONCE_LEN] = unhex(NONCE).try_into().expect("a 12-byte nonce");
     let plaintext = unhex(PLAINTEXT);
     let expected = unhex(expected_hex);
@@ -112,7 +112,7 @@ where
     // Encryption, in one call and in every chunking.
     for chunk in [plaintext.len()].into_iter().chain(CHUNKINGS) {
         let (mut enc, got) =
-            Ctr::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_encrypt_init_rng(
+            Ctr::<P, Encrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_encrypt_init_rng(
                 &key,
                 &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
             )
@@ -129,7 +129,7 @@ where
     // Decryption, likewise.
     for chunk in [expected.len()].into_iter().chain(CHUNKINGS) {
         let mut dec =
-            Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_decrypt_init(&key, &nonce)
+            Ctr::<P, Decrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_decrypt_init(&key, &nonce)
                 .expect("decrypt init");
         let mut data = expected.clone();
         for piece in data.chunks_mut(chunk) {
@@ -140,24 +140,26 @@ where
 
     // ...and the one-shot.
     let mut data = expected.clone();
-    Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::decrypt_inplace(&key, &nonce, &mut data)
-        .expect("one-shot decryption");
+    Ctr::<P, Decrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN>::decrypt_inplace(
+        &key, &nonce, &mut data,
+    )
+    .expect("one-shot decryption");
     assert_eq!(data, plaintext, "{name}: one-shot");
 }
 
 #[test]
 fn aes128_ctr_matches_openssl() {
-    check::<AES128Internal, 16>("AES-128", KEY_128, CT_128);
+    check::<AES128Internal, AES_CTR_128_Key, 16>("AES-128", KEY_128, CT_128);
 }
 
 #[test]
 fn aes192_ctr_matches_openssl() {
-    check::<AES192Internal, 24>("AES-192", KEY_192, CT_192);
+    check::<AES192Internal, AES_CTR_192_Key, 24>("AES-192", KEY_192, CT_192);
 }
 
 #[test]
 fn aes256_ctr_matches_openssl() {
-    check::<AES256Internal, 32>("AES-256", KEY_256, CT_256);
+    check::<AES256Internal, AES_CTR_256_Key, 32>("AES-256", KEY_256, CT_256);
 }
 
 /// The vectors must actually depend on the counter advancing: the second block of ciphertext must

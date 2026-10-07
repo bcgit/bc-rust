@@ -7,8 +7,12 @@
 //!
 //! ## Encrypting and decrypting a single block
 //!
+//! The engine implements [`ElectronicCodeBook`] for every key type of its key length (the modes
+//! each bring their own), so a call on a bare engine has to name one; here the ECB key, as the
+//! raw permutation is what ECB is.
+//!
 //! ```
-//! use bouncycastle_aes::hazmat::AES128Internal;
+//! use bouncycastle_aes::hazmat::{AES128Internal, AES_ECB_128_Key};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //!
@@ -18,12 +22,12 @@
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
 //!
-//! let aes = AES128Internal::new(&key).expect("a valid AES-128 key");
+//! let aes = <AES128Internal as ElectronicCodeBook<AES_ECB_128_Key, 16, 16>>::new(&key).expect("a valid AES-128 key");
 //!
 //! // Sample plaintext from FIPS 197 Appendix B.
 //! let mut block: [u8; 16] = [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
 //!                            0x31, 0x31, 0x98, 0xa2, 0xe0, 0x37, 0x07, 0x34];
-//! aes.encrypt_block(&mut block);
+//! <AES128Internal as ElectronicCodeBook<AES_ECB_128_Key, 16, 16>>::encrypt_block(&aes, &mut block);
 //!
 //! // `block` now contains the ciphertext.
 //! // Double-check it against the sample ciphertext from FIPS 197 Appdx B.
@@ -31,7 +35,7 @@
 //!                    0xdc, 0x11, 0x85, 0x97, 0x19, 0x6a, 0x0b, 0x32]);
 //!
 //! // The same value decrypts, from the same instantiated aes object.
-//! aes.decrypt_block(&mut block);
+//! <AES128Internal as ElectronicCodeBook<AES_ECB_128_Key, 16, 16>>::decrypt_block(&aes, &mut block);
 //!
 //! // `block` now contains the original plaintext again.
 //! assert_eq!(block, [0x32, 0x43, 0xf6, 0xa8, 0x88, 0x5a, 0x30, 0x8d,
@@ -50,22 +54,22 @@
 //! docs have the table and the benches record the numbers:
 //!
 //! ```
-//! use bouncycastle_aes::hazmat::AES256Internal;
+//! use bouncycastle_aes::hazmat::{AES256Internal, AES_ECB_256_Key};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let aes = AES256Internal::new(&key).expect("a valid AES-256 key");
+//! let aes = <AES256Internal as ElectronicCodeBook<AES_ECB_256_Key, 32, 16>>::new(&key).expect("a valid AES-256 key");
 //!
 //! let mut pair = [[0u8; 16], [1u8; 16]];
-//! aes.encrypt_2blocks(&mut pair);
-//! aes.decrypt_2blocks(&mut pair);
+//! <AES256Internal as ElectronicCodeBook<AES_ECB_256_Key, 32, 16>>::encrypt_2blocks(&aes, &mut pair);
+//! <AES256Internal as ElectronicCodeBook<AES_ECB_256_Key, 32, 16>>::decrypt_2blocks(&aes, &mut pair);
 //! assert_eq!(pair, [[0u8; 16], [1u8; 16]]);
 //!
 //! let mut four = [[0u8; 16], [1u8; 16], [2u8; 16], [3u8; 16]];
-//! aes.encrypt_4blocks(&mut four);
-//! aes.decrypt_4blocks(&mut four);
+//! <AES256Internal as ElectronicCodeBook<AES_ECB_256_Key, 32, 16>>::encrypt_4blocks(&aes, &mut four);
+//! <AES256Internal as ElectronicCodeBook<AES_ECB_256_Key, 32, 16>>::decrypt_4blocks(&aes, &mut four);
 //! assert_eq!(four, [[0u8; 16], [1u8; 16], [2u8; 16], [3u8; 16]]);
 //! ```
 

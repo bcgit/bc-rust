@@ -22,14 +22,14 @@
 //! ```
 //! use bouncycastle_cipher::modes::Cbc;
 //! use bouncycastle_cipher::Encrypting;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherEncryptor, SuspendableKeyed};
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! use bouncycastle_core_test_framework::{ToyBlockCipher, ToyCipherKey};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //!
-//! type ToyCbc = Cbc<ToyBlockCipher, Encrypting, 16, 16>;
+//! type ToyCbc = Cbc<ToyBlockCipher, Encrypting, ToyCipherKey, 16, 16>;
 //! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = ToyCipherKey::new_from_os().expect("a fresh key");
 //! let (mut enc, _iv) = ToyCbc::do_encrypt_init(&key).unwrap();
 //! let mut first = [0x11u8; 16];
 //! enc.do_encrypt_inplace(&mut first).unwrap();
