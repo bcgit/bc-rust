@@ -22,6 +22,10 @@ previous session's reading of them.
   issue and sub-issue structure.
 - **[INTRODUCTION.md](INTRODUCTION.md) — read for design intent**, when a change touches public API shape or you need
   the reasoning behind a convention rather than the convention itself.
+- **[NO_STD_NOTES.md](NO_STD_NOTES.md) — read before changing a `Cargo.toml`, a crate's `lib.rs` attributes, or
+  adding code that allocates or uses `std`.** The authority on what `no_std` means here, the `std` feature, how a
+  crate is converted, how `no_std` support is validated, and the current status of every crate. Any PR that changes a
+  crate's `no_std` state must update its status table.
 
 Where this file and one of those documents disagree, the document wins — and say so, so the stale line here gets
 fixed.
@@ -45,6 +49,7 @@ cargo bench --all               # all criterion benches
 cargo bench -p bouncycastle-mlkem
 cargo doc                       # rustdoc (published to gh-pages by CI on main)
 cargo run -p cli -- --help      # run the `bc-rust` CLI
+just                            # build + test every crate on its own, with and without std (what CI runs; see NO_STD_NOTES.md)
 ```
 
 Quality / mutation testing:
@@ -85,13 +90,19 @@ A typical primitive crate looks like:
 ```
 crypto/<name>/
   Cargo.toml          # depends on bouncycastle-core; dev-deps on core-test-framework, hex, rng, criterion
-  src/lib.rs          # must contain #![forbid(unsafe_code)], #![forbid(missing_docs)], aim for #![no_std]
+  src/lib.rs          # must contain #![forbid(unsafe_code)], #![forbid(missing_docs)], and a no_std attribute (see NO_STD_NOTES.md)
   src/*.rs            # implementation
   tests/*.rs          # integration tests, usually driven via core-test-framework
   benches/*.rs        # criterion benches (declared as [[bench]] with harness=false)
 ```
 
-`#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
+**`no_std` support is being added crate by crate**; [NO_STD_NOTES.md](NO_STD_NOTES.md) has the rules and the current
+status of each crate. Two things that are easy to break without noticing:
+
+- In the root `Cargo.toml`, crates that have a `std` feature are declared with `default-features = false`. A
+  dependent must either forward the feature (`std = ["<dep>/std"]`) or set `default-features = true`.
+- Building the workspace hides mistakes in either of these; only a single-crate build (`-p`) shows them, which is
+  what `just` does.
 
 ## Project-specific conventions
 
@@ -150,4 +161,15 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test` is the gate.
+All workflows live in `.github/workflows/` and run on every PR:
+
+- `rust-test.yml` — `cargo test --all`.
+- `rust-build.yml` — `cargo build --workspace --all-targets --all-features`.
+- `rust-docs.yml` — `cargo doc --all`.
+- `rust-style.yml` — `cargo fmt --all --check` using nightly rustfmt (runs only in `bcgit/bc-rust`, not on forks).
+- `publish_doc_benches_to_ghpages.yaml` — builds rustdoc and runs `quality_stats.sh`; on `main` it also publishes both
+  to GitHub Pages (`https://bcgit.github.io/bc-rust/`). The bench job is commented out, so `cargo bench` is run locally only.
+- `rust-validate.yml` — installs the `thumbv7em-none-eabi` target and `just`, then runs `just validate-all`, which
+  builds and tests every crate on its own with and without `std` (details in NO_STD_NOTES.md).
+
+All jobs except `rust-style` use the stable toolchain. There is no clippy job.
