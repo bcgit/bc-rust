@@ -9,10 +9,9 @@
 //! HMAC over a SHA2 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
 //! rather than as part of library's public API.
 //!
-//! The key buffer length of each alias is the underlying hash's block length: per RFC 2104, a key no
-//! longer than the block is used verbatim, and only longer keys are pre-hashed down to the output
-//! length, so the buffer must be able to hold a full block. It is taken from
-//! [`HashAlgParams::BLOCK_LEN`] rather than restated as a literal so the two cannot drift apart.
+//! A key of any length is accepted: per RFC 2104, a key longer than the hash's block is pre-hashed
+//! to the output length. The key's two pad states are computed once, when an
+//! [`HmacKey`](bouncycastle_hmac::HmacKey) is built or a worker is constructed from key material.
 //!
 //! # Usage
 //!
@@ -216,16 +215,16 @@
 //!
 //! | Object                                                    | Size (bytes) |
 //! |-----------------------------------------------------------|--------------|
-//! | `HMAC_SHA224`, `HMAC_SHA256`                              | 184          |
-//! | `HMAC_SHA384`, `HMAC_SHA512`                              | 344          |
+//! | `HMAC_SHA224`, `HMAC_SHA256`, and their `HmacKey`          | 224          |
+//! | `HMAC_SHA384`, `HMAC_SHA512`, and their `HmacKey`          | 416          |
 //! | Suspended `HMAC_SHA224`/`HMAC_SHA256` state               | 108          |
 //! | Suspended `HMAC_SHA384`/`HMAC_SHA512` state               | 204          |
 //!
-//! The object is the underlying hash object (see the crate-level Memory Usage section), plus one
-//! block of key buffer, plus a `usize` recording the key length: 112 + 64 + 8 = 184 for the SHA-256
-//! family, 208 + 128 + 8 = 344 for the SHA-512 family. The suspended state is exactly the inner
-//! hash's suspended state -- the key is deliberately excluded -- so it matches the corresponding row
-//! for the bare hash.
+//! The worker and the key are each two of the underlying hash object (see the crate-level Memory
+//! Usage section): the inner hash and the outer pad state, 2 x 112 = 224 for the SHA-256 family,
+//! 2 x 208 = 416 for the SHA-512 family. The suspended state is exactly the inner hash's suspended
+//! state -- the key is deliberately excluded -- so it matches the corresponding row for the bare
+//! hash.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -276,7 +275,7 @@ pub const HMAC_SHA512_256_NAME: &str = "HMAC-SHA512/256";
 /*** Type aliases ***/
 /// Public type for HMAC using SHA224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA224 = HMAC<SHA224, { <SHA224 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA224 = HMAC<SHA224>;
 impl HMACParams for SHA224 {
     type MACKey = KeyMaterial<{ <SHA224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA224_NAME;
@@ -289,7 +288,7 @@ impl HMACParams for SHA224 {
 
 /// Public type for HMAC using SHA256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA256 = HMAC<SHA256, { <SHA256 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA256 = HMAC<SHA256>;
 impl HMACParams for SHA256 {
     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA256_NAME;
@@ -302,7 +301,7 @@ impl HMACParams for SHA256 {
 
 /// Public type for HMAC using SHA384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA384 = HMAC<SHA384, { <SHA384 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA384 = HMAC<SHA384>;
 impl HMACParams for SHA384 {
     type MACKey = KeyMaterial<{ <SHA384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA384_NAME;
@@ -315,7 +314,7 @@ impl HMACParams for SHA384 {
 
 /// Public type for HMAC using SHA512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512 = HMAC<SHA512, { <SHA512 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA512 = HMAC<SHA512>;
 impl HMACParams for SHA512 {
     type MACKey = KeyMaterial<{ <SHA512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_NAME;
@@ -328,7 +327,7 @@ impl HMACParams for SHA512 {
 
 /// Public type for HMAC using SHA512/224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512_224 = HMAC<SHA512_224, { <SHA512_224 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA512_224 = HMAC<SHA512_224>;
 impl HMACParams for SHA512_224 {
     type MACKey = KeyMaterial<{ <SHA512_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_224_NAME;
@@ -341,7 +340,7 @@ impl HMACParams for SHA512_224 {
 
 /// Public type for HMAC using SHA512/256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512_256 = HMAC<SHA512_256, { <SHA512_256 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA512_256 = HMAC<SHA512_256>;
 impl HMACParams for SHA512_256 {
     type MACKey = KeyMaterial<{ <SHA512_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_256_NAME;
