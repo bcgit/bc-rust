@@ -14,14 +14,14 @@
 //! Ascon-AEAD128 additionally supports online processing.
 //!
 //! This crate implements the four Ascon functions standardized in NIST SP 800-232
-//! (August 2025), which can be found here: https://doi.org/10.6028/NIST.SP.800-232
+//! (August 2025), which can be found here: <https://doi.org/10.6028/NIST.SP.800-232>
 //!
-//! - [`ascon_aead128::AsconAead128`] — Ascon-AEAD128 authenticated encryption (128-bit
+//! - [`Ascon-AEAD128`](ascon_aead128::AsconAead128) — authenticated encryption (128-bit
 //!   key/nonce/tag, 128-bit single-key security).
-//! - [`ascon_hash256::AsconHash256`] — Ascon-Hash256 hash function (256-bit digest, 128-bit
+//! - [`Ascon-Hash256`](ascon_hash256::AsconHash256) — hash function (256-bit digest, 128-bit
 //!   security).
-//! - [`ascon_xof128::AsconXof128`] — Ascon-XOF128 extendable-output function.
-//! - [`ascon_cxof128::AsconCXof128`] — Ascon-CXOF128 customized extendable-output function.
+//! - [`Ascon-XOF128`](ascon_xof128::AsconXof128) — extendable-output function.
+//! - [`Ascon-CXOF128`](ascon_cxof128::AsconCXof128) — customized extendable-output function.
 //!
 //! # Usage Examples
 //!
@@ -141,12 +141,12 @@
 //!
 //! | Type | In-memory size (bytes) | Suspended state size (bytes) |
 //! |------|-------------------------|-------------------------------|
-//! | [`ascon_aead128::AsconAead128`] | 72 | [`ascon_aead128::SUSPENDED_ASCON_AEAD128_STATE_LEN`] (46) |
+//! | [`AsconAead128`](ascon_aead128::AsconAead128) | 72 | [`SUSPENDED_ASCON_AEAD128_STATE_LEN`](ascon_aead128::SUSPENDED_ASCON_AEAD128_STATE_LEN) (46) |
 //! | [`Ascon_AEAD128<Encrypting>`](ascon_aead128::AsconAead128Encryptor) | 72 | |
 //! | [`Ascon_AEAD128<Decrypting>`](ascon_aead128::AsconAead128Decryptor) | 96 | |
-//! | [`ascon_hash256::AsconHash256`] | 64 | [`ascon_hash256::SUSPENDED_ASCON_HASH256_STATE_LEN`] (53) |
-//! | [`ascon_xof128::AsconXof128`] | 64 | [`ascon_xof128::SUSPENDED_ASCON_XOF128_STATE_LEN`] (54) |
-//! | [`ascon_cxof128::AsconCXof128`] | 64 | [`ascon_cxof128::SUSPENDED_ASCON_CXOF128_STATE_LEN`] (54) |
+//! | [`AsconHash256`](ascon_hash256::AsconHash256) | 64 | [`SUSPENDED_ASCON_HASH256_STATE_LEN`](ascon_hash256::SUSPENDED_ASCON_HASH256_STATE_LEN) (53) |
+//! | [`AsconXof128`](ascon_xof128::AsconXof128) | 64 | [`SUSPENDED_ASCON_XOF128_STATE_LEN`](ascon_xof128::SUSPENDED_ASCON_XOF128_STATE_LEN) (54) |
+//! | [`AsconCXof128`](ascon_cxof128::AsconCXof128) | 64 | [`SUSPENDED_ASCON_CXOF128_STATE_LEN`](ascon_cxof128::SUSPENDED_ASCON_CXOF128_STATE_LEN) (54) |
 //!
 //! "In-memory size" is `core::mem::size_of` on a 64-bit target. The decryptor's extra 24 bytes are
 //! the last 16 bytes of ciphertext it holds back in case they are the inline tag, and their count.
@@ -188,13 +188,15 @@
 //!   caller that needs a partial-byte final block should reach for SHA-3, which supports one.
 //! - **Decryption tag check failure:** a ciphertext decryption whose finalization returns
 //!   `Err(SymmetricCipherError::AEADTagCheckFailed)` must be treated as tampered, and the entire
-//!   plaintext rejected. The one-shot APIs ([`ascon_aead128::AsconAead128::decrypt`],
+//!   plaintext rejected. The one-shot APIs
+//!   ([`AsconAead128::decrypt`](ascon_aead128::AsconAead128::decrypt),
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_detached_out`],
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_with_aad_out`] and
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::decrypt_out`]) zeroize their output
 //!   buffer before returning that error. The streaming API
-//!   ([`ascon_aead128::AsconAead128::do_decrypt_update`] /
-//!   [`ascon_aead128::AsconAead128::do_decrypt_final`], or `do_update_out` followed by
+//!   ([`AsconAead128::do_decrypt_update`](ascon_aead128::AsconAead128::do_decrypt_update) /
+//!   [`AsconAead128::do_decrypt_final`](ascon_aead128::AsconAead128::do_decrypt_final), or
+//!   `do_update_out` followed by
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final_detachedtag_out`] or
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::do_decrypt_final`]) does not: plaintext
 //!   bytes are necessarily written to the caller's buffer *before* the tag can be checked, so an
