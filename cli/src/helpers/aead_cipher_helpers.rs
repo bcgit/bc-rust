@@ -37,6 +37,7 @@
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
 use bouncycastle::cipher::modes::Gcm;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
@@ -75,7 +76,7 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let (mut enc, nonce) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::do_encrypt_init(key)
         .unwrap_or_else(|e| {
@@ -124,7 +125,7 @@ pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let mut nonce = [0u8; 12];
     if let Err(e) = io::stdin().read_exact(&mut nonce) {

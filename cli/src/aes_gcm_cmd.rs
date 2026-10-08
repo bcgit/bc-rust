@@ -15,6 +15,7 @@
 use crate::helpers::aead_cipher_helpers::{decrypt_gcm, encrypt_gcm, load_aad};
 use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 
@@ -73,7 +74,7 @@ fn run<P, const KEY_LEN: usize>(
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     match action {
         CipherDirection::Encrypt => encrypt_gcm::<P, KEY_LEN, 16>(key, aad, output_hex),

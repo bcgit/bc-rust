@@ -55,7 +55,8 @@
 //! as long as the plaintext:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_cipher::modes::{Cfb, Cfb8};
@@ -83,7 +84,8 @@
 //! Streaming works with chunks of any size:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
@@ -167,6 +169,7 @@
 //! This reinforces the general advice to always generate cryptographically random IVs unique for
 //! each encryption operation.
 
+use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
 use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
@@ -206,7 +209,7 @@ use crate::modes::cfb8;
 #[derive(Clone)]
 pub struct Cfb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     /// `buf[..used]` is the ciphertext of the current segment so far, i.e. the head of `I_{j+1}`;
@@ -232,7 +235,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the segment
     /// buffer and the `used` count as a `u64`. See [`bouncycastle_utils::suspendable_state`].
@@ -388,11 +391,10 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::CFB_ALG_NAME`].
+    const ALG_NAME: &'static str = P::CFB_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
@@ -400,7 +402,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -450,7 +452,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
     for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Encrypts `data`, of any length, in place.
     ///
@@ -475,7 +477,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
@@ -517,7 +519,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
     for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Decrypts `data`, of any length, in place.
     ///
@@ -552,7 +554,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN + 8;
     type Key = KeyMaterial<KEY_LEN>;
@@ -579,7 +581,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Key = KeyMaterial<KEY_LEN>;
 

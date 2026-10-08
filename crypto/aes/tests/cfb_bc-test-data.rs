@@ -39,6 +39,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Cfb;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::traits::{
@@ -98,7 +99,7 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = cipher_key::<KEY_LEN>(key_bytes);
     let mut data = input.to_vec();

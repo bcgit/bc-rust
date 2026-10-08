@@ -11,6 +11,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
@@ -69,7 +70,7 @@ fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     data: &mut [u8],
     expected_tag: &[u8],
 ) where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let mut ct = vec![0u8; data.len()];
     let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
@@ -126,7 +127,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     tag: &[u8],
     expected_pt: Option<&[u8]>,
 ) where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let tag_arr: [u8; TAG_LEN] = tag.try_into().expect("tag length matches TAG_LEN");
 

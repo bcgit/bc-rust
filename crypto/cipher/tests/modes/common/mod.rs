@@ -18,6 +18,7 @@
 // module is otherwise a dead-code warning.
 #![allow(dead_code)]
 
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -56,6 +57,16 @@ pub struct Toy {
 impl Algorithm for Toy {
     const ALG_NAME: &'static str = "Toy";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl ModeNames for Toy {
+    const CBC_ALG_NAME: &'static str = "Toy_CBC";
+    const CCM_ALG_NAME: &'static str = "Toy_CCM";
+    const CFB_ALG_NAME: &'static str = "Toy_CFB";
+    const CFB8_ALG_NAME: &'static str = "Toy_CFB8";
+    const CTR_ALG_NAME: &'static str = "Toy_CTR";
+    const ECB_ALG_NAME: &'static str = "Toy_ECB";
+    const GCM_ALG_NAME: &'static str = "Toy_GCM";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
@@ -121,6 +132,16 @@ impl Algorithm for SwappedPairToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
+impl ModeNames for SwappedPairToy {
+    const CBC_ALG_NAME: &'static str = "SwappedPairToy_CBC";
+    const CCM_ALG_NAME: &'static str = "SwappedPairToy_CCM";
+    const CFB_ALG_NAME: &'static str = "SwappedPairToy_CFB";
+    const CFB8_ALG_NAME: &'static str = "SwappedPairToy_CFB8";
+    const CTR_ALG_NAME: &'static str = "SwappedPairToy_CTR";
+    const ECB_ALG_NAME: &'static str = "SwappedPairToy_ECB";
+    const GCM_ALG_NAME: &'static str = "SwappedPairToy_GCM";
+}
+
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
@@ -184,6 +205,16 @@ impl Algorithm for ForwardOnlyToy {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
+impl ModeNames for ForwardOnlyToy {
+    const CBC_ALG_NAME: &'static str = "ForwardOnlyToy_CBC";
+    const CCM_ALG_NAME: &'static str = "ForwardOnlyToy_CCM";
+    const CFB_ALG_NAME: &'static str = "ForwardOnlyToy_CFB";
+    const CFB8_ALG_NAME: &'static str = "ForwardOnlyToy_CFB8";
+    const CTR_ALG_NAME: &'static str = "ForwardOnlyToy_CTR";
+    const ECB_ALG_NAME: &'static str = "ForwardOnlyToy_ECB";
+    const GCM_ALG_NAME: &'static str = "ForwardOnlyToy_GCM";
+}
+
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
@@ -227,6 +258,16 @@ pub struct SwappedFourToy {
 impl Algorithm for SwappedFourToy {
     const ALG_NAME: &'static str = "SwappedFourToy";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl ModeNames for SwappedFourToy {
+    const CBC_ALG_NAME: &'static str = "SwappedFourToy_CBC";
+    const CCM_ALG_NAME: &'static str = "SwappedFourToy_CCM";
+    const CFB_ALG_NAME: &'static str = "SwappedFourToy_CFB";
+    const CFB8_ALG_NAME: &'static str = "SwappedFourToy_CFB8";
+    const CTR_ALG_NAME: &'static str = "SwappedFourToy_CTR";
+    const ECB_ALG_NAME: &'static str = "SwappedFourToy_ECB";
+    const GCM_ALG_NAME: &'static str = "SwappedFourToy_GCM";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {

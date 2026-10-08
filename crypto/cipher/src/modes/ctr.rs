@@ -53,6 +53,7 @@
 //! message the counter cannot repeat, and across messages a fresh random nonce is what keeps the
 //! counter blocks distinct.
 
+use crate::modes::ModeNames;
 use crate::modes::hazmat::CtrKeyStream;
 use crate::stream::StreamCipher;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -81,7 +82,8 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// The permitted lengths all work:
 ///
 /// ```
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_cipher::modes::Ctr;
@@ -118,7 +120,7 @@ pub(crate) fn apply_counter_blocks<P, const KEY_LEN: usize, const BLOCK_LEN: usi
     counter_block: impl Fn(u64) -> [u8; BLOCK_LEN],
     blocks: &mut [[u8; BLOCK_LEN]],
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let (fours, rest) = blocks.as_chunks_mut::<4>();
     let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
@@ -149,7 +151,7 @@ fn apply_batch<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>(
     keystream: &mut [[u8; BLOCK_LEN]; N],
     batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     for slot in keystream.iter_mut() {
         *slot = counter_block(*next);

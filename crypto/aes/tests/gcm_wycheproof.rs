@@ -37,6 +37,7 @@
 //! case out.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, Gcm};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -83,7 +84,7 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     expected_tag: &[u8],
     valid: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let key = cipher_key::<KEY_LEN>(key_bytes);
     let tag: [u8; TAG_LEN] =

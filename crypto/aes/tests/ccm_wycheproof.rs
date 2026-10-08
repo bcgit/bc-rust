@@ -35,6 +35,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Ccm;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -78,7 +79,7 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
     expected_tag: &[u8],
     valid: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let key = cipher_key::<KEY_LEN>(key_bytes);
     let nonce: [u8; NONCE_LEN] =

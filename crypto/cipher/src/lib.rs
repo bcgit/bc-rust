@@ -24,7 +24,8 @@
 //! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherEncryptor, SuspendableKeyed};
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //!
 //! type ToyCbc = Cbc<ToyBlockCipher, Encrypting, 16, 16>;
 //! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
@@ -52,6 +53,11 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 #![no_std]
+
+// `tests/common/toy_block_cipher.rs` names `bouncycastle_cipher::modes::ModeNames`, and is also
+// `include!`d by unit tests here, where that path would otherwise not resolve.
+#[cfg(test)]
+extern crate self as bouncycastle_cipher;
 
 pub mod modes;
 pub mod padding;

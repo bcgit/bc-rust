@@ -23,7 +23,8 @@
 //! and the tag is inlined into the ciphertext as `ciphertext || tag`.
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 //! use bouncycastle_core::errors::SymmetricCipherError;
@@ -55,7 +56,8 @@
 //! the `_detached()` methods handle the tag separately, instead of inlined into the ciphertext.
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //! use bouncycastle_cipher::modes::Gcm;
@@ -83,7 +85,8 @@
 //! `do_update_aad()` after a `do_encrypt()` will result in a [`SymmetricCipherError::StateError`].
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -162,6 +165,7 @@
 //!   `do_encrypt_final_detachedtag`: there is no separate `Gmac` type.
 
 use crate::modes::Ctr;
+use crate::modes::ModeNames;
 use crate::modes::ghash::{GHASH_STATE_LEN, Ghash};
 use crate::modes::hazmat::CtrKeyStream;
 use crate::{Decrypting, Encrypting};
@@ -211,7 +215,7 @@ impl Phase {
 #[derive(Clone)]
 pub struct Gcm<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     /// `GCTR_K(inc32(J0), .)`: Algorithm 4 step 3 / Algorithm 5 step 4, started at counter 2 (see
     /// [`Gcm::setup`]).
@@ -239,7 +243,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Dir, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the CTR state,
     /// the GHASH state, the two byte counts, the phase, the held-back tail and its length. See
@@ -368,15 +372,15 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Algorithm for Gcm<P, Dir, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    const ALG_NAME: &'static str = P::GCM_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
 impl<P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     /// Encrypts `data` in place (GCTR, Algorithm 4 step 3) and absorbs the resulting ciphertext
     /// into GHASH (step 5). Nothing is held back.
@@ -408,7 +412,7 @@ impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
     SymmetricCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN>
     for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
@@ -463,7 +467,7 @@ impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
     AEADCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
@@ -481,7 +485,7 @@ where
 
 impl<P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     /// Absorbs `data` (ciphertext) into GHASH, then decrypts it in place. Order matters and is the
     /// reverse of the encryptor's: GHASH must see ciphertext on both sides, so it is absorbed
@@ -547,7 +551,7 @@ impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
     SymmetricCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN>
     for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
@@ -654,7 +658,7 @@ impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
     AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
@@ -738,7 +742,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> SuspendableComponent
     for Gcm<P, Dir, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     const STATE_LEN: usize = Self::CTR_STATE_LEN + GHASH_STATE_LEN + 8 + 8 + 1 + TAG_LEN + 8;
     type Key = KeyMaterial<KEY_LEN>;
@@ -788,7 +792,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize, const N: usize> SuspendableKeyed<N>
     for Gcm<P, Dir, KEY_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     type Key = KeyMaterial<KEY_LEN>;
 

@@ -27,6 +27,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Ctr;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -100,7 +101,7 @@ const CHUNKINGS: [usize; 6] = [1, 5, 16, 17, 33, 69];
 
 fn check<P, const KEY_LEN: usize>(name: &str, key_hex: &str, expected_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let nonce: [u8; NONCE_LEN] = unhex(NONCE).try_into().expect("a 12-byte nonce");

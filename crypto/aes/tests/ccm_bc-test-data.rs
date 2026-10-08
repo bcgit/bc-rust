@@ -47,6 +47,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Ccm;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -85,7 +86,7 @@ fn encrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     plaintext: &[u8],
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let mut inline = vec![0u8; plaintext.len() + TAG_LEN];
     let written = Ccm::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_out(
@@ -123,7 +124,7 @@ fn decrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     ct_and_tag: &[u8],
 ) -> Decrypted
 where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let mut plaintext = vec![0u8; ct_and_tag.len().saturating_sub(TAG_LEN)];
     match Ccm::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_out(

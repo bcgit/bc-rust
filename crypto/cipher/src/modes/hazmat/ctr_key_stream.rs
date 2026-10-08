@@ -1,5 +1,6 @@
 //! The CTR keystream, [`CtrKeyStream`]: a raw [`KeyStream`], used through [`Ctr`].
 
+use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
@@ -30,7 +31,7 @@ use crate::stream::StreamCipher;
 #[derive(Clone)]
 pub struct CtrKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     /// `N`: the message nonce, the leading bytes of every counter block.
@@ -47,7 +48,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
     CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Bytes of counter at the end of each block: whatever the nonce leaves.
     const CTR_LEN: usize = BLOCK_LEN - INIT_DATA_LEN;
@@ -125,11 +126,10 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
     for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::CTR_ALG_NAME`].
+    const ALG_NAME: &'static str = P::CTR_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
@@ -138,7 +138,7 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize
     KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
     for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Expands the key; the keystream starts at `T1 = N | [0]m`.
     fn new(
@@ -173,7 +173,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
     SuspendableComponent for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = INIT_DATA_LEN + 8;
     type Key = KeyMaterial<KEY_LEN>;
@@ -213,7 +213,11 @@ mod tests {
     use bouncycastle_core::hazmat::ElectronicCodeBook;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::StreamCipherEncryptor;
-    use bouncycastle_core_test_framework::ToyBlockCipher;
+    use toy::ToyBlockCipher;
+
+    mod toy {
+        include!("../../../tests/common/toy_block_cipher.rs");
+    }
 
     type ToyKeyStream = CtrKeyStream<ToyBlockCipher, 16, 16, 12>;
     type ToyCtr = Ctr<ToyBlockCipher, Encrypting, 16, 16, 12>;

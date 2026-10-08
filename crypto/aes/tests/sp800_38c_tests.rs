@@ -18,6 +18,7 @@
 //! direction is checked by round-tripping each vector's own `C` back to its `P`.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::modes::{Ccm, CcmDecryptor, CcmEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -54,7 +55,7 @@ fn check_vector<
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 >(
     name: &str,
     key_hex: &str,

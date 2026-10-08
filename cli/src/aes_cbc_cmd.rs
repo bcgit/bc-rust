@@ -14,6 +14,7 @@ use crate::helpers::block_mode_helpers::{
 };
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::Cbc;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
@@ -54,7 +55,7 @@ fn run<P, const KEY_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     match action {
         CipherDirection::Encrypt => {

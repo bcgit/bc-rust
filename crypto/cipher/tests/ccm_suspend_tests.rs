@@ -18,8 +18,11 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::SuspendableKeyed;
-use bouncycastle_core_test_framework::ToyBlockCipher;
 use bouncycastle_utils::suspendable_state::LIB_VERSION_LEN;
+
+#[path = "common/toy_block_cipher.rs"]
+mod toy_block_cipher;
+use toy_block_cipher::ToyBlockCipher;
 
 /// A 12-byte nonce, so `q = 3`: the counter field is the template's last three octets and the
 /// payload limit is `2^24 - 1`.

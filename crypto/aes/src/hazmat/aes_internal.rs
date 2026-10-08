@@ -73,6 +73,7 @@ use crate::bitslice::{Block, PlaneWord, Planes};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
 use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{AES128Params, AES192Params, AES256Params, AESParams, expand, round_key};
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -307,4 +308,37 @@ impl Algorithm for AES192Internal {
 impl Algorithm for AES256Internal {
     const ALG_NAME: &'static str = AES256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+}
+
+// The `Algorithm` impls above name the permutation. Each mode over it is a different algorithm,
+// reported under the name of its public alias (`AES_CBC_128` and so on).
+
+impl ModeNames for AES128Internal {
+    const CBC_ALG_NAME: &'static str = "AES_CBC_128";
+    const CCM_ALG_NAME: &'static str = "AES_CCM_128";
+    const CFB_ALG_NAME: &'static str = "AES_CFB_128";
+    const CFB8_ALG_NAME: &'static str = "AES_CFB8_128";
+    const CTR_ALG_NAME: &'static str = "AES_CTR_128";
+    const ECB_ALG_NAME: &'static str = "AES_ECB_128";
+    const GCM_ALG_NAME: &'static str = "AES_GCM_128";
+}
+
+impl ModeNames for AES192Internal {
+    const CBC_ALG_NAME: &'static str = "AES_CBC_192";
+    const CCM_ALG_NAME: &'static str = "AES_CCM_192";
+    const CFB_ALG_NAME: &'static str = "AES_CFB_192";
+    const CFB8_ALG_NAME: &'static str = "AES_CFB8_192";
+    const CTR_ALG_NAME: &'static str = "AES_CTR_192";
+    const ECB_ALG_NAME: &'static str = "AES_ECB_192";
+    const GCM_ALG_NAME: &'static str = "AES_GCM_192";
+}
+
+impl ModeNames for AES256Internal {
+    const CBC_ALG_NAME: &'static str = "AES_CBC_256";
+    const CCM_ALG_NAME: &'static str = "AES_CCM_256";
+    const CFB_ALG_NAME: &'static str = "AES_CFB_256";
+    const CFB8_ALG_NAME: &'static str = "AES_CFB8_256";
+    const CTR_ALG_NAME: &'static str = "AES_CTR_256";
+    const ECB_ALG_NAME: &'static str = "AES_ECB_256";
+    const GCM_ALG_NAME: &'static str = "AES_GCM_256";
 }

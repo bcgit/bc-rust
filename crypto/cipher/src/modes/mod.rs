@@ -1,11 +1,11 @@
 //! Block cipher modes of operation (NIST SP 800-38A, SP 800-38C and SP 800-38D).
 //!
 //! The module is deliberately cipher-agnostic: it depends on no concrete block cipher, only on the
-//! trait.
+//! traits.
 //!
-//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES128Internal` and friends,
-//! `bouncycastle_core_test_framework::ToyBlockCipher`, or anything else implementing
-//! [`ElectronicCodeBook`] -- into something that can encrypt more than one block.
+//! A mode turns a keyed block permutation -- `bouncycastle-aes`'s `AES128Internal` and friends, or
+//! anything else implementing [`ElectronicCodeBook`] and [`ModeNames`] -- into something that can
+//! encrypt more than one block.
 //!
 //! This module provides:
 //!
@@ -49,12 +49,12 @@
 //! These usage examples are for implementing a concrete cipher on top of a mode. They are intended
 //! for library developers, not end-users.
 //!
-//! They are written over `bouncycastle_core_test_framework::ToyBlockCipher`, a deliberately
-//! insecure stand-in with AES-128's key and block sizes that the test-framework crate exports for
-//! exactly this purpose, so that this module's documentation does not depend on any real cipher
-//! crate (which would be a dependency cycle: `bouncycastle-aes` and the like depend on this one). Substitute
-//! any [`ElectronicCodeBook`] implementor, such as `bouncycastle_aes::hazmat::AES128Internal`;
-//! the `bouncycastle-aes` crate's aliases carry runnable examples over the real thing.
+//! They are written over `ToyBlockCipher`, a deliberately insecure stand-in with AES-128's key and
+//! block sizes, defined in hidden lines from this crate's `tests/common/toy_block_cipher.rs`, so
+//! that this module's documentation does not depend on any real cipher crate (which would be a
+//! dependency cycle: `bouncycastle-aes` and the like depend on this one). Substitute any
+//! [`ElectronicCodeBook`] implementor, such as `bouncycastle_aes::hazmat::AES128Internal`; the
+//! `bouncycastle-aes` crate's aliases carry runnable examples over the real thing.
 //!
 //! [`ElectronicCodeBook`]: bouncycastle_core::hazmat::ElectronicCodeBook
 //!
@@ -68,7 +68,8 @@
 //! direction too, plus its nonce and tag lengths, and GCM takes the direction and its tag length:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_cipher::modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
 //!
 //! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
@@ -157,13 +158,37 @@ pub use cfb8::Cfb8;
 pub use ctr::Ctr;
 pub use gcm::{GCM_NONCE_LEN, Gcm};
 
+/// The [`Algorithm::ALG_NAME`] each mode reports when built on `Self`.
+///
+/// A mode over a permutation is a different algorithm from the permutation -- AES-128 in CBC mode
+/// is `"AES_CBC_128"`, not `"AES-128"` -- and `&'static str`s cannot be concatenated in a `const`,
+/// so the permutation names the modes built on it, as a hash names its HMAC through
+/// `HMACParams::HMAC_ALG_NAME`. There are no defaults: a permutation that forgot one would
+/// otherwise report its own name for that mode.
+pub trait ModeNames {
+    /// Reported by [`Cbc`].
+    const CBC_ALG_NAME: &'static str;
+    /// Reported by [`Ccm`], [`CcmEncryptor`] and [`CcmDecryptor`].
+    const CCM_ALG_NAME: &'static str;
+    /// Reported by [`Cfb`].
+    const CFB_ALG_NAME: &'static str;
+    /// Reported by [`Cfb8`].
+    const CFB8_ALG_NAME: &'static str;
+    /// Reported by [`Ctr`], through its keystream [`hazmat::CtrKeyStream`].
+    const CTR_ALG_NAME: &'static str;
+    /// Reported by [`hazmat::Ecb`].
+    const ECB_ALG_NAME: &'static str;
+    /// Reported by [`Gcm`].
+    const GCM_ALG_NAME: &'static str;
+}
+
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
+    BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 // end of imports needed for docs

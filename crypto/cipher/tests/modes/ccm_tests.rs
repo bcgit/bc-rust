@@ -13,7 +13,7 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Ccm, CcmDecryptor};
+use bouncycastle_cipher::modes::{Ccm, CcmDecryptor, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -39,7 +39,7 @@ fn message(len: usize) -> Vec<u8> {
 }
 
 /// One-shot Sec 6.1 over the toy permutation `P`, detached: the ciphertext and the tag.
-fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
+fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
@@ -59,7 +59,7 @@ fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
 }
 
 /// Sec 6.1 through the streaming API over `P`, `chunk` bytes per `do_encrypt_update`.
-fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
+fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
@@ -81,7 +81,7 @@ fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
 }
 
 /// Sec 6.2 through the streaming API over `P`, `chunk` bytes per `do_decrypt_update`.
-fn stream_decrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN>>(
+fn stream_decrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     ciphertext: &[u8],
@@ -352,7 +352,7 @@ fn every_permitted_nonce_length_works() {
         key: &KeyMaterial<KEY_LEN>,
         expected_max_payload: u64,
     ) where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
     {
         // The full 16-byte tag, deliberately. `Toy` permutes each byte independently, so under
         // it the CBC-MAC is sixteen independent byte-chains and a `t`-byte tag witnesses only the

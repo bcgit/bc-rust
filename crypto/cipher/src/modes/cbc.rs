@@ -22,7 +22,8 @@
 //! The IV is generated and returned; there is no API for supplying one.
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::Cbc;
@@ -49,7 +50,8 @@
 //! the concatenation:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::Cbc;
@@ -95,6 +97,7 @@
 //! So, while the IV need not be secret, best-practice is to authenticate it along with the ciphertext,
 //! or use an authenticated (AEAD) mode such as GCM.
 
+use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
@@ -127,7 +130,7 @@ use core::marker::PhantomData;
 #[derive(Clone)]
 pub struct Cbc<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     /// `Cj-1`, initialised to the IV. See the module docs on why there is only one field for both.
@@ -137,7 +140,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header and the chaining
     /// block. See [`bouncycastle_utils::suspendable_state`].
@@ -221,11 +224,10 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::CBC_ALG_NAME`].
+    const ALG_NAME: &'static str = P::CBC_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
@@ -233,7 +235,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -271,7 +273,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`BlockCipherEncryptor::do_encrypt_init`].
@@ -314,7 +316,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
     for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN;
     type Key = KeyMaterial<KEY_LEN>;
@@ -335,7 +337,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
     for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Key = KeyMaterial<KEY_LEN>;
 

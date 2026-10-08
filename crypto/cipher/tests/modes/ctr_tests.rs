@@ -23,8 +23,8 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::Ctr;
 use bouncycastle_cipher::modes::hazmat::CtrKeyStream;
+use bouncycastle_cipher::modes::{Ctr, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -533,7 +533,7 @@ fn call_chunking_does_not_change_the_result() {
 fn chunking_matches_a_single_call_over_several_batches() {
     fn check<P, const KEY_LEN: usize>(name: &str)
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
     {
         let key_bytes: [u8; KEY_LEN] =
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));

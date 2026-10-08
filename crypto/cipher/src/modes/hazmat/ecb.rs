@@ -14,7 +14,8 @@
 //! The codebook property that makes it unsuitable for data is visible in the ciphertext:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::hazmat::Ecb;
@@ -79,6 +80,7 @@
 //!
 //! **ECB Mode should not be used in production!**
 
+use crate::modes::ModeNames;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -109,7 +111,7 @@ use core::marker::PhantomData;
 #[derive(Clone)]
 pub struct Ecb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     _dir: PhantomData<Dir>,
@@ -117,7 +119,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header alone, since ECB
     /// has no state between blocks. See [`bouncycastle_utils::suspendable_state`].
@@ -132,11 +134,10 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::ECB_ALG_NAME`].
+    const ALG_NAME: &'static str = P::ECB_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher. (It does not make ECB
     /// suitable for data either; strength is about the key, not about the codebook property.)
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
@@ -145,7 +146,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<KEY_LEN, 0, BLOCK_LEN>
     for Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Expands the key. ECB has no initialization data (SP 800-38A Table D.2 lists the IV column
     /// as "Not applicable"), so the returned init data is the empty array.
@@ -203,7 +204,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>
     for Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Expands the key. The init data is the empty array [`BlockCipherEncryptor::do_encrypt_init`]
     /// returned; there is nothing in it to use.
@@ -243,7 +244,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
     for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = 0;
     type Key = KeyMaterial<KEY_LEN>;
@@ -262,7 +263,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
     for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Key = KeyMaterial<KEY_LEN>;
 

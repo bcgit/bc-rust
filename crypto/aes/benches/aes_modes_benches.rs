@@ -46,7 +46,9 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_cipher::modes::hazmat::Ecb;
-use bouncycastle_cipher::modes::{Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm};
+use bouncycastle_cipher::modes::{
+    Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
+};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -118,6 +120,16 @@ struct UnpairedAes128(AES128Internal);
 impl Algorithm for UnpairedAes128 {
     const ALG_NAME: &'static str = "AES-128 (unpaired)";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl ModeNames for UnpairedAes128 {
+    const CBC_ALG_NAME: &'static str = "AES_CBC_128 (unpaired)";
+    const CCM_ALG_NAME: &'static str = "AES_CCM_128 (unpaired)";
+    const CFB_ALG_NAME: &'static str = "AES_CFB_128 (unpaired)";
+    const CFB8_ALG_NAME: &'static str = "AES_CFB8_128 (unpaired)";
+    const CTR_ALG_NAME: &'static str = "AES_CTR_128 (unpaired)";
+    const ECB_ALG_NAME: &'static str = "AES_ECB_128 (unpaired)";
+    const GCM_ALG_NAME: &'static str = "AES_GCM_128 (unpaired)";
 }
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {

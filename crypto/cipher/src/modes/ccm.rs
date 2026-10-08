@@ -19,7 +19,8 @@
 //! ciphertext has been altered.
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_cipher::modes::Ccm;
@@ -103,6 +104,7 @@
 //! the CCM mode", and "The total number of invocations of the block cipher algorithm during the
 //! lifetime of the key shall be limited to 2^61".
 
+use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
 use crate::modes::iv::random_iv;
 use crate::stream::StreamCipher;
@@ -136,7 +138,8 @@ use crate::{Decrypting, Encrypting};
 /// A nonce length A.1 does not permit does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_cipher::modes::Ccm;
 /// use bouncycastle_cipher::Encrypting;
@@ -150,7 +153,8 @@ use crate::{Decrypting, Encrypting};
 /// Nor does an odd tag length:
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_cipher::modes::Ccm;
 /// use bouncycastle_cipher::Encrypting;
@@ -169,7 +173,7 @@ pub struct Ccm<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
 > where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     // The CTR half (Sec 6.1 steps 5-8): the payload keystream `S1 || S2 || ...`, and the key
     // schedule, which the CBC-MAC half below shares (Sec 5.2).
@@ -212,7 +216,7 @@ impl<
     const TAG_LEN: usize,
 > Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The spec's `q`: the octet length of the payload-length field `Q`. A.1 requires `n + q = 15`.
     const Q_LEN: usize = CcmKeyStream::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>::Q_LEN;
@@ -317,7 +321,8 @@ where
     /// AAD must be complete before any payload: A.2.3 puts the payload blocks after the AAD blocks.
     ///
     /// ```
-    /// use bouncycastle_core_test_framework::ToyBlockCipher;
+    /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+    /// # use toy::ToyBlockCipher;
     /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
     /// use bouncycastle_cipher::modes::Ccm;
     /// use bouncycastle_cipher::Encrypting;
@@ -626,7 +631,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
     Ccm<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Encrypts `data` in place and authenticates it.
     ///
@@ -727,7 +732,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
     Ccm<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Decrypts `data` in place and authenticates the recovered plaintext.
     ///
@@ -853,11 +858,10 @@ impl<
     const TAG_LEN: usize,
 > Algorithm for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::CCM_ALG_NAME`].
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
@@ -871,7 +875,7 @@ where
 #[derive(Clone)]
 struct CcmKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     // `Ctr_i` with its counter field zeroed (A.3, Table 3): the flags octet and the nonce, which
@@ -886,7 +890,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
     CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The spec's `q`: the octet length of the payload-length field `Q`, which is also the width
     /// of the counter field. A.1 requires `n + q = 15`.
@@ -945,16 +949,16 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize> Algorithm
     for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
     KeyStream<KEY_LEN, NONCE_LEN, BLOCK_LEN> for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     fn new(
         key: &KeyMaterial<KEY_LEN>,
@@ -1006,7 +1010,7 @@ struct CcmAdapter<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     ccm: Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
     // Associated data is authenticated but not encrypted, and travels in the clear, so it is not
@@ -1028,7 +1032,7 @@ impl<
     const DATA_LEN: usize,
 > CcmAdapter<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The compile-time checks for the trait adapters, run from both [`CcmEncryptor`]'s and
     /// [`CcmDecryptor`]'s constructors, which every entry point goes through, so that a parameter
@@ -1137,7 +1141,8 @@ where
 /// see `CcmAdapter`. More is refused.
 ///
 /// ```
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 /// use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
@@ -1184,7 +1189,8 @@ where
 /// uniqueness. A shorter nonce does not compile:
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_cipher::modes::CcmEncryptor;
@@ -1197,7 +1203,8 @@ where
 /// Nor does a `DATA_LEN` that `B0` could not carry under this `NONCE_LEN` (A.1's `p < 2^8q`):
 ///
 /// ```compile_fail
-/// use bouncycastle_core_test_framework::ToyBlockCipher;
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::SymmetricCipherEncryptor;
 /// use bouncycastle_cipher::modes::CcmEncryptor;
@@ -1223,7 +1230,7 @@ pub struct CcmEncryptor<
     const DATA_LEN: usize,
 >(CcmAdapter<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>;
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames;
 
 impl<
     P,
@@ -1235,9 +1242,9 @@ impl<
     const DATA_LEN: usize,
 > Algorithm for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
@@ -1251,7 +1258,7 @@ impl<
     const DATA_LEN: usize,
 > CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Every final comes here: Sec 6.1 steps 4 and 8, the tag. The header goes in first if no
     /// payload call put it there, which is the `DATA_LEN = 0` message.
@@ -1277,7 +1284,7 @@ impl<
 > SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>
     for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
@@ -1368,7 +1375,7 @@ impl<
 > AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
     for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Holds back `aad` until the payload begins; see `CcmAdapter`.
     ///
@@ -1424,7 +1431,7 @@ pub struct CcmDecryptor<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     inner: CcmAdapter<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
     // The bytes past the `DATA_LEN`th, as they arrive: an inline tag, if the final says the
@@ -1444,9 +1451,9 @@ impl<
     const DATA_LEN: usize,
 > Algorithm for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
@@ -1460,7 +1467,7 @@ impl<
     const DATA_LEN: usize,
 > CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Every final comes here once it has settled which bytes are the tag: Sec 6.2 step 10,
     /// through [`Ccm::do_decrypt_final`]. The header goes in first if no payload call put it
@@ -1487,7 +1494,7 @@ impl<
 > SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>
     for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
@@ -1588,7 +1595,7 @@ impl<
 > AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
     for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// As [`CcmEncryptor::do_update_aad`](AEADCipherEncryptor::do_update_aad); the concatenation
     /// must match the encryptor's byte for byte or the tag check fails.
@@ -1630,7 +1637,7 @@ impl<
     const TAG_LEN: usize,
 > SuspendableComponent for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = Self::CTR_STATE_LEN + BLOCK_LEN + 8 + 8 + 8;
     type Key = KeyMaterial<KEY_LEN>;
@@ -1677,7 +1684,7 @@ impl<
     const N: usize,
 > SuspendableKeyed<N> for Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Key = KeyMaterial<KEY_LEN>;
 
@@ -1696,7 +1703,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize> SuspendableComponent
     for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN + 8;
     type Key = KeyMaterial<KEY_LEN>;
@@ -1747,6 +1754,16 @@ mod tests {
     impl Algorithm for Identity {
         const ALG_NAME: &'static str = "identity";
         const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    }
+
+    impl ModeNames for Identity {
+        const CBC_ALG_NAME: &'static str = "identity_CBC";
+        const CCM_ALG_NAME: &'static str = "identity_CCM";
+        const CFB_ALG_NAME: &'static str = "identity_CFB";
+        const CFB8_ALG_NAME: &'static str = "identity_CFB8";
+        const CTR_ALG_NAME: &'static str = "identity_CTR";
+        const ECB_ALG_NAME: &'static str = "identity_ECB";
+        const GCM_ALG_NAME: &'static str = "identity_GCM";
     }
 
     impl ElectronicCodeBook<16, 16> for Identity {
@@ -1886,13 +1903,15 @@ mod tests {
     }
 
     /// CCM's keystream against the shared [`KeyStream`] conformance suite. A unit test rather than
-    /// an integration test because `CcmKeyStream` is crate-private. Over the framework's keyed
-    /// toy rather than the identity, which ignores the key and so could not pass the key-policy
-    /// checks.
+    /// an integration test because `CcmKeyStream` is crate-private. Over the keyed toy rather than
+    /// the identity, which ignores the key and so could not pass the key-policy checks.
     #[test]
     fn ccm_keystream_conforms_to_the_key_stream_framework() {
-        use bouncycastle_core_test_framework::ToyBlockCipher;
+        mod toy {
+            include!("../../tests/common/toy_block_cipher.rs");
+        }
         use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
+        use toy::ToyBlockCipher;
         let framework = TestFrameworkKeyStream::new();
         framework.test::<16, 7, 16, CcmKeyStream<ToyBlockCipher, 16, 16, 7>>();
         framework.test::<16, 13, 16, CcmKeyStream<ToyBlockCipher, 16, 16, 13>>();

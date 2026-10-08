@@ -1,5 +1,5 @@
-//! Suspend-and-resume round trips for every mode and adapter, over the test framework's toy
-//! permutation.
+//! Suspend-and-resume round trips for every mode and adapter, over a copy of the test
+//! framework's toy permutation, in `common/toy_block_cipher.rs`.
 //!
 //! Each test does part of an operation, suspends a clone of the cipher, resumes it with the
 //! re-supplied key, and then finishes both the original and the resumed cipher the same way. The
@@ -18,8 +18,11 @@ use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::ToyBlockCipher;
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
+
+#[path = "common/toy_block_cipher.rs"]
+mod toy_block_cipher;
+use toy_block_cipher::ToyBlockCipher;
 
 type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
 type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;

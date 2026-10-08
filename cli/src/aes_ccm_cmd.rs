@@ -53,6 +53,7 @@ use std::process::exit;
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::Ccm;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
@@ -252,7 +253,7 @@ fn feed_aad<P, Dir, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN:
     ccm: &mut Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
     aad: &mut Aad,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     match aad {
         Aad::Bytes(bytes) => {
@@ -307,7 +308,7 @@ fn run<P, const KEY_LEN: usize>(
     tag_len: usize,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     // Reject this before opening nonce/AAD files or waiting for stdin. Appendix A.1: "t is an
     // element of {4, 6, 8, 10, 12, 14, 16}".
@@ -380,7 +381,7 @@ fn payload_past_the_q_limit<P, const KEY_LEN: usize, const NONCE_LEN: usize, con
     payload_len: usize,
 ) -> !
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     eprintln!("Error: {msg}");
     eprintln!(
@@ -408,7 +409,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     encrypt: bool,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Enc<P, const K: usize, const N: usize, const T: usize> =
         Ccm<P, Encrypting, K, BLOCK_LEN, N, T>;

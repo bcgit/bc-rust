@@ -1,32 +1,11 @@
-//! A deliberately insecure block "cipher" for exercising the code that is built on top of one.
-//!
-//! [`ToyBlockCipher`] implements [`ElectronicCodeBook`] with a 16-byte key and a 16-byte block, so
-//! it slots in wherever AES-128 would, and it validates its key the way a real permutation does:
-//! it wants a [`KeyType::SymmetricCipherKey`] of the right length and at least 128-bit strength.
-//! That is what lets the conformance suites' key-policy checks run against it. Everything else
-//! about it is chosen for testability, not security:
-//!
-//! * **Each byte is permuted on its own**, as `rotate_left(1)` then XOR with the corresponding key
-//!   byte. A one-bit change in a block therefore moves exactly one bit of the output, one place to
-//!   the left, in the same byte -- which makes a mode's error propagation exact arithmetic instead
-//!   of a statistical claim about diffusion. The flip side is that anything that *depends* on
-//!   diffusion (a "random bit errors" claim, a collision argument) cannot be shown with it.
-//! * **Encryption and decryption are genuinely different functions.** The obvious toy,
-//!   `block ^= key`, is its own inverse and would let a mode that called the wrong direction
-//!   round-trip regardless. Here the inverse is XOR then `rotate_right(1)`, so a decryptor that
-//!   used the forward function, or vice versa, produces the wrong answer.
-//! * The batch methods are plain loops over the single-block ones, so a mode driven through them
-//!   gets the same answer as one driven block by block.
-//!
-//! It exists so that a crate generic over a block cipher can have runnable documentation examples
-//! and unit tests without depending on a real cipher crate, which would be a dependency cycle when
-//! that cipher crate depends on it. `bouncycastle-cipher`'s modes also need the permutation to
-//! implement that crate's `ModeNames`, which this crate cannot do without depending on it, so that
-//! crate keeps a copy of this toy in `tests/common/toy_block_cipher.rs`. **Never use it for
-//! anything but tests and examples.** It is included in this crate's public API for the same
-//! reason [`FixedSeedRNG`](crate::FixedSeedRNG) is: it is a test double, and this crate is only
-//! ever a dev-dependency.
+// A copy of `bouncycastle_core_test_framework::ToyBlockCipher` for this crate's doctests and tests:
+// the deliberately insecure 16-byte-block permutation (each byte `rotate_left(1)` then XOR with
+// the key byte; the inverse undoes both). **Never use it for anything but tests and examples.**
+//
+// Pulled in with `mod toy { include!("<path to this file>"); }` from doctests and unit tests, and
+// with `#[path]` from integration tests, so it carries no inner attributes or `//!` docs.
 
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -37,8 +16,8 @@ use bouncycastle_core::traits::Algorithm;
 /// shapes a real cipher would.
 pub const TOY_BLOCK_LEN: usize = 16;
 
-/// A per-byte, key-validating, insecure permutation with a 16-byte key and block. See the module
-/// docs for what it is and is not good for.
+/// A per-byte, key-validating, insecure permutation with a 16-byte key and block. See the header
+/// comment above, and the test framework's original, for what it is and is not good for.
 #[derive(Clone)]
 pub struct ToyBlockCipher {
     key: [u8; TOY_BLOCK_LEN],
@@ -47,6 +26,16 @@ pub struct ToyBlockCipher {
 impl Algorithm for ToyBlockCipher {
     const ALG_NAME: &'static str = "ToyBlockCipher";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl ModeNames for ToyBlockCipher {
+    const CBC_ALG_NAME: &'static str = "ToyBlockCipher_CBC";
+    const CCM_ALG_NAME: &'static str = "ToyBlockCipher_CCM";
+    const CFB_ALG_NAME: &'static str = "ToyBlockCipher_CFB";
+    const CFB8_ALG_NAME: &'static str = "ToyBlockCipher_CFB8";
+    const CTR_ALG_NAME: &'static str = "ToyBlockCipher_CTR";
+    const ECB_ALG_NAME: &'static str = "ToyBlockCipher_ECB";
+    const GCM_ALG_NAME: &'static str = "ToyBlockCipher_GCM";
 }
 
 impl ElectronicCodeBook<TOY_BLOCK_LEN, TOY_BLOCK_LEN> for ToyBlockCipher {

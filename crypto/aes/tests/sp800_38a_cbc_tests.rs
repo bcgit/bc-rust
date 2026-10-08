@@ -17,6 +17,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -93,7 +94,7 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// implementor hook -- the vector should not care how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -140,7 +141,7 @@ where
 /// leaves a one-block remainder after the pair loop in `do_decrypt_blocks_inplace`.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);

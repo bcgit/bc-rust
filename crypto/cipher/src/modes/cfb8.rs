@@ -52,6 +52,7 @@
 //! number or ID number, could still yield a syntactically-correct message and therefore be completely
 //! undetectable.
 
+use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
 use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
@@ -99,7 +100,7 @@ use crate::modes::cfb;
 #[derive(Clone)]
 pub struct Cfb8<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     /// `Ij`: the IV, then the shift register. See the module docs.
@@ -109,7 +110,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header and the shift
     /// register. See [`bouncycastle_utils::suspendable_state`].
@@ -172,11 +173,10 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::CFB8_ALG_NAME`].
+    const ALG_NAME: &'static str = P::CFB8_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
@@ -184,7 +184,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -234,7 +234,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
     for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Encrypts `data`, of any length, in place: `Cj = Pj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// then `Cj` shifts into the register.
@@ -254,7 +254,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
@@ -296,7 +296,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
     for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Decrypts `data`, of any length, in place: `Pj = Cj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// with the *ciphertext* byte -- the one that came in, not the plaintext going out -- shifted
@@ -329,7 +329,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
     for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN;
     type Key = KeyMaterial<KEY_LEN>;
@@ -350,7 +350,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
     for Cfb8<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Key = KeyMaterial<KEY_LEN>;
 
