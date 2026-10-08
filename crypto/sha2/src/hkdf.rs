@@ -186,20 +186,17 @@
 //!
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
-//! | `HKDF_SHA256`                                     | 296          |
-//! | `HKDF_SHA384`                                     | 392          |
-//! | `HKDF_SHA512`                                     | 392          |
+//! | `HKDF_SHA256`                                     | 256          |
+//! | `HKDF_SHA384`                                     | 448          |
+//! | `HKDF_SHA512`                                     | 448          |
 //! | Suspended `HKDF_SHA256` state                     | 122          |
 //! | Suspended `HKDF_SHA384` state                     | 218          |
 //! | Suspended `HKDF_SHA512` state                     | 218          |
 //!
-//! The object is an `Option` of the inner extract-phase HMAC -- 272 bytes for SHA-256, 368 for
-//! SHA-384 and SHA-512 -- plus 24 bytes of bookkeeping (the entropy counter, the accumulated security strength
-//! and the state-machine tag, with padding). Note that the inner HMAC is written as `HMAC<H>`, which
-//! takes the *default* key buffer length: the largest block length across all supported hashes
-//! (144 bytes) rather than the 64 or 128 that SHA-256 and SHA-512 actually need. So the inner
-//! `HMAC<SHA256>` is 264 bytes where the published [`crate::hmac::HMAC_SHA256`] is 184, and an
-//! `HKDF_SHA256` is correspondingly larger than the HMAC it is built on.
+//! The object is an `Option` of the inner extract-phase HMAC -- 224 bytes for SHA-256, 416 for
+//! SHA-384 and SHA-512, each two hash states -- plus the bookkeeping (the entropy counter, the
+//! accumulated security strength and the state-machine tag, with padding); the `Option` is
+//! niche-filled for SHA-256 and not for the larger pair, hence the uneven step.
 //!
 //! The suspended state is the inner HMAC's suspended state (which is the hash's) plus 14 bytes; the
 //! salt is deliberately excluded and must be re-supplied on resume.
