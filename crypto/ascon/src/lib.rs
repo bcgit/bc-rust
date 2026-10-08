@@ -136,17 +136,45 @@
 //!
 //! Ascon is a lightweight, permutation-based design intended for constrained devices. The internal
 //! permutation state is 320 bits (40 bytes), held as five `u64` words, shared by all four
-//! functions. There are no heap allocations in the streaming/`*_out` APIs, and stack usage is
-//! small and constant; consequently this crate has no dedicated `mem_usage_benches` harness.
+//! functions. There are no lookup tables and no heap allocations in the streaming/`*_out` APIs.
+//! The persistent state, held between calls, does not depend on how much data has been processed:
 //!
 //! | Type | In-memory size (bytes) | Suspended state size (bytes) |
 //! |------|-------------------------|-------------------------------|
 //! | [`ascon_aead128::AsconAead128`] | 72 | [`ascon_aead128::SUSPENDED_ASCON_AEAD128_STATE_LEN`] (46) |
+//! | [`Ascon_AEAD128<Encrypting>`](ascon_aead128::AsconAead128Encryptor) | 72 | |
+//! | [`Ascon_AEAD128<Decrypting>`](ascon_aead128::AsconAead128Decryptor) | 96 | |
 //! | [`ascon_hash256::AsconHash256`] | 64 | [`ascon_hash256::SUSPENDED_ASCON_HASH256_STATE_LEN`] (53) |
 //! | [`ascon_xof128::AsconXof128`] | 64 | [`ascon_xof128::SUSPENDED_ASCON_XOF128_STATE_LEN`] (54) |
 //! | [`ascon_cxof128::AsconCXof128`] | 64 | [`ascon_cxof128::SUSPENDED_ASCON_CXOF128_STATE_LEN`] (54) |
 //!
-//! "In-memory size" is `core::mem::size_of` on a 64-bit target.
+//! "In-memory size" is `core::mem::size_of` on a 64-bit target. The decryptor's extra 24 bytes are
+//! the last 16 bytes of ciphertext it holds back in case they are the inline tag, and their count.
+//!
+//! Per-call stack usage is separate from that and does not depend on the data length either.
+//! Measured as the deepest frame chain below each entry point in the release build (x86-64 Linux,
+//! rustc 1.95.0, return addresses included):
+//!
+//! | Ascon-AEAD128 entry point | Encrypting | Decrypting |
+//! |---|---|---|
+//! | `do_encrypt_init_rng` / `do_decrypt_init` | 536 B | 504 B |
+//! | `do_update_aad` | 104 B | 104 B |
+//! | `do_encrypt_out` / `do_decrypt_out` | 176 B | 208 B |
+//! | `do_encrypt_final` / `do_decrypt_final` (tag inline) | 176 B | 208 B |
+//! | `do_encrypt_final_detachedtag_out` / `do_decrypt_final_detachedtag_out` | 176 B | 272 B |
+//! | `encrypt_with_aad_rng_out` / `decrypt_with_aad_out` (one-shot) | 648 B | 888 B |
+//!
+//! The encrypting figures do not include the caller's RNG; `do_encrypt_init` and the one-shots
+//! without `_rng` draw the nonce from the library's default DRBG, whose stack is not counted here.
+//!
+//! | Sponge entry point | Ascon-Hash256 | Ascon-XOF128 | Ascon-CXOF128 |
+//! |---|---|---|---|
+//! | `with_customization` | | | 200 B |
+//! | `do_update` | 72 B | 72 B | 72 B |
+//! | `do_final_out` / `do_output_out` | 152 B | 104 B | 104 B |
+//! | `hash_out` / `xof_out` (one-shot) | 152 B | 168 B | 168 B |
+//!
+//! The sponges' `new` copies a precomputed state and runs no permutation.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
