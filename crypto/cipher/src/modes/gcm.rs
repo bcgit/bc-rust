@@ -189,6 +189,38 @@ use core::marker::PhantomData;
 /// The nonce (IV) length this type uses: 96 bits, SP 800-38D Sec 5.2.1.1's recommended length.
 pub const GCM_NONCE_LEN: usize = 12;
 
+/// The GCM mode type: the `M` of a mode-bound key such as `AES128Key<GCM>`. `GCM` is GCM with
+/// the full 128-bit tag; `GCM<12>` and so on select a shorter tag, within the `12..=16` byte range
+/// [`Gcm`] accepts. The [`Mode`] and AEAD mode-trait impls that connect it to a key type are
+/// written by each permutation's crate while the cipher traits still carry `KEY_LEN`.
+///
+/// [`Mode`]: bouncycastle_core::hazmat::Mode
+pub struct GCM<const TAG_LEN: usize = 16>;
+
+/// What a GCM key keeps per key: the keyed permutation and the hash subkey `H = CIPH_K(0^128)`
+/// (SP 800-38D Algorithm 4 step 1), derived once here rather than once per message. It is the
+/// `KeyState` of [`GCM`] over any permutation, and is only built and consumed through the mode
+/// impls.
+#[derive(Clone)]
+pub struct GcmKeyState<P> {
+    perm: P,
+    h: Secret<[u8; 16]>,
+}
+
+impl<P> GcmKeyState<P> {
+    /// Derives `H` from `perm`.
+    pub fn new<const KEY_LEN: usize>(perm: P) -> Self
+    where
+        P: ElectronicCodeBook<KEY_LEN, 16>,
+    {
+        // Encrypted in place inside a `Secret` so that `H` is never held in an unzeroized stack
+        // array (Sec 5.3; Appendix A on what `H` gives an attacker).
+        let mut h: Secret<[u8; 16]> = Secret::new();
+        perm.encrypt_block(&mut h);
+        Self { perm, h }
+    }
+}
+
 /// Which category of bytes `Gcm` is currently absorbing into GHASH: additional authenticated data,
 /// or plaintext/ciphertext. AAD is only accepted in the first phase (SP 800-38D Algorithm 4 absorbs
 /// `A` before `C`); the transition also pads the AAD to a block boundary (the `0^v` of step 5).
@@ -269,14 +301,16 @@ where
         };
     }
 
-    /// Algorithm 4 steps 1-2 and the precomputation for step 6's tag mask.
+    /// Algorithm 4 steps 1-2 and the precomputation for step 6's tag mask, from a bare permutation.
     fn setup(perm: P, nonce: [u8; GCM_NONCE_LEN]) -> Self {
-        Self::check_shape();
+        Self::setup_from_state(GcmKeyState::new::<KEY_LEN>(perm), nonce)
+    }
 
-        // Step 1: H = CIPH_K(0^128). Encrypted in place inside a `Secret` so that `H` is never
-        // held in an unzeroized stack array (Sec 5.3; Appendix A on what `H` gives an attacker).
-        let mut h: Secret<[u8; 16]> = Secret::new();
-        perm.encrypt_block(&mut h);
+    /// Algorithm 4 step 2 and the precomputation for step 6's tag mask, over a key state that
+    /// already holds step 1's `H`.
+    fn setup_from_state(state: GcmKeyState<P>, nonce: [u8; GCM_NONCE_LEN]) -> Self {
+        Self::check_shape();
+        let GcmKeyState { perm, h } = state;
 
         // Step 2 (len(IV) = 96 branch, the only one this type implements): J0 = IV || 0^31 || 1,
         // built directly in the `Secret` that will hold CIPH_K(J0).
@@ -382,6 +416,25 @@ impl<P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Encrypting, KEY_LEN, 
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
+    /// Begins an encryption from a key's stored state under a nonce drawn from `rng`: the
+    /// encryption constructor a permutation crate's `AeadEncryptMode` impl for [`GCM`] calls. The
+    /// result is identical to [`SymmetricCipherEncryptor::do_encrypt_init_rng`] from the same key
+    /// and RNG.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
+    pub fn from_key_state(
+        state: &GcmKeyState<P>,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError>
+    where
+        P: Clone,
+    {
+        Self::check_shape();
+        let nonce = crate::modes::iv::random_iv::<GCM_NONCE_LEN>(rng)?;
+        Ok((Self::setup_from_state(state.clone(), nonce), nonce))
+    }
+
     /// Encrypts `data` in place (GCTR, Algorithm 4 step 3) and absorbs the resulting ciphertext
     /// into GHASH (step 5). Nothing is held back.
     ///
@@ -500,6 +553,16 @@ impl<P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Decrypting, KEY_LEN, 
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
+    /// Begins the decryption of a message encrypted under `nonce` from a key's stored state: the
+    /// decryption constructor a permutation crate's `AeadDecryptMode` impl for [`GCM`] calls.
+    /// Infallible: the state is already keyed and the nonce length is in the type.
+    pub fn from_key_state(state: &GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self
+    where
+        P: Clone,
+    {
+        Self::setup_from_state(state.clone(), *nonce)
+    }
+
     /// Absorbs `data` (ciphertext) into GHASH, then decrypts it in place. Order matters and is the
     /// reverse of the encryptor's: GHASH must see ciphertext on both sides, so it is absorbed
     /// *before* GCTR turns it into plaintext here.
