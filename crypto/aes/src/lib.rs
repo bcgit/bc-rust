@@ -21,6 +21,10 @@
 //! * [AES_CTR](crate::ctr)
 //! * [AES_GCM](crate::gcm)
 //!
+//! A key that will encrypt many messages is better held as a mode-bound key object such as
+//! [`AES256Key<GCM>`](AES256Key), which validates and expands once and hands out the mode's
+//! encryptors and decryptors; see [`key`].
+//!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
 //!
@@ -175,6 +179,7 @@ pub mod cfb8;
 pub mod ctr;
 pub mod gcm;
 pub mod hazmat;
+pub mod key;
 mod round;
 mod sbox;
 mod schedule;
@@ -264,3 +269,4 @@ pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+pub use key::{AES128Key, AES192Key, AES256Key, AESKey};
