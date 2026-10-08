@@ -157,7 +157,7 @@ pub use ccm::{CcmDecryptor, CcmEncryptor, CcmPacket};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
-pub use gcm::{GCM_NONCE_LEN, Gcm};
+pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 
 /// A table of algorithm names used to populate [`Algorithm`] for each Mode-Permutation-Size combination.
 ///
