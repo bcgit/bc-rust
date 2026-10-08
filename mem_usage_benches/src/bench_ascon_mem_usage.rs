@@ -56,16 +56,10 @@
 use core::hint::black_box;
 
 use bouncycastle::ascon::Ascon_AEAD128;
-use bouncycastle::ascon::ascon_aead128::{
-    KEY_LEN, NONCE_LEN, SUSPENDED_ASCON_AEAD128_STATE_LEN, TAG_LEN,
-};
-use bouncycastle::ascon::ascon_cxof128::{
-    AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN,
-};
-use bouncycastle::ascon::ascon_hash256::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
-use bouncycastle::ascon::ascon_xof128::{
-    AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN,
-};
+use bouncycastle::ascon::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
+use bouncycastle::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
+use bouncycastle::ascon::{AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN};
+use bouncycastle::ascon::{KEY_LEN, NONCE_LEN, SUSPENDED_ASCON_AEAD128_STATE_LEN, TAG_LEN};
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{HashError, RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

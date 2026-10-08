@@ -9,9 +9,7 @@
 //!   the detached-tag (`*_detached`) and the inline `ciphertext || tag` layouts -- the latter also
 //!   through the `SymmetricCipherEncryptor`/`SymmetricCipherDecryptor` traits they extend.
 
-use bouncycastle_ascon::ascon_aead128::{
-    AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
-};
+use bouncycastle_ascon::{AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

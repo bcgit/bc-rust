@@ -37,7 +37,7 @@
 
 use crate::{AlgorithmFactory, FactoryError};
 use bouncycastle_ascon::ASCON_XOF128_NAME;
-use bouncycastle_ascon::ascon_xof128::AsconXof128;
+use bouncycastle_ascon::AsconXof128;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};

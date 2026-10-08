@@ -1,12 +1,10 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::ascon_aead128::{
-    AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
-};
-use bouncycastle::ascon::ascon_cxof128::AsconCXof128;
-use bouncycastle::ascon::ascon_hash256::AsconHash256;
-use bouncycastle::ascon::ascon_xof128::AsconXof128;
+use bouncycastle::ascon::AsconCXof128;
+use bouncycastle::ascon::AsconHash256;
+use bouncycastle::ascon::AsconXof128;
+use bouncycastle::ascon::{AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

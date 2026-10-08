@@ -9,7 +9,7 @@
 //! A `valid` case must encrypt to exactly `ct || tag` and decrypt back to `msg`. An `invalid` case
 //! must be rejected with `AEADTagCheckFailed`, leaving the output buffer zeroized.
 
-use bouncycastle_ascon::ascon_aead128::{AsconAead128, KEY_LEN, NONCE_LEN, TAG_LEN};
+use bouncycastle_ascon::{AsconAead128, KEY_LEN, NONCE_LEN, TAG_LEN};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

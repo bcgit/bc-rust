@@ -2,10 +2,10 @@ use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ascon::ascon_aead128::AsconAead128;
-use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
-use bouncycastle_ascon::ascon_hash256::AsconHash256;
-use bouncycastle_ascon::ascon_xof128::AsconXof128;
+use bouncycastle_ascon::AsconAead128;
+use bouncycastle_ascon::AsconCXof128;
+use bouncycastle_ascon::AsconHash256;
+use bouncycastle_ascon::AsconXof128;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{Hash, RNG, XOF};
 
