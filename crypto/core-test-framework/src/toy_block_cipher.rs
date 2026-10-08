@@ -18,9 +18,11 @@
 //! * The batch methods are plain loops over the single-block ones, so a mode driven through them
 //!   gets the same answer as one driven block by block.
 //!
-//! It exists so that a crate generic over a block cipher -- a mode of operation, say -- can have
-//! runnable documentation examples and unit tests without depending on a real cipher crate, which
-//! would be a dependency cycle when that cipher crate depends on the mode. **Never use it for
+//! It exists so that a crate generic over a block cipher can have runnable documentation examples
+//! and unit tests without depending on a real cipher crate, which would be a dependency cycle when
+//! that cipher crate depends on it. `bouncycastle-cipher`'s modes also need the permutation to
+//! implement that crate's `ModeNames`, which this crate cannot do without depending on it, so that
+//! crate keeps a copy of this toy in `tests/common/toy_block_cipher.rs`. **Never use it for
 //! anything but tests and examples.** It is included in this crate's public API for the same
 //! reason [`FixedSeedRNG`](crate::FixedSeedRNG) is: it is a test double, and this crate is only
 //! ever a dev-dependency.
