@@ -754,6 +754,11 @@ impl Display for AsconAead128 {
 /// The secret key is **not** serialized; it is re-supplied to [`SuspendableKeyed::from_suspended`].
 pub const SUSPENDED_ASCON_AEAD128_STATE_LEN: usize = 46;
 
+/// The byte after the library version that marks a suspended state as Ascon-AEAD128's;
+/// `from_suspended` rejects any other value as [`SuspendableError::InvalidData`]. This is a
+/// bc-rust serialization tag, not an SP 800-232 value (its Table 13 identifies Ascon-AEAD128 as
+/// `v = 1`). The crate's tags are unique: Ascon-Hash256 0x01, Ascon-XOF128 0x02,
+/// Ascon-CXOF128 0x03, Ascon-AEAD128 0x04. Never renumber one, or older states are misread.
 const AEAD128_STATE_TAG: u8 = 0x04;
 
 impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
