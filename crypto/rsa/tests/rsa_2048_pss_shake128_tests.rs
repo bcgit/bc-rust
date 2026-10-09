@@ -306,3 +306,29 @@ fn sign_randomized_takes_the_salt_from_the_callers_rng() {
     RSASSA_PSS_SHAKE128::verify(&pk, msg, None, &b).unwrap();
     assert!(RSASSA_PSS_SHAKE128::verify(&pk, b"other", None, &a).is_err());
 }
+
+/// Through the trait every malformed signature is `SignatureVerificationFailed`, never a panic or
+/// another error: a representative with its top eight bytes zero (RSAVP1's lower bound), empty,
+/// three bytes, all zero, one byte short and one byte long. A genuine signature still verifies.
+#[test]
+fn trait_verify_rejects_small_representative_and_malformed_signatures() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"msg";
+    let mut small = [0xffu8; SIG_LEN];
+    small[..8].fill(0);
+    let malformed: [&[u8]; 6] =
+        [&small, &[], &[0xff; 3], &[0; SIG_LEN], &[0xff; SIG_LEN - 1], &[0xff; SIG_LEN + 1]];
+    for sig in malformed {
+        assert!(
+            matches!(
+                RSASSA_PSS_SHAKE128::verify(&pk, msg, None, sig),
+                Err(SignatureError::SignatureVerificationFailed)
+            ),
+            "{}-byte signature",
+            sig.len()
+        );
+    }
+
+    let sig = sign_with_salt!(RSASSA_PSS_SHAKE128, &sk, msg, [0x42u8; 32]).unwrap();
+    RSASSA_PSS_SHAKE128::verify(&pk, msg, None, &sig).unwrap();
+}

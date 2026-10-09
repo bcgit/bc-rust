@@ -252,6 +252,7 @@ fn rsa_signature_sha256_all_groups() {
     let mut num_valid = 0usize;
     let mut num_invalid = 0usize;
     let mut num_wrong_length = 0usize;
+    let mut num_small_signature = 0usize;
 
     for group in doc["testGroups"].as_array().unwrap() {
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
@@ -265,7 +266,20 @@ fn rsa_signature_sha256_all_groups() {
             let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
             let sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
             let result = RSASSA_PKCS1_v1_5_SHA256::verify(&pk, &msg, None, &sig);
+            let flags: Vec<&str> =
+                test["flags"].as_array().unwrap().iter().map(|f| f.as_str().unwrap()).collect();
             match test["result"].as_str().unwrap() {
+                // Wycheproof's `SmallSignature` is a genuine `e = 3` signature whose representative
+                // is far below `n`, which RSAVP1's lower bound rejects by policy (see
+                // `rsa_core::rsavp1`).
+                "valid" if flags.contains(&"SmallSignature") => {
+                    assert!(
+                        matches!(result, Err(SignatureError::SignatureVerificationFailed)),
+                        "tcId {tc_id}: a small representative must be 'invalid signature', got \
+                         {result:?}"
+                    );
+                    num_small_signature += 1;
+                }
                 // "acceptable" is only ever MissingNull in this file, accepted by policy (see above).
                 "valid" | "acceptable" => {
                     result.unwrap_or_else(|e| panic!("tcId {tc_id}: expected valid, got {e:?}"));
@@ -290,7 +304,8 @@ fn rsa_signature_sha256_all_groups() {
     }
 
     assert_eq!(num_tests, 259);
-    assert_eq!(num_valid, 10);
+    assert_eq!(num_valid, 9);
+    assert_eq!(num_small_signature, 1);
     assert_eq!(num_invalid, 249);
     assert!(num_wrong_length > 0, "the file must contain wrong-length signatures to exercise");
 }
@@ -316,4 +331,58 @@ fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
         RSASSA_PKCS1_v1_5_SHA256::verify(&pk, b"msg", None, &too_big),
         Err(SignatureError::SignatureVerificationFailed)
     ));
+}
+
+/// RSAVP1's lower bound on the representative (see `rsa_core::rsavp1`): exactly `2^(2048 - 64)`
+/// gets past it and fails only at the padding check, while `2^(2048 - 64) - 1` is the same
+/// `DecodingError` as the out-of-range case above.
+#[test]
+fn verify_from_hash_lower_bound_on_the_representative() {
+    let (pk, _) = fixed_keypair().unwrap();
+    let mut digest = [0u8; 32];
+    SHA256::default().hash_out(b"msg", &mut digest);
+
+    let mut at_bound = [0u8; SIG_LEN];
+    at_bound[7] = 0x01;
+    assert!(matches!(
+        rsassa_pkcs1_v1_5::verify_from_hash::<SHA256, 32, 32, 64, 65, SIG_LEN>(
+            &pk, &digest, &at_bound
+        ),
+        Err(SignatureError::SignatureVerificationFailed)
+    ));
+
+    let mut below_bound = [0xffu8; SIG_LEN];
+    below_bound[..8].fill(0);
+    assert!(matches!(
+        rsassa_pkcs1_v1_5::verify_from_hash::<SHA256, 32, 32, 64, 65, SIG_LEN>(
+            &pk, &digest, &below_bound
+        ),
+        Err(SignatureError::DecodingError(_))
+    ));
+}
+
+/// Through the trait every malformed signature is `SignatureVerificationFailed`, never a panic or
+/// another error: a representative with its top eight bytes zero (RSAVP1's lower bound), empty,
+/// three bytes, all zero, one byte short and one byte long. A genuine signature still verifies.
+#[test]
+fn trait_verify_rejects_small_representative_and_malformed_signatures() {
+    let (pk, sk) = fixed_keypair().unwrap();
+    let msg = b"msg";
+    let mut small = [0xffu8; SIG_LEN];
+    small[..8].fill(0);
+    let malformed: [&[u8]; 6] =
+        [&small, &[], &[0xff; 3], &[0; SIG_LEN], &[0xff; SIG_LEN - 1], &[0xff; SIG_LEN + 1]];
+    for sig in malformed {
+        assert!(
+            matches!(
+                RSASSA_PKCS1_v1_5_SHA256::verify(&pk, msg, None, sig),
+                Err(SignatureError::SignatureVerificationFailed)
+            ),
+            "{}-byte signature",
+            sig.len()
+        );
+    }
+
+    let sig = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, msg, None).unwrap();
+    RSASSA_PKCS1_v1_5_SHA256::verify(&pk, msg, None, &sig).unwrap();
 }
