@@ -10,6 +10,7 @@
 //! `(r_i, d_i, t_i)` triplets): [`crate::keys::RsaPrivateKey`] has no representation for
 //! multi-prime RSA, so there is nothing here to extend to `u > 2`.
 
+use crate::keygen::leading_zeros;
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide, sub_mod};
 use bouncycastle_core::errors::SignatureError;
@@ -20,7 +21,8 @@ use bouncycastle_ec::nat;
 /// signature representative under the public key.
 ///
 /// Step 1's range check ("If the signature representative s is not between 0 and n - 1, output
-/// 'signature representative out of range'") is `Err(`[`SignatureError::DecodingError`]`)` here.
+/// 'signature representative out of range'") is `Err(`[`SignatureError::DecodingError`]`)` here,
+/// as is a representative whose bit length is at most 64 below `n`'s.
 pub(crate) fn rsavp1<const L: usize, const L2: usize, const L21: usize>(
     pk: &RsaPublicKey<L>,
     s: &[u64; L],
@@ -28,7 +30,18 @@ pub(crate) fn rsavp1<const L: usize, const L2: usize, const L21: usize>(
     if nat::sub(s, pk.n()).1 != 1 {
         return Err(SignatureError::DecodingError("signature representative out of range"));
     }
+    // A genuine signature is this small with probability 2^-64; rejecting it stops a pre-chosen
+    // value being matched to a key computed afterwards.
+    if bit_len(s) + 64 <= bit_len(pk.n()) {
+        return Err(SignatureError::DecodingError("signature representative too small"));
+    }
     Ok(public_exp::<L, L2, L21>(pk, s))
+}
+
+/// The number of significant bits in `x` (`0` for zero). Variable-time, used only on public
+/// values.
+fn bit_len<const L: usize>(x: &[u64; L]) -> u32 {
+    64 * L as u32 - leading_zeros(x)
 }
 
 /// `x^e mod n` under the public key, with no range check of its own: RSAVP1's step 2 (RFC 8017
