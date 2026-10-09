@@ -72,7 +72,8 @@
 use crate::bitslice::{Block, PlaneWord, Planes};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
 use crate::sbox::{inv_sbox, sbox};
-use crate::schedule::{AES128Params, AES192Params, AES256Params, AESParams, expand, round_key};
+use crate::schedule::{expand, round_key};
+use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

@@ -1,4 +1,4 @@
-//! KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2) and the per-key-length parameters.
+//! KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2).
 //!
 //! # Storage
 //!
@@ -25,9 +25,10 @@
 //! the bit-sliced circuit in [`crate::sbox`]. A table-driven "light" AES that only removes the
 //! tables from the cipher, and not from the key schedule, still leaks through the schedule.
 
+use crate::AESParams;
 use crate::bitslice::{Block, PlaneWord, Planes, ortho};
 use crate::sbox::sbox;
-use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+use bouncycastle_utils::secret::Secret;
 
 /// FIPS 197 Sec 5.2, Table 5: the round constants, `Rcon[j]` for `1 <= j <= 10`.
 ///
@@ -36,76 +37,6 @@ use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 /// by one against the spec: `Rcon[j - 1]` here is the spec's `Rcon[j]`, since the spec counts from 1.
 #[allow(non_upper_case_globals)]
 const Rcon: [u32; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
-
-/// Prevents a fourth parameter set from being added outside this crate.
-///
-/// FIPS 197 Table 3 lists exactly three Key-Block-Round combinations -- AES-128, AES-192 and
-/// AES-256 -- and Sec 5 adds that "No other configurations of Rijndael conform to this
-/// Standard". Because [`AESParams`]
-/// has this private supertrait, only the three types in this module can implement it, so no
-/// downstream crate can instantiate the cipher with an unapproved key length or round count.
-trait AESParamsInternalTrait {}
-
-/// The per-key-length constants of FIPS 197 Table 3.
-///
-/// This is a trait rather than const generic parameters because the schedule length
-/// `4 * (Nr + 1)` cannot be written as an expression over another const parameter on stable
-/// const-generics; each implementation spells its own array type out instead. The same pattern is
-/// used by the `HashDRBG80090AParams_*` types in `bouncycastle-rng`.
-///
-/// Sealed via a private supertrait, so the three types below are the only implementations. The
-/// supertrait is named `*InternalTrait` after the pattern of `MLKEMPrivateKeyInternalTrait` in
-/// `bouncycastle-mlkem`, which seals its key types the same way.
-pub trait AESParams: AESParamsInternalTrait {
-    /// Key length in bytes: 16, 24 or 32 (FIPS 197 Table 3).
-    const KEY_LEN: usize;
-    /// `Nk`, the key length in 32-bit words: 4, 6 or 8 (FIPS 197 Table 3).
-    const NK: usize;
-    /// `Nr`, the number of rounds: 10, 12 or 14 (FIPS 197 Table 3).
-    const NR: usize;
-    /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
-    const ALG_NAME: &'static str;
-    /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule. See the module docs.
-    type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
-}
-
-/// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AES128Params;
-/// AES-192 parameters: 24-byte key, `Nk` = 6, `Nr` = 12 (FIPS 197 Table 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AES192Params;
-/// AES-256 parameters: 32-byte key, `Nk` = 8, `Nr` = 14 (FIPS 197 Table 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AES256Params;
-
-impl AESParamsInternalTrait for AES128Params {}
-impl AESParamsInternalTrait for AES192Params {}
-impl AESParamsInternalTrait for AES256Params {}
-
-impl AESParams for AES128Params {
-    const KEY_LEN: usize = 16;
-    const NK: usize = 4;
-    const NR: usize = 10;
-    const ALG_NAME: &'static str = "AES-128";
-    type Schedule = [u32; 44]; // 4 * (10 + 1)
-}
-
-impl AESParams for AES192Params {
-    const KEY_LEN: usize = 24;
-    const NK: usize = 6;
-    const NR: usize = 12;
-    const ALG_NAME: &'static str = "AES-192";
-    type Schedule = [u32; 52]; // 4 * (12 + 1)
-}
-
-impl AESParams for AES256Params {
-    const KEY_LEN: usize = 32;
-    const NK: usize = 8;
-    const NR: usize = 14;
-    const ALG_NAME: &'static str = "AES-256";
-    type Schedule = [u32; 60]; // 4 * (14 + 1)
-}
 
 /// ROTWORD(): `[a0,a1,a2,a3] -> [a1,a2,a3,a0]` (FIPS 197 Sec 5.2, Eq 5.10).
 ///
@@ -244,6 +175,7 @@ pub(crate) fn round_key<P: AESParams, T: PlaneWord>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{AES128Params, AES192Params, AES256Params};
 
     /// FIPS 197 Appendix A.1: every w[i] of the AES-128 key expansion, as printed
     /// (i.e. the byte sequence [a0,a1,a2,a3] read left to right).

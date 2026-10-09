@@ -173,9 +173,9 @@
 //! ```
 
 use crate::AES_BLOCK_LEN;
+use crate::AESParams;
 use crate::bitslice::Block;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
-use crate::schedule::AESParams;
 use bouncycastle_cipher::Direction;
 use bouncycastle_cipher::modes::hazmat::Ecb;
 use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
