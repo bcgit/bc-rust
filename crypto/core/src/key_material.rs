@@ -21,6 +21,9 @@
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
 //! run inside of a [`do_hazardous_operations`] closure, see below.
 //!
+//! A key can also be bound to one algorithm with [`KeyMaterialTrait::set_algorithm`], after which
+//! every other cipher refuses it; see [`KeyMaterialTrait::algorithm`].
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! Additional security features:
@@ -173,6 +176,38 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// returns [`KeyMaterialError::ActingOnZeroizedKey`].
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError>;
 
+    /// The algorithm this key is bound to, as its [`Algorithm::ALG_NAME`], or `None` if unbound.
+    ///
+    /// Binding is opt-in key separation on top of [`KeyType`]: a [`KeyType::SymmetricCipherKey`]
+    /// bound to `"AES_CBC_128"` is refused by `AES_GCM_128`, while an unbound one is accepted by
+    /// any cipher it fits. Ciphers check it with [`KeyMaterialTrait::check_algorithm`] when they
+    /// are given the key; a raw block permutation does not.
+    ///
+    /// [`Algorithm::ALG_NAME`]: crate::traits::Algorithm::ALG_NAME
+    fn algorithm(&self) -> Option<&'static str>;
+
+    /// Binds this key to the algorithm named `Some(alg_name)`, or unbinds it with `None`.
+    ///
+    /// # 🚨 Hazardous Operation 🚨
+    /// Binding an unbound key, and re-binding a key to the algorithm it is already bound to, are
+    /// always permitted. Unbinding a key or binding it to a different algorithm needs a
+    /// [`do_hazardous_operations`] closure, and otherwise returns
+    /// [`KeyMaterialError::HazardousOperationNotPermitted`]. Binding a [`KeyType::Zeroized`] key
+    /// returns [`KeyMaterialError::ActingOnZeroizedKey`].
+    fn set_algorithm(&mut self, algorithm: Option<&'static str>) -> Result<(), KeyMaterialError>;
+
+    /// Whether this key may be used by the algorithm named `alg_name`: `Ok` if it is unbound or
+    /// bound to exactly that algorithm, and [`KeyMaterialError::InvalidKeyType`] if it is bound to
+    /// another.
+    fn check_algorithm(&self, alg_name: &str) -> Result<(), KeyMaterialError> {
+        match self.algorithm() {
+            Some(bound) if bound != alg_name => {
+                Err(KeyMaterialError::InvalidKeyType("The key is bound to a different algorithm."))
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Security Strength, as used here, aligns with NIST SP 800-90A guidance for random number generation,
     /// specifically section 8.4.
     ///
@@ -227,6 +262,8 @@ pub struct KeyMaterial<const KEY_LEN: usize> {
     key_len: Secret<usize>,
     key_type: KeyType,
     security_strength: SecurityStrength,
+    /// See [`KeyMaterialTrait::algorithm`].
+    algorithm: Option<&'static str>,
     allow_hazardous_operations: bool,
 }
 
@@ -300,6 +337,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
             key_len: Secret::new(),
             key_type: KeyType::Zeroized,
             security_strength: SecurityStrength::None,
+            algorithm: None,
             allow_hazardous_operations: false,
         }
     }
@@ -361,6 +399,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
         *key.key_len = other.key_len();
         key.key_type = other.key_type();
         key.security_strength = other.security_strength();
+        key.algorithm = other.algorithm();
         Ok(key)
     }
 }
@@ -386,6 +425,8 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.buf[..source.len()].copy_from_slice(source);
         *self.key_len = source.len();
         self.key_type = new_key_type;
+        // New bytes are a new key, bound to nothing.
+        self.algorithm = None;
 
         do_hazardous_operations(self, |s| {
             if new_key_type <= KeyType::Unknown {
@@ -502,6 +543,28 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         Ok(())
     }
 
+    fn algorithm(&self) -> Option<&'static str> {
+        self.algorithm
+    }
+
+    fn set_algorithm(&mut self, algorithm: Option<&'static str>) -> Result<(), KeyMaterialError> {
+        if self.allow_hazardous_operations {
+            self.algorithm = algorithm;
+            return Ok(());
+        }
+        if self.key_type == KeyType::Zeroized {
+            return Err(KeyMaterialError::ActingOnZeroizedKey);
+        }
+        match (self.algorithm, algorithm) {
+            // Binding only narrows where the key may be used, so it is always safe.
+            (None, _) => self.algorithm = algorithm,
+            (Some(bound), Some(new)) if bound == new => { /* No change */ }
+            // Once a KeyMaterial is bound, it should stay that way.
+            _ => return Err(KeyMaterialError::HazardousOperationNotPermitted),
+        }
+        Ok(())
+    }
+
     fn security_strength(&self) -> SecurityStrength {
         self.security_strength.clone()
     }
@@ -571,6 +634,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.buf.zeroize();
         self.key_len.zeroize();
         self.key_type = KeyType::Zeroized;
+        self.algorithm = None;
     }
 
     fn equals(&self, other: &dyn KeyMaterialTrait) -> bool {
@@ -594,6 +658,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
             // set the metadata
             into.set_key_len(bytes_to_copy)?;
             into.set_key_type(self.key_type)?;
+            into.set_algorithm(self.algorithm)?;
             into.set_security_strength(
                 min(&self.security_strength(), &SecurityStrength::from_bytes(bytes_to_copy))
                     .clone(),
@@ -658,8 +723,8 @@ impl<const KEY_LEN: usize> fmt::Display for KeyMaterial<KEY_LEN> {
         // deref the key_len explicitly so that Secret doesn't render it as "<redacted>"
         write!(
             f,
-            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?} }}",
-            KEY_LEN, *self.key_len, self.key_type, self.security_strength
+            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?}, algorithm: {:?} }}",
+            KEY_LEN, *self.key_len, self.key_type, self.security_strength, self.algorithm
         )
     }
 }
@@ -670,8 +735,8 @@ impl<const KEY_LEN: usize> fmt::Debug for KeyMaterial<KEY_LEN> {
         // deref the key_len explicitly so that Secret doesn't render it as "<redacted>"
         write!(
             f,
-            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?} }}",
-            KEY_LEN, *self.key_len, self.key_type, self.security_strength
+            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?}, algorithm: {:?} }}",
+            KEY_LEN, *self.key_len, self.key_type, self.security_strength, self.algorithm
         )
     }
 }

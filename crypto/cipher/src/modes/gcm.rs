@@ -171,7 +171,7 @@ use crate::modes::hazmat::CtrKeyStream;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
@@ -426,6 +426,7 @@ where
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         let nonce = crate::modes::iv::random_iv::<GCM_NONCE_LEN>(rng)?;
         Ok((Self::setup(perm, nonce), nonce))
@@ -533,6 +534,7 @@ where
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         let mut gcm = Self::setup(perm, *nonce);
         gcm.absorb_aad(aad)?;
@@ -558,6 +560,7 @@ where
         init_data: &[u8; GCM_NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         Ok(Self::setup(perm, *init_data))
     }
@@ -770,6 +773,7 @@ where
         // leading part of the CTR state. Its fresh CTR and GHASH are then replaced by the
         // suspended ones; the CTR read expands the key a second time, a one-off cost at resume.
         let nonce = CtrKeyStream::<P, KEY_LEN, 16, GCM_NONCE_LEN>::nonce_from_state(ctr);
+        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut gcm = Self::setup(perm, nonce);
         gcm.ctr = <Ctr<P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent>::read_state(

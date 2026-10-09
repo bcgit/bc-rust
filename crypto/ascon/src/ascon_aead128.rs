@@ -121,8 +121,8 @@ pub struct AsconAead128 {
 
 impl AsconAead128 {
     /// Validate a [`KeyMaterial`] for use with Ascon-AEAD128 and return its key words.
-    /// The key must be tagged as a [`KeyType::SymmetricCipherKey`] and carry at least the
-    /// algorithm's 128-bit security strength (SP 800-232 R1/R2).
+    /// The key must be tagged as a [`KeyType::SymmetricCipherKey`], not be bound to another
+    /// algorithm, and carry at least the algorithm's 128-bit security strength (SP 800-232 R1/R2).
     fn checked_key(key: &KeyMaterial<KEY_LEN>) -> Result<[u64; 2], SymmetricCipherError> {
         if key.key_type() != KeyType::SymmetricCipherKey {
             return Err(KeyMaterialError::InvalidKeyType(
@@ -130,6 +130,7 @@ impl AsconAead128 {
             )
             .into());
         }
+        key.check_algorithm(ASCON_AEAD128_NAME)?;
         if key.security_strength() < SecurityStrength::_128bit {
             return Err(KeyMaterialError::SecurityStrength(
                 "Ascon-AEAD128 requires a key with at least 128-bit security strength",

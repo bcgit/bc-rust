@@ -1,6 +1,15 @@
-// A copy of `bouncycastle_core_test_framework::ToyBlockCipher` for this crate's doctests and tests:
-// the deliberately insecure 16-byte-block permutation (each byte `rotate_left(1)` then XOR with
-// the key byte; the inverse undoes both). **Never use it for anything but tests and examples.**
+// The toy block cipher behind this crate's doctests and tests: a deliberately insecure permutation
+// with AES-128's 16-byte key and block, so a mode can be exercised without depending on a real
+// cipher crate (which would be a dependency cycle, since those depend on this one). **Never use it
+// for anything but tests and examples.** Everything about it is chosen for testability:
+//
+// * Each byte is permuted on its own -- `rotate_left(1)`, then XOR with the key byte -- so a
+//   one-bit change in a block moves exactly one output bit, which makes a mode's error propagation
+//   exact arithmetic. Anything that depends on diffusion cannot be shown with it.
+// * Encryption and decryption are different functions (the inverse is XOR, then `rotate_right(1)`),
+//   so a mode that called the wrong direction fails, where with `block ^= key` it would round-trip.
+// * It validates its key the way a real permutation does, so key-policy checks run against it.
+//   `tests/toy_block_cipher_tests.rs` pins it to the `ElectronicCodeBook` contract.
 //
 // Pulled in with `mod toy { include!("<path to this file>"); }` from doctests and unit tests, and
 // with `#[path]` from integration tests, so it carries no inner attributes or `//!` docs.
@@ -17,7 +26,7 @@ use bouncycastle_core::traits::Algorithm;
 pub const TOY_BLOCK_LEN: usize = 16;
 
 /// A per-byte, key-validating, insecure permutation with a 16-byte key and block. See the header
-/// comment above, and the test framework's original, for what it is and is not good for.
+/// comment above for what it is and is not good for.
 #[derive(Clone)]
 pub struct ToyBlockCipher {
     key: [u8; TOY_BLOCK_LEN],

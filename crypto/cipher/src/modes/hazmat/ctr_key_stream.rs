@@ -4,7 +4,7 @@ use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, SuspendableComponent};
@@ -146,6 +146,7 @@ where
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         Ok(Self::start(perm, *init_data))
     }
@@ -187,6 +188,7 @@ where
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut r = Cursor::new(state);
         let nonce = r.array::<INIT_DATA_LEN>();

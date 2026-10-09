@@ -2,6 +2,7 @@
 //! [`SymmetricCipherDecryptor`] and their stream-cipher refinement. The block-cipher and AEAD
 //! refinements have their own runners in [`crate::block_cipher`] and [`crate::aead`].
 
+use crate::key_binding::{assert_refused, bound_elsewhere, bound_to};
 use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -438,6 +439,12 @@ impl TestFrameworkSymmetricCipher {
             _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
         };
 
+        // error case: a key bound to another algorithm; one bound to this one is fine
+        E::do_encrypt_init(&bound_to(&key, E::ALG_NAME)).unwrap();
+        D::do_decrypt_init(&bound_to(&key, D::ALG_NAME), &init_data).unwrap();
+        assert_refused(E::do_encrypt_init(&bound_elsewhere(&key)), "do_encrypt_init");
+        assert_refused(D::do_decrypt_init(&bound_elsewhere(&key), &init_data), "do_decrypt_init");
+
         // error case: security strengths too weak, and strong enough
         let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
             &DUMMY_SEED[..KEY_LEN],
@@ -626,6 +633,13 @@ impl TestFrameworkStreamCipher {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
+
+        // error case: a key bound to another algorithm; one bound to this one is fine
+        let init_data = [0u8; INIT_DATA_LEN];
+        E::do_encrypt_init(&bound_to(&key, E::ALG_NAME)).unwrap();
+        D::do_decrypt_init(&bound_to(&key, D::ALG_NAME), &init_data).unwrap();
+        assert_refused(E::do_encrypt_init(&bound_elsewhere(&key)), "do_encrypt_init");
+        assert_refused(D::do_decrypt_init(&bound_elsewhere(&key), &init_data), "do_decrypt_init");
 
         // error case: security strengths too weak and too strong
         let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(

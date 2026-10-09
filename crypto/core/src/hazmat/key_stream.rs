@@ -41,9 +41,12 @@ pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
     /// Expands the key and positions the keystream at its first block for `init_data`.
     ///
     /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
-    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], one bound to a
+    /// different algorithm (see [`KeyMaterialTrait::algorithm`]), and one whose security strength
+    /// is below [`Algorithm::MAX_SECURITY_STRENGTH`], all as a
     /// [`SymmetricCipherError::KeyMaterialError`].
+    ///
+    /// [`KeyMaterialTrait::algorithm`]: crate::key_material::KeyMaterialTrait::algorithm
     fn new(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],

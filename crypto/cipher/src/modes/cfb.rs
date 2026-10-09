@@ -175,7 +175,7 @@ use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
@@ -417,6 +417,7 @@ where
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
@@ -485,6 +486,7 @@ where
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; BLOCK_LEN],
     ) -> Result<Self, SymmetricCipherError> {
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         // `I1 = IV`, exactly as on the encrypt side.
         Ok(Self::start(perm, *init_data))
@@ -567,6 +569,7 @@ where
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut r = Cursor::new(state);
         let buf = r.array::<BLOCK_LEN>();
