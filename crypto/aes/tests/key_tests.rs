@@ -2,8 +2,10 @@
 //! producing exactly what the mode's own `do_encrypt_init_rng` produces from the same material
 //! and RNG.
 
-use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::GCM;
+use bouncycastle_aes::{
+    AES_CCM_128_Packet, AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key,
+};
+use bouncycastle_cipher::modes::{CCM, GCM};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -288,4 +290,89 @@ fn a_cloned_key_is_the_same_key() {
     let (nonce, ct, tag) = encrypt_via_key::<16, _>(&key);
     assert_eq!(decrypt_via_key::<16, _>(&copy, &nonce, &ct, &tag).unwrap(), MSG);
     assert_eq!(encrypt_via_key::<16, _>(&copy), (nonce, ct, tag));
+}
+
+/// Lengths either side of the 64-byte chunk the provided in-place bodies copy through, plus the
+/// empty message and a long one.
+const IN_PLACE_LENS: [usize; 9] = [0, 1, 15, 16, 63, 64, 65, 200, 1000];
+
+fn message(len: usize) -> Vec<u8> {
+    (0..len).map(|i| (i * 31 % 251) as u8).collect()
+}
+
+/// The provided in-place one-shots, through GCM: the same nonce, ciphertext and tag as the
+/// `_out` forms from the same RNG, at every length, and a round trip back.
+#[test]
+fn gcm_in_place_one_shots_match_the_out_forms_at_every_length() {
+    let key = AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap();
+    for len in IN_PLACE_LENS {
+        let msg = message(len);
+        let (nonce_o, ct_o, tag_o) = key.encrypt_detached(&mut rng(), AAD, &msg).unwrap();
+
+        let mut buf = msg.clone();
+        let (nonce, tag) = key.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+        assert_eq!((nonce, &buf, tag), (nonce_o, &ct_o, tag_o), "len {len}");
+
+        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+        assert_eq!(buf, msg, "len {len}");
+    }
+}
+
+/// A `CCM` key's streaming worker is fixed-frame, and the provided `_out` one-shots go through
+/// it, so they take exactly `DATA_LEN`; the overridden in-place one-shots go through `CcmPacket`
+/// and take any length, agreeing with it byte for byte.
+#[test]
+fn ccm_in_place_one_shots_take_any_length_and_match_the_packet_api() {
+    const DATA_LEN: usize = 32;
+    let km = material::<16>();
+    let key = AES128Key::<CCM<12, 16, 0, DATA_LEN>>::from_key_material(&km).unwrap();
+    type Packet<Dir> = AES_CCM_128_Packet<Dir, 12, 16>;
+
+    for len in IN_PLACE_LENS {
+        let msg = message(len);
+        let mut buf = msg.clone();
+        let (nonce, tag) = key.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+
+        let mut ct = vec![0u8; len];
+        let (n, tag_p) =
+            Packet::<Encrypting>::encrypt_detached_out(&km, &nonce, AAD, &msg, &mut ct).unwrap();
+        assert_eq!((n, &ct, tag_p), (len, &buf, tag), "len {len}");
+
+        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+        assert_eq!(buf, msg, "len {len}");
+
+        // The streaming path, and the provided one-shots over it, only at the frame's length.
+        let via_stream = key.encrypt_detached(&mut rng(), AAD, &msg);
+        if len == DATA_LEN {
+            assert_eq!(via_stream.unwrap(), (nonce, ct, tag));
+        } else {
+            assert!(via_stream.is_err(), "len {len}");
+        }
+    }
+}
+
+/// A failed tag check leaves zeros in the caller's buffer on both the provided and the
+/// overridden paths, since the plaintext was written there before the tag could be checked.
+#[test]
+fn in_place_decryption_zeroizes_the_buffer_on_a_bad_tag() {
+    let msg = message(200);
+
+    let gcm = AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap();
+    let mut buf = msg.clone();
+    let (nonce, mut tag) = gcm.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+    tag[0] ^= 1;
+    assert!(matches!(
+        gcm.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag),
+        Err(SymmetricCipherError::AEADTagCheckFailed)
+    ));
+    assert!(buf.iter().all(|&b| b == 0));
+
+    let ccm = AES192Key::<CCM<12, 16, 0, 0>>::from_key_material(&material::<24>()).unwrap();
+    let mut buf = msg.clone();
+    let (nonce, tag) = ccm.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+    assert!(matches!(
+        ccm.decrypt_detached_in_place(&nonce, b"other aad", &mut buf, &tag),
+        Err(SymmetricCipherError::AEADTagCheckFailed)
+    ));
+    assert!(buf.iter().all(|&b| b == 0));
 }
