@@ -45,19 +45,21 @@
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
+use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_256, AES128Key, AES256Key};
 use bouncycastle_cipher::modes::hazmat::Ecb;
 use bouncycastle_cipher::modes::{
-    CCM, Cbc, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
+    CCM, CMAC, Cbc, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
-    BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    BlockCipherEncryptor, MAC, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -172,6 +174,12 @@ type UnpairedAes128Ecb<Dir> = Ecb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
+}
+
+/// [`key`]'s bytes as a `KeyType::MACKey`, which is what CMAC takes.
+fn mac_key<const N: usize>() -> KeyMaterial<N> {
+    let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap()
 }
 
 fn data() -> Vec<[u8; BLOCK_LEN]> {
@@ -1150,9 +1158,37 @@ fn bench_gcm_aes256(c: &mut Criterion) {
     group.finish();
 }
 
+/// CMAC is serial like CBC encryption (SP 800-38B Sec 6.2 step 6 chains every block), so it
+/// should come out close to `modes::cbc::AES_128` encryption. The key-object route skips the
+/// per-message subkey derivation, one block encryption, which is invisible at 16 KiB.
+fn bench_cmac(c: &mut Criterion) {
+    let data: Vec<u8> = data().concat();
+    let mut group = c.benchmark_group("modes::cmac");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    let key128 = mac_key::<16>();
+    group.bench_function("AES_128 MAC::new 16KiB", |b| {
+        b.iter(|| black_box(AES_CMAC_128::new(&key128).unwrap().mac(black_box(&data))))
+    });
+    let key_object_128 = AES128Key::<CMAC>::from_key_material(&key128).unwrap();
+    group.bench_function("AES_128 key object 16KiB", |b| {
+        b.iter(|| black_box(key_object_128.mac(black_box(&data))))
+    });
+    let key256 = mac_key::<32>();
+    group.bench_function("AES_256 MAC::new 16KiB", |b| {
+        b.iter(|| black_box(AES_CMAC_256::new(&key256).unwrap().mac(black_box(&data))))
+    });
+    let key_object_256 = AES256Key::<CMAC>::from_key_material(&key256).unwrap();
+    group.bench_function("AES_256 key object 16KiB", |b| {
+        b.iter(|| black_box(key_object_256.mac(black_box(&data))))
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_cfb8_aes128,
     bench_ctr_aes128, bench_ctr_aes256, bench_ecb_aes128, bench_ccm_aes128,
-    bench_ccm_one_shot_pair, bench_gcm_aes128, bench_gcm_aes256, bench_init
+    bench_ccm_one_shot_pair, bench_gcm_aes128, bench_gcm_aes256, bench_init, bench_cmac
 );
 criterion_main!(benches);
