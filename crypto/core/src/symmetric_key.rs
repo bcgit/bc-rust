@@ -117,6 +117,13 @@ pub trait FromAnyKeyMaterial: Sized {
 /// it unchanged; this trait adds where it comes from. The one-shots are provided over
 /// [`create_encryptor`](Self::create_encryptor) and the streaming methods, and return the same
 /// bytes as streaming the message by hand.
+///
+/// # The nonce is drawn by default
+///
+/// Every form without `_nonce` in its name draws the nonce from the RNG it is given and returns
+/// it. The `_nonce` forms take the nonce instead, for a protocol whose nonce is a counter or
+/// another value it manages itself; the caller then takes on the obligation the drawing forms
+/// discharge for it, that the nonce never repeats under this key.
 pub trait AeadEncryptionKey<
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
@@ -137,6 +144,10 @@ pub trait AeadEncryptionKey<
         &self,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError>;
+
+    /// Begins an encryption under a nonce the caller supplies. Infallible, as
+    /// [`AeadDecryptionKey::create_decryptor`] is.
+    fn create_encryptor_nonce(&self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor;
 
     /// One-shot with the tag inline: encrypts `plaintext` under `aad` into `ciphertext`, which
     /// needs `encrypt_out_len(plaintext.len())` bytes of the encryptor type, and returns the number
@@ -226,6 +237,98 @@ pub trait AeadEncryptionKey<
         let (enc, nonce) = self.create_encryptor(rng)?;
         let tag = crate::provided::encrypt_detached_in_place(enc, aad, buf)?;
         Ok((nonce, tag))
+    }
+
+    /// [`encrypt_with_aad_out`](Self::encrypt_with_aad_out) under a nonce the caller supplies;
+    /// returns the number of bytes written.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, or any error
+    /// of the encryptor's streaming methods.
+    fn encrypt_with_aad_nonce_out(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        crate::provided::encrypt_inline(
+            self.create_encryptor_nonce(nonce),
+            aad,
+            plaintext,
+            ciphertext,
+        )
+    }
+
+    /// As [`encrypt_with_aad_nonce_out`](Self::encrypt_with_aad_nonce_out), allocating the
+    /// ciphertext.
+    ///
+    /// # Errors
+    /// As [`encrypt_with_aad_nonce_out`](Self::encrypt_with_aad_nonce_out).
+    #[cfg(feature = "std")]
+    fn encrypt_with_aad_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::Encryptor::encrypt_out_len(plaintext.len())];
+        let written = self.encrypt_with_aad_nonce_out(nonce, aad, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok(ciphertext)
+    }
+
+    /// [`encrypt_detached_out`](Self::encrypt_detached_out) under a nonce the caller supplies;
+    /// returns the number of bytes written and the tag.
+    ///
+    /// # Errors
+    /// As [`encrypt_with_aad_nonce_out`](Self::encrypt_with_aad_nonce_out).
+    fn encrypt_detached_nonce_out(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        crate::provided::encrypt_detached(
+            self.create_encryptor_nonce(nonce),
+            aad,
+            plaintext,
+            ciphertext,
+        )
+    }
+
+    /// As [`encrypt_detached_nonce_out`](Self::encrypt_detached_nonce_out), allocating the
+    /// ciphertext.
+    ///
+    /// # Errors
+    /// As [`encrypt_detached_nonce_out`](Self::encrypt_detached_nonce_out).
+    #[cfg(feature = "std")]
+    fn encrypt_detached_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<(Vec<u8>, [u8; TAG_LEN]), SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::Encryptor::encrypt_detached_out_len(plaintext.len())];
+        let (written, tag) =
+            self.encrypt_detached_nonce_out(nonce, aad, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok((ciphertext, tag))
+    }
+
+    /// [`encrypt_detached_in_place`](Self::encrypt_detached_in_place) under a nonce the caller
+    /// supplies; returns the tag.
+    ///
+    /// # Errors
+    /// Any error of the encryptor's streaming methods.
+    fn encrypt_detached_in_place_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        crate::provided::encrypt_detached_in_place(self.create_encryptor_nonce(nonce), aad, buf)
     }
 }
 

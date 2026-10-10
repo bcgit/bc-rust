@@ -50,6 +50,12 @@ pub trait AeadEncryptMode<
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError>;
 
+    /// Begins an encryption from `state` under a nonce the caller supplies. Infallible, as
+    /// [`AeadDecryptMode::decrypt_init`] is: the state is keyed and the nonce length is in the
+    /// type. The caller takes on the obligation [`encrypt_init`](Self::encrypt_init) discharges
+    /// for it: the nonce must never repeat under this key.
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor;
+
     /// Encrypts `buf` in place from `state` under `aad` and a nonce drawn from `rng`, returning
     /// the nonce and the detached tag. Provided by streaming `buf` through
     /// [`encrypt_init`](Self::encrypt_init)'s encryptor a chunk at a time; a mode whose worker
@@ -66,6 +72,20 @@ pub trait AeadEncryptMode<
         let (enc, nonce) = Self::encrypt_init(state, rng)?;
         let tag = crate::provided::encrypt_detached_in_place(enc, aad, buf)?;
         Ok((nonce, tag))
+    }
+
+    /// As [`encrypt_detached_in_place`](Self::encrypt_detached_in_place) under a nonce the caller
+    /// supplies, over [`encrypt_init_nonce`](Self::encrypt_init_nonce).
+    ///
+    /// # Errors
+    /// Any error of the encryptor's streaming methods.
+    fn encrypt_detached_in_place_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        crate::provided::encrypt_detached_in_place(Self::encrypt_init_nonce(state, nonce), aad, buf)
     }
 }
 
