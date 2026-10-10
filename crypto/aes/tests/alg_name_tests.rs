@@ -8,8 +8,9 @@
 use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256, AES128Internal};
 use bouncycastle_aes::{
     AES_CBC_128, AES_CBC_192, AES_CBC_256, AES_CCM_128, AES_CCM_192, AES_CCM_256, AES_CFB_128,
-    AES_CFB_192, AES_CFB_256, AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CTR_128, AES_CTR_192,
-    AES_CTR_256, AES_GCM_128, AES_GCM_192, AES_GCM_256, CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_CFB_192, AES_CFB_256, AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CMAC_128, AES_CMAC_192,
+    AES_CMAC_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128, AES_GCM_192, AES_GCM_256,
+    CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{Cbc, Gcm};
@@ -112,6 +113,23 @@ fn ccm() {
     );
     check::<AES_CCM_256<Encrypting, N, T, 16, 32>, AES_CCM_256<Decrypting, N, T, 16, 32>>(
         "AES_CCM_256", _256bit,
+    );
+}
+
+#[test]
+fn cmac() {
+    use SecurityStrength::*;
+    assert_eq!(
+        (AES_CMAC_128::ALG_NAME, AES_CMAC_128::MAX_SECURITY_STRENGTH),
+        ("AES_CMAC_128", _128bit)
+    );
+    assert_eq!(
+        (AES_CMAC_192::ALG_NAME, AES_CMAC_192::MAX_SECURITY_STRENGTH),
+        ("AES_CMAC_192", _192bit)
+    );
+    assert_eq!(
+        (AES_CMAC_256::ALG_NAME, AES_CMAC_256::MAX_SECURITY_STRENGTH),
+        ("AES_CMAC_256", _256bit)
     );
 }
 

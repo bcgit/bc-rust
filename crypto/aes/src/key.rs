@@ -5,8 +5,9 @@
 //! is bound to its AES variant and its mode by the Rust type rather than by the length of a byte
 //! buffer and the call site. Validation and key expansion happen once, in the constructor, and
 //! every message under the key starts from the stored schedule (and, for GCM, the stored hash
-//! subkey). Using one key under two modes is two `from_key_material` calls on two key types; the
-//! accidental version does not compile.
+//! subkey, or for CMAC the stored subkeys). Using one key under two modes is two
+//! `from_key_material` calls on two key types; the accidental version does not compile. A MAC
+//! mode's key takes `KeyType::MACKey` material, a cipher mode's `KeyType::SymmetricCipherKey`.
 //!
 //! # Usage Examples
 //!
@@ -58,19 +59,21 @@
 //! # Memory Usage
 //!
 //! A key is its mode's per-key state: the expanded schedule, 176, 208 or 240 bytes for AES-128,
-//! -192 and -256, plus 16 bytes of hash subkey under `GCM`. The cost is paid per key, not per
-//! message, and replaces the per-message validation and expansion of the `KeyMaterial` path.
+//! -192 and -256, plus 16 bytes of hash subkey under `GCM` or 32 bytes of subkeys under `CMAC`.
+//! The cost is paid per key, not per message, and replaces the per-message validation and
+//! expansion of the `KeyMaterial` path.
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, Mode,
+    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, MacMode, Mode,
+    do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
-    FromKeyMaterial,
+    FromKeyMaterial, MacGenerationKey, MacVerificationKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -102,8 +105,7 @@ impl<P: AESParams, M: Mode<AESInternal<P>>> Clone for AESKey<P, M> {
 }
 
 /// The key-type check the mode asks for (`Mode::KEY_TYPE`), ahead of the permutation's own
-/// validation. The permutation accepts only `SymmetricCipherKey` today, which every mode here
-/// requires; a MAC mode will need that check parameterised as well.
+/// validation.
 fn check_key_type(
     key: &dyn KeyMaterialTrait,
     expected: KeyType,
@@ -117,6 +119,21 @@ fn check_key_type(
     Ok(())
 }
 
+/// The permutation accepts only a `SymmetricCipherKey`, so a MAC mode's key -- already checked to
+/// be the `MACKey` the mode asks for -- is handed to it as a copy retagged at the same strength,
+/// used for nothing else. The strength check in the permutation's constructor still applies.
+fn as_cipher_key<const N: usize>(
+    key: &KeyMaterial<N>,
+) -> Result<KeyMaterial<N>, SymmetricCipherError> {
+    let mut cipher_key =
+        KeyMaterial::<N>::from_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
+    do_hazardous_operations(&mut cipher_key, |k| {
+        k.set_key_type(KeyType::SymmetricCipherKey)?;
+        k.set_security_strength(key.security_strength())
+    })?;
+    Ok(cipher_key)
+}
+
 // The constructors are implemented per key length rather than once over `P`, because stable Rust
 // cannot name `KeyMaterial<{ P::KEY_LEN }>` in a generic signature; the fixed-capacity argument
 // is what makes a wrong-length key a compile error rather than a runtime one.
@@ -127,12 +144,17 @@ impl<M: Mode<AES128Internal>> FromKeyMaterial<16> for AES128Key<M> {
     /// Validates and expands a 16-byte key.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`].
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`]: the
+    ///   `SymmetricCipherKey` a cipher mode asks for, or the `MACKey` a MAC mode does.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        Ok(Self { state: M::key_state(AES128Internal::new(key)?) })
+        let perm = match M::KEY_TYPE {
+            KeyType::SymmetricCipherKey => AES128Internal::new(key)?,
+            _ => AES128Internal::new(&as_cipher_key(key)?)?,
+        };
+        Ok(Self { state: M::key_state(perm) })
     }
 }
 
@@ -143,7 +165,11 @@ impl<M: Mode<AES192Internal>> FromKeyMaterial<24> for AES192Key<M> {
     /// bytes and 192 bits.
     fn from_key_material(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        Ok(Self { state: M::key_state(AES192Internal::new(key)?) })
+        let perm = match M::KEY_TYPE {
+            KeyType::SymmetricCipherKey => AES192Internal::new(key)?,
+            _ => AES192Internal::new(&as_cipher_key(key)?)?,
+        };
+        Ok(Self { state: M::key_state(perm) })
     }
 }
 
@@ -154,7 +180,11 @@ impl<M: Mode<AES256Internal>> FromKeyMaterial<32> for AES256Key<M> {
     /// bytes and 256 bits.
     fn from_key_material(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        Ok(Self { state: M::key_state(AES256Internal::new(key)?) })
+        let perm = match M::KEY_TYPE {
+            KeyType::SymmetricCipherKey => AES256Internal::new(key)?,
+            _ => AES256Internal::new(&as_cipher_key(key)?)?,
+        };
+        Ok(Self { state: M::key_state(perm) })
     }
 }
 
@@ -320,5 +350,21 @@ where
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
         M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+    }
+}
+
+impl<P: AESParams, M: MacMode<AESInternal<P>>> MacGenerationKey for AESKey<P, M> {
+    type Generator = M::Worker;
+
+    fn create_generator(&self) -> Self::Generator {
+        M::mac_init(&self.state)
+    }
+}
+
+impl<P: AESParams, M: MacMode<AESInternal<P>>> MacVerificationKey for AESKey<P, M> {
+    type Verifier = M::Worker;
+
+    fn create_verifier(&self) -> Self::Verifier {
+        M::mac_init(&self.state)
     }
 }
